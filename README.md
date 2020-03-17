@@ -6,7 +6,7 @@ Rio is an opinated package manager built with Rust.
 
 ### Package Scoping
 
-If you run `npm install express@4.17.1` in a brand new project and then run:
+Let's say that want to install express to a brand new project, so you run `npm install express@4.17.1`. Once that's done and then you want to check the node_modules scope, you're gonna see all the express dependencies in the runtime scope, for example:
 
 ```sh
 $ node -e "console.log(require('cookie'))"
@@ -15,7 +15,7 @@ $ node -e "console.log(require('cookie'))"
 
 * This test was made using npm 6.14.2.
 
-You're gonna realize that by default there's a lot of dependecies installed in node_modules reflecting in the package scoping of the project however you only have asked for one.
+`node_modules` dependecies tree:
 
 <img alt="Package scoping example" src="assets/example-scoping.png" height="400"/>
 
