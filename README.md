@@ -9,13 +9,13 @@ Rio is an opinated package manager built with Rust.
 If you run `npm install express@4.17.1` and then run:
 
 ```sh
-❯ node -e "console.log(require('cookie'))"
+$ node -e "console.log(require('cookie'))"
 { parse: [Function: parse], serialize: [Function: serialize] }
 ```
 
 You're gonna realize that by default there's a lot of dependecies installed in node_modules reflecting in the package scoping of the project however you have asked only for one.
 
-![Package scoping example](assets/example-scoping.png)
+<img alt="Package scoping example" src="assets/example-scoping.png" height="400"/>
 
 ## Benchmark
 
