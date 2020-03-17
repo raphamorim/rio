@@ -6,7 +6,7 @@ Rio is an opinated package manager built with Rust.
 
 ### Package Scoping
 
-Let's say that want to install express to a brand new project, so you run `npm install express@4.17.1`. Once that's done and then you want to check the node_modules scope, you're gonna see all the express dependencies in the runtime scope, for example:
+Let's say that you want to install express to a brand new project, so you run `npm install express@4.17.1`. Once that's done and then you want to check the node_modules scope, you're gonna see all the express dependencies in the runtime scope, for example:
 
 ```sh
 $ node -e "console.log(require('cookie'))"
@@ -36,6 +36,10 @@ $ node index.js
 [Function: destroy]
 [Function: first]
 ```
+
+Rio is suitable to avoid this package scoping issue.
+
+<img alt="Rio's package scoping example" src="assets/example-scoping-rio.png"/>
 
 ## Benchmark
 
