@@ -15,7 +15,7 @@ If you run `npm install express@4.17.1` and then run:
 
 You're gonna realize that by default there's a lot of dependecies installed in node_modules reflecting in the package scoping of the project however you have asked only for one.
 
-![Package scoping example](assets/example-scoping.jpg)
+![Package scoping example](assets/example-scoping.png)
 
 ## Benchmark
 
