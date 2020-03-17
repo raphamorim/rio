@@ -16,4 +16,3 @@ fn main() {
     let install = matches.value_of("install").unwrap();
     println!("{}", install);
 }
-

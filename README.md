@@ -1,8 +1,21 @@
 # Rio
 
-Rio is an opinated package manager built to use a different fetch architecture of NPM or Yarn.
+Rio is an opinated package manager built with Rust.
 
-It's built over rust, for now Rio is recommended only for development. I strong recommend use Rio (for CI deploys: use yarn or NPM). The reason is because Rio doesn't care about integrity yet, just download speed.
+## Reasons
+
+#### Package Scoping
+
+If you run `npm install express@4.17.1` and then run:
+
+```sh
+❯ node -e "console.log(require('cookie'))"
+{ parse: [Function: parse], serialize: [Function: serialize] }
+```
+
+You're gonna realize that by default there's a lot of dependecies installed in node_modules reflecting in the package scoping of the project however you have asked only for one.
+
+![Package scoping example](assets/example-scoping.jpg)
 
 ## Benchmark
 
@@ -12,12 +25,6 @@ This test is using a lots of files (inspired by [Benchmarks of JavaScript Packag
 | ---     | --- | --- | --- | --- |
 | fresh install with over many dependencies | 6.6s | 22.4s | 35s | 2.2s |
 | install with cache over many dependencies  | 2.9s	 | 1.3s | 694ms | 230ms |
-
-## Reason
-
-Install dependencies in large projects is a painful job most of the times and it could very be faster.
-
-However Rio have two limitations if you try to use as NPM or yarn: It doesn't support CLI js tools (e.g: npm install -g <package>) or integrity check (Rio does a dumb check an download the hash without check the package's dependencies).
 
 ## Packages for real
 
@@ -75,3 +82,7 @@ FLAGS:
 ARGS:
     <install>    install packages
 ```
+
+## Development
+
+- `cd rio && cargo run`
