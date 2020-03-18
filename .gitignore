@@ -10,5 +10,6 @@ rio/Cargo.lock
 
 .DS_Store
 
-# Server
+# Debug local packages
 server
+example
