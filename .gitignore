@@ -9,3 +9,6 @@ rio/Cargo.lock
 **/*.rs.bk
 
 .DS_Store
+
+# Server
+server

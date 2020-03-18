@@ -4,6 +4,23 @@ Rio is an opinated package manager built with Rust.
 
 ## Reasons
 
+## Packages by source
+
+This also should allow the developer create a custom module namespace for the dependency if necessary.
+
+```js
+ "dependencies": {
+    "express": "github.com/expressjs/express/releases/tag/4.17.1", // 4.17.1
+    "lodash": "github.com/lodash/lodash", // latest master
+    "draft-js": "github.com/facebook/draft-js/tree/0.9-stable", // 0-9 stable branch
+```
+
+### Install once
+
+All the installed packages are shared across the projects *by default* using symlink (it reduces installed dependencies overall size).
+
+If you need to install for ship into production you can use a specif flag on the install command (`--disable-symlink`).
+
 ### Package Scoping
 
 Let's say that you want to install express to a brand new project, so you run `npm install express@4.17.1`. Once that's done and then you want to check the node_modules scope, you're gonna see all the express dependencies in the runtime scope, for example:
@@ -49,31 +66,6 @@ This test is using a lots of files (inspired by [Benchmarks of JavaScript Packag
 | ---     | --- | --- | --- | --- |
 | fresh install with over many dependencies | 6.6s | 22.4s | 35s | 2.2s |
 | install with cache over many dependencies  | 2.9s	 | 1.3s | 694ms | 230ms |
-
-## Packages for real
-
-```
- $ rio install ->
-    - check dependencies
-    - request rio.source.com for each processed dependency
-      -> dependency exists in .rio format (gzip data + info)
-        - fetch gzipped dependency (for each rio publish, it process and compress the package to .rio format)
-      -> if the dependency doesn't exist:
-        - process & pack the dependency asynchronously and notify the user to attemp again in an estimated time
-```
-
-## Universal cache
-
-Each package is saved and it's shared across all JS projects, reducing redudance and if exists
-
-## New package.json format
-
-```js
- "dependencies": {
-    "@babel/runtime": "https://github.com/babel/babel/tree/master/packages/babel-runtime", // always updated
-    "react": "16.12.0" // load gzip package
-```
-
 
 ## Commands && Arguments
 
