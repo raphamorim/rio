@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 clap = "2.26.0"
+failure = { version = "0.1.5", features = [] }

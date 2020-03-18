@@ -5,7 +5,7 @@ use clap::{Arg, App};
 fn main() {
     let matches = App::new("Rio")
         .version("0.1.0")
-        .author("Raphae Amorim <rapha850@gmail.com>")
+        .author("Raphael Amorim <rapha850@gmail.com>")
         .about("JavaScript Package Manager")
         .arg(Arg::with_name("install")
                  .required(true)
@@ -13,6 +13,10 @@ fn main() {
                  .index(1)
                  .help("install packages"))
         .get_matches();
-    let install = matches.value_of("install").unwrap();
-    println!("{}", install);
+
+    // println!("Value for --output: {}", matches.value_of("install").unwrap());
+
+    if matches.is_present("install") {
+        println!("nice");
+    }
 }

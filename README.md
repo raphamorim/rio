@@ -4,7 +4,7 @@ Rio is an opinated package manager built with Rust.
 
 ## Reasons
 
-## Packages by source
+### Packages by source
 
 This also should allow the developer create a custom module namespace for the dependency if necessary.
 
@@ -17,9 +17,9 @@ This also should allow the developer create a custom module namespace for the de
 
 ### Install once
 
-All the installed packages are shared across the projects *by default* using symlink (it reduces installed dependencies overall size).
+All the installed packages are shared across the projects **by default** using symlink (it reduces installed dependencies overall size).
 
-If you need to install for ship into production you can use a specif flag on the install command (`--disable-symlink`).
+If you need to install for ship into production you can use a specific flag with the install command: `--disable-symlink`.
 
 ### Package Scoping
 
@@ -65,7 +65,7 @@ This test is using a lots of files (inspired by [Benchmarks of JavaScript Packag
 | action  | npm | pnpm | Yarn | Rio |
 | ---     | --- | --- | --- | --- |
 | fresh install with over many dependencies | 6.6s | 22.4s | 35s | 2.2s |
-| install with cache over many dependencies  | 2.9s	 | 1.3s | 694ms | 230ms |
+| install with cache over many dependencies  | 2.9s | 1.3s | 694ms | 230ms |
 
 ## Commands && Arguments
 
@@ -85,7 +85,7 @@ Display the Rio available commands.
 ```bash
 $ rio --version
 Rio 0.1.0
-Raphae Amorim <rapha850@gmail.com>
+Raphael Amorim <rapha850@gmail.com>
 JavaScript Package Manager
 
 USAGE:
