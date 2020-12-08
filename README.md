@@ -1,6 +1,6 @@
 # Rio
 
-Rio is an opinated package manager built with Rust.
+Rio is an opinionated package manager built with Rust for NodeJS ecosystem.
 
 ## Under development
 
