@@ -4,17 +4,7 @@ Rio is an opinated package manager built with Rust.
 
 ## Under development
 
-**TODO list:**
-
-- [ ] fetch packages
-    - [ ] loading
-    - [ ] fallback install
-- [ ] read packages and check cache
-- [ ] cache management
-    - [ ] OSX
-    - [ ] Windows
-- [ ] `rio ls`
-- [ ] install script
+See the [TODO list](TODO.md)
 
 ## Reasons
 
