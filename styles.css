@@ -1,0 +1,238 @@
+/* silkscreen-regular - latin */
+@font-face {
+  font-family: 'Silkscreen';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../silkscreen/silkscreen-v1-latin-regular.eot'); /* IE9 Compat Modes */
+  src: local(''),
+       url('../silkscreen/silkscreen-v1-latin-regular.eot?#iefix') format('embedded-opentype'), /* IE6-IE8 */
+       url('../silkscreen/silkscreen-v1-latin-regular.woff2') format('woff2'), /* Super Modern Browsers */
+       url('../silkscreen/silkscreen-v1-latin-regular.woff') format('woff'), /* Modern Browsers */
+       url('../silkscreen/silkscreen-v1-latin-regular.ttf') format('truetype'), /* Safari, Android, iOS */
+       url('../silkscreen/silkscreen-v1-latin-regular.svg#Silkscreen') format('svg'); /* Legacy iOS */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  line-height: 1.8em;
+	/*background: #333;*/
+  background: #000;
+	color: white;
+	text-rendering: optimizeLegibility;
+	-moz-osx-font-smoothing: grayscale;
+	font-family: Helvetica;
+  font-size: 20px;
+}
+
+.container {
+	position: relative;
+	width: 820px;
+	margin: 0 auto;
+}
+
+/*
+	stack: 
+    #D35100
+    #F07900
+	  #F8A145
+	bg text: #151515
+*/
+
+section.highlight {
+  background: #333;
+  height: 750px;
+}
+
+section.features {
+  border-top: 20px solid #F8A145;
+  background: #000;
+  height: 950px;
+}
+
+section.usage {
+  border-top: 20px solid #333;
+  background: #F8A145;
+  height: 800px;
+}
+
+section.usage .twitter {
+  display: flex;
+  overflow: hidden;
+  overflow-x: scroll;
+}
+
+section.usage h2 {
+  color: white;
+  background: #000;
+  text-align: center;
+}
+
+section.usage .twitter .twitter-tweet {
+  margin-left: 20px;
+}
+
+section.features a {
+  color: orange;
+  font-weight: 500;
+}
+
+section h2 {
+  font-family: 'Silkscreen', helvetica;
+  font-size: 25px;
+  color: #999;
+  padding-left: 15px;
+  background: #000;
+}
+
+section.features .container div {
+  background: #151515;
+  padding: 20px 45px;
+  font-size: 16px;
+  font-family: monospace;
+  color: rgba(255,255,255,.7);
+}
+
+.rio {
+	width: 600px;
+	height: 400px;
+	background: #151515;
+	border-radius: 8px;
+	line-height: 1.5;
+	font-size: 14px;
+	white-space: pre-wrap;
+	word-break: break-all;
+	overflow: hidden;
+	box-shadow: 12px 12px 2px 1px rgba(0, 0, 0, .2);
+}
+
+.terminal-content {
+  text-align: left;
+  display: flex;
+  margin: 10px;
+  margin-top: -20px;
+  overflow: hidden;
+  border-right: 0.7em solid transparent;
+  white-space: nowrap; 
+  letter-spacing: .15em;
+  font-family: 'Silkscreen', helvetica;
+  animation: 
+    typing 3.2s steps(42, end),
+    blink-caret 3.2s step-end;
+}
+
+/* The typing effect */
+@keyframes typing {
+  from { width: 0 }
+  to { width: 80%; }
+}
+
+/* The typewriter cursor effect */
+@keyframes blink-caret {
+  to { border-color: transparent }
+  from, 50% { border-color: orange; }
+  100% { border-color: transparent; }
+}
+
+.layer-1 {
+  background: #000;
+  position: relative;
+  height: 30px;
+}
+
+.layer-2 {
+  background: #111;
+  position: relative;
+  height: 10px;
+}
+
+.layer-3 {
+  background: #222;
+  position: relative;
+  height: 10px;
+}
+
+.preview {
+  width: 820px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 60px;
+}
+
+.info {
+  width: 520px;
+  text-align: center;
+  /*display: flex;
+  align-items: center;
+  justify-content: center;*/
+  position: relative;
+  margin: 0 auto;
+  margin-top: 40px;
+  font-family: 'Silkscreen', helvetica;
+}
+
+.info .block {
+  background: black;
+}
+
+.info .block:nth-of-type(3) {
+  font-size: 12px;
+  box-shadow: 1px 1px 15px 1px rgba(0, 0, 0, .9);
+}
+
+.info h1 {
+  font-size: 60px;
+  color: #D35100;
+  font-family: 'Silkscreen', helvetica;
+}
+
+.terminal-header {
+  height: 30px;
+  margin-top: -42px;
+  background: #D35100;
+  display: flex;
+  align-items: center;
+  text-align: center;
+}
+
+.terminal-subheader {
+  margin-top: -42px;
+	background: #F07900;
+	height: 6px;
+}
+
+.terminal-sub-subheader {
+	background: #F8A145;
+	margin-top: -42px;
+	height: 6px;
+}
+
+.terminal-icon:first-of-type {
+  background: #ff5f56;
+  margin-left: 12px;
+}
+
+.terminal-icon {
+  border-radius: 50%;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+}
+
+.terminal-icon:nth-of-type(2) {
+  background: #ffbd2e;
+}
+
+.terminal-icon:nth-of-type(3) {
+  background: #27c93f;
+}
+
+.terminal-icon + .terminal-icon {
+  margin-left: 8px;
+}
+
+.list {
+  /*position: relative;*/
+  height: 300px;
+}
