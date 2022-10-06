@@ -27,12 +27,12 @@ body {
 
 .container {
 	position: relative;
-	width: 820px;
+	max-width: 820px;
 	margin: 0 auto;
 }
 
 /*
-	stack: 
+	stack:
     #D35100
     #F07900
 	  #F8A145
@@ -41,19 +41,18 @@ body {
 
 section.highlight {
   background: #333;
-  height: 750px;
+  padding-bottom: 60px;
 }
 
 section.features {
   border-top: 20px solid #F8A145;
   background: #000;
-  height: 950px;
+  padding-bottom: 100px;
 }
 
 section.usage {
   border-top: 20px solid #333;
   background: #F8A145;
-  height: 800px;
 }
 
 section.usage .twitter {
@@ -94,8 +93,9 @@ section.features .container div {
 }
 
 .rio {
-	width: 600px;
+	max-width: 600px;
 	height: 400px;
+    margin: 0 20px;
 	background: #151515;
 	border-radius: 8px;
 	line-height: 1.5;
@@ -113,10 +113,11 @@ section.features .container div {
   margin-top: -20px;
   overflow: hidden;
   border-right: 0.7em solid transparent;
-  white-space: nowrap; 
+  /* TODO typing effect support multi-line */
+  white-space: nowrap;
   letter-spacing: .15em;
   font-family: 'Silkscreen', helvetica;
-  animation: 
+  animation:
     typing 3.2s steps(42, end),
     blink-caret 3.2s step-end;
 }
@@ -153,7 +154,7 @@ section.features .container div {
 }
 
 .preview {
-  width: 820px;
+  max-width: 820px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -161,7 +162,7 @@ section.features .container div {
 }
 
 .info {
-  width: 520px;
+  max-width: 520px;
   text-align: center;
   /*display: flex;
   align-items: center;
