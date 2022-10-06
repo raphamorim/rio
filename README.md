@@ -10,6 +10,20 @@ Why WGPU? https://dmnsgn.me/blog/from-glsl-to-wgsl-the-future-of-shaders-on-the-
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
 
+## Configuration
+
+macOs path: ~/.rio/config.toml
+
+```toml
+# Define Rio properties as you want
+
+# default width and height
+default_size = [300, 300]
+
+# options: high, average, low
+perfomance = "high"
+```
+
 ## References
 
 - https://chromestatus.com/feature/6213121689518080
