@@ -14,10 +14,10 @@ struct Vertex {
     color: [f32; 3],
 }
 
-fn run_command() -> std::io::Result<String> {
+fn run_command(command: String) -> std::io::Result<String> {
     use std::io::{Write};
     use std::process::{Command, Stdio};
-    let mut child = Command::new("ls")
+    let mut child = Command::new(command)
         .current_dir("/Users/hugoamor/Documents/personal/rio")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -152,7 +152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let command_intro: String = String::from("■ ~ "); // ▲
     let mut command_text: String = String::from("");
     let mut command_result: String = String::from("");
-    let mut command_text_y: f32 = 0.0;
+    // let mut command_text_y: f32 = 0.0;
     // let mut now_keys = [false; 255];
     // let mut prev_keys = now_keys.clone();
 
@@ -188,6 +188,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 command_text.push_str("r");
                                 window.request_redraw();
                             }
+                            event::VirtualKeyCode::G => {
+                                command_text.push_str("g");
+                                window.request_redraw();
+                            }
+                            event::VirtualKeyCode::T => {
+                                command_text.push_str("t");
+                                window.request_redraw();
+                            }
                             event::VirtualKeyCode::I => {
                                 command_text.push_str("i");
                                 window.request_redraw();
@@ -205,7 +213,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 window.request_redraw();
                             }
                             event::VirtualKeyCode::Return => {
-                                match run_command() {
+                                match run_command(command_text.to_string()) {
                                     Ok(result_std) => {
                                         // println!("{:?}", result_std);
                                         command_result = result_std;
