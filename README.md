@@ -1,16 +1,22 @@
 # Rio: ⚡ terminal app 
 
-1. Rio is licensed under MIT license
-2. Runs on WPGU ([what's WPGU?](https://dmnsgn.me/blog/from-glsl-to-wgsl-the-future-of-shaders-on-the-web/))
-3. This project depends of donations as well, so if you are using please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim) or [ko-fi]().
+Website: https://raphamorim.io/rio
 
-## Features
+> This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim) or [ko-fi]().
 
-- [x] WGPU rendering
-- [ ] Keyboard input
-- [ ] Screen resizing
-- [ ] Style rendering (italic, bold, underline)
-- [ ] Character set
+#### Status
+
+Under development.
+
+#### WPGU based
+
+WPGU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
+
+#### Low memory and low CPU usage
+
+You want to avoid a browser-based application to reduce memory and CPU consumption. Electron for example, uses Chromium under the hood so your user sees the same on Windows, Linux and macOS but Rio have same compability rendering based on WGPU.
+
+Rio also relies on Rust memory behavior: Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques.
 
 ## Configuration
 
@@ -29,6 +35,17 @@ default_size = [300, 300]
 # options: high, average, low
 perfomance = "high"
 ```
+
+## TODO
+
+- [x] WGPU rendering
+- [ ] Read and use configuration
+- [ ] Keyboard input
+- [ ] Screen resizing
+- [ ] Allow use set different font-size
+ (~/.rio/theme.toml)
+- [ ] Style rendering (italic, bold, underline)
+- [ ] Character set
 
 ## References
 
