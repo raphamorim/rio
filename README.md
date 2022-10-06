@@ -2,7 +2,7 @@
 
 Website: https://raphamorim.io/rio
 
-> This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim) or [ko-fi]().
+> This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 
 #### Status
 
@@ -43,7 +43,7 @@ perfomance = "high"
 - [ ] Keyboard input
 - [ ] Screen resizing
 - [ ] Allow use set different font-size
- (~/.rio/theme.toml)
+- [ ] Themes support
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
 
