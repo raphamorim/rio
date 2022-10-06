@@ -42,6 +42,8 @@ perfomance = "high"
 ## TODO
 
 - [x] WGPU rendering
+	- [ ] Render font with custom color, size and family
+	- [ ] Fix topbar when resize
 - [ ] Read and use configuration
 - [ ] Keyboard input
 - [ ] Screen resizing
