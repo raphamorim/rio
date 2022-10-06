@@ -95,7 +95,7 @@ section.features .container div {
 .rio {
 	max-width: 600px;
 	height: 400px;
-    margin: 0 20px;
+  margin: 0 20px;
 	background: #151515;
 	border-radius: 8px;
 	line-height: 1.5;
@@ -113,13 +113,23 @@ section.features .container div {
   margin-top: -20px;
   overflow: hidden;
   border-right: 0.7em solid transparent;
-  /* TODO typing effect support multi-line */
   white-space: nowrap;
   letter-spacing: .15em;
   font-family: 'Silkscreen', helvetica;
   animation:
     typing 3.2s steps(42, end),
     blink-caret 3.2s step-end;
+}
+
+@media (max-width: 380px) {
+  .rio {
+    height: 150px;
+    margin: 0 30px;
+  }
+
+  .terminal-content {
+    font-size: 12px;
+  }
 }
 
 /* The typing effect */
