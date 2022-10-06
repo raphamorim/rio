@@ -12,6 +12,7 @@ tokio = { version = "1.7.1", features = ["full"] }
 winit = "0.26"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
+toml = "0.5"
 
 [package.metadata.bundle]
 name = "Rio"

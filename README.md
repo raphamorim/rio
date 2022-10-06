@@ -1,6 +1,8 @@
 # Rio: ⚡ terminal app 
 
-Why WGPU? https://dmnsgn.me/blog/from-glsl-to-wgsl-the-future-of-shaders-on-the-web/
+1. Rio is licensed under MIT license
+2. Runs on WPGU ([what's WPGU?](https://dmnsgn.me/blog/from-glsl-to-wgsl-the-future-of-shaders-on-the-web/))
+3. This project depends of donations as well, so if you are using please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim) or [ko-fi]().
 
 ## Features
 
@@ -12,7 +14,11 @@ Why WGPU? https://dmnsgn.me/blog/from-glsl-to-wgsl-the-future-of-shaders-on-the-
 
 ## Configuration
 
-macOs path: ~/.rio/config.toml
+The configuration should be the following paths otherwise Rio will use the default configuration ([which you can see here]())
+
+- macOs path: `~/.rio/config.toml`
+
+#### config.toml
 
 ```toml
 # Define Rio properties as you want
