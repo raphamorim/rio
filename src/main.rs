@@ -2,9 +2,9 @@ mod glyph;
 mod ui;
 mod utils;
 
-use wgpu::util::DeviceExt;
 use glyph::{ab_glyph, GlyphBrushBuilder, Section, Text};
 use std::error::Error;
+use wgpu::util::DeviceExt;
 use winit::{event, event_loop};
 
 #[repr(C)]
@@ -29,26 +29,40 @@ impl Vertex {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
-                }
-            ]
+                },
+            ],
         }
     }
 }
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [-2.0, 1.5, 0.0], color: [0.94, 0.47, 0.0] }, // A
-    Vertex { position: [-2.0, 0.83, 0.0], color: [0.5, 0.0, 0.5] }, // B
-    Vertex { position: [2.0, 0.83, 0.0], color: [0.94, 0.47, 0.0] }, // E
-
-    Vertex { position: [-2.0, 2.0, 0.0], color: [0.8274509804, 0.3176470588, 0.0] }, // A
-    Vertex { position: [-2.0, 0.87, 0.0], color: [0.5, 0.0, 0.5] }, // B
-    Vertex { position: [2.0, 0.87, 0.0], color: [0.8274509804, 0.3176470588, 0.0] }, // E
+    Vertex {
+        position: [-2.0, 1.5, 0.0],
+        color: [0.94, 0.47, 0.0],
+    }, // A
+    Vertex {
+        position: [-2.0, 0.83, 0.0],
+        color: [0.5, 0.0, 0.5],
+    }, // B
+    Vertex {
+        position: [2.0, 0.83, 0.0],
+        color: [0.94, 0.47, 0.0],
+    }, // E
+    Vertex {
+        position: [-2.0, 2.0, 0.0],
+        color: [0.8274509804, 0.3176470588, 0.0],
+    }, // A
+    Vertex {
+        position: [-2.0, 0.87, 0.0],
+        color: [0.5, 0.0, 0.5],
+    }, // B
+    Vertex {
+        position: [2.0, 0.87, 0.0],
+        color: [0.8274509804, 0.3176470588, 0.0],
+    }, // E
 ];
 
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-];
+const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -97,21 +111,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
     );
 
-    let vertex_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        }
-    );
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(VERTICES),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
 
-    let index_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        }
-    );
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(INDICES),
+        usage: wgpu::BufferUsages::INDEX,
+    });
     let num_indices = INDICES.len() as u32;
 
     let font = ab_glyph::FontArc::try_from_slice(ui::FONT_FIRA_MONO)?;
@@ -119,6 +129,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
     let mut command_text = "~ ";
+    let mut now_keys = [false; 255];
+    let mut prev_keys = now_keys.clone();
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -127,23 +139,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => *control_flow = event_loop::ControlFlow::Exit,
 
-//             event::Event::WindowEvent::KeyboardInput {
-//                 input:winit::event::KeyboardInput {
-//                     // Which serves to filter out only events we actually want
-//                     virtual_keycode:Some(keycode),
-//                     state, scancode, modifiers },
-//             } => {
-//     // It also binds these handy variable names!
-//     match state {
-//         winit::event::ElementState::Pressed => {
-//             // VirtualKeycode is an enum with a defined representation
-//             now_keys[keycode as usize] = true;
-//         },
-//         winit::event::ElementState::Released => {
-//             now_keys[keycode as usize] = false;
-//         }
-//     }
-// },
+            event::Event::WindowEvent {
+                event: event::WindowEvent::KeyboardInput {
+                    input:winit::event::KeyboardInput {
+                        // Which serves to filter out only events we actually want
+                        virtual_keycode:Some(keycode),
+                        state,
+                        ..
+                    },
+                    ..
+                },
+                ..
+            } => {
+                // It also binds these handy variable names!
+                match state {
+                    winit::event::ElementState::Pressed => {
+                        // VirtualKeycode is an enum with a defined representation
+                        now_keys[keycode as usize] = true;
+                        println!("code {:?}", now_keys);
+                    }
+                    winit::event::ElementState::Released => {
+                        now_keys[keycode as usize] = false;
+                        println!("code {:?}", now_keys);
+                    }
+                }
+            }
 
             event::Event::WindowEvent {
                 event: event::WindowEvent::Resized(new_size),
@@ -176,52 +196,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let render_pipeline_layout =
-                        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                            label: Some("Render Pipeline Layout"),
-                            bind_group_layouts: &[],
-                            push_constant_ranges: &[],
-                        });
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("Render Pipeline Layout"),
+                        bind_group_layouts: &[],
+                        push_constant_ranges: &[],
+                    });
 
-                    let render_pipeline =
-                        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                            label: Some("Render Pipeline"),
-                            layout: Some(&render_pipeline_layout),
-                            vertex: wgpu::VertexState {
-                                module: &shader,
-                                entry_point: "vs_main",
-                                buffers: &[
-                                    Vertex::desc(),
-                                ],
-                            },
-                            fragment: Some(wgpu::FragmentState {
-                                module: &shader,
-                                entry_point: "fs_main",
-                                targets: &[Some(wgpu::ColorTargetState {
-                                    format: render_format,
-                                    blend: Some(wgpu::BlendState::REPLACE),
-                                    write_mask: wgpu::ColorWrites::ALL,
-                                })],
-                            }),
-                            primitive: wgpu::PrimitiveState {
-                                topology: wgpu::PrimitiveTopology::TriangleList, // 1.
-                                strip_index_format: None,
-                                front_face: wgpu::FrontFace::Ccw, // 2.
-                                cull_mode: Some(wgpu::Face::Back),
-                                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                                polygon_mode: wgpu::PolygonMode::Fill,
-                                // Requires Features::DEPTH_CLIP_CONTROL
-                                unclipped_depth: false,
-                                // Requires Features::CONSERVATIVE_RASTERIZATION
-                                conservative: false,
-                            },
-                            depth_stencil: None, // 1.
-                            multisample: wgpu::MultisampleState {
-                                count: 1,                         // 2.
-                                mask: !0,                         // 3.
-                                alpha_to_coverage_enabled: false, // 4.
-                            },
-                            multiview: None, // 5.
-                        });
+                let render_pipeline =
+                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some("Render Pipeline"),
+                        layout: Some(&render_pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: "vs_main",
+                            buffers: &[Vertex::desc()],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: "fs_main",
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: render_format,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList, // 1.
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Ccw, // 2.
+                            cull_mode: Some(wgpu::Face::Back),
+                            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            // Requires Features::DEPTH_CLIP_CONTROL
+                            unclipped_depth: false,
+                            // Requires Features::CONSERVATIVE_RASTERIZATION
+                            conservative: false,
+                        },
+                        depth_stencil: None, // 1.
+                        multisample: wgpu::MultisampleState {
+                            count: 1,                         // 2.
+                            mask: !0,                         // 3.
+                            alpha_to_coverage_enabled: false, // 4.
+                        },
+                        multiview: None, // 5.
+                    });
 
                 {
                     let mut render_pass =
@@ -240,10 +258,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             depth_stencil_attachment: None,
                         });
 
-                        render_pass.set_pipeline(&render_pipeline); // 2.
-                        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                        render_pass.draw(0..num_indices, 0..1);
+                    render_pass.set_pipeline(&render_pipeline); // 2.
+                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(
+                        index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                    render_pass.draw(0..num_indices, 0..1);
                 }
 
                 {
