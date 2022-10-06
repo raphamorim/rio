@@ -14,7 +14,7 @@ impl Cache {
 
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Cache {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph::Cache"),
+            label: Some("text::Cache"),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -30,7 +30,7 @@ impl Cache {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let upload_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("glyph::Cache upload buffer"),
+            label: Some("text::Cache upload buffer"),
             size: Self::INITIAL_UPLOAD_BUFFER_SIZE,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
@@ -68,7 +68,7 @@ impl Cache {
 
         if self.upload_buffer_size < padded_data_size {
             self.upload_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("glyph::Cache upload buffer"),
+                label: Some("text::Cache upload buffer"),
                 size: padded_data_size,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,

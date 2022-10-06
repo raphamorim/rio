@@ -1,6 +1,6 @@
 mod cache;
 
-use crate::glyph::region::Region;
+use crate::text::region::Region;
 use cache::Cache;
 use std::borrow::Cow;
 
@@ -151,7 +151,7 @@ impl<Depth> Pipeline<Depth> {
 
         if instances.len() > self.supported_instances {
             self.instances = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("wgpu_glyph::Pipeline instances"),
+                label: Some("text::Pipeline instances"),
                 size: mem::size_of::<Instance>() as u64 * instances.len() as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -212,7 +212,7 @@ fn build<D>(
 
     let uniform_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("wgpu_glyph::Pipeline uniforms"),
+            label: Some("text::Pipeline uniforms"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -249,7 +249,7 @@ fn build<D>(
         create_uniforms(device, &uniform_layout, &transform, &sampler, &cache.view);
 
     let instances = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("wgpu_glyph::Pipeline instances"),
+        label: Some("text::Pipeline instances"),
         size: mem::size_of::<Instance>() as u64 * Instance::INITIAL_AMOUNT as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
@@ -357,7 +357,7 @@ fn draw<D>(
     }
 
     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("wgpu_glyph::pipeline render pass"),
+        label: Some("text::pipeline render pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: target,
             resolve_target: None,
@@ -388,7 +388,7 @@ fn create_uniforms(
     cache: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("wgpu_glyph::Pipeline uniforms"),
+        label: Some("text::Pipeline uniforms"),
         layout: layout,
         entries: &[
             wgpu::BindGroupEntry {

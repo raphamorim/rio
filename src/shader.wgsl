@@ -1,5 +1,3 @@
-// Vertex shader
-
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,
@@ -20,14 +18,7 @@ fn vs_main(
     return out;
 }
 
-// Fragment shader
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(in.color, 1.0);
 }
-
-//@fragment
-//fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-//    return vec4<f32>(0.8274509804, 0.3176470588, 0.0, 1.0);
-//}

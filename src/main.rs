@@ -1,8 +1,8 @@
-mod glyph;
+mod text;
 mod ui;
 mod utils;
 
-use glyph::{ab_glyph, GlyphBrushBuilder, Section, Text};
+use text::{ab_glyph, GlyphBrushBuilder, Section, Text};
 use std::error::Error;
 use wgpu::util::DeviceExt;
 use winit::{event, event_loop};
@@ -289,7 +289,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 staging_belt.finish();
                 queue.submit(Some(encoder.finish()));
                 frame.present();
-                
+
                 // Recall unused staging buffers
                 staging_belt.recall();
             }
