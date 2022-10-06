@@ -142,7 +142,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event::Event::WindowEvent {
                 event: event::WindowEvent::KeyboardInput {
                     input:winit::event::KeyboardInput {
-                        // Which serves to filter out only events we actually want
                         virtual_keycode:Some(keycode),
                         state,
                         ..
@@ -151,10 +150,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
                 ..
             } => {
-                // It also binds these handy variable names!
                 match state {
                     winit::event::ElementState::Pressed => {
-                        // VirtualKeycode is an enum with a defined representation
                         now_keys[keycode as usize] = true;
                         println!("code {:?}", now_keys);
                     }
@@ -221,9 +218,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             })],
                         }),
                         primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList, // 1.
+                            topology: wgpu::PrimitiveTopology::TriangleList,
                             strip_index_format: None,
-                            front_face: wgpu::FrontFace::Ccw, // 2.
+                            front_face: wgpu::FrontFace::Ccw,
                             cull_mode: Some(wgpu::Face::Back),
                             // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                             polygon_mode: wgpu::PolygonMode::Fill,
@@ -234,11 +231,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                         depth_stencil: None, // 1.
                         multisample: wgpu::MultisampleState {
-                            count: 1,                         // 2.
-                            mask: !0,                         // 3.
-                            alpha_to_coverage_enabled: false, // 4.
+                            count: 1,
+                            mask: !0,
+                            alpha_to_coverage_enabled: false,
                         },
-                        multiview: None, // 5.
+                        multiview: None,
                     });
 
                 {
@@ -292,6 +289,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 staging_belt.finish();
                 queue.submit(Some(encoder.finish()));
                 frame.present();
+                
                 // Recall unused staging buffers
                 staging_belt.recall();
             }
