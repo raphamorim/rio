@@ -8,6 +8,10 @@ Website: https://raphamorim.io/rio
 
 Under development.
 
+Last testing build for macOS:
+
+![Demo macOS](docs/demo-macos.png)
+
 #### WPGU based
 
 WPGU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
@@ -46,6 +50,11 @@ perfomance = "high"
 - [ ] Themes support
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
+
+## Credits
+
+- https://github.com/hecrj/wgpu_glyph
+- https://fonts.google.com/specimen/Silkscreen
 
 ## References
 
