@@ -1,33 +1,14 @@
-[package]
-name = "rio"
-version = "0.1.0"
-edition = "2021"
-description = "Minimal terminal application"
-authors = ["Raphael Amorim"]
+[workspace]
+members = [
+  "rio",
+  "tty"
+]
+resolver = "2"
 
-[dependencies]
-glyph_brush = "0.7"
-wgpu = "0.13.1"
-tokio = { version = "1.7.1", features = ["full"] }
-winit = "0.26"
-image = { version = "0.24.0", default-features = false, features = ["ico"] }
-bytemuck = { version = "1.9", features = [ "derive" ] }
-toml = "0.5"
+[profile.release]
+# opt-level = 3
+# debug = 1
 
-[package.metadata.bundle]
-name = "Rio"
-identifier = "com.raphaelamorim.rio"
-#icon = ["src/32x32.png", "128x128.png", "128x128@2x.png"]
-icon = ["src/assets/images/logo.png"]
-version = "1.0.0"
-resources = ["./src/assets"]
-copyright = "Copyright (c) Raphael Amorim 2022. All rights reserved."
-category = "Developer Tool"
-short_description = "Terminal App"
-long_description = """
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
-eiusmod tempor incididunt ut labore et dolore magna aliqua.  Ut
-enim ad minim veniam, quis nostrud exercitation ullamco laboris
-nisi ut aliquip ex ea commodo consequat.
-"""
-deb_depends = ["libgl1-mesa-glx", "libsdl2-2.0-0 (>= 2.0.5)"]
+[profile.dev]
+# https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
+# split-debuginfo = "unpacked"
