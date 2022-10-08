@@ -15,7 +15,7 @@ struct Vertex {
 }
 
 fn run_command(command: String) -> std::io::Result<String> {
-    use std::io::{Write};
+    use std::io::Write;
     use std::process::{Command, Stdio};
     let mut child = Command::new(command)
         .current_dir("/Users/hugoamor/Documents/personal/rio")
@@ -27,7 +27,7 @@ fn run_command(command: String) -> std::io::Result<String> {
     // child_stdin.write_all(b"Hello, world!\n")?;
     // Close stdin to finish and avoid indefinite blocking
     // drop(child_stdin);
-    
+
     let output = child.wait_with_output()?;
 
     // println!("output = {:?}", output);
@@ -220,10 +220,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         window.request_redraw();
                                     }
                                     Err(fail_std) => {
-                                        println!("erro: {:?}", fail_std);   
+                                        println!("erro: {:?}", fail_std);
                                     }
                                 };
-
 
                                 // use std::process::Command;
                                 // let output = Command::new("vim")
