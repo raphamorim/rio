@@ -52,6 +52,12 @@ perfomance = "high"
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
 
+## 
+
+ps l
+lsof -p66562
+ls . >> /dev/ttys004
+
 ## References
 
 - https://github.com/hecrj/wgpu_glyph

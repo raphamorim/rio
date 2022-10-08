@@ -1,7 +1,7 @@
 [workspace]
 members = [
-  "rio",
-  "tty"
+  "tty",
+  "rio"
 ]
 resolver = "2"
 
