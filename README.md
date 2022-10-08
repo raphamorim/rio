@@ -60,6 +60,7 @@ ls . >> /dev/ttys004
 
 ## References
 
+- https://github.com/chjj/pty.js
 - https://github.com/hecrj/wgpu_glyph
 - https://fonts.google.com/specimen/Silkscreen
 - https://github.com/alexheretic/glyph-brush/tree/master/glyph-brush
