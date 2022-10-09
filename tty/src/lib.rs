@@ -1,16 +1,13 @@
-use std::borrow::Cow;
+extern crate libc;
+
 use std::ffi::{CStr, CString};
 use std::io;
 use std::ops::Deref;
 use std::ptr;
-
-use std::env;
-use std::io::{ BufRead, BufReader };
-
-extern crate libc;
+use std::sync::Arc;
 
 pub static COLS: u32 = 80;
-pub static ROWS: u32 = 25;
+pub static ROWS: u32 = 30;
 
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -38,6 +35,7 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
+#[derive(Debug)]
 pub struct Process(Handle);
 
 impl Deref for Process {
@@ -50,11 +48,7 @@ impl Deref for Process {
 impl io::Write for Process {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match unsafe {
-            libc::write(
-                *self.0,
-                buf.as_ptr() as *const _,
-                buf.len() as libc::size_t,
-            )
+            libc::write(*self.0, buf.as_ptr() as *const _, buf.len() as libc::size_t)
         } {
             n if n >= 0 => Ok(n as usize),
             _ => Err(io::Error::last_os_error()),
@@ -85,7 +79,14 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
         c_cflag: libc::CREAD | libc::CS8 | libc::HUPCL,
-        c_lflag: libc::ICANON | libc::ISIG | libc::IEXTEN | libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ECHOKE | libc::ECHOCTL,
+        c_lflag: libc::ICANON
+            | libc::ISIG
+            | libc::IEXTEN
+            | libc::ECHO
+            | libc::ECHOE
+            | libc::ECHOK
+            | libc::ECHOKE
+            | libc::ECHOCTL,
         c_cc: Default::default(),
         c_ispeed: Default::default(),
         c_ospeed: Default::default(),
@@ -119,11 +120,11 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         term.c_cc[libc::VDSUSP] = 25;
         term.c_cc[libc::VSTATUS] = 20;
     }
-    
+
     term
 }
 
-pub fn pty(name: &str, width: u16, height: u16) -> (Process, String) {
+pub fn pty(name: &str, width: u16, height: u16) -> (Process, Process, String) {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: height as libc::c_ushort,
@@ -153,15 +154,16 @@ pub fn pty(name: &str, width: u16, height: u16) -> (Process, String) {
             unsafe {
                 pid = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             }
-            let handle = Handle(main);
-            (Process(handle), pid)
+            let handle = Handle(Arc::new(main));
+            // BufWriter::new(process_w)
+            (Process(handle.clone()), Process(handle), pid)
         }
         _ => panic!("Fork failed."),
     }
 }
 
-#[derive(Debug)]
-pub struct Handle(libc::c_int);
+#[derive(Debug, Clone)]
+pub struct Handle(Arc<libc::c_int>);
 
 impl Handle {
     pub fn set_winsize(&self, width: u16, height: u16) -> io::Result<()> {
@@ -188,7 +190,7 @@ impl Deref for Handle {
 impl Drop for Handle {
     fn drop(&mut self) {
         unsafe {
-            libc::close(self.0);
+            libc::close(*self.0);
         }
     }
 }
