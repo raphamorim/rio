@@ -2,14 +2,18 @@ mod text;
 mod ui;
 mod utils;
 
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::borrow::Cow;
+use std::cell::RefMut;
 use std::env;
-use std::io::{ BufRead, BufReader };
 use std::error::Error;
+use std::io::Write;
+use std::io::{BufRead, BufReader};
 use text::{ab_glyph, GlyphBrushBuilder, Section, Text};
+use tty::{pty, COLS, ROWS};
 use wgpu::util::DeviceExt;
 use winit::{event, event_loop};
-use tty::{Process, COLS, ROWS, pty};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -38,20 +42,6 @@ impl Vertex {
         }
     }
 }
-
-
-    // let shell = Cow::Borrowed("bash");
-    // let shell = Cow::Borrowed("bash");
-    // let (process, pid) = pty(&shell, COLS as u16, ROWS as u16);
-
-    // println!("{:?}", pid);
-
-    // let mut reader = BufReader::new(process);
-    // let mut line = String::new();
-    // loop {
-    //     let _len = reader.read_line(&mut line);
-    //     println!("> {:?}", line);
-    // }
 
 const VERTICES: &[Vertex] = &[
     Vertex {
@@ -148,17 +138,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut glyph_brush =
         GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
-    let command_intro: String = String::from("■ ~ "); // ▲
-    let mut output: String = String::from("");
-    // let mut command_text_y: f32 = 0.0;
+    // let command_intro: String = String::from("■ ~ "); // ▲
+    // let mut output: String = String::from("");
     // let mut now_keys = [false; 255];
     // let mut prev_keys = now_keys.clone();
 
     let shell = Cow::Borrowed("bash");
-    let (process, pid) = pty(&shell, COLS as u16, ROWS as u16);
-    let mut reader = BufReader::new(process);
+    let (process, mut w_process, _pid) = pty(&shell, COLS as u16, ROWS as u16);
 
-    println!("{:?}", pid);
+    // println!("{:?}", pid);
+
+    let mut output: Arc<Mutex<String>> = Arc::new(Mutex::from("".to_string()));
+    // let message = Arc::clone(&output);
+    tokio::spawn(async {
+        let reader = BufReader::new(process);
+        for ou in reader.lines() {
+            println!("{:?}", ou);
+            // window.request_redraw();
+        }
+
+        // let mut o = message.lock().unwrap();
+        // *o = "A".to_string();
+        // loop {
+        //     let _len = reader.read_line(&mut output.lock().unwrap());
+        //     println!("> {:?}", output);
+        // }
+    });
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -184,55 +189,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     winit::event::ElementState::Pressed => {
                         // println!("{:?}", keycode);
                         match keycode {
-                            // event::VirtualKeyCode::L => {
-                            //     command_text.push_str("l");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::R => {
-                            //     command_text.push_str("r");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::G => {
-                            //     command_text.push_str("g");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::T => {
-                            //     command_text.push_str("t");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::I => {
-                            //     command_text.push_str("i");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::O => {
-                            //     command_text.push_str("o");
-                            //     window.request_redraw();
-                            // }
-                            // event::VirtualKeyCode::S => {
-                            //     command_text.push_str("s");
-                            //     window.request_redraw();
-                            // }
+                            event::VirtualKeyCode::L => {
+                                w_process.write_all(b"l").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::S => {
+                                w_process.write_all(b"s").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::W => {
+                                w_process.write_all(b"w").unwrap();
+                                // window.request_redraw();
+                            }
                             // event::VirtualKeyCode::Space => {
                             //     command_text.push_str(" ");
-                            //     window.request_redraw();
+                                // window.request_redraw();
                             // }
                             event::VirtualKeyCode::Return => {
-                                // match run_command(command_text.to_string()) {
-                                //     Ok(result_std) => {
-                                //         // println!("{:?}", result_std);
-                                //         command_result = result_std;
-                                //         window.request_redraw();
-                                //     }
-                                //     Err(fail_std) => {
-                                //         println!("erro: {:?}", fail_std);
-                                //     }
-                                // };
-
-                                let mut line = String::new();
-                                let _len = reader.read_line(&mut line);
-                                // println!("{} aaa", line);
-                                output.push_str(&line);
-                                window.request_redraw();
+                                w_process.write_all(b"\n").unwrap();
+                                // window.request_redraw();
                             }
                             _ => {
                                 println!("code not implemented");
@@ -248,7 +223,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         // println!("code {:?}", now_keys);
                     }
                 }
-                // Render only text as typing
+                // Render only text as typing                
+            }
+
+            event::Event::WindowEvent {
+                event: event::WindowEvent::Focused(focused),
+                ..
+            } => {
+                if focused {
+                    println!("focado");
+                }
             }
 
             event::Event::WindowEvent {
@@ -354,19 +338,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 {
+                    // glyph_brush.queue(Section {
+                    //     screen_position: (30.0, 120.0),
+                    //     bounds: (size.width as f32, size.height as f32),
+                    //     text: vec![Text::new(&command_intro)
+                    //         .with_color([0.255, 0.191, 0.154, 1.0])
+                    //         .with_scale(36.0)],
+                    //     ..Section::default()
+                    // });
+
                     glyph_brush.queue(Section {
                         screen_position: (30.0, 120.0),
                         bounds: (size.width as f32, size.height as f32),
-                        text: vec![Text::new(&command_intro)
-                            .with_color([0.255, 0.191, 0.154, 1.0])
-                            .with_scale(36.0)],
-                        ..Section::default()
-                    });
-
-                    glyph_brush.queue(Section {
-                        screen_position: (110.0, 120.0),
-                        bounds: (size.width as f32, size.height as f32),
-                        text: vec![Text::new(&output)
+                        text: vec![Text::new(&output.lock().unwrap())
                             .with_color([1.0, 1.0, 1.0, 1.0])
                             .with_scale(36.0)],
                         ..Section::default()
