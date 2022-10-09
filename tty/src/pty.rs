@@ -1,3 +1,5 @@
+// Modified from node-pty
+
 #![deny(clippy::all)]
 
 use std::ffi::{CStr, CString};
