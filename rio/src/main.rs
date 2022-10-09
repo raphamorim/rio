@@ -3,9 +3,13 @@ mod ui;
 mod utils;
 
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::TryRecvError;
+use std::{thread, time};
 use std::sync::Mutex;
 use std::borrow::Cow;
 use std::cell::RefMut;
+use std::sync::mpsc;
 use std::env;
 use std::error::Error;
 use std::io::Write;
@@ -71,6 +75,16 @@ const VERTICES: &[Vertex] = &[
 ];
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4];
+
+fn spawn_stdin_channel() -> Receiver<String> {
+    let (tx, rx) = mpsc::channel::<String>();
+    thread::spawn(move || loop {
+        let mut buffer = String::new();
+        std::io::stdin().read_line(&mut buffer).unwrap();
+        tx.send(buffer).unwrap();
+    });
+    rx
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -148,17 +162,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // println!("{:?}", pid);
 
-    let mut output: Arc<Mutex<String>> = Arc::new(Mutex::from("".to_string()));
-    // let message = Arc::clone(&output);
-    tokio::spawn(async {
+    let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("■ ~ ")));
+    let message = Arc::clone(&output);
+    tokio::spawn(async move {
+        let mut a = message.lock().unwrap();
         let reader = BufReader::new(process);
-        for ou in reader.lines() {
-            println!("{:?}", ou);
+        *a = String::from("a");
+        // for ou in reader.lines() {
+            // println!("{:?}", ou.as_ref().unwrap());
+            // *a = String::from(ou.unwrap());
             // window.request_redraw();
-        }
+        // }
+
 
         // let mut o = message.lock().unwrap();
-        // *o = "A".to_string();
         // loop {
         //     let _len = reader.read_line(&mut output.lock().unwrap());
         //     println!("> {:?}", output);
