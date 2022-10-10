@@ -1,3 +1,4 @@
+use std::io::Read;
 mod text;
 mod ui;
 mod utils;
@@ -161,26 +162,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (process, mut w_process, _pid) = pty(&shell, COLS as u16, ROWS as u16);
 
     // println!("{:?}", pid);
-
-    let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("■ ~ ")));
+    // ■ ~
+    let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
     let message = Arc::clone(&output);
     tokio::spawn(async move {
-        let mut a = message.lock().unwrap();
         let reader = BufReader::new(process);
-        *a = String::from("a");
+
         // for ou in reader.lines() {
-            // println!("{:?}", ou.as_ref().unwrap());
-            // *a = String::from(ou.unwrap());
-            // window.request_redraw();
+        //     println!("{:?}", ou.as_ref().unwrap());
+        //     let mut a = message.lock().unwrap();
+        //     *a = String::from(format!("{} {} \n", *a, ou.unwrap()));
         // }
 
-
-        // let mut o = message.lock().unwrap();
-        // loop {
-        //     let _len = reader.read_line(&mut output.lock().unwrap());
-        //     println!("> {:?}", output);
-        // }
+        for ou in reader.bytes() {
+            let u = [ou.unwrap()];
+            let ns = String::from_utf8_lossy(&u);
+            // println!("{:?}", );
+            let mut a = message.lock().unwrap();
+            *a = String::from(format!("{}{}", *a, ns));
+        }
     });
+
+    w_process.write_all(b"").unwrap();
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -206,6 +209,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     winit::event::ElementState::Pressed => {
                         // println!("{:?}", keycode);
                         match keycode {
+                            event::VirtualKeyCode::E => {
+                                w_process.write_all(b"e").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::C => {
+                                w_process.write_all(b"c").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::H => {
+                                w_process.write_all(b"h").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::O => {
+                                w_process.write_all(b"o").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::R => {
+                                w_process.write_all(b"r").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::I => {
+                                w_process.write_all(b"i").unwrap();
+                                // window.request_redraw();
+                            }
                             event::VirtualKeyCode::L => {
                                 w_process.write_all(b"l").unwrap();
                                 // window.request_redraw();
@@ -216,6 +243,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                             event::VirtualKeyCode::W => {
                                 w_process.write_all(b"w").unwrap();
+                                // window.request_redraw();
+                            }
+                            event::VirtualKeyCode::Space => {
+                                w_process.write_all(b" ").unwrap();
                                 // window.request_redraw();
                             }
                             // event::VirtualKeyCode::Space => {
@@ -231,13 +262,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        // window.request_redraw();
+                        let duration = time::Duration::from_millis(10);
+                        std::thread::sleep(duration);
+                        window.request_redraw();
                         // now_keys[keycode as usize] = true;
                         // command_text.push_str("a");
                     }
                     winit::event::ElementState::Released => {
                         // now_keys[keycode as usize] = false;
                         // println!("code {:?}", now_keys);
+                        window.request_redraw()
                     }
                 }
                 // Render only text as typing                
@@ -248,7 +282,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 if focused {
-                    println!("focado");
+                    // TODO: Optmize non-focused rendering perf
                 }
             }
 
@@ -365,11 +399,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // });
 
                     glyph_brush.queue(Section {
-                        screen_position: (30.0, 120.0),
-                        bounds: (size.width as f32, size.height as f32),
+                        screen_position: (24.0, 120.0),
+                        bounds: ((size.width - 40) as f32, size.height as f32),
                         text: vec![Text::new(&output.lock().unwrap())
                             .with_color([1.0, 1.0, 1.0, 1.0])
-                            .with_scale(36.0)],
+                            .with_scale(36.0)
+                        ],
                         ..Section::default()
                     });
 
