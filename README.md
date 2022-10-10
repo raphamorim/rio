@@ -41,6 +41,11 @@ perfomance = "high"
 
 ## TODO
 
+- [x] pty
+- [ ] Renderizar o pty baseado no tamanho do terminal
+	- [ ] Testar o VIM (deve limpar o scroll)
+- [ ] Scroll qnd o texto é maior q a tela
+	- [ ] Talvez usar https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#cleaning-up-lib-rs
 - [x] WGPU rendering
 	- [ ] Render font with custom color, size and family
 	- [ ] Fix topbar when resize
