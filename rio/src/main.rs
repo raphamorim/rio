@@ -1,82 +1,25 @@
+mod bar;
+mod style;
 mod text;
-mod ui;
-mod utils;
 
-use std::sync::Arc;
-use std::io::Read;
-use std::sync::Mutex;
 use std::borrow::Cow;
 use std::env;
 use std::error::Error;
+use std::io::BufReader;
+use std::io::Read;
 use std::io::Write;
-use std::io::{BufReader};
+use std::sync::Arc;
+use std::sync::Mutex;
 use text::{ab_glyph, GlyphBrushBuilder, Section, Text};
 use tty::{pty, COLS, ROWS};
 use wgpu::util::DeviceExt;
 use winit::{event, event_loop};
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
-}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
-
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-2.0, 1.5, 0.0],
-        color: [0.94, 0.47, 0.0],
-    }, // A
-    Vertex {
-        position: [-2.0, 0.83, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // B
-    Vertex {
-        position: [2.0, 0.83, 0.0],
-        color: [0.94, 0.47, 0.0],
-    }, // E
-    Vertex {
-        position: [-2.0, 2.0, 0.0],
-        color: [0.8274509804, 0.3176470588, 0.0],
-    }, // A
-    Vertex {
-        position: [-2.0, 0.87, 0.0],
-        color: [0.5, 0.0, 0.5],
-    }, // B
-    Vertex {
-        position: [2.0, 0.87, 0.0],
-        color: [0.8274509804, 0.3176470588, 0.0],
-    }, // E
-];
-
-const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4];
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = event_loop::EventLoop::new();
 
-    let window_builder = utils::create_window_builder("Rio");
+    let window_builder = style::create_window_builder("Rio");
     let window = window_builder.build(&event_loop).unwrap();
 
     let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -101,13 +44,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     })
     .await;
 
-    let mut staging_belt = wgpu::util::StagingBelt::new(1024);
+    let mut staging_belt = wgpu::util::StagingBelt::new(64);
     let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
     let mut size = window.inner_size();
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("bar/bar.wgsl").into()),
     });
 
     surface.configure(
@@ -123,20 +66,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(VERTICES),
+        contents: bytemuck::cast_slice(bar::VERTICES),
         usage: wgpu::BufferUsages::VERTEX,
     });
 
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Index Buffer"),
-        contents: bytemuck::cast_slice(INDICES),
+        contents: bytemuck::cast_slice(bar::INDICES),
         usage: wgpu::BufferUsages::INDEX,
     });
-    let num_indices = INDICES.len() as u32;
+    let num_indices = bar::INDICES.len() as u32;
 
-    let font = ab_glyph::FontArc::try_from_slice(ui::FONT_FIRA_MONO)?;
-    let mut glyph_brush =
-        GlyphBrushBuilder::using_font(font).build(&device, render_format);
+    let font = ab_glyph::FontArc::try_from_slice(style::FONT_FIRA_MONO)?;
+    let mut brush = GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
     // let command_intro: String = String::from("■ ~ "); // ▲
 
@@ -232,7 +174,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                             // event::VirtualKeyCode::Space => {
                             //     command_text.push_str(" ");
-                                // window.request_redraw();
+                            // window.request_redraw();
                             // }
                             event::VirtualKeyCode::Return => {
                                 w_process.write_all(b"\n").unwrap();
@@ -249,7 +191,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         window.request_redraw();
                     }
                 }
-                // Render only text as typing                
+                // Render only text as typing
             }
 
             event::Event::WindowEvent {
@@ -305,7 +247,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         vertex: wgpu::VertexState {
                             module: &shader,
                             entry_point: "vs_main",
-                            buffers: &[Vertex::desc()],
+                            buffers: &[bar::Vertex::desc()],
                         },
                         fragment: Some(wgpu::FragmentState {
                             module: &shader,
@@ -346,7 +288,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load: wgpu::LoadOp::Clear(
-                                        ui::DEFAULT_COLOR_BACKGROUND,
+                                        style::DEFAULT_COLOR_BACKGROUND,
                                     ),
                                     store: true,
                                 },
@@ -364,18 +306,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 {
-
-                    glyph_brush.queue(Section {
+                    brush.queue(Section {
                         screen_position: (24.0, 120.0),
                         bounds: ((size.width - 40) as f32, size.height as f32),
                         text: vec![Text::new(&output.lock().unwrap())
                             .with_color([1.0, 1.0, 1.0, 1.0])
-                            .with_scale(36.0)
-                        ],
+                            .with_scale(36.0)],
                         ..Section::default()
                     });
 
-                    glyph_brush
+                    brush
                         .draw_queued(
                             &device,
                             &mut staging_belt,
