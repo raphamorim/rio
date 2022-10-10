@@ -1,20 +1,15 @@
-use std::io::Read;
 mod text;
 mod ui;
 mod utils;
 
 use std::sync::Arc;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::TryRecvError;
-use std::{thread, time};
+use std::io::Read;
 use std::sync::Mutex;
 use std::borrow::Cow;
-use std::cell::RefMut;
-use std::sync::mpsc;
 use std::env;
 use std::error::Error;
 use std::io::Write;
-use std::io::{BufRead, BufReader};
+use std::io::{BufReader};
 use text::{ab_glyph, GlyphBrushBuilder, Section, Text};
 use tty::{pty, COLS, ROWS};
 use wgpu::util::DeviceExt;
@@ -76,16 +71,6 @@ const VERTICES: &[Vertex] = &[
 ];
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4];
-
-fn spawn_stdin_channel() -> Receiver<String> {
-    let (tx, rx) = mpsc::channel::<String>();
-    thread::spawn(move || loop {
-        let mut buffer = String::new();
-        std::io::stdin().read_line(&mut buffer).unwrap();
-        tx.send(buffer).unwrap();
-    });
-    rx
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -154,9 +139,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
     // let command_intro: String = String::from("■ ~ "); // ▲
-    // let mut output: String = String::from("");
-    // let mut now_keys = [false; 255];
-    // let mut prev_keys = now_keys.clone();
 
     let shell = Cow::Borrowed("bash");
     let (process, mut w_process, _pid) = pty(&shell, COLS as u16, ROWS as u16);
@@ -174,10 +156,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         //     *a = String::from(format!("{} {} \n", *a, ou.unwrap()));
         // }
 
-        for ou in reader.bytes() {
-            let u = [ou.unwrap()];
-            let ns = String::from_utf8_lossy(&u);
-            // println!("{:?}", );
+        for input_byte in reader.bytes() {
+            let ib = [input_byte.unwrap()];
+            let ns = String::from_utf8_lossy(&ib);
             let mut a = message.lock().unwrap();
             *a = String::from(format!("{}{}", *a, ns));
         }
@@ -262,16 +243,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
 
-                        let duration = time::Duration::from_millis(10);
-                        std::thread::sleep(duration);
                         window.request_redraw();
-                        // now_keys[keycode as usize] = true;
-                        // command_text.push_str("a");
                     }
                     winit::event::ElementState::Released => {
-                        // now_keys[keycode as usize] = false;
-                        // println!("code {:?}", now_keys);
-                        window.request_redraw()
+                        window.request_redraw();
                     }
                 }
                 // Render only text as typing                
@@ -389,14 +364,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 {
-                    // glyph_brush.queue(Section {
-                    //     screen_position: (30.0, 120.0),
-                    //     bounds: (size.width as f32, size.height as f32),
-                    //     text: vec![Text::new(&command_intro)
-                    //         .with_color([0.255, 0.191, 0.154, 1.0])
-                    //         .with_scale(36.0)],
-                    //     ..Section::default()
-                    // });
 
                     glyph_brush.queue(Section {
                         screen_position: (24.0, 120.0),
