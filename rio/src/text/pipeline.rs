@@ -1,6 +1,6 @@
 mod cache;
 
-use crate::text::region::Region;
+use crate::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
 
@@ -262,10 +262,8 @@ fn build<D>(
     });
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Glyph Shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-            "shader/glyph.wgsl"
-        ))),
+        label: Some("Text Shader"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("text.wgsl"))),
     });
 
     let raw = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

@@ -1,8 +1,8 @@
 // todo: https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/std/io/struct.Chars.html
 
-use std::io::Read;
 use std::borrow::Cow;
 use std::env;
+use std::io::Read;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 use tty::{pty, COLS, ROWS};

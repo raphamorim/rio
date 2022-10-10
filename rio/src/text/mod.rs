@@ -1,13 +1,15 @@
-//! A fast text renderer for [`wgpu`]. Powered by [`glyph_brush`].
-//!
-//! [`wgpu`]: https://github.com/gfx-rs/wgpu
-//! [`glyph_brush`]: https://github.com/alexheretic/glyph-brush/tree/master/glyph-brush
+// https://github.com/hecrj/wgpu_glyph
 #![deny(unused_results)]
 mod builder;
 mod pipeline;
-mod region;
 
-pub use region::Region;
+/// A region of the screen.
+pub struct Region {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
 
 use pipeline::{Instance, Pipeline};
 
@@ -161,7 +163,8 @@ where
                 Err(BrushError::TextureTooSmall { suggested }) => {
                     // TODO: Obtain max texture dimensions using `wgpu`
                     // This is currently not possible I think. Ask!
-                    let max_image_dimension = 2048;
+                    // let max_image_dimension = 2048;
+                    let max_image_dimension = 64;
 
                     let (new_width, new_height) = if (suggested.0 > max_image_dimension
                         || suggested.1 > max_image_dimension)
@@ -481,12 +484,5 @@ impl<D, F: Font, H: BuildHasher> GlyphCruncher<F> for GlyphBrush<D, F, H> {
     {
         self.glyph_brush
             .glyph_bounds_custom_layout(section, custom_layout)
-    }
-}
-
-impl<F, H> std::fmt::Debug for GlyphBrush<F, H> {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GlyphBrush")
     }
 }
