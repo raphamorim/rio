@@ -37,22 +37,34 @@ The configuration should be the following paths otherwise Rio will use the defau
 # default: high
 # options: high, average, low
 perfomance = "high"
+
+## TODO: Add more configs
 ```
 
 ## TODO
 
+- [ ] Fix clippy
 - [x] pty
-- [ ] Renderizar o pty baseado no tamanho do terminal
-	- [ ] Testar o VIM (deve limpar o scroll)
-- [ ] Scroll qnd o texto é maior q a tela
-	- [ ] Talvez usar https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#cleaning-up-lib-rs
+- [ ] pty open
+- [ ] Render PTY COLS and ROWS based on window size
+	- [ ] Tests with VIM
+- [ ] Add scroll to text
+	- [ ] Ref: https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#cleaning-up-lib-rs
 - [x] WGPU rendering
 	- [ ] Render font with custom color, size and family
 	- [ ] Fix topbar when resize
+	- [ ] Keep rendering with intervals
 - [ ] Read and use configuration
 - [ ] Keyboard input
-- [ ] Screen resizing
+	- [ ] Alphabet keys (uppercase/lowcase)
+	- [ ] Numbers keys
+	- [ ] Control keys
+- [x] Window resizing
 - [ ] Allow use set different font-size
 - [ ] Themes support
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
+
+## Credits
+
+- Text mod code is from with https://github.com/hecrj/wgpu_glyph

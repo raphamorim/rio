@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "tty",
+  "config",
   "rio"
 ]
 resolver = "2"
