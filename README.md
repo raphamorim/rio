@@ -36,7 +36,7 @@ The configuration should be the following paths otherwise Rio will use the defau
 # <performance> Set WGPU rendering perfomance
 # default: High
 # options: High, Average, Low
-performance = "high"
+performance = "High"
 
 ## TODO: Add more configs
 ```
