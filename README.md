@@ -38,6 +38,14 @@ The configuration should be the following paths otherwise Rio will use the defau
 # options: high, average, low
 perfomance = "high"
 
+# <height> Set default height
+# default: 400
+height = 400
+
+# <width> Set default width
+# default: 600
+height = 600
+
 ## TODO: Add more configs
 ```
 
