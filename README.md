@@ -33,10 +33,10 @@ The configuration should be the following paths otherwise Rio will use the defau
 ```toml
 # Rio configuration file
 
-# <perfomance> Set WGPU rendering perfomance
-# default: high
-# options: high, average, low
-perfomance = "high"
+# <performance> Set WGPU rendering perfomance
+# default: High
+# options: High, Average, Low
+performance = "high"
 
 ## TODO: Add more configs
 ```
