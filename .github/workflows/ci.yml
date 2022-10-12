@@ -12,11 +12,12 @@ env:
 
 jobs:
   lint:
-    runs-on: ubuntu-18.04
+    # runs-on: ubuntu-18.04
+    runs-on: macOS-latest
     strategy:
       matrix:
         target:
-          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
 
     name: Lint
     steps:
@@ -46,11 +47,12 @@ jobs:
       #   run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
-    runs-on: ubuntu-18.04
+    runs-on: macOS-latest
     strategy:
       matrix:
         target:
-          - x86_64-unknown-linux-gnu
+          - x86_64-apple-darwin
+          # - x86_64-unknown-linux-gnu
 
     name: Test
     steps:
