@@ -44,9 +44,8 @@ jobs:
       - run: rustup component add rustfmt clippy
       - name: rustfmt
         run: cargo fmt -- --check --color always
-
-      # - name: cargo clippy
-      #   run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
     runs-on: macOS-latest
