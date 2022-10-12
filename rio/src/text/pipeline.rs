@@ -53,10 +53,7 @@ impl Pipeline<()> {
     ) {
         draw(
             self,
-            (device,
-            staging_belt,
-            encoder,
-            target),
+            (device, staging_belt, encoder, target),
             None,
             transform,
             region,
@@ -86,7 +83,12 @@ impl Pipeline<wgpu::DepthStencilState> {
     #[allow(dead_code)]
     pub fn draw(
         &mut self,
-        config: (&wgpu::Device, &mut wgpu::util::StagingBelt, &mut wgpu::CommandEncoder, &wgpu::TextureView),
+        config: (
+            &wgpu::Device,
+            &mut wgpu::util::StagingBelt,
+            &mut wgpu::CommandEncoder,
+            &wgpu::TextureView,
+        ),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Option<Region>,
@@ -94,10 +96,7 @@ impl Pipeline<wgpu::DepthStencilState> {
         let (device, staging_belt, encoder, target) = config;
         draw(
             self,
-            (device,
-            staging_belt,
-            encoder,
-            target),
+            (device, staging_belt, encoder, target),
             Some(depth_stencil_attachment),
             transform,
             region,
@@ -173,10 +172,7 @@ impl<Depth> Pipeline<Depth> {
 }
 
 const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 fn build<D>(
@@ -329,7 +325,12 @@ fn build<D>(
 
 fn draw<D>(
     pipeline: &mut Pipeline<D>,
-    config: (&wgpu::Device, &mut wgpu::util::StagingBelt, &mut wgpu::CommandEncoder, &wgpu::TextureView),
+    config: (
+        &wgpu::Device,
+        &mut wgpu::util::StagingBelt,
+        &mut wgpu::CommandEncoder,
+        &wgpu::TextureView,
+    ),
     depth_stencil_attachment: Option<wgpu::RenderPassDepthStencilAttachment>,
     transform: [f32; 16],
     region: Option<Region>,

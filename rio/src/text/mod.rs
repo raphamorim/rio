@@ -1,5 +1,4 @@
 #[allow(dead_code)]
-
 // https://github.com/hecrj/wgpu_glyph
 // #[deny(unused_results)]
 mod builder;
@@ -242,7 +241,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
-        w_h: (u32, u32)
+        w_h: (u32, u32),
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
@@ -356,7 +355,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
-        w_h: (u32, u32)
+        w_h: (u32, u32),
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
@@ -392,10 +391,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     ) -> Result<(), String> {
         self.process_queued(device, staging_belt, encoder);
         self.pipeline.draw(
-            (device,
-            staging_belt,
-            encoder,
-            target),
+            (device, staging_belt, encoder, target),
             depth_stencil_attachment,
             transform,
             None,
@@ -419,7 +415,12 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     pub fn _draw_queued_with_transform_and_scissoring(
         &mut self,
         // config: (device, staging_belt, encoder, target),
-        config: (&wgpu::Device, &mut wgpu::util::StagingBelt, &mut wgpu::CommandEncoder, &wgpu::TextureView),
+        config: (
+            &wgpu::Device,
+            &mut wgpu::util::StagingBelt,
+            &mut wgpu::CommandEncoder,
+            &wgpu::TextureView,
+        ),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Region,
@@ -429,10 +430,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         self.process_queued(device, staging_belt, encoder);
 
         self.pipeline.draw(
-            (device,
-            staging_belt,
-            encoder,
-            target),
+            (device, staging_belt, encoder, target),
             depth_stencil_attachment,
             transform,
             Some(region),
@@ -445,10 +443,22 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
 /// Helper function to generate a generate a transform matrix.
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [
-        2.0 / width as f32, 0.0, 0.0, 0.0,
-        0.0, -2.0 / height as f32, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        -1.0, 1.0, 0.0, 1.0,
+        2.0 / width as f32,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.0 / height as f32,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        -1.0,
+        1.0,
+        0.0,
+        1.0,
     ]
 }
 
