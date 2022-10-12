@@ -2,8 +2,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "*"
   pull_request:
 
 name: CI
@@ -58,7 +56,8 @@ jobs:
         target:
           include:
             - os: macOS-latest
-            target: x86_64-apple-darwin
+              rust: stable
+              target: x86_64-apple-darwin
           # - x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     env:
