@@ -30,27 +30,27 @@ pub const VERTICES: &[Vertex] = &[
     Vertex {
         position: [-2.0, 1.5, 0.0],
         color: [0.94, 0.47, 0.0],
-    }, // A
+    },
     Vertex {
         position: [-2.0, 0.83, 0.0],
         color: [0.5, 0.0, 0.5],
-    }, // B
+    },
     Vertex {
         position: [2.0, 0.83, 0.0],
         color: [0.94, 0.47, 0.0],
-    }, // E
+    },
     Vertex {
         position: [-2.0, 2.0, 0.0],
-        color: [0.8274509804, 0.3176470588, 0.0],
-    }, // A
+        color: [0.827, 0.317, 0.0],
+    },
     Vertex {
         position: [-2.0, 0.87, 0.0],
         color: [0.5, 0.0, 0.5],
-    }, // B
+    },
     Vertex {
         position: [2.0, 0.87, 0.0],
-        color: [0.8274509804, 0.3176470588, 0.0],
-    }, // E
+        color: [0.827, 0.317, 0.0],
+    },
 ];
 
 pub const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4];
