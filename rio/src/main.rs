@@ -312,8 +312,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             &mut staging_belt,
                             &mut encoder,
                             view,
-                            size.width,
-                            size.height,
+                            (size.width, size.height),
                         )
                         .expect("Draw queued");
                 }

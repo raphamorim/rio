@@ -53,18 +53,18 @@ impl<F: Font, D, H: BuildHasher> GlyphBrushBuilder<D, F, H> {
     /// # Platform-specific behaviour
     ///
     /// This option has no effect on wasm32.
-    pub fn draw_cache_multithread(mut self, multithread: bool) -> Self {
-        self.inner.draw_cache_builder =
-            self.inner.draw_cache_builder.multithread(multithread);
+    // pub fn draw_cache_multithread(mut self, multithread: bool) -> Self {
+    //     self.inner.draw_cache_builder =
+    //         self.inner.draw_cache_builder.multithread(multithread);
 
-        self
-    }
+    //     self
+    // }
 
     /// Sets the texture filtering method.
-    pub fn texture_filter_method(mut self, filter_method: wgpu::FilterMode) -> Self {
-        self.texture_filter_method = filter_method;
-        self
-    }
+    // pub fn texture_filter_method(mut self, filter_method: wgpu::FilterMode) -> Self {
+    //     self.texture_filter_method = filter_method;
+    //     self
+    // }
 
     /// Sets the section hasher. `GlyphBrush` cannot handle absolute section
     /// hash collisions so use a good hash algorithm.
@@ -73,16 +73,16 @@ impl<F: Font, D, H: BuildHasher> GlyphBrushBuilder<D, F, H> {
     /// internal use.
     ///
     /// Defaults to [xxHash](https://docs.rs/twox-hash).
-    pub fn section_hasher<T: BuildHasher>(
-        self,
-        section_hasher: T,
-    ) -> GlyphBrushBuilder<D, F, T> {
-        GlyphBrushBuilder {
-            inner: self.inner.section_hasher(section_hasher),
-            texture_filter_method: self.texture_filter_method,
-            depth: self.depth,
-        }
-    }
+    // pub fn section_hasher<T: BuildHasher>(
+    //     self,
+    //     section_hasher: T,
+    // ) -> GlyphBrushBuilder<D, F, T> {
+    //     GlyphBrushBuilder {
+    //         inner: self.inner.section_hasher(section_hasher),
+    //         texture_filter_method: self.texture_filter_method,
+    //         depth: self.depth,
+    //     }
+    // }
 
     /// Sets the depth stencil.
     pub fn depth_stencil_state(

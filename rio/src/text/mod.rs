@@ -1,5 +1,7 @@
+#[allow(dead_code)]
+
 // https://github.com/hecrj/wgpu_glyph
-#![deny(unused_results)]
+// #[deny(unused_results)]
 mod builder;
 mod pipeline;
 
@@ -59,68 +61,68 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     /// [`queue`](struct.GlyphBrush.html#method.queue)
     ///
     /// Benefits from caching, see [caching behaviour](#caching-behaviour).
-    #[inline]
-    pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    where
-        G: GlyphPositioner,
-        S: Into<Cow<'a, Section<'a>>>,
-    {
-        self.glyph_brush.queue_custom_layout(section, custom_layout)
-    }
+    // #[inline]
+    // pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
+    // where
+    //     G: GlyphPositioner,
+    //     S: Into<Cow<'a, Section<'a>>>,
+    // {
+    //     self.glyph_brush.queue_custom_layout(section, custom_layout)
+    // }
 
     /// Queues pre-positioned glyphs to be processed by the next call of
     /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
     /// called multiple times.
-    #[inline]
-    pub fn queue_pre_positioned(
-        &mut self,
-        glyphs: Vec<SectionGlyph>,
-        extra: Vec<Extra>,
-        bounds: Rect,
-    ) {
-        self.glyph_brush.queue_pre_positioned(glyphs, extra, bounds)
-    }
+    // #[inline]
+    // pub fn queue_pre_positioned(
+    //     &mut self,
+    //     glyphs: Vec<SectionGlyph>,
+    //     extra: Vec<Extra>,
+    //     bounds: Rect,
+    // ) {
+    //     self.glyph_brush.queue_pre_positioned(glyphs, extra, bounds)
+    // }
 
     /// Retains the section in the cache as if it had been used in the last
     /// draw-frame.
     ///
     /// Should not be necessary unless using multiple draws per frame with
     /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    #[inline]
-    pub fn keep_cached_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    where
-        S: Into<Cow<'a, Section<'a>>>,
-        G: GlyphPositioner,
-    {
-        self.glyph_brush
-            .keep_cached_custom_layout(section, custom_layout)
-    }
+    // #[inline]
+    // pub fn keep_cached_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
+    // where
+    //     S: Into<Cow<'a, Section<'a>>>,
+    //     G: GlyphPositioner,
+    // {
+    //     self.glyph_brush
+    //         .keep_cached_custom_layout(section, custom_layout)
+    // }
 
     /// Retains the section in the cache as if it had been used in the last
     /// draw-frame.
     ///
     /// Should not be necessary unless using multiple draws per frame with
     /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    #[inline]
-    pub fn keep_cached<'a, S>(&mut self, section: S)
-    where
-        S: Into<Cow<'a, Section<'a>>>,
-    {
-        self.glyph_brush.keep_cached(section)
-    }
+    // #[inline]
+    // pub fn keep_cached<'a, S>(&mut self, section: S)
+    // where
+    //     S: Into<Cow<'a, Section<'a>>>,
+    // {
+    //     self.glyph_brush.keep_cached(section)
+    // }
 
     /// Returns the available fonts.
     ///
     /// The `FontId` corresponds to the index of the font data.
-    #[inline]
-    pub fn fonts(&self) -> &[F] {
-        self.glyph_brush.fonts()
-    }
+    // #[inline]
+    // pub fn fonts(&self) -> &[F] {
+    //     self.glyph_brush.fonts()
+    // }
 
     /// Adds an additional font to the one(s) initially added on build.
     ///
     /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
-    pub fn add_font(&mut self, font: F) -> FontId {
+    pub fn _add_font(&mut self, font: F) -> FontId {
         self.glyph_brush.add_font(font)
     }
 }
@@ -240,15 +242,14 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
-        target_width: u32,
-        target_height: u32,
+        w_h: (u32, u32)
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
             staging_belt,
             encoder,
             target,
-            orthographic_projection(target_width, target_height),
+            orthographic_projection(w_h.0, w_h.1),
         )
     }
 
@@ -291,7 +292,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued_with_transform_and_scissoring(
+    pub fn _draw_queued_with_transform_and_scissoring(
         &mut self,
         device: &wgpu::Device,
         staging_belt: &mut wgpu::util::StagingBelt,
@@ -348,15 +349,14 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued(
+    pub fn _draw_queued(
         &mut self,
         device: &wgpu::Device,
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
-        target_width: u32,
-        target_height: u32,
+        w_h: (u32, u32)
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
@@ -364,7 +364,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
             encoder,
             target,
             depth_stencil_attachment,
-            orthographic_projection(target_width, target_height),
+            orthographic_projection(w_h.0, w_h.1),
         )
     }
 
@@ -380,6 +380,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
+    #[allow(dead_code)]
     pub fn draw_queued_with_transform(
         &mut self,
         device: &wgpu::Device,
@@ -391,10 +392,10 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     ) -> Result<(), String> {
         self.process_queued(device, staging_belt, encoder);
         self.pipeline.draw(
-            device,
+            (device,
             staging_belt,
             encoder,
-            target,
+            target),
             depth_stencil_attachment,
             transform,
             None,
@@ -415,23 +416,23 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued_with_transform_and_scissoring(
+    pub fn _draw_queued_with_transform_and_scissoring(
         &mut self,
-        device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        // config: (device, staging_belt, encoder, target),
+        config: (&wgpu::Device, &mut wgpu::util::StagingBelt, &mut wgpu::CommandEncoder, &wgpu::TextureView),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
+        let (device, staging_belt, encoder, target) = config;
+
         self.process_queued(device, staging_belt, encoder);
 
         self.pipeline.draw(
-            device,
+            (device,
             staging_belt,
             encoder,
-            target,
+            target),
             depth_stencil_attachment,
             transform,
             Some(region),
@@ -443,7 +444,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
 
 /// Helper function to generate a generate a transform matrix.
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
-    #[cfg_attr(rustfmt, rustfmt_skip)]
     [
         2.0 / width as f32, 0.0, 0.0, 0.0,
         0.0, -2.0 / height as f32, 0.0, 0.0,
