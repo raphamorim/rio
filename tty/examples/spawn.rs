@@ -16,11 +16,11 @@ fn main() -> std::io::Result<()> {
 
     // let mut reader = BufReader::new(process);
     // let mut stream = BufWriter::new(process_w);
-    w.write_all(b"1");
-    w.write_all(b"2");
+    w.write_all(b"1").unwrap();
+    w.write_all(b"2").unwrap();
     // w.write_all(b"ls\n");
 
-    w.write_all(b"echo 1\n");
+    w.write_all(b"echo 1\n").unwrap();
     let mut line = String::new();
 
     // let reader = BufReader::new(process);

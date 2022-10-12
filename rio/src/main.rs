@@ -80,29 +80,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let font = ab_glyph::FontArc::try_from_slice(style::FONT_FIRA_MONO)?;
     let mut brush = GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
-    // let command_intro: String = String::from("■ ~ "); // ▲
-
     let shell = Cow::Borrowed("bash");
     let (process, mut w_process, _pid) = pty(&shell, COLS as u16, ROWS as u16);
 
-    // println!("{:?}", pid);
-    // ■ ~
+    // ■ ~ ▲
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
     let message = Arc::clone(&output);
     tokio::spawn(async move {
         let reader = BufReader::new(process);
 
-        // for ou in reader.lines() {
-        //     println!("{:?}", ou.as_ref().unwrap());
-        //     let mut a = message.lock().unwrap();
-        //     *a = String::from(format!("{} {} \n", *a, ou.unwrap()));
-        // }
-
         for input_byte in reader.bytes() {
             let ib = [input_byte.unwrap()];
             let ns = String::from_utf8_lossy(&ib);
             let mut a = message.lock().unwrap();
-            *a = String::from(format!("{}{}", *a, ns));
+            *a = format!("{}{}", *a, ns);
         }
     });
 
