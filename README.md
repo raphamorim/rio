@@ -44,7 +44,7 @@ height = 400
 
 # <width> Set default width
 # default: 600
-height = 600
+width = 600
 
 ## TODO: Add more configs
 ```
