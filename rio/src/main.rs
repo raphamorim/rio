@@ -109,9 +109,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event::Event::WindowEvent {
                 event: event::WindowEvent::ModifiersChanged(modifiers),
                 ..
-            } => {
-                w_input.set_modifiers(modifiers)
-            }
+            } => w_input.set_modifiers(modifiers),
 
             event::Event::WindowEvent {
                 event:
