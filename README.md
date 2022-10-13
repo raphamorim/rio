@@ -51,7 +51,6 @@ width = 600
 
 ## TODO
 
-- [ ] Fix clippy
 - [x] pty
 - [ ] pty open
 - [ ] Render PTY COLS and ROWS based on window size
