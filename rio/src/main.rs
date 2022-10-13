@@ -1,13 +1,13 @@
 mod bar;
 mod style;
 mod text;
+mod window;
 
 use std::borrow::Cow;
 use std::env;
 use std::error::Error;
 use std::io::BufReader;
 use std::io::Read;
-use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 use text::{ab_glyph, GlyphBrushBuilder, Section, Text};
@@ -19,11 +19,11 @@ use winit::{event, event_loop};
 async fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = event_loop::EventLoop::new();
 
-    let window_builder = style::create_window_builder("Rio");
-    let window = window_builder.build(&event_loop).unwrap();
+    let window_builder = window::create_window_builder("Rio");
+    let winit_window = window_builder.build(&event_loop).unwrap();
 
     let instance = wgpu::Instance::new(wgpu::Backends::all());
-    let surface = unsafe { instance.create_surface(&window) };
+    let surface = unsafe { instance.create_surface(&winit_window) };
 
     env::set_var("TERM", "rio");
 
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut staging_belt = wgpu::util::StagingBelt::new(64);
     let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let mut size = window.inner_size();
+    let mut size = winit_window.inner_size();
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    w_process.write_all(b"").unwrap();
+    let mut w_input = window::input::Input::new();
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -105,6 +105,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 event: event::WindowEvent::CloseRequested,
                 ..
             } => *control_flow = event_loop::ControlFlow::Exit,
+
+            event::Event::WindowEvent {
+                event: event::WindowEvent::ModifiersChanged(modifiers),
+                ..
+            } => {
+                w_input.set_modifiers(modifiers)
+            }
 
             event::Event::WindowEvent {
                 event:
@@ -121,68 +128,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } => {
                 match state {
                     winit::event::ElementState::Pressed => {
-                        // println!("{:?}", keycode);
-                        match keycode {
-                            event::VirtualKeyCode::E => {
-                                w_process.write_all(b"e").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::C => {
-                                w_process.write_all(b"c").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::H => {
-                                w_process.write_all(b"h").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::O => {
-                                w_process.write_all(b"o").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::R => {
-                                w_process.write_all(b"r").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::I => {
-                                w_process.write_all(b"i").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::L => {
-                                w_process.write_all(b"l").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::S => {
-                                w_process.write_all(b"s").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::W => {
-                                w_process.write_all(b"w").unwrap();
-                                // window.request_redraw();
-                            }
-                            event::VirtualKeyCode::Space => {
-                                w_process.write_all(b" ").unwrap();
-                                // window.request_redraw();
-                            }
-                            // event::VirtualKeyCode::Space => {
-                            //     command_text.push_str(" ");
-                            // window.request_redraw();
-                            // }
-                            event::VirtualKeyCode::Return => {
-                                w_process.write_all(b"\n").unwrap();
-                                // window.request_redraw();
-                            }
-                            _ => {
-                                println!("code not implemented");
-                            }
-                        }
-
-                        window.request_redraw();
+                        // TODO: Render only text as typing
+                        w_input.keydown(keycode, &mut w_process);
+                        winit_window.request_redraw();
                     }
+
                     winit::event::ElementState::Released => {
-                        window.request_redraw();
+                        winit_window.request_redraw();
                     }
                 }
-                // Render only text as typing
             }
 
             event::Event::WindowEvent {
@@ -211,7 +165,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     },
                 );
 
-                window.request_redraw();
+                winit_window.request_redraw();
             }
             event::Event::RedrawRequested { .. } => {
                 let mut encoder =
