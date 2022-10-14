@@ -4,7 +4,6 @@ mod text;
 mod window;
 
 use std::borrow::Cow;
-use std::env;
 use std::error::Error;
 use std::io::BufReader;
 use std::io::Read;
@@ -24,8 +23,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let instance = wgpu::Instance::new(wgpu::Backends::all());
     let surface = unsafe { instance.create_surface(&winit_window) };
-
-    env::set_var("TERM", "rio");
 
     let (device, queue) = (async {
         let adapter = instance
@@ -80,8 +77,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let font = ab_glyph::FontArc::try_from_slice(style::FONT_FIRA_MONO)?;
     let mut brush = GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
-    let shell = Cow::Borrowed("bash");
-    let (process, mut w_process, _pid) = pty(&shell, COLS as u16, ROWS as u16);
+    // todo: add in config
+    let shell: String = match std::env::var("SHELL_RIO") {
+        Ok(val) => val,
+        Err(..) => String::from("bash"),
+    };
+    let (process, mut w_process, _pid) = pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
 
     // ■ ~ ▲
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
@@ -111,6 +112,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => w_input.set_modifiers(modifiers),
 
+            // event::Event::WindowEvent { event, .. } => match event {
+            //     event::WindowEvent::CloseRequested => *control_flow = event_loop::ControlFlow::Exit,
+            //     event::WindowEvent::MouseWheel { delta, .. } => match delta {
+            //         winit::event::MouseScrollDelta::LineDelta(_, _) | winit::event::MouseScrollDelta::PixelDelta(_) => todo!(),
+            //     },
+            //     _ => todo!()
+            // }
+
             event::Event::WindowEvent {
                 event:
                     event::WindowEvent::KeyboardInput {
@@ -126,7 +135,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } => {
                 match state {
                     winit::event::ElementState::Pressed => {
-                        // TODO: Render only text as typing
                         w_input.keydown(keycode, &mut w_process);
                         winit_window.request_redraw();
                     }
@@ -197,7 +205,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             entry_point: "fs_main",
                             targets: &[Some(wgpu::ColorTargetState {
                                 format: render_format,
-                                blend: Some(wgpu::BlendState::REPLACE),
+                                blend: crate::style::gpu::BLEND,
                                 write_mask: wgpu::ColorWrites::ALL,
                             })],
                         }),
@@ -205,20 +213,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             topology: wgpu::PrimitiveTopology::TriangleList,
                             strip_index_format: None,
                             front_face: wgpu::FrontFace::Ccw,
-                            cull_mode: Some(wgpu::Face::Back),
-                            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            // Requires Features::DEPTH_CLIP_CONTROL
-                            unclipped_depth: false,
-                            // Requires Features::CONSERVATIVE_RASTERIZATION
-                            conservative: false,
+                            ..Default::default()
                         },
                         depth_stencil: None, // 1.
-                        multisample: wgpu::MultisampleState {
-                            count: 1,
-                            mask: !0,
-                            alpha_to_coverage_enabled: false,
-                        },
+                        multisample: wgpu::MultisampleState::default(),
                         multiview: None,
                     });
 
@@ -239,7 +237,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             depth_stencil_attachment: None,
                         });
 
-                    render_pass.set_pipeline(&render_pipeline); // 2.
+                    render_pass.set_pipeline(&render_pipeline);
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     render_pass.set_index_buffer(
                         index_buffer.slice(..),
