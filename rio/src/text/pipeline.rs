@@ -290,18 +290,7 @@ fn build<D>(
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
                 format: render_format,
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::SrcAlpha,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                }),
+                blend: crate::style::gpu::BLEND,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
