@@ -60,8 +60,17 @@ impl Input {
             VirtualKeyCode::Y => b"y",
             VirtualKeyCode::Z => b"z",
 
-            // Control
+            // Special
+            VirtualKeyCode::Backslash => b"\\",
+            VirtualKeyCode::Slash => b"/",
+            VirtualKeyCode::Period => b".",
+            VirtualKeyCode::Comma => b",",
             VirtualKeyCode::Space => b" ",
+            VirtualKeyCode::Minus => b"-",
+            VirtualKeyCode::Equals => b"=",
+            VirtualKeyCode::Grave => b"`",
+
+            // Control
             VirtualKeyCode::Return => b"\n",
 
             // TODO: Arrows

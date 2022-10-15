@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let font = ab_glyph::FontArc::try_from_slice(style::FONT_FIRA_MONO)?;
     let mut brush = GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
-    // todo: add in config
+    // todo: read from config
     let shell: String = match std::env::var("SHELL_RIO") {
         Ok(val) => val,
         Err(..) => String::from("bash"),
@@ -91,10 +91,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let reader = BufReader::new(process);
 
         for input_byte in reader.bytes() {
-            let ib = [input_byte.unwrap()];
-            let ns = String::from_utf8_lossy(&ib);
+            let bs = convert_to_utf8_string(input_byte.unwrap());
             let mut a = message.lock().unwrap();
-            *a = format!("{}{}", *a, ns);
+            *a = format!("{}{}", *a, bs);
         }
     });
 
@@ -279,4 +278,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     })
+}
+
+#[inline]
+fn convert_to_utf8_string(byte: u8) -> String {
+    let vec_byte: Vec<u8> = vec![byte];
+    match String::from_utf8(vec_byte) {
+        Ok(character) => String::from(character),
+        Err(_d) => {
+            // Todo: Enable option of utf8_lossy and log
+            // println!("{:?}", d);
+            // String::from_utf8_lossy(&vec_byte).to_string()
+            String::from("?")
+        }
+    }
 }
