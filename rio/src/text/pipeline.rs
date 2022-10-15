@@ -1,5 +1,6 @@
 mod cache;
 
+use crate::shared;
 use crate::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
@@ -290,7 +291,7 @@ fn build<D>(
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
                 format: render_format,
-                blend: crate::style::gpu::BLEND,
+                blend: shared::gpu::BLEND,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),

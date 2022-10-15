@@ -1,6 +1,6 @@
 pub mod input;
 
-use crate::style::{
+use crate::shared::{
     DEFAULT_MINIMUM_WINDOW_HEIGHT, DEFAULT_MINIMUM_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH, LOGO_ICON,
 };

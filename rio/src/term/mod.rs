@@ -1,5 +1,5 @@
 use crate::bar::{self, BarBrush};
-use crate::style;
+use crate::shared;
 use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 use std::error::Error;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ impl Term {
             },
         );
 
-        let font = ab_glyph::FontArc::try_from_slice(style::FONT_FIRA_MONO)?;
+        let font = ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?;
         let text_brush =
             GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
@@ -132,7 +132,7 @@ impl Term {
                         entry_point: "fs_main",
                         targets: &[Some(wgpu::ColorTargetState {
                             format: self.render_format,
-                            blend: crate::style::gpu::BLEND,
+                            blend: shared::gpu::BLEND,
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                     }),
@@ -155,7 +155,7 @@ impl Term {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(style::DEFAULT_COLOR_BACKGROUND),
+                            load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
                             store: true,
                         },
                     })],
