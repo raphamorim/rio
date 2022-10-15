@@ -1,3 +1,5 @@
+pub mod gpu;
+
 pub const LOGO_ICON: &[u8; 102762] = include_bytes!("./images/logo.ico");
 
 pub const FONT_FIRA_MONO: &[u8; 170204] =
@@ -18,12 +20,5 @@ pub const DEFAULT_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
 };
 
 // #d35100 (todo)
-// pub const DEFAULT_COLOR_LINE: wgpu::Color = wgpu::Color {
-//     r: 0.8274509804,
-//     g: 0.3176470588,
-//     b: 0.0,
-//     a: 1.0,
-// };
-
 // #F8A145 (todo)
 // #F07900 (todo)

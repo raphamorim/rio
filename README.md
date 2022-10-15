@@ -64,7 +64,7 @@ width = 600
 - [ ] Read and use configuration
 - [ ] Keyboard input
 	- [ ] Alphabet keys (uppercase/lowcase)
-	- [ ] Numbers keys
+	- [x] Numbers keys
 	- [ ] Control keys
 - [x] Window resizing
 - [ ] Allow use set different font-size
