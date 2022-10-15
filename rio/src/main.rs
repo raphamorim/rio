@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let (process, mut w_process, _pid) =
         pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
-    
+
     let mut rio: Term = match Term::new(&winit_window).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
@@ -134,8 +134,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             _ => {
-                let next_frame_time = std::time::Instant::now()
-                    + std::time::Duration::from_nanos(500_000);
+                let next_frame_time =
+                    std::time::Instant::now() + std::time::Duration::from_nanos(500_000);
                 *control_flow = event_loop::ControlFlow::WaitUntil(next_frame_time);
                 // *control_flow = event_loop::ControlFlow::Wait;
             }
