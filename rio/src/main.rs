@@ -41,7 +41,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // ■ ~ ▲
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
     let message = Arc::clone(&output);
+
     tokio::spawn(async move {
+        // std::thread::spawn(move || {
         let reader = BufReader::new(process);
 
         for input_byte in reader.bytes() {
@@ -80,6 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 if scroll_y != 0.0 {
+                    rio.set_view(scroll_y as f32);
                     // winit_window.request_redraw();
                 }
             }
@@ -111,9 +114,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 event: event::WindowEvent::Focused(focused),
                 ..
             } => {
-                // if focused {
                 is_focused = focused;
-                // }
             }
 
             event::Event::WindowEvent {
