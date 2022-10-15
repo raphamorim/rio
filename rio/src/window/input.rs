@@ -19,7 +19,7 @@ impl Input {
     }
 
     pub fn keydown(&mut self, keycode: VirtualKeyCode, stream: &mut Process) {
-        let code: &[u8; 1] = match keycode {
+        let code: &[u8] = match keycode {
             // Numbers
             VirtualKeyCode::Key0 => b"0",
             VirtualKeyCode::Key1 => b"1",
@@ -72,15 +72,18 @@ impl Input {
 
             // Control
             VirtualKeyCode::Return => b"\n",
+            VirtualKeyCode::LWin => b"",
+            VirtualKeyCode::RWin => b"",
 
             // TODO: Arrows
             VirtualKeyCode::Back => {
                 // TODO: Delete last byte
                 b"-"
             }
+
             _ => {
                 println!("code not implemented {:?}", keycode);
-                b"-"
+                b""
             }
         };
 
