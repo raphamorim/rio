@@ -28,12 +28,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     let (process, mut w_process, _pid) =
         pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
+    
     let mut rio: Term = match Term::new(&winit_window).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
             panic!("couldn't create Rio terminal {}", e);
         }
     };
+
+    let mut input_stream = window::input::Input::new();
 
     // ■ ~ ▲
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
@@ -48,8 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let mut w_input = window::input::Input::new();
-
+    let mut is_focused = true;
     event_loop.run(move |event, _, control_flow| {
         match event {
             event::Event::WindowEvent {
@@ -60,7 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event::Event::WindowEvent {
                 event: event::WindowEvent::ModifiersChanged(modifiers),
                 ..
-            } => w_input.set_modifiers(modifiers),
+            } => input_stream.set_modifiers(modifiers),
 
             event::Event::WindowEvent {
                 event: event::WindowEvent::MouseWheel { delta, .. },
@@ -96,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    w_input.keydown(keycode, &mut w_process);
+                    input_stream.keydown(keycode, &mut w_process);
                     rio.draw(&output);
                 }
 
@@ -109,9 +111,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 event: event::WindowEvent::Focused(focused),
                 ..
             } => {
-                if focused {
-                    // TODO: Optmize non-focused rendering perf
-                }
+                // if focused {
+                is_focused = focused;
+                // }
             }
 
             event::Event::WindowEvent {
@@ -127,12 +129,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             event::Event::RedrawRequested { .. } => {
-                rio.draw(&output);
+                if is_focused {
+                    rio.draw(&output);
+                }
             }
             _ => {
                 let next_frame_time = std::time::Instant::now()
-                    + std::time::Duration::from_nanos(1_000_000);
+                    + std::time::Duration::from_nanos(500_000);
                 *control_flow = event_loop::ControlFlow::WaitUntil(next_frame_time);
+                // *control_flow = event_loop::ControlFlow::Wait;
             }
         }
     })
