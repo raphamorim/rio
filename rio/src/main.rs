@@ -119,14 +119,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 rio.set_size(new_size);
-
-                rio.draw(&output);
+                winit_window.request_redraw();
             }
+
+            event::Event::MainEventsCleared { .. } => {
+                winit_window.request_redraw();
+            }
+
             event::Event::RedrawRequested { .. } => {
                 rio.draw(&output);
             }
             _ => {
-                *control_flow = event_loop::ControlFlow::Wait;
+                let next_frame_time = std::time::Instant::now()
+                    + std::time::Duration::from_nanos(1_000_000);
+                *control_flow = event_loop::ControlFlow::WaitUntil(next_frame_time);
             }
         }
     })
