@@ -31,7 +31,6 @@ extern "C" {
         winsize: *const Winsize,
     ) -> libc::pid_t;
 
-    // fn ptsname(fd: c_int) -> *mut c_char
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
@@ -155,7 +154,6 @@ pub fn pty(name: &str, width: u16, height: u16) -> (Process, Process, String) {
                 pid = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             }
             let handle = Handle(Arc::new(main));
-            // BufWriter::new(process_w)
             (Process(handle.clone()), Process(handle), pid)
         }
         _ => panic!("Fork failed."),

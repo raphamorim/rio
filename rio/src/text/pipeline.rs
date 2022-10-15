@@ -1,5 +1,6 @@
 mod cache;
 
+use crate::shared;
 use crate::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
@@ -53,10 +54,7 @@ impl Pipeline<()> {
     ) {
         draw(
             self,
-            device,
-            staging_belt,
-            encoder,
-            target,
+            (device, staging_belt, encoder, target),
             None,
             transform,
             region,
@@ -83,22 +81,23 @@ impl Pipeline<wgpu::DepthStencilState> {
         )
     }
 
+    #[allow(dead_code)]
     pub fn draw(
         &mut self,
-        device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        config: (
+            &wgpu::Device,
+            &mut wgpu::util::StagingBelt,
+            &mut wgpu::CommandEncoder,
+            &wgpu::TextureView,
+        ),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Option<Region>,
     ) {
+        let (device, staging_belt, encoder, target) = config;
         draw(
             self,
-            device,
-            staging_belt,
-            encoder,
-            target,
+            (device, staging_belt, encoder, target),
             Some(depth_stencil_attachment),
             transform,
             region,
@@ -173,13 +172,8 @@ impl<Depth> Pipeline<Depth> {
     }
 }
 
-// Helpers
-#[cfg_attr(rustfmt, rustfmt_skip)]
 const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 fn build<D>(
@@ -297,18 +291,7 @@ fn build<D>(
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
                 format: render_format,
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::SrcAlpha,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                }),
+                blend: shared::gpu::BLEND,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -332,14 +315,17 @@ fn build<D>(
 
 fn draw<D>(
     pipeline: &mut Pipeline<D>,
-    device: &wgpu::Device,
-    staging_belt: &mut wgpu::util::StagingBelt,
-    encoder: &mut wgpu::CommandEncoder,
-    target: &wgpu::TextureView,
+    config: (
+        &wgpu::Device,
+        &mut wgpu::util::StagingBelt,
+        &mut wgpu::CommandEncoder,
+        &wgpu::TextureView,
+    ),
     depth_stencil_attachment: Option<wgpu::RenderPassDepthStencilAttachment>,
     transform: [f32; 16],
     region: Option<Region>,
 ) {
+    let (device, staging_belt, encoder, target) = config;
     if transform != pipeline.current_transform {
         let mut transform_view = staging_belt.write_buffer(
             encoder,
@@ -387,7 +373,7 @@ fn create_uniforms(
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("text::Pipeline uniforms"),
-        layout: layout,
+        layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
