@@ -18,7 +18,7 @@ WPGU is an implementation of WebGPU for use outside of a browser and as backend 
 
 #### Low CPU and memory usage
 
-You want to avoid a browser-based application to reduce memory and CPU consumption. Electron for example, uses Chromium under the hood so your user sees the same on Windows, Linux and macOS but Rio have same compability rendering based on WGPU.
+You want to avoid a browser-based application to reduce memory and CPU consumption. Electron for example, uses Chromium under the hood so your user sees the same on Windows, Linux and macOS but Rio have same compatibility rendering based on WGPU.
 
 Rio also relies on Rust memory behavior: Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. [More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)
 
@@ -38,12 +38,19 @@ The configuration should be the following paths otherwise Rio will use the defau
 # options: High, Average, Low
 performance = "High"
 
+# <height> Set default height
+# default: 400
+height = 400
+
+# <width> Set default width
+# default: 600
+width = 600
+
 ## TODO: Add more configs
 ```
 
 ## TODO
 
-- [ ] Fix clippy
 - [x] pty
 - [ ] pty open
 - [ ] Render PTY COLS and ROWS based on window size
@@ -57,7 +64,7 @@ performance = "High"
 - [ ] Read and use configuration
 - [ ] Keyboard input
 	- [ ] Alphabet keys (uppercase/lowcase)
-	- [ ] Numbers keys
+	- [x] Numbers keys
 	- [ ] Control keys
 - [x] Window resizing
 - [ ] Allow use set different font-size
