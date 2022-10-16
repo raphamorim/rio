@@ -1,21 +1,19 @@
-use std::io::{Read, BufReader};
-use tty::Process;
+use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
+use tty::Process;
 
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser, Perform};
 
 /// A type implementing Perform that just logs actions
 struct Log<'a> {
-    message: &'a Arc<Mutex<String>>
+    message: &'a Arc<Mutex<String>>,
 }
 
-impl<'a> Log<'_> {
+impl Log<'_> {
     fn new(message: &Arc<Mutex<String>>) -> Log {
-        Log {
-            message
-        }
+        Log { message }
     }
 }
 
@@ -31,10 +29,10 @@ impl Perform for Log<'_> {
         println!("[execute] {:04x}", byte);
         let c = match byte {
             0x0a => "\n",
-            _ => "" 
+            _ => "",
         };
 
-        if c.len() > 0 {
+        if !c.is_empty() {
             let s = &mut *self.message.lock().unwrap();
             s.push_str(c);
         }
@@ -56,10 +54,19 @@ impl Perform for Log<'_> {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        println!("[osc_dispatch] params={:?} bell_terminated={}", params, bell_terminated);
+        println!(
+            "[osc_dispatch] params={:?} bell_terminated={}",
+            params, bell_terminated
+        );
     }
 
-    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
+    fn csi_dispatch(
+        &mut self,
+        params: &Params,
+        intermediates: &[u8],
+        ignore: bool,
+        c: char,
+    ) {
         println!(
             "[csi_dispatch] params={:#?}, intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c

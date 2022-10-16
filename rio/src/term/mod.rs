@@ -100,7 +100,7 @@ impl Term {
     }
 
     pub fn set_text_scroll(&mut self, text_scroll: f32) {
-        self.text_scroll = self.text_scroll - text_scroll;
+        self.text_scroll -= text_scroll;
     }
 
     #[inline]
