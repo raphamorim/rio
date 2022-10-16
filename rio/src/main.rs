@@ -1,3 +1,4 @@
+mod ansi;
 mod bar;
 mod shared;
 mod term;
@@ -7,11 +8,9 @@ mod window;
 use crate::term::Term;
 use std::borrow::Cow;
 use std::error::Error;
-use std::io::BufReader;
-use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::{pty, setup_env, TtyConfig, COLS, ROWS};
+use tty::{pty, setup_env, COLS, ROWS};
 use winit::{event, event_loop};
 
 #[tokio::main]
@@ -43,20 +42,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let mut input_stream = window::input::Input::new();
-
-    // ■ ~ ▲
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
-    let message = Arc::clone(&output);
-
+    
+    let mut message = Arc::clone(&output);
     tokio::spawn(async move {
-        // std::thread::spawn(move || {
-        let reader = BufReader::new(process);
-
-        for input_byte in reader.bytes() {
-            let bs = shared::utils::convert_to_utf8_string(input_byte.unwrap());
-            let mut a = message.lock().unwrap();
-            *a = format!("{}{}", *a, bs);
-        }
+        crate::ansi::process(process, &mut message);
     });
 
     let mut is_focused = true;
@@ -91,7 +81,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if scroll_y < 0.0 {
                     rio.set_text_scroll(0.8 as f32);
                     // winit_window.request_redraw();
-                } if scroll_y > 0.0 {
+                }
+                if scroll_y > 0.0 {
                     rio.set_text_scroll(-0.8 as f32);
                 }
             }

@@ -203,12 +203,16 @@ unsafe fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
 }
 
 pub struct TtyConfig {
-    env: Vec<(String, String)>
+    env: Vec<(String, String)>,
 }
 
 pub fn setup_env() {
-// pub fn setup_env(config: &TtyConfig) {
-    let terminfo = if terminfo_exists("rio") { "rio" } else { "xterm-256color" };
+    // pub fn setup_env(config: &TtyConfig) {
+    let terminfo = if terminfo_exists("rio") {
+        "rio"
+    } else {
+        "xterm-256color"
+    };
     std::env::set_var("TERM", terminfo);
 
     std::env::set_var("COLORTERM", "truecolor");
@@ -216,7 +220,7 @@ pub fn setup_env() {
 
     // Set env vars from config.
     // for (key, value) in config.env.iter() {
-        // std::env::set_var(key, value);
+    // std::env::set_var(key, value);
     // }
 }
 
@@ -239,7 +243,7 @@ fn terminfo_exists(terminfo: &str) -> bool {
 
     if let Some(dir) = std::env::var_os("TERMINFO") {
         check_path!(std::path::PathBuf::from(&dir));
-    } 
+    }
     // else if let Some(home) = dirs::home_dir() {
     //     check_path!(home.join(".terminfo"));
     // }
