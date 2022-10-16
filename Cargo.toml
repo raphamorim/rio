@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "ansi",
   "tty",
   "config",
   "rio"

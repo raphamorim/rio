@@ -1,9 +1,9 @@
-use std::error::Error;
-use std::sync::Arc;
-use std::sync::Mutex;
 use crate::bar::{self, BarBrush};
 use crate::shared;
 use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
+use std::error::Error;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 pub struct Term {
     device: wgpu::Device,
