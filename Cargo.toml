@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "ansi",
   "tty",
   "config",
   "rio"
@@ -7,9 +8,8 @@ members = [
 resolver = "2"
 
 [profile.release]
-# opt-level = 3
-# debug = 1
+opt-level = "z"
 
 [profile.dev]
 # https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
-# split-debuginfo = "unpacked"
+split-debuginfo = "unpacked"

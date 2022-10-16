@@ -11,7 +11,7 @@ use std::io::BufReader;
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::{pty, COLS, ROWS};
+use tty::{pty, setup_env, TtyConfig, COLS, ROWS};
 use winit::{event, event_loop};
 
 #[tokio::main]
@@ -20,6 +20,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let window_builder = window::create_window_builder("Rio");
     let winit_window = window_builder.build(&event_loop).unwrap();
+
+    // let tty_config = TtyConfig{
+    //     env: std::env::args()
+    // };
+
+    setup_env();
 
     // todo: read from config
     let shell: String = match std::env::var("SHELL_RIO") {
@@ -81,9 +87,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                if scroll_y != 0.0 {
-                    rio.set_view(scroll_y as f32);
+                // hacky
+                if scroll_y < 0.0 {
+                    rio.set_text_scroll(0.8 as f32);
                     // winit_window.request_redraw();
+                } if scroll_y > 0.0 {
+                    rio.set_text_scroll(-0.8 as f32);
                 }
             }
 

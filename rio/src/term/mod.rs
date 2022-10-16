@@ -1,9 +1,9 @@
-use crate::bar::{self, BarBrush};
-use crate::shared;
-use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
+use crate::bar::{self, BarBrush};
+use crate::shared;
+use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 
 pub struct Term {
     device: wgpu::Device,
@@ -14,7 +14,7 @@ pub struct Term {
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
     bar: BarBrush,
-    view: (f32, f32, f32),
+    text_scroll: f32,
 }
 
 impl Term {
@@ -76,7 +76,7 @@ impl Term {
             render_format,
             bar,
             queue,
-            view: (0.0, 0.0, 0.0),
+            text_scroll: 1.0,
         })
     }
 
@@ -99,8 +99,8 @@ impl Term {
         );
     }
 
-    pub fn set_view(&mut self, view_y: f32) {
-        self.view = (0.0, view_y, 0.0);
+    pub fn set_text_scroll(&mut self, text_scroll: f32) {
+        self.text_scroll = self.text_scroll - text_scroll;
     }
 
     #[inline]
@@ -195,7 +195,7 @@ impl Term {
 
         {
             self.text_brush.queue(Section {
-                screen_position: (24.0, 120.0 - self.view.1),
+                screen_position: (24.0, 120.0 - self.text_scroll),
                 bounds: ((self.size.width - 40) as f32, self.size.height as f32),
                 text: vec![Text::new(&output.lock().unwrap())
                     .with_color([1.0, 1.0, 1.0, 1.0])
