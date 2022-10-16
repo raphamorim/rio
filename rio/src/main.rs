@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::{pty, setup_env, COLS, ROWS};
+use tty::{pty, COLS, ROWS};
 use winit::{event, event_loop};
 
 #[tokio::main]
@@ -19,12 +19,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let window_builder = window::create_window_builder("Rio");
     let winit_window = window_builder.build(&event_loop).unwrap();
-
-    // let tty_config = TtyConfig{
-    //     env: std::env::args()
-    // };
-
-    setup_env();
 
     // todo: read from config
     let shell: String = match std::env::var("SHELL_RIO") {
@@ -43,10 +37,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut input_stream = window::input::Input::new();
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
-    
-    let mut message = Arc::clone(&output);
+
+    let message = Arc::clone(&output);
     tokio::spawn(async move {
-        crate::ansi::process(process, &mut message);
+        crate::ansi::process(process, &message);
     });
 
     let mut is_focused = true;
@@ -79,11 +73,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // hacky
                 if scroll_y < 0.0 {
-                    rio.set_text_scroll(0.8 as f32);
+                    rio.set_text_scroll(0.8_f32);
                     // winit_window.request_redraw();
                 }
                 if scroll_y > 0.0 {
-                    rio.set_text_scroll(-0.8 as f32);
+                    rio.set_text_scroll(-0.8_f32);
                 }
             }
 
