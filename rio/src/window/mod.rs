@@ -1,4 +1,5 @@
 pub mod input;
+mod keys;
 
 use crate::shared::{
     DEFAULT_MINIMUM_WINDOW_HEIGHT, DEFAULT_MINIMUM_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
