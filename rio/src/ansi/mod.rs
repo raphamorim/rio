@@ -6,7 +6,6 @@ use tty::Process;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser, Perform};
 
-/// A type implementing Perform that just logs actions
 struct Log<'a> {
     message: &'a Arc<Mutex<String>>,
 }
@@ -19,8 +18,7 @@ impl Log<'_> {
 
 impl Perform for Log<'_> {
     fn print(&mut self, c: char) {
-        // println!("[print] {:?}", c);
-        // let bs = crate::shared::utils::convert_to_utf8_string(byte.unwrap());
+        println!("[print] {:?}", c);
         let s = &mut *self.message.lock().unwrap();
         s.push(c);
     }
@@ -29,6 +27,8 @@ impl Perform for Log<'_> {
         println!("[execute] {:04x}", byte);
         let c = match byte {
             0x0a => "\n",
+            // TODO: create a wrap/table for words
+            0x09 => " ",
             _ => "",
         };
 
