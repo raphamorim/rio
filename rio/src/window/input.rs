@@ -1,23 +1,23 @@
-use crate::window::keys::*;
-use std::io::Write;
+use crate::window::keys;
 use std::collections::HashMap;
+use std::io::Write;
 use tty::Process;
 use winit::event::{ModifiersState, VirtualKeyCode};
 
 pub struct Input {
     modifiers: ModifiersState,
-    key_map: HashMap<VirtualKeyCode, u16>
+    #[allow(dead_code)]
+    key_map: HashMap<VirtualKeyCode, u16>,
 }
-
 
 fn build_map() -> HashMap<VirtualKeyCode, u16> {
     [
-        (VirtualKeyCode::A, kVK_ANSI_A),
-        (VirtualKeyCode::S, kVK_ANSI_S),
-        (VirtualKeyCode::D, kVK_ANSI_D),
-        (VirtualKeyCode::F, kVK_ANSI_F),
-        (VirtualKeyCode::H, kVK_ANSI_H),
-        (VirtualKeyCode::G, kVK_ANSI_G),
+        (VirtualKeyCode::A, keys::A),
+        (VirtualKeyCode::S, keys::S),
+        (VirtualKeyCode::D, keys::D),
+        (VirtualKeyCode::F, keys::F),
+        (VirtualKeyCode::H, keys::H),
+        (VirtualKeyCode::G, keys::G),
         // (kVK_ANSI_Z, PhysKeyCode::Z),
         // (kVK_ANSI_X, PhysKeyCode::X),
         // (kVK_ANSI_C, PhysKeyCode::C),
@@ -127,7 +127,7 @@ fn build_map() -> HashMap<VirtualKeyCode, u16> {
         // (kVK_UpArrow, PhysKeyCode::UpArrow),
     ]
     .iter()
-    .map(|&tuple| tuple)
+    .copied()
     .collect()
 }
 
@@ -140,9 +140,9 @@ impl Input {
         }
     }
 
-    pub fn virtual_key_code_to_ansi(&self, vkey: VirtualKeyCode) -> Option<u16> {
-        self.key_map.get(&vkey).copied()
-    }
+    // pub fn virtual_key_code_to_ansi(&self, vkey: VirtualKeyCode) -> Option<u16> {
+    //    self.key_map.get(&vkey).copied()
+    //}
 
     pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
         // println!("set_modifiers {:?}", modifiers);

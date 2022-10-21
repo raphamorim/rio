@@ -7,7 +7,6 @@ mod window;
 
 use crate::term::Term;
 use std::borrow::Cow;
-use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
