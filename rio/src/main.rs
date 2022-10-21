@@ -7,6 +7,7 @@ mod window;
 
 use crate::term::Term;
 use std::borrow::Cow;
+use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -20,8 +21,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let window_builder = window::create_window_builder("Rio");
     let winit_window = window_builder.build(&event_loop).unwrap();
 
+    std::env::set_var("TERM", "xterm-256color");
+
     // todo: read from config
-    let shell: String = match std::env::var("SHELL_RIO") {
+    let shell: String = match std::env::var("RIO_SHELL") {
         Ok(val) => val,
         Err(..) => String::from("bash"),
     };
