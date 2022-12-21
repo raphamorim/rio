@@ -27,8 +27,8 @@ impl Perform for Log<'_> {
         println!("[execute] {:04x}", byte);
         let c = match byte {
             0x0a => "\n",
-            // TODO: create a wrap/table for words
-            0x09 => " ",
+            // 0x08 => "\u{8}",
+            0x09 => "",
             _ => "",
         };
 
@@ -60,6 +60,10 @@ impl Perform for Log<'_> {
         );
     }
 
+    // Control Sequence Introducer
+    // CSI is the two-character sequence ESCape left-bracket or the 8-bit
+    // C1 code of 233 octal, 9B hex.  CSI introduces a Control Sequence, which
+    // continues until an alphabetic character is received.
     fn csi_dispatch(
         &mut self,
         params: &Params,
@@ -72,9 +76,17 @@ impl Perform for Log<'_> {
             params, intermediates, ignore, c
         );
 
+        // TODO: Implement params
+
         if c == 'J' {
             let mut s = self.message.lock().unwrap();
             *s = String::from("");
+        }
+
+        if c == 'K' {
+            let mut s = self.message.lock().unwrap();
+            s.pop();
+            *s = s.to_string();
         }
     }
 
@@ -95,6 +107,7 @@ pub fn process(process: Process, arc_m: &Arc<Mutex<String>>) {
 
     for byte in reader.bytes() {
         statemachine.advance(&mut performer, *byte.as_ref().unwrap());
+
         // let bs = crate::shared::utils::convert_to_utf8_string(byte.unwrap());
         // let mut a = arc_m.lock().unwrap();
         // *a = format!("{}{}", *a, bs);

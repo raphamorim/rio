@@ -88,8 +88,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     event::WindowEvent::KeyboardInput {
                         input:
                             winit::event::KeyboardInput {
-                                virtual_keycode: Some(keycode),
+                                // semantic meaning of the key
+                                // virtual_keycode: Some(keycode),
+                                // physical key pressed
+                                scancode,
                                 state,
+                                // modifiers,
                                 ..
                             },
                         ..
@@ -97,7 +101,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    input_stream.keydown(keycode, &mut w_process);
+                    // println!("{:?} {:?}", scancode, keycode);
+                    input_stream.keydown(scancode, &mut w_process);
                     rio.draw(&output);
                 }
 

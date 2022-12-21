@@ -2,129 +2,253 @@ use crate::window::keys;
 use std::collections::HashMap;
 use std::io::Write;
 use tty::Process;
-use winit::event::{ModifiersState, VirtualKeyCode};
+use winit::event::{ModifiersState};
+
+// pub struct ModifiersState {
+//     pub shift: bool,
+//     pub ctrl: bool,
+//     pub alt: bool,
+//     pub logo: bool,
+//     ^ This is the "windows" key on PC and "command" key on Mac.
+// }
 
 pub struct Input {
     modifiers: ModifiersState,
     #[allow(dead_code)]
-    key_map: HashMap<VirtualKeyCode, u16>,
+    key_map: HashMap<u32, u8>,
 }
 
-fn build_map() -> HashMap<VirtualKeyCode, u16> {
+pub const VK_ANSI_A: u32 = 0x00;
+pub const VK_ANSI_S: u32 = 0x01;
+pub const VK_ANSI_D: u32 = 0x02;
+pub const VK_ANSI_F: u32 = 0x03;
+pub const VK_ANSI_H: u32 = 0x04;
+pub const VK_ANSI_G: u32 = 0x05;
+pub const VK_ANSI_Z: u32 = 0x06;
+pub const VK_ANSI_X: u32 = 0x07;
+pub const VK_ANSI_C: u32 = 0x08;
+pub const VK_ANSI_V: u32 = 0x09;
+pub const VK_ANSI_B: u32 = 0x0B;
+pub const VK_ANSI_Q: u32 = 0x0C;
+pub const VK_ANSI_W: u32 = 0x0D;
+pub const VK_ANSI_E: u32 = 0x0E;
+pub const VK_ANSI_R: u32 = 0x0F;
+pub const VK_ANSI_Y: u32 = 0x10;
+pub const VK_ANSI_T: u32 = 0x11;
+pub const VK_ANSI_1: u32 = 0x12;
+pub const VK_ANSI_2: u32 = 0x13;
+pub const VK_ANSI_3: u32 = 0x14;
+pub const VK_ANSI_4: u32 = 0x15;
+pub const VK_ANSI_6: u32 = 0x16;
+pub const VK_ANSI_5: u32 = 0x17;
+pub const VK_ANSI_EQUAL: u32 = 0x18;
+pub const VK_ANSI_9: u32 = 0x19;
+pub const VK_ANSI_7: u32 = 0x1A;
+pub const VK_ANSI_MINUS: u32 = 0x1B;
+pub const VK_ANSI_8: u32 = 0x1C;
+pub const VK_ANSI_0: u32 = 0x1D;
+pub const VK_ANSI_RIGHTBRACKET: u32 = 0x1E;
+pub const VK_ANSI_O: u32 = 0x1F;
+pub const VK_ANSI_U: u32 = 0x20;
+pub const VK_ANSI_LEFTBRACKET: u32 = 0x21;
+pub const VK_ANSI_I: u32 = 0x22;
+pub const VK_ANSI_P: u32 = 0x23;
+pub const VK_ANSI_L: u32 = 0x25;
+pub const VK_ANSI_J: u32 = 0x26;
+pub const VK_ANSI_QUOTE: u32 = 0x27;
+pub const VK_ANSI_K: u32 = 0x28;
+pub const VK_ANSI_SEMICOLON: u32 = 0x29;
+pub const VK_ANSI_BACKSLASH: u32 = 0x2A;
+pub const VK_ANSI_COMMA: u32 = 0x2B;
+pub const VK_ANSI_SLASH: u32 = 0x2C;
+pub const VK_ANSI_N: u32 = 0x2D;
+pub const VK_ANSI_M: u32 = 0x2E;
+pub const VK_ANSI_PERIOD: u32 = 0x2F;
+pub const VK_ANSI_GRAVE: u32 = 0x32;
+pub const VK_ANSI_KEYPADDECIMAL: u32 = 0x41;
+pub const VK_ANSI_KEYPADMULTIPLY: u32 = 0x43;
+pub const VK_ANSI_KEYPADPLUS: u32 = 0x45;
+pub const VK_ANSI_KEYPADCLEAR: u32 = 0x47;
+pub const VK_ANSI_KEYPADDIVIDE: u32 = 0x4B;
+pub const VK_ANSI_KEYPADENTER: u32 = 0x4C;
+pub const VK_ANSI_KEYPADMINUS: u32 = 0x4E;
+pub const VK_ANSI_KEYPADEQUALS: u32 = 0x51;
+pub const VK_ANSI_KEYPAD0: u32 = 0x52;
+pub const VK_ANSI_KEYPAD1: u32 = 0x53;
+pub const VK_ANSI_KEYPAD2: u32 = 0x54;
+pub const VK_ANSI_KEYPAD3: u32 = 0x55;
+pub const VK_ANSI_KEYPAD4: u32 = 0x56;
+pub const VK_ANSI_KEYPAD5: u32 = 0x57;
+pub const VK_ANSI_KEYPAD6: u32 = 0x58;
+pub const VK_ANSI_KEYPAD7: u32 = 0x59;
+pub const VK_ANSI_KEYPAD8: u32 = 0x5B;
+pub const VK_ANSI_KEYPAD9: u32 = 0x5C;
+
+pub const VK_RETURN: u32 = 0x24;
+pub const VK_TAB: u32 = 0x30;
+pub const VK_SPACE: u32 = 0x31;
+pub const VK_DELETE: u32 = 0x33;
+pub const VK_ESCAPE: u32 = 0x35;
+pub const VK_COMMAND: u32 = 0x37;
+pub const VK_SHIFT: u32 = 0x38;
+pub const VK_CAPSLOCK: u32 = 0x39;
+pub const VK_OPTION: u32 = 0x3A;
+pub const VK_CONTROL: u32 = 0x3B;
+pub const VK_RIGHTCOMMAND: u32 = 0x36;
+pub const VK_RIGHTSHIFT: u32 = 0x3C;
+pub const VK_RIGHTOPTION: u32 = 0x3D;
+pub const VK_RIGHTCONTROL: u32 = 0x3E;
+pub const VK_FUNCTION: u32 = 0x3F;
+pub const VK_F17: u32 = 0x40;
+pub const VK_VOLUMEUP: u32 = 0x48;
+pub const VK_VOLUMEDOWN: u32 = 0x49;
+pub const VK_MUTE: u32 = 0x4A;
+pub const VK_F18: u32 = 0x4F;
+pub const VK_F19: u32 = 0x50;
+pub const VK_F20: u32 = 0x5A;
+pub const VK_F5: u32 = 0x60;
+pub const VK_F6: u32 = 0x61;
+pub const VK_F7: u32 = 0x62;
+pub const VK_F3: u32 = 0x63;
+pub const VK_F8: u32 = 0x64;
+pub const VK_F9: u32 = 0x65;
+pub const VK_F11: u32 = 0x67;
+pub const VK_F13: u32 = 0x69;
+pub const VK_F16: u32 = 0x6A;
+pub const VK_F14: u32 = 0x6B;
+pub const VK_F10: u32 = 0x6D;
+pub const VK_F12: u32 = 0x6F;
+pub const VK_F15: u32 = 0x71;
+pub const VK_HELP: u32 = 0x72;
+pub const VK_HOME: u32 = 0x73;
+pub const VK_PAGEUP: u32 = 0x74;
+pub const VK_FORWARDDELETE: u32 = 0x75;
+pub const VK_F4: u32 = 0x76;
+pub const VK_END: u32 = 0x77;
+pub const VK_F2: u32 = 0x78;
+pub const VK_PAGEDOWN: u32 = 0x79;
+pub const VK_F1: u32 = 0x7A;
+pub const VK_LEFTARROW: u32 = 0x7B;
+pub const VK_RIGHTARROW: u32 = 0x7C;
+pub const VK_DOWNARROW: u32 = 0x7D;
+pub const VK_UPARROW: u32 = 0x7E;
+
+// fn build_map() -> HashMap<VirtualKeyCode, u16> {
+fn build_map() -> HashMap<u32, u8> {
     [
-        (VirtualKeyCode::A, keys::A),
-        (VirtualKeyCode::S, keys::S),
-        (VirtualKeyCode::D, keys::D),
-        (VirtualKeyCode::F, keys::F),
-        (VirtualKeyCode::H, keys::H),
-        (VirtualKeyCode::G, keys::G),
-        // (kVK_ANSI_Z, PhysKeyCode::Z),
-        // (kVK_ANSI_X, PhysKeyCode::X),
-        // (kVK_ANSI_C, PhysKeyCode::C),
-        // (kVK_ANSI_V, PhysKeyCode::V),
-        // (kVK_ANSI_B, PhysKeyCode::B),
-        // (kVK_ANSI_Q, PhysKeyCode::Q),
-        // (kVK_ANSI_W, PhysKeyCode::W),
-        // (kVK_ANSI_E, PhysKeyCode::E),
-        // (kVK_ANSI_R, PhysKeyCode::R),
-        // (kVK_ANSI_Y, PhysKeyCode::Y),
-        // (kVK_ANSI_T, PhysKeyCode::T),
-        // (kVK_ANSI_1, PhysKeyCode::K1),
-        // (kVK_ANSI_2, PhysKeyCode::K2),
-        // (kVK_ANSI_3, PhysKeyCode::K3),
-        // (kVK_ANSI_4, PhysKeyCode::K4),
-        // (kVK_ANSI_6, PhysKeyCode::K6),
-        // (kVK_ANSI_5, PhysKeyCode::K5),
-        // (kVK_ANSI_Equal, PhysKeyCode::Equal),
-        // (kVK_ANSI_9, PhysKeyCode::K9),
-        // (kVK_ANSI_7, PhysKeyCode::K7),
-        // (kVK_ANSI_Minus, PhysKeyCode::Minus),
-        // (kVK_ANSI_8, PhysKeyCode::K8),
-        // (kVK_ANSI_0, PhysKeyCode::K0),
-        // (kVK_ANSI_RightBracket, PhysKeyCode::RightBracket),
-        // (kVK_ANSI_O, PhysKeyCode::O),
-        // (kVK_ANSI_U, PhysKeyCode::U),
-        // (kVK_ANSI_LeftBracket, PhysKeyCode::LeftBracket),
-        // (kVK_ANSI_I, PhysKeyCode::I),
-        // (kVK_ANSI_P, PhysKeyCode::P),
-        // (kVK_ANSI_L, PhysKeyCode::L),
-        // (kVK_ANSI_J, PhysKeyCode::J),
-        // (kVK_ANSI_Quote, PhysKeyCode::Quote),
-        // (kVK_ANSI_K, PhysKeyCode::K),
-        // (kVK_ANSI_Semicolon, PhysKeyCode::Semicolon),
-        // (kVK_ANSI_Backslash, PhysKeyCode::Backslash),
-        // (kVK_ANSI_Comma, PhysKeyCode::Comma),
-        // (kVK_ANSI_Slash, PhysKeyCode::Slash),
-        // (kVK_ANSI_N, PhysKeyCode::N),
-        // (kVK_ANSI_M, PhysKeyCode::M),
-        // (kVK_ANSI_Period, PhysKeyCode::Period),
-        // (kVK_ANSI_Grave, PhysKeyCode::Grave),
-        // (kVK_ANSI_KeypadDecimal, PhysKeyCode::KeypadDecimal),
-        // (kVK_ANSI_KeypadMultiply, PhysKeyCode::KeypadMultiply),
-        // (kVK_ANSI_KeypadPlus, PhysKeyCode::KeypadAdd),
-        // (kVK_ANSI_KeypadClear, PhysKeyCode::KeypadClear),
-        // (kVK_ANSI_KeypadDivide, PhysKeyCode::KeypadDivide),
-        // (kVK_ANSI_KeypadEnter, PhysKeyCode::KeypadEnter),
-        // (kVK_ANSI_KeypadMinus, PhysKeyCode::KeypadSubtract),
-        // (kVK_ANSI_KeypadEquals, PhysKeyCode::KeypadEquals),
-        // (kVK_ANSI_Keypad0, PhysKeyCode::Keypad0),
-        // (kVK_ANSI_Keypad1, PhysKeyCode::Keypad1),
-        // (kVK_ANSI_Keypad2, PhysKeyCode::Keypad2),
-        // (kVK_ANSI_Keypad3, PhysKeyCode::Keypad3),
-        // (kVK_ANSI_Keypad4, PhysKeyCode::Keypad4),
-        // (kVK_ANSI_Keypad5, PhysKeyCode::Keypad5),
-        // (kVK_ANSI_Keypad6, PhysKeyCode::Keypad6),
-        // (kVK_ANSI_Keypad7, PhysKeyCode::Keypad7),
-        // (kVK_ANSI_Keypad8, PhysKeyCode::Keypad8),
-        // (kVK_ANSI_Keypad9, PhysKeyCode::Keypad9),
-        // (kVK_Return, PhysKeyCode::Return),
-        // (kVK_Tab, PhysKeyCode::Tab),
-        // (kVK_Space, PhysKeyCode::Space),
-        // (kVK_Delete, PhysKeyCode::Backspace),
-        // (kVK_Escape, PhysKeyCode::Escape),
-        // (kVK_Command, PhysKeyCode::LeftWindows),
-        // (kVK_Shift, PhysKeyCode::LeftShift),
-        // (kVK_CapsLock, PhysKeyCode::CapsLock),
-        // (kVK_Option, PhysKeyCode::LeftAlt),
-        // (kVK_Control, PhysKeyCode::LeftControl),
-        // (kVK_RightCommand, PhysKeyCode::RightWindows),
-        // (kVK_RightShift, PhysKeyCode::RightShift),
-        // (kVK_RightOption, PhysKeyCode::RightAlt),
-        // (kVK_RightControl, PhysKeyCode::RightControl),
-        // (kVK_Function, PhysKeyCode::Function),
-        // (kVK_F17, PhysKeyCode::F17),
-        // (kVK_VolumeUp, PhysKeyCode::VolumeUp),
-        // (kVK_VolumeDown, PhysKeyCode::VolumeDown),
-        // (kVK_Mute, PhysKeyCode::VolumeMute),
-        // (kVK_F18, PhysKeyCode::F18),
-        // (kVK_F19, PhysKeyCode::F19),
-        // (kVK_F20, PhysKeyCode::F20),
-        // (kVK_F5, PhysKeyCode::F5),
-        // (kVK_F6, PhysKeyCode::F6),
-        // (kVK_F7, PhysKeyCode::F7),
-        // (kVK_F3, PhysKeyCode::F3),
-        // (kVK_F8, PhysKeyCode::F8),
-        // (kVK_F9, PhysKeyCode::F9),
-        // (kVK_F11, PhysKeyCode::F11),
-        // (kVK_F13, PhysKeyCode::F13),
-        // (kVK_F16, PhysKeyCode::F16),
-        // (kVK_F14, PhysKeyCode::F14),
-        // (kVK_F10, PhysKeyCode::F10),
-        // (kVK_F12, PhysKeyCode::F12),
-        // (kVK_F15, PhysKeyCode::F15),
-        // (kVK_Help, PhysKeyCode::Help),
-        // (kVK_Home, PhysKeyCode::Home),
-        // (kVK_PageUp, PhysKeyCode::PageUp),
-        // (kVK_ForwardDelete, PhysKeyCode::Delete),
-        // (kVK_F4, PhysKeyCode::F4),
-        // (kVK_End, PhysKeyCode::End),
-        // (kVK_F2, PhysKeyCode::F2),
-        // (kVK_PageDown, PhysKeyCode::PageDown),
-        // (kVK_F1, PhysKeyCode::F1),
-        // (kVK_LeftArrow, PhysKeyCode::LeftArrow),
-        // (kVK_RightArrow, PhysKeyCode::RightArrow),
-        // (kVK_DownArrow, PhysKeyCode::DownArrow),
-        // (kVK_UpArrow, PhysKeyCode::UpArrow),
+        (VK_ANSI_A, keys::A),
+        (VK_ANSI_B, keys::B),
+        (VK_ANSI_C, keys::C),
+        (VK_ANSI_D, keys::D),
+        (VK_ANSI_E, keys::E),
+        (VK_ANSI_F, keys::F),
+        (VK_ANSI_G, keys::G),
+        (VK_ANSI_H, keys::H),
+        (VK_ANSI_Q, keys::Q),
+        (VK_ANSI_R, keys::R),
+        (VK_ANSI_S, keys::S),
+        (VK_ANSI_T, keys::T),
+        (VK_ANSI_V, keys::V),
+        (VK_ANSI_W, keys::W),
+        (VK_ANSI_X, keys::X),
+        (VK_ANSI_Y, keys::Y),
+        (VK_ANSI_Z, keys::Z),
+        (VK_ANSI_1, keys::K1),
+        (VK_ANSI_2, keys::K2),
+        (VK_ANSI_3, keys::K3),
+        (VK_ANSI_4, keys::K4),
+        (VK_ANSI_6, keys::K6),
+        (VK_ANSI_5, keys::K5),
+        (VK_ANSI_EQUAL, keys::EQUAL),
+        (VK_ANSI_9, keys::K9),
+        (VK_ANSI_7, keys::K7),
+        (VK_ANSI_MINUS, keys::MINUS),
+        (VK_ANSI_8, keys::K8),
+        (VK_ANSI_0, keys::K0),
+        // (VK_ANSI_RIGHTBRACKET, keys::RightBracket),
+        (VK_ANSI_O, keys::O),
+        (VK_ANSI_U, keys::U),
+        // (VK_ANSI_LEFTBRACKET, keys::LeftBracket),
+        (VK_ANSI_I, keys::I),
+        (VK_ANSI_P, keys::P),
+        (VK_ANSI_L, keys::L),
+        (VK_ANSI_J, keys::J),
+        // (VK_ANSI_QUOTE, keys::Quote),
+        (VK_ANSI_K, keys::K),
+        // (VK_ANSI_SEMICOLON, keys::Semicolon),
+        // (VK_ANSI_BACKSLASH, keys::Backslash),
+        // (VK_ANSI_COMMA, keys::Comma),
+        // (VK_ANSI_SLASH, keys::Slash),
+        (VK_ANSI_N, keys::N),
+        (VK_ANSI_M, keys::M),
+        (VK_ANSI_PERIOD, keys::PERIOD),
+        // (VK_ANSI_GRAVE, keys::Grave),
+        // (VK_ANSI_KEYPADDECIMAL, keys::KeypadDecimal),
+        // (VK_ANSI_KEYPADMULTIPLY, keys::KeypadMultiply),
+        // (VK_ANSI_KEYPADPLUS, keys::KeypadAdd),
+        // (VK_ANSI_KEYPADCLEAR, keys::KeypadClear),
+        // (VK_ANSI_KEYPADDIVIDE, keys::KeypadDivide),
+        // (VK_ANSI_KEYPADENTER, keys::KeypadEnter),
+        // (VK_ANSI_KEYPADMINUS, keys::KeypadSubtract),
+        // (VK_ANSI_KEYPADEQUALS, keys::KeypadEquals),
+        (VK_ANSI_KEYPAD0, keys::KEYPAD0),
+        (VK_ANSI_KEYPAD1, keys::KEYPAD1),
+        (VK_ANSI_KEYPAD2, keys::KEYPAD2),
+        (VK_ANSI_KEYPAD3, keys::KEYPAD3),
+        (VK_ANSI_KEYPAD4, keys::KEYPAD4),
+        (VK_ANSI_KEYPAD5, keys::KEYPAD5),
+        (VK_ANSI_KEYPAD6, keys::KEYPAD6),
+        (VK_ANSI_KEYPAD7, keys::KEYPAD7),
+        (VK_ANSI_KEYPAD8, keys::KEYPAD8),
+        (VK_ANSI_KEYPAD9, keys::KEYPAD9),
+        (VK_RETURN, keys::RETURN),
+        (VK_TAB, keys::TAB),
+        (VK_SPACE, keys::SPACE),
+        (VK_DELETE, keys::BACKSPACE),
+        // (VK_ESCAPE, keys::Escape),
+        // (VK_COMMAND, keys::LeftWindows),
+        // (VK_SHIFT, keys::LeftShift),
+        // (VK_CAPSLOCK, keys::CapsLock),
+        // (VK_OPTION, keys::LeftAlt),
+        // (VK_CONTROL, keys::LeftControl),
+        // (VK_RIGHTCOMMAND, keys::RightWindows),
+        // (VK_RIGHTSHIFT, keys::RightShift),
+        // (VK_RIGHTOPTION, keys::RightAlt),
+        // (VK_RIGHTCONTROL, keys::RightControl),
+        // (VK_FUNCTION, keys::Function),
+        // (VK_F17, keys::F17),
+        // (VK_VOLUMEUP, keys::VolumeUp),
+        // (VK_VOLUMEDOWN, keys::VolumeDown),
+        // (VK_MUTE, keys::VolumeMute),
+        // (VK_F18, keys::F18),
+        // (VK_F19, keys::F19),
+        // (VK_F20, keys::F20),
+        // (VK_F5, keys::F5),
+        // (VK_F6, keys::F6),
+        // (VK_F7, keys::F7),
+        // (VK_F3, keys::F3),
+        // (VK_F8, keys::F8),
+        // (VK_F9, keys::F9),
+        // (VK_F11, keys::F11),
+        // (VK_F13, keys::F13),
+        // (VK_F16, keys::F16),
+        // (VK_F14, keys::F14),
+        // (VK_F10, keys::F10),
+        // (VK_F12, keys::F12),
+        // (VK_F15, keys::F15),
+        // (VK_HELP, keys::Help),
+        // (VK_HOME, keys::Home),
+        // (VK_PAGEUP, keys::PageUp),
+        // (VK_FORWARDDELETE, keys::Delete),
+        // (VK_F4, keys::F4),
+        // (VK_END, keys::End),
+        // (VK_F2, keys::F2),
+        // (VK_PAGEDOWN, keys::PageDown),
+        // (VK_F1, keys::F1),
+        // (VK_LEFTARROW, keys::LeftArrow),
+        // (VK_RIGHTARROW, keys::RightArrow),
+        // (VK_DOWNARROW, keys::DownArrow),
+        // (VK_UPARROW, keys::UpArrow),
     ]
     .iter()
     .copied()
@@ -133,93 +257,41 @@ fn build_map() -> HashMap<VirtualKeyCode, u16> {
 
 impl Input {
     pub fn new() -> Input {
-        let key_map: HashMap<VirtualKeyCode, u16> = build_map();
+        let key_map: HashMap<u32, u8> = build_map();
         Input {
             modifiers: ModifiersState::default(),
             key_map,
         }
     }
 
-    // pub fn virtual_key_code_to_ansi(&self, vkey: VirtualKeyCode) -> Option<u16> {
-    //    self.key_map.get(&vkey).copied()
-    //}
+    // pub fn virtual_key_code_to_ansi(&self, vkey: VirtualKeyCode) -> Result<u8, ()> {
+    //     match self.key_map.get(&vkey) {
+    //         Some(val) => Ok(*val),
+    //         None => Err(()),
+    //     }
+    // }
+
+    pub fn physical_key_code_to_ansi(&self, vkey: u32) -> Result<u8, ()> {
+        match self.key_map.get(&vkey) {
+            Some(val) => Ok(*val),
+            None => Err(()),
+        }
+    }
 
     pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
-        // println!("set_modifiers {:?}", modifiers);
+        // println!("set_modifiers {:?} {:?} {:?}", modifiers, modifiers.shift(), modifiers.logo());
         self.modifiers = modifiers;
     }
 
-    pub fn keydown(&mut self, keycode: VirtualKeyCode, stream: &mut Process) {
-        let code: &[u8] = match keycode {
-            // Numbers
-            VirtualKeyCode::Key0 => b"0",
-            VirtualKeyCode::Key1 => b"1",
-            VirtualKeyCode::Key2 => b"2",
-            VirtualKeyCode::Key3 => b"3",
-            VirtualKeyCode::Key4 => b"4",
-            VirtualKeyCode::Key5 => b"5",
-            VirtualKeyCode::Key6 => b"6",
-            VirtualKeyCode::Key7 => b"7",
-            VirtualKeyCode::Key8 => b"8",
-            VirtualKeyCode::Key9 => b"9",
+    pub fn keydown(&mut self, keycode: u32, stream: &mut Process) {
+        let code = self.physical_key_code_to_ansi(keycode);
+        println!("keydown {:?} {:?}", keycode, code);
 
-            // Alphabet
-            VirtualKeyCode::A => b"a",
-            VirtualKeyCode::B => b"b",
-            VirtualKeyCode::C => b"c",
-            VirtualKeyCode::D => b"d",
-            VirtualKeyCode::E => b"e",
-            VirtualKeyCode::F => b"f",
-            VirtualKeyCode::G => b"g",
-            VirtualKeyCode::H => b"h",
-            VirtualKeyCode::I => b"i",
-            VirtualKeyCode::J => b"j",
-            VirtualKeyCode::K => b"k",
-            VirtualKeyCode::L => b"l",
-            VirtualKeyCode::M => b"m",
-            VirtualKeyCode::N => b"n",
-            VirtualKeyCode::O => b"o",
-            VirtualKeyCode::P => b"p",
-            VirtualKeyCode::Q => b"q",
-            VirtualKeyCode::R => b"r",
-            VirtualKeyCode::S => b"s",
-            VirtualKeyCode::T => b"t",
-            VirtualKeyCode::U => b"u",
-            VirtualKeyCode::V => b"v",
-            VirtualKeyCode::W => b"w",
-            VirtualKeyCode::X => b"x",
-            VirtualKeyCode::Y => b"y",
-            VirtualKeyCode::Z => b"z",
-
-            // Special
-            VirtualKeyCode::Backslash => b"\\",
-            VirtualKeyCode::Slash => b"/",
-            VirtualKeyCode::Period => b".",
-            VirtualKeyCode::Comma => b",",
-            VirtualKeyCode::Space => b" ",
-            VirtualKeyCode::Minus => b"-",
-            VirtualKeyCode::Equals => b"=",
-            VirtualKeyCode::Grave => b"`",
-
-            // Control
-            VirtualKeyCode::Return => b"\n",
-            VirtualKeyCode::LWin => b"",
-            VirtualKeyCode::RWin => b"",
-
-            // TODO: Arrows
-            VirtualKeyCode::Back => {
-                // TODO: Delete last byte
-                b"-"
-            }
-
-            _ => {
-                println!("code not implemented {:?}", keycode);
-                b""
-            }
-        };
-
-        // println!("keydown {:?}", self.modifiers);
-
-        stream.write_all(code).unwrap();
+        match code {
+            Ok(val) => {
+                stream.write_all(&[val]).unwrap();
+            },
+            Err(()) => {}
+        }
     }
 }

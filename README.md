@@ -82,6 +82,8 @@ width = 600
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
 
-## Credits
+## Reference && Credits
 
 - Text mod code is from with https://github.com/hecrj/wgpu_glyph
+- https://github.com/wez/wezterm
+- https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
