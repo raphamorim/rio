@@ -91,11 +91,11 @@ impl Perform for Log<'_> {
             *s = String::from("");
         }
 
-        if c == 'K' {
-            let mut s = self.message.lock().unwrap();
-            s.pop();
-            *s = s.to_string();
-        }
+        // if c == 'K' {
+        //     let mut s = self.message.lock().unwrap();
+        //     s.pop();
+        //     *s = s.to_string();
+        // }
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {

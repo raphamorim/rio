@@ -22,8 +22,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     std::env::set_var("TERM", "xterm-256color");
 
-    println!("{:?}", std::env::var("SHELL"));
-
     // todo: read from config
     let shell: String = match std::env::var("SHELL") {
         Ok(val) => val,
