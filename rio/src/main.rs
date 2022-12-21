@@ -22,8 +22,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     std::env::set_var("TERM", "xterm-256color");
 
+    println!("{:?}", std::env::var("SHELL"));
+
     // todo: read from config
-    let shell: String = match std::env::var("RIO_SHELL") {
+    let shell: String = match std::env::var("SHELL") {
         Ok(val) => val,
         Err(..) => String::from("bash"),
     };
@@ -75,11 +77,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // hacky
                 if scroll_y < 0.0 {
-                    rio.set_text_scroll(0.8_f32);
+                    rio.set_text_scroll(-3.0_f32);
                     // winit_window.request_redraw();
                 }
                 if scroll_y > 0.0 {
-                    rio.set_text_scroll(-0.8_f32);
+                    rio.set_text_scroll(3.0_f32);
                 }
             }
 

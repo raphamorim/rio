@@ -143,9 +143,13 @@ pub fn pty(name: &str, width: u16, height: u16) -> (Process, Process, String) {
         )
     } {
         0 => {
-            let name = CString::new(name).unwrap();
+            let command_name_string = CString::new(name).unwrap();
+            let command_pointer = command_name_string.as_ptr() as *const i8;
+            // let home = std::env::var("HOME").unwrap();
+            // let args = CString::new(home).unwrap();
+            // let args_pointer = args.as_ptr() as *const i8;
             unsafe {
-                libc::execvp(name.as_ptr(), ptr::null());
+                libc::execvp(command_pointer, vec![command_pointer, std::ptr::null()].as_ptr());
             }
             unreachable!();
         }

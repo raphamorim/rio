@@ -25,6 +25,14 @@ impl Perform for Log<'_> {
 
     fn execute(&mut self, byte: u8) {
         println!("[execute] {:04x}", byte);
+
+        if byte == 0x08 {
+            let mut s = self.message.lock().unwrap();
+            s.pop();
+            *s = s.to_string();
+            return;
+        }
+
         let c = match byte {
             0x0a => "\n",
             // 0x08 => "\u{8}",
@@ -78,7 +86,7 @@ impl Perform for Log<'_> {
 
         // TODO: Implement params
 
-        if c == 'J' {
+        if c == 'J' && params.len() > 1 {
             let mut s = self.message.lock().unwrap();
             *s = String::from("");
         }

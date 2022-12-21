@@ -4,6 +4,9 @@ docs:
 run:
 	cargo run --release
 
+dev:
+	cargo run
+
 pack-osx:
 	# cargo build --target x86_64-apple-darwin
 	cargo build --target aarch64-apple-darwin
@@ -20,7 +23,7 @@ install:
 	cargo install ou
 	cargo install cargo-bundle
 	cargo install cargo-watch
-	make build
+	cargo build --release
 
 build:
 	cargo build --release
