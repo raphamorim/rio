@@ -1,4 +1,5 @@
 pub mod input;
+mod ansi;
 mod keys;
 
 use crate::shared::{
