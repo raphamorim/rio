@@ -36,7 +36,7 @@ impl Perform for Log<'_> {
         let c = match byte {
             0x0a => "\n",
             // 0x08 => "\u{8}",
-            0x09 => "",
+            0x09 => "  ",
             _ => "",
         };
 

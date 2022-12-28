@@ -26,20 +26,18 @@ pub const W: u8 = b'w';
 pub const X: u8 = b'x';
 pub const Y: u8 = b'y';
 pub const Z: u8 = b'z';
-
-
+pub const K0: u8 = b'0';
 pub const K1: u8 = b'1';
 pub const K2: u8 = b'2';
 pub const K3: u8 = b'3';
 pub const K4: u8 = b'4';
-pub const K6: u8 = b'5';
-pub const K5: u8 = b'6';
-pub const EQUAL: u8 = b'=';
-pub const K9: u8 = b'9';
+pub const K5: u8 = b'5';
+pub const K6: u8 = b'6';
 pub const K7: u8 = b'7';
-pub const MINUS: u8 = b'-';
 pub const K8: u8 = b'8';
-pub const K0: u8 = b'0';
+pub const K9: u8 = b'9';
+pub const EQUAL: u8 = b'=';
+pub const MINUS: u8 = b'-';
 // pub const KVK_ANSI_RIGHT_BRACKET: u8 = 0x1E;
 // pub const KVK_ANSI_O: u8 = 0x1F;
 // pub const KVK_ANSI_U: u8 = 0x20;
