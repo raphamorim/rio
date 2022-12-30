@@ -1,8 +1,8 @@
-use crate::window::{keys, ansi};
+use crate::window::{ansi, keys};
 use std::collections::HashMap;
 use std::io::Write;
 use tty::Process;
-use winit::event::{ModifiersState};
+use winit::event::ModifiersState;
 
 // pub struct ModifiersState {
 //     pub shift: bool,
@@ -167,7 +167,7 @@ impl Input {
         match code {
             Ok(val) => {
                 stream.write_all(&[val]).unwrap();
-            },
+            }
             Err(()) => {}
         }
     }
