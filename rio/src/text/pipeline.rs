@@ -419,8 +419,8 @@ impl Instance {
         let gl_bounds = bounds;
 
         let mut gl_rect = Rect {
-            min: point(pixel_coords.min.x as f32, pixel_coords.min.y as f32),
-            max: point(pixel_coords.max.x as f32, pixel_coords.max.y as f32),
+            min: point(pixel_coords.min.x, pixel_coords.min.y),
+            max: point(pixel_coords.max.x, pixel_coords.max.y),
         };
 
         // handle overlapping bounds, modify uv_rect to preserve texture aspect

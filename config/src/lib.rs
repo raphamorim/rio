@@ -18,30 +18,18 @@ struct Config {
 }
 
 impl Config {
-    fn new(&self) -> Self {
-        Self {
-            performance: self.performance,
-            width: self.width,
-            height: self.height,
-        }
-    }
-
     fn load_from_path(path: &str) -> Self {
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            // TODO: still don't know how to solve this!
-            let decoded: Config = toml::from_str(&content).unwrap_or_else(|v| {
-                println!("{}", v);
-                Config::default()
-            });
-            println!("eeeee {:#?}", decoded);
+            let decoded: Config =
+                toml::from_str(&content).unwrap_or_else(|_| Config::default());
             decoded
-            //toml::from_str(&content).unwrap()
         } else {
             Config::default()
         }
     }
 
+    #[allow(dead_code)]
     fn load() -> Self {
         let base_dir_buffer = dirs::home_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();
@@ -49,20 +37,16 @@ impl Config {
         let path = format!("{}/.rio/config.toml", base_dir);
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            // TODO: still don't know how to solve this!
-            let decoded: Config = toml::from_str(&content).unwrap_or_else(|v| {
-                println!("{}", v);
-                Config::default()
-            });
-            println!("eeeee {:#?}", decoded);
+            let decoded: Config =
+                toml::from_str(&content).unwrap_or_else(|_| Config::default());
             decoded
-            //toml::from_str(&content).unwrap()
         } else {
             Config::default()
         }
     }
 }
 
+#[allow(dead_code)]
 fn create_temporary_config(performance: Performance, width: u16, height: u16) -> Config {
     let toml_str = format!(
         r#"
@@ -85,7 +69,7 @@ fn create_temporary_config(performance: Performance, width: u16, height: u16) ->
         "#,
         performance, height, width
     );
-    let binding = format!("/tmp/{:?}-config.toml", performance).to_owned();
+    let binding = format!("/tmp/{:?}-config.toml", performance);
     let file_name = binding.as_str();
 
     let mut file = std::fs::File::create(file_name).unwrap();
@@ -96,11 +80,11 @@ fn create_temporary_config(performance: Performance, width: u16, height: u16) ->
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new(&Self {
+        Config {
             performance: Performance::default(),
             width: 600,
             height: 400,
-        })
+        }
     }
 }
 
