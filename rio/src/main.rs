@@ -1,3 +1,4 @@
+mod ansi;
 mod bar;
 mod shared;
 mod term;
@@ -7,8 +8,6 @@ mod window;
 use crate::term::Term;
 use std::borrow::Cow;
 use std::error::Error;
-use std::io::BufReader;
-use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tty::{pty, COLS, ROWS};
@@ -21,13 +20,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let window_builder = window::create_window_builder("Rio");
     let winit_window = window_builder.build(&event_loop).unwrap();
 
+    std::env::set_var("TERM", "xterm-256color");
+
     // todo: read from config
-    let shell: String = match std::env::var("SHELL_RIO") {
+    let shell: String = match std::env::var("SHELL") {
         Ok(val) => val,
         Err(..) => String::from("bash"),
     };
     let (process, mut w_process, _pid) =
         pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
+
     let mut rio: Term = match Term::new(&winit_window).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
@@ -35,21 +37,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // ■ ~ ▲
+    let mut input_stream = window::input::Input::new();
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
+
     let message = Arc::clone(&output);
     tokio::spawn(async move {
-        let reader = BufReader::new(process);
-
-        for input_byte in reader.bytes() {
-            let bs = shared::utils::convert_to_utf8_string(input_byte.unwrap());
-            let mut a = message.lock().unwrap();
-            *a = format!("{}{}", *a, bs);
-        }
+        crate::ansi::process(process, &message);
     });
 
-    let mut w_input = window::input::Input::new();
-
+    let mut is_focused = true;
     event_loop.run(move |event, _, control_flow| {
         match event {
             event::Event::WindowEvent {
@@ -60,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event::Event::WindowEvent {
                 event: event::WindowEvent::ModifiersChanged(modifiers),
                 ..
-            } => w_input.set_modifiers(modifiers),
+            } => input_stream.set_modifiers(modifiers),
 
             event::Event::WindowEvent {
                 event: event::WindowEvent::MouseWheel { delta, .. },
@@ -77,8 +73,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                if scroll_y != 0.0 {
+                // hacky
+                if scroll_y < 0.0 {
+                    rio.set_text_scroll(-3.0_f32);
                     // winit_window.request_redraw();
+                }
+                if scroll_y > 0.0 {
+                    rio.set_text_scroll(3.0_f32);
                 }
             }
 
@@ -87,8 +88,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     event::WindowEvent::KeyboardInput {
                         input:
                             winit::event::KeyboardInput {
-                                virtual_keycode: Some(keycode),
+                                // semantic meaning of the key
+                                // virtual_keycode: Some(keycode),
+                                // physical key pressed
+                                scancode,
                                 state,
+                                // modifiers,
                                 ..
                             },
                         ..
@@ -96,7 +101,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    w_input.keydown(keycode, &mut w_process);
+                    // println!("{:?} {:?}", scancode, keycode);
+                    input_stream.keydown(scancode, &mut w_process);
                     rio.draw(&output);
                 }
 
@@ -109,9 +115,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 event: event::WindowEvent::Focused(focused),
                 ..
             } => {
-                if focused {
-                    // TODO: Optmize non-focused rendering perf
-                }
+                is_focused = focused;
             }
 
             event::Event::WindowEvent {
@@ -119,14 +123,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 rio.set_size(new_size);
-
-                rio.draw(&output);
+                winit_window.request_redraw();
             }
+
+            event::Event::MainEventsCleared { .. } => {
+                winit_window.request_redraw();
+            }
+
             event::Event::RedrawRequested { .. } => {
-                rio.draw(&output);
+                if is_focused {
+                    rio.draw(&output);
+                }
             }
             _ => {
-                *control_flow = event_loop::ControlFlow::Wait;
+                let next_frame_time =
+                    std::time::Instant::now() + std::time::Duration::from_nanos(500_000);
+                *control_flow = event_loop::ControlFlow::WaitUntil(next_frame_time);
+                // *control_flow = event_loop::ControlFlow::Wait;
             }
         }
     })

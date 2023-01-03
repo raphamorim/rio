@@ -16,27 +16,27 @@ body {
   margin: 0;
   padding: 0;
   line-height: 1.8em;
-	/*background: #333;*/
+  /*background: #333;*/
   background: #000;
-	color: white;
-	text-rendering: optimizeLegibility;
-	-moz-osx-font-smoothing: grayscale;
-	font-family: Helvetica;
+  color: white;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: Helvetica;
   font-size: 20px;
 }
 
 .container {
-	position: relative;
-	max-width: 820px;
-	margin: 0 auto;
+  position: relative;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
 /*
-	stack:
-    #D35100
-    #F07900
-	  #F8A145
-	bg text: #151515
+  stack:
+  #D35100
+  #F07900
+  #F8A145
+  bg text: #151515
 */
 
 section.highlight {
@@ -93,17 +93,17 @@ section.features .container div {
 }
 
 .rio {
-	max-width: 600px;
-	height: 400px;
+  max-width: 600px;
+  height: 400px;
   margin: 0 20px;
-	background: #151515;
-	border-radius: 8px;
-	line-height: 1.5;
-	font-size: 14px;
-	white-space: pre-wrap;
-	word-break: break-all;
-	overflow: hidden;
-	box-shadow: 12px 12px 2px 1px rgba(0, 0, 0, .2);
+  background: #151515;
+  border-radius: 8px;
+  line-height: 1.5;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: hidden;
+  box-shadow: 12px 12px 2px 1px rgba(0, 0, 0, .2);
 }
 
 .terminal-content {
@@ -187,8 +187,10 @@ section.features .container div {
   background: black;
 }
 
-.info .block:nth-of-type(3) {
-  font-size: 12px;
+.info .block:nth-of-type(3) a {
+  font-size: 14px;
+  color: orange;
+  text-decoration: none;
   box-shadow: 1px 1px 15px 1px rgba(0, 0, 0, .9);
 }
 
@@ -209,14 +211,14 @@ section.features .container div {
 
 .terminal-subheader {
   margin-top: -42px;
-	background: #F07900;
-	height: 6px;
+  background: #F07900;
+  height: 6px;
 }
 
 .terminal-sub-subheader {
-	background: #F8A145;
-	margin-top: -42px;
-	height: 6px;
+  background: #F8A145;
+  margin-top: -42px;
+  height: 6px;
 }
 
 .terminal-icon:first-of-type {
