@@ -9,9 +9,10 @@ authors = ["Raphael Amorim"]
 glyph_brush = "0.7"
 wgpu = "0.13.1"
 tokio = { version = "1.7.1", features = ["full"] }
-winit = "0.26"
+winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
+vte = "0.11.0"
 tty = { path = "../tty" }
 
 [package.metadata.bundle]

@@ -14,6 +14,7 @@ pub struct Term {
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
     bar: BarBrush,
+    text_scroll: f32,
 }
 
 impl Term {
@@ -75,6 +76,7 @@ impl Term {
             render_format,
             bar,
             queue,
+            text_scroll: 1.0,
         })
     }
 
@@ -97,70 +99,90 @@ impl Term {
         );
     }
 
+    pub fn set_text_scroll(&mut self, text_scroll: f32) {
+        self.text_scroll -= text_scroll;
+    }
+
+    #[inline]
+    fn create_encoder(&self) -> wgpu::CommandEncoder {
+        self.device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Redraw"),
+            })
+    }
+
+    #[inline]
+    fn clear_frame<'a>(
+        &'a self,
+        encoder: &'a mut wgpu::CommandEncoder,
+        view: &'a wgpu::TextureView,
+    ) -> wgpu::RenderPass {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Term -> Clear frame"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        })
+    }
+
+    #[inline]
+    fn create_render_pipeline(&self) -> wgpu::RenderPipeline {
+        let render_pipeline_layout: wgpu::PipelineLayout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Term -> Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+
+        self.device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Term -> Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &self.bar.shader,
+                    entry_point: "vs_main",
+                    buffers: &[bar::Vertex::desc()],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &self.bar.shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.render_format,
+                        blend: shared::gpu::BLEND,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+            })
+    }
+
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
-        let mut encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Redraw"),
-                });
+        let mut encoder = self.create_encoder();
 
         let frame = self.surface.get_current_texture().expect("Get next frame");
         let view = &frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let render_pipeline_layout =
-            self.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: &[],
-                    push_constant_ranges: &[],
-                });
-
-        let render_pipeline =
-            self.device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("Render Pipeline"),
-                    layout: Some(&render_pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        module: &self.bar.shader,
-                        entry_point: "vs_main",
-                        buffers: &[bar::Vertex::desc()],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        module: &self.bar.shader,
-                        entry_point: "fs_main",
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: self.render_format,
-                            blend: shared::gpu::BLEND,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        strip_index_format: None,
-                        front_face: wgpu::FrontFace::Ccw,
-                        ..Default::default()
-                    },
-                    depth_stencil: None, // 1.
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview: None,
-                });
+        let render_pipeline = self.create_render_pipeline();
 
         {
-            let mut render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
+            let mut render_pass = self.clear_frame(&mut encoder, view);
 
             render_pass.set_pipeline(&render_pipeline);
             render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
@@ -173,7 +195,7 @@ impl Term {
 
         {
             self.text_brush.queue(Section {
-                screen_position: (24.0, 120.0),
+                screen_position: (24.0, 120.0 - self.text_scroll),
                 bounds: ((self.size.width - 40) as f32, self.size.height as f32),
                 text: vec![Text::new(&output.lock().unwrap())
                     .with_color([1.0, 1.0, 1.0, 1.0])

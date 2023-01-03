@@ -4,9 +4,19 @@ Website: https://raphamorim.io/rio
 
 This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 
+- Cross-platform
+- Offloads rendering to the GPU for lower system load
+- Uses threaded rendering for absolutely minimal latency
+
 #### Status
 
-Under development.
+Basic features are under development for MacOs right now.
+
+| Platform | Development Status |
+| --- | --- |
+| MacOs | In development |
+| Linux | Not started yet |
+| Windows | Not started yet |
 
 Last testing build for macOS (c603bdcffb6c23a137cb491a505dd23e5f6329c5):
 
@@ -72,6 +82,8 @@ width = 600
 - [ ] Style rendering (italic, bold, underline)
 - [ ] Character set
 
-## Credits
+## Reference && Credits
 
 - Text mod code is from with https://github.com/hecrj/wgpu_glyph
+- https://github.com/wez/wezterm
+- https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
