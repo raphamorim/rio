@@ -1,8 +1,8 @@
-use crate::window::{keys, ansi};
+use crate::window::{ansi, keys};
 use std::collections::HashMap;
 use std::io::Write;
 use tty::Process;
-use winit::event::{ModifiersState};
+use winit::event::ModifiersState;
 
 // pub struct ModifiersState {
 //     pub shift: bool,
@@ -164,11 +164,15 @@ impl Input {
         let code = self.physical_key_code_to_ansi(keycode);
         println!("keydown {:?} {:?}", keycode, code);
 
-        match code {
-            Ok(val) => {
-                stream.write_all(&[val]).unwrap();
-            },
-            Err(()) => {}
+        // match code {
+        //     Ok(val) => {
+        //         stream.write_all(&[val]).unwrap();
+        //     }
+        //     Err(()) => {}
+        // }
+
+        if let Ok(val) = code {
+            stream.write_all(&[val]).unwrap();
         }
     }
 }
