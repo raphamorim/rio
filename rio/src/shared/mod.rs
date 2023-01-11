@@ -9,7 +9,8 @@ pub const FONT_FIRA_MONO: &[u8; 170204] =
 // Terminal W/H contraints
 pub const DEFAULT_WINDOW_HEIGHT: i32 = 400;
 pub const DEFAULT_WINDOW_WIDTH: i32 = 600;
-pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 300;
+
+pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 400;
 
 // #151515

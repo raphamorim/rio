@@ -28,7 +28,10 @@ pub struct Term {
 }
 
 const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0,
 ];
 
 impl Term {
@@ -260,27 +263,18 @@ impl Term {
             })
     }
 
-    /// Draws all queued sections onto a render target, applying a position
-    /// transform (e.g. a projection).
-    /// See
-    pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
+    pub fn projection(width: u32, height: u32) -> [f32; 16] {
+        // [2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+        let h = (height as f32) / 1000.0;
+        let w = (width as f32) / 1000.0;
+        // println!("{:?}", h);
+
         [
-            2.0,// / width as f32,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,// / height as f32,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
+            w, 0.0, 0.0, 0.0,
+            w - 1.0, 1.0, h, 0.0,
+            w - 1.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
         ]
     }
 
@@ -335,9 +329,9 @@ impl Term {
                     &self.device,
                 );
 
-                let new_transform = Self::orthographic_projection(self.size.width, self.size.height);
+                let new_transform = Self::projection(self.size.width, self.size.height);
 
-                println!("{:?}", new_transform);
+                // println!("{:?}", new_transform);
 
                 transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
 
