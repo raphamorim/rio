@@ -45,7 +45,7 @@ impl BarBrush {
     ) -> BarBrush {
         let vertices: &[Vertex] = &[
             Vertex {
-                position: [-2.0, 1.5],
+                position: [-1.0, 1.5],
                 color: [0.94, 0.47, 0.0],
             },
             Vertex {
