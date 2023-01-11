@@ -20,7 +20,8 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     out.color = input.color;
-    out.position = vec4<f32>(input.position, 0.0, 1.0);
+
+    out.position = globals.transform * vec4<f32>(input.position, 0.0, 1.0);
     
     return out;
 }

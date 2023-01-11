@@ -1,7 +1,12 @@
+mod cache;
+
+use core::num::NonZeroU64;
 use crate::bar::{self, BarBrush};
 use crate::shared;
 use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
+use cache::Cache;
 use std::error::Error;
+use std::mem;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -14,8 +19,17 @@ pub struct Term {
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
     bar: BarBrush,
+    cache: Cache,
+    uniform_layout: wgpu::BindGroupLayout,
+    uniforms: wgpu::BindGroup,
+    transform: wgpu::Buffer,
+    // current_transform: [f32; 16],
     text_scroll: f32,
 }
+
+const IDENTITY_MATRIX: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
 
 impl Term {
     pub async fn new(
@@ -67,6 +81,75 @@ impl Term {
         let text_brush =
             GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
+        let cache = Cache::new(&device, 1024, 1024);
+
+         let uniform_layout =
+            device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("text::Pipeline uniforms"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: wgpu::BufferSize::new(mem::size_of::<
+                                    [f32; 16],
+                                >(
+                                )
+                                    as u64),
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(
+                                wgpu::SamplerBindingType::Filtering,
+                            ),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float {
+                                    filterable: true,
+                                },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+
+        use wgpu::util::DeviceExt;
+
+        let transform =
+            device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
+        let uniforms = Self::create_uniforms(
+            &device,
+            &uniform_layout,
+            &transform,
+            &sampler,
+            &cache.view,
+        );
+
         Ok(Term {
             device,
             surface,
@@ -76,6 +159,10 @@ impl Term {
             render_format,
             bar,
             queue,
+            cache,
+            uniforms,
+            uniform_layout,
+            transform,
             text_scroll: 1.0,
         })
     }
@@ -132,13 +219,15 @@ impl Term {
     }
 
     #[inline]
-    fn create_render_pipeline(&self) -> wgpu::RenderPipeline {
+    fn create_render_pipeline(
+        &self,
+    ) -> wgpu::RenderPipeline {
         let render_pipeline_layout: wgpu::PipelineLayout = self
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Term -> Render Pipeline Layout"),
-                bind_group_layouts: &[],
                 push_constant_ranges: &[],
+                bind_group_layouts: &[&self.uniform_layout],
             });
 
         self.device
@@ -171,6 +260,61 @@ impl Term {
             })
     }
 
+    /// Draws all queued sections onto a render target, applying a position
+    /// transform (e.g. a projection).
+    /// See
+    pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
+        [
+            2.0,// / width as f32,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -2.0,// / height as f32,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            -1.0,
+            1.0,
+            0.0,
+            1.0,
+        ]
+    }
+
+    fn create_uniforms(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        transform: &wgpu::Buffer,
+        sampler: &wgpu::Sampler,
+        cache: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("text::Pipeline uniforms"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: transform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(cache),
+                },
+            ],
+        })
+    }
+
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
         let mut encoder = self.create_encoder();
 
@@ -182,9 +326,39 @@ impl Term {
         let render_pipeline = self.create_render_pipeline();
 
         {
-            let mut render_pass = self.clear_frame(&mut encoder, view);
+            // if self.transform != self.current_transform {
+                let mut transform_view = self.staging_belt.write_buffer(
+                    &mut encoder,
+                    &self.transform,
+                    0,
+                    unsafe { NonZeroU64::new_unchecked(16 * 4) },
+                    &self.device,
+                );
+
+                let new_transform = Self::orthographic_projection(self.size.width, self.size.height);
+
+                println!("{:?}", new_transform);
+
+                transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
+
+                // self.current_transform = self.transform;
+            // }
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Term -> Clear frame"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
 
             render_pass.set_pipeline(&render_pipeline);
+            render_pass.set_bind_group(0, &self.uniforms, &[]);
             render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
             render_pass.set_index_buffer(
                 self.bar.buffers.1.slice(..),

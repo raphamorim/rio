@@ -19,7 +19,9 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
+                    // 2 bit integer for alpha channel. [0, 1023] ([0, 3] for alpha) converted
                     format: wgpu::VertexFormat::Float32x3,
+                    // Reset to Float32x2 in case to disable alpha
                     // format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -43,7 +45,7 @@ impl BarBrush {
     ) -> BarBrush {
         let vertices: &[Vertex] = &[
             Vertex {
-                position: [-2.0, 1.5],
+                position: [-1.0, 1.5],
                 color: [0.94, 0.47, 0.0],
             },
             Vertex {
