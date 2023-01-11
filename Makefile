@@ -1,5 +1,5 @@
 docs:
-	cd docs && cargo-server --open --port 4000
+	cd docs && cargo server --open --port 4000
 
 run:
 	cargo run --release
@@ -20,7 +20,7 @@ watch:
 	cargo watch -- cargo run
 
 install:
-	cargo install ou
+	cargo install cargo-server
 	cargo install cargo-bundle
 	cargo install cargo-watch
 	cargo build --release
