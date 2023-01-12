@@ -1,6 +1,7 @@
 use core::num::NonZeroU64;
 use std::num::NonZeroU32;
 
+#[allow(dead_code)]
 pub struct Cache {
     texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
@@ -44,6 +45,7 @@ impl Cache {
         }
     }
 
+    #[allow(dead_code)]
     pub fn update(
         &mut self,
         device: &wgpu::Device,
