@@ -23,7 +23,7 @@ pub struct Term {
     uniform_layout: wgpu::BindGroupLayout,
     uniforms: wgpu::BindGroup,
     transform: wgpu::Buffer,
-    // current_transform: [f32; 16],
+    current_transform: [f32; 16],
     text_scroll: f32,
 }
 
@@ -153,6 +153,8 @@ impl Term {
             &cache.view,
         );
 
+        let current_transform = Self::projection(size.width, size.height);
+
         Ok(Term {
             device,
             surface,
@@ -165,6 +167,7 @@ impl Term {
             cache,
             uniforms,
             uniform_layout,
+            current_transform,
             transform,
             text_scroll: 1.0,
         })
@@ -199,26 +202,6 @@ impl Term {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Redraw"),
             })
-    }
-
-    #[inline]
-    fn clear_frame<'a>(
-        &'a self,
-        encoder: &'a mut wgpu::CommandEncoder,
-        view: &'a wgpu::TextureView,
-    ) -> wgpu::RenderPass {
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Term -> Clear frame"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        })
     }
 
     #[inline]
@@ -263,17 +246,16 @@ impl Term {
             })
     }
 
-    pub fn projection(width: u32, height: u32) -> [f32; 16] {
+    #[inline]
+    fn projection(width: u32, height: u32) -> [f32; 16] {
         // [2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
-        let h = (height as f32) / 1000.0;
+        let h = (height as f32) / 10000.0;
         let w = (width as f32) / 1000.0;
-        // println!("{:?}", h);
-
         [
             w, 0.0, 0.0, 0.0,
-            w - 1.0, 1.0, h, 0.0,
-            w - 1.0, 0.0, 1.0, 0.0,
+            w - 0.89, 0.89 + h, 0.0, 0.0,
+            w - 0.89, 0.89 + h, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0,
         ]
     }
@@ -320,7 +302,9 @@ impl Term {
         let render_pipeline = self.create_render_pipeline();
 
         {
-            // if self.transform != self.current_transform {
+            let new_transform = Self::projection(self.size.width, self.size.height);
+
+            if new_transform != self.current_transform {
                 let mut transform_view = self.staging_belt.write_buffer(
                     &mut encoder,
                     &self.transform,
@@ -329,14 +313,10 @@ impl Term {
                     &self.device,
                 );
 
-                let new_transform = Self::projection(self.size.width, self.size.height);
-
-                // println!("{:?}", new_transform);
-
                 transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
 
-                // self.current_transform = self.transform;
-            // }
+                self.current_transform = new_transform;
+            }
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Term -> Clear frame"),
