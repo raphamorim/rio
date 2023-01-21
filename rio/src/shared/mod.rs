@@ -7,9 +7,6 @@ pub const FONT_FIRA_MONO: &[u8; 170204] =
     include_bytes!("./fonts/Fira_Mono/FiraMono-Regular.ttf");
 
 // Terminal W/H contraints
-pub const DEFAULT_WINDOW_HEIGHT: i32 = 400;
-pub const DEFAULT_WINDOW_WIDTH: i32 = 600;
-
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 400;
 
