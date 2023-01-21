@@ -41,22 +41,47 @@ The configuration should be the following paths otherwise Rio will use the defau
 #### config.toml
 
 ```toml
-# Rio configuration file
+performance = "High"
+height = 400
+width = 600
+```
 
+### List
+
+#### Perfomance
+
+- High: Adapter that has the highest performance. This is often a discrete GPU.
+- Low: Adapter that uses the least possible power. This is often an integrated GPU.
+
+See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
+
+```toml
 # <performance> Set WGPU rendering perfomance
 # default: High
-# options: High, Average, Low
+# options: High, Low
+# High: Adapter that has the highest performance. This is often a discrete GPU.
+# Low: Adapter that uses the least possible power. This is often an integrated GPU.
 performance = "High"
+```
 
+### Height
+
+Sets terminal window height
+
+```toml
 # <height> Set default height
 # default: 400
 height = 400
+```
 
+### Width
+
+Sets terminal window width
+
+```toml
 # <width> Set default width
-# default: 600
+# default: 400
 width = 600
-
-## TODO: Add more configs
 ```
 
 ## TODO
