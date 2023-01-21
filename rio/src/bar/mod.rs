@@ -42,30 +42,37 @@ impl BarBrush {
     pub fn new(
         device: &dyn wgpu::util::DeviceExt,
         shader: wgpu::ShaderModule,
-    ) -> BarBrush {
+        scale: f32,
+    ) -> Self {
         let vertices: &[Vertex] = &[
             Vertex {
-                position: [-1.0, 1.5],
+                // position: [-1.0, 1.5],
+                position: [-2.0 / scale, 1.6],
                 color: [0.94, 0.47, 0.0],
             },
             Vertex {
-                position: [-2.0, 0.83],
+                // position: [-2.0, 0.83],
+                position: [-4.0 / scale, 0.832],
                 color: [0.5, 0.0, 0.5],
             },
             Vertex {
-                position: [2.0, 0.83],
+                // position: [2.0, 0.83],
+                position: [4.0 / scale, 0.832],
                 color: [0.94, 0.47, 0.0],
             },
             Vertex {
-                position: [-2.0, 2.0],
+                // position: [-2.0, 2.0],
+                position: [-4.0 / scale, 2.0],
                 color: [0.827, 0.317, 0.0],
             },
             Vertex {
-                position: [-2.0, 0.87],
+                // position: [-2.0, 0.87],
+                position: [-4.0 / scale, 0.86],
                 color: [0.5, 0.0, 0.5],
             },
             Vertex {
-                position: [2.0, 0.87],
+                // position: [2.0, 0.87],
+                position: [4.0 / scale, 0.86],
                 color: [0.827, 0.317, 0.0],
             },
         ];
