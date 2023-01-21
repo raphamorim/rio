@@ -36,14 +36,20 @@ const IDENTITY_MATRIX: [f32; 16] = [
 impl Term {
     pub async fn new(
         winit_window: &winit::window::Window,
+        config: &config::Config,
     ) -> Result<Term, Box<dyn Error>> {
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(&winit_window) };
 
+        let power_preference: wgpu::PowerPreference = match config.performance {
+            config::Performance::High => wgpu::PowerPreference::HighPerformance,
+            config::Performance::Low => wgpu::PowerPreference::LowPower,
+        };
+
         let (device, queue) = (async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    power_preference,
                     compatible_surface: Some(&surface),
                     force_fallback_adapter: false,
                 })

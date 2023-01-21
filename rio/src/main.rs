@@ -6,6 +6,7 @@ mod text;
 mod window;
 
 use crate::term::Term;
+use config::Config;
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
@@ -20,9 +21,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let window_builder = window::create_window_builder("Rio");
     let winit_window = window_builder.build(&event_loop).unwrap();
 
-    std::env::set_var("TERM", "xterm-256color");
+    let config = Config::load_macos();
 
-    // todo: read from config
+    std::env::set_var("TERM", "xterm-256color");
     let shell: String = match std::env::var("SHELL") {
         Ok(val) => val,
         Err(..) => String::from("bash"),
@@ -30,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (process, mut w_process, _pid) =
         pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
 
-    let mut rio: Term = match Term::new(&winit_window).await {
+    let mut rio: Term = match Term::new(&winit_window, &config).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
             panic!("couldn't create Rio terminal {}", e);
