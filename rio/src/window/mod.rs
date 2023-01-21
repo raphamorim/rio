@@ -3,11 +3,13 @@ pub mod input;
 mod keys;
 
 use crate::shared::{
-    DEFAULT_MINIMUM_WINDOW_HEIGHT, DEFAULT_MINIMUM_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
-    DEFAULT_WINDOW_WIDTH, LOGO_ICON,
+    DEFAULT_MINIMUM_WINDOW_HEIGHT, DEFAULT_MINIMUM_WINDOW_WIDTH, LOGO_ICON,
 };
 
-pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
+pub fn create_window_builder(
+    title: &str,
+    size: (u16, u16),
+) -> winit::window::WindowBuilder {
     use winit::window::Icon;
 
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
@@ -21,8 +23,8 @@ pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
-            width: DEFAULT_WINDOW_WIDTH,
-            height: DEFAULT_WINDOW_HEIGHT,
+            width: size.0,
+            height: size.1,
         })
         .with_min_inner_size(winit::dpi::LogicalSize {
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,
