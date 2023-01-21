@@ -21,6 +21,14 @@ pub const DEFAULT_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
+#[allow(dead_code)]
+pub const WHITE: wgpu::Color = wgpu::Color {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
+
 // #d35100 (todo)
 // #F8A145 (todo)
 // #F07900 (todo)

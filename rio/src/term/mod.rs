@@ -18,6 +18,7 @@ pub struct Term {
     staging_belt: wgpu::util::StagingBelt,
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
+    scale: f32,
     bar: BarBrush,
     #[allow(dead_code)]
     cache: Cache,
@@ -58,6 +59,7 @@ impl Term {
 
         let staging_belt = wgpu::util::StagingBelt::new(64);
         let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
+
         let size = winit_window.inner_size();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -65,7 +67,8 @@ impl Term {
             source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
         });
 
-        let bar: BarBrush = BarBrush::new(&device, shader);
+        let scale = winit_window.scale_factor() as f32;
+        let bar: BarBrush = BarBrush::new(&device, shader, scale);
 
         surface.configure(
             &device,
@@ -156,6 +159,7 @@ impl Term {
             staging_belt,
             text_brush,
             size,
+            scale,
             render_format,
             bar,
             queue,
@@ -174,6 +178,28 @@ impl Term {
         self.configure_surface();
     }
 
+    // https://docs.rs/winit/latest/winit/dpi/
+    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.scale = new_scale;
+        self.size = new_size;
+
+        self.configure_surface();
+
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
+            });
+
+        self.bar = BarBrush::new(&self.device, shader, self.scale);
+    }
+
+    pub fn get_scale(&self) -> f32 {
+        self.scale
+    }
+
+    #[inline]
     fn configure_surface(&mut self) {
         self.surface.configure(
             &self.device,
@@ -349,11 +375,17 @@ impl Term {
 
         {
             self.text_brush.queue(Section {
-                screen_position: (24.0, 120.0 - self.text_scroll),
-                bounds: ((self.size.width - 40) as f32, self.size.height as f32),
+                screen_position: (
+                    12.0 * self.scale,
+                    (60.0 * self.scale) - self.text_scroll,
+                ),
+                bounds: (
+                    (self.size.width as f32) - (40.0 * self.scale),
+                    (self.size.height as f32) * self.scale,
+                ),
                 text: vec![Text::new(&output.lock().unwrap())
                     .with_color([1.0, 1.0, 1.0, 1.0])
-                    .with_scale(36.0)],
+                    .with_scale(18.0 * self.scale)],
                 ..Section::default()
             });
 

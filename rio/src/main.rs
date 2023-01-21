@@ -126,6 +126,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 winit_window.request_redraw();
             }
 
+            event::Event::WindowEvent {
+                event:
+                    event::WindowEvent::ScaleFactorChanged {
+                        new_inner_size,
+                        scale_factor,
+                    },
+                ..
+            } => {
+                let scale_factor_f32 = scale_factor as f32;
+                if rio.get_scale() != scale_factor_f32 {
+                    rio.set_scale(scale_factor_f32, *new_inner_size);
+                }
+            }
+
             event::Event::MainEventsCleared { .. } => {
                 winit_window.request_redraw();
             }
