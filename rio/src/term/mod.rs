@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 pub struct Term {
+    font_size: f32,
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
@@ -160,6 +161,8 @@ impl Term {
         let current_transform = Self::projection(size.width, size.height);
 
         Ok(Term {
+            // TODO: fix style propagation
+            font_size: config.style.font_size,
             device,
             surface,
             staging_belt,
@@ -391,7 +394,7 @@ impl Term {
                 ),
                 text: vec![Text::new(&output.lock().unwrap())
                     .with_color([1.0, 1.0, 1.0, 1.0])
-                    .with_scale(18.0 * self.scale)],
+                    .with_scale(self.font_size * self.scale)],
                 ..Section::default()
             });
 

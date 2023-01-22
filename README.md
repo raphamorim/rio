@@ -14,7 +14,7 @@ Basic features are under development for MacOs right now.
 
 | Platform | Development Status |
 | --- | --- |
-| MacOs | In development |
+| MacOs | In development 👷 |
 | Linux | Not started yet |
 | Windows | Not started yet |
 
@@ -84,14 +84,23 @@ Description: Set terminal window width.
 width = 600
 ```
 
-### Style
+### Colors
 
 - `background` - Set background color.
 
 ```toml
-[style]
+[colors]
 background = "#151515"
 cursor = "#8E12CC"
+```
+
+### Style
+
+- `font_size` - Set font size.
+
+```toml
+[style]
+font_size = 16.0
 ```
 
 
@@ -108,7 +117,7 @@ cursor = "#8E12CC"
 	- [ ] Render font with custom color, size and family
 	- [ ] Fix topbar when resize
 	- [ ] Keep rendering with intervals
-- [ ] Read and use configuration
+- [x] Read and use configuration
 - [ ] Keyboard input
 	- [ ] Alphabet keys (uppercase/lowcase)
 	- [x] Numbers keys

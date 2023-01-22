@@ -12,7 +12,12 @@ pub enum Performance {
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
-    background: String,
+    pub font_size: f32,
+}
+
+#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+pub struct Colors {
+    pub background: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -21,6 +26,7 @@ pub struct Config {
     pub width: u16,
     pub height: u16,
     pub style: Style,
+    pub colors: Colors,
 }
 
 impl Config {
@@ -58,9 +64,10 @@ impl Default for Config {
             performance: Performance::default(),
             width: 600,
             height: 400,
-            style: Style {
+            colors: Colors {
                 background: String::from("#151515"),
             },
+            style: Style { font_size: 16.0 },
         }
     }
 }
@@ -74,7 +81,8 @@ mod tests {
         performance: Performance,
         width: u16,
         height: u16,
-        style_background: String,
+        style_font_size: f32,
+        color_background: String,
     ) -> Config {
         let toml_str = format!(
             r#"
@@ -94,11 +102,14 @@ mod tests {
             width = {}
 
             [style]
+            font_size = {}
+
+            [colors]
             background = {:?}
 
             ## TODO: Add more configs
             "#,
-            performance, height, width, style_background
+            performance, height, width, style_font_size, color_background
         );
         let binding = format!("/tmp/{:?}-config.toml", performance);
         let file_name = binding.as_str();
@@ -115,15 +126,17 @@ mod tests {
             performance: Performance::High,
             width: 300,
             height: 200,
-            style: Style {
+            colors: Colors {
                 background: String::from("#151515"),
             },
+            style: Style { font_size: 18.0 },
         };
 
         let result = create_temporary_config(
             expected.performance,
             300,
             200,
+            18.0,
             String::from("#151515"),
         );
         assert_eq!(result, expected);
@@ -135,15 +148,17 @@ mod tests {
             performance: Performance::Low,
             width: 400,
             height: 400,
-            style: Style {
+            colors: Colors {
                 background: String::from("#151515"),
             },
+            style: Style { font_size: 22.0 },
         };
 
         let result = create_temporary_config(
             expected.performance,
             400,
             400,
+            22.0,
             String::from("#151515"),
         );
         assert_eq!(result, expected);
