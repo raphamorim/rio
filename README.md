@@ -38,7 +38,7 @@ The configuration should be the following paths otherwise Rio will use the defau
 
 - macOs path: `~/.rio/config.toml`
 
-#### config.toml
+Example of `config.toml`:
 
 ```toml
 performance = "High"
@@ -46,9 +46,9 @@ height = 400
 width = 600
 ```
 
-### List
+### Perfomance
 
-#### Perfomance
+Description: Set terminal WGPU rendering perfomance.
 
 - High: Adapter that has the highest performance. This is often a discrete GPU.
 - Low: Adapter that uses the least possible power. This is often an integrated GPU.
@@ -66,7 +66,7 @@ performance = "High"
 
 ### Height
 
-Sets terminal window height
+Description: Set terminal window height.
 
 ```toml
 # <height> Set default height
@@ -76,13 +76,25 @@ height = 400
 
 ### Width
 
-Sets terminal window width
+Description: Set terminal window width.
 
 ```toml
 # <width> Set default width
 # default: 400
 width = 600
 ```
+
+### Style
+
+- `background` - Set background color.
+
+```toml
+[style]
+background = "#151515"
+cursor = "#8E12CC"
+```
+
+
 
 ## TODO
 

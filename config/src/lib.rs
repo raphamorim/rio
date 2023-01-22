@@ -10,11 +10,17 @@ pub enum Performance {
     Low,
 }
 
+#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+pub struct Style {
+    background: String,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
     pub performance: Performance,
     pub width: u16,
     pub height: u16,
+    pub style: Style,
 }
 
 impl Config {
@@ -52,6 +58,9 @@ impl Default for Config {
             performance: Performance::default(),
             width: 600,
             height: 400,
+            style: Style {
+                background: String::from("#151515"),
+            },
         }
     }
 }
@@ -65,6 +74,7 @@ mod tests {
         performance: Performance,
         width: u16,
         height: u16,
+        style_background: String,
     ) -> Config {
         let toml_str = format!(
             r#"
@@ -83,9 +93,12 @@ mod tests {
             # default: 600
             width = {}
 
+            [style]
+            background = {:?}
+
             ## TODO: Add more configs
             "#,
-            performance, height, width
+            performance, height, width, style_background
         );
         let binding = format!("/tmp/{:?}-config.toml", performance);
         let file_name = binding.as_str();
@@ -102,12 +115,16 @@ mod tests {
             performance: Performance::High,
             width: 300,
             height: 200,
+            style: Style {
+                background: String::from("#151515"),
+            },
         };
 
         let result = create_temporary_config(
             expected.performance,
-            expected.width,
-            expected.height,
+            300,
+            200,
+            String::from("#151515"),
         );
         assert_eq!(result, expected);
     }
@@ -118,12 +135,16 @@ mod tests {
             performance: Performance::Low,
             width: 400,
             height: 400,
+            style: Style {
+                background: String::from("#151515"),
+            },
         };
 
         let result = create_temporary_config(
             expected.performance,
-            expected.width,
-            expected.height,
+            400,
+            400,
+            String::from("#151515"),
         );
         assert_eq!(result, expected);
     }
