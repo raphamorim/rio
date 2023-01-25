@@ -1,6 +1,6 @@
 [package]
 name = "rio"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "Minimal terminal application"
 authors = ["Raphael Amorim"]
@@ -23,7 +23,7 @@ identifier = "com.raphaelamorim.rio"
 icon = ["src/assets/images/logo.png"]
 version = "1.0.0"
 resources = ["./src/assets"]
-copyright = "Copyright (c) Raphael Amorim 2022. All rights reserved."
+copyright = "Copyright (c) Raphael Amorim 2023. All rights reserved."
 category = "Developer Tool"
 short_description = "Terminal App"
 long_description = """
