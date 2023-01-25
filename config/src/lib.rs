@@ -1,5 +1,7 @@
 use serde::Deserialize;
 use std::default::Default;
+use colors::Rgba;
+
 #[allow(unused_imports)]
 use std::io::Write;
 
