@@ -2,60 +2,77 @@ use regex::Regex;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Rgba {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8
+    red: f32,
+    green: f32,
+    blue: f32,
+    alpha: f32
 }
 
 impl Rgba {
-    fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+    fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
         Self {
-            r,
-            g,
-            b,
-            a
+            red,
+            green,
+            blue,
+            alpha
         }
     }
 
-    pub fn from_hex(hex: String) -> Self {
-        let hexCharacters = "a-f\\d";
-        let match3or4Hex = "#?[${hexCharacters}]{3}[${hexCharacters}]?";
-        let match6or8Hex = "#?[${hexCharacters}]{6}([${hexCharacters}]{2})?";
-        let nonHexChars = Regex::new(r"[^#${hexCharacters}]", "gi");
-        let validHexSize = Regex::new(r"^${match3or4Hex}$|^${match6or8Hex}$", 'i');
+    pub fn from_hex(mut hex: String) -> Result<Self, String> {
+        let _match3or4_hex = "#?[a-f\\d]{3}[a-f\\d]?";
+        let _match6or8_hex = "#?[a-f\\d]{6}([a-f\\d]{2})?";
+        let non_hex_chars = Regex::new(r"(?i)[^#a-f\\0-9]").unwrap();
 
-        if (typeof hex !== "string" || nonHexChars.test(hex) || !validHexSize.test(hex)) {
-            return Rgba::default();
+        // ^#?[a-f\\d]{3}[a-f\\d]?$|^#?[a-f\\d]{6}([a-f\\d]{2})?$ , "i"
+        let valid_hex_size = Regex::new(r"(?i)^#?[a-f\\0-9]{6}([a-f]\\0-9]{2})?$").unwrap();
+
+        if non_hex_chars.is_match(&hex) {
+            return Err(String::from("Error: Character is not valid"));
         }
 
-        hex = hex.replace(/^#/, '');
-        let alphaFromHex = 1;
-
-        if (hex.length === 8) {
-         alphaFromHex = Number.parseInt(hex.slice(6, 8), 16) / 255;
-         hex = hex.slice(0, 6);
+        if !valid_hex_size.is_match(&hex) {
+            return Err(String::from("Error: Hex String size is not valid"));
         }
 
-        if (hex.length === 4) {
-         alphaFromHex = Number.parseInt(hex.slice(3, 4).repeat(2), 16) / 255;
-         hex = hex.slice(0, 3);
+        hex = hex.replace("#", "");
+        let mut alpha_from_hex: i32 = 1;
+
+        if hex.len() == 6 {
+            // split_at(6, 8)
+            println!("{:?}", hex);
+            // let alpha = hex.split_at(6).1.to_string();
+            // let alpha_i32:i32 = alpha.parse::<i32>().unwrap(); 
+            // alpha_from_hex = alpha_i32 / 255;
+            // hex = hex.split_at(1).0.to_string();
+
+            println!("{:?}", hex)
         }
 
-        if (hex.length === 3) {
-         hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-        }
+        // if hex.len() == 4 {
+        //  alpha_from_hex = Number.parseInt(hex.slice(3, 4).repeat(2), 16) / 255;
+        //  hex = hex.slice(0, 3);
+        // }
 
-        const number = Number.parseInt(hex, 16);
-        const red = number >> 16;
-        const green = (number >> 8) & 255;
-        const blue = number & 255;
-        const alpha = typeof options.alpha === "number" ? options.alpha : alphaFromHex;
+        // if hex.len() == 4 {
+        //  hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+        // }
+
+        let number = hex.parse::<i32>().unwrap();
+
+        println!("{:?}", number);
+        let red = number >> 16;
+        let green = (number >> 8) & 255;
+        let blue = number & 255;
+        // let alpha = typeof options.alpha === "number" ? options.alpha : alpha_from_hex;
 
 
-        Self {
-            r: 0, g: 0, b: 0, a: 0
-        }
+        Ok(Self {
+            red: red as f32, green: green as f32, blue: blue as f32, alpha: 1.0
+        })
+    }
+
+    pub fn to_string(&self) -> String {
+        std::format!("r: {:?}, g: {:?}, b: {:?}, a: {:?}", self.red, self.green, self.blue, self.alpha)
     }
 }
 
@@ -63,8 +80,14 @@ impl Default for Rgba {
     // #000000 Color Hex Black #000
     fn default() -> Self {
         Self {
-            r: 0, g: 0, b: 0, a: 0
+            red: 0.021, green: 0.021, blue: 0.021, alpha: 1.0
         }
+    }
+}
+
+impl std::fmt::Display for Rgba {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::Display::fmt(&self.to_string(), f)
     }
 }
 
@@ -104,11 +127,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn load_default_config() {
-        let color = Rgba::from_hex(String::from("#151515"));
+    fn conversion_from_hex_invalid_character() {
+        let invalid_character_color = match Rgba::from_hex(String::from("#invalid-color")) {
+            Ok(d) => {
+                d.to_string()
+            }
+            Err(e) => {
+                e
+            }
+        };
 
+        assert_eq!(invalid_character_color, "Error: Character is not valid");
+    }
+
+    #[test]
+    fn conversion_from_hex_invalid_size() {
+        let invalid_invalid_size = match Rgba::from_hex(String::from("abc")) {
+            Ok(d) => {
+                d.to_string()
+            }
+            Err(e) => {
+                e
+            }
+        };
+
+        assert_eq!(invalid_invalid_size, "Error: Hex String size is not valid");
+    }
+
+    #[test]
+    fn conversion_from_hex() {
+        let color = Rgba::from_hex(String::from("#000000")).unwrap();
         assert_eq!(color, Rgba {
-            r: 0, g: 0, b: 0, a: 0
+            red: 0.021, green: 0.021, blue: 0.021, alpha: 1.0
         });
     }
 }
