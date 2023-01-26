@@ -99,9 +99,9 @@ impl Default for Rgba {
     // #000000 Color Hex Black #000
     fn default() -> Self {
         Self {
-            red: 0.021,
-            green: 0.021,
-            blue: 0.021,
+            red: 0.0,
+            green: 0.0,
+            blue: 0.0,
             alpha: 1.0,
         }
     }
@@ -118,7 +118,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conversion_from_hex_invalid_character() {
+    fn test_conversion_from_hex_invalid_character() {
         let invalid_character_color = match Rgba::from_hex(String::from("#invalid-color"))
         {
             Ok(d) => d.to_string(),
@@ -129,7 +129,22 @@ mod tests {
     }
 
     #[test]
-    fn conversion_from_hex_invalid_size() {
+    fn test_default_color_as_black() {
+        let default_color: Rgba = Rgba::default();
+
+        assert_eq!(
+            Rgba {
+                red: 0.0,
+                green: 0.0,
+                blue: 0.0,
+                alpha: 1.0,
+            },
+            default_color
+        );
+    }
+
+    #[test]
+    fn test_conversion_from_hex_invalid_size() {
         let invalid_invalid_size = match Rgba::from_hex(String::from("abc")) {
             Ok(d) => d.to_string(),
             Err(e) => e,
@@ -139,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn conversion_from_hex() {
+    fn test_conversion_from_hex() {
         let color = Rgba::from_hex(String::from("#151515")).unwrap();
         assert_eq!(
             color,
