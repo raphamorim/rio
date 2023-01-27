@@ -1,4 +1,4 @@
-// use colors::Rgba;
+use colors::Rgba;
 use serde::Deserialize;
 use std::default::Default;
 
@@ -19,7 +19,8 @@ pub struct Style {
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct Colors {
-    pub background: String,
+    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    pub background: Rgba,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -67,7 +68,7 @@ impl Default for Config {
             width: 600,
             height: 400,
             colors: Colors {
-                background: String::from("#151515"),
+                background: Rgba::default(),
             },
             style: Style { font_size: 16.0 },
         }
@@ -129,7 +130,12 @@ mod tests {
             width: 300,
             height: 200,
             colors: Colors {
-                background: String::from("#151515"),
+                background: Rgba {
+                red: 0.021,
+                green: 0.021,
+                blue: 0.021,
+                alpha: 1.0
+            },
             },
             style: Style { font_size: 18.0 },
         };
@@ -151,7 +157,12 @@ mod tests {
             width: 400,
             height: 400,
             colors: Colors {
-                background: String::from("#151515"),
+                background: Rgba {
+                red: 0.0,
+                green: 0.0,
+                blue: 0.0,
+                alpha: 1.0
+            },
             },
             style: Style { font_size: 22.0 },
         };
@@ -161,7 +172,7 @@ mod tests {
             400,
             400,
             22.0,
-            String::from("#151515"),
+            String::from("#000000"),
         );
         assert_eq!(result, expected);
     }
