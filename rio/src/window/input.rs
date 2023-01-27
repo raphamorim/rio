@@ -162,7 +162,7 @@ impl Input {
 
     pub fn keydown(&mut self, keycode: u32, stream: &mut Process) {
         let code = self.physical_key_code_to_ansi(keycode);
-        println!("keydown {:?} {:?}", keycode, code);
+        println!("keydown {keycode:?} {code:?}");
 
         // match code {
         //     Ok(val) => {

@@ -1,5 +1,5 @@
-use serde::{de, Deserialize};
 use regex::Regex;
+use serde::{de, Deserialize};
 use std::num::ParseIntError;
 
 #[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
@@ -121,7 +121,7 @@ where
     let s: &str = de::Deserialize::deserialize(deserializer)?;
     match Rgba::from_hex(s.to_string()) {
         Ok(color) => Ok(color),
-        Err(e) => Err(serde::de::Error::custom(e))
+        Err(e) => Err(serde::de::Error::custom(e)),
     }
 }
 

@@ -8,7 +8,7 @@ fn main() {
     let stdin_channel = spawn_stdin_channel();
     loop {
         match stdin_channel.try_recv() {
-            Ok(key) => println!("Received: {}", key),
+            Ok(key) => println!("Received: {key}"),
             Err(TryRecvError::Empty) => println!("Channel empty"),
             Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
         }
