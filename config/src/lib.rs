@@ -49,7 +49,7 @@ impl Config {
         let base_dir_buffer = dirs::home_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();
 
-        let path = format!("{}/.rio/config.toml", base_dir);
+        let path = format!("{base_dir}/.rio/config.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             let decoded: Config =
@@ -94,31 +94,30 @@ mod tests {
             # <performance> Set WGPU rendering performance
             # default: High
             # options: High, Low
-            performance = "{:?}"
+            performance = "{performance:?}"
 
             # <height> Set default height
             # default: 400
-            height = {}
+            height = {height}
 
             # <width> Set default width
             # default: 600
-            width = {}
+            width = {width}
 
             [style]
-            font_size = {}
+            font_size = {style_font_size}
 
             [colors]
-            background = {:?}
+            background = {color_background:?}
 
             ## TODO: Add more configs
-            "#,
-            performance, height, width, style_font_size, color_background
+            "#
         );
-        let binding = format!("/tmp/{:?}-config.toml", performance);
+        let binding = format!("/tmp/{performance:?}-config.toml");
         let file_name = binding.as_str();
 
         let mut file = std::fs::File::create(file_name).unwrap();
-        writeln!(file, "{}", toml_str).unwrap(); // writing using the macro 'writeln!'``
+        writeln!(file, "{toml_str}").unwrap(); // writing using the macro 'writeln!'``
 
         Config::load_from_path(file_name) // load_from_path should just call load() with a custom path
     }
@@ -131,11 +130,11 @@ mod tests {
             height: 200,
             colors: Colors {
                 background: Rgba {
-                red: 0.021,
-                green: 0.021,
-                blue: 0.021,
-                alpha: 1.0
-            },
+                    red: 0.021,
+                    green: 0.021,
+                    blue: 0.021,
+                    alpha: 1.0,
+                },
             },
             style: Style { font_size: 18.0 },
         };
@@ -158,11 +157,11 @@ mod tests {
             height: 400,
             colors: Colors {
                 background: Rgba {
-                red: 0.0,
-                green: 0.0,
-                blue: 0.0,
-                alpha: 1.0
-            },
+                    red: 0.0,
+                    green: 0.0,
+                    blue: 0.0,
+                    alpha: 1.0,
+                },
             },
             style: Style { font_size: 22.0 },
         };

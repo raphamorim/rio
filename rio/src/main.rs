@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut rio: Term = match Term::new(&winit_window, &config).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
-            panic!("couldn't create Rio terminal {}", e);
+            panic!("couldn't create Rio terminal {e}");
         }
     };
 

@@ -13,7 +13,7 @@ fn main() -> std::io::Result<()> {
 
     let shell = Cow::Borrowed("bash");
     let (process, mut w, pid) = pty(&shell, COLS as u16, ROWS as u16);
-    println!("{:?}", pid);
+    println!("{pid:?}");
 
     w.write_all(b"1").unwrap();
     w.write_all(b"2").unwrap();
