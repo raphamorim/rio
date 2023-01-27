@@ -14,6 +14,7 @@ image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
 vte = "0.11.0"
 tty = { path = "../tty" }
+colors = { path = "../colors" }
 config = { path = "../config" }
 
 [package.metadata.bundle]

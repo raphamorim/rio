@@ -1,12 +1,13 @@
+use serde::{de, Deserialize};
 use regex::Regex;
 use std::num::ParseIntError;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
 pub struct Rgba {
-    red: f32,
-    green: f32,
-    blue: f32,
-    alpha: f32,
+    pub red: f32,
+    pub green: f32,
+    pub blue: f32,
+    pub alpha: f32,
 }
 
 impl Rgba {
@@ -110,6 +111,17 @@ impl Default for Rgba {
 impl std::fmt::Display for Rgba {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         std::fmt::Display::fmt(&self.format_string(), f)
+    }
+}
+
+pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Rgba, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let s: &str = de::Deserialize::deserialize(deserializer)?;
+    match Rgba::from_hex(s.to_string()) {
+        Ok(color) => Ok(color),
+        Err(e) => Err(serde::de::Error::custom(e))
     }
 }
 
