@@ -16,6 +16,7 @@ vte = "0.11.0"
 tty = { path = "../tty" }
 colors = { path = "../colors" }
 config = { path = "../config" }
+crosswords = { path = "../crosswords" }
 
 [package.metadata.bundle]
 name = "Rio"

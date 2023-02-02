@@ -1,48 +1,63 @@
+mod control;
+pub mod cell;
+
+use crate::ansi::cell::Cell;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tty::Process;
+use control::C0;
+use crosswords::Crossword;
 
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser, Perform};
 
 struct Log<'a> {
     message: &'a Arc<Mutex<String>>,
+    grid: Grid
 }
 
 impl Log<'_> {
-    fn new(message: &Arc<Mutex<String>>) -> Log {
-        Log { message }
+    fn new(message: &Arc<Mutex<String>>, grid: Grid) -> Log<> {
+        Log { message, grid }
     }
 }
 
 impl Perform for Log<'_> {
     fn print(&mut self, c: char) {
-        println!("[print] {c:?}");
-        let s = &mut *self.message.lock().unwrap();
-        s.push(c);
+        // println!("[print] {c:?}");
+        Grid::input(c);
+        // let s = &mut *self.message.lock().unwrap();
+        // s.push(c);
     }
 
     fn execute(&mut self, byte: u8) {
         println!("[execute] {byte:04x}");
 
-        if byte == 0x08 {
-            let mut s = self.message.lock().unwrap();
-            s.pop();
-            *s = s.to_string();
-            return;
-        }
-
-        let c = match byte {
-            0x0a => "\n",
-            // 0x08 => "\u{8}",
-            0x09 => "  ",
-            _ => "",
-        };
-
-        if !c.is_empty() {
-            let s = &mut *self.message.lock().unwrap();
-            s.push_str(c);
+        match byte {
+            C0::HT => {
+                // TODO: Insert tab at cursor position
+                // self.handler.put_tab(1)
+                let s = &mut *self.message.lock().unwrap();
+                s.push_str(" ");
+            },
+            C0::BS => {
+                // TODO: Move back cursor
+                let mut s = self.message.lock().unwrap();
+                s.pop();
+                *s = s.to_string()
+            },
+            // C0::CR => self.handler.carriage_return(),
+            C0::LF | C0::VT | C0::FF => {
+                // TODO: add new line
+                let s = &mut *self.message.lock().unwrap();
+                s.push_str("\n");
+            },
+            // C0::BEL => self.handler.bell(),
+            // C0::SUB => self.handler.substitute(),
+            // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
+            // C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
+            _ => println!("[unhandled] execute byte={:02x}", byte),
         }
     }
 
@@ -104,8 +119,9 @@ impl Perform for Log<'_> {
 pub fn process(process: Process, arc_m: &Arc<Mutex<String>>) {
     let reader = BufReader::new(process);
 
+    let mut grid: Crosswords = Crosswords::new();
     let mut statemachine = Parser::new();
-    let mut performer = Log::new(arc_m);
+    let mut performer = Log::new(arc_m, grid);
 
     for byte in reader.bytes() {
         statemachine.advance(&mut performer, *byte.as_ref().unwrap());

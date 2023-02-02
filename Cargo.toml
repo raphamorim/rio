@@ -3,6 +3,7 @@ members = [
   "tty",
   "colors",
   "config",
+  "crosswords",
   "rio"
 ]
 resolver = "2"
