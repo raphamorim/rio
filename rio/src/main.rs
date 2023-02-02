@@ -1,5 +1,6 @@
 mod ansi;
 mod bar;
+mod grid;
 mod shared;
 mod term;
 mod text;
