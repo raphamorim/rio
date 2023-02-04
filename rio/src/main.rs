@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let message = Arc::clone(&output);
     tokio::spawn(async move {
-        crate::ansi::process(process, &message);
+        crate::ansi::process(process, &message, config);
     });
 
     let mut is_focused = true;

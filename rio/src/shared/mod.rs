@@ -3,7 +3,10 @@ pub mod gpu;
 pub const LOGO_ICON: &[u8; 102762] = include_bytes!("./images/logo.ico");
 
 pub const FONT_FIRA_MONO: &[u8; 170204] =
-    include_bytes!("./fonts/Fira_Mono/FiraMono-Regular.ttf");
+    include_bytes!("./fonts/FiraMono/FiraMono-Regular.ttf");
+
+pub const FONT_BRASS_MONO: &[u8; 39008] =
+    include_bytes!("./fonts/BrassMono/BrassMono-Regular.otf");
 
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
@@ -14,6 +17,15 @@ pub const DEFAULT_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
     r: 0.021,
     g: 0.021,
     b: 0.021,
+    a: 1.0,
+};
+
+// #19242f
+// rgb(25,36,47)
+pub const LUCARIO_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
+    r: 0.025,
+    g: 0.036,
+    b: 0.047,
     a: 1.0,
 };
 

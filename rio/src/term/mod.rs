@@ -4,6 +4,7 @@ use crate::bar::{self, BarBrush};
 use crate::shared;
 use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 use cache::Cache;
+use config::Style;
 use core::num::NonZeroU64;
 use std::error::Error;
 use std::mem;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 pub struct Term {
-    font_size: f32,
+    style: Style,
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
@@ -88,7 +89,15 @@ impl Term {
             },
         );
 
-        let font = ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?;
+        let font = match config.style.theme {
+            config::Theme::Modern => {
+                ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?
+            }
+            config::Theme::Lucario => {
+                ab_glyph::FontArc::try_from_slice(shared::FONT_BRASS_MONO)?
+            }
+        };
+
         let text_brush =
             GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
@@ -161,8 +170,7 @@ impl Term {
         let current_transform = Self::projection(size.width, size.height);
 
         Ok(Term {
-            // TODO: fix style propagation
-            font_size: config.style.font_size,
+            style: config.style,
             device,
             surface,
             staging_belt,
@@ -194,14 +202,18 @@ impl Term {
 
         self.configure_surface();
 
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
-            });
+        if self.is_modern() {
+            let shader = self
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("Shader"),
+                    source: wgpu::ShaderSource::Wgsl(
+                        include_str!("../bar/bar.wgsl").into(),
+                    ),
+                });
 
-        self.bar = BarBrush::new(&self.device, shader, self.scale);
+            self.bar = BarBrush::new(&self.device, shader, self.scale);
+        }
     }
 
     pub fn get_scale(&self) -> f32 {
@@ -331,6 +343,11 @@ impl Term {
         })
     }
 
+    #[inline]
+    fn is_modern(&self) -> bool {
+        self.style.theme == config::Theme::Modern
+    }
+
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
         let mut encoder = self.create_encoder();
 
@@ -358,6 +375,12 @@ impl Term {
                 self.current_transform = new_transform;
             }
 
+            let bg_color = if self.is_modern() {
+                shared::DEFAULT_COLOR_BACKGROUND
+            } else {
+                shared::LUCARIO_COLOR_BACKGROUND
+            };
+
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Term -> Clear frame"),
@@ -365,28 +388,31 @@ impl Term {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
+                            load: wgpu::LoadOp::Clear(bg_color),
                             store: true,
                         },
                     })],
                     depth_stencil_attachment: None,
                 });
 
-            render_pass.set_pipeline(&render_pipeline);
-            render_pass.set_bind_group(0, &self.uniforms, &[]);
-            render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
-            render_pass.set_index_buffer(
-                self.bar.buffers.1.slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-            render_pass.draw(0..self.bar.num_indices, 0..1);
+            if self.is_modern() {
+                render_pass.set_pipeline(&render_pipeline);
+                render_pass.set_bind_group(0, &self.uniforms, &[]);
+                render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
+                render_pass.set_index_buffer(
+                    self.bar.buffers.1.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw(0..self.bar.num_indices, 0..1);
+            }
         }
 
+        let yspacing = if self.is_modern() { 60.0 } else { 50.0 };
         {
             self.text_brush.queue(Section {
                 screen_position: (
                     12.0 * self.scale,
-                    (60.0 * self.scale) - self.text_scroll,
+                    (yspacing * self.scale) - self.text_scroll,
                 ),
                 bounds: (
                     (self.size.width as f32) - (40.0 * self.scale),
@@ -394,7 +420,7 @@ impl Term {
                 ),
                 text: vec![Text::new(&output.lock().unwrap())
                     .with_color([1.0, 1.0, 1.0, 1.0])
-                    .with_scale(self.font_size * self.scale)],
+                    .with_scale(self.style.font_size * self.scale)],
                 ..Section::default()
             });
 
