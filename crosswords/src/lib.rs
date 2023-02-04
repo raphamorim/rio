@@ -7,29 +7,28 @@
     |----------------------------------|
     |----------------------------------|
     |----------------------------------|
+    |----------------------------------|
+    |----------------------------------|
+
 */
 
-pub mod cell;
+pub mod row;
+pub mod square;
+pub mod pos;
+pub mod storage;
+pub mod dimensions;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct CursorLocation {
-    row: u16,
-    col: u16
-}
+use crate::storage::Storage;
+use crate::row::Row;
+use std::ops::{Index, IndexMut};
+use pos::{Pos, Cursor, Line, Column};
+use square::Square;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Cursor {
-    pub location: CursorLocation,
-
-    // Template cell when using this cursor.
-    // pub template: T,
-}
-
-// impl<T: std::default::Default> Default for Cursor {
+// impl<T: Default> Default for Cursor<T> {
 //     // #000000 Color Hex Black #000
 //     fn default() -> Self {
 //         Self {
-//             location: CursorLocation {
+//             pos: Pos {
 //              row: 0,
 //              col: 0,
 //             },
@@ -38,21 +37,59 @@ pub struct Cursor {
 //     }
 // }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Grid {
-    rows: u16,
-    cols: u16,
-    cursor: Cursor,
+#[derive(Debug, Clone)]
+pub struct Crosswords<T> {
+    rows: usize,
+    cols: usize,
+    raw: Storage<T>,
+    cursor: Cursor<T>,
     // scroll:  
 }
 
-impl Grid {
-    pub fn new() -> Grid {
-        Grid {
-            cols: 80,
-            rows: 25,
+impl<T> Index<Line> for Crosswords<T> {
+    type Output = Row<T>;
+
+    #[inline]
+    fn index(&self, index: Line) -> &Row<T> {
+        &self.raw[index]
+    }
+}
+
+impl<T> IndexMut<Line> for Crosswords<T> {
+    #[inline]
+    fn index_mut(&mut self, index: Line) -> &mut Row<T> {
+        &mut self.raw[index]
+    }
+}
+
+impl<T> Index<Pos> for Crosswords<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, pos: Pos) -> &T {
+        &self[pos.row][pos.col]
+    }
+}
+
+impl<T> IndexMut<Pos> for Crosswords<T> {
+    #[inline]
+    fn index_mut(&mut self, pos: Pos) -> &mut T {
+        &mut self[pos.row][pos.col]
+    }
+}
+
+impl<T: Default + PartialEq + Clone> Crosswords<T> {
+    pub fn new(rows: usize, cols: usize) -> Crosswords<T> {
+        Crosswords::<T> {
+            cols,
+            rows,
+            raw: Storage::with_capacity(rows, cols),
             cursor: Cursor::default()
         }
+    }
+
+    pub fn lines(&mut self) -> usize {
+        self.raw.len()
     }
 
     pub fn input(&mut self, c: char) {
@@ -62,12 +99,16 @@ impl Grid {
         // Calculate if can be render in the row, otherwise break to next col
         // self[row][col].push_zerowidth(c);
 
-        self.cursor.location.col += 1;
+        self.cursor.pos.col += 1;
     }
 
     pub fn feedline(&mut self, c: char) {
-        self.cursor.location.row += 1;
+        self.cursor.pos.row += 1;
     }
+
+    // pub fn to_arr_u8(&mut self, row: Line) -> Row<T> {
+        // self.raw[row]
+    // }
 }
 
 #[cfg(test)]
@@ -76,13 +117,28 @@ mod tests {
 
     #[test]
     fn test_feedline() {
-        // let mut grid: Grid<Cell> = Grid::new(1, 5, 0);
-        // for i in 0..5 {
-        //     grid[Line(0)][Column(i)].c = 'a';
-        // }
-        // grid[Line(0)][Column(0)].c = '"';
-        // grid[Line(0)][Column(3)].c = '"';        
+        let mut cw: Crosswords<Square> = Crosswords::new(1, 3);
+        assert_eq!(cw.lines(), 1);
 
-        // assert_eq!(invalid_character_color, "Error: Character is not valid");
+        cw.feedline('"');
+        // assert_eq!(cw.lines(), 2);
+    }
+
+    #[ignore]
+    #[test]
+    fn test_input() {
+        let mut cw: Crosswords<Square> = Crosswords::new(1, 5);
+        // println!("{:?}", cw);
+        for i in 0..5 {
+            cw[Line(0)][Column(i)].c = 'a';
+        }
+        // grid[Pos { row: 0, col: 0 }].c = '"';
+        cw[Line(0)][Column(3)].c = '"';        
+
+        // println!("{:?}", cw[Line(0)][Column(1)]);
+        // println!("{:?}", cw[Line(0)]);
+        // println!("{:?}", cw.to_arr_u8(Line(0)));
+
+        assert_eq!("1", "Error: Character is not valid");
     }
 }
