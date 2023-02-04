@@ -68,7 +68,12 @@ impl<T> Storage<T> {
         let mut inner = Vec::with_capacity(visible_lines);
         inner.resize_with(visible_lines, || Row::new(columns));
 
-        Storage { inner, zero: 0, visible_lines, len: visible_lines }
+        Storage {
+            inner,
+            zero: 0,
+            visible_lines,
+            len: visible_lines,
+        }
     }
 
     /// Increase the number of lines in the buffer.
@@ -346,7 +351,9 @@ mod tests {
             visible_lines: 4,
             len: 4,
         };
-        expected.inner.append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        expected
+            .inner
+            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -387,7 +394,9 @@ mod tests {
             visible_lines: 4,
             len: 4,
         };
-        expected.inner.append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        expected
+            .inner
+            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -720,7 +729,12 @@ mod tests {
         ];
         let expected_init_size = std::cmp::max(init_size, MAX_CACHE_SIZE);
         expected_inner.append(&mut vec![filled_row('\0'); expected_init_size]);
-        let expected_storage = Storage { inner: expected_inner, zero: 0, visible_lines: 0, len: 9 };
+        let expected_storage = Storage {
+            inner: expected_inner,
+            zero: 0,
+            visible_lines: 0,
+            len: 9,
+        };
 
         assert_eq!(storage.len, expected_storage.len);
         assert_eq!(storage.zero, expected_storage.zero);

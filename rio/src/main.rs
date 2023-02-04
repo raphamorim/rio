@@ -1,6 +1,5 @@
 mod ansi;
 mod bar;
-mod grid;
 mod shared;
 mod term;
 mod text;
@@ -12,7 +11,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::{pty, COLS, ROWS};
+use tty::pty;
 use winit::{event, event_loop};
 
 #[tokio::main]
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Err(..) => String::from("bash"),
     };
     let (process, mut w_process, _pid) =
-        pty(&Cow::Borrowed(&shell), COLS as u16, ROWS as u16);
+        pty(&Cow::Borrowed(&shell), config.columns, config.rows);
 
     let mut rio: Term = match Term::new(&winit_window, &config).await {
         Ok(term_instance) => term_instance,

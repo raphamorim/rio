@@ -6,10 +6,6 @@ use std::ops::Deref;
 use std::ptr;
 use std::sync::Arc;
 
-// Default Terminal.App MacOs
-pub static COLS: u32 = 80;
-pub static ROWS: u32 = 25;
-
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
 #[cfg(target_os = "macos")]

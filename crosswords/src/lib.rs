@@ -12,17 +12,17 @@
 
 */
 
+pub mod dimensions;
+pub mod pos;
 pub mod row;
 pub mod square;
-pub mod pos;
 pub mod storage;
-pub mod dimensions;
 
-use crate::storage::Storage;
 use crate::row::Row;
-use std::ops::{Index, IndexMut};
-use pos::{Pos, Cursor, Line, Column};
+use crate::storage::Storage;
+use pos::{Column, Cursor, Line, Pos};
 use square::Square;
+use std::ops::{Index, IndexMut};
 
 // impl<T: Default> Default for Cursor<T> {
 //     // #000000 Color Hex Black #000
@@ -43,7 +43,7 @@ pub struct Crosswords<T> {
     cols: usize,
     raw: Storage<T>,
     cursor: Cursor<T>,
-    // scroll:  
+    // scroll:
 }
 
 impl<T> Index<Line> for Crosswords<T> {
@@ -84,7 +84,7 @@ impl<T: Default + PartialEq + Clone> Crosswords<T> {
             cols,
             rows,
             raw: Storage::with_capacity(rows, cols),
-            cursor: Cursor::default()
+            cursor: Cursor::default(),
         }
     }
 
@@ -107,7 +107,7 @@ impl<T: Default + PartialEq + Clone> Crosswords<T> {
     }
 
     // pub fn to_arr_u8(&mut self, row: Line) -> Row<T> {
-        // self.raw[row]
+    // self.raw[row]
     // }
 }
 
@@ -133,7 +133,7 @@ mod tests {
             cw[Line(0)][Column(i)].c = 'a';
         }
         // grid[Pos { row: 0, col: 0 }].c = '"';
-        cw[Line(0)][Column(3)].c = '"';        
+        cw[Line(0)][Column(3)].c = '"';
 
         // println!("{:?}", cw[Line(0)][Column(1)]);
         // println!("{:?}", cw[Line(0)]);

@@ -6,13 +6,13 @@ use std::io::Read;
 use std::io::Write;
 // use std::io::BufRead;
 use std::io::BufReader;
-use tty::{pty, COLS, ROWS};
+use tty::pty;
 
 fn main() -> std::io::Result<()> {
     env::set_var("TERM", "rio");
 
     let shell = Cow::Borrowed("bash");
-    let (process, mut w, pid) = pty(&shell, COLS as u16, ROWS as u16);
+    let (process, mut w, pid) = pty(&shell, 80, 25);
     println!("{pid:?}");
 
     w.write_all(b"1").unwrap();
