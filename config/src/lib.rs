@@ -16,9 +16,17 @@ pub enum Performance {
     Low,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Deserialize, Eq, PartialEq, Clone, Copy)]
+pub enum Theme {
+    Modern,
+    #[default]
+    Lucario,
+}
+
+#[derive(Default, Copy, Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
     pub font_size: f32,
+    pub theme: Theme,
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
@@ -95,7 +103,10 @@ impl Default for Config {
                     alpha: 1.0,
                 },
             },
-            style: Style { font_size: 16.0 },
+            style: Style {
+                font_size: 16.0,
+                theme: Theme::default(),
+            },
         }
     }
 }
@@ -108,12 +119,11 @@ mod tests {
     fn create_temporary_config(
         performance: Performance,
         default: (u16, u16, u16, u16),
-        #[allow(unused_parens)] style: (f32),
+        style: (f32, Theme),
         colors: (String, String, String),
     ) -> Config {
         let (width, height, columns, rows) = default;
-        #[allow(unused_parens)]
-        let (font_size) = style;
+        let (font_size, theme) = style;
         let (background, foreground, cursor) = colors;
 
         let toml_str = format!(
@@ -138,6 +148,7 @@ mod tests {
 
             [style]
             font_size = {font_size}
+            theme = {theme:?}
 
             [colors]
             background = {background:?}
@@ -184,14 +195,17 @@ mod tests {
                     alpha: 1.0,
                 },
             },
-            style: Style { font_size: 18.0 },
+            style: Style {
+                theme: Theme::Lucario,
+                font_size: 18.0,
+            },
         };
 
         let result = create_temporary_config(
             expected.performance,
             (300, 200, 80, 25),
             #[allow(unused_parens)]
-            (18.0),
+            (18.0, expected.style.theme),
             (
                 String::from("#000000"),
                 String::from("#FFFFFF"),
@@ -229,14 +243,17 @@ mod tests {
                     alpha: 1.0,
                 },
             },
-            style: Style { font_size: 22.0 },
+            style: Style {
+                theme: Theme::Lucario,
+                font_size: 22.0,
+            },
         };
 
         let result = create_temporary_config(
             expected.performance,
             (400, 400, 80, 25),
             #[allow(unused_parens)]
-            (22.0),
+            (22.0, expected.style.theme),
             (
                 String::from("#000000"),
                 String::from("#FFFFFF"),

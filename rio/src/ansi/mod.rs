@@ -1,5 +1,6 @@
 mod control;
 
+use config::Config;
 use control::C0;
 use crosswords::square::Square;
 use crosswords::Crosswords;
@@ -26,8 +27,8 @@ impl<T> Perform for Log<'_, T> {
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
         // self.term.input(c);
-        // let s = &mut *self.message.lock().unwrap();
-        // s.push(c);
+        let s = &mut *self.message.lock().unwrap();
+        s.push(c);
     }
 
     fn execute(&mut self, byte: u8) {
@@ -115,10 +116,11 @@ impl<T> Perform for Log<'_, T> {
 }
 
 // ■ ~ ▲
-pub fn process(process: Process, arc_m: &Arc<Mutex<String>>) {
+pub fn process(process: Process, arc_m: &Arc<Mutex<String>>, config: Config) {
     let reader = BufReader::new(process);
 
-    let mut grid: Crosswords<Square> = Crosswords::new(80, 25);
+    let grid: Crosswords<Square> =
+        Crosswords::new(config.columns.into(), config.rows.into());
     let mut statemachine = Parser::new();
     let mut performer = Log::new(arc_m, grid);
 
