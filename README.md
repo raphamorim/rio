@@ -84,6 +84,26 @@ Description: Set terminal window width.
 width = 600
 ```
 
+### Columns
+
+Description: Defines the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
+
+```toml
+# <width> Set default width
+# default: 80 (macOs)
+columns = 80
+```
+
+### Rows
+
+Description: Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
+
+```toml
+# <width> Set default width
+# default: 25 (macOs)
+rows = 25
+```
+
 ### Colors
 
 - `background` - Set background color.
@@ -92,6 +112,7 @@ width = 600
 [colors]
 background = "#151515"
 cursor = "#8E12CC"
+foreground = "#FFFFFF"
 ```
 
 ### Style
@@ -130,6 +151,7 @@ font_size = 16.0
 
 ## Reference && Credits
 
+- Grid system was built originally on Alacritty's code https://github.com/alacritty/alacritty/blob/766a3b5582fa8ee13506c0f23c9c145ff0012078/alacritty_terminal/src/grid/mod.rs
 - Text mod code is from with https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol

@@ -5,6 +5,10 @@ use std::default::Default;
 #[allow(unused_imports)]
 use std::io::Write;
 
+/// Default Terminal.App MacOs
+pub static COLS_MACOS: u16 = 80;
+pub static ROWS_MACOS: u16 = 25;
+
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
     #[default]
@@ -21,6 +25,10 @@ pub struct Style {
 pub struct Colors {
     #[serde(deserialize_with = "colors::deserialize_hex_string")]
     pub background: Rgba,
+    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    pub foreground: Rgba,
+    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    pub cursor: Rgba,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -28,6 +36,8 @@ pub struct Config {
     pub performance: Performance,
     pub width: u16,
     pub height: u16,
+    pub columns: u16,
+    pub rows: u16,
     pub style: Style,
     pub colors: Colors,
 }
@@ -67,8 +77,23 @@ impl Default for Config {
             performance: Performance::default(),
             width: 600,
             height: 400,
+            // MacOs default
+            columns: COLS_MACOS,
+            rows: ROWS_MACOS,
             colors: Colors {
                 background: Rgba::default(),
+                foreground: Rgba {
+                    red: 0.255,
+                    green: 0.255,
+                    blue: 0.255,
+                    alpha: 1.0,
+                },
+                cursor: Rgba {
+                    red: 0.142,
+                    green: 0.018,
+                    blue: 0.204,
+                    alpha: 1.0,
+                },
             },
             style: Style { font_size: 16.0 },
         }
@@ -82,11 +107,15 @@ mod tests {
     #[allow(dead_code)]
     fn create_temporary_config(
         performance: Performance,
-        width: u16,
-        height: u16,
-        style_font_size: f32,
-        color_background: String,
+        default: (u16, u16, u16, u16),
+        #[allow(unused_parens)] style: (f32),
+        colors: (String, String, String),
     ) -> Config {
+        let (width, height, columns, rows) = default;
+        #[allow(unused_parens)]
+        let (font_size) = style;
+        let (background, foreground, cursor) = colors;
+
         let toml_str = format!(
             r#"
             # Rio configuration file
@@ -104,11 +133,16 @@ mod tests {
             # default: 600
             width = {width}
 
+            columns = {columns}
+            rows = {rows}
+
             [style]
-            font_size = {style_font_size}
+            font_size = {font_size}
 
             [colors]
-            background = {color_background:?}
+            background = {background:?}
+            foreground = {foreground:?}
+            cursor = {cursor:?}
 
             ## TODO: Add more configs
             "#
@@ -128,11 +162,25 @@ mod tests {
             performance: Performance::High,
             width: 300,
             height: 200,
+            rows: 25,
+            columns: 80,
             colors: Colors {
                 background: Rgba {
-                    red: 0.021,
-                    green: 0.021,
-                    blue: 0.021,
+                    red: 0.0,
+                    green: 0.0,
+                    blue: 0.0,
+                    alpha: 1.0,
+                },
+                foreground: Rgba {
+                    red: 0.255,
+                    green: 0.255,
+                    blue: 0.255,
+                    alpha: 1.0,
+                },
+                cursor: Rgba {
+                    red: 0.142,
+                    green: 0.018,
+                    blue: 0.204,
                     alpha: 1.0,
                 },
             },
@@ -141,10 +189,14 @@ mod tests {
 
         let result = create_temporary_config(
             expected.performance,
-            300,
-            200,
-            18.0,
-            String::from("#151515"),
+            (300, 200, 80, 25),
+            #[allow(unused_parens)]
+            (18.0),
+            (
+                String::from("#000000"),
+                String::from("#FFFFFF"),
+                String::from("#8E12CC"),
+            ),
         );
         assert_eq!(result, expected);
     }
@@ -155,11 +207,25 @@ mod tests {
             performance: Performance::Low,
             width: 400,
             height: 400,
+            rows: 25,
+            columns: 80,
             colors: Colors {
                 background: Rgba {
                     red: 0.0,
                     green: 0.0,
                     blue: 0.0,
+                    alpha: 1.0,
+                },
+                foreground: Rgba {
+                    red: 0.255,
+                    green: 0.255,
+                    blue: 0.255,
+                    alpha: 1.0,
+                },
+                cursor: Rgba {
+                    red: 0.142,
+                    green: 0.018,
+                    blue: 0.204,
                     alpha: 1.0,
                 },
             },
@@ -168,10 +234,14 @@ mod tests {
 
         let result = create_temporary_config(
             expected.performance,
-            400,
-            400,
-            22.0,
-            String::from("#000000"),
+            (400, 400, 80, 25),
+            #[allow(unused_parens)]
+            (22.0),
+            (
+                String::from("#000000"),
+                String::from("#FFFFFF"),
+                String::from("#8E12CC"),
+            ),
         );
         assert_eq!(result, expected);
     }

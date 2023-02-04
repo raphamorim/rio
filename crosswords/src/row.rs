@@ -1,4 +1,4 @@
-use std::cmp::{max};
+use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::{ptr, slice};
 
