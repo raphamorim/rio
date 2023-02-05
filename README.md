@@ -64,6 +64,20 @@ See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 performance = "High"
 ```
 
+### Theme
+
+Description: Set Rio terminal theme
+
+- Modern
+- Basic
+
+```toml
+# <performance> Set WGPU rendering perfomance
+# default: Basic
+# options: Modern, Basic
+performance = "Modern"
+```
+
 ### Height
 
 Description: Set terminal window height.

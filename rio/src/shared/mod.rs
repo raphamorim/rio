@@ -20,12 +20,11 @@ pub const DEFAULT_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-// #19242f
-// rgb(25,36,47)
-pub const LUCARIO_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
-    r: 0.025,
-    g: 0.036,
-    b: 0.047,
+// 0.3/0.4/0.6
+pub const BASIC_COLOR_BACKGROUND: wgpu::Color = wgpu::Color {
+    r: 0.03,
+    g: 0.04,
+    b: 0.06,
     a: 1.0,
 };
 

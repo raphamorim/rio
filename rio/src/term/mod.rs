@@ -93,7 +93,7 @@ impl Term {
             config::Theme::Modern => {
                 ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?
             }
-            config::Theme::Lucario => {
+            config::Theme::Basic => {
                 ab_glyph::FontArc::try_from_slice(shared::FONT_BRASS_MONO)?
             }
         };
@@ -348,6 +348,11 @@ impl Term {
         self.style.theme == config::Theme::Modern
     }
 
+    #[inline]
+    fn is_basic(&self) -> bool {
+        self.style.theme == config::Theme::Basic
+    }
+
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
         let mut encoder = self.create_encoder();
 
@@ -356,58 +361,73 @@ impl Term {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let render_pipeline = self.create_render_pipeline();
+        let bg_color = if self.is_modern() {
+            shared::DEFAULT_COLOR_BACKGROUND
+        } else {
+            shared::BASIC_COLOR_BACKGROUND
+        };
 
-        {
-            let new_transform = Self::projection(self.size.width, self.size.height);
+        if self.is_modern() {
+            let render_pipeline = self.create_render_pipeline();
 
-            if new_transform != self.current_transform {
-                let mut transform_view = self.staging_belt.write_buffer(
-                    &mut encoder,
-                    &self.transform,
-                    0,
-                    unsafe { NonZeroU64::new_unchecked(16 * 4) },
-                    &self.device,
-                );
+            {
+                let new_transform = Self::projection(self.size.width, self.size.height);
 
-                transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
+                if new_transform != self.current_transform {
+                    let mut transform_view = self.staging_belt.write_buffer(
+                        &mut encoder,
+                        &self.transform,
+                        0,
+                        unsafe { NonZeroU64::new_unchecked(16 * 4) },
+                        &self.device,
+                    );
 
-                self.current_transform = new_transform;
+                    transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
+
+                    self.current_transform = new_transform;
+                }
+
+                let mut render_pass =
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Term -> Clear frame"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(bg_color),
+                                store: true,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
+
+                if self.is_modern() {
+                    render_pass.set_pipeline(&render_pipeline);
+                    render_pass.set_bind_group(0, &self.uniforms, &[]);
+                    render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
+                    render_pass.set_index_buffer(
+                        self.bar.buffers.1.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                    render_pass.draw(0..self.bar.num_indices, 0..1);
+                }
             }
-
-            let bg_color = if self.is_modern() {
-                shared::DEFAULT_COLOR_BACKGROUND
-            } else {
-                shared::LUCARIO_COLOR_BACKGROUND
-            };
-
-            let mut render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Term -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(bg_color),
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-
-            if self.is_modern() {
-                render_pass.set_pipeline(&render_pipeline);
-                render_pass.set_bind_group(0, &self.uniforms, &[]);
-                render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
-                render_pass.set_index_buffer(
-                    self.bar.buffers.1.slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                render_pass.draw(0..self.bar.num_indices, 0..1);
-            }
+        } else {
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Term -> Clear frame"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(bg_color),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
         }
 
-        let yspacing = if self.is_modern() { 60.0 } else { 50.0 };
+        let yspacing = if self.is_modern() { 60.0 } else { 40.0 };
         {
             self.text_brush.queue(Section {
                 screen_position: (
@@ -423,6 +443,33 @@ impl Term {
                     .with_scale(self.style.font_size * self.scale)],
                 ..Section::default()
             });
+
+            if self.is_basic() {
+                self.text_brush.queue(Section {
+                    screen_position: (80.0 * self.scale, (8.0 * self.scale)),
+                    bounds: (
+                        (self.size.width as f32) - (40.0 * self.scale),
+                        (self.size.height as f32) * self.scale,
+                    ),
+                    text: vec![Text::new("| zsh")
+                        .with_color([0.8, 0.6, 0.2, 1.0])
+                        .with_scale(14.0 * self.scale)],
+                    ..Section::default()
+                });
+
+                self.text_brush.queue(Section {
+                    screen_position: (130.0 * self.scale, (8.0 * self.scale)),
+                    bounds: (
+                        (self.size.width as f32) - (40.0 * self.scale),
+                        (self.size.height as f32) * self.scale,
+                    ),
+                    text: vec![Text::new("| vim | zsh | docker")
+                        //(157,165,237)
+                        .with_color([0.157, 0.165, 0.237, 1.0])
+                        .with_scale(14.0 * self.scale)],
+                    ..Section::default()
+                });
+            }
 
             self.text_brush
                 .draw_queued(

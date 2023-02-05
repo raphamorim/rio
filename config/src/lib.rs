@@ -16,11 +16,11 @@ pub enum Performance {
     Low,
 }
 
-#[derive(Default, Debug, Deserialize, Eq, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Theme {
     Modern,
     #[default]
-    Lucario,
+    Basic,
 }
 
 #[derive(Default, Copy, Debug, Deserialize, PartialEq, Clone)]
@@ -126,6 +126,8 @@ mod tests {
         let (font_size, theme) = style;
         let (background, foreground, cursor) = colors;
 
+        println!("{:?}", theme);
+
         let toml_str = format!(
             r#"
             # Rio configuration file
@@ -148,7 +150,7 @@ mod tests {
 
             [style]
             font_size = {font_size}
-            theme = {theme:?}
+            theme = "{theme:?}"
 
             [colors]
             background = {background:?}
@@ -162,9 +164,9 @@ mod tests {
         let file_name = binding.as_str();
 
         let mut file = std::fs::File::create(file_name).unwrap();
-        writeln!(file, "{toml_str}").unwrap(); // writing using the macro 'writeln!'``
+        writeln!(file, "{toml_str}").unwrap();
 
-        Config::load_from_path(file_name) // load_from_path should just call load() with a custom path
+        Config::load_from_path(file_name)
     }
 
     #[test]
@@ -196,7 +198,7 @@ mod tests {
                 },
             },
             style: Style {
-                theme: Theme::Lucario,
+                theme: Theme::Basic,
                 font_size: 18.0,
             },
         };
@@ -204,7 +206,6 @@ mod tests {
         let result = create_temporary_config(
             expected.performance,
             (300, 200, 80, 25),
-            #[allow(unused_parens)]
             (18.0, expected.style.theme),
             (
                 String::from("#000000"),
@@ -244,7 +245,7 @@ mod tests {
                 },
             },
             style: Style {
-                theme: Theme::Lucario,
+                theme: Theme::Basic,
                 font_size: 22.0,
             },
         };
@@ -252,7 +253,6 @@ mod tests {
         let result = create_temporary_config(
             expected.performance,
             (400, 400, 80, 25),
-            #[allow(unused_parens)]
             (22.0, expected.style.theme),
             (
                 String::from("#000000"),
