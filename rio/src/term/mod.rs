@@ -89,15 +89,7 @@ impl Term {
             },
         );
 
-        let font = match config.style.theme {
-            config::Theme::Modern => {
-                ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?
-            }
-            config::Theme::Basic => {
-                ab_glyph::FontArc::try_from_slice(shared::FONT_BRASS_MONO)?
-            }
-        };
-
+        let font = ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?;
         let text_brush =
             GlyphBrushBuilder::using_font(font).build(&device, render_format);
 
@@ -361,12 +353,6 @@ impl Term {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let bg_color = if self.is_modern() {
-            shared::DEFAULT_COLOR_BACKGROUND
-        } else {
-            shared::BASIC_COLOR_BACKGROUND
-        };
-
         if self.is_modern() {
             let render_pipeline = self.create_render_pipeline();
 
@@ -394,7 +380,9 @@ impl Term {
                             view,
                             resolve_target: None,
                             ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(bg_color),
+                                load: wgpu::LoadOp::Clear(
+                                    shared::DEFAULT_COLOR_BACKGROUND,
+                                ),
                                 store: true,
                             },
                         })],
@@ -419,7 +407,7 @@ impl Term {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(bg_color),
+                        load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
                         store: true,
                     },
                 })],
@@ -452,20 +440,21 @@ impl Term {
                         (self.size.height as f32) * self.scale,
                     ),
                     text: vec![Text::new("| zsh")
-                        .with_color([0.8, 0.6, 0.2, 1.0])
+                        // #CD5E98
+                        .with_color([0.81569, 0.39608, 0.56863, 1.0])
                         .with_scale(14.0 * self.scale)],
                     ..Section::default()
                 });
 
                 self.text_brush.queue(Section {
-                    screen_position: (130.0 * self.scale, (8.0 * self.scale)),
+                    screen_position: (124.0 * self.scale, (8.0 * self.scale)),
                     bounds: (
                         (self.size.width as f32) - (40.0 * self.scale),
                         (self.size.height as f32) * self.scale,
                     ),
                     text: vec![Text::new("| vim | zsh | docker")
                         //(157,165,237)
-                        .with_color([0.157, 0.165, 0.237, 1.0])
+                        .with_color([0.89020, 0.54118, 0.33725, 1.0])
                         .with_scale(14.0 * self.scale)],
                     ..Section::default()
                 });
