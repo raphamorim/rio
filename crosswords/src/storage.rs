@@ -143,6 +143,11 @@ impl<T> Storage<T> {
         self.len
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Swap implementation for Row<T>.
     ///
     /// Exploits the known size of Row<T> to produce a slightly more efficient
