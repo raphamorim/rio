@@ -20,7 +20,9 @@ Basic features are under development for MacOs right now.
 
 Last testing build for macOS (c603bdcffb6c23a137cb491a505dd23e5f6329c5):
 
-#### Themes
+#### Available themes
+
+[See more in configuration](#theme)
 
 | Modern | Basic |
 | --- | --- |
@@ -76,7 +78,7 @@ Description: Set Rio terminal theme
 - Basic
 
 ```toml
-# <performance> Set WGPU rendering perfomance
+# <performance> Set Rio terminal theme
 # default: Basic
 # options: Modern, Basic
 performance = "Modern"
@@ -170,7 +172,6 @@ font_size = 16.0
 ## Reference && Credits
 
 - Grid system was built originally on Alacritty's code https://github.com/alacritty/alacritty/blob/766a3b5582fa8ee13506c0f23c9c145ff0012078/alacritty_terminal/src/grid/mod.rs
-- Brass Mono https://github.com/fonsecapeter/brass_mono
 - Text mod code is from with https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
