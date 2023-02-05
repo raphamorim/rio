@@ -20,7 +20,13 @@ Basic features are under development for MacOs right now.
 
 Last testing build for macOS (c603bdcffb6c23a137cb491a505dd23e5f6329c5):
 
+## Modern theme
+
 ![Demo macOS](docs/demo-macos.png)
+
+## Basic theme
+
+![Demo basic macOS](docs/demo-macos-basic.png)
 
 #### WPGU based
 
