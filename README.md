@@ -70,20 +70,6 @@ See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 performance = "High"
 ```
 
-### Theme
-
-Description: Set Rio terminal theme
-
-- Modern
-- Basic
-
-```toml
-# <performance> Set Rio terminal theme
-# default: Basic
-# options: Modern, Basic
-performance = "Modern"
-```
-
 ### Height
 
 Description: Set terminal window height.
@@ -137,6 +123,8 @@ foreground = "#FFFFFF"
 
 ### Style
 
+#### Font Size
+
 - `font_size` - Set font size.
 
 ```toml
@@ -144,30 +132,19 @@ foreground = "#FFFFFF"
 font_size = 16.0
 ```
 
+#### Theme
 
+Description: Set Rio terminal theme
 
-## TODO
+- Modern
+- Basic
 
-- [x] pty
-- [ ] pty open
-- [ ] Render PTY COLS and ROWS based on window size
-	- [ ] Tests with VIM
-- [ ] Add scroll to text
-	- [ ] Ref: https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#cleaning-up-lib-rs
-- [x] WGPU rendering
-	- [ ] Render font with custom color, size and family
-	- [ ] Fix topbar when resize
-	- [ ] Keep rendering with intervals
-- [x] Read and use configuration
-- [ ] Keyboard input
-	- [ ] Alphabet keys (uppercase/lowcase)
-	- [x] Numbers keys
-	- [ ] Control keys
-- [x] Window resizing
-- [ ] Allow use set different font-size
-- [ ] Themes support
-- [ ] Style rendering (italic, bold, underline)
-- [ ] Character set
+```toml
+# <theme> Set Rio terminal theme
+# default: Basic
+# options: Modern, Basic
+theme = "Modern"
+```
 
 ## Reference && Credits
 
