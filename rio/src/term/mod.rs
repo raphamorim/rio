@@ -439,7 +439,7 @@ impl Term {
                         (self.size.width as f32) - (40.0 * self.scale),
                         (self.size.height as f32) * self.scale,
                     ),
-                    text: vec![Text::new("| zsh")
+                    text: vec![Text::new("■ zsh")
                         // #CD5E98
                         .with_color([0.81569, 0.39608, 0.56863, 1.0])
                         .with_scale(14.0 * self.scale)],
@@ -452,7 +452,7 @@ impl Term {
                         (self.size.width as f32) - (40.0 * self.scale),
                         (self.size.height as f32) * self.scale,
                     ),
-                    text: vec![Text::new("| vim | zsh | docker")
+                    text: vec![Text::new("■ vim ■ zsh ■ docker")
                         //(157,165,237)
                         .with_color([0.89020, 0.54118, 0.33725, 1.0])
                         .with_scale(14.0 * self.scale)],
