@@ -18,7 +18,7 @@ Basic features are under development for MacOs right now.
 | Linux | Not started yet |
 | Windows | Not started yet |
 
-Last testing build for macOS (c603bdcffb6c23a137cb491a505dd23e5f6329c5):
+Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
 
 #### Available themes
 
@@ -113,6 +113,10 @@ rows = 25
 ### Colors
 
 - `background` - Set background color.
+- `cursor` - Set cursor color.
+- `foreground` - Set foreground color.
+- `tabs` - Set tab color.
+- `tabs-active` - Set active tab color.
 
 ```toml
 [colors]
