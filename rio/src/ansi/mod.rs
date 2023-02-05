@@ -14,6 +14,7 @@ use vte::{Params, Parser, Perform};
 
 struct Log<'a, T> {
     message: &'a Arc<Mutex<String>>,
+    #[allow(dead_code)]
     term: Crosswords<T>,
 }
 
@@ -39,7 +40,7 @@ impl<T> Perform for Log<'_, T> {
                 // TODO: Insert tab at cursor position
                 // self.handler.put_tab(1)
                 let s = &mut *self.message.lock().unwrap();
-                s.push_str(" ");
+                s.push(' ');
             }
             C0::BS => {
                 // TODO: Move back cursor
@@ -51,13 +52,13 @@ impl<T> Perform for Log<'_, T> {
             C0::LF | C0::VT | C0::FF => {
                 // TODO: add new line
                 let s = &mut *self.message.lock().unwrap();
-                s.push_str("\n");
+                s.push('\n');
             }
             // C0::BEL => self.handler.bell(),
             // C0::SUB => self.handler.substitute(),
             // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
             // C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
-            _ => println!("[unhandled] execute byte={:02x}", byte),
+            _ => println!("[unhandled] execute byte={byte:02x}"),
         }
     }
 

@@ -5,8 +5,8 @@ pub const LOGO_ICON: &[u8; 102762] = include_bytes!("./images/logo.ico");
 pub const FONT_FIRA_MONO: &[u8; 170204] =
     include_bytes!("./fonts/FiraMono/FiraMono-Regular.ttf");
 
-pub const FONT_BRASS_MONO: &[u8; 39008] =
-    include_bytes!("./fonts/BrassMono/BrassMono-Regular.otf");
+// pub const FONT_BRASS_MONO: &[u8; 39008] =
+//     include_bytes!("./fonts/BrassMono/BrassMono-Regular.otf");
 
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
