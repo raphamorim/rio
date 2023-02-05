@@ -31,6 +31,7 @@ pub struct Pos {
 }
 
 impl Pos {
+    #[allow(dead_code)]
     fn new(row: Line, col: Column) -> Pos {
         Self { row, col }
     }

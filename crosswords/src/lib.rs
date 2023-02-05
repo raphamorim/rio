@@ -21,7 +21,7 @@ pub mod storage;
 use crate::row::Row;
 use crate::storage::Storage;
 use pos::{Column, Cursor, Line, Pos};
-use square::Square;
+
 use std::ops::{Index, IndexMut};
 
 // impl<T: Default> Default for Cursor<T> {
@@ -92,7 +92,7 @@ impl<T: Default + PartialEq + Clone> Crosswords<T> {
         self.raw.len()
     }
 
-    pub fn input(&mut self, c: char) {
+    pub fn input(&mut self, _c: char) {
         // let row = self.grid.cursor.point.row ;
         // let col = self.grid.cursor.point.col;
 
@@ -102,7 +102,7 @@ impl<T: Default + PartialEq + Clone> Crosswords<T> {
         self.cursor.pos.col += 1;
     }
 
-    pub fn feedline(&mut self, c: char) {
+    pub fn feedline(&mut self, _c: char) {
         self.cursor.pos.row += 1;
     }
 
@@ -114,6 +114,7 @@ impl<T: Default + PartialEq + Clone> Crosswords<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::square::Square;
 
     #[test]
     fn test_feedline() {

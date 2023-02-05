@@ -126,8 +126,6 @@ mod tests {
         let (font_size, theme) = style;
         let (background, foreground, cursor) = colors;
 
-        println!("{:?}", theme);
-
         let toml_str = format!(
             r#"
             # Rio configuration file
