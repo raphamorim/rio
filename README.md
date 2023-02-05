@@ -150,7 +150,7 @@ Description: Set Rio terminal theme
 theme = "Modern"
 ```
 
-## Reference && Credits
+## Reference & Credits
 
 - Grid system was built originally on Alacritty's code https://github.com/alacritty/alacritty/blob/766a3b5582fa8ee13506c0f23c9c145ff0012078/alacritty_terminal/src/grid/mod.rs
 - Text mod code is from with https://github.com/hecrj/wgpu_glyph
