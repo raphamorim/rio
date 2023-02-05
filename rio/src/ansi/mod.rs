@@ -1,5 +1,6 @@
 mod control;
 
+use crosswords::CrosswordsSquare;
 use config::Config;
 use control::C0;
 use crosswords::square::Square;
@@ -12,24 +13,43 @@ use tty::Process;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser, Perform};
 
-struct Log<'a, T> {
-    message: &'a Arc<Mutex<String>>,
-    #[allow(dead_code)]
-    term: Crosswords<T>,
+pub trait Handler {
+    /// A character to be displayed.
+    fn input(&mut self, _c: char) {}
 }
 
-impl<T> Log<'_, T> {
-    fn new(message: &Arc<Mutex<String>>, term: Crosswords<T>) -> Log<T> {
-        Log { message, term }
+struct Performer<'a> {
+    message: &'a Arc<Mutex<String>>,
+    handler: Crosswords<Square>
+}
+
+impl<'a> Performer<'a>
+{
+    fn new(message: &Arc<Mutex<String>>, columns: u16, rows: u16) -> Performer {
+        let crosswords: Crosswords<Square> =
+        Crosswords::new(columns.into(), rows.into());
+
+        Performer { 
+            message,
+            handler: crosswords
+        }
     }
 }
 
-impl<T> Perform for Log<'_, T> {
+impl<'a> vte::Perform for Performer<'a>
+// where
+//     H: Handler + 'a,
+{
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
-        // self.term.input(c);
-        let s = &mut *self.message.lock().unwrap();
-        s.push(c);
+        self.handler.input(c);
+        // println!("{:?}", self.handler.to_string());
+
+        let mut s = self.message.lock().unwrap();
+        *s = self.handler.to_string();
+
+        // let s = &mut *self.message.lock().unwrap();
+        // s.push(c);
     }
 
     fn execute(&mut self, byte: u8) {
@@ -39,20 +59,22 @@ impl<T> Perform for Log<'_, T> {
             C0::HT => {
                 // TODO: Insert tab at cursor position
                 // self.handler.put_tab(1)
-                let s = &mut *self.message.lock().unwrap();
-                s.push(' ');
+                // let s = &mut *self.message.lock().unwrap();
+                // s.push(' ');
             }
             C0::BS => {
                 // TODO: Move back cursor
-                let mut s = self.message.lock().unwrap();
-                s.pop();
-                *s = s.to_string()
+                self.handler.backspace();
+                // let mut s = self.message.lock().unwrap();
+                // s.pop();
+                // *s = s.to_string()
             }
             // C0::CR => self.handler.carriage_return(),
             C0::LF | C0::VT | C0::FF => {
                 // TODO: add new line
-                let s = &mut *self.message.lock().unwrap();
-                s.push('\n');
+                // let s = &mut *self.message.lock().unwrap();
+                // s.push('\n');
+                self.handler.feedline();
             }
             // C0::BEL => self.handler.bell(),
             // C0::SUB => self.handler.substitute(),
@@ -97,10 +119,10 @@ impl<T> Perform for Log<'_, T> {
 
         // TODO: Implement params
 
-        if c == 'J' && params.len() > 1 {
-            let mut s = self.message.lock().unwrap();
-            *s = String::from("");
-        }
+        // if c == 'J' && params.len() > 1 {
+            // let mut s = self.message.lock().unwrap();
+            // *s = String::from("");
+        // }
 
         // if c == 'K' {
         //     let mut s = self.message.lock().unwrap();
@@ -120,13 +142,10 @@ impl<T> Perform for Log<'_, T> {
 pub fn process(process: Process, arc_m: &Arc<Mutex<String>>, config: Config) {
     let reader = BufReader::new(process);
 
-    let grid: Crosswords<Square> =
-        Crosswords::new(config.columns.into(), config.rows.into());
-    let mut statemachine = Parser::new();
-    let mut performer = Log::new(arc_m, grid);
-
+    let mut handler = Performer::new(arc_m, config.columns, config.rows);
+    let mut parser = Parser::new();
     for byte in reader.bytes() {
-        statemachine.advance(&mut performer, *byte.as_ref().unwrap());
+        parser.advance(&mut handler, *byte.as_ref().unwrap());
 
         // let bs = crate::shared::utils::convert_to_utf8_string(byte.unwrap());
         // let mut a = arc_m.lock().unwrap();
