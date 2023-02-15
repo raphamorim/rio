@@ -1,10 +1,10 @@
 mod control;
 
-use crosswords::CrosswordsSquare;
 use config::Config;
 use control::C0;
 use crosswords::square::Square;
 use crosswords::Crosswords;
+use crosswords::CrosswordsSquare;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -20,18 +20,16 @@ pub trait Handler {
 
 struct Performer<'a> {
     message: &'a Arc<Mutex<String>>,
-    handler: Crosswords<Square>
+    handler: Crosswords<Square>,
 }
 
-impl<'a> Performer<'a>
-{
+impl<'a> Performer<'a> {
     fn new(message: &Arc<Mutex<String>>, columns: u16, rows: u16) -> Performer {
-        let crosswords: Crosswords<Square> =
-        Crosswords::new(columns.into(), rows.into());
+        let crosswords: Crosswords<Square> = Crosswords::new(columns.into(), rows.into());
 
-        Performer { 
+        Performer {
             message,
-            handler: crosswords
+            handler: crosswords,
         }
     }
 }
@@ -120,8 +118,8 @@ impl<'a> vte::Perform for Performer<'a>
         // TODO: Implement params
 
         // if c == 'J' && params.len() > 1 {
-            // let mut s = self.message.lock().unwrap();
-            // *s = String::from("");
+        // let mut s = self.message.lock().unwrap();
+        // *s = String::from("");
         // }
 
         // if c == 'K' {

@@ -18,11 +18,12 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
-use crate::square::ResetDiscriminant;
-use std::cmp::min;
 use crate::row::Row;
+use crate::square::ResetDiscriminant;
+use crate::square::Square;
 use crate::storage::Storage;
 use pos::{Column, Cursor, Line, Pos};
+use std::cmp::min;
 use std::ops::{Index, IndexMut, Range};
 use std::{cmp, mem, ptr, slice, str};
 
@@ -32,7 +33,7 @@ pub struct Crosswords<T> {
     cols: usize,
     raw: Storage<T>,
     cursor: Cursor<T>,
-    scroll: usize
+    scroll: usize,
 }
 
 impl<T> Index<Line> for Crosswords<T> {
@@ -162,7 +163,7 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
         // let top = if region.start == 0 { viewport_top } else { region.start };
         // let line = &mut self.vi_mode_cursor.point.line;
         // if (top <= *line) && region.end > *line {
-            // *line = cmp::max(*line - lines, top);
+        // *line = cmp::max(*line - lines, top);
         // }
         // self.mark_fully_damaged();
     }
@@ -222,26 +223,25 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
         let square = &self[row][col];
 
         // if square.is_empty() {
-            self[row][col].set_char(c);
-            self.cursor.pos.col += 1;
+        self[row][col].set_char(c);
+        self.cursor.pos.col += 1;
 
-            println!("{:?} {:?} {:?}", row, col, c);
+        println!("{:?} {:?} {:?}", row, col, c);
 
-            if self.cursor.pos.col == self.cols {
-                // Place cursor to beginning if hits the max of cols
-                self.cursor.pos.row += 1;
-                self.cursor.pos.col = pos::Column(0);
-            }
+        if self.cursor.pos.col == self.cols {
+            // Place cursor to beginning if hits the max of cols
+            self.cursor.pos.row += 1;
+            self.cursor.pos.col = pos::Column(0);
+        }
 
-            let next_row = self.cursor.pos.row;
-            let next_col = self.cursor.pos.col;
-            self[next_row][next_col].set_char('█');
+        let next_row = self.cursor.pos.row;
+        let next_col = self.cursor.pos.col;
+        self[next_row][next_col].set_char('█');
         // }
-        
+
         // Calculate if can be render in the row, otherwise break to next col
         // self[row][col].push_zerowidth(c);
         // self[row][col].c = c;
-
     }
 
     #[inline]
@@ -268,7 +268,9 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
             self[row][col].set_char(' ');
         }
 
+        // Break line and put cursor in the front
         self.cursor.pos.row += 1;
+        self.cursor.pos.col = pos::Column(0);
 
         // if self.cursor.pos.row >= self.cols {
         //     self.scroll_up_per_line(1);
@@ -276,18 +278,32 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
     }
 
     pub fn to_string(&mut self) -> String {
-        let mut string = String::from("");
+        let mut text = String::from("");
 
         for row in 0..24 {
             for colums in 0..self.cols {
-                let c = self[Line(row)][Column(colums)].get_char();
-                string.push(c);
+                let s = &mut self[Line(row)][Column(colums)];
+                // text.push(s.get_char());
+                // text.push(row_squares.c);
+                // for c in row_squares.zerowidth().into_iter().flatten() {
+                //     text.push(*c);
+                // }
+
+                // let square = &mut self[Line(row)][Column(colums)];
+                // if !s.is_empty() {
+                text.push(s.get_char());
+                // }
+
+                if colums == (self.cols - 1) {
+                    text.push('\n');
+                }
             }
-            string.push('\n');
         }
 
+        println!("{:?}", text);
+
         // string.push('█');
-        string
+        text
     }
 
     // fn line_to_string(

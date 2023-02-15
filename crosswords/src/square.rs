@@ -10,7 +10,6 @@ use std::sync::Arc;
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CellExtra {
     zerowidth: Vec<char>,
-
     // underline_color: Option<colors::Color>,
 
     // hyperlink: Option<Hyperlink>,
@@ -34,20 +33,22 @@ impl CrosswordsSquare for Square {
 
     #[inline]
     fn reset(&mut self, template: &Self) {
-        *self = Square { bg: template.bg, ..Square::default() };
+        *self = Square {
+            bg: template.bg,
+            ..Square::default()
+        };
     }
 
     #[inline]
     fn set_char(&mut self, c: char) {
         self.c = c;
-        // self.push_zerowidth(c);
+        self.push_zerowidth(c);
     }
 
     #[inline]
     fn get_char(&mut self) -> char {
         self.c
     }
-
 }
 
 impl Default for Square {
