@@ -7,6 +7,7 @@ This project depends of donations, so if you are using or want to help in any wa
 - Cross-platform
 - Offloads rendering to the GPU for lower system load
 - Uses threaded rendering for absolutely minimal latency
+- Tabs support
 
 #### Status
 

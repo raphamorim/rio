@@ -3,6 +3,7 @@ extern crate libc;
 use std::ffi::{CStr, CString};
 use std::io;
 use std::ops::Deref;
+use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
 
@@ -120,7 +121,11 @@ pub fn create_termp(utf8: bool) -> libc::termios {
     term
 }
 
-pub fn pty(name: &str, width: u16, height: u16) -> (Process, Process, String) {
+pub fn pty(
+    name: &str,
+    width: u16,
+    height: u16,
+) -> (Process, Process, String, libc::pid_t) {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: height as libc::c_ushort,
@@ -153,12 +158,12 @@ pub fn pty(name: &str, width: u16, height: u16) -> (Process, Process, String) {
             unreachable!();
         }
         n if n > 0 => {
-            let pid: String;
+            let ptsname: String;
             unsafe {
-                pid = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
+                ptsname = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             }
             let handle = Handle(Arc::new(main));
-            (Process(handle.clone()), Process(handle), pid)
+            (Process(handle.clone()), Process(handle), ptsname, n)
         }
         _ => panic!("Fork failed."),
     }
@@ -195,6 +200,21 @@ impl Drop for Handle {
             libc::close(*self.0);
         }
     }
+}
+
+pub fn command_per_pid(pid: libc::pid_t) -> String {
+    let current_process_name = Command::new("ps")
+        .arg("-p")
+        .arg(format!("{:?}", pid))
+        .arg("-o")
+        .arg("comm=")
+        .output()
+        .expect("failed to execute process")
+        .stdout;
+
+    std::str::from_utf8(&current_process_name)
+        .unwrap_or_else(|_| "zsh")
+        .to_string()
 }
 
 unsafe fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {

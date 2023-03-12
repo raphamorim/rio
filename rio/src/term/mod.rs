@@ -29,6 +29,7 @@ pub struct Term {
     transform: wgpu::Buffer,
     current_transform: [f32; 16],
     text_scroll: f32,
+    pid: i32,
 }
 
 const IDENTITY_MATRIX: [f32; 16] = [
@@ -39,6 +40,7 @@ impl Term {
     pub async fn new(
         winit_window: &winit::window::Window,
         config: &config::Config,
+        pid: i32,
     ) -> Result<Term, Box<dyn Error>> {
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(&winit_window) };
@@ -177,6 +179,7 @@ impl Term {
             uniform_layout,
             current_transform,
             transform,
+            pid,
             text_scroll: 1.0,
         })
     }
@@ -302,6 +305,13 @@ impl Term {
             0.0,
             1.0,
         ]
+    }
+
+    // TODO: Asynchronous update based on 2s
+    // Idea? Prob move Term inside of TermUi that contains Tabs/Term
+    // Allowing switch Terms
+    fn get_command_name(&self) -> String {
+        tty::command_per_pid(self.pid)
     }
 
     fn create_uniforms(
@@ -439,25 +449,27 @@ impl Term {
                         (self.size.width as f32) - (40.0 * self.scale),
                         (self.size.height as f32) * self.scale,
                     ),
-                    text: vec![Text::new("■ zsh")
-                        // #CD5E98
-                        .with_color([0.81569, 0.39608, 0.56863, 1.0])
-                        .with_scale(14.0 * self.scale)],
+                    text: vec![Text::new(
+                        format!("■ {}", self.get_command_name()).as_str(),
+                    )
+                    // #CD5E98
+                    .with_color([0.81569, 0.39608, 0.56863, 1.0])
+                    .with_scale(14.0 * self.scale)],
                     ..Section::default()
                 });
 
-                self.text_brush.queue(Section {
-                    screen_position: (124.0 * self.scale, (8.0 * self.scale)),
-                    bounds: (
-                        (self.size.width as f32) - (40.0 * self.scale),
-                        (self.size.height as f32) * self.scale,
-                    ),
-                    text: vec![Text::new("■ vim ■ zsh ■ docker")
-                        //(157,165,237)
-                        .with_color([0.89020, 0.54118, 0.33725, 1.0])
-                        .with_scale(14.0 * self.scale)],
-                    ..Section::default()
-                });
+                // self.text_brush.queue(Section {
+                //     screen_position: (124.0 * self.scale, (8.0 * self.scale)),
+                //     bounds: (
+                //         (self.size.width as f32) - (40.0 * self.scale),
+                //         (self.size.height as f32) * self.scale,
+                //     ),
+                //     text: vec![Text::new("■ vim ■ zsh ■ docker")
+                //         //(157,165,237)
+                //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
+                //         .with_scale(14.0 * self.scale)],
+                //     ..Section::default()
+                // });
             }
 
             self.text_brush
