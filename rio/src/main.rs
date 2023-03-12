@@ -29,10 +29,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(val) => val,
         Err(..) => String::from("bash"),
     };
-    let (process, mut w_process, _pid) =
+    let (process, mut w_process, _ptyname, pid) =
         pty(&Cow::Borrowed(&shell), config.columns, config.rows);
 
-    let mut rio: Term = match Term::new(&winit_window, &config).await {
+    let mut rio: Term = match Term::new(&winit_window, &config, pid.into()).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
             panic!("couldn't create Rio terminal {e}");
