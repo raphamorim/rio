@@ -18,52 +18,80 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
+use crate::pos::CharsetIndex;
 use crate::row::Row;
-use crate::square::ResetDiscriminant;
 use crate::square::Square;
 use crate::storage::Storage;
+use bitflags::bitflags;
 use pos::{Column, Cursor, Line, Pos};
-use std::cmp::min;
 use std::ops::{Index, IndexMut, Range};
-use std::{cmp, mem, ptr, slice, str};
+use unicode_width::UnicodeWidthChar;
 
-#[derive(Debug, Clone)]
-pub struct Crosswords<T> {
-    rows: usize,
-    cols: usize,
-    raw: Storage<T>,
-    cursor: Cursor<T>,
-    scroll: usize,
+bitflags! {
+    pub struct Mode: u32 {
+        const NONE                = 0;
+        const SHOW_CURSOR         = 0b0000_0000_0000_0000_0001;
+        const APP_CURSOR          = 0b0000_0000_0000_0000_0010;
+        const APP_KEYPAD          = 0b0000_0000_0000_0000_0100;
+        const MOUSE_REPORT_CLICK  = 0b0000_0000_0000_0000_1000;
+        const BRACKETED_PASTE     = 0b0000_0000_0000_0001_0000;
+        const SGR_MOUSE           = 0b0000_0000_0000_0010_0000;
+        const MOUSE_MOTION        = 0b0000_0000_0000_0100_0000;
+        const LINE_WRAP           = 0b0000_0000_0000_1000_0000;
+        const LINE_FEED_NEW_LINE  = 0b0000_0000_0001_0000_0000;
+        const ORIGIN              = 0b0000_0000_0010_0000_0000;
+        const INSERT              = 0b0000_0000_0100_0000_0000;
+        const FOCUS_IN_OUT        = 0b0000_0000_1000_0000_0000;
+        const ALT_SCREEN          = 0b0000_0001_0000_0000_0000;
+        const MOUSE_DRAG          = 0b0000_0010_0000_0000_0000;
+        const MOUSE_MODE          = 0b0000_0010_0000_0100_1000;
+        const UTF8_MOUSE          = 0b0000_0100_0000_0000_0000;
+        const ALTERNATE_SCROLL    = 0b0000_1000_0000_0000_0000;
+        const VI                  = 0b0001_0000_0000_0000_0000;
+        const URGENCY_HINTS       = 0b0010_0000_0000_0000_0000;
+        const ANY                 = u32::MAX;
+    }
 }
 
-impl<T> Index<Line> for Crosswords<T> {
-    type Output = Row<T>;
+#[derive(Debug, Clone)]
+pub struct Crosswords {
+    rows: usize,
+    cols: usize,
+    raw: Storage<Square>,
+    cursor: Cursor<Square>,
+    scroll: usize,
+    mode: Mode,
+    active_charset: CharsetIndex,
+}
+
+impl Index<Line> for Crosswords {
+    type Output = Row<Square>;
 
     #[inline]
-    fn index(&self, index: Line) -> &Row<T> {
+    fn index(&self, index: Line) -> &Row<Square> {
         &self.raw[index]
     }
 }
 
-impl<T> IndexMut<Line> for Crosswords<T> {
+impl IndexMut<Line> for Crosswords {
     #[inline]
-    fn index_mut(&mut self, index: Line) -> &mut Row<T> {
+    fn index_mut(&mut self, index: Line) -> &mut Row<Square> {
         &mut self.raw[index]
     }
 }
 
-impl<T> Index<Pos> for Crosswords<T> {
-    type Output = T;
+impl Index<Pos> for Crosswords {
+    type Output = Square;
 
     #[inline]
-    fn index(&self, pos: Pos) -> &T {
+    fn index(&self, pos: Pos) -> &Square {
         &self[pos.row][pos.col]
     }
 }
 
-impl<T> IndexMut<Pos> for Crosswords<T> {
+impl IndexMut<Pos> for Crosswords {
     #[inline]
-    fn index_mut(&mut self, pos: Pos) -> &mut T {
+    fn index_mut(&mut self, pos: Pos) -> &mut Square {
         &mut self[pos.row][pos.col]
     }
 }
@@ -74,31 +102,28 @@ pub trait CrosswordsSquare: Sized {
 
     /// Perform an opinionated cell reset based on a template cell.
     fn reset(&mut self, template: &Self);
-
-    fn set_char(&mut self, character: char);
-
-    fn get_char(&mut self) -> char;
 }
 
-impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
-    pub fn new(cols: usize, rows: usize) -> Crosswords<T> {
-        Crosswords::<T> {
+impl Crosswords {
+    pub fn new(cols: usize, rows: usize) -> Crosswords {
+        Crosswords {
             cols,
             rows,
             raw: Storage::with_capacity(rows, cols),
             cursor: Cursor::default(),
+            active_charset: CharsetIndex::default(),
             scroll: 0,
+            mode: Mode::SHOW_CURSOR
+                | Mode::LINE_WRAP
+                | Mode::ALTERNATE_SCROLL
+                | Mode::URGENCY_HINTS,
         }
     }
 
     /// Move lines at the bottom toward the top.
     ///
     /// This is the performance-sensitive part of scrolling.
-    pub fn scroll_up<D>(&mut self, region: &Range<Line>, positions: usize)
-    where
-        T: ResetDiscriminant<D>,
-        D: PartialEq,
-    {
+    pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
@@ -172,109 +197,133 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
         self.raw.len()
     }
 
-    // fn write_at_cursor(&mut self, c: char) {
-    //     let c = self.grid.cursor.charsets[self.active_charset].map(c);
-    //     let fg = self.grid.cursor.template.fg;
-    //     let bg = self.grid.cursor.template.bg;
-    //     let flags = self.grid.cursor.template.flags;
-    //     let extra = self.grid.cursor.template.extra.clone();
+    fn cursor_square(&mut self) -> &mut Square {
+        let pos = &self.cursor.pos;
+        &mut self.raw[pos.row][pos.col]
+    }
 
-    //     let mut cursor_cell = self.grid.cursor_cell();
+    fn write_at_cursor(&mut self, c: char) {
+        let c = self.cursor.charsets[self.active_charset].map(c);
+        //     let fg = self.grid.cursor.template.fg;
+        //     let bg = self.grid.cursor.template.bg;
+        //     let flags = self.grid.cursor.template.flags;
+        //     let extra = self.grid.cursor.template.extra.clone();
 
-    //     // Clear all related cells when overwriting a fullwidth cell.
-    //     if cursor_cell.flags.intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER) {
-    //         // Remove wide char and spacer.
-    //         let wide = cursor_cell.flags.contains(Flags::WIDE_CHAR);
-    //         let point = self.grid.cursor.point;
-    //         if wide && point.column < self.last_column() {
-    //             self.grid[point.line][point.column + 1].flags.remove(Flags::WIDE_CHAR_SPACER);
-    //         } else if point.column > 0 {
-    //             self.grid[point.line][point.column - 1].clear_wide();
-    //         }
-
-    //         // Remove leading spacers.
-    //         if point.column <= 1 && point.line != self.topmost_line() {
-    //             let column = self.last_column();
-    //             self.grid[point.line - 1i32][column].flags.remove(Flags::LEADING_WIDE_CHAR_SPACER);
-    //         }
-
-    //         cursor_cell = self.grid.cursor_cell();
-    //     }
-
-    //     cursor_cell.c = c;
-    //     cursor_cell.fg = fg;
-    //     cursor_cell.bg = bg;
-    //     cursor_cell.flags = flags;
-    //     cursor_cell.extra = extra;
-    // }
+        let mut cursor_square = self.cursor_square();
+        cursor_square.c = c;
+        // cursor_cell.fg = fg;
+        // cursor_cell.bg = bg;
+        // cursor_cell.flags = flags;
+        // cursor_cell.extra = extra;
+    }
 
     pub fn input(&mut self, c: char) {
-        // let width = match c.width() {
-        //     Some(width) => width,
-        //     None => return,
-        // };
-
-        // if width == 1 {
-        //     self.write_at_cursor(c);
-        // }
+        let width = match c.width() {
+            Some(width) => width,
+            None => return,
+        };
 
         let row = self.cursor.pos.row;
-        let col = self.cursor.pos.col;
-        let square = &self[row][col];
 
-        // if square.is_empty() {
-        self[row][col].set_char(c);
-        self.cursor.pos.col += 1;
+        // Handle zero-width characters.
+        if width == 0 {
+            // // Get previous column.
+            let mut column = self.cursor.pos.col;
+            if !self.cursor.should_wrap {
+                column.0 = column.saturating_sub(1);
+            }
 
-        println!("{:?} {:?} {:?}", row, col, c);
+            // // Put zerowidth characters over first fullwidth character cell.
+            // let row = self.cursor.pos.row;
+            // if self[row][column].flags.contains(Flags::WIDE_CHAR_SPACER) {
+            //     column.0 = column.saturating_sub(1);
+            // }
 
-        if self.cursor.pos.col == self.cols {
-            // Place cursor to beginning if hits the max of cols
-            self.cursor.pos.row += 1;
-            self.cursor.pos.col = pos::Column(0);
+            self[row][column].push_zerowidth(c);
+            return;
         }
 
-        let next_row = self.cursor.pos.row;
-        let next_col = self.cursor.pos.col;
-        self[next_row][next_col].set_char('█');
+        if self.cursor.should_wrap {
+            self.wrapline();
+        }
+
+        if width == 1 {
+            self.write_at_cursor(c);
+        } else {
+            if self.cursor.pos.col == self.cols {
+                // Place cursor to beginning if hits the max of cols
+                self.cursor.pos.row += 1;
+                self.cursor.pos.col = pos::Column(0);
+            }
+
+            let next_row = self.cursor.pos.row;
+            let next_col = self.cursor.pos.col;
+            self[next_row][next_col].c = '█';
+        }
+
+        if self.cursor.pos.col + 1 < self.cols {
+            self.cursor.pos.col += 1;
+        } else {
+            self.cursor.should_wrap = true;
+        }
+    }
+
+    #[inline]
+    fn wrapline(&mut self) {
+        if !self.mode.contains(Mode::LINE_WRAP) {
+            return;
+        }
+
+        // self.cursor_cell().flags.insert(Flags::WRAPLINE);
+
+        // if self.cursor.pos.col + 1 >= self.scroll_region.end {
+        self.feedline();
+        // } else {
+        // self.damage_cursor();
+        // self.cursor.point.line += 1;
         // }
 
-        // Calculate if can be render in the row, otherwise break to next col
-        // self[row][col].push_zerowidth(c);
-        // self[row][col].c = c;
+        self.cursor.pos.col = Column(0);
+        self.cursor.should_wrap = false;
+        // self.damage_cursor();
     }
 
     #[inline]
     pub fn backspace(&mut self) {
-        // let row = self.cursor.pos.row;
-        // let col = self.cursor.pos.col;
-        // let square = &mut self[row][col];
-        // self[row][col].set_char(' ');
-
         if self.cursor.pos.col > Column(0) {
-            let row = self.cursor.pos.row;
-            let col = self.cursor.pos.col;
-            let square = &mut self[row][col];
-            square.set_char(' ');
+            self.cursor.should_wrap = false;
             self.cursor.pos.col -= 1;
         }
     }
 
     pub fn feedline(&mut self) {
-        let row = self.cursor.pos.row;
-        let col = self.cursor.pos.col;
-        let square = &mut self[row][col];
-        if square.get_char() == '█' {
-            self[row][col].set_char(' ');
-        }
+        // if self.cursor_square().c == '█' {
+        // self[row][col].p(' ');
+        // }
 
         // Break line and put cursor in the front
         self.cursor.pos.row += 1;
         self.cursor.pos.col = pos::Column(0);
 
+        // println!(">>>>> feedline");
+
         // if self.cursor.pos.row >= self.cols {
         //     self.scroll_up_per_line(1);
         // }
+    }
+
+    // #[inline]
+    // fn damage_row(&mut self, line: usize, left: usize, right: usize) {
+    // self.raw[line.into()].expand(left, right);
+    // }
+
+    pub fn carriage_return(&mut self) {
+        println!("Carriage return");
+        let new_col = 0;
+        // let row = self.cursor.pos.row.0 as usize;
+        // self.damage_row(row, new_col, self.cursor.pos.col.0);
+        self.cursor.pos.col = Column(new_col);
+        self.cursor.should_wrap = false;
     }
 
     pub fn to_string(&mut self) -> String {
@@ -282,17 +331,11 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
 
         for row in 0..24 {
             for colums in 0..self.cols {
-                let s = &mut self[Line(row)][Column(colums)];
-                // text.push(s.get_char());
-                // text.push(row_squares.c);
-                // for c in row_squares.zerowidth().into_iter().flatten() {
-                //     text.push(*c);
-                // }
-
-                // let square = &mut self[Line(row)][Column(colums)];
-                // if !s.is_empty() {
-                text.push(s.get_char());
-                // }
+                let square_content = &mut self[Line(row)][Column(colums)];
+                text.push(square_content.c);
+                for c in square_content.zerowidth().into_iter().flatten() {
+                    text.push(*c);
+                }
 
                 if colums == (self.cols - 1) {
                     text.push('\n');
@@ -300,80 +343,16 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
             }
         }
 
-        println!("{:?}", text);
+        // println!("{:?}", text);
 
-        // string.push('█');
         text
     }
-
-    // fn line_to_string(
-    //     &self,
-    //     line: Line,
-    //     mut cols: Range<Column>,
-    //     include_wrapped_wide: bool,
-    // ) -> String {
-    //     let mut text = String::new();
-
-    //     let grid_line = &self.grid[line];
-    //     let line_length = cmp::min(grid_line.line_length(), cols.end + 1);
-
-    //     // Include wide char when trailing spacer is selected.
-    //     if grid_line[cols.start].flags.contains(Flags::WIDE_CHAR_SPACER) {
-    //         cols.start -= 1;
-    //     }
-
-    //     let mut tab_mode = false;
-    //     for column in (cols.start.0..line_length.0).map(Column::from) {
-    //         let cell = &grid_line[column];
-
-    //         // Skip over cells until next tab-stop once a tab was found.
-    //         if tab_mode {
-    //             if self.tabs[column] || cell.c != ' ' {
-    //                 tab_mode = false;
-    //             } else {
-    //                 continue;
-    //             }
-    //         }
-
-    //         if cell.c == '\t' {
-    //             tab_mode = true;
-    //         }
-
-    //         if !cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
-    //             // Push cells primary character.
-    //             text.push(cell.c);
-
-    //             // Push zero-width characters.
-    //             for c in cell.zerowidth().into_iter().flatten() {
-    //                 text.push(*c);
-    //             }
-    //         }
-    //     }
-
-    //     if cols.end >= self.columns() - 1
-    //         && (line_length.0 == 0
-    //             || !self.grid[line][line_length - 1].flags.contains(Flags::WRAPLINE))
-    //     {
-    //         text.push('\n');
-    //     }
-
-    //     // If wide char is not part of the selection, but leading spacer is, include it.
-    //     if line_length == self.columns()
-    //         && line_length.0 >= 2
-    //         && grid_line[line_length - 1].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
-    //         && include_wrapped_wide
-    //     {
-    //         text.push(self.grid[line - 1i32][Column(0)].c);
-    //     }
-
-    //     text
-    // }
 
     // pub fn feedline(&mut self, _c: char) {
     //     self.cursor.pos.row += 1;
     // }
 
-    // pub fn to_arr_u8(&mut self, row: Line) -> Row<T> {
+    // pub fn to_arr_u8(&mut self, row: Line) -> Row<Square> {
     // self.raw[row]
     // }
 }
@@ -381,11 +360,10 @@ impl<T: CrosswordsSquare + Default + PartialEq + Clone> Crosswords<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::square::Square;
 
     #[test]
     fn test_feedline() {
-        let mut cw: Crosswords<Square> = Crosswords::new(1, 3);
+        let mut cw: Crosswords = Crosswords::new(1, 3);
         assert_eq!(cw.lines(), 1);
 
         cw.feedline();
@@ -395,7 +373,7 @@ mod tests {
     #[ignore]
     #[test]
     fn test_input() {
-        let mut cw: Crosswords<Square> = Crosswords::new(1, 5);
+        let mut cw: Crosswords = Crosswords::new(1, 5);
         // println!("{:?}", cw);
         for i in 0..5 {
             cw[Line(0)][Column(i)].c = 'a';
