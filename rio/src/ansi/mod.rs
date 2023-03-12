@@ -2,9 +2,9 @@ mod control;
 
 use config::Config;
 use control::C0;
-use crosswords::square::Square;
+
 use crosswords::Crosswords;
-use crosswords::CrosswordsSquare;
+
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -20,12 +20,12 @@ pub trait Handler {
 
 struct Performer<'a> {
     message: &'a Arc<Mutex<String>>,
-    handler: Crosswords<Square>,
+    handler: Crosswords,
 }
 
 impl<'a> Performer<'a> {
     fn new(message: &Arc<Mutex<String>>, columns: u16, rows: u16) -> Performer {
-        let crosswords: Crosswords<Square> = Crosswords::new(columns.into(), rows.into());
+        let crosswords: Crosswords = Crosswords::new(columns.into(), rows.into());
 
         Performer {
             message,
@@ -60,20 +60,9 @@ impl<'a> vte::Perform for Performer<'a>
                 // let s = &mut *self.message.lock().unwrap();
                 // s.push(' ');
             }
-            C0::BS => {
-                // TODO: Move back cursor
-                self.handler.backspace();
-                // let mut s = self.message.lock().unwrap();
-                // s.pop();
-                // *s = s.to_string()
-            }
-            // C0::CR => self.handler.carriage_return(),
-            C0::LF | C0::VT | C0::FF => {
-                // TODO: add new line
-                // let s = &mut *self.message.lock().unwrap();
-                // s.push('\n');
-                self.handler.feedline();
-            }
+            C0::BS => self.handler.backspace(),
+            C0::CR => self.handler.carriage_return(),
+            C0::LF | C0::VT | C0::FF => self.handler.feedline(),
             // C0::BEL => self.handler.bell(),
             // C0::SUB => self.handler.substitute(),
             // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),

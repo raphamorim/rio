@@ -38,17 +38,6 @@ impl CrosswordsSquare for Square {
             ..Square::default()
         };
     }
-
-    #[inline]
-    fn set_char(&mut self, c: char) {
-        self.c = c;
-        self.push_zerowidth(c);
-    }
-
-    #[inline]
-    fn get_char(&mut self) -> char {
-        self.c
-    }
 }
 
 impl Default for Square {
@@ -64,6 +53,11 @@ impl Default for Square {
 }
 
 impl Square {
+    #[inline]
+    pub fn zerowidth(&self) -> Option<&[char]> {
+        self.extra.as_ref().map(|extra| extra.zerowidth.as_slice())
+    }
+
     /// Write a new zerowidth character to this cell.
     #[inline]
     pub fn push_zerowidth(&mut self, character: char) {

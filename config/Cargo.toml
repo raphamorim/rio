@@ -7,5 +7,5 @@ edition = "2021"
 toml = "0.5"
 dirs = "4.0"
 colors = { path = "../colors" }
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true }
 

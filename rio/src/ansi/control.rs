@@ -38,7 +38,6 @@ pub mod C0 {
     /// Form Feed, move to next form or page.
     pub const FF: u8 = 0x0C;
     /// Carriage Return, move to first character of current line.
-    #[allow(dead_code)]
     pub const CR: u8 = 0x0D;
     /// Shift Out, switch to G1 (other half of character set).
     #[allow(dead_code)]
