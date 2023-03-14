@@ -1,6 +1,5 @@
 mod control;
 
-use config::Config;
 use control::C0;
 
 use crosswords::Crosswords;
@@ -11,7 +10,7 @@ use std::sync::Mutex;
 use tty::Process;
 
 // https://vt100.net/emu/dec_ansi_parser
-use vte::{Params, Parser, Perform};
+use vte::{Params, Parser};
 
 pub trait Handler {
     /// A character to be displayed.
@@ -24,8 +23,8 @@ struct Performer<'a> {
 }
 
 impl<'a> Performer<'a> {
-    fn new(message: &Arc<Mutex<String>>, columns: u16, rows: u16) -> Performer {
-        let crosswords: Crosswords = Crosswords::new(columns.into(), rows.into());
+    fn new(message: &Arc<Mutex<String>>, columns: usize, rows: usize) -> Performer {
+        let crosswords: Crosswords = Crosswords::new(columns, rows);
 
         Performer {
             message,
@@ -44,7 +43,7 @@ impl<'a> vte::Perform for Performer<'a>
         // println!("{:?}", self.handler.to_string());
 
         let mut s = self.message.lock().unwrap();
-        *s = self.handler.to_string();
+        *s = self.handler.visible_rows_to_string();
 
         // let s = &mut *self.message.lock().unwrap();
         // s.push(c);
@@ -62,7 +61,7 @@ impl<'a> vte::Perform for Performer<'a>
             }
             C0::BS => self.handler.backspace(),
             C0::CR => self.handler.carriage_return(),
-            C0::LF | C0::VT | C0::FF => self.handler.feedline(),
+            C0::LF | C0::VT | C0::FF => self.handler.linefeed(),
             // C0::BEL => self.handler.bell(),
             // C0::SUB => self.handler.substitute(),
             // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
@@ -126,10 +125,15 @@ impl<'a> vte::Perform for Performer<'a>
 }
 
 // ■ ~ ▲
-pub fn process(process: Process, arc_m: &Arc<Mutex<String>>, config: Config) {
+pub fn process(
+    process: Process,
+    arc_m: &Arc<Mutex<String>>,
+    rows: usize,
+    columns: usize,
+) {
     let reader = BufReader::new(process);
 
-    let mut handler = Performer::new(arc_m, config.columns, config.rows);
+    let mut handler = Performer::new(arc_m, columns, rows);
     let mut parser = Parser::new();
     for byte in reader.bytes() {
         parser.advance(&mut handler, *byte.as_ref().unwrap());

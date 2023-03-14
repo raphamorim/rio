@@ -205,7 +205,7 @@ impl Drop for Handle {
 pub fn command_per_pid(pid: libc::pid_t) -> String {
     let current_process_name = Command::new("ps")
         .arg("-p")
-        .arg(format!("{:?}", pid))
+        .arg(format!("{pid:}"))
         .arg("-o")
         .arg("comm=")
         .output()
@@ -213,7 +213,7 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
         .stdout;
 
     std::str::from_utf8(&current_process_name)
-        .unwrap_or_else(|_| "zsh")
+        .unwrap_or("zsh")
         .to_string()
 }
 

@@ -12,11 +12,10 @@ tokio = { version = "1.7.1", features = ["full"] }
 winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
-vte = "0.11.0"
 tty = { path = "../tty" }
 colors = { path = "../colors" }
+ansi-machine = { path = "../ansi-machine" }
 config = { path = "../config" }
-crosswords = { path = "../crosswords" }
 
 [package.metadata.bundle]
 name = "Rio"
