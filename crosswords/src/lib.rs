@@ -18,6 +18,7 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
+use crate::dimensions::Dimensions;
 use crate::pos::CharsetIndex;
 use crate::row::Row;
 use crate::square::Square;
@@ -54,6 +55,12 @@ bitflags! {
 }
 
 #[derive(Debug, Clone)]
+struct ScrollRegion {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Crosswords {
     rows: usize,
     cols: usize,
@@ -62,6 +69,7 @@ pub struct Crosswords {
     scroll: usize,
     mode: Mode,
     active_charset: CharsetIndex,
+    scroll_region: ScrollRegion,
 }
 
 impl Index<Line> for Crosswords {
@@ -96,14 +104,6 @@ impl IndexMut<Pos> for Crosswords {
     }
 }
 
-pub trait CrosswordsSquare: Sized {
-    /// Check if the cell contains any content.
-    fn is_empty(&self) -> bool;
-
-    /// Perform an opinionated cell reset based on a template cell.
-    fn reset(&mut self, template: &Self);
-}
-
 impl Crosswords {
     pub fn new(cols: usize, rows: usize) -> Crosswords {
         Crosswords {
@@ -113,6 +113,10 @@ impl Crosswords {
             cursor: Cursor::default(),
             active_charset: CharsetIndex::default(),
             scroll: 0,
+            scroll_region: ScrollRegion {
+                start: 0,
+                end: rows,
+            },
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
@@ -125,21 +129,25 @@ impl Crosswords {
     /// This is the performance-sensitive part of scrolling.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
-        if region.end - region.start <= positions && region.start != 0 {
-            for i in (region.start.0..region.end.0).map(Line::from) {
-                // self.raw[i].reset(&self.cursor.template);
-            }
+        // if region.end - region.start <= positions && region.start != 0 {
+        // for i in (region.start.0..region.end.0).map(Line::from) {
+        // self.raw[i].reset(&self.cursor.template);
+        // }
 
-            return;
-        }
+        // return;
+        // }
 
         // Update display offset when not pinned to active area.
         if self.scroll != 0 {
-            // self.scroll = min(self.scroll + positions, self.max_scroll_limit);
+            // TODO: update to proper limit instead of usize::MAX
+            self.scroll = std::cmp::min(self.scroll + positions, usize::MAX);
         }
 
         // Create scrollback for the new lines.
-        // self.increase_scroll_limit(positions);
+        let count = std::cmp::min(positions, usize::MAX - self.history_size());
+        if count != 0 {
+            self.raw.initialize(count, self.cols);
+        }
 
         // Swap the lines fixed at the top to their target positions after rotation.
         //
@@ -157,31 +165,35 @@ impl Crosswords {
         self.raw.rotate(-(positions as isize));
 
         // Ensure all new lines are fully cleared.
-        // let screen_lines = self.screen_lines();
+        let screen_lines = self.rows();
         // for i in ((screen_lines - positions)..screen_lines).map(Line::from) {
-        //     self.raw[i].reset(&self.cursor.template);
+        // self.raw[i].reset(&self.cursor.template);
         // }
 
         // Swap the fixed lines at the bottom back into position.
-        // for i in (region.end.0..(screen_lines as i32)).rev().map(Line::from) {
-        //     self.raw.swap(i, i - positions);
-        // }
+        for i in (region.end.0..(screen_lines as i32)).rev().map(Line::from) {
+            self.raw.swap(i, i - positions);
+        }
+    }
+
+    fn history_size(&self) -> usize {
+        self.total_lines().saturating_sub(self.screen_lines())
     }
 
     #[inline]
     fn scroll_up_per_line(&mut self, mut lines: usize) {
         let origin = Line(self.rows.try_into().unwrap());
 
-        println!("Scrolling up relative: origin={}, lines={}", origin, lines);
+        println!("Scrolling up relative: origin={origin}, lines={lines}");
 
-        // lines = cmp::min(lines, (self.scroll_region.end - self.scroll_region.start).0 as usize);
+        lines = std::cmp::min(lines, self.scroll_region.end - self.scroll_region.start);
 
         let region = origin..lines.into();
 
         // Scroll selection.
         // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
 
-        // self.scroll_up(&region, lines);
+        self.scroll_up(&region, lines);
 
         // // Scroll vi mode cursor.
         // let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -193,7 +205,7 @@ impl Crosswords {
         // self.mark_fully_damaged();
     }
 
-    pub fn lines(&mut self) -> usize {
+    pub fn rows(&mut self) -> usize {
         self.raw.len()
     }
 
@@ -277,7 +289,7 @@ impl Crosswords {
         // self.cursor_cell().flags.insert(Flags::WRAPLINE);
 
         // if self.cursor.pos.col + 1 >= self.scroll_region.end {
-        self.feedline();
+        self.linefeed();
         // } else {
         // self.damage_cursor();
         // self.cursor.point.line += 1;
@@ -296,7 +308,7 @@ impl Crosswords {
         }
     }
 
-    pub fn feedline(&mut self) {
+    pub fn linefeed(&mut self) {
         // if self.cursor_square().c == '█' {
         // self[row][col].p(' ');
         // }
@@ -305,11 +317,11 @@ impl Crosswords {
         self.cursor.pos.row += 1;
         self.cursor.pos.col = pos::Column(0);
 
-        // println!(">>>>> feedline");
+        // println!(">>>>> linefeed");
 
-        // if self.cursor.pos.row >= self.cols {
-        //     self.scroll_up_per_line(1);
-        // }
+        if self.cursor.pos.row >= self.cols {
+            self.scroll_up_per_line(1);
+        }
     }
 
     // #[inline]
@@ -326,7 +338,7 @@ impl Crosswords {
         self.cursor.should_wrap = false;
     }
 
-    pub fn to_string(&mut self) -> String {
+    pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
 
         for row in 0..24 {
@@ -343,17 +355,11 @@ impl Crosswords {
             }
         }
 
-        // println!("{:?}", text);
-
         text
     }
 
-    // pub fn feedline(&mut self, _c: char) {
-    //     self.cursor.pos.row += 1;
-    // }
-
-    // pub fn to_arr_u8(&mut self, row: Line) -> Row<Square> {
-    // self.raw[row]
+    // pub fn to_arr_u8(&mut self, line: Line) -> Row<Square> {
+    //     self.raw[line]
     // }
 }
 
@@ -361,30 +367,34 @@ impl Crosswords {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_feedline() {
-        let mut cw: Crosswords = Crosswords::new(1, 3);
-        assert_eq!(cw.lines(), 1);
-
-        cw.feedline();
-        // assert_eq!(cw.lines(), 2);
-    }
-
     #[ignore]
     #[test]
+    fn test_linefeed() {
+        let mut cw: Crosswords = Crosswords::new(1, 1);
+        assert_eq!(cw.rows(), 1);
+
+        cw.linefeed();
+        assert_eq!(cw.rows(), 2);
+    }
+
+    #[test]
     fn test_input() {
-        let mut cw: Crosswords = Crosswords::new(1, 5);
-        // println!("{:?}", cw);
-        for i in 0..5 {
-            cw[Line(0)][Column(i)].c = 'a';
+        let columns: usize = 5;
+        let rows: usize = 10;
+        let mut cw: Crosswords = Crosswords::new(columns, rows);
+        for i in 0..4 {
+            println!("{i:?}");
+            cw[Line(0)][Column(i)].c = i as u8 as char;
         }
-        // grid[Pos { row: 0, col: 0 }].c = '"';
-        cw[Line(0)][Column(3)].c = '"';
+        cw[Line(1)][Column(3)].c = 'b';
 
-        // println!("{:?}", cw[Line(0)][Column(1)]);
-        // println!("{:?}", cw[Line(0)]);
-        // println!("{:?}", cw.to_arr_u8(Line(0)));
-
-        assert_eq!("1", "Error: Character is not valid");
+        assert_eq!(cw[Line(0)][Column(0)].c, '\u{0}');
+        assert_eq!(cw[Line(0)][Column(1)].c, '\u{1}');
+        assert_eq!(cw[Line(0)][Column(2)].c, '\u{2}');
+        assert_eq!(cw[Line(0)][Column(3)].c, '\u{3}');
+        assert_eq!(cw[Line(0)][Column(4)].c, ' ');
+        assert_eq!(cw[Line(1)][Column(2)].c, ' ');
+        assert_eq!(cw[Line(1)][Column(3)].c, 'b');
+        assert_eq!(cw[Line(0)][Column(4)].c, ' ');
     }
 }

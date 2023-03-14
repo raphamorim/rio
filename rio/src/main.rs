@@ -1,4 +1,3 @@
-mod ansi;
 mod bar;
 mod shared;
 mod term;
@@ -32,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (process, mut w_process, _ptyname, pid) =
         pty(&Cow::Borrowed(&shell), config.columns, config.rows);
 
-    let mut rio: Term = match Term::new(&winit_window, &config, pid.into()).await {
+    let mut rio: Term = match Term::new(&winit_window, &config, pid).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
             panic!("couldn't create Rio terminal {e}");
@@ -44,7 +43,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let message = Arc::clone(&output);
     tokio::spawn(async move {
-        crate::ansi::process(process, &message, config);
+        ansi_machine::process(
+            process,
+            &message,
+            config.columns.into(),
+            config.rows.into(),
+        );
     });
 
     let mut is_focused = true;

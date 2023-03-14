@@ -1,4 +1,3 @@
-use crate::CrosswordsSquare;
 use colors::Rgba;
 use std::sync::Arc;
 
@@ -24,22 +23,6 @@ pub struct Square {
     pub extra: Option<Arc<CellExtra>>,
 }
 
-impl CrosswordsSquare for Square {
-    #[inline]
-    fn is_empty(&self) -> bool {
-        (self.c == ' ' || self.c == '\t')
-            && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
-    }
-
-    #[inline]
-    fn reset(&mut self, template: &Self) {
-        *self = Square {
-            bg: template.bg,
-            ..Square::default()
-        };
-    }
-}
-
 impl Default for Square {
     #[inline]
     fn default() -> Square {
@@ -63,6 +46,30 @@ impl Square {
     pub fn push_zerowidth(&mut self, character: char) {
         let extra = self.extra.get_or_insert(Default::default());
         Arc::make_mut(extra).zerowidth.push(character);
+    }
+}
+
+pub trait CrosswordsSquare: Sized {
+    /// Check if the cell contains any content.
+    fn is_empty(&self) -> bool;
+
+    /// Perform an opinionated cell reset based on a template cell.
+    fn reset(&mut self, template: &Self);
+}
+
+impl CrosswordsSquare for Square {
+    #[inline]
+    fn is_empty(&self) -> bool {
+        (self.c == ' ' || self.c == '\t')
+            && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
+    }
+
+    #[inline]
+    fn reset(&mut self, template: &Self) {
+        *self = Square {
+            bg: template.bg,
+            ..Square::default()
+        };
     }
 }
 

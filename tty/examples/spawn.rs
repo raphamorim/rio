@@ -12,8 +12,8 @@ fn main() -> std::io::Result<()> {
     env::set_var("TERM", "rio");
 
     let shell = Cow::Borrowed("bash");
-    let (process, mut w, pid) = pty(&shell, 80, 25);
-    println!("{pid:?}");
+    let (process, mut w, ptyname, pid) = pty(&shell, 80, 25);
+    println!("{ptyname:?} {pid:?}");
 
     w.write_all(b"1").unwrap();
     w.write_all(b"2").unwrap();
