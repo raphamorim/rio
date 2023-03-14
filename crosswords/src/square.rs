@@ -66,10 +66,7 @@ impl CrosswordsSquare for Square {
 
     #[inline]
     fn reset(&mut self, template: &Self) {
-        *self = Square {
-            bg: template.bg,
-            ..Square::default()
-        };
+        *self = Square { bg: template.bg, ..Square::default() };
     }
 }
 
@@ -84,8 +81,8 @@ impl<T: Copy> ResetDiscriminant<T> for T {
     }
 }
 
-// impl ResetDiscriminant<Color> for Cell {
-//     fn discriminant(&self) -> Color {
-//         self.bg
-//     }
-// }
+impl ResetDiscriminant<Rgba> for Square {
+    fn discriminant(&self) -> Rgba {
+        self.bg
+    }
+}

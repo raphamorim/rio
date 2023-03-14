@@ -1,8 +1,8 @@
+use crate::square::{ResetDiscriminant, CrosswordsSquare};
+use crate::Column;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::{ptr, slice};
-
-use crate::Column;
 
 /// A row in the grid.
 #[derive(Default, Clone, Debug)]
@@ -55,6 +55,29 @@ impl<T: Clone + Default> Row<T> {
         }
 
         self.inner.resize_with(columns, T::default);
+    }
+
+    /// Reset all cells in the row to the `template` cell.
+    #[inline]
+    pub fn reset<D>(&mut self, template: &T) 
+    where
+        T: ResetDiscriminant<D> + CrosswordsSquare,
+        D: PartialEq,
+    {
+        debug_assert!(!self.inner.is_empty());
+
+        // Mark all cells as dirty if template cell changed.
+        let len = self.inner.len();
+        if self.inner[len - 1].discriminant() != template.discriminant() {
+            self.occ = len;
+        }
+
+        // Reset every dirty cell in the row.
+        for item in &mut self.inner[0..self.occ] {
+            item.reset(template);
+        }
+
+        self.occ = 0;
     }
 }
 

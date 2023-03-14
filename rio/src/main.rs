@@ -64,30 +64,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => input_stream.set_modifiers(modifiers),
 
-            event::Event::WindowEvent {
-                event: event::WindowEvent::MouseWheel { delta, .. },
-                ..
-            } => {
-                let mut scroll_y: f64 = 0.0;
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_x, _y) => {
-                        // scroll_y = y;
-                    }
+            // event::Event::WindowEvent {
+            //     event: event::WindowEvent::MouseWheel { delta, .. },
+            //     ..
+            // } => {
+            //     let mut scroll_y: f64 = 0.0;
+            //     match delta {
+            //         winit::event::MouseScrollDelta::LineDelta(_x, _y) => {
+            //             // scroll_y = y;
+            //         }
 
-                    winit::event::MouseScrollDelta::PixelDelta(pixel_delta) => {
-                        scroll_y = pixel_delta.y;
-                    }
-                }
+            //         winit::event::MouseScrollDelta::PixelDelta(pixel_delta) => {
+            //             scroll_y = pixel_delta.y;
+            //         }
+            //     }
 
-                // hacky
-                if scroll_y < 0.0 {
-                    rio.set_text_scroll(-3.0_f32);
-                    // winit_window.request_redraw();
-                }
-                if scroll_y > 0.0 {
-                    rio.set_text_scroll(3.0_f32);
-                }
-            }
+            //     // hacky
+            //     if scroll_y < 0.0 {
+            //         rio.set_text_scroll(-3.0_f32);
+            //         // winit_window.request_redraw();
+            //     }
+            //     if scroll_y > 0.0 {
+            //         rio.set_text_scroll(3.0_f32);
+            //     }
+            // }
 
             event::Event::WindowEvent {
                 event:
