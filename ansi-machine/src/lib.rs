@@ -1,14 +1,11 @@
 mod control;
 
-use control::C0;
-
-use crosswords::Crosswords;
-
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
+use control::C0;
+use crosswords::Crosswords;
 use tty::Process;
-
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser};
 
@@ -34,13 +31,10 @@ impl<'a> Performer<'a> {
 }
 
 impl<'a> vte::Perform for Performer<'a>
-// where
-//     H: Handler + 'a,
 {
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
         self.handler.input(c);
-        // println!("{:?}", self.handler.to_string());
 
         let mut s = self.message.lock().unwrap();
         *s = self.handler.visible_rows_to_string();
@@ -53,17 +47,12 @@ impl<'a> vte::Perform for Performer<'a>
         println!("[execute] {byte:04x}");
 
         match byte {
-            C0::HT => {
-                // TODO: Insert tab at cursor position
-                // self.handler.put_tab(1)
-                // let s = &mut *self.message.lock().unwrap();
-                // s.push(' ');
-            }
+            C0::HT => self.handler.put_tab(1),
             C0::BS => self.handler.backspace(),
             C0::CR => self.handler.carriage_return(),
             C0::LF | C0::VT | C0::FF => self.handler.linefeed(),
-            // C0::BEL => self.handler.bell(),
-            // C0::SUB => self.handler.substitute(),
+            C0::BEL => self.handler.bell(),
+            C0::SUB => self.handler.substitute(),
             // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
             // C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
             _ => println!("[unhandled] execute byte={byte:02x}"),
@@ -96,11 +85,11 @@ impl<'a> vte::Perform for Performer<'a>
         &mut self,
         params: &Params,
         intermediates: &[u8],
-        ignore: bool,
-        c: char,
+        should_ignore: bool,
+        action: char,
     ) {
         println!(
-            "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, ignore={ignore:?}, char={c:?}"
+            "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, should_ignore={should_ignore:?}, action={action:?}"
         );
 
         // TODO: Implement params
@@ -109,6 +98,25 @@ impl<'a> vte::Perform for Performer<'a>
         // let mut s = self.message.lock().unwrap();
         // *s = String::from("");
         // }
+
+        if should_ignore || intermediates.len() > 1 {
+            return;
+        }
+
+        let mut params_iter = params.iter();
+        let handler = &mut self.handler;
+
+        let mut next_param_or = |default: u16| match params_iter.next() {
+            Some(&[param, ..]) if param != 0 => param,
+            _ => default,
+        };
+
+        match (action, intermediates) {
+            ('K', []) => handler.clear_line(next_param_or(0)),
+            _ => {
+
+            }
+        };
 
         // if c == 'K' {
         //     let mut s = self.message.lock().unwrap();
@@ -124,12 +132,11 @@ impl<'a> vte::Perform for Performer<'a>
     }
 }
 
-// ■ ~ ▲
 pub fn process(
     process: Process,
     arc_m: &Arc<Mutex<String>>,
-    rows: usize,
     columns: usize,
+    rows: usize,
 ) {
     let reader = BufReader::new(process);
 
@@ -137,9 +144,5 @@ pub fn process(
     let mut parser = Parser::new();
     for byte in reader.bytes() {
         parser.advance(&mut handler, *byte.as_ref().unwrap());
-
-        // let bs = crate::shared::utils::convert_to_utf8_string(byte.unwrap());
-        // let mut a = arc_m.lock().unwrap();
-        // *a = format!("{}{}", *a, bs);
     }
 }

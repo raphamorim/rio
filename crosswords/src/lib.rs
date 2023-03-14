@@ -25,6 +25,7 @@ use crate::square::Square;
 use crate::storage::Storage;
 use bitflags::bitflags;
 use pos::{Column, Cursor, Line, Pos};
+use std::{ptr};
 use std::ops::{Index, IndexMut, Range};
 use unicode_width::UnicodeWidthChar;
 
@@ -68,8 +69,58 @@ pub struct Crosswords {
     cursor: Cursor<Square>,
     scroll: usize,
     mode: Mode,
+    tabs: TabStops,
     active_charset: CharsetIndex,
     scroll_region: ScrollRegion,
+    scroll_limit: usize
+}
+
+#[derive(Debug, Clone)]
+struct TabStops {
+    tabs: Vec<bool>,
+}
+
+/// Default tab interval, corresponding to terminfo `it` value.
+const INITIAL_TABSTOPS: usize = 8;
+
+impl TabStops {
+    #[inline]
+    fn new(columns: usize) -> TabStops {
+        TabStops { tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect() }
+    }
+
+    /// Remove all tabstops.
+    #[inline]
+    fn clear_all(&mut self) {
+        unsafe {
+            ptr::write_bytes(self.tabs.as_mut_ptr(), 0, self.tabs.len());
+        }
+    }
+
+    /// Increase tabstop capacity.
+    #[inline]
+    fn resize(&mut self, columns: usize) {
+        let mut index = self.tabs.len();
+        self.tabs.resize_with(columns, || {
+            let is_tabstop = index % INITIAL_TABSTOPS == 0;
+            index += 1;
+            is_tabstop
+        });
+    }
+}
+
+impl Index<Column> for TabStops {
+    type Output = bool;
+
+    fn index(&self, index: Column) -> &bool {
+        &self.tabs[index.0]
+    }
+}
+
+impl IndexMut<Column> for TabStops {
+    fn index_mut(&mut self, index: Column) -> &mut bool {
+        self.tabs.index_mut(index.0)
+    }
 }
 
 impl Index<Line> for Crosswords {
@@ -117,6 +168,8 @@ impl Crosswords {
                 start: 0,
                 end: rows,
             },
+            tabs: TabStops::new(cols),
+            scroll_limit: 10_000,
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
@@ -124,27 +177,47 @@ impl Crosswords {
         }
     }
 
+    // pub fn scroll_display(&mut self, scroll: Scroll) {
+    //     self.display_offset = match scroll {
+    //         Scroll::Delta(count) => {
+    //             min(max((self.display_offset as i32) + count, 0) as usize, self.history_size())
+    //         },
+    //         Scroll::PageUp => min(self.display_offset + self.lines, self.history_size()),
+    //         Scroll::PageDown => self.display_offset.saturating_sub(self.lines),
+    //         Scroll::Top => self.history_size(),
+    //         Scroll::Bottom => 0,
+    //     };
+    // }
+
+    pub fn update_history(&mut self, history_size: usize) {
+        let current_history_size = self.history_size();
+        if current_history_size > history_size {
+            self.raw.shrink_lines(current_history_size - history_size);
+        }
+        self.scroll = std::cmp::min(self.scroll, history_size);
+        self.scroll_limit = history_size;
+    }
+
     /// Move lines at the bottom toward the top.
-    ///
-    /// This is the performance-sensitive part of scrolling.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
-        // if region.end - region.start <= positions && region.start != 0 {
-        // for i in (region.start.0..region.end.0).map(Line::from) {
-        // self.raw[i].reset(&self.cursor.template);
-        // }
 
-        // return;
-        // }
+        if region.end - region.start <= positions {
+            for i in (region.start.0..region.end.0).map(Line::from) {
+                self.raw[i].reset(&self.cursor.template);
+            }
+
+            return;
+        }
 
         // Update display offset when not pinned to active area.
         if self.scroll != 0 {
-            // TODO: update to proper limit instead of usize::MAX
-            self.scroll = std::cmp::min(self.scroll + positions, usize::MAX);
+            self.scroll = std::cmp::min(self.scroll + positions, self.scroll_limit);
         }
 
-        // Create scrollback for the new lines.
-        let count = std::cmp::min(positions, usize::MAX - self.history_size());
+
+        // Increase scroll limit
+        let count = std::cmp::min(positions, self.scroll_limit - self.history_size());
         if count != 0 {
             self.raw.initialize(count, self.cols);
         }
@@ -166,9 +239,9 @@ impl Crosswords {
 
         // Ensure all new lines are fully cleared.
         let screen_lines = self.rows();
-        // for i in ((screen_lines - positions)..screen_lines).map(Line::from) {
-        // self.raw[i].reset(&self.cursor.template);
-        // }
+        for i in ((screen_lines - positions)..screen_lines).map(Line::from) {
+            self.raw[i].reset(&self.cursor.template);
+        }
 
         // Swap the fixed lines at the bottom back into position.
         for i in (region.end.0..(screen_lines as i32)).rev().map(Line::from) {
@@ -180,20 +253,19 @@ impl Crosswords {
         self.total_lines().saturating_sub(self.screen_lines())
     }
 
+    /// Text moves up; clear at top
     #[inline]
-    fn scroll_up_per_line(&mut self, mut lines: usize) {
-        let origin = Line(self.rows.try_into().unwrap());
+    fn scroll_up_from_origin(&mut self, origin: Line, mut rows_to_scroll: usize) {
+        println!("Scrolling up: origin={origin}, rows_to_scroll={rows_to_scroll}");
 
-        println!("Scrolling up relative: origin={origin}, lines={lines}");
+        rows_to_scroll = std::cmp::min(rows_to_scroll, self.scroll_region.end - self.scroll_region.start);
 
-        lines = std::cmp::min(lines, self.scroll_region.end - self.scroll_region.start);
-
-        let region = origin..lines.into();
+        let region = origin..rows_to_scroll.into();
 
         // Scroll selection.
-        // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
+        // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, rows_to_scroll as i32));
 
-        self.scroll_up(&region, lines);
+        self.scroll_up(&region, rows_to_scroll);
 
         // // Scroll vi mode cursor.
         // let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -267,11 +339,11 @@ impl Crosswords {
                 self.cursor.pos.row += 1;
                 self.cursor.pos.col = pos::Column(0);
             }
-
-            let next_row = self.cursor.pos.row;
-            let next_col = self.cursor.pos.col;
-            self[next_row][next_col].c = '█';
         }
+
+        // let next_row = self.cursor.pos.row;
+        // let next_col = self.cursor.pos.col;
+        // self[next_row][next_col].c = '█';
 
         if self.cursor.pos.col + 1 < self.cols {
             self.cursor.pos.col += 1;
@@ -288,12 +360,12 @@ impl Crosswords {
 
         // self.cursor_cell().flags.insert(Flags::WRAPLINE);
 
-        // if self.cursor.pos.col + 1 >= self.scroll_region.end {
-        self.linefeed();
-        // } else {
+        if self.cursor.pos.col + 1 >= self.scroll_region.end {
+            self.linefeed();
+        } else {
         // self.damage_cursor();
-        // self.cursor.point.line += 1;
-        // }
+            self.cursor.pos.row += 1;
+        }
 
         self.cursor.pos.col = Column(0);
         self.cursor.should_wrap = false;
@@ -309,28 +381,64 @@ impl Crosswords {
     }
 
     pub fn linefeed(&mut self) {
-        // if self.cursor_square().c == '█' {
-        // self[row][col].p(' ');
-        // }
-
-        // Break line and put cursor in the front
-        self.cursor.pos.row += 1;
-        self.cursor.pos.col = pos::Column(0);
-
-        // println!(">>>>> linefeed");
-
-        if self.cursor.pos.row >= self.cols {
-            self.scroll_up_per_line(1);
+        let next = self.cursor.pos.row + 1;
+        if next == self.scroll_region.end {
+            let origin = Line(self.scroll_region.start.try_into().unwrap());
+            self.scroll_up_from_origin(origin, 1);
+        } else if next < self.screen_lines()  {
+            self.cursor.pos.row += 1;
         }
     }
 
+    #[inline]
+    pub fn bell(&mut self) {
+        println!("[unimplemented] Bell");
+    }
+
+    #[inline]
+    pub fn substitute(&mut self) {
+        println!("[unimplemented] Substitute");
+    }
+
+    #[inline]
+    pub fn put_tab(&mut self, mut count: u16) {
+        // A tab after the last column is the same as a linebreak.
+        if self.cursor.should_wrap {
+            self.wrapline();
+            return;
+        }
+
+        while self.cursor.pos.col < self.columns() && count != 0 {
+            count -= 1;
+
+            let c = self.cursor.charsets[self.active_charset].map('\t');
+            let cell = self.cursor_square();
+            if cell.c == ' ' {
+                cell.c = c;
+            }
+
+            loop {
+                if (self.cursor.pos.col + 1) == self.columns() {
+                    break;
+                }
+
+                self.cursor.pos.col += 1;
+
+                if self.tabs[self.cursor.pos.col] {
+                    break;
+                }
+            }
+        }
+    }
+
+
+
     // #[inline]
     // fn damage_row(&mut self, line: usize, left: usize, right: usize) {
-    // self.raw[line.into()].expand(left, right);
+    //     self.raw[line.into()].expand(left, right);
     // }
 
     pub fn carriage_return(&mut self) {
-        println!("Carriage return");
         let new_col = 0;
         // let row = self.cursor.pos.row.0 as usize;
         // self.damage_row(row, new_col, self.cursor.pos.col.0);
@@ -340,8 +448,10 @@ impl Crosswords {
 
     pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
+        let start = self.scroll_region.start as i32;
+        let end = self.scroll_region.end as i32;
 
-        for row in 0..24 {
+        for row in start..end {
             for colums in 0..self.cols {
                 let square_content = &mut self[Line(row)][Column(colums)];
                 text.push(square_content.c);
@@ -355,7 +465,38 @@ impl Crosswords {
             }
         }
 
+        println!("{}", self.raw.len());
+
         text
+    }
+
+    #[inline]
+    pub fn clear_line(&mut self, mode: u16) {
+        let cursor = &self.cursor;
+        let _bg = cursor.template.bg;
+        let pos = &cursor.pos;
+        let (_left, _right) = match mode {
+            // Right
+            0 => {
+                if self.cursor.should_wrap {
+                    return;
+                }
+                (pos.col, Column(self.columns()))
+            },
+            // Left
+            1 => (Column(0), pos.col + 1),
+            // All
+            2 => (Column(0), Column(self.columns())),
+            _ => todo!(),
+        };
+
+        // self.damage.damage_line(point.line.0 as usize, left.0, right.0 - 1);
+        // let row = &mut self[pos.row];
+        // for cell in &mut row[left..right] {
+            // *cell = bg.into();
+        // }
+        // let range = self.cursor.pos.row..=self.cursor.pos.row;
+        // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
     }
 
     // pub fn to_arr_u8(&mut self, line: Line) -> Row<Square> {
@@ -367,7 +508,6 @@ impl Crosswords {
 mod tests {
     use super::*;
 
-    #[ignore]
     #[test]
     fn test_linefeed() {
         let mut cw: Crosswords = Crosswords::new(1, 1);
