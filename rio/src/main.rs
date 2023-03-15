@@ -88,7 +88,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             //         rio.set_text_scroll(3.0_f32);
             //     }
             // }
-
             event::Event::WindowEvent {
                 event:
                     event::WindowEvent::KeyboardInput {

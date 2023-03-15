@@ -1,4 +1,4 @@
-use crate::square::{ResetDiscriminant, CrosswordsSquare};
+use crate::square::{CrosswordsSquare, ResetDiscriminant};
 use crate::Column;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
@@ -59,7 +59,7 @@ impl<T: Clone + Default> Row<T> {
 
     /// Reset all cells in the row to the `template` cell.
     #[inline]
-    pub fn reset<D>(&mut self, template: &T) 
+    pub fn reset<D>(&mut self, template: &T)
     where
         T: ResetDiscriminant<D> + CrosswordsSquare,
         D: PartialEq,

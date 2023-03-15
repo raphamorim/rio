@@ -66,7 +66,10 @@ impl CrosswordsSquare for Square {
 
     #[inline]
     fn reset(&mut self, template: &Self) {
-        *self = Square { bg: template.bg, ..Square::default() };
+        *self = Square {
+            bg: template.bg,
+            ..Square::default()
+        };
     }
 }
 
