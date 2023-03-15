@@ -1,10 +1,10 @@
 mod control;
 
+use control::C0;
+use crosswords::Crosswords;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
-use control::C0;
-use crosswords::Crosswords;
 use tty::Process;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser};
@@ -30,8 +30,7 @@ impl<'a> Performer<'a> {
     }
 }
 
-impl<'a> vte::Perform for Performer<'a>
-{
+impl<'a> vte::Perform for Performer<'a> {
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
         self.handler.input(c);
@@ -92,13 +91,6 @@ impl<'a> vte::Perform for Performer<'a>
             "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, should_ignore={should_ignore:?}, action={action:?}"
         );
 
-        // TODO: Implement params
-
-        // if c == 'J' && params.len() > 1 {
-        // let mut s = self.message.lock().unwrap();
-        // *s = String::from("");
-        // }
-
         if should_ignore || intermediates.len() > 1 {
             return;
         }
@@ -113,16 +105,9 @@ impl<'a> vte::Perform for Performer<'a>
 
         match (action, intermediates) {
             ('K', []) => handler.clear_line(next_param_or(0)),
-            _ => {
-
-            }
+            ('J', []) => {}
+            _ => {}
         };
-
-        // if c == 'K' {
-        //     let mut s = self.message.lock().unwrap();
-        //     s.pop();
-        //     *s = s.to_string();
-        // }
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {

@@ -25,8 +25,8 @@ use crate::square::Square;
 use crate::storage::Storage;
 use bitflags::bitflags;
 use pos::{Column, Cursor, Line, Pos};
-use std::{ptr};
 use std::ops::{Index, IndexMut, Range};
+use std::ptr;
 use unicode_width::UnicodeWidthChar;
 
 bitflags! {
@@ -72,7 +72,7 @@ pub struct Crosswords {
     tabs: TabStops,
     active_charset: CharsetIndex,
     scroll_region: ScrollRegion,
-    scroll_limit: usize
+    scroll_limit: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -86,11 +86,14 @@ const INITIAL_TABSTOPS: usize = 8;
 impl TabStops {
     #[inline]
     fn new(columns: usize) -> TabStops {
-        TabStops { tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect() }
+        TabStops {
+            tabs: (0..columns).map(|i| i % INITIAL_TABSTOPS == 0).collect(),
+        }
     }
 
     /// Remove all tabstops.
     #[inline]
+    #[allow(unused)]
     fn clear_all(&mut self) {
         unsafe {
             ptr::write_bytes(self.tabs.as_mut_ptr(), 0, self.tabs.len());
@@ -99,6 +102,7 @@ impl TabStops {
 
     /// Increase tabstop capacity.
     #[inline]
+    #[allow(unused)]
     fn resize(&mut self, columns: usize) {
         let mut index = self.tabs.len();
         self.tabs.resize_with(columns, || {
@@ -215,7 +219,6 @@ impl Crosswords {
             self.scroll = std::cmp::min(self.scroll + positions, self.scroll_limit);
         }
 
-
         // Increase scroll limit
         let count = std::cmp::min(positions, self.scroll_limit - self.history_size());
         if count != 0 {
@@ -258,7 +261,10 @@ impl Crosswords {
     fn scroll_up_from_origin(&mut self, origin: Line, mut rows_to_scroll: usize) {
         println!("Scrolling up: origin={origin}, rows_to_scroll={rows_to_scroll}");
 
-        rows_to_scroll = std::cmp::min(rows_to_scroll, self.scroll_region.end - self.scroll_region.start);
+        rows_to_scroll = std::cmp::min(
+            rows_to_scroll,
+            self.scroll_region.end - self.scroll_region.start,
+        );
 
         let region = origin..rows_to_scroll.into();
 
@@ -333,12 +339,10 @@ impl Crosswords {
 
         if width == 1 {
             self.write_at_cursor(c);
-        } else {
-            if self.cursor.pos.col == self.cols {
-                // Place cursor to beginning if hits the max of cols
-                self.cursor.pos.row += 1;
-                self.cursor.pos.col = pos::Column(0);
-            }
+        } else if self.cursor.pos.col == self.cols {
+            // Place cursor to beginning if hits the max of cols
+            self.cursor.pos.row += 1;
+            self.cursor.pos.col = pos::Column(0);
         }
 
         // let next_row = self.cursor.pos.row;
@@ -363,7 +367,7 @@ impl Crosswords {
         if self.cursor.pos.col + 1 >= self.scroll_region.end {
             self.linefeed();
         } else {
-        // self.damage_cursor();
+            // self.damage_cursor();
             self.cursor.pos.row += 1;
         }
 
@@ -385,7 +389,7 @@ impl Crosswords {
         if next == self.scroll_region.end {
             let origin = Line(self.scroll_region.start.try_into().unwrap());
             self.scroll_up_from_origin(origin, 1);
-        } else if next < self.screen_lines()  {
+        } else if next < self.screen_lines() {
             self.cursor.pos.row += 1;
         }
     }
@@ -430,8 +434,6 @@ impl Crosswords {
             }
         }
     }
-
-
 
     // #[inline]
     // fn damage_row(&mut self, line: usize, left: usize, right: usize) {
@@ -482,7 +484,7 @@ impl Crosswords {
                     return;
                 }
                 (pos.col, Column(self.columns()))
-            },
+            }
             // Left
             1 => (Column(0), pos.col + 1),
             // All
@@ -493,7 +495,7 @@ impl Crosswords {
         // self.damage.damage_line(point.line.0 as usize, left.0, right.0 - 1);
         // let row = &mut self[pos.row];
         // for cell in &mut row[left..right] {
-            // *cell = bg.into();
+        // *cell = bg.into();
         // }
         // let range = self.cursor.pos.row..=self.cursor.pos.row;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));

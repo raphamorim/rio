@@ -28,7 +28,6 @@ pub struct Term {
     uniforms: wgpu::BindGroup,
     transform: wgpu::Buffer,
     current_transform: [f32; 16],
-    text_scroll: f32,
     pid: i32,
 }
 
@@ -180,7 +179,6 @@ impl Term {
             current_transform,
             transform,
             pid,
-            text_scroll: 1.0,
         })
     }
 
@@ -227,10 +225,6 @@ impl Term {
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
-    }
-
-    pub fn set_text_scroll(&mut self, text_scroll: f32) {
-        self.text_scroll -= text_scroll;
     }
 
     #[inline]
@@ -428,10 +422,7 @@ impl Term {
         let yspacing = if self.is_modern() { 60.0 } else { 40.0 };
         {
             self.text_brush.queue(Section {
-                screen_position: (
-                    12.0 * self.scale,
-                    (yspacing * self.scale) - self.text_scroll,
-                ),
+                screen_position: (12.0 * self.scale, (yspacing * self.scale)),
                 bounds: (
                     (self.size.width as f32) - (40.0 * self.scale),
                     (self.size.height as f32) * self.scale,
