@@ -8,7 +8,7 @@ authors = ["Raphael Amorim"]
 [dependencies]
 glyph_brush = "0.7"
 wgpu = { workspace = true }
-tokio = { version = "1.7.1", features = ["full"] }
+tokio = { version = "1.24.2", features = ["full"] }
 winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }

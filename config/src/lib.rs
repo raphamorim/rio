@@ -98,8 +98,8 @@ impl Config {
                 Ok(decoded) => decoded,
                 Err(err_message) => {
                     // TODO: Use debug flags
-                    println!("{:?}", err_message);
-                    return Config::default();
+                    println!("{err_message:?}");
+                    Config::default()
                 }
             }
         } else {
