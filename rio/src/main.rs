@@ -19,6 +19,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = Config::load_macos();
 
+    tracing::debug!("{:?}", config);
+
     let window_builder =
         window::create_window_builder("Rio", (config.width, config.height));
     let winit_window = window_builder.build(&event_loop).unwrap();

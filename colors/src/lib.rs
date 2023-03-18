@@ -4,15 +4,15 @@ use std::num::ParseIntError;
 
 #[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
 pub struct Rgba {
-    pub red: f32,
-    pub green: f32,
-    pub blue: f32,
-    pub alpha: f32,
+    pub red: f64,
+    pub green: f64,
+    pub blue: f64,
+    pub alpha: f64,
 }
 
 impl Rgba {
     #[allow(dead_code)]
-    fn new(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
+    fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self {
             red,
             green,
@@ -22,7 +22,7 @@ impl Rgba {
     }
 
     pub fn from_hex(mut hex: String) -> Result<Self, String> {
-        let mut alpha: f32 = 1.0;
+        let mut alpha: f64 = 1.0;
         let _match3or4_hex = "#?[a-f\\d]{3}[a-f\\d]?";
         let _match6or8_hex = "#?[a-f\\d]{6}([a-f\\d]{2})?";
         let non_hex_chars = Regex::new(r"(?i)[^#a-f\\0-9]").unwrap();
@@ -46,7 +46,7 @@ impl Rgba {
             let items = hex.split_at(4);
             let alpha_from_hex = items.1.to_string().parse::<i32>().unwrap();
             hex = items.0.to_string();
-            alpha = (alpha_from_hex / 255) as f32;
+            alpha = (alpha_from_hex / 255) as f64;
             // hex = hex.split_at(1).0.to_string();
         }
 
@@ -71,11 +71,20 @@ impl Rgba {
         // let alpha = typeof options.alpha === "number" ? options.alpha : alpha_from_hex;
 
         Ok(Self {
-            red: (rgb[0] as f32) / 1000.0,
-            green: (rgb[1] as f32) / 1000.0,
-            blue: (rgb[2] as f32) / 1000.0,
+            red: (rgb[0] as f64) / 1000.0,
+            green: (rgb[1] as f64) / 1000.0,
+            blue: (rgb[2] as f64) / 1000.0,
             alpha,
         })
+    }
+
+    pub fn to_wgpu(&self) -> wgpu::Color {
+        wgpu::Color {
+            r: self.red,
+            g: self.green,
+            b: self.blue,
+            a: self.alpha,
+        }
     }
 
     pub fn format_string(&self) -> String {
@@ -185,6 +194,17 @@ mod tests {
                 red: 0.0,
                 green: 0.0,
                 blue: 0.0,
+                alpha: 1.0
+            }
+        );
+
+        let color = Rgba::from_hex(String::from("#FFFFFF")).unwrap();
+        assert_eq!(
+            color,
+            Rgba {
+                red: 0.025,
+                green: 0.025,
+                blue: 0.025,
                 alpha: 1.0
             }
         );

@@ -8,4 +8,3 @@ toml = "0.5"
 dirs = "4.0"
 colors = { path = "../colors" }
 serde = { workspace = true }
-

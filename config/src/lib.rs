@@ -9,6 +9,14 @@ use std::io::Write;
 pub static COLS_MACOS: u16 = 80;
 pub static ROWS_MACOS: u16 = 25;
 
+fn default_cols() -> u16 {
+    COLS_MACOS
+}
+
+fn default_rows() -> u16 {
+    ROWS_MACOS
+}
+
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
     #[default]
@@ -23,28 +31,44 @@ pub enum Theme {
     Basic,
 }
 
+#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
+pub enum Font {
+    #[default]
+    Firamono,
+    Novamono,
+}
+
 #[derive(Default, Copy, Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
     pub font_size: f32,
     pub theme: Theme,
+    pub font: Font,
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct Colors {
     #[serde(deserialize_with = "colors::deserialize_hex_string")]
     pub background: Rgba,
-    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    #[serde(
+        deserialize_with = "colors::deserialize_hex_string",
+        default = "Rgba::default"
+    )]
     pub foreground: Rgba,
-    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    #[serde(
+        deserialize_with = "colors::deserialize_hex_string",
+        default = "Rgba::default"
+    )]
     pub cursor: Rgba,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
     pub performance: Performance,
     pub width: u16,
     pub height: u16,
+    #[serde(default = "default_cols")]
     pub columns: u16,
+    #[serde(default = "default_rows")]
     pub rows: u16,
     pub style: Style,
     pub colors: Colors,
@@ -70,9 +94,14 @@ impl Config {
         let path = format!("{base_dir}/.rio/config.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            let decoded: Config =
-                toml::from_str(&content).unwrap_or_else(|_| Config::default());
-            decoded
+            match toml::from_str(&content) {
+                Ok(decoded) => decoded,
+                Err(err_message) => {
+                    // TODO: Use debug flags
+                    println!("{:?}", err_message);
+                    return Config::default();
+                }
+            }
         } else {
             Config::default()
         }
@@ -106,6 +135,7 @@ impl Default for Config {
             style: Style {
                 font_size: 16.0,
                 theme: Theme::default(),
+                font: Font::default(),
             },
         }
     }
@@ -119,11 +149,11 @@ mod tests {
     fn create_temporary_config(
         performance: Performance,
         default: (u16, u16, u16, u16),
-        style: (f32, Theme),
+        style: (f32, Theme, Font),
         colors: (String, String, String),
     ) -> Config {
         let (width, height, columns, rows) = default;
-        let (font_size, theme) = style;
+        let (font_size, theme, font) = style;
         let (background, foreground, cursor) = colors;
 
         let toml_str = format!(
@@ -148,6 +178,7 @@ mod tests {
 
             [style]
             font_size = {font_size}
+            font = "{font:?}"
             theme = "{theme:?}"
 
             [colors]
@@ -198,13 +229,14 @@ mod tests {
             style: Style {
                 theme: Theme::Basic,
                 font_size: 18.0,
+                font: Font::Firamono,
             },
         };
 
         let result = create_temporary_config(
             expected.performance,
             (300, 200, 80, 25),
-            (18.0, expected.style.theme),
+            (18.0, expected.style.theme, expected.style.font),
             (
                 String::from("#000000"),
                 String::from("#FFFFFF"),
@@ -245,13 +277,14 @@ mod tests {
             style: Style {
                 theme: Theme::Basic,
                 font_size: 22.0,
+                font: Font::Novamono,
             },
         };
 
         let result = create_temporary_config(
             expected.performance,
             (400, 400, 80, 25),
-            (22.0, expected.style.theme),
+            (22.0, expected.style.theme, expected.style.font),
             (
                 String::from("#000000"),
                 String::from("#FFFFFF"),

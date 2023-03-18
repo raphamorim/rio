@@ -6,8 +6,9 @@ description = "Virtual terminal application"
 authors = ["Raphael Amorim"]
 
 [dependencies]
+tracing = "0.1.37"
 glyph_brush = "0.7"
-wgpu = "0.13.1"
+wgpu = { workspace = true }
 tokio = { version = "1.7.1", features = ["full"] }
 winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
