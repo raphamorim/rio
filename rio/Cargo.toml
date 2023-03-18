@@ -2,7 +2,7 @@
 name = "rio"
 version = "0.0.1"
 edition = "2021"
-description = "Minimal terminal application"
+description = "Virtual terminal application"
 authors = ["Raphael Amorim"]
 
 [dependencies]
