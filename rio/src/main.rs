@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = Config::load_macos();
 
-    tracing::debug!("{:?}", config);
+    println!("{:?}", config);
 
     let window_builder =
         window::create_window_builder("Rio", (config.width, config.height));

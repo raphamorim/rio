@@ -6,7 +6,6 @@ description = "Virtual terminal application"
 authors = ["Raphael Amorim"]
 
 [dependencies]
-tracing = "0.1.37"
 glyph_brush = "0.7"
 wgpu = { workspace = true }
 tokio = { version = "1.7.1", features = ["full"] }
