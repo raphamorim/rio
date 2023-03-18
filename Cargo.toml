@@ -13,8 +13,13 @@ resolver = "2"
 serde = { version = "1.0.155", features = ["derive"] }
 
 [profile.release]
-opt-level = "z"
+opt-level = "s"
+lto = true
+codegen-units = 1
 
 [profile.dev]
 # https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
 split-debuginfo = "unpacked"
+lto = false
+incremental = true
+opt-level = 0
