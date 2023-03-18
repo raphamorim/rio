@@ -90,7 +90,15 @@ impl Term {
             },
         );
 
-        let font = ab_glyph::FontArc::try_from_slice(shared::FONT_FIRA_MONO)?;
+        let font = match config.style.font {
+            config::Font::Firamono => {
+                ab_glyph::FontArc::try_from_slice(shared::FONT_FIRAMONO)?
+            }
+            config::Font::Novamono => {
+                ab_glyph::FontArc::try_from_slice(shared::FONT_NOVAMONO)?
+            }
+        };
+
         let text_brush =
             GlyphBrushBuilder::using_font(font).build(&device, render_format);
 

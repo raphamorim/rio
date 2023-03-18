@@ -128,6 +128,17 @@ foreground = "#FFFFFF"
 
 ### Style
 
+#### Font
+
+This property will change later to an actual font path. Currently Rio has 2 fonts builtin: `Firamono`, `Novamono`.
+
+- `font` - Set font size.
+
+```toml
+[style]
+font = "Firamono"
+```
+
 #### Font Size
 
 - `font_size` - Set font size.
