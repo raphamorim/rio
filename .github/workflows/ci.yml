@@ -1,10 +1,6 @@
 name: CI
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -15,38 +11,20 @@ env:
 
 jobs:
   lint:
-    runs-on: macOS-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         target:
-          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
     name: Lint
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          target: ${{ matrix.target }}
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      # make sure all code has been formatted with rustfmt and linted with clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: rustup component add rustfmt clippy
-      - name: rustfmt
-        run: cargo fmt -- --check --color always
       - run: cargo fetch
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo fmt -- --check --color always
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
     runs-on: macOS-latest
@@ -57,28 +35,13 @@ jobs:
     env:
       RUSTUP_UNPACK_RAM: "26214400"
       RUSTUP_IO_THREADS: "1"
+      RUSTFLAGS: "-C target-cpu=native"
+      RUST_BACKTRACE: full
+
     name: Test
     steps:
       - name: Checkout source Git repo
         uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          target: ${{ matrix.target }}
-          toolchain: stable
-
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cargo Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: '--release'
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: cargo test
