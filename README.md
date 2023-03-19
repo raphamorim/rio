@@ -79,7 +79,7 @@ Description: Set terminal window height.
 
 ```toml
 # <height> Set default height
-# default: 400
+# default: 438
 height = 400
 ```
 
@@ -89,8 +89,8 @@ Description: Set terminal window width.
 
 ```toml
 # <width> Set default width
-# default: 400
-width = 600
+# default: 662
+width = 800
 ```
 
 ### Columns
@@ -126,6 +126,8 @@ rows = 25
 background = "#151515"
 cursor = "#8E12CC"
 foreground = "#FFFFFF"
+tabs = "#8E12CC"
+tabs-active = "#8E12CC"
 ```
 
 ### Style
