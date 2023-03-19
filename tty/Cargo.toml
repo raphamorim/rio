@@ -5,4 +5,4 @@ edition = "2021"
 authors = ["Raphael Amorim"]
 
 [dependencies]
-libc = "0.2.134"
+libc = "0.2.140"
