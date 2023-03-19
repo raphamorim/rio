@@ -1,5 +1,6 @@
-docs-install:
-	cargo install cargo-server
+.PHONY: docs
+
+all: install run
 
 docs:
 	cd docs && cargo server --open --port 4000
