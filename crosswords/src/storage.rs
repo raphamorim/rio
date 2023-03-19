@@ -747,6 +747,50 @@ mod tests {
     }
 
     #[test]
+    fn initialize_with_square() {
+        use crate::Square;
+
+        // Setup storage area.
+        let mut storage: Storage<Square> = Storage {
+            inner: vec![
+                Row::default(),
+                Row::default(),
+                Row::default(),
+                Row::default(),
+                Row::default(),
+                Row::default(),
+            ],
+            zero: 2,
+            visible_lines: 25,
+            len: 6,
+        };
+
+        // Initialize additional lines.
+        let init_size = 5;
+        storage.initialize(init_size, 1);
+
+        // Generate expected grid.
+        let expected_inner = vec![
+            Row::default(),
+            Row::default(),
+            Row::default(),
+            Row::default(),
+            Row::default(),
+            Row::default(),
+        ];
+        let expected_storage: Storage<Square> = Storage {
+            inner: expected_inner,
+            zero: 0,
+            visible_lines: 25,
+            len: 11,
+        };
+
+        assert_eq!(storage.len, expected_storage.len);
+        assert_eq!(storage.visible_lines, expected_storage.visible_lines);
+        assert_eq!(storage.zero, expected_storage.zero);
+    }
+
+    #[test]
     fn rotate_wrap_zero() {
         let mut storage: Storage<char> = Storage {
             inner: vec![filled_row('-'), filled_row('-'), filled_row('-')],

@@ -57,22 +57,22 @@ bitflags! {
 
 #[derive(Debug, Clone)]
 struct ScrollRegion {
-    start: usize,
-    end: usize,
+    start: Line,
+    end: Line,
 }
 
 #[derive(Debug, Clone)]
 pub struct Crosswords {
-    rows: usize,
-    cols: usize,
-    raw: Storage<Square>,
-    cursor: Cursor<Square>,
-    scroll: usize,
-    mode: Mode,
-    tabs: TabStops,
     active_charset: CharsetIndex,
-    scroll_region: ScrollRegion,
+    cols: usize,
+    cursor: Cursor<Square>,
+    mode: Mode,
+    rows: usize,
+    scroll: usize,
     scroll_limit: usize,
+    scroll_region: ScrollRegion,
+    storage: Storage<Square>,
+    tabs: TabStops,
 }
 
 #[derive(Debug, Clone)]
@@ -132,14 +132,14 @@ impl Index<Line> for Crosswords {
 
     #[inline]
     fn index(&self, index: Line) -> &Row<Square> {
-        &self.raw[index]
+        &self.storage[index]
     }
 }
 
 impl IndexMut<Line> for Crosswords {
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Row<Square> {
-        &mut self.raw[index]
+        &mut self.storage[index]
     }
 }
 
@@ -164,13 +164,13 @@ impl Crosswords {
         Crosswords {
             cols,
             rows,
-            raw: Storage::with_capacity(rows, cols),
+            storage: Storage::with_capacity(rows, cols),
             cursor: Cursor::default(),
             active_charset: CharsetIndex::default(),
             scroll: 0,
             scroll_region: ScrollRegion {
-                start: 0,
-                end: rows,
+                start: pos::Line(0),
+                end: pos::Line(rows.try_into().unwrap()),
             },
             tabs: TabStops::new(cols),
             scroll_limit: 10_000,
@@ -196,7 +196,8 @@ impl Crosswords {
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
         if current_history_size > history_size {
-            self.raw.shrink_lines(current_history_size - history_size);
+            self.storage
+                .shrink_lines(current_history_size - history_size);
         }
         self.scroll = std::cmp::min(self.scroll, history_size);
         self.scroll_limit = history_size;
@@ -205,10 +206,9 @@ impl Crosswords {
     /// Move lines at the bottom toward the top.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
-
-        if region.end - region.start <= positions {
+        if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
-                self.raw[i].reset(&self.cursor.template);
+                self.storage[i].reset(&self.cursor.template);
             }
 
             return;
@@ -222,7 +222,7 @@ impl Crosswords {
         // Increase scroll limit
         let count = std::cmp::min(positions, self.scroll_limit - self.history_size());
         if count != 0 {
-            self.raw.initialize(count, self.cols);
+            self.storage.initialize(count, self.cols);
         }
 
         // Swap the lines fixed at the top to their target positions after rotation.
@@ -234,21 +234,21 @@ impl Crosswords {
         // We need to start from the bottom, to make sure the fixed lines aren't swapped with each
         // other.
         for i in (0..region.start.0).rev().map(Line::from) {
-            self.raw.swap(i, i + positions);
+            self.storage.swap(i, i + positions);
         }
 
         // Rotate the entire line buffer upward.
-        self.raw.rotate(-(positions as isize));
+        self.storage.rotate(-(positions as isize));
 
         // Ensure all new lines are fully cleared.
-        let screen_lines = self.rows();
+        let screen_lines = self.screen_lines();
         for i in ((screen_lines - positions)..screen_lines).map(Line::from) {
-            self.raw[i].reset(&self.cursor.template);
+            self.storage[i].reset(&self.cursor.template);
         }
 
         // Swap the fixed lines at the bottom back into position.
         for i in (region.end.0..(screen_lines as i32)).rev().map(Line::from) {
-            self.raw.swap(i, i - positions);
+            self.storage.swap(i, i - positions);
         }
     }
 
@@ -258,20 +258,20 @@ impl Crosswords {
 
     /// Text moves up; clear at top
     #[inline]
-    fn scroll_up_from_origin(&mut self, origin: Line, mut rows_to_scroll: usize) {
-        println!("Scrolling up: origin={origin}, rows_to_scroll={rows_to_scroll}");
+    fn scroll_up_from_origin(&mut self, origin: Line, mut lines: usize) {
+        // println!("Scrolling up: origin={origin}, lines={lines}");
 
-        rows_to_scroll = std::cmp::min(
-            rows_to_scroll,
-            self.scroll_region.end - self.scroll_region.start,
+        lines = std::cmp::min(
+            lines,
+            (self.scroll_region.end - self.scroll_region.start).0 as usize,
         );
 
-        let region = origin..rows_to_scroll.into();
+        let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, rows_to_scroll as i32));
+        // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
 
-        self.scroll_up(&region, rows_to_scroll);
+        self.scroll_up(&region, lines);
 
         // // Scroll vi mode cursor.
         // let viewport_top = Line(-(self.grid.display_offset() as i32));
@@ -284,12 +284,12 @@ impl Crosswords {
     }
 
     pub fn rows(&mut self) -> usize {
-        self.raw.len()
+        self.storage.len()
     }
 
     fn cursor_square(&mut self) -> &mut Square {
         let pos = &self.cursor.pos;
-        &mut self.raw[pos.row][pos.col]
+        &mut self.storage[pos.row][pos.col]
     }
 
     fn write_at_cursor(&mut self, c: char) {
@@ -364,7 +364,7 @@ impl Crosswords {
 
         // self.cursor_cell().flags.insert(Flags::WRAPLINE);
 
-        if self.cursor.pos.col + 1 >= self.scroll_region.end {
+        if self.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
         } else {
             // self.damage_cursor();
@@ -387,8 +387,7 @@ impl Crosswords {
     pub fn linefeed(&mut self) {
         let next = self.cursor.pos.row + 1;
         if next == self.scroll_region.end {
-            let origin = Line(self.scroll_region.start.try_into().unwrap());
-            self.scroll_up_from_origin(origin, 1);
+            self.scroll_up_from_origin(self.scroll_region.start, 1);
         } else if next < self.screen_lines() {
             self.cursor.pos.row += 1;
         }
@@ -437,7 +436,7 @@ impl Crosswords {
 
     // #[inline]
     // fn damage_row(&mut self, line: usize, left: usize, right: usize) {
-    //     self.raw[line.into()].expand(left, right);
+    //     self.storage[line.into()].expand(left, right);
     // }
 
     pub fn carriage_return(&mut self) {
@@ -450,10 +449,10 @@ impl Crosswords {
 
     pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
-        let start = self.scroll_region.start as i32;
-        let end = self.scroll_region.end as i32;
+        // let start = self.scroll_region.start as i32;
+        // let end = self.scroll_region.end as i32;
 
-        for row in start..end {
+        for row in 0..25 {
             for colums in 0..self.cols {
                 let square_content = &mut self[Line(row)][Column(colums)];
                 text.push(square_content.c);
@@ -466,8 +465,6 @@ impl Crosswords {
                 }
             }
         }
-
-        println!("{}", self.raw.len());
 
         text
     }
@@ -502,13 +499,44 @@ impl Crosswords {
     }
 
     // pub fn to_arr_u8(&mut self, line: Line) -> Row<Square> {
-    //     self.raw[line]
+    //     self.storage[line]
     // }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scroll_up() {
+        let mut cw = Crosswords::new(1, 10);
+        for i in 0..10 {
+            cw[Line(i)][Column(0)].c = i as u8 as char;
+        }
+
+        cw.scroll_up(&(Line(0)..Line(10)), 2);
+
+        assert_eq!(cw[Line(0)][Column(0)].c, '\u{2}');
+        assert_eq!(cw[Line(0)].occ, 1);
+        assert_eq!(cw[Line(1)][Column(0)].c, '\u{3}');
+        assert_eq!(cw[Line(1)].occ, 1);
+        assert_eq!(cw[Line(2)][Column(0)].c, '\u{4}');
+        assert_eq!(cw[Line(2)].occ, 1);
+        assert_eq!(cw[Line(3)][Column(0)].c, '\u{5}');
+        assert_eq!(cw[Line(3)].occ, 1);
+        assert_eq!(cw[Line(4)][Column(0)].c, '\u{6}');
+        assert_eq!(cw[Line(4)].occ, 1);
+        assert_eq!(cw[Line(5)][Column(0)].c, '\u{7}');
+        assert_eq!(cw[Line(5)].occ, 1);
+        assert_eq!(cw[Line(6)][Column(0)].c, '\u{8}');
+        assert_eq!(cw[Line(6)].occ, 1);
+        assert_eq!(cw[Line(7)][Column(0)].c, '\u{9}');
+        assert_eq!(cw[Line(7)].occ, 1);
+        assert_eq!(cw[Line(8)][Column(0)].c, ' '); // was 0.
+        assert_eq!(cw[Line(8)].occ, 0);
+        assert_eq!(cw[Line(9)][Column(0)].c, ' '); // was 1.
+        assert_eq!(cw[Line(9)].occ, 0);
+    }
 
     #[test]
     fn test_linefeed() {
@@ -525,7 +553,6 @@ mod tests {
         let rows: usize = 10;
         let mut cw: Crosswords = Crosswords::new(columns, rows);
         for i in 0..4 {
-            println!("{i:?}");
             cw[Line(0)][Column(i)].c = i as u8 as char;
         }
         cw[Line(1)][Column(3)].c = 'b';

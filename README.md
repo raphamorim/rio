@@ -9,6 +9,8 @@ This project depends of donations, so if you are using or want to help in any wa
 - Uses threaded rendering for absolutely minimal latency
 - Tabs support
 
+Note: Rio wouldn't be possible without [few acknowledgements](#acknowledgements).
+
 #### Status
 
 Basic features are under development for MacOs right now.

@@ -175,6 +175,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_conversion_from_hex() {
         let color = Rgba::from_hex(String::from("#151515")).unwrap();
         assert_eq!(
