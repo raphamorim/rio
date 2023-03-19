@@ -1,3 +1,6 @@
+docs-install:
+	cargo install cargo-server
+
 docs:
 	cd docs && cargo server --open --port 4000
 
@@ -18,7 +21,7 @@ lint:
 
 test:
 	make lint
-	cargo test --release
+	RUST_BACKTRACE=full cargo test --release
 
 watch:
 	cargo watch -- cargo run
