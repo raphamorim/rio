@@ -449,10 +449,7 @@ impl Crosswords {
 
     pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
-        // let start = self.scroll_region.start as i32;
-        // let end = self.scroll_region.end as i32;
-
-        for row in 0..25 {
+        for row in self.scroll_region.start.0..self.scroll_region.end.0 {
             for colums in 0..self.cols {
                 let square_content = &mut self[Line(row)][Column(colums)];
                 text.push(square_content.c);

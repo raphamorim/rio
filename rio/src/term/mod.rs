@@ -427,12 +427,13 @@ impl Term {
             });
         }
 
-        let yspacing = if self.is_modern() { 60.0 } else { 40.0 };
+        let yspacing = if self.is_modern() { 60.0 } else { 30.0 };
         {
             self.text_brush.queue(Section {
-                screen_position: (12.0 * self.scale, (yspacing * self.scale)),
+                screen_position: (10.0 * self.scale, (yspacing * self.scale)),
                 bounds: (
-                    (self.size.width as f32) - (40.0 * self.scale),
+                    (self.size.width as f32)
+                        - ((self.style.font_size + 5.0) * self.scale),
                     (self.size.height as f32) * self.scale,
                 ),
                 text: vec![Text::new(&output.lock().unwrap())

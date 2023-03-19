@@ -112,8 +112,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             performance: Performance::default(),
-            width: 800,
-            height: 600,
+            width: 662,
+            height: 438,
             // MacOs default
             columns: COLS_MACOS,
             rows: ROWS_MACOS,
