@@ -113,7 +113,7 @@ impl Default for Config {
             .unwrap()
             .to_wgpu();
         let tabs_active =
-            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+            ColorBuilder::from_hex(String::from("#F8A145"), Format::SRGB0_1)
                 .unwrap()
                 .to_arr();
         Config {
@@ -203,7 +203,7 @@ mod tests {
             .to_wgpu();
         let foreground = [1.0, 1.0, 1.0, 1.0];
         let tabs_active =
-            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+            ColorBuilder::from_hex(String::from("#F8A145"), Format::SRGB0_1)
                 .unwrap()
                 .to_arr();
         let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
@@ -237,7 +237,7 @@ mod tests {
                 String::from("#151515"),
                 String::from("#FFFFFF"),
                 String::from("#8E12CC"),
-                String::from("#E6DB74"),
+                String::from("#F8A145"),
             ),
         );
         assert_eq!(expected.performance, result.performance);
