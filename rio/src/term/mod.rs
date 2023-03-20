@@ -1,11 +1,11 @@
 mod cache;
 
-use crate::bar::{self, BarBrush};
+// use crate::bar::{self, BarBrush};
 use crate::shared;
 use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 use cache::Cache;
-use config::Style;
-use core::num::NonZeroU64;
+use config::{Colors, Style};
+// use core::num::NonZeroU64;
 use std::error::Error;
 use std::mem;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use std::sync::Mutex;
 
 pub struct Term {
     style: Style,
+    colors: Colors,
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
@@ -21,7 +22,7 @@ pub struct Term {
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
     scale: f32,
-    bar: BarBrush,
+    // bar: BarBrush,
     #[allow(dead_code)]
     cache: Cache,
     uniform_layout: wgpu::BindGroupLayout,
@@ -71,13 +72,13 @@ impl Term {
 
         let size = winit_window.inner_size();
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
-        });
+        // let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        //     label: Some("Shader"),
+        //     source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
+        // });
 
         let scale = winit_window.scale_factor() as f32;
-        let bar: BarBrush = BarBrush::new(&device, shader, scale);
+        // let bar: BarBrush = BarBrush::new(&device, shader, scale);
 
         surface.configure(
             &device,
@@ -172,6 +173,7 @@ impl Term {
 
         Ok(Term {
             style: config.style,
+            colors: config.colors,
             device,
             surface,
             staging_belt,
@@ -179,7 +181,7 @@ impl Term {
             size,
             scale,
             render_format,
-            bar,
+            // bar,
             queue,
             cache,
             uniforms,
@@ -203,18 +205,18 @@ impl Term {
 
         self.configure_surface();
 
-        if self.is_modern() {
-            let shader = self
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Shader"),
-                    source: wgpu::ShaderSource::Wgsl(
-                        include_str!("../bar/bar.wgsl").into(),
-                    ),
-                });
+        // if self.is_modern() {
+        //     let shader = self
+        //         .device
+        //         .create_shader_module(wgpu::ShaderModuleDescriptor {
+        //             label: Some("Shader"),
+        //             source: wgpu::ShaderSource::Wgsl(
+        //                 include_str!("../bar/bar.wgsl").into(),
+        //             ),
+        //         });
 
-            self.bar = BarBrush::new(&self.device, shader, self.scale);
-        }
+        //     self.bar = BarBrush::new(&self.device, shader, self.scale);
+        // }
     }
 
     pub fn get_scale(&self) -> f32 {
@@ -243,45 +245,45 @@ impl Term {
             })
     }
 
-    #[inline]
-    fn create_render_pipeline(&self) -> wgpu::RenderPipeline {
-        let render_pipeline_layout: wgpu::PipelineLayout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Term -> Render Pipeline Layout"),
-                push_constant_ranges: &[],
-                bind_group_layouts: &[&self.uniform_layout],
-            });
+    // #[inline]
+    // fn create_render_pipeline(&self) -> wgpu::RenderPipeline {
+    //     let render_pipeline_layout: wgpu::PipelineLayout = self
+    //         .device
+    //         .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    //             label: Some("Term -> Render Pipeline Layout"),
+    //             push_constant_ranges: &[],
+    //             bind_group_layouts: &[&self.uniform_layout],
+    //         });
 
-        self.device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Term -> Render Pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &self.bar.shader,
-                    entry_point: "vs_main",
-                    buffers: &[bar::Vertex::desc()],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &self.bar.shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: self.render_format,
-                        blend: shared::gpu::BLEND,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-            })
-    }
+    // self.device
+    //     .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    //         label: Some("Term -> Render Pipeline"),
+    //         layout: Some(&render_pipeline_layout),
+    //         vertex: wgpu::VertexState {
+    //             module: &self.bar.shader,
+    //             entry_point: "vs_main",
+    //             buffers: &[bar::Vertex::desc()],
+    //         },
+    //         fragment: Some(wgpu::FragmentState {
+    //             module: &self.bar.shader,
+    //             entry_point: "fs_main",
+    //             targets: &[Some(wgpu::ColorTargetState {
+    //                 format: self.render_format,
+    //                 blend: shared::gpu::BLEND,
+    //                 write_mask: wgpu::ColorWrites::ALL,
+    //             })],
+    //         }),
+    //         primitive: wgpu::PrimitiveState {
+    //             topology: wgpu::PrimitiveTopology::TriangleList,
+    //             strip_index_format: None,
+    //             front_face: wgpu::FrontFace::Ccw,
+    //             ..Default::default()
+    //         },
+    //         depth_stencil: None,
+    //         multisample: wgpu::MultisampleState::default(),
+    //         multiview: None,
+    //     })
+    // }
 
     #[inline]
     fn projection(width: u32, height: u32) -> [f32; 16] {
@@ -365,67 +367,67 @@ impl Term {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        if self.is_modern() {
-            let render_pipeline = self.create_render_pipeline();
+        // if self.is_modern() {
+        //     let render_pipeline = self.create_render_pipeline();
 
-            {
-                let new_transform = Self::projection(self.size.width, self.size.height);
+        //     {
+        //         let new_transform = Self::projection(self.size.width, self.size.height);
 
-                if new_transform != self.current_transform {
-                    let mut transform_view = self.staging_belt.write_buffer(
-                        &mut encoder,
-                        &self.transform,
-                        0,
-                        unsafe { NonZeroU64::new_unchecked(16 * 4) },
-                        &self.device,
-                    );
+        //         if new_transform != self.current_transform {
+        //             let mut transform_view = self.staging_belt.write_buffer(
+        //                 &mut encoder,
+        //                 &self.transform,
+        //                 0,
+        //                 unsafe { NonZeroU64::new_unchecked(16 * 4) },
+        //                 &self.device,
+        //             );
 
-                    transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
+        //             transform_view.copy_from_slice(bytemuck::cast_slice(&new_transform));
 
-                    self.current_transform = new_transform;
-                }
+        //             self.current_transform = new_transform;
+        //         }
 
-                let mut render_pass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Term -> Clear frame"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(
-                                    shared::DEFAULT_COLOR_BACKGROUND,
-                                ),
-                                store: true,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                    });
+        //         let mut render_pass =
+        //             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //                 label: Some("Term -> Clear frame"),
+        //                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        //                     view,
+        //                     resolve_target: None,
+        //                     ops: wgpu::Operations {
+        //                         load: wgpu::LoadOp::Clear(
+        //                             self.colors.background,
+        //                         ),
+        //                         store: true,
+        //                     },
+        //                 })],
+        //                 depth_stencil_attachment: None,
+        //             });
 
-                if self.is_modern() {
-                    render_pass.set_pipeline(&render_pipeline);
-                    render_pass.set_bind_group(0, &self.uniforms, &[]);
-                    render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
-                    render_pass.set_index_buffer(
-                        self.bar.buffers.1.slice(..),
-                        wgpu::IndexFormat::Uint16,
-                    );
-                    render_pass.draw(0..self.bar.num_indices, 0..1);
-                }
-            }
-        } else {
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Term -> Clear frame"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(shared::DEFAULT_COLOR_BACKGROUND),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-        }
+        //         if self.is_modern() {
+        //             render_pass.set_pipeline(&render_pipeline);
+        //             render_pass.set_bind_group(0, &self.uniforms, &[]);
+        //             render_pass.set_vertex_buffer(0, self.bar.buffers.0.slice(..));
+        //             render_pass.set_index_buffer(
+        //                 self.bar.buffers.1.slice(..),
+        //                 wgpu::IndexFormat::Uint16,
+        //             );
+        //             render_pass.draw(0..self.bar.num_indices, 0..1);
+        //         }
+        //     }
+        // } else {
+
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Term -> Clear frame"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(self.colors.background),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
 
         let yspacing = if self.is_modern() { 60.0 } else { 30.0 };
         {
