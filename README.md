@@ -27,9 +27,11 @@ Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
 
 [See more in configuration](#theme)
 
-| Modern | Basic |
+| Basic | Modern * |
 | --- | --- |
-| ![Demo macOS](docs/demo-macos.png) | ![Demo basic macOS](docs/demo-macos-basic.png) |
+| ![Demo basic macOS](docs/demo-macos-basic.png) | ![Demo macOS](docs/demo-macos.png) |
+
+_* Modern theme is only available in Developer builds._
 
 #### WPGU based
 

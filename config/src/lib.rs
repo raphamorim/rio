@@ -1,4 +1,4 @@
-use colors::{Color, ColorBuilder, Format};
+use colors::{Color, ColorArray, ColorBuilder, Format};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -47,18 +47,14 @@ pub struct Style {
 
 #[derive(Default, Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
-    #[serde(deserialize_with = "colors::deserialize_hex_string")]
+    #[serde(deserialize_with = "colors::deserialize_to_wpgu")]
     pub background: Color,
-    #[serde(
-        deserialize_with = "colors::deserialize_hex_string",
-        default = "Color::default"
-    )]
-    pub foreground: Color,
-    #[serde(
-        deserialize_with = "colors::deserialize_hex_string",
-        default = "Color::default"
-    )]
+    #[serde(deserialize_with = "colors::deserialize_to_arr")]
+    pub foreground: ColorArray,
+    #[serde(deserialize_with = "colors::deserialize_to_wpgu")]
     pub cursor: Color,
+    #[serde(deserialize_with = "colors::deserialize_to_arr")]
+    pub tabs_active: ColorArray,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -113,12 +109,13 @@ impl Default for Config {
         let background = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
-        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
-            .unwrap()
-            .to_wgpu();
         let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
+        let tabs_active =
+            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+                .unwrap()
+                .to_arr();
         Config {
             performance: Performance::default(),
             width: 662,
@@ -128,8 +125,9 @@ impl Default for Config {
             rows: ROWS_MACOS,
             colors: Colors {
                 background,
-                foreground,
+                foreground: [1.0, 1.0, 1.0, 1.0],
                 cursor,
+                tabs_active,
             },
             style: Style {
                 font_size: 16.0,
@@ -149,11 +147,11 @@ mod tests {
         performance: Performance,
         default: (u16, u16, u16, u16),
         style: (f32, Theme, Font),
-        colors: (String, String, String),
+        colors: (String, String, String, String),
     ) -> Config {
         let (width, height, columns, rows) = default;
         let (font_size, theme, font) = style;
-        let (background, foreground, cursor) = colors;
+        let (background, foreground, cursor, tabs_active) = colors;
 
         let toml_str = format!(
             r#"
@@ -184,6 +182,7 @@ mod tests {
             background = {background:?}
             foreground = {foreground:?}
             cursor = {cursor:?}
+            tabs_active = {tabs_active:?}
 
             ## TODO: Add more configs
             "#
@@ -202,9 +201,11 @@ mod tests {
         let background = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
-        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
-            .unwrap()
-            .to_wgpu();
+        let foreground = [1.0, 1.0, 1.0, 1.0];
+        let tabs_active =
+            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+                .unwrap()
+                .to_arr();
         let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
@@ -219,6 +220,7 @@ mod tests {
                 background,
                 foreground,
                 cursor,
+                tabs_active,
             },
             style: Style {
                 theme: Theme::Basic,
@@ -235,11 +237,13 @@ mod tests {
                 String::from("#151515"),
                 String::from("#FFFFFF"),
                 String::from("#8E12CC"),
+                String::from("#E6DB74"),
             ),
         );
         assert_eq!(expected.performance, result.performance);
         assert_eq!(expected.colors.background, result.colors.background);
         assert_eq!(expected.colors.foreground, result.colors.foreground);
+        assert_eq!(expected.colors.tabs_active, result.colors.tabs_active);
         assert_eq!(expected.colors.cursor, result.colors.cursor);
         assert_eq!(expected.style.font, result.style.font);
         assert_eq!(expected.style.theme, result.style.theme);
@@ -253,12 +257,13 @@ mod tests {
         let background = ColorBuilder::from_hex(String::from("#000000"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
-        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
-            .unwrap()
-            .to_wgpu();
         let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
             .unwrap()
             .to_wgpu();
+        let tabs_active =
+            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+                .unwrap()
+                .to_arr();
 
         let expected = Config {
             performance: Performance::Low,
@@ -268,8 +273,9 @@ mod tests {
             columns: 80,
             colors: Colors {
                 background,
-                foreground,
+                foreground: [1.0, 1.0, 1.0, 1.0],
                 cursor,
+                tabs_active,
             },
             style: Style {
                 theme: Theme::Basic,
@@ -286,6 +292,7 @@ mod tests {
                 String::from("#000000"),
                 String::from("#FFFFFF"),
                 String::from("#8E12CC"),
+                String::from("#E6DB74"),
             ),
         );
 

@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-wgpu = "0.13.1"
+wgpu = "0.15.1"
 serde = { version = "1.0.155", features = ["derive"] }
 
 [profile.release]
