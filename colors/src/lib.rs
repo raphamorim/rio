@@ -19,6 +19,7 @@ pub struct ColorBuilder {
 }
 
 pub type Color = wgpu::Color;
+pub type ColorArray = [f32; 4];
 
 impl ColorBuilder {
     #[allow(dead_code)]
@@ -90,6 +91,15 @@ impl ColorBuilder {
         }
     }
 
+    pub fn to_arr(&self) -> ColorArray {
+        [
+            self.red as f32,
+            self.green as f32,
+            self.blue as f32,
+            self.alpha as f32,
+        ]
+    }
+
     pub fn format_string(&self) -> String {
         std::format!(
             "r: {:?}, g: {:?}, b: {:?}, a: {:?}",
@@ -126,13 +136,24 @@ impl std::fmt::Display for ColorBuilder {
     }
 }
 
-pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Color, D::Error>
+pub fn deserialize_to_wpgu<'de, D>(deserializer: D) -> Result<Color, D::Error>
 where
     D: de::Deserializer<'de>,
 {
     let s: &str = de::Deserialize::deserialize(deserializer)?;
     match ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1) {
         Ok(color) => Ok(color.to_wgpu()),
+        Err(e) => Err(serde::de::Error::custom(e)),
+    }
+}
+
+pub fn deserialize_to_arr<'de, D>(deserializer: D) -> Result<ColorArray, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let s: &str = de::Deserialize::deserialize(deserializer)?;
+    match ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1) {
+        Ok(color) => Ok(color.to_arr()),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
 }

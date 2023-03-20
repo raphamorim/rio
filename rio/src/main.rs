@@ -1,4 +1,4 @@
-mod bar;
+// mod bar;
 mod shared;
 mod term;
 mod text;

@@ -2,9 +2,11 @@ mod ansi;
 pub mod input;
 mod keys;
 
-use crate::shared::{
-    DEFAULT_MINIMUM_WINDOW_HEIGHT, DEFAULT_MINIMUM_WINDOW_WIDTH, LOGO_ICON,
-};
+use crate::shared::LOGO_ICON;
+
+// Terminal W/H contraints
+pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
+pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 400;
 
 pub fn create_window_builder(
     title: &str,

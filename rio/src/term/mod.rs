@@ -7,7 +7,7 @@ use cache::Cache;
 use config::{Colors, Style};
 // use core::num::NonZeroU64;
 use std::error::Error;
-use std::mem;
+// use std::mem;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -17,7 +17,8 @@ pub struct Term {
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
-    render_format: wgpu::TextureFormat,
+    format: wgpu::TextureFormat,
+    alpha_mode: wgpu::CompositeAlphaMode,
     staging_belt: wgpu::util::StagingBelt,
     text_brush: GlyphBrush<()>,
     size: winit::dpi::PhysicalSize<u32>,
@@ -25,16 +26,16 @@ pub struct Term {
     // bar: BarBrush,
     #[allow(dead_code)]
     cache: Cache,
-    uniform_layout: wgpu::BindGroupLayout,
-    uniforms: wgpu::BindGroup,
-    transform: wgpu::Buffer,
-    current_transform: [f32; 16],
+    // uniform_layout: wgpu::BindGroupLayout,
+    // uniforms: wgpu::BindGroup,
+    // transform: wgpu::Buffer,
+    // current_transform: [f32; 16],
     pid: i32,
 }
 
-const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-];
+// const IDENTITY_MATRIX: [f32; 16] = [
+//     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+// ];
 
 impl Term {
     pub async fn new(
@@ -42,24 +43,28 @@ impl Term {
         config: &config::Config,
         pid: i32,
     ) -> Result<Term, Box<dyn Error>> {
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(&winit_window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
+        });
 
+        let surface: wgpu::Surface =
+            unsafe { instance.create_surface(&winit_window).unwrap() };
         let power_preference: wgpu::PowerPreference = match config.performance {
             config::Performance::High => wgpu::PowerPreference::HighPerformance,
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let (device, queue) = (async {
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference,
-                    compatible_surface: Some(&surface),
-                    force_fallback_adapter: false,
-                })
-                .await
-                .expect("Request adapter");
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .expect("Request adapter");
 
+        let (device, queue) = (async {
             adapter
                 .request_device(&wgpu::DeviceDescriptor::default(), None)
                 .await
@@ -68,7 +73,15 @@ impl Term {
         .await;
 
         let staging_belt = wgpu::util::StagingBelt::new(64);
-        let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
+
+        // TODO:
+        // Bgra8UnormSrgb is the only texture format that is guaranteed to be
+        // natively supported by the swapchains of all the APIs/platforms
+        // This should be allowed to be configured by Rio
+        // https://github.com/gfx-rs/wgpu-rs/issues/123
+        // https://github.com/gfx-rs/wgpu/commit/ae3e5057aff64a8e6f13e75be661c0f8a98abcd5
+        // let render_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let format = wgpu::TextureFormat::Rgb10a2Unorm;
 
         let size = winit_window.inner_size();
 
@@ -79,14 +92,22 @@ impl Term {
 
         let scale = winit_window.scale_factor() as f32;
         // let bar: BarBrush = BarBrush::new(&device, shader, scale);
+        let caps = surface.get_capabilities(&adapter);
+        // [Bgra8UnormSrgb, Bgra8Unorm, Rgba16Float, Rgb10a2Unorm]
+        // let formats = caps.formats;
+        let formats = vec![format];
+        let alpha_modes = caps.alpha_modes;
+        let alpha_mode = alpha_modes[0];
 
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: render_format,
+                format,
                 width: size.width,
                 height: size.height,
+                view_formats: formats,
+                alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
@@ -100,76 +121,75 @@ impl Term {
             }
         };
 
-        let text_brush =
-            GlyphBrushBuilder::using_font(font).build(&device, render_format);
+        let text_brush = GlyphBrushBuilder::using_font(font).build(&device, format);
 
         let cache = Cache::new(&device, 1024, 1024);
 
-        let uniform_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("text::Pipeline uniforms"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<
-                                [f32; 16],
-                            >(
-                            )
-                                as u64),
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(
-                            wgpu::SamplerBindingType::Filtering,
-                        ),
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: true,
-                            },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+        // let uniform_layout =
+        //     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //         label: Some("text::Pipeline uniforms"),
+        //         entries: &[
+        //             wgpu::BindGroupLayoutEntry {
+        //                 binding: 0,
+        //                 visibility: wgpu::ShaderStages::VERTEX,
+        //                 ty: wgpu::BindingType::Buffer {
+        //                     ty: wgpu::BufferBindingType::Uniform,
+        //                     has_dynamic_offset: false,
+        //                     min_binding_size: wgpu::BufferSize::new(mem::size_of::<
+        //                         [f32; 16],
+        //                     >(
+        //                     )
+        //                         as u64),
+        //                 },
+        //                 count: None,
+        //             },
+        //             wgpu::BindGroupLayoutEntry {
+        //                 binding: 1,
+        //                 visibility: wgpu::ShaderStages::FRAGMENT,
+        //                 ty: wgpu::BindingType::Sampler(
+        //                     wgpu::SamplerBindingType::Filtering,
+        //                 ),
+        //                 count: None,
+        //             },
+        //             wgpu::BindGroupLayoutEntry {
+        //                 binding: 2,
+        //                 visibility: wgpu::ShaderStages::FRAGMENT,
+        //                 ty: wgpu::BindingType::Texture {
+        //                     sample_type: wgpu::TextureSampleType::Float {
+        //                         filterable: true,
+        //                     },
+        //                     view_dimension: wgpu::TextureViewDimension::D2,
+        //                     multisampled: false,
+        //                 },
+        //                 count: None,
+        //             },
+        //         ],
+        //     });
 
-        use wgpu::util::DeviceExt;
+        // use wgpu::util::DeviceExt;
 
-        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        // let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: None,
+        //     contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+        //     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        // });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
+        // let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        //     address_mode_u: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_v: wgpu::AddressMode::ClampToEdge,
+        //     address_mode_w: wgpu::AddressMode::ClampToEdge,
+        //     ..Default::default()
+        // });
 
-        let uniforms = Self::create_uniforms(
-            &device,
-            &uniform_layout,
-            &transform,
-            &sampler,
-            &cache.view,
-        );
+        // let uniforms = Self::create_uniforms(
+        //     &device,
+        //     &uniform_layout,
+        //     &transform,
+        //     &sampler,
+        //     &cache.view,
+        // );
 
-        let current_transform = Self::projection(size.width, size.height);
+        // let current_transform = Self::projection(size.width, size.height);
 
         Ok(Term {
             style: config.style,
@@ -180,14 +200,15 @@ impl Term {
             text_brush,
             size,
             scale,
-            render_format,
+            format,
+            alpha_mode,
             // bar,
             queue,
             cache,
-            uniforms,
-            uniform_layout,
-            current_transform,
-            transform,
+            // uniforms,
+            // uniform_layout,
+            // current_transform,
+            // transform,
             pid,
         })
     }
@@ -229,9 +250,11 @@ impl Term {
             &self.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.render_format,
+                format: self.format,
                 width: self.size.width,
                 height: self.size.height,
+                view_formats: vec![self.format],
+                alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
@@ -268,7 +291,7 @@ impl Term {
     //             module: &self.bar.shader,
     //             entry_point: "fs_main",
     //             targets: &[Some(wgpu::ColorTargetState {
-    //                 format: self.render_format,
+    //                 format: self.format,
     //                 blend: shared::gpu::BLEND,
     //                 write_mask: wgpu::ColorWrites::ALL,
     //             })],
@@ -285,31 +308,31 @@ impl Term {
     //     })
     // }
 
-    #[inline]
-    fn projection(width: u32, height: u32) -> [f32; 16] {
-        // [2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    // #[inline]
+    // fn projection(width: u32, height: u32) -> [f32; 16] {
+    //     // [2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
-        let h = (height as f32) / 10000.0;
-        let w = (width as f32) / 1000.0;
-        [
-            w,
-            0.0,
-            0.0,
-            0.0,
-            w - 0.89,
-            0.89 + h,
-            0.0,
-            0.0,
-            w - 0.89,
-            0.89 + h,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ]
-    }
+    //     let h = (height as f32) / 10000.0;
+    //     let w = (width as f32) / 1000.0;
+    //     [
+    //         w,
+    //         0.0,
+    //         0.0,
+    //         0.0,
+    //         w - 0.89,
+    //         0.89 + h,
+    //         0.0,
+    //         0.0,
+    //         w - 0.89,
+    //         0.89 + h,
+    //         1.0,
+    //         0.0,
+    //         0.0,
+    //         0.0,
+    //         0.0,
+    //         1.0,
+    //     ]
+    // }
 
     // TODO: Asynchronous update based on 2s
     // Idea? Prob move Term inside of TermUi that contains Tabs/Term
@@ -318,46 +341,46 @@ impl Term {
         tty::command_per_pid(self.pid)
     }
 
-    fn create_uniforms(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        transform: &wgpu::Buffer,
-        sampler: &wgpu::Sampler,
-        cache: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("text::Pipeline uniforms"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: transform,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(cache),
-                },
-            ],
-        })
-    }
+    // fn create_uniforms(
+    //     device: &wgpu::Device,
+    //     layout: &wgpu::BindGroupLayout,
+    //     transform: &wgpu::Buffer,
+    //     sampler: &wgpu::Sampler,
+    //     cache: &wgpu::TextureView,
+    // ) -> wgpu::BindGroup {
+    //     device.create_bind_group(&wgpu::BindGroupDescriptor {
+    //         label: Some("text::Pipeline uniforms"),
+    //         layout,
+    //         entries: &[
+    //             wgpu::BindGroupEntry {
+    //                 binding: 0,
+    //                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+    //                     buffer: transform,
+    //                     offset: 0,
+    //                     size: None,
+    //                 }),
+    //             },
+    //             wgpu::BindGroupEntry {
+    //                 binding: 1,
+    //                 resource: wgpu::BindingResource::Sampler(sampler),
+    //             },
+    //             wgpu::BindGroupEntry {
+    //                 binding: 2,
+    //                 resource: wgpu::BindingResource::TextureView(cache),
+    //             },
+    //         ],
+    //     })
+    // }
 
-    #[inline]
-    fn is_modern(&self) -> bool {
-        self.style.theme == config::Theme::Modern
-    }
+    // #[inline]
+    // fn is_modern(&self) -> bool {
+    //     self.style.theme == config::Theme::Modern
+    // }
 
-    #[inline]
-    fn is_basic(&self) -> bool {
-        self.style.theme == config::Theme::Basic
-    }
+    // #[inline]
+    // fn is_basic(&self) -> bool {
+    //     self.style.theme == config::Theme::Basic
+    // }
 
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
         let mut encoder = self.create_encoder();
@@ -429,7 +452,8 @@ impl Term {
             depth_stencil_attachment: None,
         });
 
-        let yspacing = if self.is_modern() { 60.0 } else { 30.0 };
+        // let yspacing = if self.is_modern() { 60.0 } else { 30.0 };
+        let yspacing = 30.0;
         {
             self.text_brush.queue(Section {
                 screen_position: (10.0 * self.scale, (yspacing * self.scale)),
@@ -439,40 +463,38 @@ impl Term {
                     (self.size.height as f32) * self.scale,
                 ),
                 text: vec![Text::new(&output.lock().unwrap())
-                    .with_color([1.0, 1.0, 1.0, 1.0])
+                    .with_color(self.colors.foreground)
                     .with_scale(self.style.font_size * self.scale)],
                 ..Section::default()
             });
 
-            if self.is_basic() {
-                self.text_brush.queue(Section {
-                    screen_position: (80.0 * self.scale, (8.0 * self.scale)),
-                    bounds: (
-                        (self.size.width as f32) - (40.0 * self.scale),
-                        (self.size.height as f32) * self.scale,
-                    ),
-                    text: vec![Text::new(
-                        format!("■ {}", self.get_command_name()).as_str(),
-                    )
+            // if self.is_basic() {
+            self.text_brush.queue(Section {
+                screen_position: (80.0 * self.scale, (8.0 * self.scale)),
+                bounds: (
+                    (self.size.width as f32) - (40.0 * self.scale),
+                    (self.size.height as f32) * self.scale,
+                ),
+                text: vec![Text::new(format!("■ {}", self.get_command_name()).as_str())
                     // #CD5E98
-                    .with_color([0.81569, 0.39608, 0.56863, 1.0])
+                    .with_color(self.colors.tabs_active)
                     .with_scale(14.0 * self.scale)],
-                    ..Section::default()
-                });
+                ..Section::default()
+            });
 
-                // self.text_brush.queue(Section {
-                //     screen_position: (124.0 * self.scale, (8.0 * self.scale)),
-                //     bounds: (
-                //         (self.size.width as f32) - (40.0 * self.scale),
-                //         (self.size.height as f32) * self.scale,
-                //     ),
-                //     text: vec![Text::new("■ vim ■ zsh ■ docker")
-                //         //(157,165,237)
-                //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
-                //         .with_scale(14.0 * self.scale)],
-                //     ..Section::default()
-                // });
-            }
+            // self.text_brush.queue(Section {
+            //     screen_position: (124.0 * self.scale, (8.0 * self.scale)),
+            //     bounds: (
+            //         (self.size.width as f32) - (40.0 * self.scale),
+            //         (self.size.height as f32) * self.scale,
+            //     ),
+            //     text: vec![Text::new("■ vim ■ zsh ■ docker")
+            //         //(157,165,237)
+            //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
+            //         .with_scale(14.0 * self.scale)],
+            //     ..Section::default()
+            // });
+            // }
 
             self.text_brush
                 .draw_queued(
