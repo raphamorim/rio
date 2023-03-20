@@ -1,4 +1,4 @@
-use colors::Rgba;
+use colors::{Color, ColorBuilder, Format};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -48,17 +48,17 @@ pub struct Style {
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct Colors {
     #[serde(deserialize_with = "colors::deserialize_hex_string")]
-    pub background: Rgba,
+    pub background: Color,
     #[serde(
         deserialize_with = "colors::deserialize_hex_string",
-        default = "Rgba::default"
+        default = "Color::default"
     )]
-    pub foreground: Rgba,
+    pub foreground: Color,
     #[serde(
         deserialize_with = "colors::deserialize_hex_string",
-        default = "Rgba::default"
+        default = "Color::default"
     )]
-    pub cursor: Rgba,
+    pub cursor: Color,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -110,6 +110,15 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let background = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
         Config {
             performance: Performance::default(),
             width: 662,
@@ -118,19 +127,9 @@ impl Default for Config {
             columns: COLS_MACOS,
             rows: ROWS_MACOS,
             colors: Colors {
-                background: Rgba::default(),
-                foreground: Rgba {
-                    red: 0.255,
-                    green: 0.255,
-                    blue: 0.255,
-                    alpha: 1.0,
-                },
-                cursor: Rgba {
-                    red: 0.142,
-                    green: 0.018,
-                    blue: 0.204,
-                    alpha: 1.0,
-                },
+                background,
+                foreground,
+                cursor,
             },
             style: Style {
                 font_size: 16.0,
@@ -200,6 +199,16 @@ mod tests {
 
     #[test]
     fn load_default_config() {
+        let background = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+
         let expected = Config {
             performance: Performance::High,
             width: 300,
@@ -207,24 +216,9 @@ mod tests {
             rows: 25,
             columns: 80,
             colors: Colors {
-                background: Rgba {
-                    red: 0.0,
-                    green: 0.0,
-                    blue: 0.0,
-                    alpha: 1.0,
-                },
-                foreground: Rgba {
-                    red: 0.255,
-                    green: 0.255,
-                    blue: 0.255,
-                    alpha: 1.0,
-                },
-                cursor: Rgba {
-                    red: 0.142,
-                    green: 0.018,
-                    blue: 0.204,
-                    alpha: 1.0,
-                },
+                background,
+                foreground,
+                cursor,
             },
             style: Style {
                 theme: Theme::Basic,
@@ -238,16 +232,34 @@ mod tests {
             (300, 200, 80, 25),
             (18.0, expected.style.theme, expected.style.font),
             (
-                String::from("#000000"),
+                String::from("#151515"),
                 String::from("#FFFFFF"),
                 String::from("#8E12CC"),
             ),
         );
-        assert_eq!(result, expected);
+        assert_eq!(expected.performance, result.performance);
+        assert_eq!(expected.colors.background, result.colors.background);
+        assert_eq!(expected.colors.foreground, result.colors.foreground);
+        assert_eq!(expected.colors.cursor, result.colors.cursor);
+        assert_eq!(expected.style.font, result.style.font);
+        assert_eq!(expected.style.theme, result.style.theme);
+        assert_eq!(expected.width, result.width);
+        assert_eq!(expected.rows, result.rows);
+        assert_eq!(expected.columns, result.columns);
     }
 
     #[test]
     fn load_default_performance_config() {
+        let background = ColorBuilder::from_hex(String::from("#000000"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let foreground = ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+        let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
+            .unwrap()
+            .to_wgpu();
+
         let expected = Config {
             performance: Performance::Low,
             width: 400,
@@ -255,24 +267,9 @@ mod tests {
             rows: 25,
             columns: 80,
             colors: Colors {
-                background: Rgba {
-                    red: 0.0,
-                    green: 0.0,
-                    blue: 0.0,
-                    alpha: 1.0,
-                },
-                foreground: Rgba {
-                    red: 0.255,
-                    green: 0.255,
-                    blue: 0.255,
-                    alpha: 1.0,
-                },
-                cursor: Rgba {
-                    red: 0.142,
-                    green: 0.018,
-                    blue: 0.204,
-                    alpha: 1.0,
-                },
+                background,
+                foreground,
+                cursor,
             },
             style: Style {
                 theme: Theme::Basic,
@@ -291,6 +288,15 @@ mod tests {
                 String::from("#8E12CC"),
             ),
         );
-        assert_eq!(result, expected);
+
+        assert_eq!(expected.performance, result.performance);
+        assert_eq!(expected.colors.background, result.colors.background);
+        assert_eq!(expected.colors.foreground, result.colors.foreground);
+        assert_eq!(expected.colors.cursor, result.colors.cursor);
+        assert_eq!(expected.style.font, result.style.font);
+        assert_eq!(expected.style.theme, result.style.theme);
+        assert_eq!(expected.width, result.width);
+        assert_eq!(expected.rows, result.rows);
+        assert_eq!(expected.columns, result.columns);
     }
 }

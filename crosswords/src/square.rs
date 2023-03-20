@@ -1,4 +1,4 @@
-use colors::Rgba;
+use colors::Color;
 use std::sync::Arc;
 
 /// Dynamically allocated cell content.
@@ -18,8 +18,8 @@ pub struct CellExtra {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Square {
     pub c: char,
-    pub fg: Rgba,
-    pub bg: Rgba,
+    pub fg: Color,
+    pub bg: Color,
     pub extra: Option<Arc<CellExtra>>,
 }
 
@@ -28,8 +28,8 @@ impl Default for Square {
     fn default() -> Square {
         Square {
             c: ' ',
-            bg: Rgba::default(),
-            fg: Rgba::default(),
+            bg: Color::default(),
+            fg: Color::default(),
             extra: None,
         }
     }
@@ -84,8 +84,8 @@ impl<T: Copy> ResetDiscriminant<T> for T {
     }
 }
 
-impl ResetDiscriminant<Rgba> for Square {
-    fn discriminant(&self) -> Rgba {
+impl ResetDiscriminant<Color> for Square {
+    fn discriminant(&self) -> Color {
         self.bg
     }
 }

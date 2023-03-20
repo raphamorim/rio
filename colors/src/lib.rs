@@ -1,16 +1,26 @@
+// Produces WGPU Color based on ColorBuilder
+
 use regex::Regex;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Format {
+    SRGB0_255,
+    SRGB0_1,
+}
+
 #[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
-pub struct Rgba {
+pub struct ColorBuilder {
     pub red: f64,
     pub green: f64,
     pub blue: f64,
     pub alpha: f64,
 }
 
-impl Rgba {
+pub type Color = wgpu::Color;
+
+impl ColorBuilder {
     #[allow(dead_code)]
     fn new(red: f64, green: f64, blue: f64, alpha: f64) -> Self {
         Self {
@@ -21,7 +31,7 @@ impl Rgba {
         }
     }
 
-    pub fn from_hex(mut hex: String) -> Result<Self, String> {
+    pub fn from_hex(mut hex: String, conversion_type: Format) -> Result<Self, String> {
         let mut alpha: f64 = 1.0;
         let _match3or4_hex = "#?[a-f\\d]{3}[a-f\\d]?";
         let _match6or8_hex = "#?[a-f\\d]{6}([a-f\\d]{2})?";
@@ -50,32 +60,25 @@ impl Rgba {
             // hex = hex.split_at(1).0.to_string();
         }
 
-        // if hex.len() == 4 {
-        //  alpha_from_hex = Number.parseInt(hex.slice(3, 4).repeat(2), 16) / 255;
-        //  hex = hex.slice(0, 3);
-        // }
-
-        // if hex.len() == 3 {
-        //  hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-        // }
-
         let rgb = decode_hex(&hex).unwrap_or_default();
         if rgb.is_empty() || rgb.len() > 4 {
             return Err(String::from("Error: Invalid string, not able to convert"));
         }
 
-        // let number = hex.parse::<i32>().unwrap();
-        // let red = number >> 16;
-        // let green = (number >> 8) & 255;
-        // let blue = number & 255;
-        // let alpha = typeof options.alpha === "number" ? options.alpha : alpha_from_hex;
-
-        Ok(Self {
-            red: (rgb[0] as f64) / 1000.0,
-            green: (rgb[1] as f64) / 1000.0,
-            blue: (rgb[2] as f64) / 1000.0,
-            alpha,
-        })
+        match conversion_type {
+            Format::SRGB0_1 => Ok(Self {
+                red: (rgb[0] as f64) / 255.0,
+                green: (rgb[1] as f64) / 255.0,
+                blue: (rgb[2] as f64) / 255.0,
+                alpha,
+            }),
+            Format::SRGB0_255 => Ok(Self {
+                red: (rgb[0] as f64),
+                green: (rgb[1] as f64),
+                blue: (rgb[2] as f64),
+                alpha,
+            }),
+        }
     }
 
     pub fn to_wgpu(&self) -> wgpu::Color {
@@ -105,7 +108,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
         .collect()
 }
 
-impl Default for Rgba {
+impl Default for ColorBuilder {
     // #000000 Color Hex Black #000
     fn default() -> Self {
         Self {
@@ -117,19 +120,19 @@ impl Default for Rgba {
     }
 }
 
-impl std::fmt::Display for Rgba {
+impl std::fmt::Display for ColorBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         std::fmt::Display::fmt(&self.format_string(), f)
     }
 }
 
-pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Rgba, D::Error>
+pub fn deserialize_hex_string<'de, D>(deserializer: D) -> Result<Color, D::Error>
 where
     D: de::Deserializer<'de>,
 {
     let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match Rgba::from_hex(s.to_string()) {
-        Ok(color) => Ok(color),
+    match ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1) {
+        Ok(color) => Ok(color.to_wgpu()),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
 }
@@ -140,8 +143,10 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_invalid_character() {
-        let invalid_character_color = match Rgba::from_hex(String::from("#invalid-color"))
-        {
+        let invalid_character_color = match ColorBuilder::from_hex(
+            String::from("#invalid-color"),
+            Format::SRGB0_255,
+        ) {
             Ok(d) => d.to_string(),
             Err(e) => e,
         };
@@ -151,10 +156,10 @@ mod tests {
 
     #[test]
     fn test_default_color_as_black() {
-        let default_color: Rgba = Rgba::default();
+        let default_color: ColorBuilder = ColorBuilder::default();
 
         assert_eq!(
-            Rgba {
+            ColorBuilder {
                 red: 0.0,
                 green: 0.0,
                 blue: 0.0,
@@ -166,46 +171,68 @@ mod tests {
 
     #[test]
     fn test_conversion_from_hex_invalid_size() {
-        let invalid_invalid_size = match Rgba::from_hex(String::from("abc")) {
-            Ok(d) => d.to_string(),
-            Err(e) => e,
-        };
+        let invalid_invalid_size =
+            match ColorBuilder::from_hex(String::from("abc"), Format::SRGB0_255) {
+                Ok(d) => d.to_string(),
+                Err(e) => e,
+            };
 
         assert_eq!(invalid_invalid_size, "Error: Hex String size is not valid");
     }
 
     #[test]
-    #[ignore]
-    fn test_conversion_from_hex() {
-        let color = Rgba::from_hex(String::from("#151515")).unwrap();
+    fn test_conversion_from_hex_sgb_255() {
+        let color: wgpu::Color =
+            ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
+                .unwrap()
+                .to_wgpu();
         assert_eq!(
             color,
-            Rgba {
-                red: 0.021,
-                green: 0.021,
-                blue: 0.021,
-                alpha: 1.0
+            Color {
+                r: 0.08235294117647059,
+                g: 0.08235294117647059,
+                b: 0.08235294117647059,
+                a: 1.0
             }
         );
 
-        let color = Rgba::from_hex(String::from("#000000")).unwrap();
+        let color =
+            ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1).unwrap();
         assert_eq!(
             color,
-            Rgba {
-                red: 0.0,
-                green: 0.0,
-                blue: 0.0,
+            ColorBuilder {
+                red: 1.0,
+                green: 1.0,
+                blue: 1.0,
                 alpha: 1.0
             }
         );
+    }
 
-        let color = Rgba::from_hex(String::from("#FFFFFF")).unwrap();
+    #[test]
+    fn test_conversion_from_hex_sgb_1() {
+        let color: wgpu::Color =
+            ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_255)
+                .unwrap()
+                .to_wgpu();
         assert_eq!(
             color,
-            Rgba {
-                red: 0.025,
-                green: 0.025,
-                blue: 0.025,
+            Color {
+                r: 21.0,
+                g: 21.0,
+                b: 21.0,
+                a: 1.0
+            }
+        );
+
+        let color =
+            ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_255).unwrap();
+        assert_eq!(
+            color,
+            ColorBuilder {
+                red: 255.0,
+                green: 255.0,
+                blue: 255.0,
                 alpha: 1.0
             }
         );
