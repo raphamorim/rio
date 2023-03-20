@@ -1,8 +1,10 @@
 mod cache;
 
+use renderer::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
+use renderer::Renderer;
+
 // use crate::bar::{self, BarBrush};
-use crate::shared;
-use crate::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
+
 use cache::Cache;
 use config::{Colors, Style};
 // use core::num::NonZeroU64;
@@ -20,7 +22,7 @@ pub struct Term {
     format: wgpu::TextureFormat,
     alpha_mode: wgpu::CompositeAlphaMode,
     staging_belt: wgpu::util::StagingBelt,
-    text_brush: GlyphBrush<()>,
+    renderer: Renderer,
     size: winit::dpi::PhysicalSize<u32>,
     scale: f32,
     // bar: BarBrush,
@@ -112,16 +114,10 @@ impl Term {
             },
         );
 
-        let font = match config.style.font {
-            config::Font::Firamono => {
-                ab_glyph::FontArc::try_from_slice(shared::FONT_FIRAMONO)?
-            }
-            config::Font::Novamono => {
-                ab_glyph::FontArc::try_from_slice(shared::FONT_NOVAMONO)?
-            }
+        let renderer = match Renderer::new(&device, format) {
+            Ok(r) => r,
+            Err(e) => panic!("{e:?}")
         };
-
-        let text_brush = GlyphBrushBuilder::using_font(font).build(&device, format);
 
         let cache = Cache::new(&device, 1024, 1024);
 
@@ -197,7 +193,7 @@ impl Term {
             device,
             surface,
             staging_belt,
-            text_brush,
+            renderer,
             size,
             scale,
             format,
@@ -455,7 +451,7 @@ impl Term {
         // let yspacing = if self.is_modern() { 60.0 } else { 30.0 };
         let yspacing = 30.0;
         {
-            self.text_brush.queue(Section {
+            self.renderer.brush.queue(Section {
                 screen_position: (10.0 * self.scale, (yspacing * self.scale)),
                 bounds: (
                     (self.size.width as f32)
@@ -469,7 +465,7 @@ impl Term {
             });
 
             // if self.is_basic() {
-            self.text_brush.queue(Section {
+            self.renderer.brush.queue(Section {
                 screen_position: (80.0 * self.scale, (8.0 * self.scale)),
                 bounds: (
                     (self.size.width as f32) - (40.0 * self.scale),
@@ -478,13 +474,14 @@ impl Term {
                 text: vec![Text::new(format!("■ {}", self.get_command_name()).as_str())
                     .with_color(self.colors.tabs_active)
                     .with_scale(15.0 * self.scale)],
-                layout: glyph_brush::Layout::default(),
+                // layout: renderer::glyph_brush::Layout::default(),
+                ..Section::default()
                 // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
                 // .v_align(glyph_brush::VerticalAlign::Center)
                 // .h_align(glyph_brush::HorizontalAlign::Left)
             });
 
-            // self.text_brush.queue(Section {
+            // self.renderer.brush.queue(Section {
             //     screen_position: ((self.size.width as f32 - 20.0) * self.scale, (8.0 * self.scale)),
             //     bounds: (
             //         (self.size.width as f32) - (40.0 * self.scale),
@@ -501,7 +498,7 @@ impl Term {
             //     ..Section::default()
             // });
 
-            self.text_brush
+            self.renderer.brush
                 .draw_queued(
                     &self.device,
                     &mut self.staging_belt,

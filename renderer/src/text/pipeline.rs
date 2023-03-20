@@ -1,6 +1,5 @@
 mod cache;
 
-use crate::shared;
 use crate::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
@@ -10,6 +9,19 @@ use core::num::NonZeroU64;
 use glyph_brush::ab_glyph::{point, Rect};
 use std::marker::PhantomData;
 use std::mem;
+
+pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
+    color: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::SrcAlpha,
+        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+        operation: wgpu::BlendOperation::Add,
+    },
+    alpha: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+        operation: wgpu::BlendOperation::Add,
+    },
+});
 
 pub struct Pipeline<Depth> {
     transform: wgpu::Buffer,
@@ -291,7 +303,7 @@ fn build<D>(
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
                 format: render_format,
-                blend: shared::gpu::BLEND,
+                blend: BLEND,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),

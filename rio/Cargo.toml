@@ -6,12 +6,12 @@ description = "Virtual terminal application"
 authors = ["Raphael Amorim"]
 
 [dependencies]
-glyph_brush = "0.7.7"
 wgpu = { workspace = true }
 tokio = { version = "1.24.2", features = ["full"] }
 winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
-bytemuck = { version = "1.9", features = [ "derive" ] }
+bytemuck = { workspace = true }
+renderer = { path = "../renderer" }
 tty = { path = "../tty" }
 colors = { path = "../colors" }
 ansi-machine = { path = "../ansi-machine" }
