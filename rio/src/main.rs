@@ -1,7 +1,6 @@
 // mod bar;
 mod shared;
 mod term;
-mod text;
 mod window;
 
 use crate::term::Term;
