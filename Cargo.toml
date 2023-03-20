@@ -4,6 +4,7 @@ members = [
   "tty",
   "colors",
   "config",
+  "renderer",
   "crosswords",
   "rio"
 ]

@@ -476,14 +476,16 @@ impl Term {
                     (self.size.height as f32) * self.scale,
                 ),
                 text: vec![Text::new(format!("■ {}", self.get_command_name()).as_str())
-                    // #CD5E98
                     .with_color(self.colors.tabs_active)
-                    .with_scale(14.0 * self.scale)],
-                ..Section::default()
+                    .with_scale(15.0 * self.scale)],
+                layout: glyph_brush::Layout::default(),
+                // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+                // .v_align(glyph_brush::VerticalAlign::Center)
+                // .h_align(glyph_brush::HorizontalAlign::Left)
             });
 
             // self.text_brush.queue(Section {
-            //     screen_position: (124.0 * self.scale, (8.0 * self.scale)),
+            //     screen_position: ((self.size.width as f32 - 20.0) * self.scale, (8.0 * self.scale)),
             //     bounds: (
             //         (self.size.width as f32) - (40.0 * self.scale),
             //         (self.size.height as f32) * self.scale,
@@ -492,9 +494,12 @@ impl Term {
             //         //(157,165,237)
             //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
             //         .with_scale(14.0 * self.scale)],
+            //     layout: glyph_brush::Layout::default()
+            //         // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+            //         // .v_align(glyph_brush::VerticalAlign::Center)
+            //         .h_align(glyph_brush::HorizontalAlign::Right),
             //     ..Section::default()
             // });
-            // }
 
             self.text_brush
                 .draw_queued(
