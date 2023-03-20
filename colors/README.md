@@ -1,3 +1,5 @@
+# Colors
+
 ## Conversion Enums
 
 ```rust
@@ -22,13 +24,17 @@ RGB Adobe 98 =  255.000  255.000  255.000
 [WGPU Color](https://docs.rs/wgpu/latest/wgpu/struct.Color.html)
 
 ```rust
-let color: wgpu::Color = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_255).unwrap().to_wgpu();
+let color: wgpu::Color =
+    ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
+        .unwrap()
+        .to_wgpu();
+
 assert_eq!(
     color,
     Color {
-        r: 21.0,
-        g: 21.0,
-        b: 21.0,
+        r: 0.08235294117647059,
+        g: 0.08235294117647059,
+        b: 0.08235294117647059,
         a: 1.0
     }
 );

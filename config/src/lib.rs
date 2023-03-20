@@ -45,7 +45,7 @@ pub struct Style {
     pub font: Font,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
     #[serde(deserialize_with = "colors::deserialize_hex_string")]
     pub background: Color,
