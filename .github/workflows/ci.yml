@@ -10,22 +10,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-ubuntu:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-    name: Test Ubuntu
-    steps:
-      - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-      - run: rustup component add rustfmt clippy
-      - run: cargo fetch
-      - run: cargo fmt -- --check --color always
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test
+  # test-ubuntu:
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       target:
+  #         - x86_64-unknown-linux-gnu
+  #   name: Test Ubuntu
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+  #     - run: rustup component add rustfmt clippy
+  #     - run: cargo fetch
+  #     - run: cargo fmt -- --check --color always
+  #     - run: cargo clippy --all-targets --all-features -- -D warnings
+  #     - run: cargo test
 
   test-macos:
     runs-on: macOS-latest

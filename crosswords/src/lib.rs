@@ -203,6 +203,11 @@ impl Crosswords {
         self.scroll_limit = history_size;
     }
 
+    #[inline]
+    pub fn cursor(&self) -> (Column, Line) {
+        (self.cursor.pos.col, self.cursor.pos.row)
+    }
+
     /// Move lines at the bottom toward the top.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
@@ -345,10 +350,6 @@ impl Crosswords {
             self.cursor.pos.col = pos::Column(0);
         }
 
-        // let next_row = self.cursor.pos.row;
-        // let next_col = self.cursor.pos.col;
-        // self[next_row][next_col].c = '█';
-
         if self.cursor.pos.col + 1 < self.cols {
             self.cursor.pos.col += 1;
         } else {
@@ -449,15 +450,16 @@ impl Crosswords {
 
     pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
+
         for row in self.scroll_region.start.0..self.scroll_region.end.0 {
-            for colums in 0..self.cols {
-                let square_content = &mut self[Line(row)][Column(colums)];
+            for column in 0..self.cols {
+                let square_content = &mut self[Line(row)][Column(column)];
                 text.push(square_content.c);
                 for c in square_content.zerowidth().into_iter().flatten() {
                     text.push(*c);
                 }
 
-                if colums == (self.cols - 1) {
+                if column == (self.cols - 1) {
                     text.push('\n');
                 }
             }
@@ -542,6 +544,28 @@ mod tests {
 
         cw.linefeed();
         assert_eq!(cw.rows(), 2);
+    }
+
+    #[test]
+    fn test_linefeed_moving_cursor() {
+        let mut cw: Crosswords = Crosswords::new(1, 3);
+        let (col, row) = cw.cursor();
+        assert_eq!(col, 0);
+        assert_eq!(row, 0);
+
+        cw.linefeed();
+        let (col, row) = cw.cursor();
+        assert_eq!(col, 0);
+        assert_eq!(row, 1);
+
+        // Keep adding lines but keep cursor at max row
+        for _ in 0..20 {
+            cw.linefeed();
+        }
+        let (col, row) = cw.cursor();
+        assert_eq!(col, 0);
+        assert_eq!(row, 2);
+        assert_eq!(cw.rows(), 22);
     }
 
     #[test]
