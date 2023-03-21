@@ -1,6 +1,6 @@
 mod cache;
 
-use renderer::text::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
+use renderer::text::{Section, Text};
 use renderer::Renderer;
 
 // use crate::bar::{self, BarBrush};
@@ -116,7 +116,7 @@ impl Term {
 
         let renderer = match Renderer::new(&device, format) {
             Ok(r) => r,
-            Err(e) => panic!("{e:?}")
+            Err(e) => panic!("{e:?}"),
         };
 
         let cache = Cache::new(&device, 1024, 1024);
@@ -475,10 +475,9 @@ impl Term {
                     .with_color(self.colors.tabs_active)
                     .with_scale(15.0 * self.scale)],
                 // layout: renderer::glyph_brush::Layout::default(),
-                ..Section::default()
-                // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-                // .v_align(glyph_brush::VerticalAlign::Center)
-                // .h_align(glyph_brush::HorizontalAlign::Left)
+                ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+                                     // .v_align(glyph_brush::VerticalAlign::Center)
+                                     // .h_align(glyph_brush::HorizontalAlign::Left)
             });
 
             // self.renderer.brush.queue(Section {
@@ -498,7 +497,8 @@ impl Term {
             //     ..Section::default()
             // });
 
-            self.renderer.brush
+            self.renderer
+                .brush
                 .draw_queued(
                     &self.device,
                     &mut self.staging_belt,
