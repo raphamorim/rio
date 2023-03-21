@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-toml = "0.5"
+toml = "0.7.3"
 dirs = "4.0"
 colors = { path = "../colors" }
 serde = { workspace = true }
