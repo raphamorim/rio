@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::defaults::*;
-use colors::{Color, ColorArray, ColorBuilder, Format};
+use colors::{Color, ColorArray};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -26,28 +26,61 @@ pub enum Font {
     Novamono,
 }
 
-#[derive(Default, Copy, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Copy, Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
-    #[serde(default = "default_font_size")]
     pub font_size: f32,
     pub theme: Theme,
     pub font: Font,
 }
 
-#[derive(Default, Debug, Copy, Deserialize, PartialEq, Clone)]
+impl Default for Style {
+    fn default() -> Style {
+        Style {
+            font_size: default_font_size(),
+            theme: Theme::default(),
+            font: Font::default(),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
-    #[serde(deserialize_with = "colors::deserialize_to_wpgu")]
+    #[serde(
+        deserialize_with = "colors::deserialize_to_wpgu",
+        default = "default_color_background"
+    )]
     pub background: Color,
-    #[serde(deserialize_with = "colors::deserialize_to_arr")]
+    #[serde(
+        deserialize_with = "colors::deserialize_to_arr",
+        default = "default_color_foreground"
+    )]
     pub foreground: ColorArray,
-    #[serde(deserialize_with = "colors::deserialize_to_wpgu")]
+    #[serde(
+        deserialize_with = "colors::deserialize_to_wpgu",
+        default = "default_color_cursor"
+    )]
     pub cursor: Color,
-    #[serde(deserialize_with = "colors::deserialize_to_arr")]
+    #[serde(
+        deserialize_with = "colors::deserialize_to_arr",
+        default = "default_color_tabs_active"
+    )]
     pub tabs_active: ColorArray,
+}
+
+impl Default for Colors {
+    fn default() -> Colors {
+        Colors {
+            background: default_color_background(),
+            foreground: default_color_foreground(),
+            cursor: default_color_cursor(),
+            tabs_active: default_color_tabs_active(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_width")]
     pub width: u16,
@@ -57,7 +90,9 @@ pub struct Config {
     pub columns: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+    #[serde(default = "Style::default")]
     pub style: Style,
+    #[serde(default = "Colors::default")]
     pub colors: Colors,
 }
 
@@ -77,8 +112,8 @@ impl Config {
     fn load_from_path_without_fallback(path: &str) -> Result<Self, String> {
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            match toml::from_str(&content) {
-                Ok(decoded) => decoded,
+            match toml::from_str::<Config>(&content) {
+                Ok(decoded) => Ok(decoded),
                 Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
         } else {
@@ -109,16 +144,6 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let background = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
-            .unwrap()
-            .to_wgpu();
-        let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
-            .unwrap()
-            .to_wgpu();
-        let tabs_active =
-            ColorBuilder::from_hex(String::from("#F8A145"), Format::SRGB0_1)
-                .unwrap()
-                .to_arr();
         Config {
             performance: Performance::default(),
             width: default_width(),
@@ -127,10 +152,10 @@ impl Default for Config {
             columns: default_columns(),
             rows: default_rows(),
             colors: Colors {
-                background,
+                background: default_color_background(),
                 foreground: [1.0, 1.0, 1.0, 1.0],
-                cursor,
-                tabs_active,
+                cursor: default_color_cursor(),
+                tabs_active: default_color_tabs_active(),
             },
             style: Style {
                 font_size: default_font_size(),
@@ -144,11 +169,12 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use colors::{ColorBuilder, Format};
     use std::io::Write;
 
     #[allow(dead_code)]
-    fn create_temporary_config(toml_str: &str) -> Config {
-        let file_name = String::from("/tmp/test-rio-config.toml");
+    fn create_temporary_config(prefix: &str, toml_str: &str) -> Config {
+        let file_name = format!("/tmp/test-rio-{prefix}-config.toml");
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 
@@ -173,95 +199,163 @@ mod tests {
     }
 
     #[test]
-    fn test_single_config_change_and_keep_defaults() {
-        let result =
-            create_temporary_config(String::from("performance = \"Low\"\n").as_str());
+    fn test_empty_config_file() {
+        let result = create_temporary_config(
+            "empty-config-file",
+            r#"
+            # Config is empty
+        "#,
+        );
 
-        // background = "#151515"
-        // foreground = "#FFFFFF"
-        // cursor = "#8E12CC"
-        // tabs_active = "#F8A145"
-
-        assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.style.font, Font::Firamono);
-        assert_eq!(result.style.theme, Theme::Basic);
-        assert_eq!(result.width, 400);
-        assert_eq!(result.height, 500);
-        assert_eq!(result.rows, 25);
-        assert_eq!(result.columns, 80);
-
-        let expected_background =
-            ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
-                .unwrap()
-                .to_wgpu();
-        let expected_foreground = [1.0, 1.0, 1.0, 1.0];
-        let expected_tabs_active =
-            ColorBuilder::from_hex(String::from("#F8A145"), Format::SRGB0_1)
-                .unwrap()
-                .to_arr();
-        let expected_cursor =
-            ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
-                .unwrap()
-                .to_wgpu();
-
-        assert_eq!(result.colors.background, expected_background);
-        assert_eq!(result.colors.foreground, expected_foreground);
-        assert_eq!(result.colors.tabs_active, expected_tabs_active);
-        assert_eq!(result.colors.cursor, expected_cursor);
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::default());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::default());
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
     }
 
-    // #[test]
-    // fn test_changing_all_values() {
-    //     let background = ColorBuilder::from_hex(String::from("#000000"), Format::SRGB0_1)
-    //         .unwrap()
-    //         .to_wgpu();
-    //     let cursor = ColorBuilder::from_hex(String::from("#8E12CC"), Format::SRGB0_1)
-    //         .unwrap()
-    //         .to_wgpu();
-    //     let tabs_active =
-    //         ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
-    //             .unwrap()
-    //             .to_arr();
+    #[test]
+    fn test_change_config_perfomance() {
+        let result = create_temporary_config(
+            "change-perfomance",
+            r#"
+            performance = "Low"
+        "#,
+        );
 
-    //     let expected = Config {
-    //         performance: Performance::Low,
-    //         width: 400,
-    //         height: 400,
-    //         rows: 25,
-    //         columns: 80,
-    //         colors: Colors {
-    //             background,
-    //             foreground: [1.0, 1.0, 1.0, 1.0],
-    //             cursor,
-    //             tabs_active,
-    //         },
-    //         style: Style {
-    //             theme: Theme::Basic,
-    //             font_size: 22.0,
-    //             font: Font::Novamono,
-    //         },
-    //     };
+        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
 
-    //     let result = create_temporary_config(
-    //         expected.performance,
-    //         (400, 400, 80, 25),
-    //         (22.0, expected.style.theme, expected.style.font),
-    //         (
-    //             String::from("#000000"),
-    //             String::from("#FFFFFF"),
-    //             String::from("#8E12CC"),
-    //             String::from("#E6DB74"),
-    //         ),
-    //     );
+    #[test]
+    fn test_change_config_width_height() {
+        let result = create_temporary_config(
+            "change-width-height",
+            r#"
+            width = 400
+            height = 500
+        "#,
+        );
 
-    //     assert_eq!(expected.performance, result.performance);
-    //     assert_eq!(expected.colors.background, result.colors.background);
-    //     assert_eq!(expected.colors.foreground, result.colors.foreground);
-    //     assert_eq!(expected.colors.cursor, result.colors.cursor);
-    //     assert_eq!(expected.style.font, result.style.font);
-    //     assert_eq!(expected.style.theme, result.style.theme);
-    //     assert_eq!(expected.width, result.width);
-    //     assert_eq!(expected.rows, result.rows);
-    //     assert_eq!(expected.columns, result.columns);
-    // }
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.width, 400);
+        assert_eq!(result.height, 500);
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
+    fn test_change_config_rows_columns() {
+        let result = create_temporary_config(
+            "change-rows-columns",
+            r#"
+            rows = 40
+            columns = 100
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, 40);
+        assert_eq!(result.columns, 100);
+        // Style
+        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
+    fn test_change_style() {
+        let result = create_temporary_config(
+            "change-style",
+            r#"
+            performance = "Low"
+
+            [style]
+            font = "Novamono"
+            theme = "Modern"
+            font_size = 14.0
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::Novamono);
+        assert_eq!(result.style.font_size, 14.0);
+        assert_eq!(result.style.theme, Theme::Modern);
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
+    #[ignore]
+    fn test_change_colors() {
+        let foreground = String::from("#000000");
+        let config = format!(
+            r#"
+            [colors]
+            foreground = {foreground:?}
+        "#
+        );
+
+        let result = create_temporary_config("change-colors", &config);
+
+        assert_eq!(
+            result.colors.background,
+            ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+                .unwrap()
+                .to_wgpu()
+        );
+        assert_eq!(result.colors.foreground, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(result.colors.tabs_active, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(
+            result.colors.cursor,
+            ColorBuilder::from_hex(String::from("#AEB664"), Format::SRGB0_1)
+                .unwrap()
+                .to_wgpu()
+        );
+    }
 }
