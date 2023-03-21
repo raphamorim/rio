@@ -19,6 +19,7 @@ bytemuck = { version = "1.9", features = [ "derive" ] }
 opt-level = "s"
 lto = true
 codegen-units = 1
+incremental = false
 
 [profile.dev]
 # https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
