@@ -1,7 +1,7 @@
 [package]
 name = "teletypewriter"
 description = "Rust crate to create a pseudoterminal (pty) that emulates a tty, which is a command in Unix and Unix-like operating systems to print the file name of the terminal connected to standard input. tty stands for TeleTYpewriter. This project is created and maintaned for Rio terminal purposes but feel free to use it."
-version = "1.0.0"
+version = "1.0.1"
 edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -10,3 +10,16 @@ authors = { workspace = true }
 
 [dependencies]
 libc = "0.2.140"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+incremental = false
+
+[profile.dev]
+# https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
+split-debuginfo = "unpacked"
+lto = false
+incremental = true
+opt-level = 0
