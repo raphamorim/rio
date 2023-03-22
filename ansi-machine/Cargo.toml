@@ -8,5 +8,5 @@ authors = { workspace = true }
 
 [dependencies]
 vte = "0.11.0"
-tty = { path = "../tty" }
+teletypewriter = { path = "../teletypewriter" }
 crosswords = { path = "../crosswords" }

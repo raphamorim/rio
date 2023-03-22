@@ -1,7 +1,7 @@
 use crate::window::{ansi, keys};
 use std::collections::HashMap;
 use std::io::Write;
-use tty::Process;
+use teletypewriter::Process;
 use winit::event::ModifiersState;
 
 // pub struct ModifiersState {

@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::pty;
+use teletypewriter::pty;
 use winit::{event, event_loop};
 
 #[tokio::main]

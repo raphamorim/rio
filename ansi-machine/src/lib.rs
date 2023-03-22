@@ -5,7 +5,7 @@ use crosswords::Crosswords;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
-use tty::Process;
+use teletypewriter::Process;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, Parser};
 
