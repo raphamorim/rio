@@ -140,8 +140,8 @@ pub fn deserialize_to_wpgu<'de, D>(deserializer: D) -> Result<Color, D::Error>
 where
     D: de::Deserializer<'de>,
 {
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1) {
+    let s = String::deserialize(deserializer)?;
+    match ColorBuilder::from_hex(s, Format::SRGB0_1) {
         Ok(color) => Ok(color.to_wgpu()),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
@@ -151,8 +151,8 @@ pub fn deserialize_to_arr<'de, D>(deserializer: D) -> Result<ColorArray, D::Erro
 where
     D: de::Deserializer<'de>,
 {
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1) {
+    let s = String::deserialize(deserializer)?;
+    match ColorBuilder::from_hex(s, Format::SRGB0_1) {
         Ok(color) => Ok(color.to_arr()),
         Err(e) => Err(serde::de::Error::custom(e)),
     }

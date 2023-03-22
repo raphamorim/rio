@@ -1,7 +1,8 @@
 [package]
 name = "config"
-version = "0.0.1"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
 
 [dependencies]
 toml = "0.7.3"
