@@ -11,7 +11,7 @@ winit = "0.27.5"
 image = { version = "0.24.0", default-features = false, features = ["ico"] }
 bytemuck = { workspace = true }
 renderer = { path = "../renderer" }
-teletypewriter = { path = "../teletypewriter" }
+teletypewriter = { workspace = true }
 colors = { path = "../colors" }
 ansi-machine = { path = "../ansi-machine" }
 config = { path = "../config" }
