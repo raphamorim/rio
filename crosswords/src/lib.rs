@@ -30,6 +30,7 @@ use std::ptr;
 use unicode_width::UnicodeWidthChar;
 
 bitflags! {
+    #[derive(Debug, Clone)]
     pub struct Mode: u32 {
         const NONE                = 0;
         const SHOW_CURSOR         = 0b0000_0000_0000_0000_0001;
