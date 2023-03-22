@@ -33,9 +33,9 @@ Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
 
 _* Modern theme is only available in Developer builds._
 
-#### WPGU based
+#### WGPU based
 
-WPGU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
+WGPU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
 
 #### Low CPU and memory usage
 

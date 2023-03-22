@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::defaults::*;
-use colors::{deserialize_to_arr, deserialize_to_wpgu, Color, ColorArray};
+use colors::{deserialize_to_arr, deserialize_to_wgpu, Color, ColorArray};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -46,7 +46,7 @@ impl Default for Style {
 #[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
     #[serde(
-        deserialize_with = "deserialize_to_wpgu",
+        deserialize_with = "deserialize_to_wgpu",
         default = "default_color_background"
     )]
     pub background: Color,
@@ -56,7 +56,7 @@ pub struct Colors {
     )]
     pub foreground: ColorArray,
     #[serde(
-        deserialize_with = "deserialize_to_wpgu",
+        deserialize_with = "deserialize_to_wgpu",
         default = "default_color_cursor"
     )]
     pub cursor: Color,

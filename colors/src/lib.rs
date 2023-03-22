@@ -136,7 +136,7 @@ impl std::fmt::Display for ColorBuilder {
     }
 }
 
-pub fn deserialize_to_wpgu<'de, D>(deserializer: D) -> Result<Color, D::Error>
+pub fn deserialize_to_wgpu<'de, D>(deserializer: D) -> Result<Color, D::Error>
 where
     D: de::Deserializer<'de>,
 {
