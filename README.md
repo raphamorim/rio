@@ -49,12 +49,24 @@ The configuration should be the following paths otherwise Rio will use the defau
 
 - macOs path: `~/.rio/config.toml`
 
-Example of `config.toml`:
+Default configuration of `config.toml`:
 
 ```toml
+# Rio default configuration file
 performance = "High"
-height = 400
-width = 600
+height = 438
+width = 662
+
+[colors]
+background = '#151515'
+foreground = '#FFFFFF'
+cursor = '#8E12CC'
+tabs_active = '#F8A145'
+
+[style]
+font = "Firamono"
+font_size = 16
+theme = "Basic"
 ```
 
 ### Perfomance

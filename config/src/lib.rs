@@ -224,6 +224,45 @@ mod tests {
     }
 
     #[test]
+    fn test_if_explict_defaults_match() {
+        let result = create_temporary_config(
+            "defaults",
+            r#"
+            # Rio default configuration file
+            performance = "High"
+            height = 438
+            width = 662
+
+            [colors]
+            background = '#151515'
+            foreground = '#FFFFFF'
+            cursor = '#8E12CC'
+            tabs_active = '#F8A145'
+
+            [style]
+            font = "Firamono"
+            font_size = 16
+            theme = "Basic"
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::default());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::default());
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
     fn test_invalid_config_file() {
         let toml_str = r#"
             Performance = 2
