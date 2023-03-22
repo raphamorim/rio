@@ -67,7 +67,7 @@ name = "ansi-machine"
 version = "0.1.0"
 dependencies = [
  "crosswords",
- "teletypewriter 1.0.2",
+ "teletypewriter 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "vte",
 ]
 
@@ -1465,7 +1465,7 @@ dependencies = [
  "config",
  "image",
  "renderer",
- "teletypewriter 1.0.2",
+ "teletypewriter 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "wgpu",
  "winit",
@@ -1665,9 +1665,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caf4b9851ab3c725a4a904a7d4b4085019b045f5312a09b910e3012a94e3abe0"
+version = "1.0.3"
 dependencies = [
  "libc",
 ]
@@ -1675,6 +1673,8 @@ dependencies = [
 [[package]]
 name = "teletypewriter"
 version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70c40b583f3061d07d367f7c3b0eec31d6d9183fc9bccde30649481228d4912a"
 dependencies = [
  "libc",
 ]
