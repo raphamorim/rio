@@ -121,11 +121,11 @@ pub fn create_termp(utf8: bool) -> libc::termios {
     term
 }
 
-/// 
+///
 /// Creates a pseudoterminal.
 ///
-/// The [`pty`] creates a pseudoterminal with similar behavior as tty, 
-/// which is a command in Unix and Unix-like operating systems to print the file name of the 
+/// The [`pty`] creates a pseudoterminal with similar behavior as tty,
+/// which is a command in Unix and Unix-like operating systems to print the file name of the
 /// terminal connected to standard input. tty stands for TeleTYpewriter.
 ///
 /// It returns two [`Process`] along with respective process name [`String`] and process id (`libc::pid_`)
@@ -167,10 +167,7 @@ pub fn pty(
             unreachable!();
         }
         n if n > 0 => {
-            let ptsname: String;
-            unsafe {
-                ptsname = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            }
+            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let handle = Handle(Arc::new(main));
             (Process(handle.clone()), Process(handle), ptsname, n)
         }
@@ -228,9 +225,17 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
 
 /// Unsafe
 /// Return tty pts name [`String`]
-pub unsafe fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let name_ptr = ptsname(fd as *mut _);
-    let c_str: &CStr = CStr::from_ptr(name_ptr);
+///
+/// # Safety
+///
+/// This function is unsafe because it contains the usage of `libc::ptsname`
+/// from libc that's naturally unsafe.
+pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
+    let name_ptr: *mut i8;
+    let c_str: &CStr = unsafe {
+        name_ptr = ptsname(fd as *mut _);
+        CStr::from_ptr(name_ptr)
+    };
     let str_slice: &str = c_str.to_str().unwrap();
     let str_buf: String = str_slice.to_owned();
 

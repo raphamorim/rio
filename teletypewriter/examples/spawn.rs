@@ -6,7 +6,7 @@ use std::io::Read;
 use std::io::Write;
 // use std::io::BufRead;
 use std::io::BufReader;
-use tty::pty;
+use teletypewriter::pty;
 
 fn main() -> std::io::Result<()> {
     env::set_var("TERM", "rio");
