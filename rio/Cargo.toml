@@ -1,9 +1,8 @@
 [package]
 name = "rio"
-version = "0.0.1"
-edition = "2021"
-description = "Virtual terminal application"
-authors = ["Raphael Amorim"]
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
 
 [dependencies]
 wgpu = { workspace = true }

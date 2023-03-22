@@ -291,7 +291,7 @@ checksum = "bf43edc576402991846b093a7ca18a3477e0ef9c588cde84964b5d3e43016642"
 
 [[package]]
 name = "config"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "colors",
  "dirs",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "rio"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ansi-machine",
  "bytemuck",
@@ -1799,7 +1799,7 @@ checksum = "7b3e06c9b9d80ed6b745c7159c40b311ad2916abb34a49e9be2653b90db0d8dd"
 
 [[package]]
 name = "tty"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "libc",
 ]

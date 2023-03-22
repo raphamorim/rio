@@ -10,6 +10,14 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+authors = ["Raphael Amorim <rapha850@gmail.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+
 [workspace.dependencies]
 wgpu = "0.15.1"
 serde = { version = "1.0.158", features = ["derive"] }

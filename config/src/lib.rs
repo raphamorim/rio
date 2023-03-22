@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::defaults::*;
-use colors::{Color, ColorArray};
+use colors::{deserialize_to_arr, deserialize_to_wpgu, Color, ColorArray};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -46,22 +46,22 @@ impl Default for Style {
 #[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
     #[serde(
-        deserialize_with = "colors::deserialize_to_wpgu",
+        deserialize_with = "deserialize_to_wpgu",
         default = "default_color_background"
     )]
     pub background: Color,
     #[serde(
-        deserialize_with = "colors::deserialize_to_arr",
+        deserialize_with = "deserialize_to_arr",
         default = "default_color_foreground"
     )]
     pub foreground: ColorArray,
     #[serde(
-        deserialize_with = "colors::deserialize_to_wpgu",
+        deserialize_with = "deserialize_to_wpgu",
         default = "default_color_cursor"
     )]
     pub cursor: Color,
     #[serde(
-        deserialize_with = "colors::deserialize_to_arr",
+        deserialize_with = "deserialize_to_arr",
         default = "default_color_tabs_active"
     )]
     pub tabs_active: ColorArray,
@@ -201,11 +201,41 @@ mod tests {
     #[test]
     fn test_empty_config_file() {
         let result = create_temporary_config(
-            "empty-config-file",
+            "empty",
             r#"
             # Config is empty
         "#,
         );
+
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Style
+        assert_eq!(result.style.font, Font::default());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::default());
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
+    fn test_invalid_config_file() {
+        let toml_str = r#"
+            Performance = 2
+            width = "big"
+            height = "small"
+        "#;
+
+        let file_name = String::from("/tmp/test-rio-invalid-config.toml");
+        let mut file = std::fs::File::create(&file_name).unwrap();
+        writeln!(file, "{toml_str}").unwrap();
+
+        let result = Config::load_from_path(&file_name);
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
@@ -331,29 +361,57 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn test_change_colors() {
-        let foreground = String::from("#000000");
-        let config = format!(
+    fn test_change_one_color() {
+        let result = create_temporary_config(
+            "change-one-color",
             r#"
             [colors]
-            foreground = {foreground:?}
-        "#
+            foreground = '#000000'
+        "#,
         );
 
-        let result = create_temporary_config("change-colors", &config);
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
+    }
+
+    #[test]
+    fn test_change_colors() {
+        let result = create_temporary_config(
+            "change-colors",
+            r#"
+            # Using lucario colors: https://github.com/raphamorim/lucario/
+
+            [colors]
+            background = '#2B3E50'
+            tabs_active = '#E6DB74'
+            foreground = '#F8F8F2'
+            cursor = '#E6DB74'
+        "#,
+        );
 
         assert_eq!(
             result.colors.background,
-            ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+            ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
                 .unwrap()
                 .to_wgpu()
         );
-        assert_eq!(result.colors.foreground, [0.0, 0.0, 0.0, 1.0]);
-        assert_eq!(result.colors.tabs_active, [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(
+            result.colors.foreground,
+            ColorBuilder::from_hex(String::from("#F8F8F2"), Format::SRGB0_1)
+                .unwrap()
+                .to_arr()
+        );
+        assert_eq!(
+            result.colors.tabs_active,
+            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
+                .unwrap()
+                .to_arr()
+        );
         assert_eq!(
             result.colors.cursor,
-            ColorBuilder::from_hex(String::from("#AEB664"), Format::SRGB0_1)
+            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
                 .unwrap()
                 .to_wgpu()
         );
