@@ -67,7 +67,7 @@ name = "ansi-machine"
 version = "0.1.0"
 dependencies = [
  "crosswords",
- "tty",
+ "teletypewriter",
  "vte",
 ]
 
@@ -1465,8 +1465,8 @@ dependencies = [
  "config",
  "image",
  "renderer",
+ "teletypewriter",
  "tokio",
- "tty",
  "wgpu",
  "winit",
 ]
@@ -1664,6 +1664,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "teletypewriter"
+version = "1.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1796,13 +1803,6 @@ name = "ttf-parser"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b3e06c9b9d80ed6b745c7159c40b311ad2916abb34a49e9be2653b90db0d8dd"
-
-[[package]]
-name = "tty"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "twox-hash"

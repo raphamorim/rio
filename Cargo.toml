@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "ansi-machine",
-  "tty",
+  "teletypewriter",
   "colors",
   "config",
   "renderer",

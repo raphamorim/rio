@@ -121,6 +121,15 @@ pub fn create_termp(utf8: bool) -> libc::termios {
     term
 }
 
+/// 
+/// Creates a pseudoterminal.
+///
+/// The [`pty`] creates a pseudoterminal with similar behavior as tty, 
+/// which is a command in Unix and Unix-like operating systems to print the file name of the 
+/// terminal connected to standard input. tty stands for TeleTYpewriter.
+///
+/// It returns two [`Process`] along with respective process name [`String`] and process id (`libc::pid_`)
+///
 pub fn pty(
     name: &str,
     width: u16,
@@ -217,7 +226,9 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
         .to_string()
 }
 
-unsafe fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
+/// Unsafe
+/// Return tty pts name [`String`]
+pub unsafe fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
     let name_ptr = ptsname(fd as *mut _);
     let c_str: &CStr = CStr::from_ptr(name_ptr);
     let str_slice: &str = c_str.to_str().unwrap();

@@ -334,7 +334,7 @@ impl Term {
     // Idea? Prob move Term inside of TermUi that contains Tabs/Term
     // Allowing switch Terms
     fn get_command_name(&self) -> String {
-        tty::command_per_pid(self.pid)
+        teletypewriter::command_per_pid(self.pid)
     }
 
     // fn create_uniforms(
