@@ -29,13 +29,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (process, mut w_process, _ptyname, pid) =
         pty(&Cow::Borrowed(&shell), config.columns, config.rows);
 
-    let mut rio: Term = match Term::new(&winit_window, &config, pid).await {
-        Ok(term_instance) => term_instance,
-        Err(e) => {
-            panic!("couldn't create Rio terminal {e}");
-        }
-    };
-
     let mut input_stream = window::input::Input::new();
     let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
 
@@ -48,6 +41,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             config.rows.into(),
         );
     });
+
+    let mut rio: Term = match Term::new(&winit_window, config, pid).await {
+        Ok(term_instance) => term_instance,
+        Err(e) => {
+            panic!("couldn't create Rio terminal {e}");
+        }
+    };
 
     let mut is_focused = true;
     event_loop.run(move |event, _, control_flow| {
@@ -138,9 +138,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 let scale_factor_f32 = scale_factor as f32;
-                if rio.get_scale() != scale_factor_f32 {
-                    rio.set_scale(scale_factor_f32, *new_inner_size);
-                }
+                // if rio.get_scale() != scale_factor_f32 {
+                rio.set_scale(scale_factor_f32, *new_inner_size);
+                // }
             }
 
             event::Event::MainEventsCleared { .. } => {
