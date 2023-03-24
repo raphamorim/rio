@@ -16,6 +16,7 @@ pub struct Term {
     size: winit::dpi::PhysicalSize<u32>,
     #[allow(dead_code)]
     cache: Cache,
+    #[allow(dead_code)]
     pid: i32,
 }
 
@@ -170,7 +171,8 @@ impl Term {
     // Idea? Prob move Term inside of TermUi that contains Tabs/Term
     // Allowing switch Terms
     fn get_command_name(&self) -> String {
-        format!("■ {}", teletypewriter::command_per_pid(self.pid))
+        // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
+        String::from("■ zsh ")
     }
 
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
