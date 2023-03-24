@@ -4,6 +4,7 @@ use glyph_brush::{Section, Text};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+mod fps;
 mod shared;
 pub mod text;
 
@@ -58,6 +59,7 @@ pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Config,
     styles: RendererStyles,
+    fps: fps::FramesCounter,
 }
 
 impl Renderer {
@@ -71,10 +73,12 @@ impl Renderer {
             Ok(font_data) => {
                 let brush =
                     text::GlyphBrushBuilder::using_font(font_data).build(device, format);
+                let fps = fps::FramesCounter::new();
                 Ok(Renderer {
                     brush,
                     config,
                     styles,
+                    fps,
                 })
             }
             Err(err_message) => Err(format!(
@@ -101,16 +105,22 @@ impl Renderer {
             ..Section::default()
         });
 
+        let fps_text = format!("fps: {:?}", self.fps.tick());
         self.brush.queue(Section {
             screen_position: self.styles.tabs_active.screen_position,
             bounds: self.styles.tabs_active.bounds,
-            text: vec![Text::new(&command)
-                .with_color(self.config.colors.tabs_active)
-                .with_scale(self.styles.tabs_active.text_scale)],
-            // layout: renderer::glyph_brush::Layout::default(),
-            ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-                                 // .v_align(glyph_brush::VerticalAlign::Center)
-                                 // .h_align(glyph_brush::HorizontalAlign::Left)
+            text: vec![
+                Text::new(&command)
+                    .with_color(self.config.colors.tabs_active)
+                    .with_scale(self.styles.tabs_active.text_scale),
+                Text::new(&fps_text)
+                    .with_color(self.config.colors.foreground)
+                    .with_scale(self.styles.tabs_active.text_scale),
+            ],
+            layout: glyph_brush::Layout::default_single_line(),
+            // ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+            // .v_align(glyph_brush::VerticalAlign::Center)
+            // .h_align(glyph_brush::HorizontalAlign::Left)
         });
 
         // self.brush.queue(Section {
