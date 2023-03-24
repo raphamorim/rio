@@ -10,3 +10,4 @@ authors = { workspace = true }
 glyph_brush = "0.7.7"
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
+config = { path = "../config" }
