@@ -7,7 +7,7 @@ use std::{ptr, slice};
 /// A row in the grid.
 #[derive(Default, Clone, Debug)]
 pub struct Row<T> {
-    inner: Vec<T>,
+    pub inner: Vec<T>,
 
     /// Maximum number of occupied entries.
     ///

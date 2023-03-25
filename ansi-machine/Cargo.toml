@@ -10,3 +10,4 @@ authors = { workspace = true }
 vte = "0.11.0"
 teletypewriter = { workspace = true }
 crosswords = { path = "../crosswords" }
+renderer = { path = "../renderer" }
