@@ -7,10 +7,8 @@
 ## Summary
 
 - [About Rio](#about-rio)
-    - [WebGPU outside of a browser](#wgpu-based)
-    - [WebGPU](#wgpu-based)
 - [Configuration file](#configuration-file)
-- [Color scheme file](#configuration-scheme-file)
+- [Color scheme file](#color-scheme-file)
 - [Status](#development-status)
 - [Acknowledgments](#acknowledgments)
 
@@ -20,7 +18,7 @@ Website: https://raphamorim.io/rio
 
 > If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 > 
-> Rio wouldn't be possible without [few acknowledgements](#acknowledgements).
+> Rio would not be possible without [few acknowledgements](#acknowledgements).
 > 
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
@@ -33,9 +31,9 @@ Below some of Rio's features:
 - Uses threaded rendering for absolutely minimal latency
 - Tabs support
 
-Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
+Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. **[More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)**
 
-It also relies on Rust memory behavior, since Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. [More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)
+It also relies on Rust memory behavior, since Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. **[More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)**
 
 ## Configuration File
 
@@ -53,12 +51,6 @@ performance = "High"
 height = 438
 width = 662
 
-[colors]
-background = '#151515'
-foreground = '#FFFFFF'
-cursor = '#8E12CC'
-tabs-active = '#F8A145'
-
 [style]
 font = "Firamono"
 font-size = 16
@@ -71,11 +63,9 @@ monochrome = false
 enable-fps-counter = false
 ```
 
-_* Monochrome is not implemented yet._
+#### `perfomance`
 
-#### Perfomance
-
-Description: Set terminal WGPU rendering perfomance.
+Set terminal WGPU rendering perfomance.
 
 - High: Adapter that has the highest performance. This is often a discrete GPU.
 - Low: Adapter that uses the least possible power. This is often an integrated GPU.
@@ -91,9 +81,9 @@ See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 performance = "High"
 ```
 
-#### Height
+#### `height`
 
-Description: Set terminal window height.
+Set terminal window height.
 
 ```toml
 # <height> Set default height
@@ -101,9 +91,9 @@ Description: Set terminal window height.
 height = 400
 ```
 
-#### Width
+#### `width`
 
-Description: Set terminal window width.
+Set terminal window width.
 
 ```toml
 # <width> Set default width
@@ -111,9 +101,9 @@ Description: Set terminal window width.
 width = 800
 ```
 
-#### Columns
+#### `columns`
 
-Description: Defines the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
+Define the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
 
 ```toml
 # <width> Set default width
@@ -121,9 +111,9 @@ Description: Defines the column width of your console window. This mode is syste
 columns = 80
 ```
 
-#### Rows
+#### `rows`
 
-Description: Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
+Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
 
 ```toml
 # <width> Set default width
@@ -133,33 +123,60 @@ rows = 25
 
 ### Style
 
-#### Font
+#### `font`
 
 This property will change later to an actual font path. Currently Rio has 2 fonts builtin: `Firamono`, `Novamono`.
-
-- `font` - Set font size.
 
 ```toml
 [style]
 font = "Firamono"
 ```
 
-#### Font Size
+#### `font-size`
 
-- `font_size` - Set font size.
+Sets font size.
 
 ```toml
 [style]
-font_size = 16.0
+font-size = 16.0
 ```
 
-## Color Scheme File
+### Advanced
 
-The configuration should be the following paths otherwise Rio will use the default configuration.
+#### `enable-fps-counter`
+
+This property enables frame per second counter.
+
+```toml
+[style]
+enable-fps-counter = false
+```
+
+#### `tab-character-active`
+
+This property sets a `char` for an active tab.
+
+```toml
+[style]
+tab-character-active = '●'
+```
+
+#### `tab-character-inactive`
+
+This property sets a `char` for an inactive tab.
+
+```toml
+[style]
+tab-character-inactive = '■'
+```
+
+## Color scheme file
+
+The colors scheme file should be the following paths otherwise Rio will use the default colors.
 
 - macOs path: `~/.rio/colors.toml`
 
-Default configuration of `colors.toml`:
+Default colors scheme content of `colors.toml`:
 
 ```toml
 [colors]
