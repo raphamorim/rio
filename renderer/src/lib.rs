@@ -1,12 +1,12 @@
+mod frames;
+mod shared;
+pub mod text;
+
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{Section, Text};
 use std::sync::Arc;
 use std::sync::Mutex;
-
-mod fps;
-mod shared;
-pub mod text;
 
 pub struct Style {
     pub screen_position: (f32, f32),
@@ -59,7 +59,7 @@ pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Config,
     styles: RendererStyles,
-    fps: fps::FramesCounter,
+    fps: frames::Counter,
 }
 
 impl Renderer {
@@ -73,7 +73,7 @@ impl Renderer {
             Ok(font_data) => {
                 let brush =
                     text::GlyphBrushBuilder::using_font(font_data).build(device, format);
-                let fps = fps::FramesCounter::new();
+                let fps = frames::Counter::new();
                 Ok(Renderer {
                     brush,
                     config,
@@ -87,11 +87,11 @@ impl Renderer {
         }
     }
 
-    pub fn refresh_styles(&mut self, scale: f32, width: f32, height: f32) {
+    pub fn refresh_styles(&mut self, width: f32, height: f32, scale: f32) {
         self.styles.refresh_styles(width, height, scale);
     }
 
-    pub fn get_current_term_scale(&self) -> f32 {
+    pub fn get_current_scale(&self) -> f32 {
         self.styles.scale
     }
 
@@ -105,13 +105,21 @@ impl Renderer {
             ..Section::default()
         });
 
-        let fps_text = format!("fps: {:?}", self.fps.tick());
+        let fps_text = if self.config.advanced.enable_fps_counter {
+            format!(" fps_{:?}", self.fps.tick())
+        } else {
+            String::from("")
+        };
+
         self.brush.queue(Section {
             screen_position: self.styles.tabs_active.screen_position,
             bounds: self.styles.tabs_active.bounds,
             text: vec![
                 Text::new(&command)
                     .with_color(self.config.colors.tabs_active)
+                    .with_scale(self.styles.tabs_active.text_scale),
+                Text::new("■ vim ■ zsh ■ docker")
+                    .with_color([0.89020, 0.54118, 0.33725, 1.0])
                     .with_scale(self.styles.tabs_active.text_scale),
                 Text::new(&fps_text)
                     .with_color(self.config.colors.foreground)

@@ -84,15 +84,18 @@ impl Default for Colors {
 pub struct Advanced {
     #[serde(default = "default_tab_character", rename = "tab-character")]
     pub tab_character: char,
-    #[serde(default = "bool::default", rename = "disable-colors")]
-    pub disable_colors: bool,
+    #[serde(default = "bool::default")]
+    pub monochrome: bool,
+    #[serde(default = "bool::default", rename = "enable-fps-counter")]
+    pub enable_fps_counter: bool,
 }
 
 impl Default for Advanced {
     fn default() -> Advanced {
         Advanced {
             tab_character: default_tab_character(),
-            disable_colors: false,
+            monochrome: false,
+            enable_fps_counter: false,
         }
     }
 }
@@ -245,7 +248,8 @@ mod tests {
         assert_eq!(result.colors.cursor, default_color_cursor());
         // Advanced
         assert_eq!(result.advanced.tab_character, default_tab_character());
-        assert!(!result.advanced.disable_colors);
+        assert!(!result.advanced.monochrome);
+        assert!(!result.advanced.enable_fps_counter);
     }
 
     #[test]
@@ -271,7 +275,8 @@ mod tests {
 
             [advanced]
             tab-character = '■'
-            disable-colors = false
+            monochrome = false
+            enable-fps-counter = false
         "#,
         );
 
@@ -291,7 +296,8 @@ mod tests {
         assert_eq!(result.colors.cursor, default_color_cursor());
         // Advanced
         assert_eq!(result.advanced.tab_character, default_tab_character());
-        assert!(!result.advanced.disable_colors);
+        assert!(!result.advanced.monochrome);
+        assert!(!result.advanced.enable_fps_counter);
     }
 
     #[test]
@@ -496,7 +502,8 @@ mod tests {
             performance = "Low"
 
             [advanced]
-            disable-colors = true
+            monochrome = true
+            enable-fps-counter = true
             tab-character = '▲'            
         "#,
         );
@@ -507,8 +514,9 @@ mod tests {
         assert_eq!(result.rows, default_rows());
         assert_eq!(result.columns, default_columns());
         // Advanced
-        assert!(result.advanced.disable_colors);
+        assert!(result.advanced.monochrome);
         assert_eq!(result.advanced.tab_character, '▲');
+        assert!(result.advanced.enable_fps_counter);
 
         // Colors
         assert_eq!(result.colors.background, default_color_background());

@@ -70,8 +70,11 @@ theme = "Basic"
 
 [advanced]
 tab-character = '■'
-disable-colors = false
+monochrome = false
+enable-fps-counter = false
 ```
+
+_* Monochrome is not implemented yet._
 
 ### Perfomance
 
