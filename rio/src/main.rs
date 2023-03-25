@@ -5,16 +5,12 @@ mod window;
 
 use crate::term::Term;
 use config::Config;
-use std::borrow::Cow;
 use std::error::Error;
-use std::sync::Arc;
-use std::sync::Mutex;
-use teletypewriter::pty;
 use winit::{event, event_loop};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let event_loop = event_loop::EventLoop::new();
+    let event_loop = event_loop::EventLoopBuilder::new().build();
 
     let config = Config::load_macos();
     let window_builder =
@@ -22,27 +18,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let winit_window = window_builder.build(&event_loop).unwrap();
 
     std::env::set_var("TERM", "xterm-256color");
-    let shell: String = match std::env::var("SHELL") {
-        Ok(val) => val,
-        Err(..) => String::from("bash"),
-    };
-    let (process, mut w_process, _ptyname, pid) =
-        pty(&Cow::Borrowed(&shell), config.columns, config.rows);
 
     let mut input_stream = window::input::Input::new();
-    let output: Arc<Mutex<String>> = Arc::new(Mutex::from(String::from("")));
-
-    let message = Arc::clone(&output);
-    tokio::spawn(async move {
-        ansi_machine::process(
-            process,
-            &message,
-            config.columns.into(),
-            config.rows.into(),
-        );
-    });
-
-    let mut rio: Term = match Term::new(&winit_window, config, pid).await {
+    let mut rio: Term = match Term::new(&winit_window, config).await {
         Ok(term_instance) => term_instance,
         Err(e) => {
             panic!("couldn't create Rio terminal {e}");
@@ -105,12 +83,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } => match state {
                 winit::event::ElementState::Pressed => {
                     // println!("{:?} {:?}", scancode, keycode);
-                    input_stream.keydown(scancode, &mut w_process);
-                    rio.draw(&output);
+                    input_stream.keydown(scancode, &mut rio.write_process);
+                    rio.draw();
                 }
 
                 winit::event::ElementState::Released => {
-                    rio.draw(&output);
+                    rio.draw();
                 }
             },
 
@@ -149,7 +127,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             event::Event::RedrawRequested { .. } => {
                 if is_focused {
-                    rio.draw(&output);
+                    rio.draw();
                 }
             }
             _ => {

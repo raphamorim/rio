@@ -3,10 +3,11 @@ mod shared;
 pub mod text;
 
 use config::Config;
+use crosswords::row::Row;
+use crosswords::square::Square;
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::{Section, Text};
-use std::sync::Arc;
-use std::sync::Mutex;
+use glyph_brush::OwnedText;
+use glyph_brush::{OwnedSection, Section, Text};
 
 pub struct Style {
     pub screen_position: (f32, f32),
@@ -59,6 +60,7 @@ pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Config,
     styles: RendererStyles,
+    /// This field is used if monochrome is true, so skip color processing per squares
     fps: frames::Counter,
 }
 
@@ -95,16 +97,47 @@ impl Renderer {
         self.styles.scale
     }
 
-    pub fn queue(&mut self, arc_m: &Arc<Mutex<String>>, command: String) {
-        self.brush.queue(Section {
-            screen_position: self.styles.term.screen_position,
-            bounds: self.styles.term.bounds,
-            text: vec![Text::new(&arc_m.lock().unwrap())
-                .with_color(self.config.colors.foreground)
-                .with_scale(self.styles.term.text_scale)],
-            ..Section::default()
-        });
+    #[inline]
+    fn process_row(&self, square: &Square) -> OwnedText {
+        let content: String = square.c.to_string();
+        OwnedText::new(content)
+            .with_color(self.config.colors.foreground)
+            .with_scale(self.styles.term.text_scale)
+    }
 
+    pub fn term(&mut self, rows: Vec<Row<Square>>) {
+        let mut line_height: f32 = 1.0;
+        for row in rows {
+            let mut row_text: Vec<OwnedText> = vec![];
+            let columns: usize = row.len();
+            for column in 0..columns {
+                let square = &row.inner[column];
+                let text = self.process_row(square);
+                row_text.push(text);
+                // for c in square.zerowidth().into_iter().flatten() {
+                //     text.push(*c);
+                // }
+
+                // Render last column and break row
+                if column == (columns - 1) {
+                    self.brush.queue(&OwnedSection {
+                        screen_position: (
+                            self.styles.term.screen_position.0,
+                            self.styles.term.screen_position.1 + line_height,
+                        ),
+                        bounds: self.styles.term.bounds,
+                        text: row_text,
+                        layout: glyph_brush::Layout::default_single_line(),
+                    });
+
+                    line_height += self.styles.term.text_scale;
+                    row_text = vec![];
+                }
+            }
+        }
+    }
+
+    pub fn topbar(&mut self, command: String) {
         let fps_text = if self.config.advanced.enable_fps_counter {
             format!(" fps_{:?}", self.fps.tick())
         } else {

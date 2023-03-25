@@ -1,7 +1,11 @@
 mod cache;
+use ansi_machine::{process, Row, VisibleRows};
 use cache::Cache;
 use renderer::{Renderer, RendererStyles};
+use std::borrow::Cow;
 use std::error::Error;
+use teletypewriter::{pty, Process};
+
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -12,19 +16,20 @@ pub struct Term {
     format: wgpu::TextureFormat,
     alpha_mode: wgpu::CompositeAlphaMode,
     staging_belt: wgpu::util::StagingBelt,
-    renderer: Renderer,
+    pub renderer: Renderer,
     size: winit::dpi::PhysicalSize<u32>,
     #[allow(dead_code)]
     cache: Cache,
     #[allow(dead_code)]
     pid: i32,
+    pub write_process: Process,
+    data_arc: VisibleRows,
 }
 
 impl Term {
     pub async fn new(
         winit_window: &winit::window::Window,
         config: config::Config,
-        pid: i32,
     ) -> Result<Term, Box<dyn Error>> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -101,6 +106,9 @@ impl Term {
             scale,
             config.style.font_size,
         );
+        let data_arc: VisibleRows = Arc::new(Mutex::from(vec![Row::default()]));
+        let data_arc_clone: VisibleRows = Arc::clone(&data_arc);
+
         let renderer = match Renderer::new(&device, format, config, renderer_styles) {
             Ok(r) => r,
             Err(e) => panic!("{e:?}"),
@@ -108,7 +116,21 @@ impl Term {
 
         let cache = Cache::new(&device, 1024, 1024);
 
-        Ok(Term {
+        let shell: String = match std::env::var("SHELL") {
+            Ok(val) => val,
+            Err(..) => String::from("bash"),
+        };
+
+        let (read_process, write_process, _ptyname, pid) = pty(
+            &Cow::Borrowed(&shell),
+            renderer.config.columns,
+            renderer.config.rows,
+        );
+
+        let columns = renderer.config.columns;
+        let rows = renderer.config.rows;
+
+        let term = Term {
             device,
             surface,
             staging_belt,
@@ -119,7 +141,15 @@ impl Term {
             queue,
             cache,
             pid,
-        })
+            write_process,
+            data_arc,
+        };
+
+        tokio::spawn(async move {
+            process(read_process, data_arc_clone, columns.into(), rows.into());
+        });
+
+        Ok(term)
     }
 
     pub fn set_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -175,7 +205,7 @@ impl Term {
         format!("{} zsh ", self.renderer.config.advanced.tab_character)
     }
 
-    pub fn draw(&mut self, output: &Arc<Mutex<String>>) {
+    pub fn draw(&mut self) {
         let mut encoder = self.create_encoder();
 
         let frame = self.surface.get_current_texture().expect("Get next frame");
@@ -196,7 +226,8 @@ impl Term {
             depth_stencil_attachment: None,
         });
 
-        self.renderer.queue(output, self.get_command_name());
+        self.renderer.topbar(self.get_command_name());
+        self.renderer.term(self.data_arc.lock().unwrap().to_vec());
 
         self.renderer
             .brush

@@ -470,6 +470,16 @@ impl Crosswords {
     }
 
     #[inline]
+    pub fn visible_rows(&mut self) -> Vec<Row<Square>> {
+        let mut visible_rows = vec![];
+        for row in self.scroll_region.start.0..self.scroll_region.end.0 {
+            visible_rows.push(self[Line(row)].to_owned());
+        }
+
+        visible_rows
+    }
+
+    #[inline]
     pub fn clear_line(&mut self, mode: u16) {
         let cursor = &self.cursor;
         let _bg = cursor.template.bg;
