@@ -27,14 +27,29 @@ Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
 
 Example using [Lucario color scheme](github.com/raphamorim/lucario/)
 
-[Demo using Lucario](docs/demo-macos-lucario.png)
+![Demo using Lucario](docs/demo-macos-lucario.png)
 
 Usage example running the following bash script:
 
 ```bash
-#!/bin/bash
+for x in {0..8}; do
+    for i in {30..37}; do
+        for a in {40..47}; do
+            echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "
+        done
+        echo
+    done
+done
+echo ""
+```
+
+Or one-liner:
+
+```bash
 for x in {0..8}; do for i in {30..37}; do for a in {40..47}; do echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "; done; echo; done; done; echo ""
 ```
+
+
 
 #### WGPU based
 
