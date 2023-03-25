@@ -130,7 +130,7 @@ impl Term {
 
     // https://docs.rs/winit/latest/winit/dpi/
     pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
-        if self.renderer.get_current_term_scale() != new_scale {
+        if self.renderer.get_current_scale() != new_scale {
             // self.scale = new_scale;
             self.renderer.refresh_styles(
                 new_size.width as f32,
