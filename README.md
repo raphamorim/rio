@@ -1,67 +1,43 @@
 # Rio: ⚡ terminal app 
 
+> Example using [Lucario color scheme](github.com/raphamorim/lucario/).
+
+![Demo using Lucario](docs/demo-macos-lucario.png)
+
+## Summary
+
+- [About Rio](#about-rio)
+    - [WebGPU outside of a browser](#wgpu-based)
+    - [WebGPU](#wgpu-based)
+- [Configuration file](#configuration-file)
+- [Color scheme file](#configuration-scheme-file)
+- [Status](#development-status)
+- [Acknowledgments](#acknowledgments)
+
+## About Rio
+
 Website: https://raphamorim.io/rio
 
-This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
+> If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
+> 
+> Rio wouldn't be possible without [few acknowledgements](#acknowledgements).
+> 
+
+A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
+
+Below some of Rio's features:
 
 - Cross-platform
+- Configurable (Render level, colors, icons, fonts)
 - Offloads rendering to the GPU for lower system load
 - Uses threaded rendering for absolutely minimal latency
 - Tabs support
 
-Note: Rio wouldn't be possible without [few acknowledgements](#acknowledgments).
+Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
 
-#### Status
+It also relies on Rust memory behavior, since Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. [More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)
 
-Basic features are under development for MacOs right now.
-
-| Platform | Development Status |
-| --- | --- |
-| MacOs | In development 👷 |
-| Linux | Not started yet |
-| Windows | Not started yet |
-
-Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
-
-#### Examples
-
-Example using [Lucario color scheme](github.com/raphamorim/lucario/)
-
-![Demo using Lucario](docs/demo-macos-lucario.png)
-
-Usage example running the following bash script:
-
-```bash
-for x in {0..8}; do
-    for i in {30..37}; do
-        for a in {40..47}; do
-            echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "
-        done
-        echo
-    done
-done
-echo ""
-```
-
-Or one-liner:
-
-```bash
-for x in {0..8}; do for i in {30..37}; do for a in {40..47}; do echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "; done; echo; done; done; echo ""
-```
-
-
-
-#### WGPU based
-
-WGPU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
-
-#### Low CPU and memory usage
-
-You want to avoid a browser-based application to reduce memory and CPU consumption. Electron for example, uses Chromium under the hood so your user sees the same on Windows, Linux and macOS but Rio have same compatibility rendering based on WGPU.
-
-Rio also relies on Rust memory behavior: Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. [More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)
-
-## Configuration
+## Configuration File
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
@@ -97,7 +73,7 @@ enable-fps-counter = false
 
 _* Monochrome is not implemented yet._
 
-### Perfomance
+#### Perfomance
 
 Description: Set terminal WGPU rendering perfomance.
 
@@ -115,7 +91,7 @@ See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 performance = "High"
 ```
 
-### Height
+#### Height
 
 Description: Set terminal window height.
 
@@ -125,7 +101,7 @@ Description: Set terminal window height.
 height = 400
 ```
 
-### Width
+#### Width
 
 Description: Set terminal window width.
 
@@ -135,7 +111,7 @@ Description: Set terminal window width.
 width = 800
 ```
 
-### Columns
+#### Columns
 
 Description: Defines the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
 
@@ -145,7 +121,7 @@ Description: Defines the column width of your console window. This mode is syste
 columns = 80
 ```
 
-### Rows
+#### Rows
 
 Description: Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
 
@@ -153,23 +129,6 @@ Description: Define the row height of your console window. This mode is system d
 # <width> Set default width
 # default: 25 (macOs)
 rows = 25
-```
-
-### Colors
-
-- `background` - Set background color.
-- `cursor` - Set cursor color.
-- `foreground` - Set foreground color.
-- `tabs` - Set tab color.
-- `tabs-active` - Set active tab color.
-
-```toml
-[colors]
-background = "#151515"
-cursor = "#8E12CC"
-foreground = "#FFFFFF"
-tabs = "#8E12CC"
-tabs-active = "#8E12CC"
 ```
 
 ### Style
@@ -194,19 +153,53 @@ font = "Firamono"
 font_size = 16.0
 ```
 
-#### Theme
+## Color Scheme File
 
-Description: Set Rio terminal theme
+The configuration should be the following paths otherwise Rio will use the default configuration.
 
-- Modern
-- Basic
+- macOs path: `~/.rio/colors.toml`
+
+Default configuration of `colors.toml`:
 
 ```toml
-# <theme> Set Rio terminal theme
-# default: Basic
-# options: Modern, Basic
-theme = "Modern"
+[colors]
+background = '#151515'
+foreground = '#FFFFFF'
+cursor = '#8E12CC'
+tabs-active = '#F8A145'
 ```
+
+### Color palette demo
+
+Usage example running the following bash script:
+
+```bash
+for x in {0..8}; do
+    for i in {30..37}; do
+        for a in {40..47}; do
+            echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "
+        done
+        echo
+    done
+done
+echo ""
+```
+
+Or one-liner:
+
+```bash
+for x in {0..8}; do for i in {30..37}; do for a in {40..47}; do echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "; done; echo; done; done; echo ""
+```
+
+## Development Status
+
+Basic features are under development for MacOs right now.
+
+| Platform | Development Status |
+| --- | --- |
+| MacOs | In development 👷 |
+| Linux | Not started yet |
+| Windows | Not started yet |
 
 ## Acknowledgments
 
