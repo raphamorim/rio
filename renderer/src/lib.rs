@@ -5,6 +5,7 @@ pub mod text;
 use config::Config;
 use crosswords::row::Row;
 use crosswords::square::Square;
+use crosswords::NamedColor;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::OwnedText;
 use glyph_brush::{OwnedSection, Section, Text};
@@ -100,8 +101,20 @@ impl Renderer {
     #[inline]
     fn process_row(&self, square: &Square) -> OwnedText {
         let content: String = square.c.to_string();
+
+        // println!("{:?}", square.fg);
+
+        let fg_color = match square.fg {
+            crosswords::attr::Color::Named(NamedColor::Foreground) => {
+                self.config.colors.foreground
+            }
+            crosswords::attr::Color::Named(NamedColor::Blue) => self.config.colors.blue,
+            crosswords::attr::Color::Named(NamedColor::Red) => self.config.colors.red,
+            _ => self.config.colors.foreground,
+        };
+
         OwnedText::new(content)
-            .with_color(self.config.colors.foreground)
+            .with_color(fg_color)
             .with_scale(self.styles.term.text_scale)
     }
 

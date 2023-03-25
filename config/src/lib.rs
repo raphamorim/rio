@@ -57,16 +57,33 @@ pub struct Colors {
     )]
     pub foreground: ColorArray,
     #[serde(
-        deserialize_with = "deserialize_to_wgpu",
-        default = "default_color_cursor"
+        deserialize_with = "deserialize_to_arr",
+        default = "default_color_blue"
     )]
-    pub cursor: Color,
+    pub blue: ColorArray,
+    #[serde(
+        deserialize_with = "deserialize_to_arr",
+        default = "default_color_green"
+    )]
+    pub green: ColorArray,
+    #[serde(deserialize_with = "deserialize_to_arr", default = "default_color_red")]
+    pub red: ColorArray,
+    #[serde(
+        deserialize_with = "deserialize_to_arr",
+        default = "default_color_yellow"
+    )]
+    pub yellow: ColorArray,
     #[serde(
         deserialize_with = "deserialize_to_arr",
         default = "default_color_tabs_active",
         rename = "tabs-active"
     )]
     pub tabs_active: ColorArray,
+    #[serde(
+        deserialize_with = "deserialize_to_wgpu",
+        default = "default_color_cursor"
+    )]
+    pub cursor: Color,
 }
 
 impl Default for Colors {
@@ -74,8 +91,12 @@ impl Default for Colors {
         Colors {
             background: default_color_background(),
             foreground: default_color_foreground(),
-            cursor: default_color_cursor(),
+            blue: default_color_blue(),
+            red: default_color_red(),
+            green: default_color_green(),
+            yellow: default_color_yellow(),
             tabs_active: default_color_tabs_active(),
+            cursor: default_color_cursor(),
         }
     }
 }
@@ -179,8 +200,12 @@ impl Default for Config {
             colors: Colors {
                 background: default_color_background(),
                 foreground: [1.0, 1.0, 1.0, 1.0],
-                cursor: default_color_cursor(),
+                blue: [1.0, 1.0, 1.0, 1.0],
+                yellow: [1.0, 1.0, 1.0, 1.0],
+                red: [1.0, 1.0, 1.0, 1.0],
+                green: [1.0, 1.0, 1.0, 1.0],
                 tabs_active: default_color_tabs_active(),
+                cursor: default_color_cursor(),
             },
             style: Style {
                 font_size: default_font_size(),
@@ -247,6 +272,7 @@ mod tests {
         assert_eq!(result.colors.foreground, default_color_foreground());
         assert_eq!(result.colors.tabs_active, default_color_tabs_active());
         assert_eq!(result.colors.cursor, default_color_cursor());
+
         // Advanced
         assert_eq!(result.advanced.tab_character, default_tab_character());
         assert!(!result.advanced.monochrome);

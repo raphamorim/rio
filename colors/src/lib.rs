@@ -4,10 +4,127 @@ use regex::Regex;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
 
+pub type Color = wgpu::Color;
+pub type ColorArray = [f32; 4];
+
 #[derive(Debug, Clone, Copy)]
 pub enum Format {
     SRGB0_255,
     SRGB0_1,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub enum NamedColor {
+    /// Black.
+    Black = 0,
+    /// Red.
+    Red,
+    /// Green.
+    Green,
+    /// Yellow.
+    Yellow,
+    /// Blue.
+    Blue,
+    /// Magenta.
+    Magenta,
+    /// Cyan.
+    Cyan,
+    /// White.
+    White,
+    /// Bright black.
+    BrightBlack,
+    /// Bright red.
+    BrightRed,
+    /// Bright green.
+    BrightGreen,
+    /// Bright yellow.
+    BrightYellow,
+    /// Bright blue.
+    BrightBlue,
+    /// Bright magenta.
+    BrightMagenta,
+    /// Bright cyan.
+    BrightCyan,
+    /// Bright white.
+    BrightWhite,
+    /// The foreground color.
+    Foreground = 256,
+    /// The background color.
+    Background,
+    /// Color for the cursor itself.
+    Cursor,
+    /// Dim black.
+    DimBlack,
+    /// Dim red.
+    DimRed,
+    /// Dim green.
+    DimGreen,
+    /// Dim yellow.
+    DimYellow,
+    /// Dim blue.
+    DimBlue,
+    /// Dim magenta.
+    DimMagenta,
+    /// Dim cyan.
+    DimCyan,
+    /// Dim white.
+    DimWhite,
+    /// The bright foreground color.
+    BrightForeground,
+    /// Dim foreground.
+    DimForeground,
+}
+
+impl NamedColor {
+    #[must_use]
+    pub fn to_bright(self) -> Self {
+        match self {
+            NamedColor::Foreground => NamedColor::BrightForeground,
+            NamedColor::Black => NamedColor::BrightBlack,
+            NamedColor::Red => NamedColor::BrightRed,
+            NamedColor::Green => NamedColor::BrightGreen,
+            NamedColor::Yellow => NamedColor::BrightYellow,
+            NamedColor::Blue => NamedColor::BrightBlue,
+            NamedColor::Magenta => NamedColor::BrightMagenta,
+            NamedColor::Cyan => NamedColor::BrightCyan,
+            NamedColor::White => NamedColor::BrightWhite,
+            NamedColor::DimForeground => NamedColor::Foreground,
+            NamedColor::DimBlack => NamedColor::Black,
+            NamedColor::DimRed => NamedColor::Red,
+            NamedColor::DimGreen => NamedColor::Green,
+            NamedColor::DimYellow => NamedColor::Yellow,
+            NamedColor::DimBlue => NamedColor::Blue,
+            NamedColor::DimMagenta => NamedColor::Magenta,
+            NamedColor::DimCyan => NamedColor::Cyan,
+            NamedColor::DimWhite => NamedColor::White,
+            val => val,
+        }
+    }
+
+    #[must_use]
+    pub fn to_dim(self) -> Self {
+        match self {
+            NamedColor::Black => NamedColor::DimBlack,
+            NamedColor::Red => NamedColor::DimRed,
+            NamedColor::Green => NamedColor::DimGreen,
+            NamedColor::Yellow => NamedColor::DimYellow,
+            NamedColor::Blue => NamedColor::DimBlue,
+            NamedColor::Magenta => NamedColor::DimMagenta,
+            NamedColor::Cyan => NamedColor::DimCyan,
+            NamedColor::White => NamedColor::DimWhite,
+            NamedColor::Foreground => NamedColor::DimForeground,
+            NamedColor::BrightBlack => NamedColor::Black,
+            NamedColor::BrightRed => NamedColor::Red,
+            NamedColor::BrightGreen => NamedColor::Green,
+            NamedColor::BrightYellow => NamedColor::Yellow,
+            NamedColor::BrightBlue => NamedColor::Blue,
+            NamedColor::BrightMagenta => NamedColor::Magenta,
+            NamedColor::BrightCyan => NamedColor::Cyan,
+            NamedColor::BrightWhite => NamedColor::White,
+            NamedColor::BrightForeground => NamedColor::Foreground,
+            val => val,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
@@ -18,8 +135,19 @@ pub struct ColorBuilder {
     pub alpha: f64,
 }
 
-pub type Color = wgpu::Color;
-pub type ColorArray = [f32; 4];
+#[derive(Debug, PartialEq, Eq, Deserialize, Clone, Copy)]
+pub struct ColorBuilder8Bits {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+impl ColorBuilder8Bits {
+    pub fn transform_to_color_arr(red: u8, green: u8, blue: u8, alpha: u8) -> ColorArray {
+        [red as f32, green as f32, blue as f32, alpha as f32]
+    }
+}
 
 impl ColorBuilder {
     #[allow(dead_code)]

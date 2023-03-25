@@ -1,4 +1,5 @@
-use colors::Color;
+use crate::attr::Color;
+use colors::NamedColor;
 use std::sync::Arc;
 
 /// Dynamically allocated cell content.
@@ -28,8 +29,8 @@ impl Default for Square {
     fn default() -> Square {
         Square {
             c: ' ',
-            bg: Color::default(),
-            fg: Color::default(),
+            bg: Color::Named(NamedColor::Black),
+            fg: Color::Named(NamedColor::Foreground),
             extra: None,
         }
     }

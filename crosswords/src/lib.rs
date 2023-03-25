@@ -12,6 +12,7 @@
 
 */
 
+pub mod attr;
 pub mod dimensions;
 pub mod pos;
 pub mod row;
@@ -23,11 +24,14 @@ use crate::pos::CharsetIndex;
 use crate::row::Row;
 use crate::square::Square;
 use crate::storage::Storage;
+use attr::*;
 use bitflags::bitflags;
 use pos::{Column, Cursor, Line, Pos};
 use std::ops::{Index, IndexMut, Range};
 use std::ptr;
 use unicode_width::UnicodeWidthChar;
+
+pub type NamedColor = colors::NamedColor;
 
 bitflags! {
     #[derive(Debug, Clone)]
@@ -209,6 +213,59 @@ impl Crosswords {
         (self.cursor.pos.col, self.cursor.pos.row)
     }
 
+    #[inline]
+    pub fn terminal_attribute(&mut self, attr: Attr) {
+        let cursor = &mut self.cursor;
+        println!("{:?}", attr);
+        match attr {
+            Attr::Foreground(color) => cursor.template.fg = color,
+            Attr::Background(color) => cursor.template.bg = color,
+            // Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
+            // Attr::Reset => {
+            //     cursor.template.fg = Color::Named(NamedColor::Foreground);
+            //     cursor.template.bg = Color::Named(NamedColor::Background);
+            //     cursor.template.flags = Flags::empty();
+            //     cursor.template.set_underline_color(None);
+            // },
+            // Attr::Reverse => cursor.template.flags.insert(Flags::INVERSE),
+            // Attr::CancelReverse => cursor.template.flags.remove(Flags::INVERSE),
+            // Attr::Bold => cursor.template.flags.insert(Flags::BOLD),
+            // Attr::CancelBold => cursor.template.flags.remove(Flags::BOLD),
+            // Attr::Dim => cursor.template.flags.insert(Flags::DIM),
+            // Attr::CancelBoldDim => cursor.template.flags.remove(Flags::BOLD | Flags::DIM),
+            // Attr::Italic => cursor.template.flags.insert(Flags::ITALIC),
+            // Attr::CancelItalic => cursor.template.flags.remove(Flags::ITALIC),
+            // Attr::Underline => {
+            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+            //     cursor.template.flags.insert(Flags::UNDERLINE);
+            // },
+            // Attr::DoubleUnderline => {
+            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+            //     cursor.template.flags.insert(Flags::DOUBLE_UNDERLINE);
+            // },
+            // Attr::Undercurl => {
+            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+            //     cursor.template.flags.insert(Flags::UNDERCURL);
+            // },
+            // Attr::DottedUnderline => {
+            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+            //     cursor.template.flags.insert(Flags::DOTTED_UNDERLINE);
+            // },
+            // Attr::DashedUnderline => {
+            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
+            //     cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
+            // },
+            // Attr::CancelUnderline => cursor.template.flags.remove(Flags::ALL_UNDERLINES),
+            // Attr::Hidden => cursor.template.flags.insert(Flags::HIDDEN),
+            // Attr::CancelHidden => cursor.template.flags.remove(Flags::HIDDEN),
+            // Attr::Strike => cursor.template.flags.insert(Flags::STRIKEOUT),
+            // Attr::CancelStrike => cursor.template.flags.remove(Flags::STRIKEOUT),
+            _ => {
+                println!("Term got unhandled attr: {:?}", attr);
+            }
+        }
+    }
+
     /// Move lines at the bottom toward the top.
     pub fn scroll_up(&mut self, region: &Range<Line>, positions: usize) {
         // When rotating the entire region with fixed lines at the top, just reset everything.
@@ -300,15 +357,15 @@ impl Crosswords {
 
     fn write_at_cursor(&mut self, c: char) {
         let c = self.cursor.charsets[self.active_charset].map(c);
-        //     let fg = self.grid.cursor.template.fg;
-        //     let bg = self.grid.cursor.template.bg;
+        let fg = self.cursor.template.fg;
+        let bg = self.cursor.template.bg;
         //     let flags = self.grid.cursor.template.flags;
         //     let extra = self.grid.cursor.template.extra.clone();
 
         let mut cursor_square = self.cursor_square();
         cursor_square.c = c;
-        // cursor_cell.fg = fg;
-        // cursor_cell.bg = bg;
+        cursor_square.fg = fg;
+        cursor_square.bg = bg;
         // cursor_cell.flags = flags;
         // cursor_cell.extra = extra;
     }
