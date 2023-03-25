@@ -221,12 +221,12 @@ impl Crosswords {
             Attr::Foreground(color) => cursor.template.fg = color,
             Attr::Background(color) => cursor.template.bg = color,
             // Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
-            // Attr::Reset => {
-            //     cursor.template.fg = Color::Named(NamedColor::Foreground);
-            //     cursor.template.bg = Color::Named(NamedColor::Background);
-            //     cursor.template.flags = Flags::empty();
-            //     cursor.template.set_underline_color(None);
-            // },
+            Attr::Reset => {
+                cursor.template.fg = Color::Named(NamedColor::Foreground);
+                cursor.template.bg = Color::Named(NamedColor::Background);
+                // cursor.template.flags = Flags::empty();
+                // cursor.template.set_underline_color(None);
+            },
             // Attr::Reverse => cursor.template.flags.insert(Flags::INVERSE),
             // Attr::CancelReverse => cursor.template.flags.remove(Flags::INVERSE),
             // Attr::Bold => cursor.template.flags.insert(Flags::BOLD),

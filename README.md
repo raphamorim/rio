@@ -23,15 +23,18 @@ Basic features are under development for MacOs right now.
 
 Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
 
-#### Available themes
+#### Examples
 
-[See more in configuration](#theme)
+Example using [Lucario color scheme](github.com/raphamorim/lucario/)
 
-| Basic | Modern * |
-| --- | --- |
-| ![Demo basic macOS](docs/demo-macos-basic.png) | ![Demo macOS](docs/demo-macos.png) |
+[Demo using Lucario](docs/demo-macos-lucario.png)
 
-_* Modern theme is only available in Developer builds._
+Usage example running the following bash script:
+
+```bash
+#!/bin/bash
+for x in {0..8}; do for i in {30..37}; do for a in {40..47}; do echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "; done; echo; done; done; echo ""
+```
 
 #### WGPU based
 
@@ -71,7 +74,8 @@ font-size = 16
 theme = "Basic"
 
 [advanced]
-tab-character = '■'
+tab-character-active = '●'
+tab-character-inactive = '■'
 monochrome = false
 enable-fps-counter = false
 ```
