@@ -61,12 +61,16 @@ width = 662
 background = '#151515'
 foreground = '#FFFFFF'
 cursor = '#8E12CC'
-tabs_active = '#F8A145'
+tabs-active = '#F8A145'
 
 [style]
 font = "Firamono"
-font_size = 16
+font-size = 16
 theme = "Basic"
+
+[advanced]
+tab-character = '■'
+disable-colors = false
 ```
 
 ### Perfomance
