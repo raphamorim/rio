@@ -20,6 +20,10 @@ pub fn default_font_size() -> f32 {
     16.0
 }
 
+pub fn default_tab_character() -> char {
+    '■'
+}
+
 pub fn default_color_background() -> colors::Color {
     colors::ColorBuilder::from_hex(String::from("#151515"), colors::Format::SRGB0_1)
         .unwrap()

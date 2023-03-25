@@ -172,7 +172,7 @@ impl Term {
     // Allowing switch Terms
     fn get_command_name(&self) -> String {
         // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
-        String::from("■ zsh ")
+        format!("{} zsh ", self.renderer.config.advanced.tab_character)
     }
 
     pub fn draw(&mut self, output: &Arc<Mutex<String>>) {

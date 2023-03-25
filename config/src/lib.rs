@@ -28,6 +28,7 @@ pub enum Font {
 
 #[derive(Copy, Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
+    #[serde(rename = "font-size")]
     pub font_size: f32,
     pub theme: Theme,
     pub font: Font,
@@ -62,7 +63,8 @@ pub struct Colors {
     pub cursor: Color,
     #[serde(
         deserialize_with = "deserialize_to_arr",
-        default = "default_color_tabs_active"
+        default = "default_color_tabs_active",
+        rename = "tabs-active"
     )]
     pub tabs_active: ColorArray,
 }
@@ -74,6 +76,23 @@ impl Default for Colors {
             foreground: default_color_foreground(),
             cursor: default_color_cursor(),
             tabs_active: default_color_tabs_active(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize)]
+pub struct Advanced {
+    #[serde(default = "default_tab_character", rename = "tab-character")]
+    pub tab_character: char,
+    #[serde(default = "bool::default", rename = "disable-colors")]
+    pub disable_colors: bool,
+}
+
+impl Default for Advanced {
+    fn default() -> Advanced {
+        Advanced {
+            tab_character: default_tab_character(),
+            disable_colors: false,
         }
     }
 }
@@ -94,6 +113,8 @@ pub struct Config {
     pub style: Style,
     #[serde(default = "Colors::default")]
     pub colors: Colors,
+    #[serde(default = "Advanced::default")]
+    pub advanced: Advanced,
 }
 
 impl Config {
@@ -162,6 +183,7 @@ impl Default for Config {
                 theme: Theme::default(),
                 font: Font::default(),
             },
+            advanced: Advanced::default(),
         }
     }
 }
@@ -221,6 +243,9 @@ mod tests {
         assert_eq!(result.colors.foreground, default_color_foreground());
         assert_eq!(result.colors.tabs_active, default_color_tabs_active());
         assert_eq!(result.colors.cursor, default_color_cursor());
+        // Advanced
+        assert_eq!(result.advanced.tab_character, default_tab_character());
+        assert!(!result.advanced.disable_colors);
     }
 
     #[test]
@@ -237,12 +262,16 @@ mod tests {
             background = '#151515'
             foreground = '#FFFFFF'
             cursor = '#8E12CC'
-            tabs_active = '#F8A145'
+            tabs-active = '#F8A145'
 
             [style]
             font = "Firamono"
-            font_size = 16
+            font-size = 16
             theme = "Basic"
+
+            [advanced]
+            tab-character = '■'
+            disable-colors = false
         "#,
         );
 
@@ -260,6 +289,9 @@ mod tests {
         assert_eq!(result.colors.foreground, default_color_foreground());
         assert_eq!(result.colors.tabs_active, default_color_tabs_active());
         assert_eq!(result.colors.cursor, default_color_cursor());
+        // Advanced
+        assert_eq!(result.advanced.tab_character, default_tab_character());
+        assert!(!result.advanced.disable_colors);
     }
 
     #[test]
@@ -379,7 +411,7 @@ mod tests {
             [style]
             font = "Novamono"
             theme = "Modern"
-            font_size = 14.0
+            font-size = 14.0
         "#,
         );
 
@@ -424,7 +456,7 @@ mod tests {
 
             [colors]
             background = '#2B3E50'
-            tabs_active = '#E6DB74'
+            tabs-active = '#E6DB74'
             foreground = '#F8F8F2'
             cursor = '#E6DB74'
         "#,
@@ -454,5 +486,34 @@ mod tests {
                 .unwrap()
                 .to_wgpu()
         );
+    }
+
+    #[test]
+    fn test_change_advanced() {
+        let result = create_temporary_config(
+            "change-advanced",
+            r#"
+            performance = "Low"
+
+            [advanced]
+            disable-colors = true
+            tab-character = '▲'            
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Advanced
+        assert!(result.advanced.disable_colors);
+        assert_eq!(result.advanced.tab_character, '▲');
+
+        // Colors
+        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.foreground, default_color_foreground());
+        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
+        assert_eq!(result.colors.cursor, default_color_cursor());
     }
 }
