@@ -146,7 +146,7 @@ impl Config {
     }
 
     pub fn load_macos() -> Self {
-        // XDG base directory 
+        // XDG base directory
         let base_dir_buffer = dirs::config_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();
 
@@ -505,7 +505,7 @@ mod tests {
             [advanced]
             monochrome = true
             enable-fps-counter = true
-            tab-character = '▲'            
+            tab-character = '▲'
         "#,
         );
 
