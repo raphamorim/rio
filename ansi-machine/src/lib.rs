@@ -21,8 +21,8 @@ pub trait Handler {
 }
 
 struct Performer {
-    arc: VisibleRows,
     handler: Crosswords,
+    arc: VisibleRows,
 }
 
 impl Performer {
@@ -362,12 +362,33 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     attrs
 }
 
-pub fn process(process: Process, data_ptr: VisibleRows, columns: usize, rows: usize) {
-    let reader = BufReader::new(process);
+pub struct Machine {
+    handler: Performer,
+    parser: Parser,
+}
 
-    let mut handler = Performer::new(data_ptr, columns, rows);
-    let mut parser = Parser::new();
-    for byte in reader.bytes() {
-        parser.advance(&mut handler, *byte.as_ref().unwrap());
+impl Machine {
+    pub fn new(data_ptr: VisibleRows, columns: usize, rows: usize) -> Machine {
+        let handler = Performer::new(data_ptr, columns, rows);
+        let parser = Parser::new();
+        Machine { handler, parser }
+    }
+
+    pub fn process(&mut self, process: Process) {
+        let reader = BufReader::new(process);
+        for byte in reader.bytes() {
+            self.parser
+                .advance(&mut self.handler, *byte.as_ref().unwrap());
+        }
     }
 }
+
+// pub fn (process: Process, columns: usize, rows: usize) {
+//     let reader = BufReader::new(process);
+
+//     let mut handler = Performer::new(data_ptr, columns, rows);
+//     let mut parser = Parser::new();
+//     for byte in reader.bytes() {
+//         parser.advance(&mut handler, *byte.as_ref().unwrap());
+//     }
+// }

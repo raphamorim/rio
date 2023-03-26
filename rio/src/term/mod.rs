@@ -1,13 +1,12 @@
 mod cache;
-use ansi_machine::{process, Row, VisibleRows};
+use ansi_machine::{Machine, Row, VisibleRows};
 use cache::Cache;
 use renderer::{Renderer, RendererStyles};
 use std::borrow::Cow;
 use std::error::Error;
-use teletypewriter::{pty, Process};
-
 use std::sync::Arc;
 use std::sync::Mutex;
+use teletypewriter::{pty, Process};
 
 pub struct Term {
     device: wgpu::Device,
@@ -20,8 +19,6 @@ pub struct Term {
     size: winit::dpi::PhysicalSize<u32>,
     #[allow(dead_code)]
     cache: Cache,
-    #[allow(dead_code)]
-    pid: i32,
     pub write_process: Process,
     data_arc: VisibleRows,
 }
@@ -130,7 +127,14 @@ impl Term {
         let columns = renderer.config.columns;
         let rows = renderer.config.rows;
 
-        let term = Term {
+        tokio::spawn(async move {
+            let mut machine = Machine::new(data_arc_clone, columns.into(), rows.into());
+            machine.process(read_process);
+        });
+
+        Ok(Term {
+            write_process,
+            data_arc,
             device,
             surface,
             staging_belt,
@@ -140,16 +144,7 @@ impl Term {
             alpha_mode,
             queue,
             cache,
-            pid,
-            write_process,
-            data_arc,
-        };
-
-        tokio::spawn(async move {
-            process(read_process, data_arc_clone, columns.into(), rows.into());
-        });
-
-        Ok(term)
+        })
     }
 
     pub fn set_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -202,7 +197,10 @@ impl Term {
     // Allowing switch Terms
     fn get_command_name(&self) -> String {
         // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
-        format!("{} zsh ", self.renderer.config.advanced.tab_character_active)
+        format!(
+            "{} zsh ",
+            self.renderer.config.advanced.tab_character_active
+        )
     }
 
     pub fn draw(&mut self) {
@@ -226,7 +224,7 @@ impl Term {
             depth_stencil_attachment: None,
         });
 
-        self.renderer.topbar(self.get_command_name());
+        // self.renderer.topbar(self.get_command_name());
         self.renderer.term(self.data_arc.lock().unwrap().to_vec());
 
         self.renderer

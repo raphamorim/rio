@@ -9,6 +9,7 @@
 - [About Rio](#about-rio)
 - [Configuration file](#configuration-file)
 - [Color scheme file](#color-scheme-file)
+    - [Color pallete demo](##color-palette-demo)
 - [Status](#development-status)
 - [Acknowledgments](#acknowledgments)
 
@@ -25,11 +26,11 @@ A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets
 
 Below some of Rio's features:
 
-- Cross-platform
-- Configurable (Render level, colors, icons, fonts)
-- Offloads rendering to the GPU for lower system load
-- Uses threaded rendering for absolutely minimal latency
-- Tabs support
+- Cross-platform.
+- Configurable (Render level, colors, icons, fonts).
+- Offloads rendering to the GPU for lower system load.
+- Uses threaded rendering for absolutely minimal latency.
+- Tabs support.
 
 Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. **[More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)**
 
@@ -180,10 +181,37 @@ Default colors scheme content of `colors.toml`:
 
 ```toml
 [colors]
-background = '#151515'
-foreground = '#FFFFFF'
-cursor = '#8E12CC'
-tabs-active = '#F8A145'
+background      = '#151515'
+black
+blue
+cursor          = '#8E12CC'
+cyan
+foreground      = '#FFFFFF'
+green
+magenta
+red
+tabs       
+tabs-active     = '#F8A145'
+white
+yellow
+dim-black
+dim-blue
+dim-cyan
+dim-foreground
+dim-green
+dim-magenta
+dim-red
+dim-white
+dim-yellow
+light-black
+light-blue
+light-cyan
+light-foreground
+light-green
+light-magenta
+light-red
+light-white
+light-yellow
 ```
 
 ### Color palette demo

@@ -216,7 +216,7 @@ impl Crosswords {
     #[inline]
     pub fn terminal_attribute(&mut self, attr: Attr) {
         let cursor = &mut self.cursor;
-        println!("{:?}", attr);
+        // println!("{:?}", attr);
         match attr {
             Attr::Foreground(color) => cursor.template.fg = color,
             Attr::Background(color) => cursor.template.bg = color,
@@ -226,7 +226,7 @@ impl Crosswords {
                 cursor.template.bg = Color::Named(NamedColor::Background);
                 // cursor.template.flags = Flags::empty();
                 // cursor.template.set_underline_color(None);
-            },
+            }
             // Attr::Reverse => cursor.template.flags.insert(Flags::INVERSE),
             // Attr::CancelReverse => cursor.template.flags.remove(Flags::INVERSE),
             // Attr::Bold => cursor.template.flags.insert(Flags::BOLD),

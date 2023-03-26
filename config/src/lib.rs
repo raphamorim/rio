@@ -103,9 +103,15 @@ impl Default for Colors {
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 pub struct Advanced {
-    #[serde(default = "default_tab_character_active", rename = "tab-character-active")]
+    #[serde(
+        default = "default_tab_character_active",
+        rename = "tab-character-active"
+    )]
     pub tab_character_active: char,
-    #[serde(default = "default_tab_character_inactive", rename = "tab-character-inactive")]
+    #[serde(
+        default = "default_tab_character_inactive",
+        rename = "tab-character-inactive"
+    )]
     pub tab_character_inactive: char,
     #[serde(default = "bool::default")]
     pub monochrome: bool,
@@ -277,8 +283,14 @@ mod tests {
         assert_eq!(result.colors.cursor, default_color_cursor());
 
         // Advanced
-        assert_eq!(result.advanced.tab_character_active, default_tab_character_active());
-        assert_eq!(result.advanced.tab_character_inactive, default_tab_character_inactive());
+        assert_eq!(
+            result.advanced.tab_character_active,
+            default_tab_character_active()
+        );
+        assert_eq!(
+            result.advanced.tab_character_inactive,
+            default_tab_character_inactive()
+        );
         assert!(!result.advanced.monochrome);
         assert!(!result.advanced.enable_fps_counter);
     }
@@ -327,8 +339,14 @@ mod tests {
         assert_eq!(result.colors.tabs_active, default_color_tabs_active());
         assert_eq!(result.colors.cursor, default_color_cursor());
         // Advanced
-        assert_eq!(result.advanced.tab_character_active, default_tab_character_active());
-        assert_eq!(result.advanced.tab_character_inactive, default_tab_character_inactive());
+        assert_eq!(
+            result.advanced.tab_character_active,
+            default_tab_character_active()
+        );
+        assert_eq!(
+            result.advanced.tab_character_inactive,
+            default_tab_character_inactive()
+        );
         assert!(!result.advanced.monochrome);
         assert!(!result.advanced.enable_fps_counter);
     }

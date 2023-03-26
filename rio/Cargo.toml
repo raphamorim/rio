@@ -1,8 +1,12 @@
 [package]
 name = "rio"
-version = { workspace = true }
-edition = { workspace = true }
-authors = { workspace = true }
+version = "0.1.0"
+authors = ["Raphael Amorim <rapha850@gmail.com>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+description = "Rio termina app"
 
 [dependencies]
 wgpu = { workspace = true }

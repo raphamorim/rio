@@ -71,6 +71,21 @@ impl io::Read for Process {
     }
 }
 
+impl io::Read for &Process {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match unsafe {
+            libc::read(
+                *self.0,
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as libc::size_t,
+            )
+        } {
+            n if n >= 0 => Ok(n as usize),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+}
+
 pub fn create_termp(utf8: bool) -> libc::termios {
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
@@ -166,10 +181,10 @@ pub fn pty(
             }
             unreachable!();
         }
-        n if n > 0 => {
+        id if id > 0 => {
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let handle = Handle(Arc::new(main));
-            (Process(handle.clone()), Process(handle), ptsname, n)
+            (Process(handle.clone()), Process(handle), ptsname, id)
         }
         _ => panic!("Fork failed."),
     }

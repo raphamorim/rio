@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         input:
                             winit::event::KeyboardInput {
                                 // semantic meaning of the key
-                                // virtual_keycode: Some(keycode),
+                                virtual_keycode,
                                 // physical key pressed
                                 scancode,
                                 state,
@@ -82,8 +82,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    // println!("{:?} {:?}", scancode, keycode);
-                    input_stream.keydown(scancode, &mut rio.write_process);
+                    println!("{:?} {:?}", scancode, Some(virtual_keycode));
+                    input_stream.keydown(
+                        scancode,
+                        virtual_keycode,
+                        &mut rio.write_process,
+                    );
                     rio.draw();
                 }
 
@@ -126,9 +130,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             event::Event::RedrawRequested { .. } => {
-                if is_focused {
-                    rio.draw();
-                }
+                // if is_focused {
+                rio.draw();
+                // }
             }
             _ => {
                 let next_frame_time =

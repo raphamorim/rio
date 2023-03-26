@@ -1,6 +1,6 @@
 mod ansi;
 pub mod input;
-mod keys;
+mod scancode;
 
 use crate::shared::LOGO_ICON;
 
