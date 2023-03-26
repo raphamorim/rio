@@ -146,7 +146,8 @@ impl Config {
     }
 
     pub fn load_macos() -> Self {
-        let base_dir_buffer = dirs::home_dir().unwrap();
+        // XDG base directory 
+        let base_dir_buffer = dirs::config_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();
 
         let path = format!("{base_dir}/.rio/config.toml");
