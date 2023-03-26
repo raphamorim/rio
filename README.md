@@ -8,8 +8,12 @@
 
 - [About Rio](#about-rio)
 - [Configuration file](#configuration-file)
-- [Color scheme file](#color-scheme-file)
-    - [Color pallete demo](##color-palette-demo)
+    - [Performance](#performance)
+    - [Height](#height)
+    - [Width](#width)
+    - [Style](#style)
+    - [Advanced](#advanced)
+    - [Colors](#colors)
 - [Status](#development-status)
 - [Acknowledgments](#acknowledgments)
 
@@ -62,9 +66,43 @@ tab-character-active = '●'
 tab-character-inactive = '■'
 monochrome = false
 enable-fps-counter = false
+disable-renderer-when-unfocused = false
+
+[colors]
+background      = '#151515'
+black
+blue
+cursor          = '#8E12CC'
+cyan
+foreground      = '#FFFFFF'
+green
+magenta
+red
+tabs       
+tabs-active     = '#F8A145'
+white
+yellow
+dim-black
+dim-blue
+dim-cyan
+dim-foreground
+dim-green
+dim-magenta
+dim-red
+dim-white
+dim-yellow
+light-black
+light-blue
+light-cyan
+light-foreground
+light-green
+light-magenta
+light-red
+light-white
+light-yellow
 ```
 
-#### `perfomance`
+#### `performance`
 
 Set terminal WGPU rendering perfomance.
 
@@ -171,50 +209,18 @@ This property sets a `char` for an inactive tab.
 tab-character-inactive = '■'
 ```
 
-## Color scheme file
+#### `disable-renderer-when-unfocused`
 
-The colors scheme file should be the following paths otherwise Rio will use the default colors.
-
-- macOs path: `~/.rio/colors.toml`
-
-Default colors scheme content of `colors.toml`:
+This property disable renderer processes until focus on Rio term again.
 
 ```toml
-[colors]
-background      = '#151515'
-black
-blue
-cursor          = '#8E12CC'
-cyan
-foreground      = '#FFFFFF'
-green
-magenta
-red
-tabs       
-tabs-active     = '#F8A145'
-white
-yellow
-dim-black
-dim-blue
-dim-cyan
-dim-foreground
-dim-green
-dim-magenta
-dim-red
-dim-white
-dim-yellow
-light-black
-light-blue
-light-cyan
-light-foreground
-light-green
-light-magenta
-light-red
-light-white
-light-yellow
+[style]
+disable-renderer-when-unfocused = false
 ```
 
-### Color palette demo
+## Colors
+
+Default color palette demo:
 
 Usage example running the following bash script:
 
