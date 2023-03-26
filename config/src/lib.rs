@@ -150,7 +150,7 @@ impl Config {
         let base_dir_buffer = dirs::config_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();
 
-        let path = format!("{base_dir}/.rio/config.toml");
+        let path = format!("{base_dir}/rio.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str(&content) {
