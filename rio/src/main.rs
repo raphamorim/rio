@@ -10,23 +10,17 @@ use winit::{event, event_loop};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let event_loop = event_loop::EventLoopBuilder::new().build();
-
     let config = Config::load_macos();
+    // std::env::set_var("TERM", "xterm-256color");
+    std::env::set_var("TERM", "xterm-color");
+
+    let event_loop = event_loop::EventLoopBuilder::new().build();
     let window_builder =
         window::create_window_builder("Rio", (config.width, config.height));
     let winit_window = window_builder.build(&event_loop).unwrap();
 
-    std::env::set_var("TERM", "xterm-256color");
-
     let mut input_stream = window::input::Input::new();
-    let mut rio: Term = match Term::new(&winit_window, config).await {
-        Ok(term_instance) => term_instance,
-        Err(e) => {
-            panic!("couldn't create Rio terminal {e}");
-        }
-    };
-
+    let mut rio = Term::new(&winit_window, config).await?;
     let mut is_focused = true;
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -70,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         input:
                             winit::event::KeyboardInput {
                                 // semantic meaning of the key
-                                // virtual_keycode: Some(keycode),
+                                virtual_keycode,
                                 // physical key pressed
                                 scancode,
                                 state,
@@ -82,13 +76,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    // println!("{:?} {:?}", scancode, keycode);
-                    input_stream.keydown(scancode, &mut rio.write_process);
-                    rio.draw();
+                    println!("{:?} {:?}", scancode, Some(virtual_keycode));
+                    input_stream.keydown(
+                        scancode,
+                        virtual_keycode,
+                        &mut rio.write_process,
+                    );
+                    winit_window.request_redraw();
                 }
 
                 winit::event::ElementState::Released => {
-                    rio.draw();
+                    winit_window.request_redraw();
                 }
             },
 
@@ -126,9 +124,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             event::Event::RedrawRequested { .. } => {
-                if is_focused {
-                    rio.draw();
+                if rio.renderer.config.advanced.disable_render_when_unfocused
+                    && is_focused
+                {
+                    return;
                 }
+
+                rio.draw();
             }
             _ => {
                 let next_frame_time =

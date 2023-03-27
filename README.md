@@ -1,49 +1,46 @@
 # Rio: ⚡ terminal app 
 
+> Example using [Lucario color scheme](github.com/raphamorim/lucario/).
+
+![Demo using Lucario](docs/demo-macos-lucario.png)
+
+## Summary
+
+- [About Rio](#about-rio)
+- [Configuration file](#configuration-file)
+    - [Performance](#performance)
+    - [Height](#height)
+    - [Width](#width)
+    - [Style](#style)
+    - [Advanced](#advanced)
+    - [Colors](#colors)
+- [Status](#development-status)
+- [Acknowledgments](#acknowledgments)
+
+## About Rio
+
 Website: https://raphamorim.io/rio
 
-This project depends of donations, so if you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
+> If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
+> 
+> Rio would not be possible without [few acknowledgements](#acknowledgements).
+> 
 
-- Cross-platform
-- Offloads rendering to the GPU for lower system load
-- Uses threaded rendering for absolutely minimal latency
-- Tabs support
+A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
 
-Note: Rio wouldn't be possible without [few acknowledgements](#acknowledgments).
+Below some of Rio's features:
 
-#### Status
+- Cross-platform.
+- Configurable (Render level, colors, icons, fonts).
+- Offloads rendering to the GPU for lower system load.
+- Uses threaded rendering for absolutely minimal latency.
+- Tabs support.
 
-Basic features are under development for MacOs right now.
+Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. **[More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)**
 
-| Platform | Development Status |
-| --- | --- |
-| MacOs | In development 👷 |
-| Linux | Not started yet |
-| Windows | Not started yet |
+It also relies on Rust memory behavior, since Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. **[More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)**
 
-Last testing build for macOS (338b4c411ac62dc4bdf68b5c9b8e5da7d7bab8ca):
-
-#### Available themes
-
-[See more in configuration](#theme)
-
-| Basic | Modern * |
-| --- | --- |
-| ![Demo basic macOS](docs/demo-macos-basic.png) | ![Demo macOS](docs/demo-macos.png) |
-
-_* Modern theme is only available in Developer builds._
-
-#### WGPU based
-
-WGPU is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. [More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)
-
-#### Low CPU and memory usage
-
-You want to avoid a browser-based application to reduce memory and CPU consumption. Electron for example, uses Chromium under the hood so your user sees the same on Windows, Linux and macOS but Rio have same compatibility rendering based on WGPU.
-
-Rio also relies on Rust memory behavior: Rust is a memory-safe language that employs a compiler to track the ownership of values that can be used once and a borrow checker that manages how data is used without relying on traditional garbage collection techniques. [More info](https://stanford-cs242.github.io/f18/lectures/05-1-rust-memory-safety.html)
-
-## Configuration
+## Configuration File
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
@@ -59,28 +56,54 @@ performance = "High"
 height = 438
 width = 662
 
-[colors]
-background = '#151515'
-foreground = '#FFFFFF'
-cursor = '#8E12CC'
-tabs-active = '#F8A145'
-
 [style]
 font = "Firamono"
 font-size = 16
 theme = "Basic"
 
 [advanced]
-tab-character = '■'
-monochrome = false
+tab-character-active = '●'
+tab-character-inactive = '■'
 enable-fps-counter = false
+disable-renderer-when-unfocused = false
+
+[colors]
+background       = '#151515'
+black            = '#FFFFFF'
+blue             = '#006EE6'
+cursor           = '#8E12CC'
+cyan             = '#FFFFFF'
+foreground       = '#FFFFFF'
+green            = '#FFFFFF'
+magenta          = '#FFFFFF'
+red              = '#FFFFFF'
+tabs             = '#FFFFFF'
+tabs-active      = '#F8A145'
+white            = '#FFFFFF'
+yellow           = '#FFFFFF'
+dim-black        = '#FFFFFF'
+dim-blue         = '#FFFFFF'
+dim-cyan         = '#FFFFFF'
+dim-foreground   = '#FFFFFF'
+dim-green        = '#FFFFFF'
+dim-magenta      = '#FFFFFF'
+dim-red          = '#FFFFFF'
+dim-white        = '#FFFFFF'
+dim-yellow       = '#FFFFFF'
+light-black      = '#FFFFFF'
+light-blue       = '#FFFFFF'
+light-cyan       = '#FFFFFF'
+light-foreground = '#FFFFFF'
+light-green      = '#FFFFFF'
+light-magenta    = '#FFFFFF'
+light-red        = '#FFFFFF'
+light-white      = '#FFFFFF'
+light-yellow     = '#FFFFFF'
 ```
 
-_* Monochrome is not implemented yet._
+#### `performance`
 
-### Perfomance
-
-Description: Set terminal WGPU rendering perfomance.
+Set terminal WGPU rendering perfomance.
 
 - High: Adapter that has the highest performance. This is often a discrete GPU.
 - Low: Adapter that uses the least possible power. This is often an integrated GPU.
@@ -96,9 +119,9 @@ See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 performance = "High"
 ```
 
-### Height
+#### `height`
 
-Description: Set terminal window height.
+Set terminal window height.
 
 ```toml
 # <height> Set default height
@@ -106,9 +129,9 @@ Description: Set terminal window height.
 height = 400
 ```
 
-### Width
+#### `width`
 
-Description: Set terminal window width.
+Set terminal window width.
 
 ```toml
 # <width> Set default width
@@ -116,9 +139,9 @@ Description: Set terminal window width.
 width = 800
 ```
 
-### Columns
+#### `columns`
 
-Description: Defines the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
+Define the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
 
 ```toml
 # <width> Set default width
@@ -126,9 +149,9 @@ Description: Defines the column width of your console window. This mode is syste
 columns = 80
 ```
 
-### Rows
+#### `rows`
 
-Description: Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
+Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
 
 ```toml
 # <width> Set default width
@@ -136,58 +159,97 @@ Description: Define the row height of your console window. This mode is system d
 rows = 25
 ```
 
-### Colors
-
-- `background` - Set background color.
-- `cursor` - Set cursor color.
-- `foreground` - Set foreground color.
-- `tabs` - Set tab color.
-- `tabs-active` - Set active tab color.
-
-```toml
-[colors]
-background = "#151515"
-cursor = "#8E12CC"
-foreground = "#FFFFFF"
-tabs = "#8E12CC"
-tabs-active = "#8E12CC"
-```
-
 ### Style
 
-#### Font
+#### `font`
 
 This property will change later to an actual font path. Currently Rio has 2 fonts builtin: `Firamono`, `Novamono`.
-
-- `font` - Set font size.
 
 ```toml
 [style]
 font = "Firamono"
 ```
 
-#### Font Size
+#### `font-size`
 
-- `font_size` - Set font size.
+Sets font size.
 
 ```toml
 [style]
-font_size = 16.0
+font-size = 16.0
 ```
 
-#### Theme
+### Advanced
 
-Description: Set Rio terminal theme
+#### `enable-fps-counter`
 
-- Modern
-- Basic
+This property enables frame per second counter.
 
 ```toml
-# <theme> Set Rio terminal theme
-# default: Basic
-# options: Modern, Basic
-theme = "Modern"
+[style]
+enable-fps-counter = false
 ```
+
+#### `tab-character-active`
+
+This property sets a `char` for an active tab.
+
+```toml
+[style]
+tab-character-active = '●'
+```
+
+#### `tab-character-inactive`
+
+This property sets a `char` for an inactive tab.
+
+```toml
+[style]
+tab-character-inactive = '■'
+```
+
+#### `disable-renderer-when-unfocused`
+
+This property disable renderer processes until focus on Rio term again.
+
+```toml
+[style]
+disable-renderer-when-unfocused = false
+```
+
+## Colors
+
+Default color palette demo:
+
+Usage example running the following bash script:
+
+```bash
+for x in {0..8}; do
+    for i in {30..37}; do
+        for a in {40..47}; do
+            echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "
+        done
+        echo
+    done
+done
+echo ""
+```
+
+Or one-liner:
+
+```bash
+for x in {0..8}; do for i in {30..37}; do for a in {40..47}; do echo -ne "\e[$x;$i;$a""m\\\e[$x;$i;$a""m\e[0;37;40m "; done; echo; done; done; echo ""
+```
+
+## Development Status
+
+Basic features are under development for MacOs right now.
+
+| Platform | Development Status |
+| --- | --- |
+| MacOs | In development 👷 |
+| Linux | Not started yet |
+| Windows | Not started yet |
 
 ## Acknowledgments
 

@@ -1,13 +1,12 @@
 mod cache;
-use ansi_machine::{process, Row, VisibleRows};
+use ansi_machine::{Machine, Row, VisibleRows};
 use cache::Cache;
 use renderer::{Renderer, RendererStyles};
 use std::borrow::Cow;
 use std::error::Error;
-use teletypewriter::{pty, Process};
-
 use std::sync::Arc;
 use std::sync::Mutex;
+use teletypewriter::{pty, Process};
 
 pub struct Term {
     device: wgpu::Device,
@@ -20,10 +19,8 @@ pub struct Term {
     size: winit::dpi::PhysicalSize<u32>,
     #[allow(dead_code)]
     cache: Cache,
-    #[allow(dead_code)]
-    pid: i32,
     pub write_process: Process,
-    data_arc: VisibleRows,
+    visible_rows_arc: VisibleRows,
 }
 
 impl Term {
@@ -106,8 +103,10 @@ impl Term {
             scale,
             config.style.font_size,
         );
-        let data_arc: VisibleRows = Arc::new(Mutex::from(vec![Row::default()]));
-        let data_arc_clone: VisibleRows = Arc::clone(&data_arc);
+
+        // TODO: Write a proper event driven updater
+        let visible_rows_arc = Arc::new(Mutex::from(vec![Row::default()]));
+        let visible_rows_arc_clone = Arc::clone(&visible_rows_arc);
 
         let renderer = match Renderer::new(&device, format, config, renderer_styles) {
             Ok(r) => r,
@@ -121,7 +120,7 @@ impl Term {
             Err(..) => String::from("bash"),
         };
 
-        let (read_process, write_process, _ptyname, pid) = pty(
+        let (read_process, write_process, _ptyname, _pid) = pty(
             &Cow::Borrowed(&shell),
             renderer.config.columns,
             renderer.config.rows,
@@ -130,7 +129,15 @@ impl Term {
         let columns = renderer.config.columns;
         let rows = renderer.config.rows;
 
-        let term = Term {
+        tokio::spawn(async move {
+            let mut machine =
+                Machine::new(visible_rows_arc_clone, columns.into(), rows.into());
+            machine.process(read_process);
+        });
+
+        Ok(Term {
+            write_process,
+            visible_rows_arc,
             device,
             surface,
             staging_belt,
@@ -140,16 +147,7 @@ impl Term {
             alpha_mode,
             queue,
             cache,
-            pid,
-            write_process,
-            data_arc,
-        };
-
-        tokio::spawn(async move {
-            process(read_process, data_arc_clone, columns.into(), rows.into());
-        });
-
-        Ok(term)
+        })
     }
 
     pub fn set_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -200,10 +198,13 @@ impl Term {
     // TODO: Asynchronous update based on 2s
     // Idea? Prob move Term inside of TermUi that contains Tabs/Term
     // Allowing switch Terms
-    fn get_command_name(&self) -> String {
-        // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
-        format!("{} zsh ", self.renderer.config.advanced.tab_character)
-    }
+    // fn get_command_name(&self) -> String {
+    //     // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
+    //     format!(
+    //         "{} zsh ",
+    //         self.renderer.config.advanced.tab_character_active
+    //     )
+    // }
 
     pub fn draw(&mut self) {
         let mut encoder = self.create_encoder();
@@ -219,15 +220,16 @@ impl Term {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(self.renderer.config.colors.background),
+                    load: wgpu::LoadOp::Clear(self.renderer.config.colors.background.1),
                     store: true,
                 },
             })],
             depth_stencil_attachment: None,
         });
 
-        self.renderer.topbar(self.get_command_name());
-        self.renderer.term(self.data_arc.lock().unwrap().to_vec());
+        // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
+        self.renderer
+            .term(self.visible_rows_arc.lock().unwrap().to_vec());
 
         self.renderer
             .brush

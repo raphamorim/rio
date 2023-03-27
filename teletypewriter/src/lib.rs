@@ -71,7 +71,42 @@ impl io::Read for Process {
     }
 }
 
+impl io::Read for &Process {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match unsafe {
+            libc::read(
+                *self.0,
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as libc::size_t,
+            )
+        } {
+            n if n >= 0 => Ok(n as usize),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+}
+
 pub fn create_termp(utf8: bool) -> libc::termios {
+    #[cfg(target_os = "linux")]
+    let mut term = libc::termios {
+        c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
+        c_oflag: libc::OPOST | libc::ONLCR,
+        c_cflag: libc::CREAD | libc::CS8 | libc::HUPCL,
+        c_lflag: libc::ICANON
+            | libc::ISIG
+            | libc::IEXTEN
+            | libc::ECHO
+            | libc::ECHOE
+            | libc::ECHOK
+            | libc::ECHOKE
+            | libc::ECHOCTL,
+        c_cc: Default::default(),
+        c_ispeed: Default::default(),
+        c_ospeed: Default::default(),
+        c_line: 0,
+    };
+
+    #[cfg(target_os = "macos")]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
@@ -166,10 +201,10 @@ pub fn pty(
             }
             unreachable!();
         }
-        n if n > 0 => {
+        id if id > 0 => {
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let handle = Handle(Arc::new(main));
-            (Process(handle.clone()), Process(handle), ptsname, n)
+            (Process(handle.clone()), Process(handle), ptsname, id)
         }
         _ => panic!("Fork failed."),
     }

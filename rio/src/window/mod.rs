@@ -1,6 +1,6 @@
 mod ansi;
 pub mod input;
-mod keys;
+// mod scancode;
 
 use crate::shared::LOGO_ICON;
 
@@ -22,6 +22,7 @@ pub fn create_window_builder(
     )
     .unwrap();
 
+    #[allow(unused_mut)]
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
@@ -36,9 +37,21 @@ pub fn create_window_builder(
         .with_decorations(true)
         .with_window_icon(Some(icon));
 
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        // use winit::platform::unix::WindowBuilderExtUnix;
+        // window_builder = window_builder.with_name(title);
+    }
+
+    #[cfg(target_os = "macos")]
     {
         use winit::platform::macos::WindowBuilderExtMacOS;
-
         window_builder = window_builder
             .with_title_hidden(true)
             .with_titlebar_transparent(true)

@@ -36,92 +36,156 @@ pub const K6: u8 = b'6';
 pub const K7: u8 = b'7';
 pub const K8: u8 = b'8';
 pub const K9: u8 = b'9';
+#[allow(unused)]
 pub const EQUAL: u8 = b'=';
+#[allow(unused)]
 pub const MINUS: u8 = b'-';
-// pub const KVK_ANSI_RIGHT_BRACKET: u8 = 0x1E;
-// pub const KVK_ANSI_O: u8 = 0x1F;
-// pub const KVK_ANSI_U: u8 = 0x20;
-// pub const KVK_ANSI_LEFT_BRACKET: u8 = 0x21;
-// pub const KVK_ANSI_I: u8 = 0x22;
-// pub const KVK_ANSI_P: u8 = 0x23;
-// pub const KVK_ANSI_L: u8 = 0x25;
-// pub const KVK_ANSI_J: u8 = 0x26;
-// pub const KVK_ANSI_QUOTE: u8 = 0x27;
-// pub const KVK_ANSI_K: u8 = 0x28;
-// pub const KVK_ANSI_SEMICOLON: u8 = 0x29;
-// pub const KVK_ANSI_BACKSLASH: u8 = 0x2A;
-// pub const KVK_ANSI_COMMA: u8 = 0x2B;
-// pub const KVK_ANSI_SLASH: u8 = 0x2C;
-// pub const KVK_ANSI_N: u8 = 0x2D;
-// pub const KVK_ANSI_M: u8 = 0x2E;
+#[allow(unused)]
+pub const RIGHT_BRACKET: u8 = 0x1E;
+#[allow(unused)]
+pub const LEFT_BRACKET: u8 = 0x21;
+#[allow(unused)]
+pub const QUOTE: u8 = 0x27;
+#[allow(unused)]
+pub const SEMICOLON: u8 = 0x29;
+#[allow(unused)]
+pub const BACKSLASH: u8 = 0x2A;
+#[allow(unused)]
+pub const COMMA: u8 = 0x2B;
+#[allow(unused)]
+pub const SLASH: u8 = 0x2C;
+#[allow(unused)]
 pub const PERIOD: u8 = b'.';
-// pub const KVK_ANSI_GRAVE: u8 = 0x32;
-// pub const KVK_ANSI_KeypadDecimal: u8 = 0x41;
-// pub const KVK_ANSI_KeypadMultiply: u8 = 0x43;
-// pub const KVK_ANSI_KeypadPlus: u8 = 0x45;
-// pub const KVK_ANSI_KeypadClear: u8 = 0x47;
-// pub const KVK_ANSI_KeypadDivide: u8 = 0x4B;
-// pub const KVK_ANSI_KeypadEnter: u8 = 0x4C;
-// pub const KVK_ANSI_KeypadMinus: u8 = 0x4E;
-// pub const KVK_ANSI_KeypadEquals: u8 = 0x51;
+#[allow(unused)]
+pub const GRAVE: u8 = 0x32;
+#[allow(unused)]
+pub const KEYPAD_DECIMAL: u8 = 0x41;
+#[allow(unused)]
+pub const KEYPAD_MULTIPLY: u8 = 0x43;
+#[allow(unused)]
+pub const KEYPAD_PLUS: u8 = 0x45;
+#[allow(unused)]
+pub const KEYPAD_CLEAR: u8 = 0x47;
+#[allow(unused)]
+pub const KEYPAD_DIVIDE: u8 = 0x4B;
+#[allow(unused)]
+pub const KEYPAD_ENTER: u8 = 0x4C;
+#[allow(unused)]
+pub const KEYPAD_MINUS: u8 = 0x4E;
+#[allow(unused)]
+pub const KEYPAD_EQUALS: u8 = 0x51;
+#[allow(unused)]
 pub const KEYPAD0: u8 = 48;
+#[allow(unused)]
 pub const KEYPAD1: u8 = 49;
+#[allow(unused)]
 pub const KEYPAD2: u8 = 50;
+#[allow(unused)]
 pub const KEYPAD3: u8 = 51;
+#[allow(unused)]
 pub const KEYPAD4: u8 = 52;
+#[allow(unused)]
 pub const KEYPAD5: u8 = 53;
+#[allow(unused)]
 pub const KEYPAD6: u8 = 54;
+#[allow(unused)]
 pub const KEYPAD7: u8 = 55;
+#[allow(unused)]
 pub const KEYPAD8: u8 = 56;
+#[allow(unused)]
 pub const KEYPAD9: u8 = 57;
 
 pub const RETURN: u8 = 13;
-pub const TAB: u8 = 0x30;
+pub const TAB: u8 = 9;
 pub const SPACE: u8 = 32;
-// pub const DELETE: u8 = 0x7F;
-pub const BACKSPACE: u8 = 8; // \u{8}
-                             // pub const KVK_ESCAPE: u8 = 0x35;
-                             // pub const KVK_COMMAND: u8 = 0x37;
-                             // pub const SHIFT_IN: u8 = 15;
-                             // pub const SHIFT_OUT: u8 = 16;
-                             // pub const CAPS_LOCK: u8 = 0x39;
-                             // pub const KVK_OPTION: u8 = 0x3A;
-                             // pub const KVK_CONTROL: u8 = 0x3B;
-                             // pub const KVK_RIGHT_COMMAND: u8 = 0x36;
-                             // pub const KVK_RIGHT_SHIFT: u8 = 0x3C;
-                             // pub const KVK_RIGHT_OPTION: u8 = 0x3D;
-                             // pub const KVK_RIGHT_CONTROL: u8 = 0x3E;
-                             // pub const KVK_FUNCTION: u8 = 0x3F;
-                             // pub const KVK_F17: u8 = 0x40;
-                             // pub const KVK_VOLUME_UP: u8 = 0x48;
-                             // pub const KVK_VOLUME_DOWN: u8 = 0x49;
-                             // pub const KVK_MUTE: u8 = 0x4A;
-                             // pub const KVK_F18: u8 = 0x4F;
-                             // pub const KVK_F19: u8 = 0x50;
-                             // pub const KVK_F20: u8 = 0x5A;
-                             // pub const KVK_F5: u8 = 0x60;
-                             // pub const KVK_F6: u8 = 0x61;
-                             // pub const KVK_F7: u8 = 0x62;
-                             // pub const KVK_F3: u8 = 0x63;
-                             // pub const KVK_F8: u8 = 0x64;
-                             // pub const KVK_F9: u8 = 0x65;
-                             // pub const KVK_F11: u8 = 0x67;
-                             // pub const KVK_F13: u8 = 0x69;
-                             // pub const KVK_F16: u8 = 0x6A;
-                             // pub const KVK_F14: u8 = 0x6B;
-                             // pub const KVK_F10: u8 = 0x6D;
-                             // pub const KVK_F12: u8 = 0x6F;
-                             // pub const KVK_F15: u8 = 0x71;
-                             // pub const KVK_HELP: u8 = 0x72;
-                             // pub const KVK_HOME: u8 = 0x73;
-                             // pub const KVK_PAGE_UP: u8 = 0x74;
-                             // pub const KVK_FORWARD_DELETE: u8 = 0x75;
-                             // pub const KVK_F4: u8 = 0x76;
-                             // pub const KVK_END: u8 = 0x77;
-                             // pub const KVK_F2: u8 = 0x78;
-                             // pub const KVK_PAGE_DOWN: u8 = 0x79;
-                             // pub const KVK_F1: u8 = 0x7A;
-                             // pub const KVK_LEFT_ARROW: u8 = 0x7B;
-                             // pub const KVK_RIGHT_ARROW: u8 = 0x7C;
-                             // pub const KVK_DOWN_ARROW: u8 = 0x7D;
-                             // pub const KVK_UP_ARROW: u8 = 0x7E;
+#[allow(unused)]
+pub const DELETE: u8 = 0x7F;
+pub const BACKSPACE: u8 = 8;
+#[allow(unused)]
+pub const COMMAND: u8 = 0x37;
+#[allow(unused)]
+pub const SHIFT_IN: u8 = 15;
+#[allow(unused)]
+pub const SHIFT_OUT: u8 = 16;
+#[allow(unused)]
+pub const CAPS_LOCK: u8 = 0x39;
+#[allow(unused)]
+pub const OPTION: u8 = 0x3A;
+#[allow(unused)]
+pub const CONTROL: u8 = 0x3B;
+#[allow(unused)]
+pub const RIGHT_COMMAND: u8 = 0x36;
+#[allow(unused)]
+pub const RIGHT_SHIFT: u8 = 0x3C;
+#[allow(unused)]
+pub const RIGHT_OPTION: u8 = 0x3D;
+#[allow(unused)]
+pub const RIGHT_CONTROL: u8 = 0x3E;
+#[allow(unused)]
+pub const FUNCTION: u8 = 0x3F;
+#[allow(unused)]
+pub const F17: u8 = 0x40;
+#[allow(unused)]
+pub const VOLUME_UP: u8 = 0x48;
+#[allow(unused)]
+pub const VOLUME_DOWN: u8 = 0x49;
+#[allow(unused)]
+pub const MUTE: u8 = 0x4A;
+#[allow(unused)]
+pub const F18: u8 = 0x4F;
+#[allow(unused)]
+pub const F19: u8 = 0x50;
+#[allow(unused)]
+pub const F20: u8 = 0x5A;
+#[allow(unused)]
+pub const F5: u8 = 0x60;
+#[allow(unused)]
+pub const F6: u8 = 0x61;
+#[allow(unused)]
+pub const F7: u8 = 0x62;
+#[allow(unused)]
+pub const F3: u8 = 0x63;
+#[allow(unused)]
+pub const F8: u8 = 0x64;
+#[allow(unused)]
+pub const F9: u8 = 0x65;
+#[allow(unused)]
+pub const F11: u8 = 0x67;
+#[allow(unused)]
+pub const F13: u8 = 0x69;
+#[allow(unused)]
+pub const F16: u8 = 0x6A;
+#[allow(unused)]
+pub const F14: u8 = 0x6B;
+#[allow(unused)]
+pub const F10: u8 = 0x6D;
+#[allow(unused)]
+pub const F12: u8 = 0x6F;
+#[allow(unused)]
+pub const F15: u8 = 0x71;
+#[allow(unused)]
+pub const HELP: u8 = 0x72;
+#[allow(unused)]
+pub const HOME: u8 = 0x73;
+#[allow(unused)]
+pub const PAGE_UP: u8 = 0x74;
+#[allow(unused)]
+pub const FORWARD_DELETE: u8 = 0x75;
+#[allow(unused)]
+pub const F4: u8 = 0x76;
+#[allow(unused)]
+pub const END: u8 = 0x77;
+#[allow(unused)]
+pub const F2: u8 = 0x78;
+#[allow(unused)]
+pub const PAGE_DOWN: u8 = 0x79;
+#[allow(unused)]
+pub const F1: u8 = 0x7A;
+#[allow(unused)]
+pub const LEFT_ARROW: u8 = 0x7B;
+#[allow(unused)]
+pub const RIGHT_ARROW: u8 = 0x7C;
+#[allow(unused)]
+pub const DOWN_ARROW: u8 = 0x7D;
+#[allow(unused)]
+pub const UP_ARROW: u8 = 0x7E;

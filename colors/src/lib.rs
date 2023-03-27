@@ -1,13 +1,310 @@
 // Produces WGPU Color based on ColorBuilder
+pub mod defaults;
 
 use regex::Regex;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
 
+pub type ColorWGPU = wgpu::Color;
+pub type ColorArray = [f32; 4];
+pub type ColorComposition = (ColorArray, ColorWGPU);
+
 #[derive(Debug, Clone, Copy)]
 pub enum Format {
     SRGB0_255,
     SRGB0_1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnsiColor {
+    Named(NamedColor),
+}
+
+#[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
+pub struct Colors {
+    #[serde(
+        deserialize_with = "deserialize_to_composition",
+        default = "defaults::background"
+    )]
+    /// Background is a special color type called ColorComposition
+    /// ColorComposition type is (ColorArray, ColorWGPU)
+    /// See more in colors definition
+    pub background: ColorComposition,
+    #[serde(
+        deserialize_with = "deserialize_to_arr",
+        default = "defaults::foreground"
+    )]
+    pub foreground: ColorArray,
+    #[serde(deserialize_with = "deserialize_to_arr", default = "defaults::blue")]
+    pub blue: ColorArray,
+    #[serde(deserialize_with = "deserialize_to_arr", default = "defaults::green")]
+    pub green: ColorArray,
+    #[serde(deserialize_with = "deserialize_to_arr", default = "defaults::red")]
+    pub red: ColorArray,
+    #[serde(deserialize_with = "deserialize_to_arr", default = "defaults::yellow")]
+    pub yellow: ColorArray,
+    #[serde(
+        deserialize_with = "deserialize_to_arr",
+        default = "defaults::tabs_active",
+        rename = "tabs-active"
+    )]
+    pub tabs_active: ColorArray,
+    #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
+    pub cursor: ColorArray,
+
+    #[serde(default = "defaults::black", deserialize_with = "deserialize_to_arr")]
+    pub black: ColorArray,
+    #[serde(default = "defaults::cyan", deserialize_with = "deserialize_to_arr")]
+    pub cyan: ColorArray,
+    #[serde(default = "defaults::magenta", deserialize_with = "deserialize_to_arr")]
+    pub magenta: ColorArray,
+    #[serde(default = "defaults::tabs", deserialize_with = "deserialize_to_arr")]
+    pub tabs: ColorArray,
+    #[serde(default = "defaults::white", deserialize_with = "deserialize_to_arr")]
+    pub white: ColorArray,
+    #[serde(
+        default = "defaults::dim_black",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-black"
+    )]
+    pub dim_black: ColorArray,
+    #[serde(
+        default = "defaults::dim_blue",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-blue"
+    )]
+    pub dim_blue: ColorArray,
+    #[serde(
+        default = "defaults::dim_cyan",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-cyan"
+    )]
+    pub dim_cyan: ColorArray,
+    #[serde(
+        default = "defaults::dim_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-foreground"
+    )]
+    pub dim_foreground: ColorArray,
+    #[serde(
+        default = "defaults::dim_green",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-green"
+    )]
+    pub dim_green: ColorArray,
+    #[serde(
+        default = "defaults::dim_magenta",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-magenta"
+    )]
+    pub dim_magenta: ColorArray,
+    #[serde(
+        default = "defaults::dim_red",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-red"
+    )]
+    pub dim_red: ColorArray,
+    #[serde(
+        default = "defaults::dim_white",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-white"
+    )]
+    pub dim_white: ColorArray,
+    #[serde(
+        default = "defaults::dim_yellow",
+        deserialize_with = "deserialize_to_arr",
+        rename = "dim-yellow"
+    )]
+    pub dim_yellow: ColorArray,
+    #[serde(
+        default = "defaults::light_black",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-black"
+    )]
+    pub light_black: ColorArray,
+    #[serde(
+        default = "defaults::light_blue",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-blue"
+    )]
+    pub light_blue: ColorArray,
+    #[serde(
+        default = "defaults::light_cyan",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-cyan"
+    )]
+    pub light_cyan: ColorArray,
+    #[serde(
+        default = "defaults::light_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-foreground"
+    )]
+    pub light_foreground: ColorArray,
+    #[serde(
+        default = "defaults::light_green",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-green"
+    )]
+    pub light_green: ColorArray,
+    #[serde(
+        default = "defaults::light_magenta",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-magenta"
+    )]
+    pub light_magenta: ColorArray,
+    #[serde(
+        default = "defaults::light_red",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-red"
+    )]
+    pub light_red: ColorArray,
+    #[serde(
+        default = "defaults::light_white",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-white"
+    )]
+    pub light_white: ColorArray,
+    #[serde(
+        default = "defaults::light_yellow",
+        deserialize_with = "deserialize_to_arr",
+        rename = "light-yellow"
+    )]
+    pub light_yellow: ColorArray,
+}
+
+impl Default for Colors {
+    fn default() -> Colors {
+        Colors {
+            background: defaults::background(),
+            foreground: defaults::foreground(),
+            blue: defaults::blue(),
+            green: defaults::green(),
+            red: defaults::red(),
+            yellow: defaults::yellow(),
+            tabs_active: defaults::tabs_active(),
+            cursor: defaults::cursor(),
+            black: defaults::black(),
+            cyan: defaults::cyan(),
+            magenta: defaults::magenta(),
+            tabs: defaults::tabs(),
+            white: defaults::white(),
+            dim_black: defaults::dim_black(),
+            dim_blue: defaults::dim_blue(),
+            dim_cyan: defaults::dim_cyan(),
+            dim_foreground: defaults::dim_foreground(),
+            dim_green: defaults::dim_green(),
+            dim_magenta: defaults::dim_magenta(),
+            dim_red: defaults::dim_red(),
+            dim_white: defaults::dim_white(),
+            dim_yellow: defaults::dim_yellow(),
+            light_black: defaults::light_black(),
+            light_blue: defaults::light_blue(),
+            light_cyan: defaults::light_cyan(),
+            light_foreground: defaults::light_foreground(),
+            light_green: defaults::light_green(),
+            light_magenta: defaults::light_magenta(),
+            light_red: defaults::light_red(),
+            light_white: defaults::light_white(),
+            light_yellow: defaults::light_yellow(),
+        }
+    }
+}
+
+pub fn hex_to_color_arr(s: &str) -> ColorArray {
+    ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1)
+        .unwrap_or_default()
+        .to_arr()
+}
+
+pub fn hex_to_color_wgpu(s: &str) -> ColorWGPU {
+    ColorBuilder::from_hex(s.to_string(), Format::SRGB0_1)
+        .unwrap_or_default()
+        .to_wgpu()
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub enum NamedColor {
+    Black = 0,
+    Background,
+    Blue,
+    LightBlack,
+    LightBlue,
+    LightCyan,
+    LightForeground,
+    LightGreen,
+    LightMagenta,
+    LightRed,
+    LightWhite,
+    LightYellow,
+    Cursor,
+    Cyan,
+    DimBlack,
+    DimBlue,
+    DimCyan,
+    DimForeground,
+    DimGreen,
+    DimMagenta,
+    DimRed,
+    DimWhite,
+    DimYellow,
+    Foreground = 256,
+    Green,
+    Magenta,
+    Red,
+    White,
+    Yellow,
+}
+
+impl NamedColor {
+    #[must_use]
+    pub fn to_bright(self) -> Self {
+        match self {
+            NamedColor::Foreground => NamedColor::LightForeground,
+            NamedColor::Black => NamedColor::LightBlack,
+            NamedColor::Red => NamedColor::LightRed,
+            NamedColor::Green => NamedColor::LightGreen,
+            NamedColor::Yellow => NamedColor::LightYellow,
+            NamedColor::Blue => NamedColor::LightBlue,
+            NamedColor::Magenta => NamedColor::LightMagenta,
+            NamedColor::Cyan => NamedColor::LightCyan,
+            NamedColor::White => NamedColor::LightWhite,
+            NamedColor::DimForeground => NamedColor::Foreground,
+            NamedColor::DimBlack => NamedColor::Black,
+            NamedColor::DimRed => NamedColor::Red,
+            NamedColor::DimGreen => NamedColor::Green,
+            NamedColor::DimYellow => NamedColor::Yellow,
+            NamedColor::DimBlue => NamedColor::Blue,
+            NamedColor::DimMagenta => NamedColor::Magenta,
+            NamedColor::DimCyan => NamedColor::Cyan,
+            NamedColor::DimWhite => NamedColor::White,
+            val => val,
+        }
+    }
+
+    #[must_use]
+    pub fn to_dim(self) -> Self {
+        match self {
+            NamedColor::Black => NamedColor::DimBlack,
+            NamedColor::Red => NamedColor::DimRed,
+            NamedColor::Green => NamedColor::DimGreen,
+            NamedColor::Yellow => NamedColor::DimYellow,
+            NamedColor::Blue => NamedColor::DimBlue,
+            NamedColor::Magenta => NamedColor::DimMagenta,
+            NamedColor::Cyan => NamedColor::DimCyan,
+            NamedColor::White => NamedColor::DimWhite,
+            NamedColor::Foreground => NamedColor::DimForeground,
+            NamedColor::LightBlack => NamedColor::Black,
+            NamedColor::LightRed => NamedColor::Red,
+            NamedColor::LightGreen => NamedColor::Green,
+            NamedColor::LightYellow => NamedColor::Yellow,
+            NamedColor::LightBlue => NamedColor::Blue,
+            NamedColor::LightMagenta => NamedColor::Magenta,
+            NamedColor::LightCyan => NamedColor::Cyan,
+            NamedColor::LightWhite => NamedColor::White,
+            NamedColor::LightForeground => NamedColor::Foreground,
+            val => val,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
@@ -18,8 +315,19 @@ pub struct ColorBuilder {
     pub alpha: f64,
 }
 
-pub type Color = wgpu::Color;
-pub type ColorArray = [f32; 4];
+#[derive(Debug, PartialEq, Eq, Deserialize, Clone, Copy)]
+pub struct ColorBuilder8Bits {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+impl ColorBuilder8Bits {
+    pub fn transform_to_color_arr(red: u8, green: u8, blue: u8, alpha: u8) -> ColorArray {
+        [red as f32, green as f32, blue as f32, alpha as f32]
+    }
+}
 
 impl ColorBuilder {
     #[allow(dead_code)]
@@ -136,13 +444,26 @@ impl std::fmt::Display for ColorBuilder {
     }
 }
 
-pub fn deserialize_to_wgpu<'de, D>(deserializer: D) -> Result<Color, D::Error>
+pub fn deserialize_to_wgpu<'de, D>(deserializer: D) -> Result<ColorWGPU, D::Error>
 where
     D: de::Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
     match ColorBuilder::from_hex(s, Format::SRGB0_1) {
         Ok(color) => Ok(color.to_wgpu()),
+        Err(e) => Err(serde::de::Error::custom(e)),
+    }
+}
+
+pub fn deserialize_to_composition<'de, D>(
+    deserializer: D,
+) -> Result<ColorComposition, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match ColorBuilder::from_hex(s, Format::SRGB0_1) {
+        Ok(color) => Ok((color.to_arr(), color.to_wgpu())),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
 }
@@ -176,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn test_default_color_as_black() {
+    fn test_default_as_black() {
         let default_color: ColorBuilder = ColorBuilder::default();
 
         assert_eq!(
@@ -209,7 +530,7 @@ mod tests {
                 .to_wgpu();
         assert_eq!(
             color,
-            Color {
+            ColorWGPU {
                 r: 0.08235294117647059,
                 g: 0.08235294117647059,
                 b: 0.08235294117647059,
@@ -238,7 +559,7 @@ mod tests {
                 .to_wgpu();
         assert_eq!(
             color,
-            Color {
+            ColorWGPU {
                 r: 21.0,
                 g: 21.0,
                 b: 21.0,
