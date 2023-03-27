@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 event: event::WindowEvent::ReceivedCharacter(character),
                 ..
             } => {
-                println!("{:?}", character);
+                println!("character: {:?}", character);
                 input_stream.input_character(character, &mut rio.write_process);
             }
 

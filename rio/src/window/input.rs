@@ -4,6 +4,16 @@ use teletypewriter::Process;
 use winit::event::ModifiersState;
 use winit::event::VirtualKeyCode;
 
+// As defined in: http://www.unicode.org/faq/private_use.html
+fn is_private_use_character(c: char) -> bool {
+    matches!(
+        c,
+        '\u{E000}'..='\u{F8FF}'
+        | '\u{F0000}'..='\u{FFFFD}'
+        | '\u{100000}'..='\u{10FFFD}'
+    )
+}
+
 fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<u8> {
     Some(match (key_code, is_shift_down) {
         (VirtualKeyCode::Grave, false) => b'`',
@@ -20,6 +30,7 @@ fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<u8
         (VirtualKeyCode::Numpad7, false) => ansi::KEYPAD7,
         (VirtualKeyCode::Numpad8, false) => ansi::KEYPAD8,
         (VirtualKeyCode::Numpad9, false) => ansi::KEYPAD9,
+        (VirtualKeyCode::Return, _) => ansi::RETURN,
         _ => return None,
     })
 }
@@ -48,8 +59,11 @@ impl Input {
     }
 
     pub fn input_character(&mut self, character: char, stream: &mut Process) {
-        stream.write_all(&[character as u8]).unwrap();
-        stream.flush().unwrap();
+        if !is_private_use_character(character) && character != '\r' && character != '\n'
+        {
+            stream.write_all(&[character as u8]).unwrap();
+            stream.flush().unwrap();
+        }
     }
 
     pub fn keydown(
