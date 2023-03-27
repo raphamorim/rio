@@ -1,4 +1,4 @@
-use colors::{ NamedColor, AnsiColor};
+use colors::{AnsiColor, NamedColor};
 use std::sync::Arc;
 
 /// Dynamically allocated cell content.

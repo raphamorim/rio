@@ -22,15 +22,13 @@ pub enum AnsiColor {
 
 #[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
 pub struct Colors {
-    // #[serde(
-    //     deserialize_with = "deserialize_to_wgpu",
-    //     default = "defaults::background"
-    // )]
-    // pub background: WGPUColor,
     #[serde(
         deserialize_with = "deserialize_to_composition",
         default = "defaults::background"
     )]
+    /// Background is a special color type called ColorComposition
+    /// ColorComposition type is (ColorArray, ColorWGPU)
+    /// See more in colors definition
     pub background: ColorComposition,
     #[serde(
         deserialize_with = "deserialize_to_arr",
@@ -457,7 +455,9 @@ where
     }
 }
 
-pub fn deserialize_to_composition<'de, D>(deserializer: D) -> Result<ColorComposition, D::Error>
+pub fn deserialize_to_composition<'de, D>(
+    deserializer: D,
+) -> Result<ColorComposition, D::Error>
 where
     D: de::Deserializer<'de>,
 {
@@ -530,7 +530,7 @@ mod tests {
                 .to_wgpu();
         assert_eq!(
             color,
-            WGPUColor {
+            ColorWGPU {
                 r: 0.08235294117647059,
                 g: 0.08235294117647059,
                 b: 0.08235294117647059,
@@ -559,7 +559,7 @@ mod tests {
                 .to_wgpu();
         assert_eq!(
             color,
-            WGPUColor {
+            ColorWGPU {
                 r: 21.0,
                 g: 21.0,
                 b: 21.0,

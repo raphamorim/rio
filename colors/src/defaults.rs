@@ -1,10 +1,9 @@
-use crate::{ColorArray, ColorComposition, ColorBuilder, Format};
+use crate::{ColorArray, ColorBuilder, ColorComposition, Format};
 
 // These functions are expected to panic if cannot convert the hex string
 
 pub fn background() -> ColorComposition {
-    let color = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1)
-        .unwrap();
+    let color = ColorBuilder::from_hex(String::from("#151515"), Format::SRGB0_1).unwrap();
     (color.to_arr(), color.to_wgpu())
 }
 

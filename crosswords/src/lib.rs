@@ -24,9 +24,9 @@ use crate::pos::CharsetIndex;
 use crate::row::Row;
 use crate::square::Square;
 use crate::storage::Storage;
-use colors::AnsiColor;
 use attr::*;
 use bitflags::bitflags;
+use colors::AnsiColor;
 use pos::{Column, Cursor, Line, Pos};
 use std::ops::{Index, IndexMut, Range};
 use std::ptr;
@@ -79,6 +79,7 @@ pub struct Crosswords {
     scroll_region: ScrollRegion,
     storage: Storage<Square>,
     tabs: TabStops,
+    window_title: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +179,7 @@ impl Crosswords {
                 start: pos::Line(0),
                 end: pos::Line(rows.try_into().unwrap()),
             },
+            window_title: std::option::Option::Some(String::from("")),
             tabs: TabStops::new(cols),
             scroll_limit: 10_000,
             mode: Mode::SHOW_CURSOR
@@ -265,6 +267,16 @@ impl Crosswords {
                 println!("Term got unhandled attr: {:?}", attr);
             }
         }
+    }
+
+    pub fn set_title(&mut self, window_title: Option<String>) -> String {
+        self.window_title = window_title;
+
+        let title: String = match &self.window_title {
+            Some(title) => title.to_string(),
+            None => String::from(""),
+        };
+        title
     }
 
     /// Move lines at the bottom toward the top.

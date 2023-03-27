@@ -1,8 +1,8 @@
 mod control;
 
+use colors::{AnsiColor, NamedColor};
 use control::C0;
 use crosswords::{attr::*, Crosswords};
-use colors::{ NamedColor, AnsiColor };
 use std::fmt::Write;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use vte::{Params, Parser};
 pub type Square = crosswords::square::Square;
 pub type Row = crosswords::row::Row<Square>;
 pub type VisibleRows = Arc<Mutex<Vec<Row>>>;
+pub type WindowTitle = Arc<Mutex<String>>;
 
 pub trait Handler {
     /// A character to be displayed.
@@ -23,15 +24,15 @@ pub trait Handler {
 
 struct Performer {
     handler: Crosswords,
-    arc: VisibleRows,
+    visible_rows: VisibleRows,
 }
 
 impl Performer {
-    fn new(arc: VisibleRows, columns: usize, rows: usize) -> Performer {
+    fn new(visible_rows: VisibleRows, columns: usize, rows: usize) -> Performer {
         let crosswords: Crosswords = Crosswords::new(columns, rows);
 
         Performer {
-            arc,
+            visible_rows,
             handler: crosswords,
         }
     }
@@ -41,15 +42,8 @@ impl vte::Perform for Performer {
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
         self.handler.input(c);
-
-        let mut s = self.arc.lock().unwrap();
-        // let visible_rows_to_string = self.handler.visible_rows_to_string();
-        // let data_ptr: Arc<Mutex<Vec<&Square>>> = Arc::new(Mutex::from(self.handler.visible_rows()));
-
+        let mut s = self.visible_rows.lock().unwrap();
         *s = self.handler.visible_rows();
-
-        // let s = &mut *self.arc.lock().unwrap();
-        // s.push(c);
     }
 
     fn execute(&mut self, byte: u8) {
@@ -92,7 +86,7 @@ impl vte::Perform for Performer {
         // );
     }
 
-    fn put(&mut self, byte: u8) {
+    fn put(&mut self, _byte: u8) {
         // println!("[put] {byte:02x}");
     }
 
@@ -103,7 +97,7 @@ impl vte::Perform for Performer {
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
         println!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
 
-        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
         fn unhandled(params: &[&[u8]]) {
             let mut buf = String::new();
@@ -132,43 +126,41 @@ impl vte::Perform for Performer {
                         .join(";")
                         .trim()
                         .to_owned();
+                    self.handler.set_title(Some(title));
                     // println!("{:?} title", Some(title));
-                    // self.handler.set_title(Some(title));
-                    return;
+                    // return;
                 }
                 unhandled(params);
             }
 
             // Set color index.
             b"4" => {
-                println!("4");
                 if params.len() <= 1 || params.len() % 2 == 0 {
                     unhandled(params);
-                    return;
+                    // return;
                 }
 
-                for chunk in params[1..].chunks(2) {
-                    // let index = match parse_number(chunk[0]) {
-                    //     Some(index) => index,
-                    //     None => {
-                    //         unhandled(params);
-                    //         continue;
-                    //     },
-                    // };
+                // for chunk in params[1..].chunks(2) {
+                // let index = match parse_number(chunk[0]) {
+                //     Some(index) => index,
+                //     None => {
+                //         unhandled(params);
+                //         continue;
+                //     },
+                // };
 
-                    // if let Some(c) = xparse_color(chunk[1]) {
-                    //     self.handler.set_color(index as usize, c);
-                    // } else if chunk[1] == b"?" {
-                    //     let prefix = format!("4;{index}");
-                    //     self.handler.dynamic_color_sequence(prefix, index as usize, terminator);
-                    // } else {
-                    //     unhandled(params);
-                    // }
-                }
+                // if let Some(c) = xparse_color(chunk[1]) {
+                //     self.handler.set_color(index as usize, c);
+                // } else if chunk[1] == b"?" {
+                //     let prefix = format!("4;{index}");
+                //     self.handler.dynamic_color_sequence(prefix, index as usize, terminator);
+                // } else {
+                //     unhandled(params);
+                // }
+                // }
             }
 
             b"10" | b"11" | b"12" => {
-                println!(">color");
                 if params.len() >= 2 {
                     // if let Some(mut dynamic_code) = parse_number(params[0]) {
                     //     for param in &params[1..] {
@@ -201,17 +193,11 @@ impl vte::Perform for Performer {
                 unhandled(params);
             }
 
-            b"110" => {
-                println!("110");
-            }
+            b"110" => {}
 
-            b"111" => {
-                println!("111");
-            }
+            b"111" => {}
 
-            b"112" => {
-                println!("112");
-            }
+            b"112" => {}
 
             _ => unhandled(params),
         }
@@ -278,6 +264,7 @@ impl vte::Perform for Performer {
 fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     let mut attrs = Vec::with_capacity(params.size_hint().0);
 
+    #[allow(clippy::while_let_on_iterator)]
     while let Some(param) = params.next() {
         let attr = match param {
             [0] => Some(Attr::Reset),
@@ -312,10 +299,12 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [36] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Cyan))),
             [37] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::White))),
             // [38] => {
-            //     let mut iter = params.map(|param| param[0]);
-            //     parse_sgr_color(&mut iter).map(Attr::Foreground)
-            // },
-            // [38, params @ ..] => handle_colon_rgb(params).map(Attr::Foreground),
+            //     // let mut iter = params.map(|param| param[0]);
+            //     // parse_sgr_color(&mut iter).map(Attr::Foreground)
+            // }
+            // [38, params @ ..] => {
+            //     // handle_colon_rgb(params).map(Attr::Foreground)
+            // }
             [39] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Foreground))),
             [40] => Some(Attr::Background(AnsiColor::Named(NamedColor::Black))),
             [41] => Some(Attr::Background(AnsiColor::Named(NamedColor::Red))),
@@ -369,8 +358,8 @@ pub struct Machine {
 }
 
 impl Machine {
-    pub fn new(data_ptr: VisibleRows, columns: usize, rows: usize) -> Machine {
-        let handler = Performer::new(data_ptr, columns, rows);
+    pub fn new(visible_rows_arc: VisibleRows, columns: usize, rows: usize) -> Machine {
+        let handler = Performer::new(visible_rows_arc, columns, rows);
         let parser = Parser::new();
         Machine { handler, parser }
     }
@@ -383,13 +372,3 @@ impl Machine {
         }
     }
 }
-
-// pub fn (process: Process, columns: usize, rows: usize) {
-//     let reader = BufReader::new(process);
-
-//     let mut handler = Performer::new(data_ptr, columns, rows);
-//     let mut parser = Parser::new();
-//     for byte in reader.bytes() {
-//         parser.advance(&mut handler, *byte.as_ref().unwrap());
-//     }
-// }

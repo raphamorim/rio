@@ -2,9 +2,9 @@ mod frames;
 mod shared;
 pub mod text;
 
+use colors::{AnsiColor, NamedColor};
 use config::Config;
-use colors::{ NamedColor, AnsiColor };
-use crosswords::{ row::Row, square::Square };
+use crosswords::{row::Row, square::Square};
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText, Section, Text};
 
@@ -104,17 +104,18 @@ impl Renderer {
 
         let fg_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
-            /// Background is a special color type called ColorComposition
-            /// ColorComposition type is (ColorArray, ColorWGPU)
-            /// See more in colors definition
             AnsiColor::Named(NamedColor::Background) => self.config.colors.background.0,
             AnsiColor::Named(NamedColor::Blue) => self.config.colors.blue,
             AnsiColor::Named(NamedColor::LightBlack) => self.config.colors.light_black,
             AnsiColor::Named(NamedColor::LightBlue) => self.config.colors.light_blue,
             AnsiColor::Named(NamedColor::LightCyan) => self.config.colors.light_cyan,
-            AnsiColor::Named(NamedColor::LightForeground) => self.config.colors.light_foreground,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.config.colors.light_foreground
+            }
             AnsiColor::Named(NamedColor::LightGreen) => self.config.colors.light_green,
-            AnsiColor::Named(NamedColor::LightMagenta) => self.config.colors.light_magenta,
+            AnsiColor::Named(NamedColor::LightMagenta) => {
+                self.config.colors.light_magenta
+            }
             AnsiColor::Named(NamedColor::LightRed) => self.config.colors.light_red,
             AnsiColor::Named(NamedColor::LightWhite) => self.config.colors.light_white,
             AnsiColor::Named(NamedColor::LightYellow) => self.config.colors.light_yellow,
@@ -123,7 +124,9 @@ impl Renderer {
             AnsiColor::Named(NamedColor::DimBlack) => self.config.colors.dim_black,
             AnsiColor::Named(NamedColor::DimBlue) => self.config.colors.dim_blue,
             AnsiColor::Named(NamedColor::DimCyan) => self.config.colors.dim_cyan,
-            AnsiColor::Named(NamedColor::DimForeground) => self.config.colors.dim_foreground,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.config.colors.dim_foreground
+            }
             AnsiColor::Named(NamedColor::DimGreen) => self.config.colors.dim_green,
             AnsiColor::Named(NamedColor::DimMagenta) => self.config.colors.dim_magenta,
             AnsiColor::Named(NamedColor::DimRed) => self.config.colors.dim_red,

@@ -10,24 +10,17 @@ use winit::{event, event_loop};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let event_loop = event_loop::EventLoopBuilder::new().build();
-
     let config = Config::load_macos();
+    // std::env::set_var("TERM", "xterm-256color");
+    std::env::set_var("TERM", "xterm-color");
+
+    let event_loop = event_loop::EventLoopBuilder::new().build();
     let window_builder =
         window::create_window_builder("Rio", (config.width, config.height));
     let winit_window = window_builder.build(&event_loop).unwrap();
 
-    // std::env::set_var("TERM", "xterm-256color");
-    std::env::set_var("TERM", "xterm-color");
-
     let mut input_stream = window::input::Input::new();
-    let mut rio: Term = match Term::new(&winit_window, config).await {
-        Ok(term_instance) => term_instance,
-        Err(e) => {
-            panic!("couldn't create Rio terminal {e}");
-        }
-    };
-
+    let mut rio = Term::new(&winit_window, config).await?;
     let mut is_focused = true;
     event_loop.run(move |event, _, control_flow| {
         match event {

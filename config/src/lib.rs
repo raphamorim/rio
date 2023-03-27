@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::defaults::*;
-use colors::{hex_to_color_arr, Colors};
+use colors::Colors;
 use serde::Deserialize;
 use std::default::Default;
 
@@ -163,7 +163,7 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colors::{ColorBuilder, Format};
+    use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
     #[allow(dead_code)]
@@ -468,7 +468,8 @@ mod tests {
         //         .to_wgpu()
         // );
 
-        assert_eq!(result.colors.background, hex_to_color_arr("#2B3E50"));
+        assert_eq!(result.colors.background.0, hex_to_color_arr("#2B3E50"));
+        assert_eq!(result.colors.background.1, hex_to_color_wgpu("#2B3E50"));
         assert_eq!(result.colors.cursor, hex_to_color_arr("#E6DB74"));
         assert_eq!(result.colors.foreground, hex_to_color_arr("#F8F8F2"));
         assert_eq!(result.colors.tabs_active, hex_to_color_arr("#E6DB74"));
