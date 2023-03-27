@@ -103,7 +103,7 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_cc: Default::default(),
         c_ispeed: Default::default(),
         c_ospeed: Default::default(),
-        c_line: libc::C_LINE,
+        c_line: 0,
     };
 
     #[cfg(target_os = "macos")]
