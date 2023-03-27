@@ -36,9 +36,21 @@ pub fn create_window_builder(
         .with_decorations(true)
         .with_window_icon(Some(icon));
 
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        use winit::platform::unix::WindowBuilderExtUnix;
+        window_builder = window_builder.with_fullsize_content_view(true);
+    }
+
+    #[cfg(target_os = "macos")]
     {
         use winit::platform::macos::WindowBuilderExtMacOS;
-
         window_builder = window_builder
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
