@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => match state {
                 winit::event::ElementState::Pressed => {
-                    println!("{:?} {:?}", scancode, Some(virtual_keycode));
+                    // println!("{:?} {:?}", scancode, Some(virtual_keycode));
                     input_stream.keydown(
                         scancode,
                         virtual_keycode,
