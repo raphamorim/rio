@@ -88,7 +88,7 @@ impl io::Read for &Process {
 
 pub fn create_termp(utf8: bool) -> libc::termios {
     #[cfg(target_os = "linux")]
-    let mut term_cfg = libc::termios {
+    let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
         c_cflag: libc::CREAD | libc::CS8 | libc::HUPCL,
