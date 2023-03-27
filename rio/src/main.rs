@@ -17,6 +17,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         window::create_window_builder("Rio", (config.width, config.height));
     let winit_window = window_builder.build(&event_loop).unwrap();
 
+    println!("{:?}", config);
+
     std::env::set_var("TERM", "xterm-256color");
 
     let mut input_stream = window::input::Input::new();
@@ -88,11 +90,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         virtual_keycode,
                         &mut rio.write_process,
                     );
-                    rio.draw();
+                    winit_window.request_redraw();
                 }
 
                 winit::event::ElementState::Released => {
-                    rio.draw();
+                    winit_window.request_redraw();
                 }
             },
 
@@ -130,9 +132,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             event::Event::RedrawRequested { .. } => {
-                // if is_focused {
+                if rio.renderer.config.advanced.disable_render_when_unfocused && is_focused {
+                    return;
+                }
+
                 rio.draw();
-                // }
             }
             _ => {
                 let next_frame_time =

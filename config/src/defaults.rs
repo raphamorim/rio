@@ -47,12 +47,12 @@ pub fn default_color_green() -> [f32; 4] {
     [1.0, 1.0, 1.0, 1.0]
 }
 pub fn default_color_red() -> [f32; 4] {
-    colors::ColorBuilder::from_hex(String::from("#FE6956"), colors::Format::SRGB0_1)
+    colors::ColorBuilder::from_hex(String::from("#5c98cd"), colors::Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 pub fn default_color_blue() -> [f32; 4] {
-    colors::ColorBuilder::from_hex(String::from("#5c98cd"), colors::Format::SRGB0_1)
+    colors::ColorBuilder::from_hex(String::from("#006EE6"), colors::Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }

@@ -64,42 +64,41 @@ theme = "Basic"
 [advanced]
 tab-character-active = '●'
 tab-character-inactive = '■'
-monochrome = false
 enable-fps-counter = false
 disable-renderer-when-unfocused = false
 
 [colors]
-background      = '#151515'
-black
-blue
-cursor          = '#8E12CC'
-cyan
-foreground      = '#FFFFFF'
-green
-magenta
-red
-tabs       
-tabs-active     = '#F8A145'
-white
-yellow
-dim-black
-dim-blue
-dim-cyan
-dim-foreground
-dim-green
-dim-magenta
-dim-red
-dim-white
-dim-yellow
-light-black
-light-blue
-light-cyan
-light-foreground
-light-green
-light-magenta
-light-red
-light-white
-light-yellow
+background       = '#151515'
+black            = '#FFFFFF'
+blue             = '#006EE6'
+cursor           = '#8E12CC'
+cyan             = '#FFFFFF'
+foreground       = '#FFFFFF'
+green            = '#FFFFFF'
+magenta          = '#FFFFFF'
+red              = '#FFFFFF'
+tabs             = '#FFFFFF'
+tabs-active      = '#F8A145'
+white            = '#FFFFFF'
+yellow           = '#FFFFFF'
+dim-black        = '#FFFFFF'
+dim-blue         = '#FFFFFF'
+dim-cyan         = '#FFFFFF'
+dim-foreground   = '#FFFFFF'
+dim-green        = '#FFFFFF'
+dim-magenta      = '#FFFFFF'
+dim-red          = '#FFFFFF'
+dim-white        = '#FFFFFF'
+dim-yellow       = '#FFFFFF'
+light-black      = '#FFFFFF'
+light-blue       = '#FFFFFF'
+light-cyan       = '#FFFFFF'
+light-foreground = '#FFFFFF'
+light-green      = '#FFFFFF'
+light-magenta    = '#FFFFFF'
+light-red        = '#FFFFFF'
+light-white      = '#FFFFFF'
+light-yellow     = '#FFFFFF'
 ```
 
 #### `performance`

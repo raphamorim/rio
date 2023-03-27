@@ -113,8 +113,8 @@ pub struct Advanced {
         rename = "tab-character-inactive"
     )]
     pub tab_character_inactive: char,
-    #[serde(default = "bool::default")]
-    pub monochrome: bool,
+    #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
+    pub disable_render_when_unfocused: bool,
     #[serde(default = "bool::default", rename = "enable-fps-counter")]
     pub enable_fps_counter: bool,
 }
@@ -124,7 +124,7 @@ impl Default for Advanced {
         Advanced {
             tab_character_active: default_tab_character_active(),
             tab_character_inactive: default_tab_character_inactive(),
-            monochrome: false,
+            disable_render_when_unfocused: false,
             enable_fps_counter: false,
         }
     }
@@ -206,16 +206,7 @@ impl Default for Config {
             // MacOs default
             columns: default_columns(),
             rows: default_rows(),
-            colors: Colors {
-                background: default_color_background(),
-                foreground: [1.0, 1.0, 1.0, 1.0],
-                blue: [1.0, 1.0, 1.0, 1.0],
-                yellow: [1.0, 1.0, 1.0, 1.0],
-                red: [1.0, 1.0, 1.0, 1.0],
-                green: [1.0, 1.0, 1.0, 1.0],
-                tabs_active: default_color_tabs_active(),
-                cursor: default_color_cursor(),
-            },
+            colors: Colors::default(),
             style: Style {
                 font_size: default_font_size(),
                 theme: Theme::default(),
@@ -291,7 +282,7 @@ mod tests {
             result.advanced.tab_character_inactive,
             default_tab_character_inactive()
         );
-        assert!(!result.advanced.monochrome);
+        assert!(!result.advanced.disable-render-when-unfocused);
         assert!(!result.advanced.enable_fps_counter);
     }
 
@@ -319,7 +310,7 @@ mod tests {
             [advanced]
             tab-character-active = '●'
             tab-character-inactive = '■'
-            monochrome = false
+            disable-render-when-unfocused = false
             enable-fps-counter = false
         "#,
         );
@@ -347,7 +338,7 @@ mod tests {
             result.advanced.tab_character_inactive,
             default_tab_character_inactive()
         );
-        assert!(!result.advanced.monochrome);
+        assert!(!result.advanced.disable_render_when_unfocused);
         assert!(!result.advanced.enable_fps_counter);
     }
 
@@ -553,7 +544,7 @@ mod tests {
             performance = "Low"
 
             [advanced]
-            monochrome = true
+            disable-render-when-unfocused = true
             enable-fps-counter = true
             tab-character-active = '▲'
             tab-character-inactive = '●'
@@ -566,7 +557,7 @@ mod tests {
         assert_eq!(result.rows, default_rows());
         assert_eq!(result.columns, default_columns());
         // Advanced
-        assert!(result.advanced.monochrome);
+        assert!(result.advanced.disable_render_when_unfocused);
         assert_eq!(result.advanced.tab_character_active, '▲');
         assert_eq!(result.advanced.tab_character_inactive, '●');
         assert!(result.advanced.enable_fps_counter);
