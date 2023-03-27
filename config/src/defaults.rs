@@ -20,28 +20,10 @@ pub fn default_font_size() -> f32 {
     16.0
 }
 
-pub fn default_tab_character() -> char {
+pub fn default_tab_character_active() -> char {
+    '●'
+}
+
+pub fn default_tab_character_inactive() -> char {
     '■'
-}
-
-pub fn default_color_background() -> colors::Color {
-    colors::ColorBuilder::from_hex(String::from("#151515"), colors::Format::SRGB0_1)
-        .unwrap()
-        .to_wgpu()
-}
-
-pub fn default_color_tabs_active() -> [f32; 4] {
-    colors::ColorBuilder::from_hex(String::from("#F8A145"), colors::Format::SRGB0_1)
-        .unwrap()
-        .to_arr()
-}
-
-pub fn default_color_foreground() -> [f32; 4] {
-    [1.0, 1.0, 1.0, 1.0]
-}
-
-pub fn default_color_cursor() -> colors::Color {
-    colors::ColorBuilder::from_hex(String::from("#8E12CC"), colors::Format::SRGB0_1)
-        .unwrap()
-        .to_wgpu()
 }

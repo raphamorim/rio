@@ -22,7 +22,7 @@ documentation = "https://github.com/raphamorim/rio#readme"
 wgpu = "0.15.1"
 serde = { version = "1.0.158", features = ["derive"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
-teletypewriter = { version = "1.0.3" }
+teletypewriter = { version = "1.0.5" }
 
 [profile.release]
 opt-level = "s"

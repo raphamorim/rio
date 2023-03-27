@@ -2,12 +2,11 @@ mod frames;
 mod shared;
 pub mod text;
 
+use colors::{AnsiColor, NamedColor};
 use config::Config;
-use crosswords::row::Row;
-use crosswords::square::Square;
+use crosswords::{row::Row, square::Square};
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::OwnedText;
-use glyph_brush::{OwnedSection, Section, Text};
+use glyph_brush::{OwnedSection, OwnedText, Section, Text};
 
 pub struct Style {
     pub screen_position: (f32, f32),
@@ -100,8 +99,49 @@ impl Renderer {
     #[inline]
     fn process_row(&self, square: &Square) -> OwnedText {
         let content: String = square.c.to_string();
+
+        // println!("{:?}", square.fg);
+
+        let fg_color = match square.fg {
+            AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
+            AnsiColor::Named(NamedColor::Background) => self.config.colors.background.0,
+            AnsiColor::Named(NamedColor::Blue) => self.config.colors.blue,
+            AnsiColor::Named(NamedColor::LightBlack) => self.config.colors.light_black,
+            AnsiColor::Named(NamedColor::LightBlue) => self.config.colors.light_blue,
+            AnsiColor::Named(NamedColor::LightCyan) => self.config.colors.light_cyan,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.config.colors.light_foreground
+            }
+            AnsiColor::Named(NamedColor::LightGreen) => self.config.colors.light_green,
+            AnsiColor::Named(NamedColor::LightMagenta) => {
+                self.config.colors.light_magenta
+            }
+            AnsiColor::Named(NamedColor::LightRed) => self.config.colors.light_red,
+            AnsiColor::Named(NamedColor::LightWhite) => self.config.colors.light_white,
+            AnsiColor::Named(NamedColor::LightYellow) => self.config.colors.light_yellow,
+            AnsiColor::Named(NamedColor::Cursor) => self.config.colors.cursor,
+            AnsiColor::Named(NamedColor::Cyan) => self.config.colors.cyan,
+            AnsiColor::Named(NamedColor::DimBlack) => self.config.colors.dim_black,
+            AnsiColor::Named(NamedColor::DimBlue) => self.config.colors.dim_blue,
+            AnsiColor::Named(NamedColor::DimCyan) => self.config.colors.dim_cyan,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.config.colors.dim_foreground
+            }
+            AnsiColor::Named(NamedColor::DimGreen) => self.config.colors.dim_green,
+            AnsiColor::Named(NamedColor::DimMagenta) => self.config.colors.dim_magenta,
+            AnsiColor::Named(NamedColor::DimRed) => self.config.colors.dim_red,
+            AnsiColor::Named(NamedColor::DimWhite) => self.config.colors.dim_white,
+            AnsiColor::Named(NamedColor::DimYellow) => self.config.colors.dim_yellow,
+            AnsiColor::Named(NamedColor::Foreground) => self.config.colors.foreground,
+            AnsiColor::Named(NamedColor::Green) => self.config.colors.green,
+            AnsiColor::Named(NamedColor::Magenta) => self.config.colors.magenta,
+            AnsiColor::Named(NamedColor::Red) => self.config.colors.red,
+            AnsiColor::Named(NamedColor::White) => self.config.colors.white,
+            AnsiColor::Named(NamedColor::Yellow) => self.config.colors.yellow,
+        };
+
         OwnedText::new(content)
-            .with_color(self.config.colors.foreground)
+            .with_color(fg_color)
             .with_scale(self.styles.term.text_scale)
     }
 
