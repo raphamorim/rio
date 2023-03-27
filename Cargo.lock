@@ -93,7 +93,7 @@ dependencies = [
  "colors",
  "crosswords",
  "renderer",
- "teletypewriter 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "teletypewriter 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "vte",
 ]
 
@@ -1345,7 +1345,7 @@ dependencies = [
  "config",
  "image",
  "renderer",
- "teletypewriter 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "teletypewriter 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "wgpu",
  "winit",
@@ -1516,16 +1516,16 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "teletypewriter"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04990483570fb9b254fc5716d800e22118478da21e7a8879c1b555497567e5a6"
+checksum = "e55fc82132403ef8c59e0ab8ebe51b33c59ab030db2baa0b27ac32dd5a7d0ba2"
 dependencies = [
  "libc",
 ]
