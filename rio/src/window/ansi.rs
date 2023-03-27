@@ -54,6 +54,7 @@ pub const KEYPAD8: u8 = 56;
 #[allow(unused)]
 pub const KEYPAD9: u8 = 57;
 
+pub const RETURN: u8 = 13;
 #[allow(unused)]
 pub const DELETE: u8 = 0x7F;
 #[allow(unused)]
