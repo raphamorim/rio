@@ -87,6 +87,26 @@ impl io::Read for &Process {
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {
+    #[cfg(target_os = "linux")]
+    let mut term_cfg = libc::termios {
+        c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
+        c_oflag: libc::OPOST | libc::ONLCR,
+        c_cflag: libc::CREAD | libc::CS8 | libc::HUPCL,
+        c_lflag: libc::ICANON
+            | libc::ISIG
+            | libc::IEXTEN
+            | libc::ECHO
+            | libc::ECHOE
+            | libc::ECHOK
+            | libc::ECHOKE
+            | libc::ECHOCTL,
+        c_cc: Default::default(),
+        c_ispeed: Default::default(),
+        c_ospeed: Default::default(),
+        c_line: libc::C_LINE,
+    };
+
+    #[cfg(target_os = "macos")]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
