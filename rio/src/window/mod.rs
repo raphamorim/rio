@@ -22,6 +22,7 @@ pub fn create_window_builder(
     )
     .unwrap();
 
+    #[allow(unused_mut)]
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
@@ -44,8 +45,8 @@ pub fn create_window_builder(
         target_os = "openbsd"
     ))]
     {
-        use winit::platform::unix::WindowBuilderExtUnix;
-        window_builder = window_builder.with_fullsize_content_view(true);
+        // use winit::platform::unix::WindowBuilderExtUnix;
+        // window_builder = window_builder.with_name(title);
     }
 
     #[cfg(target_os = "macos")]
