@@ -1,45 +1,4 @@
 // ASCII and ANSI Characters
-
-pub const A: u8 = b'a';
-pub const B: u8 = b'b';
-pub const C: u8 = b'c';
-pub const D: u8 = b'd';
-pub const E: u8 = b'e';
-pub const F: u8 = b'f';
-pub const G: u8 = b'g';
-pub const H: u8 = b'h';
-pub const I: u8 = b'i';
-pub const J: u8 = b'j';
-pub const K: u8 = b'k';
-pub const L: u8 = b'l';
-pub const M: u8 = b'm';
-pub const N: u8 = b'n';
-pub const O: u8 = b'o';
-pub const P: u8 = b'p';
-pub const Q: u8 = b'q';
-pub const R: u8 = b'r';
-pub const S: u8 = b's';
-pub const T: u8 = b't';
-pub const U: u8 = b'u';
-pub const V: u8 = b'v';
-pub const W: u8 = b'w';
-pub const X: u8 = b'x';
-pub const Y: u8 = b'y';
-pub const Z: u8 = b'z';
-pub const K0: u8 = b'0';
-pub const K1: u8 = b'1';
-pub const K2: u8 = b'2';
-pub const K3: u8 = b'3';
-pub const K4: u8 = b'4';
-pub const K5: u8 = b'5';
-pub const K6: u8 = b'6';
-pub const K7: u8 = b'7';
-pub const K8: u8 = b'8';
-pub const K9: u8 = b'9';
-#[allow(unused)]
-pub const EQUAL: u8 = b'=';
-#[allow(unused)]
-pub const MINUS: u8 = b'-';
 #[allow(unused)]
 pub const RIGHT_BRACKET: u8 = 0x1E;
 #[allow(unused)]
@@ -97,7 +56,6 @@ pub const KEYPAD9: u8 = 57;
 
 pub const RETURN: u8 = 13;
 pub const TAB: u8 = 9;
-pub const SPACE: u8 = 32;
 #[allow(unused)]
 pub const DELETE: u8 = 0x7F;
 pub const BACKSPACE: u8 = 8;
