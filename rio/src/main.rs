@@ -11,9 +11,6 @@ use winit::{event, event_loop};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::load_macos();
-    // std::env::set_var("TERM", "xterm-256color");
-    std::env::set_var("TERM", "xterm-color");
-
     let event_loop = event_loop::EventLoopBuilder::new().build();
     let window_builder =
         window::create_window_builder("Rio", (config.width, config.height));
