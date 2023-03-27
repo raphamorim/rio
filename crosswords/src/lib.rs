@@ -24,6 +24,7 @@ use crate::pos::CharsetIndex;
 use crate::row::Row;
 use crate::square::Square;
 use crate::storage::Storage;
+use colors::AnsiColor;
 use attr::*;
 use bitflags::bitflags;
 use pos::{Column, Cursor, Line, Pos};
@@ -222,8 +223,8 @@ impl Crosswords {
             Attr::Background(color) => cursor.template.bg = color,
             // Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
             Attr::Reset => {
-                cursor.template.fg = Color::Named(NamedColor::Foreground);
-                cursor.template.bg = Color::Named(NamedColor::Background);
+                cursor.template.fg = AnsiColor::Named(NamedColor::Foreground);
+                cursor.template.bg = AnsiColor::Named(NamedColor::Background);
                 // cursor.template.flags = Flags::empty();
                 // cursor.template.set_underline_color(None);
             }

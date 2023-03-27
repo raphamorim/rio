@@ -1,7 +1,8 @@
 mod control;
 
 use control::C0;
-use crosswords::{attr::*, Crosswords, NamedColor};
+use crosswords::{attr::*, Crosswords};
+use colors::{ NamedColor, AnsiColor };
 use std::fmt::Write;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
@@ -302,34 +303,34 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [27] => Some(Attr::CancelReverse),
             [28] => Some(Attr::CancelHidden),
             [29] => Some(Attr::CancelStrike),
-            [30] => Some(Attr::Foreground(Color::Named(NamedColor::Black))),
-            [31] => Some(Attr::Foreground(Color::Named(NamedColor::Red))),
-            [32] => Some(Attr::Foreground(Color::Named(NamedColor::Green))),
-            [33] => Some(Attr::Foreground(Color::Named(NamedColor::Yellow))),
-            [34] => Some(Attr::Foreground(Color::Named(NamedColor::Blue))),
-            [35] => Some(Attr::Foreground(Color::Named(NamedColor::Magenta))),
-            [36] => Some(Attr::Foreground(Color::Named(NamedColor::Cyan))),
-            [37] => Some(Attr::Foreground(Color::Named(NamedColor::White))),
+            [30] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Black))),
+            [31] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Red))),
+            [32] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Green))),
+            [33] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Yellow))),
+            [34] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Blue))),
+            [35] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Magenta))),
+            [36] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Cyan))),
+            [37] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::White))),
             // [38] => {
             //     let mut iter = params.map(|param| param[0]);
             //     parse_sgr_color(&mut iter).map(Attr::Foreground)
             // },
             // [38, params @ ..] => handle_colon_rgb(params).map(Attr::Foreground),
-            [39] => Some(Attr::Foreground(Color::Named(NamedColor::Foreground))),
-            [40] => Some(Attr::Background(Color::Named(NamedColor::Black))),
-            [41] => Some(Attr::Background(Color::Named(NamedColor::Red))),
-            [42] => Some(Attr::Background(Color::Named(NamedColor::Green))),
-            [43] => Some(Attr::Background(Color::Named(NamedColor::Yellow))),
-            [44] => Some(Attr::Background(Color::Named(NamedColor::Blue))),
-            [45] => Some(Attr::Background(Color::Named(NamedColor::Magenta))),
-            [46] => Some(Attr::Background(Color::Named(NamedColor::Cyan))),
-            [47] => Some(Attr::Background(Color::Named(NamedColor::White))),
+            [39] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Foreground))),
+            [40] => Some(Attr::Background(AnsiColor::Named(NamedColor::Black))),
+            [41] => Some(Attr::Background(AnsiColor::Named(NamedColor::Red))),
+            [42] => Some(Attr::Background(AnsiColor::Named(NamedColor::Green))),
+            [43] => Some(Attr::Background(AnsiColor::Named(NamedColor::Yellow))),
+            [44] => Some(Attr::Background(AnsiColor::Named(NamedColor::Blue))),
+            [45] => Some(Attr::Background(AnsiColor::Named(NamedColor::Magenta))),
+            [46] => Some(Attr::Background(AnsiColor::Named(NamedColor::Cyan))),
+            [47] => Some(Attr::Background(AnsiColor::Named(NamedColor::White))),
             // [48] => {
             //     let mut iter = params.map(|param| param[0]);
             //     parse_sgr_color(&mut iter).map(Attr::Background)
             // },
             // [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
-            [49] => Some(Attr::Background(Color::Named(NamedColor::Background))),
+            [49] => Some(Attr::Background(AnsiColor::Named(NamedColor::Background))),
             // [58] => {
             //     let mut iter = params.map(|param| param[0]);
             //     parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
@@ -338,22 +339,22 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             //     handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
             // },
             [59] => Some(Attr::UnderlineColor(None)),
-            [90] => Some(Attr::Foreground(Color::Named(NamedColor::BrightBlack))),
-            [91] => Some(Attr::Foreground(Color::Named(NamedColor::BrightRed))),
-            [92] => Some(Attr::Foreground(Color::Named(NamedColor::BrightGreen))),
-            [93] => Some(Attr::Foreground(Color::Named(NamedColor::BrightYellow))),
-            [94] => Some(Attr::Foreground(Color::Named(NamedColor::BrightBlue))),
-            [95] => Some(Attr::Foreground(Color::Named(NamedColor::BrightMagenta))),
-            [96] => Some(Attr::Foreground(Color::Named(NamedColor::BrightCyan))),
-            [97] => Some(Attr::Foreground(Color::Named(NamedColor::BrightWhite))),
-            [100] => Some(Attr::Background(Color::Named(NamedColor::BrightBlack))),
-            [101] => Some(Attr::Background(Color::Named(NamedColor::BrightRed))),
-            [102] => Some(Attr::Background(Color::Named(NamedColor::BrightGreen))),
-            [103] => Some(Attr::Background(Color::Named(NamedColor::BrightYellow))),
-            [104] => Some(Attr::Background(Color::Named(NamedColor::BrightBlue))),
-            [105] => Some(Attr::Background(Color::Named(NamedColor::BrightMagenta))),
-            [106] => Some(Attr::Background(Color::Named(NamedColor::BrightCyan))),
-            [107] => Some(Attr::Background(Color::Named(NamedColor::BrightWhite))),
+            [90] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlack))),
+            [91] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightRed))),
+            [92] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightGreen))),
+            [93] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightYellow))),
+            [94] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlue))),
+            [95] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightMagenta))),
+            [96] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightCyan))),
+            [97] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightWhite))),
+            [100] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightBlack))),
+            [101] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightRed))),
+            [102] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightGreen))),
+            [103] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightYellow))),
+            [104] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightBlue))),
+            [105] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightMagenta))),
+            [106] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightCyan))),
+            [107] => Some(Attr::Background(AnsiColor::Named(NamedColor::LightWhite))),
             _ => None,
         };
         attrs.push(attr);

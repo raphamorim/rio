@@ -217,7 +217,7 @@ impl Term {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(self.renderer.config.colors.background),
+                    load: wgpu::LoadOp::Clear(self.renderer.config.colors.background.1),
                     store: true,
                 },
             })],

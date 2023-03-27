@@ -130,8 +130,7 @@ fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<u8
         (VirtualKeyCode::Return, _) => ansi::RETURN,
         (VirtualKeyCode::Back, _) => ansi::BACKSPACE,
 
-        (VirtualKeyCode::Up, _) => ansi::BACKSPACE,
-
+        // (VirtualKeyCode::Up, _) => 0x72,
         _ => return None,
     })
 }

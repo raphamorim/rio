@@ -1,7 +1,7 @@
 mod defaults;
 
 use crate::defaults::*;
-use colors::{deserialize_to_arr, deserialize_to_wgpu, Color, ColorArray};
+use colors::{hex_to_color_arr, Colors};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -40,63 +40,6 @@ impl Default for Style {
             font_size: default_font_size(),
             theme: Theme::default(),
             font: Font::default(),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Deserialize, PartialEq, Clone)]
-pub struct Colors {
-    #[serde(
-        deserialize_with = "deserialize_to_wgpu",
-        default = "default_color_background"
-    )]
-    pub background: Color,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "default_color_foreground"
-    )]
-    pub foreground: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "default_color_blue"
-    )]
-    pub blue: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "default_color_green"
-    )]
-    pub green: ColorArray,
-    #[serde(deserialize_with = "deserialize_to_arr", default = "default_color_red")]
-    pub red: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "default_color_yellow"
-    )]
-    pub yellow: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "default_color_tabs_active",
-        rename = "tabs-active"
-    )]
-    pub tabs_active: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_wgpu",
-        default = "default_color_cursor"
-    )]
-    pub cursor: Color,
-}
-
-impl Default for Colors {
-    fn default() -> Colors {
-        Colors {
-            background: default_color_background(),
-            foreground: default_color_foreground(),
-            blue: default_color_blue(),
-            red: default_color_red(),
-            green: default_color_green(),
-            yellow: default_color_yellow(),
-            tabs_active: default_color_tabs_active(),
-            cursor: default_color_cursor(),
         }
     }
 }
@@ -268,10 +211,7 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::default());
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors, Colors::default());
 
         // Advanced
         assert_eq!(
@@ -282,7 +222,7 @@ mod tests {
             result.advanced.tab_character_inactive,
             default_tab_character_inactive()
         );
-        assert!(!result.advanced.disable-render-when-unfocused);
+        assert!(!result.advanced.disable_render_when_unfocused);
         assert!(!result.advanced.enable_fps_counter);
     }
 
@@ -321,25 +261,11 @@ mod tests {
         assert_eq!(result.rows, default_rows());
         assert_eq!(result.columns, default_columns());
         // Style
-        assert_eq!(result.style.font, Font::default());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::default());
+        assert_eq!(result.style, Style::default());
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors, Colors::default());
         // Advanced
-        assert_eq!(
-            result.advanced.tab_character_active,
-            default_tab_character_active()
-        );
-        assert_eq!(
-            result.advanced.tab_character_inactive,
-            default_tab_character_inactive()
-        );
-        assert!(!result.advanced.disable_render_when_unfocused);
-        assert!(!result.advanced.enable_fps_counter);
+        assert_eq!(result.advanced, Advanced::default());
     }
 
     #[test]
@@ -366,10 +292,10 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::default());
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -391,10 +317,10 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -417,10 +343,10 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -443,10 +369,10 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -473,10 +399,10 @@ mod tests {
         assert_eq!(result.style.font_size, 14.0);
         assert_eq!(result.style.theme, Theme::Modern);
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -489,10 +415,10 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.colors.background, default_color_background());
+        assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, [0.0, 0.0, 0.0, 1.0]);
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
@@ -500,40 +426,79 @@ mod tests {
         let result = create_temporary_config(
             "change-colors",
             r#"
-            # Using lucario colors: https://github.com/raphamorim/lucario/
-
             [colors]
-            background = '#2B3E50'
-            tabs-active = '#E6DB74'
-            foreground = '#F8F8F2'
-            cursor = '#E6DB74'
+            background       = '#2B3E50'
+            tabs-active      = '#E6DB74'
+            foreground       = '#F8F8F2'
+            cursor           = '#E6DB74'
+            black            = '#FFFFFF'
+            blue             = '#030303'
+            cyan             = '#030303'
+            green            = '#030303'
+            magenta          = '#030303'
+            red              = '#030303'
+            tabs             = '#030303'
+            white            = '#000000'
+            yellow           = '#030303'
+            dim-black        = '#030303'
+            dim-blue         = '#030303'
+            dim-cyan         = '#030303'
+            dim-foreground   = '#030303'
+            dim-green        = '#030303'
+            dim-magenta      = '#030303'
+            dim-red          = '#030303'
+            dim-white        = '#030303'
+            dim-yellow       = '#030303'
+            light-black      = '#030303'
+            light-blue       = '#030303'
+            light-cyan       = '#030303'
+            light-foreground = '#030303'
+            light-green      = '#030303'
+            light-magenta    = '#030303'
+            light-red        = '#030303'
+            light-white      = '#030303'
+            light-yellow     = '#030303'
         "#,
         );
 
-        assert_eq!(
-            result.colors.background,
-            ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
-                .unwrap()
-                .to_wgpu()
-        );
-        assert_eq!(
-            result.colors.foreground,
-            ColorBuilder::from_hex(String::from("#F8F8F2"), Format::SRGB0_1)
-                .unwrap()
-                .to_arr()
-        );
-        assert_eq!(
-            result.colors.tabs_active,
-            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
-                .unwrap()
-                .to_arr()
-        );
-        assert_eq!(
-            result.colors.cursor,
-            ColorBuilder::from_hex(String::from("#E6DB74"), Format::SRGB0_1)
-                .unwrap()
-                .to_wgpu()
-        );
+        // assert_eq!(
+        //     result.colors.background,
+        //     ColorBuilder::from_hex(String::from("#2B3E50"), Format::SRGB0_1)
+        //         .unwrap()
+        //         .to_wgpu()
+        // );
+
+        assert_eq!(result.colors.background, hex_to_color_arr("#2B3E50"));
+        assert_eq!(result.colors.cursor, hex_to_color_arr("#E6DB74"));
+        assert_eq!(result.colors.foreground, hex_to_color_arr("#F8F8F2"));
+        assert_eq!(result.colors.tabs_active, hex_to_color_arr("#E6DB74"));
+        assert_eq!(result.colors.black, hex_to_color_arr("#FFFFFF"));
+        assert_eq!(result.colors.blue, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.cyan, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.green, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.magenta, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.red, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.tabs, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.white, hex_to_color_arr("#000000"));
+        assert_eq!(result.colors.yellow, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_black, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_blue, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_cyan, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_foreground, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_green, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_magenta, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_red, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_white, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.dim_yellow, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_black, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_blue, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_cyan, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_foreground, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_green, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_magenta, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_red, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_white, hex_to_color_arr("#030303"));
+        assert_eq!(result.colors.light_yellow, hex_to_color_arr("#030303"));
     }
 
     #[test]
@@ -563,9 +528,9 @@ mod tests {
         assert!(result.advanced.enable_fps_counter);
 
         // Colors
-        assert_eq!(result.colors.background, default_color_background());
-        assert_eq!(result.colors.foreground, default_color_foreground());
-        assert_eq!(result.colors.tabs_active, default_color_tabs_active());
-        assert_eq!(result.colors.cursor, default_color_cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 }

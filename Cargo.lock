@@ -90,6 +90,7 @@ dependencies = [
 name = "ansi-machine"
 version = "0.1.0"
 dependencies = [
+ "colors",
  "crosswords",
  "renderer",
  "teletypewriter 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1327,6 +1328,7 @@ name = "renderer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "colors",
  "config",
  "crosswords",
  "glyph_brush",

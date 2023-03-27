@@ -17,9 +17,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         window::create_window_builder("Rio", (config.width, config.height));
     let winit_window = window_builder.build(&event_loop).unwrap();
 
-    println!("{:?}", config);
-
-    std::env::set_var("TERM", "xterm-256color");
+    // std::env::set_var("TERM", "xterm-256color");
+    std::env::set_var("TERM", "xterm-color");
 
     let mut input_stream = window::input::Input::new();
     let mut rio: Term = match Term::new(&winit_window, config).await {
@@ -132,7 +131,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
 
             event::Event::RedrawRequested { .. } => {
-                if rio.renderer.config.advanced.disable_render_when_unfocused && is_focused {
+                if rio.renderer.config.advanced.disable_render_when_unfocused
+                    && is_focused
+                {
                     return;
                 }
 

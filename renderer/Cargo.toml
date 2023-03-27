@@ -12,3 +12,4 @@ wgpu = { workspace = true }
 bytemuck = { workspace = true }
 config = { path = "../config" }
 crosswords = { path = "../crosswords" }
+colors = { path = "../colors" }

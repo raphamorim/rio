@@ -1,5 +1,4 @@
-use crate::attr::Color;
-use colors::NamedColor;
+use colors::{ NamedColor, AnsiColor};
 use std::sync::Arc;
 
 /// Dynamically allocated cell content.
@@ -10,7 +9,7 @@ use std::sync::Arc;
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CellExtra {
     zerowidth: Vec<char>,
-    // underline_color: Option<colors::Color>,
+    // underline_color: Option<colors::AnsiColor>,
 
     // hyperlink: Option<Hyperlink>,
 }
@@ -19,8 +18,8 @@ pub struct CellExtra {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Square {
     pub c: char,
-    pub fg: Color,
-    pub bg: Color,
+    pub fg: AnsiColor,
+    pub bg: AnsiColor,
     pub extra: Option<Arc<CellExtra>>,
 }
 
@@ -29,8 +28,8 @@ impl Default for Square {
     fn default() -> Square {
         Square {
             c: ' ',
-            bg: Color::Named(NamedColor::Black),
-            fg: Color::Named(NamedColor::Foreground),
+            bg: AnsiColor::Named(NamedColor::Black),
+            fg: AnsiColor::Named(NamedColor::Foreground),
             extra: None,
         }
     }
@@ -85,8 +84,8 @@ impl<T: Copy> ResetDiscriminant<T> for T {
     }
 }
 
-impl ResetDiscriminant<Color> for Square {
-    fn discriminant(&self) -> Color {
+impl ResetDiscriminant<AnsiColor> for Square {
+    fn discriminant(&self) -> AnsiColor {
         self.bg
     }
 }

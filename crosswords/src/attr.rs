@@ -1,9 +1,4 @@
-use colors::NamedColor;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Color {
-    Named(NamedColor),
-}
+use colors::AnsiColor;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Attr {
@@ -52,9 +47,9 @@ pub enum Attr {
     /// Cancel strikeout.
     CancelStrike,
     /// Set indexed foreground color.
-    Foreground(Color),
+    Foreground(AnsiColor),
     /// Set indexed background color.
-    Background(Color),
+    Background(AnsiColor),
     /// Underline color.
-    UnderlineColor(Option<Color>),
+    UnderlineColor(Option<AnsiColor>),
 }
