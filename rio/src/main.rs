@@ -56,6 +56,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             //     }
             // }
             event::Event::WindowEvent {
+                event: event::WindowEvent::ReceivedCharacter(character),
+                ..
+            } => {
+                println!("{:?}", character);
+                input_stream.input_character(character, &mut rio.write_process);
+            }
+
+            event::Event::WindowEvent {
                 event:
                     event::WindowEvent::KeyboardInput {
                         input:
