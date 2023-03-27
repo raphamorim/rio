@@ -69,22 +69,10 @@ impl Term {
         let scale = winit_window.scale_factor() as f32;
         // let bar: BarBrush = BarBrush::new(&device, shader, scale);
         let caps = surface.get_capabilities(&adapter);
-        println!("{:?}", caps);
+        // Possible formats for MacOs:
         // [Bgra8UnormSrgb, Bgra8Unorm, Rgba16Float, Rgb10a2Unorm]
         let formats = caps.formats;
-        println!("available formats {:?}", formats);
-
-        // TODO:
-        // Testing it properly
-        // Bgra8UnormSrgb is the only texture format that is guaranteed to be
-        // natively supported by the swapchains of all the APIs/platforms
-        // This should be allowed to be configured by Rio
-        // https://github.com/gfx-rs/wgpu-rs/issues/123
-        // https://github.com/gfx-rs/wgpu/commit/ae3e5057aff64a8e6f13e75be661c0f8a98abcd5
-        // let render_format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let format = *formats.last().expect("No supported formats for surface");
-        println!("using format {:?}", format);
-
         let alpha_modes = caps.alpha_modes;
         let alpha_mode = alpha_modes[0];
 
@@ -184,7 +172,7 @@ impl Term {
                 format: self.format,
                 width: self.size.width,
                 height: self.size.height,
-                view_formats: vec![self.format],
+                view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
