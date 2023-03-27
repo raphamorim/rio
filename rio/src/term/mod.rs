@@ -59,15 +59,6 @@ impl Term {
 
         let staging_belt = wgpu::util::StagingBelt::new(64);
 
-        // TODO:
-        // Bgra8UnormSrgb is the only texture format that is guaranteed to be
-        // natively supported by the swapchains of all the APIs/platforms
-        // This should be allowed to be configured by Rio
-        // https://github.com/gfx-rs/wgpu-rs/issues/123
-        // https://github.com/gfx-rs/wgpu/commit/ae3e5057aff64a8e6f13e75be661c0f8a98abcd5
-        // let render_format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let format = wgpu::TextureFormat::Rgb10a2Unorm;
-
         let size = winit_window.inner_size();
 
         // let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -78,9 +69,22 @@ impl Term {
         let scale = winit_window.scale_factor() as f32;
         // let bar: BarBrush = BarBrush::new(&device, shader, scale);
         let caps = surface.get_capabilities(&adapter);
+        println!("{:?}", caps);
         // [Bgra8UnormSrgb, Bgra8Unorm, Rgba16Float, Rgb10a2Unorm]
-        // let formats = caps.formats;
-        let formats = vec![format];
+        let formats = caps.formats;
+        println!("available formats {:?}", formats);
+
+        // TODO:
+        // Testing it properly
+        // Bgra8UnormSrgb is the only texture format that is guaranteed to be
+        // natively supported by the swapchains of all the APIs/platforms
+        // This should be allowed to be configured by Rio
+        // https://github.com/gfx-rs/wgpu-rs/issues/123
+        // https://github.com/gfx-rs/wgpu/commit/ae3e5057aff64a8e6f13e75be661c0f8a98abcd5
+        // let render_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let format = *formats.last().expect("No supported formats for surface");
+        println!("using format {:?}", format);
+
         let alpha_modes = caps.alpha_modes;
         let alpha_mode = alpha_modes[0];
 
@@ -91,7 +95,7 @@ impl Term {
                 format,
                 width: size.width,
                 height: size.height,
-                view_formats: formats,
+                view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
