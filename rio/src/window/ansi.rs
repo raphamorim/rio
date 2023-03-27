@@ -54,11 +54,8 @@ pub const KEYPAD8: u8 = 56;
 #[allow(unused)]
 pub const KEYPAD9: u8 = 57;
 
-pub const RETURN: u8 = 13;
-pub const TAB: u8 = 9;
 #[allow(unused)]
 pub const DELETE: u8 = 0x7F;
-pub const BACKSPACE: u8 = 8;
 #[allow(unused)]
 pub const COMMAND: u8 = 0x37;
 #[allow(unused)]
