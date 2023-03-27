@@ -1,3 +1,4 @@
 [alias]
 testrenderer = "test --release -p renderer --"
 testconfig = "test --release -p config --"
+pubcrates = "publish -p teletypewriter --"

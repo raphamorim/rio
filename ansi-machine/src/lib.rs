@@ -8,9 +8,8 @@ use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
 use teletypewriter::Process;
-use vte::ParamsIter;
 // https://vt100.net/emu/dec_ansi_parser
-use vte::{Params, Parser};
+use vte::{Params, ParamsIter, Parser};
 
 pub type Square = crosswords::square::Square;
 pub type Row = crosswords::row::Row<Square>;

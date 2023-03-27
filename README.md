@@ -44,11 +44,9 @@ It also relies on Rust memory behavior, since Rust is a memory-safe language tha
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-- macOS path: `~/.config/rio.toml`
+- macOS path: `~/.rio/config.toml`
 
-> `$XDG_CONFIG_HOME` defines the base directory relative to which user specific configuration files should be stored. If `$XDG_CONFIG_HOME` is either not set or empty, a default equal to `$HOME/.config` should be used.
-
-Default configuration of `rio.toml`:
+Default configuration of `config.toml`:
 
 ```toml
 # Rio default configuration file
