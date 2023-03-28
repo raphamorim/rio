@@ -1,6 +1,6 @@
 use crate::window::ansi;
 use std::io::Write;
-use teletypewriter::Process;
+// use teletypewriter::Process;
 use winit::event::ModifiersState;
 use winit::event::VirtualKeyCode;
 
@@ -58,11 +58,11 @@ impl Input {
         self.modifiers = modifiers;
     }
 
-    pub fn input_character(&mut self, character: char, stream: &mut Process) {
+    pub fn input_character(&mut self, character: char) {
         if !is_private_use_character(character) && character != '\r' && character != '\n'
         {
-            stream.write_all(&[character as u8]).unwrap();
-            stream.flush().unwrap();
+            // stream.write_all(&[character as u8]).unwrap();
+            // stream.flush().unwrap();
         }
     }
 
@@ -70,13 +70,13 @@ impl Input {
         &mut self,
         _scancode: u32,
         virtual_keycode: Option<VirtualKeyCode>,
-        stream: &mut Process,
+        // stream: &mut Process,
     ) {
         if let Some(keycode) = virtual_keycode {
             match winit_key_to_char(keycode, self.modifiers.shift()) {
                 Some(key_char) => {
-                    stream.write_all(&[key_char]).unwrap();
-                    stream.flush().unwrap();
+                    // stream.write_all(&[key_char]).unwrap();
+                    // stream.flush().unwrap();
                 }
                 None => println!("key unimplemented!()"),
             }

@@ -1,8 +1,4 @@
-mod ansi;
-pub mod input;
-
-use crate::shared::LOGO_ICON;
-
+pub const LOGO_ICON: &[u8; 102762] = include_bytes!("./resources/images/logo.ico");
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 400;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 400;

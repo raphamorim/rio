@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "ansi-machine",
   "teletypewriter",
   "colors",
   "config",

@@ -1,6 +1,7 @@
 mod frames;
 mod shared;
 pub mod text;
+// pub mod term;
 
 use colors::{AnsiColor, NamedColor};
 use config::Config;

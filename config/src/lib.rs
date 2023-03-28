@@ -118,7 +118,7 @@ impl Config {
         }
     }
 
-    pub fn load_macos() -> Self {
+    pub fn load() -> Self {
         // Home directory
         let base_dir_buffer = dirs::home_dir().unwrap();
         let base_dir = base_dir_buffer.to_str().unwrap();

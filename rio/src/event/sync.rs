@@ -14,7 +14,10 @@ pub struct FairMutex<T> {
 impl<T> FairMutex<T> {
     /// Create a new fair mutex.
     pub fn new(data: T) -> FairMutex<T> {
-        FairMutex { data: Mutex::new(data), next: Mutex::new(()) }
+        FairMutex {
+            data: Mutex::new(data),
+            next: Mutex::new(()),
+        }
     }
 
     /// Acquire a lease to reserve the mutex lock.
