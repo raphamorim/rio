@@ -19,6 +19,7 @@ teletypewriter = { workspace = true }
 colors = { path = "../colors" }
 ansi-machine = { path = "../ansi-machine" }
 config = { path = "../config" }
+dirs = "5.0"
 
 [package.metadata.bundle]
 name = "Rio"

@@ -10,3 +10,4 @@ authors = { workspace = true }
 
 [dependencies]
 libc = "0.2.140"
+mio = "0.6.20"

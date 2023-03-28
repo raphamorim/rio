@@ -71,19 +71,24 @@ impl io::Read for Process {
     }
 }
 
-impl io::Read for &Process {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match unsafe {
-            libc::read(
-                *self.0,
-                buf.as_mut_ptr() as *mut _,
-                buf.len() as libc::size_t,
-            )
-        } {
-            n if n >= 0 => Ok(n as usize),
-            _ => Err(io::Error::last_os_error()),
-        }
-    }
+pub trait ProcessReadWrite {
+    type Reader: io::Read;
+    type Writer: io::Write;
+
+    fn register(
+        &mut self,
+        _: &mio::Poll,
+        _: &mut dyn Iterator<Item = mio::Token>,
+        _: mio::Ready,
+        _: mio::PollOpt,
+    ) -> io::Result<()>;
+    fn reregister(&mut self, _: &mio::Poll, _: mio::Ready, _: mio::PollOpt) -> io::Result<()>;
+    fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
+
+    fn reader(&mut self) -> &mut Self::Reader;
+    fn read_token(&self) -> mio::Token;
+    fn writer(&mut self) -> &mut Self::Writer;
+    fn write_token(&self) -> mio::Token;
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {

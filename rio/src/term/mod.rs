@@ -121,12 +121,6 @@ impl Term {
         let columns = renderer.config.columns;
         let rows = renderer.config.rows;
 
-        tokio::spawn(async move {
-            let mut machine =
-                Machine::new(visible_rows_arc_clone, columns.into(), rows.into());
-            machine.process(read_process);
-        });
-
         Ok(Term {
             write_process,
             visible_rows_arc,
