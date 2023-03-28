@@ -1,10 +1,5 @@
 mod control;
-mod sync;
 
-use std::fmt::{self, Debug, Formatter};
-use std::borrow::Cow;
-use std::marker::Send;
-use crate::sync::FairMutex;
 use colors::{AnsiColor, NamedColor};
 use control::C0;
 use crosswords::{attr::*, Crosswords};
@@ -15,38 +10,15 @@ use std::sync::Mutex;
 use teletypewriter::Process;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, ParamsIter, Parser};
-#[cfg(not(windows))]
-use mio::unix::UnixReady;
-use mio::{self, Events, PollOpt, Ready};
-use mio_extras::channel::{self, Receiver, Sender};
 
 pub type Square = crosswords::square::Square;
 pub type Row = crosswords::row::Row<Square>;
 pub type VisibleRows = Arc<Mutex<Vec<Row>>>;
 pub type WindowTitle = Arc<Mutex<String>>;
-#[derive(Copy, Clone, Debug)]
-pub struct WindowSize {
-    pub num_lines: u16,
-    pub num_cols: u16,
-    pub cell_width: u16,
-    pub cell_height: u16,
-}
 
 pub trait Handler {
     /// A character to be displayed.
     fn input(&mut self, _c: char) {}
-}
-
-#[derive(Debug)]
-pub enum Msg {
-    /// Data that should be written to the PTY.
-    Input(Cow<'static, [u8]>),
-
-    /// Indicates that the `EventLoop` should shut down, as Alacritty is shutting down.
-    Shutdown,
-
-    /// Instruction to resize the PTY.
-    Resize(WindowSize),
 }
 
 struct Performer {
@@ -379,152 +351,23 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     attrs
 }
 
-#[derive(Clone)]
-pub enum Event {
-    /// Grid has changed possibly requiring a mouse cursor shape change.
-    MouseCursorDirty,
-
-    /// Window title change.
-    Title(String),
-
-    /// Reset to the default window title.
-    ResetTitle,
-
-    /// Request to store a text string in the clipboard.
-    // ClipboardStore(ClipboardType, String),
-
-    /// Request to write the contents of the clipboard to the PTY.
-    ///
-    /// The attached function is a formatter which will corectly transform the clipboard content
-    /// into the expected escape sequence format.
-    // ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
-
-    /// Request to write the RGB value of a color to the PTY.
-    ///
-    /// The attached function is a formatter which will corectly transform the RGB color into the
-    /// expected escape sequence format.
-    // ColorRequest(usize, Arc<dyn Fn(Rgb) -> String + Sync + Send + 'static>),
-
-    /// Write some text to the PTY.
-    PtyWrite(String),
-
-    /// Request to write the text area size.
-    TextAreaSizeRequest(Arc<dyn Fn(WindowSize) -> String + Sync + Send + 'static>),
-
-    /// Cursor blinking state has changed.
-    CursorBlinkingChange,
-
-    /// New terminal content available.
-    Wakeup,
-
-    /// Terminal bell ring.
-    Bell,
-
-    /// Shutdown request.
-    Exit,
+pub struct Machine {
+    handler: Performer,
+    parser: Parser,
 }
 
-impl Debug for Event {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            // Event::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
-            // Event::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
-            Event::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
-            // Event::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
-            Event::PtyWrite(text) => write!(f, "PtyWrite({text})"),
-            Event::Title(title) => write!(f, "Title({title})"),
-            Event::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
-            Event::MouseCursorDirty => write!(f, "MouseCursorDirty"),
-            Event::ResetTitle => write!(f, "ResetTitle"),
-            Event::Wakeup => write!(f, "Wakeup"),
-            Event::Bell => write!(f, "Bell"),
-            Event::Exit => write!(f, "Exit"),
-        }
-    }
-}
-
-pub trait OnResize {
-    fn on_resize(&mut self, window_size: WindowSize);
-}
-
-/// Event Loop for notifying the renderer about terminal events.
-pub trait EventListener {
-    fn send_event(&self, _event: Event) {}
-}
-
-pub struct Notifier(pub Sender<Msg>);
-
-/// Byte sequences are sent to a `Notify` in response to some events.
-pub trait Notify {
-    /// Notify that an escape sequence should be written to the PTY.
-    ///
-    /// TODO this needs to be able to error somehow.
-    fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
-}
-
-impl Notify for Notifier {
-    fn notify<B>(&self, bytes: B)
-    where
-        B: Into<Cow<'static, [u8]>>,
-    {
-        let bytes = bytes.into();
-        // terminal hangs if we send 0 bytes through.
-        if bytes.len() == 0 {
-            return;
-        }
-
-        let _ = self.0.send(Msg::Input(bytes));
-    }
-}
-
-impl OnResize for Notifier {
-    fn on_resize(&mut self, window_size: WindowSize) {
-        let _ = self.0.send(Msg::Resize(window_size));
-    }
-}
-
-pub struct Machine<T: teletypewriter::ProcessReadWrite> {
-    // handler: Performer,
-    // parser: Parser,
-    pty: T,
-    rx: Receiver<Msg>,
-    tx: Sender<Msg>,
-    poll: mio::Poll,
-    // terminal: Arc<FairMutex<Handler>>,
-}
-
-impl<T> Machine<T> 
-where 
-    T: teletypewriter::ProcessReadWrite + Send + 'static
-{
-    pub fn new(pty: T, columns: usize, rows: usize) -> Machine<T> {
-        let (tx, rx) = channel::channel();
-        // let handler = Performer::new(visible_rows_arc, columns, rows);
-        // let parser = Parser::new();
-        Machine { 
-             poll: mio::Poll::new().expect("create mio Poll"),
-             // handler, 
-             tx, rx, 
-             pty
-             // parser }
-        }
-    }
-
-    pub fn channel(&self) -> Sender<Msg> {
-        self.tx.clone()
+impl Machine {
+    pub fn new(visible_rows_arc: VisibleRows, columns: usize, rows: usize) -> Machine {
+        let handler = Performer::new(visible_rows_arc, columns, rows);
+        let parser = Parser::new();
+        Machine { handler, parser }
     }
 
     pub fn process(&mut self, process: Process) {
         let reader = BufReader::new(process);
-        // for byte in reader.bytes() {
-        //     self.parser
-        //         .advance(&mut self.handler, *byte.as_ref().unwrap());
-        // }
-    }
-
-    pub fn spawn(&mut self, process: Process) {
-        // tokio::spawn(async move {
-        //     self.process(read_process);
-        // });
+        for byte in reader.bytes() {
+            self.parser
+                .advance(&mut self.handler, *byte.as_ref().unwrap());
+        }
     }
 }
