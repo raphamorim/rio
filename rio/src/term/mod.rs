@@ -1,33 +1,53 @@
-mod cache;
-use ansi_machine::{Machine, Row, VisibleRows};
-use cache::Cache;
-use renderer::{Renderer, RendererStyles};
 use std::borrow::Cow;
 use std::error::Error;
-use std::sync::Arc;
-use std::sync::Mutex;
-use teletypewriter::{pty, Process};
+use std::rc::Rc;
+use teletypewriter::{create_pty, Pty};
 
-pub struct Term {
+struct RenderContext {
     device: wgpu::Device,
     surface: wgpu::Surface,
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
     queue: wgpu::Queue,
-    format: wgpu::TextureFormat,
-    alpha_mode: wgpu::CompositeAlphaMode,
     staging_belt: wgpu::util::StagingBelt,
-    pub renderer: Renderer,
-    size: winit::dpi::PhysicalSize<u32>,
-    #[allow(dead_code)]
-    cache: Cache,
-    pub write_process: Process,
-    visible_rows_arc: VisibleRows,
+}
+
+impl RenderContext {
+    pub fn configure(&self, size: winit::dpi::PhysicalSize<u32>) {
+        let caps = self.surface.get_capabilities(&self.adapter);
+        let formats = caps.formats;
+        let format = *formats.last().expect("No supported formats for surface");
+        let alpha_modes = caps.alpha_modes;
+        let alpha_mode = alpha_modes[0];
+
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format,
+                width: size.width,
+                height: size.height,
+                view_formats: vec![],
+                alpha_mode,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
+    }
+}
+
+pub struct Term {
+    pty: Pty,
+    render_context: RenderContext,
 }
 
 impl Term {
     pub async fn new(
         winit_window: &winit::window::Window,
-        config: config::Config,
+        config: &Rc<config::Config>,
     ) -> Result<Term, Box<dyn Error>> {
+        let shell = std::env::var("SHELL")?;
+        let pty = create_pty(&Cow::Borrowed(&shell), config.columns, config.rows);
+
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
@@ -59,154 +79,51 @@ impl Term {
 
         let staging_belt = wgpu::util::StagingBelt::new(64);
 
+        let render_context = RenderContext {
+            device,
+            queue,
+            adapter,
+            surface,
+            instance,
+            staging_belt,
+        };
+
         let size = winit_window.inner_size();
-
-        // let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        //     label: Some("Shader"),
-        //     source: wgpu::ShaderSource::Wgsl(include_str!("../bar/bar.wgsl").into()),
-        // });
-
-        let scale = winit_window.scale_factor() as f32;
-        // let bar: BarBrush = BarBrush::new(&device, shader, scale);
-        let caps = surface.get_capabilities(&adapter);
-        // Possible formats for MacOs:
-        // [Bgra8UnormSrgb, Bgra8Unorm, Rgba16Float, Rgb10a2Unorm]
-        let formats = caps.formats;
-        let format = *formats.last().expect("No supported formats for surface");
-        let alpha_modes = caps.alpha_modes;
-        let alpha_mode = alpha_modes[0];
-
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format,
-                width: size.width,
-                height: size.height,
-                view_formats: vec![],
-                alpha_mode,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-
-        let renderer_styles = RendererStyles::new(
-            size.width as f32,
-            size.height as f32,
-            scale,
-            config.style.font_size,
-        );
-
-        // TODO: Write a proper event driven updater
-        let visible_rows_arc = Arc::new(Mutex::from(vec![Row::default()]));
-        let visible_rows_arc_clone = Arc::clone(&visible_rows_arc);
-
-        let renderer = match Renderer::new(&device, format, config, renderer_styles) {
-            Ok(r) => r,
-            Err(e) => panic!("{e:?}"),
-        };
-
-        let cache = Cache::new(&device, 1024, 1024);
-
-        let shell: String = match std::env::var("SHELL") {
-            Ok(val) => val,
-            Err(..) => String::from("bash"),
-        };
-
-        let (read_process, write_process, _ptyname, _pid) = pty(
-            &Cow::Borrowed(&shell),
-            renderer.config.columns,
-            renderer.config.rows,
-        );
-
-        let columns = renderer.config.columns;
-        let rows = renderer.config.rows;
+        // let scale = winit_window.scale_factor() as f32;
+        render_context.configure(size);
 
         Ok(Term {
-            write_process,
-            visible_rows_arc,
-            device,
-            surface,
-            staging_belt,
-            renderer,
-            size,
-            format,
-            alpha_mode,
-            queue,
-            cache,
+            render_context,
+            pty,
         })
     }
 
-    pub fn set_size(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.size = new_size;
-
-        self.configure_surface();
+    pub fn configure(&mut self) {
+        // 
     }
 
-    // https://docs.rs/winit/latest/winit/dpi/
-    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
-        if self.renderer.get_current_scale() != new_scale {
-            // self.scale = new_scale;
-            self.renderer.refresh_styles(
-                new_size.width as f32,
-                new_size.height as f32,
-                new_scale,
-            );
-            self.size = new_size;
-
-            self.configure_surface();
-        }
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.render_context.configure(new_size);
     }
 
-    #[inline]
-    fn configure_surface(&mut self) {
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.format,
-                width: self.size.width,
-                height: self.size.height,
-                view_formats: vec![],
-                alpha_mode: self.alpha_mode,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-    }
-
-    #[inline]
-    fn create_encoder(&self) -> wgpu::CommandEncoder {
-        self.device
+    pub fn render(&mut self, color: wgpu::Color) {
+        let mut encoder = self.render_context.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Redraw"),
-            })
-    }
+            });
 
-    // TODO: Asynchronous update based on 2s
-    // Idea? Prob move Term inside of TermUi that contains Tabs/Term
-    // Allowing switch Terms
-    // fn get_command_name(&self) -> String {
-    //     // format!("■ {:?}", teletypewriter::command_per_pid(self.pid))
-    //     format!(
-    //         "{} zsh ",
-    //         self.renderer.config.advanced.tab_character_active
-    //     )
-    // }
-
-    pub fn draw(&mut self) {
-        let mut encoder = self.create_encoder();
-
-        let frame = self.surface.get_current_texture().expect("Get next frame");
+        let frame = self.render_context.surface.get_current_texture().expect("Get next frame");
         let view = &frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Term -> Clear frame"),
+            label: Some("Render -> Clear frame"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(self.renderer.config.colors.background.1),
+                    load: wgpu::LoadOp::Clear(color),
                     store: true,
                 },
             })],
@@ -214,25 +131,38 @@ impl Term {
         });
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
-        self.renderer
-            .term(self.visible_rows_arc.lock().unwrap().to_vec());
+        // self.renderer
+        //     .term(self.visible_rows_arc.lock().unwrap().to_vec());
 
-        self.renderer
-            .brush
-            .draw_queued(
-                &self.device,
-                &mut self.staging_belt,
-                &mut encoder,
-                view,
-                (self.size.width, self.size.height),
-            )
-            .expect("Draw queued");
+        // self.renderer
+        //     .brush
+        //     .draw_queued(
+        //         &self.device,
+        //         &mut self.staging_belt,
+        //         &mut encoder,
+        //         view,
+        //         (self.size.width, self.size.height),
+        //     )
+        //     .expect("Draw queued");
 
-        self.staging_belt.finish();
-        self.queue.submit(Some(encoder.finish()));
+        self.render_context.staging_belt.finish();
+        self.render_context.queue.submit(Some(encoder.finish()));
         frame.present();
+        self.render_context.staging_belt.recall();
+    }
 
-        // Recall unused staging buffers
-        self.staging_belt.recall();
+    // https://docs.rs/winit/latest/winit/dpi/
+    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
+        // if self.renderer.get_current_scale() != new_scale {
+        //     // self.scale = new_scale;
+        //     self.renderer.refresh_styles(
+        //         new_size.width as f32,
+        //         new_size.height as f32,
+        //         new_scale,
+        //     );
+        //     self.size = new_size;
+
+        //     self.configure_surface();
+        // }
     }
 }

@@ -1,11 +1,19 @@
 extern crate libc;
 
+use mio::unix::SourceFd;
+use mio::Interest;
+use mio::Registry;
+use mio::Token;
 use std::ffi::{CStr, CString};
+use std::fs::File;
 use std::io;
 use std::ops::Deref;
+use std::os::fd::FromRawFd;
+use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
+// use signal_hook_mio::v0_8::Signals;
 
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -32,20 +40,30 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
-#[derive(Debug)]
-pub struct Process(Handle);
+pub struct Pty {
+    child: Child,
+    file: File,
+    token: mio::Token,
+    #[allow(dead_code)]
+    signals_token: mio::Token,
+    // signals: Signals,
+}
 
-impl Deref for Process {
-    type Target = Handle;
-    fn deref(&self) -> &Handle {
-        &self.0
+impl Deref for Pty {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
     }
 }
 
-impl io::Write for Process {
+impl io::Write for Pty {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match unsafe {
-            libc::write(*self.0, buf.as_ptr() as *const _, buf.len() as libc::size_t)
+            libc::write(
+                *self.child,
+                buf.as_ptr() as *const _,
+                buf.len() as libc::size_t,
+            )
         } {
             n if n >= 0 => Ok(n as usize),
             _ => Err(io::Error::last_os_error()),
@@ -56,11 +74,11 @@ impl io::Write for Process {
     }
 }
 
-impl io::Read for Process {
+impl io::Read for Pty {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match unsafe {
             libc::read(
-                *self.0,
+                *self.child,
                 buf.as_mut_ptr() as *mut _,
                 buf.len() as libc::size_t,
             )
@@ -71,20 +89,105 @@ impl io::Read for Process {
     }
 }
 
+impl mio::event::Source for Pty {
+    #[inline]
+    fn register(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.child).register(registry, token, interests)
+    }
+
+    fn reregister(
+        &mut self,
+        registry: &Registry,
+        token: Token,
+        interests: Interest,
+    ) -> io::Result<()> {
+        SourceFd(&self.child).reregister(registry, token, interests)
+    }
+
+    fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
+        SourceFd(&self.child).deregister(registry)
+    }
+}
+
+impl ProcessReadWrite for Pty {
+    type Reader = File;
+    type Writer = File;
+
+    #[inline]
+    fn reader(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    #[inline]
+    fn read_token(&self) -> mio::Token {
+        self.token
+    }
+
+    #[inline]
+    fn writer(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    #[inline]
+    fn write_token(&self) -> mio::Token {
+        self.token
+    }
+}
+
+// From alacritty: https://github.com/alacritty/alacritty/blob/2df8f860b960d7c96efaf4f059fe2fbbdce82bcc/alacritty_terminal/src/tty/mod.rs#L83
+/// Check if a terminfo entry exists on the system.
+pub fn terminfo_exists(terminfo: &str) -> bool {
+    // Get first terminfo character for the parent directory.
+    let first = terminfo.get(..1).unwrap_or_default();
+    let first_hex = format!("{:x}", first.chars().next().unwrap_or_default() as usize);
+
+    // Return true if the terminfo file exists at the specified location.
+    macro_rules! check_path {
+        ($path:expr) => {
+            if $path.join(first).join(terminfo).exists()
+                || $path.join(&first_hex).join(terminfo).exists()
+            {
+                return true;
+            }
+        };
+    }
+
+    if let Some(dir) = std::env::var_os("TERMINFO") {
+        check_path!(PathBuf::from(&dir));
+    } else if let Some(home) = dirs::home_dir() {
+        check_path!(home.join(".terminfo"));
+    }
+
+    if let Ok(dirs) = std::env::var("TERMINFO_DIRS") {
+        for dir in dirs.split(':') {
+            check_path!(PathBuf::from(dir));
+        }
+    }
+
+    if let Ok(prefix) = std::env::var("PREFIX") {
+        let path = PathBuf::from(prefix);
+        check_path!(path.join("etc/terminfo"));
+        check_path!(path.join("lib/terminfo"));
+        check_path!(path.join("share/terminfo"));
+    }
+
+    check_path!(PathBuf::from("/etc/terminfo"));
+    check_path!(PathBuf::from("/lib/terminfo"));
+    check_path!(PathBuf::from("/usr/share/terminfo"));
+    check_path!(PathBuf::from("/boot/system/data/terminfo"));
+
+    // No valid terminfo path has been found.
+    false
+}
+
 pub trait ProcessReadWrite {
     type Reader: io::Read;
     type Writer: io::Write;
-
-    fn register(
-        &mut self,
-        _: &mio::Poll,
-        _: &mut dyn Iterator<Item = mio::Token>,
-        _: mio::Ready,
-        _: mio::PollOpt,
-    ) -> io::Result<()>;
-    fn reregister(&mut self, _: &mio::Poll, _: mio::Ready, _: mio::PollOpt) -> io::Result<()>;
-    fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
-
     fn reader(&mut self) -> &mut Self::Reader;
     fn read_token(&self) -> mio::Token;
     fn writer(&mut self) -> &mut Self::Writer;
@@ -164,17 +267,13 @@ pub fn create_termp(utf8: bool) -> libc::termios {
 ///
 /// Creates a pseudoterminal.
 ///
-/// The [`pty`] creates a pseudoterminal with similar behavior as tty,
+/// The [`create_pty`] creates a pseudoterminal with similar behavior as tty,
 /// which is a command in Unix and Unix-like operating systems to print the file name of the
 /// terminal connected to standard input. tty stands for TeleTYpewriter.
 ///
-/// It returns two [`Process`] along with respective process name [`String`] and process id (`libc::pid_`)
+/// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn pty(
-    name: &str,
-    width: u16,
-    height: u16,
-) -> (Process, Process, String, libc::pid_t) {
+pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: height as libc::c_ushort,
@@ -208,17 +307,33 @@ pub fn pty(
         }
         id if id > 0 => {
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let handle = Handle(Arc::new(main));
-            (Process(handle.clone()), Process(handle), ptsname, id)
+            let child = Child {
+                id: Arc::new(main),
+                ptsname,
+                pid: Arc::new(id),
+            };
+
+            // let mut signals = Signals::new([signal_hook_mio::consts::SIGWINCH])?;
+            Pty {
+                child,
+                // signals,
+                file: unsafe { File::from_raw_fd(main) },
+                token: mio::Token::from(mio::Token(0)),
+                signals_token: mio::Token::from(mio::Token(0)),
+            }
         }
         _ => panic!("Fork failed."),
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Handle(Arc<libc::c_int>);
+pub struct Child {
+    id: Arc<libc::c_int>,
+    ptsname: String,
+    pid: Arc<libc::pid_t>,
+}
 
-impl Handle {
+impl Child {
     pub fn set_winsize(&self, width: u16, height: u16) -> io::Result<()> {
         let winsize = Winsize {
             ws_row: height as libc::c_ushort,
@@ -233,17 +348,17 @@ impl Handle {
     }
 }
 
-impl Deref for Handle {
+impl Deref for Child {
     type Target = libc::c_int;
     fn deref(&self) -> &libc::c_int {
-        &self.0
+        &self.id
     }
 }
 
-impl Drop for Handle {
+impl Drop for Child {
     fn drop(&mut self) {
         unsafe {
-            libc::close(*self.0);
+            libc::close(*self.id);
         }
     }
 }

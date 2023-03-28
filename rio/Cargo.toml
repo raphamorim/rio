@@ -15,9 +15,13 @@ winit = "0.28.3"
 image = { version = "0.24.5", default-features = false, features = ["ico"] }
 bytemuck = { workspace = true }
 renderer = { path = "../renderer" }
+crosswords = { path = "../crosswords" }
+mio = { version = "0.8.6", features = ["os-poll"] }
+mio-extras = "2.0.6"
+parking_lot = "0.12"
+vte = "0.11.0"
 teletypewriter = { workspace = true }
 colors = { path = "../colors" }
-ansi-machine = { path = "../ansi-machine" }
 config = { path = "../config" }
 dirs = "5.0"
 
