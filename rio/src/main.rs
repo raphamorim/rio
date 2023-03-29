@@ -1,4 +1,5 @@
 mod event;
+mod performer;
 mod sequencer;
 mod scheduler;
 mod term;

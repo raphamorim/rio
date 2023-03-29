@@ -68,7 +68,7 @@ struct ScrollRegion {
 }
 
 #[derive(Debug, Clone)]
-pub struct Crosswords {
+pub struct Crosswords<U> {
     active_charset: CharsetIndex,
     cols: usize,
     cursor: Cursor<Square>,
@@ -79,6 +79,7 @@ pub struct Crosswords {
     scroll_region: ScrollRegion,
     storage: Storage<Square>,
     tabs: TabStops,
+    event_proxy: U,
     window_title: Option<String>,
 }
 
@@ -134,7 +135,7 @@ impl IndexMut<Column> for TabStops {
     }
 }
 
-impl Index<Line> for Crosswords {
+impl<U> Index<Line> for Crosswords<U> {
     type Output = Row<Square>;
 
     #[inline]
@@ -143,14 +144,14 @@ impl Index<Line> for Crosswords {
     }
 }
 
-impl IndexMut<Line> for Crosswords {
+impl<U> IndexMut<Line> for Crosswords<U> {
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Row<Square> {
         &mut self.storage[index]
     }
 }
 
-impl Index<Pos> for Crosswords {
+impl<U> Index<Pos> for Crosswords<U> {
     type Output = Square;
 
     #[inline]
@@ -159,15 +160,15 @@ impl Index<Pos> for Crosswords {
     }
 }
 
-impl IndexMut<Pos> for Crosswords {
+impl<U> IndexMut<Pos> for Crosswords<U> {
     #[inline]
     fn index_mut(&mut self, pos: Pos) -> &mut Square {
         &mut self[pos.row][pos.col]
     }
 }
 
-impl Crosswords {
-    pub fn new(cols: usize, rows: usize) -> Crosswords {
+impl<U> Crosswords<U> {
+    pub fn new(cols: usize, rows: usize, event_proxy: U) -> Crosswords<U> {
         Crosswords {
             cols,
             rows,
@@ -179,6 +180,7 @@ impl Crosswords {
                 start: pos::Line(0),
                 end: pos::Line(rows.try_into().unwrap()),
             },
+            event_proxy,
             window_title: std::option::Option::Some(String::from("")),
             tabs: TabStops::new(cols),
             scroll_limit: 10_000,
