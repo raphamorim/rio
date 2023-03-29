@@ -107,6 +107,8 @@ impl Term {
     }
 
     pub fn render(&mut self, color: wgpu::Color) {
+        println!("rendering");
+
         let mut encoder = self.render_context.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Redraw"),

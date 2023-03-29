@@ -7,14 +7,9 @@ use std::fmt::Write;
 use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::sync::Mutex;
-use teletypewriter::Process;
+use teletypewriter::Pty;
 // https://vt100.net/emu/dec_ansi_parser
 use vte::{Params, ParamsIter, Parser};
-
-pub type Square = crosswords::square::Square;
-pub type Row = crosswords::row::Row<Square>;
-pub type VisibleRows = Arc<Mutex<Vec<Row>>>;
-pub type WindowTitle = Arc<Mutex<String>>;
 
 pub trait Handler {
     /// A character to be displayed.
@@ -23,15 +18,13 @@ pub trait Handler {
 
 struct Performer {
     handler: Crosswords,
-    visible_rows: VisibleRows,
 }
 
 impl Performer {
-    fn new(visible_rows: VisibleRows, columns: usize, rows: usize) -> Performer {
+    fn new(columns: usize, rows: usize) -> Performer {
         let crosswords: Crosswords = Crosswords::new(columns, rows);
 
         Performer {
-            visible_rows,
             handler: crosswords,
         }
     }
@@ -41,8 +34,8 @@ impl vte::Perform for Performer {
     fn print(&mut self, c: char) {
         // println!("[print] {c:?}");
         self.handler.input(c);
-        let mut s = self.visible_rows.lock().unwrap();
-        *s = self.handler.visible_rows();
+        // let mut s = self.visible_rows.lock().unwrap();
+        // *s = self.handler.visible_rows();
     }
 
     fn execute(&mut self, byte: u8) {
@@ -349,25 +342,4 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     }
 
     attrs
-}
-
-pub struct Machine {
-    handler: Performer,
-    parser: Parser,
-}
-
-impl Machine {
-    pub fn new(visible_rows_arc: VisibleRows, columns: usize, rows: usize) -> Machine {
-        let handler = Performer::new(visible_rows_arc, columns, rows);
-        let parser = Parser::new();
-        Machine { handler, parser }
-    }
-
-    pub fn process(&mut self, process: Process) {
-        let reader = BufReader::new(process);
-        for byte in reader.bytes() {
-            self.parser
-                .advance(&mut self.handler, *byte.as_ref().unwrap());
-        }
-    }
 }

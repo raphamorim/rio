@@ -36,7 +36,7 @@ pub trait Dimensions {
     }
 }
 
-impl Dimensions for Crosswords {
+impl<U> Dimensions for Crosswords<U> {
     #[inline]
     fn total_lines(&self) -> usize {
         self.storage.len()
