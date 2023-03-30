@@ -1,6 +1,11 @@
+use crate::crosswords::Crosswords;
+use crate::event::sync::FairMutex;
+use crate::event::EventProxy;
+use crate::performer::Machine;
 use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
+use std::sync::Arc;
 use teletypewriter::{create_pty, Pty};
 
 struct RenderContext {
@@ -36,7 +41,7 @@ impl RenderContext {
 }
 
 pub struct Term {
-    pty: Pty,
+    machine: Machine<Pty, EventProxy>,
     render_context: RenderContext,
 }
 
@@ -44,6 +49,7 @@ impl Term {
     pub async fn new(
         winit_window: &winit::window::Window,
         config: &Rc<config::Config>,
+        event_proxy: EventProxy,
     ) -> Result<Term, Box<dyn Error>> {
         let shell = std::env::var("SHELL")?;
         let pty = create_pty(&Cow::Borrowed(&shell), config.columns, config.rows);
@@ -92,14 +98,21 @@ impl Term {
         // let scale = winit_window.scale_factor() as f32;
         render_context.configure(size);
 
+        let event_proxy_clone = event_proxy.clone();
+        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
+            Arc::new(FairMutex::new(Crosswords::new(80, 25, event_proxy)));
+
+        let machine = Machine::new(terminal, pty, event_proxy_clone)?;
+        // terminal: Arc<FairMutex<Crosswords<U>>>, pty: T, event_proxy: U
+
         Ok(Term {
             render_context,
-            pty,
+            machine,
         })
     }
 
     pub fn configure(&mut self) {
-        // 
+        //
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -109,12 +122,17 @@ impl Term {
     pub fn render(&mut self, color: wgpu::Color) {
         println!("rendering");
 
-        let mut encoder = self.render_context.device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let mut encoder = self.render_context.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
                 label: Some("Redraw"),
-            });
+            },
+        );
 
-        let frame = self.render_context.surface.get_current_texture().expect("Get next frame");
+        let frame = self
+            .render_context
+            .surface
+            .get_current_texture()
+            .expect("Get next frame");
         let view = &frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());

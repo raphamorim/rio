@@ -1,9 +1,9 @@
 pub mod sync;
-use mio_extras::channel::Sender;
 use std::borrow::Cow;
-use std::sync::Arc;
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::sync::Arc;
+use winit::event_loop::EventLoopProxy;
 
 #[derive(Debug)]
 pub enum Msg {
@@ -120,12 +120,11 @@ impl EventP {
     }
 }
 
-impl From<Event> for winit::event::Event<'_, Event> {
-    fn from(event: Event) -> Self {
+impl From<EventP> for winit::event::Event<'_, EventP> {
+    fn from(event: EventP) -> Self {
         winit::event::Event::UserEvent(event)
     }
 }
-
 
 pub trait OnResize {
     fn on_resize(&mut self, window_size: WindowSize);
@@ -136,7 +135,7 @@ pub trait EventListener {
     fn send_event(&self, _event: crate::event::Event) {}
 }
 
-pub struct Notifier(pub Sender<Msg>);
+// pub struct Notifier(pub Sender<Msg>);
 
 /// Byte sequences are sent to a `Notify` in response to some events.
 pub trait Notify {
@@ -146,27 +145,49 @@ pub trait Notify {
     fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
 }
 
-impl Notify for Notifier {
-    fn notify<B>(&self, bytes: B)
-    where
-        B: Into<Cow<'static, [u8]>>,
-    {
-        let bytes = bytes.into();
-        // terminal hangs if we send 0 bytes through.
-        if bytes.len() == 0 {
-            return;
-        }
+// impl Notify for Notifier {
+//     fn notify<B>(&self, bytes: B)
+//     where
+//         B: Into<Cow<'static, [u8]>>,
+//     {
+//         let bytes = bytes.into();
+//         // terminal hangs if we send 0 bytes through.
+//         if bytes.len() == 0 {
+//             return;
+//         }
 
-        let _ = self.0.send(Msg::Input(bytes));
-    }
-}
+//         let _ = self.0.send(Msg::Input(bytes));
+//     }
+// }
 
-impl OnResize for Notifier {
-    fn on_resize(&mut self, window_size: WindowSize) {
-        let _ = self.0.send(Msg::Resize(window_size));
-    }
-}
+// impl OnResize for Notifier {
+//     fn on_resize(&mut self, window_size: WindowSize) {
+//         let _ = self.0.send(Msg::Resize(window_size));
+//     }
+// }
 
 pub struct VoidListener;
 
 impl EventListener for VoidListener {}
+
+#[derive(Debug, Clone)]
+pub struct EventProxy {
+    proxy: EventLoopProxy<EventP>,
+}
+
+impl EventProxy {
+    pub fn new(proxy: EventLoopProxy<EventP>) -> Self {
+        Self { proxy }
+    }
+
+    /// Send an event to the event loop.
+    pub fn send_event(&self, event: crate::event::EventType) {
+        let _ = self.proxy.send_event(EventP::new(event));
+    }
+}
+
+impl EventListener for EventProxy {
+    fn send_event(&self, event: crate::event::Event) {
+        let _ = self.proxy.send_event(EventP::new(event.into()));
+    }
+}

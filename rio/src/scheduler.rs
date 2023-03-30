@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
-use crate::event::Event;
+use crate::event::EventP as Event;
 
 /// ID uniquely identifying a timer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -46,7 +46,10 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(event_proxy: EventLoopProxy<Event>) -> Self {
-        Self { timers: VecDeque::new(), event_proxy }
+        Self {
+            timers: VecDeque::new(),
+            event_proxy,
+        }
     }
 
     /// Process all pending timers.
@@ -71,7 +74,13 @@ impl Scheduler {
     }
 
     /// Schedule a new event.
-    pub fn schedule(&mut self, event: Event, interval: Duration, repeat: bool, timer_id: TimerId) {
+    pub fn schedule(
+        &mut self,
+        event: Event,
+        interval: Duration,
+        repeat: bool,
+        timer_id: TimerId,
+    ) {
         let deadline = Instant::now() + interval;
 
         // Get insert position in the schedule.
@@ -84,7 +93,15 @@ impl Scheduler {
         // Set the automatic event repeat rate.
         let interval = if repeat { Some(interval) } else { None };
 
-        self.timers.insert(index, Timer { interval, deadline, event, id: timer_id });
+        self.timers.insert(
+            index,
+            Timer {
+                interval,
+                deadline,
+                event,
+                id: timer_id,
+            },
+        );
     }
 
     /// Cancel a scheduled event.

@@ -1,4 +1,4 @@
-use crate::dimensions::Dimensions;
+use crate::crosswords::dimensions::Dimensions;
 use std::cmp::{max, min, Ord, Ordering};
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Index, IndexMut, Sub, SubAssign};

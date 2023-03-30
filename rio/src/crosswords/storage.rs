@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
 use super::Row;
-use crate::Line;
+use crate::crosswords::Line;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
 const MAX_CACHE_SIZE: usize = 1_000;

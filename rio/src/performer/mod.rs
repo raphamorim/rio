@@ -1,19 +1,19 @@
-use crate::event::EventP;
-use crate::event::EventListener;
-use crate::event::Msg;
-use std::io::{ self, Read };
-use mio::{Events, Interest, Token};
-use std::fs::File;
-use std::time::Instant;
-use crosswords::Crosswords;
-use std::borrow::Cow;
-use std::sync::Arc;
+use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-use winit::event_loop::EventLoopProxy;
+use crate::event::EventListener;
+use crate::event::EventP;
+use crate::event::EventProxy;
+use crate::event::Msg;
+use mio::{Events, Interest, Token};
+use std::borrow::Cow;
 use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{self, Read};
+use std::sync::Arc;
+use std::time::Instant;
 use vte::Parser;
-use tokio::io::Ready;
-use mio_extras::channel::{Receiver, Sender};
+use winit::event_loop::EventLoopProxy;
+
 use std::io::{ErrorKind, Write};
 
 const READ_BUFFER_SIZE: usize = 0x10_0000;
@@ -24,33 +24,11 @@ pub struct Machine<T: teletypewriter::ProcessReadWrite, U: EventListener> {
     // handler: Performer,
     // parser: Parser,
     pty: T,
-    rx: Receiver<Msg>,
-    tx: Sender<Msg>,
+    stream: mio::net::TcpStream,
+    events: mio::Events,
     poll: mio::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
-}
-
-#[derive(Debug, Clone)]
-pub struct EventProxy {
-    proxy: EventLoopProxy<EventP>,
-}
-
-impl EventProxy {
-    pub fn new(proxy: EventLoopProxy<EventP>) -> Self {
-        Self { proxy }
-    }
-
-    /// Send an event to the event loop.
-    pub fn send_event(&self, event: crate::event::EventType) {
-        let _ = self.proxy.send_event(EventP::new(event));
-    }
-}
-
-impl EventListener for EventProxy {
-    fn send_event(&self, event: crate::event::Event) {
-        let _ = self.proxy.send_event(EventP::new(event.into()));
-    }
 }
 
 #[derive(Default)]
@@ -121,24 +99,39 @@ impl Writing {
 
 impl<T, U> Machine<T, U>
 where
-    T: teletypewriter::ProcessReadWrite + Send + 'static + mio::event::Source,
+    T: teletypewriter::ProcessReadWrite + Send + mio::event::Source + 'static,
     U: EventListener + Send + 'static,
 {
-    pub fn new(terminal: Arc<FairMutex<Crosswords<U>>>, pty: T, event_proxy: U,) -> Machine<T, U> {
-        let (tx, rx) = mio_extras::channel::channel();
-        Machine {
-            poll: mio::Poll::new().expect("create mio Poll"),
-            tx,
-            rx,
+    pub fn new(
+        terminal: Arc<FairMutex<Crosswords<U>>>,
+        pty: T,
+        event_proxy: U,
+    ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
+        let poll = mio::Poll::new()?;
+        let addr: std::net::SocketAddr = "127.0.0.1:0".parse()?;
+        let server = mio::net::TcpListener::bind(addr)?;
+        let events = mio::Events::with_capacity(1024);
+        let stream = mio::net::TcpStream::connect(server.local_addr()?)?;
+        Ok(Machine {
+            poll,
+            events,
+            stream,
             pty,
             terminal,
             event_proxy,
-        }
+        })
     }
 
-    pub fn channel(&self) -> Sender<Msg> {
-        self.tx.clone()
-    }
+    // #[inline]
+    // pub fn sync_timeout(&self) -> Option<&Instant> {
+    //     self.state.sync_state.timeout.as_ref()
+    // }
+
+    // /// Number of bytes in the synchronization buffer.
+    // #[inline]
+    // pub fn sync_bytes_count(&self) -> usize {
+    //     self.state.sync_state.buffer.len()
+    // }
 
     // pub fn process(&mut self, process: Pty) {
     //     let reader = BufReader::new(process);
@@ -218,10 +211,22 @@ where
 
         // Queue terminal redraw unless all processed bytes were synchronized.
         // if state.parser.sync_bytes_count() < processed && processed > 0 {
-            // self.event_proxy.send_event(Event::Wakeup);
+        // self.event_proxy.send_event(Event::Wakeup);
         // }
 
         Ok(())
+    }
+
+    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
+        // while let Ok(msg) = self.stream.try_recv() {
+        //     match msg {
+        //         Msg::Input(input) => state.write_list.push_back(input),
+        //         // Msg::Resize(window_size) => self.pty.on_resize(window_size),
+        //         Msg::Shutdown => return false,
+        //     }
+        // }
+
+        true
     }
 
     /// Returns a `bool` indicating whether or not the event loop should continue running.
@@ -232,11 +237,8 @@ where
         }
 
         self.poll
-            .reregister(
-                &self.rx,
-                token,
-                Ready::readable(),
-            )
+            .registry()
+            .reregister(&mut self.stream, token, Interest::READABLE)
             .unwrap();
 
         true
@@ -275,39 +277,33 @@ where
         Ok(())
     }
 
-    pub fn spawn(&mut self) {
+    pub fn spawn(mut self) {
         tokio::spawn(async move {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
             let mut tokens = Token(0);
-            let channel_token = tokens.next().unwrap();
-            self.poll
-            	.registry()
-                .register(&mut self.rx, tokens, Interest::readable)
+            // let channel_token = tokens.next().unwrap();
+            let register = self
+                .poll
+                .registry()
+                .register(&mut self.stream, tokens, Interest::READABLE)
                 .unwrap();
 
             // Register TTY through EventedRW interface.
             self.pty
-                .register(&self.poll, &mut tokens, Interest::readable)
+                .register(&self.poll.registry(), tokens, Interest::READABLE)
                 .unwrap();
 
             let mut events = Events::with_capacity(1024);
 
-            let mut pipe = if self.ref_test {
-                Some(
-                    File::create("./alacritty.recording")
-                        .expect("create alacritty recording"),
-                )
-            } else {
-                None
-            };
+            // let mut pipe = None;
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
-                let sync_timeout = state.parser.sync_timeout();
-                let timeout =
-                    sync_timeout.map(|st| st.saturating_duration_since(Instant::now()));
+                // let sync_timeout = state.parser.sync_timeout();
+                // let timeout =
+                // sync_timeout.map(|st| st.saturating_duration_since(Instant::now()));
 
                 // if let Err(err) = self.poll.poll(&mut events, timeout) {
                 //     match err.kind() {
@@ -318,97 +314,99 @@ where
 
                 // Handle synchronized update timeout.
                 if events.is_empty() {
-                    state.parser.stop_sync(&mut *self.terminal.lock());
+                    // state.parser.stop_sync(&mut *self.terminal.lock());
                     // self.event_proxy.send_event(Event::Wakeup);
                     continue;
                 }
 
                 for event in events.iter() {
-                    match event.token() {
-                        token if token == channel_token => {
-                            if !self.channel_event(channel_token, &mut state) {
-                                break 'event_loop;
-                            }
-                        }
+                    println!("{:?}", event);
+                    break 'event_loop;
+                    // match event.token() {
+                    // token if token == channel_token => {
+                    //     if !self.channel_event(channel_token, &mut state) {
+                    //         break 'event_loop;
+                    //     }
+                    // }
 
-                        // token if token == self.pty.child_event_token() => {
-                        //     if let Some(tty::ChildEvent::Exited) =
-                        //         self.pty.next_child_event()
-                        //     {
-                        //         if self.hold {
-                        //             // With hold enabled, make sure the PTY is drained.
-                        //             let _ = self.pty_read(
-                        //                 &mut state,
-                        //                 &mut buf,
-                        //                 pipe.as_mut(),
-                        //             );
-                        //         } else {
-                        //             // Without hold, shutdown the terminal.
-                        //             self.terminal.lock().exit();
-                        //         }
+                    // token if token == self.pty.child_event_token() => {
+                    //     if let Some(tty::ChildEvent::Exited) =
+                    //         self.pty.next_child_event()
+                    //     {
+                    //         if self.hold {
+                    //             // With hold enabled, make sure the PTY is drained.
+                    //             let _ = self.pty_read(
+                    //                 &mut state,
+                    //                 &mut buf,
+                    //                 pipe.as_mut(),
+                    //             );
+                    //         } else {
+                    //             // Without hold, shutdown the terminal.
+                    //             self.terminal.lock().exit();
+                    //         }
 
-                        //         self.event_proxy.send_event(Event::Wakeup);
-                        //         break 'event_loop;
-                        //     }
-                        // }
+                    //         self.event_proxy.send_event(Event::Wakeup);
+                    //         break 'event_loop;
+                    //     }
+                    // }
 
-                        // token
-                        //     if token == self.pty.read_token()
-                        //         || token == self.pty.write_token() =>
-                        // {
-                        //     #[cfg(unix)]
-                        //     if UnixReady::from(event.readiness()).is_hup() {
-                        //         // Don't try to do I/O on a dead PTY.
-                        //         continue;
-                        //     }
+                    // token
+                    //     if token == self.pty.read_token()
+                    //         || token == self.pty.write_token() =>
+                    // {
+                    //     #[cfg(unix)]
+                    //     if UnixReady::from(event.readiness()).is_hup() {
+                    //         // Don't try to do I/O on a dead PTY.
+                    //         continue;
+                    //     }
 
-                        //     if event.readiness().is_readable() {
-                        //         if let Err(err) =
-                        //             self.pty_read(&mut state, &mut buf, pipe.as_mut())
-                        //         {
-                        //             // On Linux, a `read` on the master side of a PTY can fail
-                        //             // with `EIO` if the client side hangs up.  In that case,
-                        //             // just loop back round for the inevitable `Exited` event.
-                        //             // This sucks, but checking the process is either racy or
-                        //             // blocking.
-                        //             #[cfg(target_os = "linux")]
-                        //             if err.raw_os_error() == Some(libc::EIO) {
-                        //                 continue;
-                        //             }
+                    //     if event.readiness().is_readable() {
+                    //         if let Err(err) =
+                    //             self.pty_read(&mut state, &mut buf, pipe.as_mut())
+                    //         {
+                    //             // On Linux, a `read` on the master side of a PTY can fail
+                    //             // with `EIO` if the client side hangs up.  In that case,
+                    //             // just loop back round for the inevitable `Exited` event.
+                    //             // This sucks, but checking the process is either racy or
+                    //             // blocking.
+                    //             #[cfg(target_os = "linux")]
+                    //             if err.raw_os_error() == Some(libc::EIO) {
+                    //                 continue;
+                    //             }
 
-                        //             error!(
-                        //                 "Error reading from PTY in event loop: {}",
-                        //                 err
-                        //             );
-                        //             break 'event_loop;
-                        //         }
-                        //     }
+                    //             error!(
+                    //                 "Error reading from PTY in event loop: {}",
+                    //                 err
+                    //             );
+                    //             break 'event_loop;
+                    //         }
+                    //     }
 
-                        //     if event.readiness().is_writable() {
-                        //         if let Err(err) = self.pty_write(&mut state) {
-                        //             error!("Error writing to PTY in event loop: {}", err);
-                        //             break 'event_loop;
-                        //         }
-                        //     }
-                        // }
-                        _ => (),
-                    }
+                    //     if event.readiness().is_writable() {
+                    //         if let Err(err) = self.pty_write(&mut state) {
+                    //             error!("Error writing to PTY in event loop: {}", err);
+                    //             break 'event_loop;
+                    //         }
+                    //     }
+                    // }
+                    //     _ => (),
+                    // }
                 }
 
                 // Register write interest if necessary.
-                let mut interest = Ready::readable();
+                let mut interest = Interest::READABLE;
                 if state.needs_write() {
-                    interest.insert(Ready::writable());
+                    interest.add(Interest::WRITABLE);
                 }
                 // Reregister with new interest.
                 // self.pty
-                    // .reregister(&self.poll, interest, poll_opts)
-                    // .unwrap();
+                // .reregister(&self.poll, interest, poll_opts)
+                // .unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.deregister(&self.rx);
-            let _ = self.pty.deregister(&self.poll);
+            let _ = self.poll.registry().deregister(&mut self.stream);
+            let _ = self.pty.deregister(&self.poll.registry());
 
             (self, state)
 
