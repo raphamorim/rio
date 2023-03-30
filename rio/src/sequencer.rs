@@ -1,31 +1,16 @@
+use crate::event::EventP;
+use crate::event::EventProxy;
 use crate::term::Term;
-use crate::Event;
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::error::Error;
-use std::fmt::Write;
-use std::fmt::{self, Debug, Formatter};
-use std::fs::File;
-use std::io::{self, ErrorKind};
-use std::io::{BufReader, Read};
-use std::marker::Send;
-use std::rc::Rc;
+
 use crate::scheduler::Scheduler;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Instant;
-use teletypewriter::Pty;
-use winit::event::Event::WindowEvent;
-use winit::event_loop::{
-    ControlFlow, DeviceEventFilter, EventLoop, EventLoopProxy, EventLoopWindowTarget,
-};
+use std::rc::Rc;
+
+use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 // https://vt100.net/emu/dec_ansi_parser
 // use mio::net::UnixStream;
-use mio::{self, Events};
-use mio_extras::channel::{self, Receiver, Sender};
 pub struct Sequencer {
     // term: Term,
     config: Rc<config::Config>,
@@ -43,16 +28,17 @@ impl Sequencer {
 
     pub async fn run(
         &mut self,
-        mut event_loop: EventLoop<Event>,
+        mut event_loop: EventLoop<EventP>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
+        let event_proxy = EventProxy::new(proxy.clone());
         let mut scheduler = Scheduler::new(proxy.clone());
         let window_builder = crate::window::create_window_builder(
             "Rio",
             (self.config.width, self.config.height),
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
-        let mut term = Term::new(&winit_window, &self.config).await?;
+        let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
 
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
@@ -201,4 +187,3 @@ impl Sequencer {
         // }
     }
 }
-

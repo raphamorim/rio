@@ -19,17 +19,17 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
-use crate::dimensions::Dimensions;
-use crate::pos::CharsetIndex;
-use crate::row::Row;
-use crate::square::Square;
-use crate::storage::Storage;
 use attr::*;
 use bitflags::bitflags;
 use colors::AnsiColor;
+use dimensions::Dimensions;
+use pos::CharsetIndex;
 use pos::{Column, Cursor, Line, Pos};
+use row::Row;
+use square::Square;
 use std::ops::{Index, IndexMut, Range};
 use std::ptr;
+use storage::Storage;
 use unicode_width::UnicodeWidthChar;
 
 pub type NamedColor = colors::NamedColor;
@@ -588,10 +588,11 @@ impl<U> Crosswords<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::VoidListener;
 
     #[test]
     fn scroll_up() {
-        let mut cw = Crosswords::new(1, 10);
+        let mut cw = Crosswords::new(1, 10, VoidListener {});
         for i in 0..10 {
             cw[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -622,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_linefeed() {
-        let mut cw: Crosswords = Crosswords::new(1, 1);
+        let mut cw: Crosswords<VoidListener> = Crosswords::new(1, 1, VoidListener {});
         assert_eq!(cw.rows(), 1);
 
         cw.linefeed();
@@ -631,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_linefeed_moving_cursor() {
-        let mut cw: Crosswords = Crosswords::new(1, 3);
+        let mut cw: Crosswords<VoidListener> = Crosswords::new(1, 3, VoidListener {});
         let (col, row) = cw.cursor();
         assert_eq!(col, 0);
         assert_eq!(row, 0);
@@ -655,7 +656,8 @@ mod tests {
     fn test_input() {
         let columns: usize = 5;
         let rows: usize = 10;
-        let mut cw: Crosswords = Crosswords::new(columns, rows);
+        let mut cw: Crosswords<VoidListener> =
+            Crosswords::new(columns, rows, VoidListener {});
         for i in 0..4 {
             cw[Line(0)][Column(i)].c = i as u8 as char;
         }

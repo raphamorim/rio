@@ -1,5 +1,5 @@
-use crate::Crosswords;
-use crate::{Column, Line};
+use crate::crosswords::Crosswords;
+use crate::crosswords::{Column, Line};
 
 pub trait Dimensions {
     /// Total number of lines in the buffer, this includes scrollback and visible lines.

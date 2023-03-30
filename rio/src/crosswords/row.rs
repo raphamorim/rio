@@ -1,5 +1,5 @@
-use crate::square::{CrosswordsSquare, ResetDiscriminant};
-use crate::Column;
+use crate::crosswords::square::{CrosswordsSquare, ResetDiscriminant};
+use crate::crosswords::Column;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::{ptr, slice};

@@ -1,10 +1,11 @@
+mod crosswords;
 mod event;
 mod performer;
-mod sequencer;
 mod scheduler;
+mod sequencer;
 mod term;
 mod window;
-use crate::event::Event;
+use crate::event::EventP;
 use crate::sequencer::Sequencer;
 
 pub fn setup_environment_variables(config: &config::Config) {
@@ -36,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_environment_variables(&config);
 
     let window_event_loop =
-        winit::event_loop::EventLoopBuilder::<Event>::with_user_event().build();
+        winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();
     let mut sequencer = Sequencer::new(config);
     let result = sequencer.run(window_event_loop);
 
