@@ -1,18 +1,20 @@
+mod control;
+pub mod handler;
+
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
-use crate::event::EventP;
-use crate::event::EventProxy;
-use crate::event::Msg;
+use mio::unix::pipe::{Receiver, Sender};
+use std::os::fd::AsRawFd;
+
+use crate::event::{Msg, RioEvent};
 use mio::{Events, Interest, Token};
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::fs::File;
+
 use std::io::{self, Read};
 use std::sync::Arc;
 use std::time::Instant;
-use vte::Parser;
-use winit::event_loop::EventLoopProxy;
 
 use std::io::{ErrorKind, Write};
 
@@ -20,22 +22,23 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
-pub struct Machine<T: teletypewriter::ProcessReadWrite, U: EventListener> {
-    // handler: Performer,
-    // parser: Parser,
+pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
+    sender: Sender,
+    receiver: Receiver,
     pty: T,
     stream: mio::net::TcpStream,
     events: mio::Events,
     poll: mio::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
+    hold: bool,
 }
 
 #[derive(Default)]
 pub struct State {
     write_list: VecDeque<Cow<'static, [u8]>>,
     writing: Option<Writing>,
-    parser: Parser,
+    parser: handler::ParserProcessor,
 }
 
 impl State {
@@ -99,7 +102,7 @@ impl Writing {
 
 impl<T, U> Machine<T, U>
 where
-    T: teletypewriter::ProcessReadWrite + Send + mio::event::Source + 'static,
+    T: teletypewriter::EventedPty + Send + mio::event::Source + 'static,
     U: EventListener + Send + 'static,
 {
     pub fn new(
@@ -107,52 +110,27 @@ where
         pty: T,
         event_proxy: U,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
+        let (sender, receiver) = mio::unix::pipe::new()?;
         let poll = mio::Poll::new()?;
         let addr: std::net::SocketAddr = "127.0.0.1:0".parse()?;
         let server = mio::net::TcpListener::bind(addr)?;
-        let events = mio::Events::with_capacity(1024);
+        let events = mio::Events::with_capacity(3);
         let stream = mio::net::TcpStream::connect(server.local_addr()?)?;
         Ok(Machine {
+            sender,
+            receiver,
             poll,
             events,
             stream,
             pty,
             terminal,
             event_proxy,
+            hold: true,
         })
     }
 
-    // #[inline]
-    // pub fn sync_timeout(&self) -> Option<&Instant> {
-    //     self.state.sync_state.timeout.as_ref()
-    // }
-
-    // /// Number of bytes in the synchronization buffer.
-    // #[inline]
-    // pub fn sync_bytes_count(&self) -> usize {
-    //     self.state.sync_state.buffer.len()
-    // }
-
-    // pub fn process(&mut self, process: Pty) {
-    //     let reader = BufReader::new(process);
-    //     let handler = Performer::new(visible_rows_arc, columns, rows);
-    //     let parser = Parser::new();
-    //     for byte in reader.bytes() {
-    //         parser
-    //             .advance(&mut handler, *byte.as_ref().unwrap());
-    //     }
-    // }
-
     #[inline]
-    fn pty_read<X>(
-        &mut self,
-        state: &mut State,
-        buf: &mut [u8],
-        mut writer: Option<&mut X>,
-    ) -> io::Result<()>
-    where
-        X: Write,
-    {
+    fn pty_read(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<()> {
         let mut unprocessed = 0;
         let mut processed = 0;
 
@@ -190,14 +168,9 @@ where
                 }),
             };
 
-            // Write a copy of the bytes to the ref test file.
-            if let Some(writer) = &mut writer {
-                writer.write_all(&buf[..unprocessed]).unwrap();
-            }
-
             // Parse the incoming bytes.
             for byte in &buf[..unprocessed] {
-                // state.parser.advance(&mut **terminal, *byte);
+                state.parser.advance(&mut **terminal, *byte);
             }
 
             processed += unprocessed;
@@ -210,21 +183,41 @@ where
         }
 
         // Queue terminal redraw unless all processed bytes were synchronized.
-        // if state.parser.sync_bytes_count() < processed && processed > 0 {
-        // self.event_proxy.send_event(Event::Wakeup);
-        // }
+        if state.parser.sync_bytes_count() < processed && processed > 0 {
+            self.event_proxy.send_event(RioEvent::Wakeup);
+        }
 
         Ok(())
     }
 
     fn drain_recv_channel(&mut self, state: &mut State) -> bool {
-        // while let Ok(msg) = self.stream.try_recv() {
+        // while let Ok(msg) = self.receiver.try_recv() {
         //     match msg {
         //         Msg::Input(input) => state.write_list.push_back(input),
         //         // Msg::Resize(window_size) => self.pty.on_resize(window_size),
         //         Msg::Shutdown => return false,
         //     }
         // }
+
+        // Read from the receiver using a direct libc call
+        let mut buf = [0; 512];
+        let n = self
+            .receiver
+            .try_io(|| {
+                let buf_ptr = &mut buf as *mut _ as *mut _;
+                let res =
+                    unsafe { libc::read(self.receiver.as_raw_fd(), buf_ptr, buf.len()) };
+                if res != -1 {
+                    Ok(res as usize)
+                } else {
+                    // If EAGAIN or EWOULDBLOCK is set by libc::read, the closure
+                    // should return `WouldBlock` error.
+                    Err(io::Error::last_os_error())
+                }
+            })
+            .unwrap_or(0);
+
+        eprintln!("read {} bytes", n);
 
         true
     }
@@ -238,7 +231,7 @@ where
 
         self.poll
             .registry()
-            .reregister(&mut self.stream, token, Interest::READABLE)
+            .reregister(&mut self.receiver, token, Interest::READABLE)
             .unwrap();
 
         true
@@ -277,17 +270,20 @@ where
         Ok(())
     }
 
+    pub fn channel(&self) -> i32 {
+        self.sender.as_raw_fd()
+    }
+
     pub fn spawn(mut self) {
         tokio::spawn(async move {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
             let mut tokens = Token(0);
-            // let channel_token = tokens.next().unwrap();
             let register = self
                 .poll
                 .registry()
-                .register(&mut self.stream, tokens, Interest::READABLE)
+                .register(&mut self.receiver, tokens, Interest::READABLE)
                 .unwrap();
 
             // Register TTY through EventedRW interface.
@@ -296,101 +292,101 @@ where
                 .unwrap();
 
             let mut events = Events::with_capacity(1024);
-
-            // let mut pipe = None;
+            let mut channel_token = 0;
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
-                // let sync_timeout = state.parser.sync_timeout();
-                // let timeout =
-                // sync_timeout.map(|st| st.saturating_duration_since(Instant::now()));
+                let sync_timeout = state.parser.sync_timeout();
+                let timeout =
+                    sync_timeout.map(|st| st.saturating_duration_since(Instant::now()));
 
-                // if let Err(err) = self.poll.poll(&mut events, timeout) {
-                //     match err.kind() {
-                //         ErrorKind::Interrupted => continue,
-                //         _ => panic!("EventLoop polling error: {err:?}"),
-                //     }
-                // }
+                if let Err(err) = self.poll.poll(&mut events, timeout) {
+                    match err.kind() {
+                        ErrorKind::Interrupted => continue,
+                        _ => panic!("EventLoop polling error: {err:?}"),
+                    }
+                }
 
                 // Handle synchronized update timeout.
                 if events.is_empty() {
-                    // state.parser.stop_sync(&mut *self.terminal.lock());
-                    // self.event_proxy.send_event(Event::Wakeup);
+                    state.parser.stop_sync(&mut *self.terminal.lock());
+                    self.event_proxy.send_event(RioEvent::Wakeup);
                     continue;
                 }
 
                 for event in events.iter() {
-                    println!("{:?}", event);
-                    break 'event_loop;
-                    // match event.token() {
-                    // token if token == channel_token => {
-                    //     if !self.channel_event(channel_token, &mut state) {
-                    //         break 'event_loop;
-                    //     }
-                    // }
+                    println!(
+                        "{:?} {:?}",
+                        event,
+                        event.token() == self.pty.child_event_token()
+                    );
+                    match event.token() {
+                        // token if token == mio::Token(channel_token) => {
+                        //     if !self.channel_event(mio::Token(channel_token), &mut state)
+                        //     {
+                        //         println!("quebrou");
+                        //         break 'event_loop;
+                        //     }
+                        // }
+                        token if token == self.pty.child_event_token() => {
+                            println!("pty");
+                            // if let Some(pty::ChildEvent::Exited) =
+                            //     self.pty.next_child_event()
+                            // {
+                            if self.hold {
+                                // With hold enabled, make sure the PTY is drained.
+                                let _ = self.pty_read(&mut state, &mut buf);
+                            } else {
+                                // Without hold, shutdown the terminal.
+                                // self.terminal.lock().exit();
+                            }
 
-                    // token if token == self.pty.child_event_token() => {
-                    //     if let Some(tty::ChildEvent::Exited) =
-                    //         self.pty.next_child_event()
-                    //     {
-                    //         if self.hold {
-                    //             // With hold enabled, make sure the PTY is drained.
-                    //             let _ = self.pty_read(
-                    //                 &mut state,
-                    //                 &mut buf,
-                    //                 pipe.as_mut(),
-                    //             );
-                    //         } else {
-                    //             // Without hold, shutdown the terminal.
-                    //             self.terminal.lock().exit();
-                    //         }
+                            self.event_proxy.send_event(RioEvent::Wakeup);
+                            break 'event_loop;
+                            // }
+                        }
 
-                    //         self.event_proxy.send_event(Event::Wakeup);
-                    //         break 'event_loop;
-                    //     }
-                    // }
+                        // token
+                        //     if token == self.pty.read_token()
+                        //         || token == self.pty.write_token() =>
+                        // {
+                        //     #[cfg(unix)]
+                        //     if UnixReady::from(event.readiness()).is_hup() {
+                        //         // Don't try to do I/O on a dead PTY.
+                        //         continue;
+                        //     }
 
-                    // token
-                    //     if token == self.pty.read_token()
-                    //         || token == self.pty.write_token() =>
-                    // {
-                    //     #[cfg(unix)]
-                    //     if UnixReady::from(event.readiness()).is_hup() {
-                    //         // Don't try to do I/O on a dead PTY.
-                    //         continue;
-                    //     }
+                        //     if event.readiness().is_readable() {
+                        //         if let Err(err) =
+                        //             self.pty_read(&mut state, &mut buf, pipe.as_mut())
+                        //         {
+                        //             // On Linux, a `read` on the master side of a PTY can fail
+                        //             // with `EIO` if the client side hangs up.  In that case,
+                        //             // just loop back round for the inevitable `Exited` event.
+                        //             // This sucks, but checking the process is either racy or
+                        //             // blocking.
+                        //             #[cfg(target_os = "linux")]
+                        //             if err.raw_os_error() == Some(libc::EIO) {
+                        //                 continue;
+                        //             }
 
-                    //     if event.readiness().is_readable() {
-                    //         if let Err(err) =
-                    //             self.pty_read(&mut state, &mut buf, pipe.as_mut())
-                    //         {
-                    //             // On Linux, a `read` on the master side of a PTY can fail
-                    //             // with `EIO` if the client side hangs up.  In that case,
-                    //             // just loop back round for the inevitable `Exited` event.
-                    //             // This sucks, but checking the process is either racy or
-                    //             // blocking.
-                    //             #[cfg(target_os = "linux")]
-                    //             if err.raw_os_error() == Some(libc::EIO) {
-                    //                 continue;
-                    //             }
+                        //             error!(
+                        //                 "Error reading from PTY in event loop: {}",
+                        //                 err
+                        //             );
+                        //             break 'event_loop;
+                        //         }
+                        //     }
 
-                    //             error!(
-                    //                 "Error reading from PTY in event loop: {}",
-                    //                 err
-                    //             );
-                    //             break 'event_loop;
-                    //         }
-                    //     }
-
-                    //     if event.readiness().is_writable() {
-                    //         if let Err(err) = self.pty_write(&mut state) {
-                    //             error!("Error writing to PTY in event loop: {}", err);
-                    //             break 'event_loop;
-                    //         }
-                    //     }
-                    // }
-                    //     _ => (),
-                    // }
+                        //     if event.readiness().is_writable() {
+                        //         if let Err(err) = self.pty_write(&mut state) {
+                        //             error!("Error writing to PTY in event loop: {}", err);
+                        //             break 'event_loop;
+                        //         }
+                        //     }
+                        // }
+                        _ => (),
+                    }
                 }
 
                 // Register write interest if necessary.
@@ -405,18 +401,10 @@ where
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.registry().deregister(&mut self.stream);
+            let _ = self.poll.registry().deregister(&mut self.receiver);
             let _ = self.pty.deregister(&self.poll.registry());
 
             (self, state)
-
-            // let reader = BufReader::new(self.pty);
-            // let handler = Performer::new(columns, rows);
-            // let parser = Parser::new();
-            // for byte in reader.bytes() {
-            //     parser
-            //         .advance(&mut handler, *byte.as_ref().unwrap());
-            // }
         });
     }
 }

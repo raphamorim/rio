@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
-use teletypewriter::{create_pty, Pty};
+use teletypewriter::create_pty;
 
 struct RenderContext {
     device: wgpu::Device,
@@ -41,7 +41,6 @@ impl RenderContext {
 }
 
 pub struct Term {
-    machine: Machine<Pty, EventProxy>,
     render_context: RenderContext,
 }
 
@@ -99,20 +98,20 @@ impl Term {
         render_context.configure(size);
 
         let event_proxy_clone = event_proxy.clone();
+        let event_proxy_clone_2 = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
             Arc::new(FairMutex::new(Crosswords::new(80, 25, event_proxy)));
 
         let machine = Machine::new(terminal, pty, event_proxy_clone)?;
+
+        machine.spawn();
         // terminal: Arc<FairMutex<Crosswords<U>>>, pty: T, event_proxy: U
 
-        Ok(Term {
-            render_context,
-            machine,
-        })
+        Ok(Term { render_context })
     }
 
-    pub fn configure(&mut self) {
-        //
+    pub fn configure(&self) {
+        // self.machine.spawn();
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {

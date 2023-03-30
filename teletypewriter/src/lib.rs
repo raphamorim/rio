@@ -4,6 +4,8 @@ use mio::unix::SourceFd;
 use mio::Interest;
 use mio::Registry;
 use mio::Token;
+use signal_hook::consts as sigconsts;
+use signal_hook_mio::v0_8::Signals;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
@@ -13,7 +15,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
-// use signal_hook_mio::v0_8::Signals;
 
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -46,7 +47,7 @@ pub struct Pty {
     token: mio::Token,
     #[allow(dead_code)]
     signals_token: mio::Token,
-    // signals: Signals,
+    signals: Signals,
 }
 
 impl Deref for Pty {
@@ -313,10 +314,10 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
                 pid: Arc::new(id),
             };
 
-            // let mut signals = Signals::new([signal_hook_mio::consts::SIGWINCH])?;
+            let mut signals = Signals::new([sigconsts::SIGWINCH]).unwrap();
             Pty {
                 child,
-                // signals,
+                signals,
                 file: unsafe { File::from_raw_fd(main) },
                 token: mio::Token::from(mio::Token(0)),
                 signals_token: mio::Token::from(mio::Token(0)),
@@ -376,6 +377,46 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
     std::str::from_utf8(&current_process_name)
         .unwrap_or("zsh")
         .to_string()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ChildEvent {
+    /// Indicates the child has exited.
+    Exited,
+}
+
+pub trait EventedPty: ProcessReadWrite {
+    fn child_event_token(&self) -> mio::Token;
+
+    /// Tries to retrieve an event.
+    ///
+    /// Returns `Some(event)` on success, or `None` if there are no events to retrieve.
+    fn next_child_event(&mut self) -> Option<ChildEvent>;
+}
+
+impl EventedPty for Pty {
+    #[inline]
+    fn next_child_event(&mut self) -> Option<ChildEvent> {
+        self.signals.pending().next().and_then(|signal| {
+            if signal != sigconsts::SIGCHLD {
+                return None;
+            }
+
+            // match self.child.try_wait() {
+            //     Err(e) => {
+            //         std::process::exit(1);
+            //     },
+            //     Ok(None) => None,
+            None
+            // Ok(_) => Some(ChildEvent::Exited),
+            // }
+        })
+    }
+
+    #[inline]
+    fn child_event_token(&self) -> mio::Token {
+        self.signals_token
+    }
 }
 
 /// Unsafe

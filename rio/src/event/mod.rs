@@ -1,4 +1,5 @@
 pub mod sync;
+use mio::unix::pipe::Sender;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -26,7 +27,7 @@ pub struct WindowSize {
 }
 
 #[derive(Clone)]
-pub enum Event {
+pub enum RioEvent {
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
 
@@ -70,29 +71,29 @@ pub enum Event {
     Exit,
 }
 
-impl Debug for Event {
+impl Debug for RioEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            // Event::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
-            // Event::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
-            Event::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
-            // Event::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
-            Event::PtyWrite(text) => write!(f, "PtyWrite({text})"),
-            Event::Title(title) => write!(f, "Title({title})"),
-            Event::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
-            Event::MouseCursorDirty => write!(f, "MouseCursorDirty"),
-            Event::ResetTitle => write!(f, "ResetTitle"),
-            Event::Wakeup => write!(f, "Wakeup"),
-            Event::Bell => write!(f, "Bell"),
-            Event::Exit => write!(f, "Exit"),
+            // RioEvent::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
+            // RioEvent::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
+            RioEvent::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
+            // RioEvent::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
+            RioEvent::PtyWrite(text) => write!(f, "PtyWrite({text})"),
+            RioEvent::Title(title) => write!(f, "Title({title})"),
+            RioEvent::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
+            RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
+            RioEvent::ResetTitle => write!(f, "ResetTitle"),
+            RioEvent::Wakeup => write!(f, "Wakeup"),
+            RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::Exit => write!(f, "Exit"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum EventType {
+pub enum RioEventType {
     ScaleFactorChanged(f64, (u32, u32)),
-    Terminal(Event),
+    Rio(RioEvent),
     // ConfigReload(PathBuf),
     // Message(Message),
     // Scroll(Scroll),
@@ -102,20 +103,20 @@ pub enum EventType {
     Frame,
 }
 
-impl From<Event> for EventType {
-    fn from(event: Event) -> Self {
-        Self::Terminal(event)
+impl From<RioEvent> for RioEventType {
+    fn from(rio_event: RioEvent) -> Self {
+        Self::Rio(rio_event)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct EventP {
     /// Event payload.
-    payload: EventType,
+    pub payload: RioEventType,
 }
 
 impl EventP {
-    pub fn new(payload: EventType) -> Self {
+    pub fn new(payload: RioEventType) -> Self {
         Self { payload }
     }
 }
@@ -132,10 +133,11 @@ pub trait OnResize {
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
-    fn send_event(&self, _event: crate::event::Event) {}
+    fn send_event(&self, _event: RioEvent) {}
 }
 
 // pub struct Notifier(pub Sender<Msg>);
+pub struct Notifier(pub Sender);
 
 /// Byte sequences are sent to a `Notify` in response to some events.
 pub trait Notify {
@@ -145,26 +147,26 @@ pub trait Notify {
     fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
 }
 
-// impl Notify for Notifier {
-//     fn notify<B>(&self, bytes: B)
-//     where
-//         B: Into<Cow<'static, [u8]>>,
-//     {
-//         let bytes = bytes.into();
-//         // terminal hangs if we send 0 bytes through.
-//         if bytes.len() == 0 {
-//             return;
-//         }
+impl Notify for Notifier {
+    fn notify<B>(&self, bytes: B)
+    where
+        B: Into<Cow<'static, [u8]>>,
+    {
+        let bytes = bytes.into();
+        // terminal hangs if we send 0 bytes through.
+        if bytes.len() == 0 {
+            return;
+        }
 
-//         let _ = self.0.send(Msg::Input(bytes));
-//     }
-// }
+        // let _ = self.0.send(Msg::Input(bytes));
+    }
+}
 
-// impl OnResize for Notifier {
-//     fn on_resize(&mut self, window_size: WindowSize) {
-//         let _ = self.0.send(Msg::Resize(window_size));
-//     }
-// }
+impl OnResize for Notifier {
+    fn on_resize(&mut self, window_size: WindowSize) {
+        // let _ = self.0.send(Msg::Resize(window_size));
+    }
+}
 
 pub struct VoidListener;
 
@@ -181,13 +183,13 @@ impl EventProxy {
     }
 
     /// Send an event to the event loop.
-    pub fn send_event(&self, event: crate::event::EventType) {
+    pub fn send_event(&self, event: RioEventType) {
         let _ = self.proxy.send_event(EventP::new(event));
     }
 }
 
 impl EventListener for EventProxy {
-    fn send_event(&self, event: crate::event::Event) {
+    fn send_event(&self, event: RioEvent) {
         let _ = self.proxy.send_event(EventP::new(event.into()));
     }
 }
