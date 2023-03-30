@@ -32,14 +32,13 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let mut scheduler = Scheduler::new(proxy.clone());
+        let scheduler = Scheduler::new(proxy.clone());
         let window_builder = crate::window::create_window_builder(
             "Rio",
             (self.config.width, self.config.height),
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
         let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
-
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             // if Self::skip_event(&event) {
@@ -47,6 +46,20 @@ impl Sequencer {
             // }
 
             match event {
+                winit::event::Event::UserEvent(EventP { payload, .. }) => match payload {
+                    crate::event::RioEventType::Rio(event) => match event {
+                        crate::event::RioEvent::Wakeup => {
+                            println!("renderiza td");
+                        }
+                        crate::event::RioEvent::Title(title) => {
+                            // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
+                            // self.ctx.window().set_title(title);
+                            // }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                },
                 winit::event::Event::Resumed => {
                     term.configure();
                     // Should render once the loop is resumed for first time
@@ -174,8 +187,8 @@ impl Sequencer {
                     // let next_frame_time =
                     // std::time::Instant::now() + std::time::Duration::from_nanos(500_000);
                     // *control_flow = winit::event_loop::ControlFlow::WaitUntil(next_frame_time);
-                    // *control_flow = event_loop::ControlFlow::Wait;
-                    return;
+                    *control_flow = winit::event_loop::ControlFlow::Wait;
+                    // return;
                 }
             }
         });

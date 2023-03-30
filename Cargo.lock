@@ -1323,6 +1323,7 @@ dependencies = [
  "config",
  "dirs",
  "image",
+ "libc",
  "mio",
  "parking_lot",
  "renderer",
@@ -1526,6 +1527,7 @@ dependencies = [
  "dirs",
  "libc",
  "mio",
+ "signal-hook",
  "signal-hook-mio",
 ]
 

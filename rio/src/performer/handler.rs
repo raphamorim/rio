@@ -1,45 +1,403 @@
-mod control;
+use crate::crosswords::pos::CharsetIndex;
+use crate::crosswords::pos::Column;
+use crate::crosswords::pos::StandardCharset;
+use crate::crosswords::Mode;
+use std::time::{Duration, Instant};
 
+use crate::crosswords::attr::Attr;
+
+use crate::performer::control::C0;
 use colors::{AnsiColor, NamedColor};
-use control::C0;
-use crosswords::{attr::*, Crosswords};
 use std::fmt::Write;
-use std::io::{BufReader, Read};
-use std::sync::Arc;
-use std::sync::Mutex;
-use teletypewriter::Pty;
+
 // https://vt100.net/emu/dec_ansi_parser
-use vte::{Params, ParamsIter, Parser};
+use vte::{Params, ParamsIter};
+
+/// Maximum time before a synchronized update is aborted.
+const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+
+/// Number of bytes in the synchronized update DCS sequence before the passthrough parameters.
+const SYNC_ESCAPE_START_LEN: usize = 5;
+
+/// Start of the DCS sequence for beginning synchronized updates.
+const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+    [b'\x1b', b'P', b'=', b'1', b's'];
+
+/// Start of the DCS sequence for terminating synchronized updates.
+const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+    [b'\x1b', b'P', b'=', b'2', b's'];
 
 pub trait Handler {
+    /// OSC to set window title.
+    fn set_title(&mut self, _: Option<String>) {}
+
+    /// Set the cursor style.
+    // fn set_cursor_style(&mut self, _: Option<CursorStyle>) {}
+
+    /// Set the cursor shape.
+    // fn set_cursor_shape(&mut self, _shape: CursorShape) {}
+
     /// A character to be displayed.
     fn input(&mut self, _c: char) {}
+
+    /// Set cursor to position.
+    // fn goto(&mut self, _: Line, _: Column) {}
+
+    /// Set cursor to specific row.
+    // fn goto_line(&mut self, _: Line) {}
+
+    /// Set cursor to specific column.
+    // fn goto_col(&mut self, _: Column) {}
+
+    /// Insert blank characters in current line starting from cursor.
+    fn insert_blank(&mut self, _: usize) {}
+
+    /// Move cursor up `rows`.
+    fn move_up(&mut self, _: usize) {}
+
+    /// Move cursor down `rows`.
+    fn move_down(&mut self, _: usize) {}
+
+    /// Identify the terminal (should write back to the pty stream).
+    fn identify_terminal(&mut self, _intermediate: Option<char>) {}
+
+    /// Report device status.
+    fn device_status(&mut self, _: usize) {}
+
+    /// Move cursor forward `cols`.
+    // fn move_forward(&mut self, _: Column) {}
+
+    /// Move cursor backward `cols`.
+    // fn move_backward(&mut self, _: Column) {}
+
+    /// Move cursor down `rows` and set to column 1.
+    fn move_down_and_cr(&mut self, _: usize) {}
+
+    /// Move cursor up `rows` and set to column 1.
+    fn move_up_and_cr(&mut self, _: usize) {}
+
+    /// Put `count` tabs.
+    fn put_tab(&mut self, _count: u16) {}
+
+    /// Backspace `count` characters.
+    fn backspace(&mut self) {}
+
+    /// Carriage return.
+    fn carriage_return(&mut self) {}
+
+    /// Linefeed.
+    fn linefeed(&mut self) {}
+
+    /// Ring the bell.
+    ///
+    /// Hopefully this is never implemented.
+    fn bell(&mut self) {}
+
+    /// Substitute char under cursor.
+    fn substitute(&mut self) {}
+
+    /// Newline.
+    fn newline(&mut self) {}
+
+    /// Set current position as a tabstop.
+    fn set_horizontal_tabstop(&mut self) {}
+
+    /// Scroll up `rows` rows.
+    // fn scroll_up(&mut self, _: usize) {}
+
+    /// Scroll down `rows` rows.
+    fn scroll_down(&mut self, _: usize) {}
+
+    /// Insert `count` blank lines.
+    fn insert_blank_lines(&mut self, _: usize) {}
+
+    /// Delete `count` lines.
+    fn delete_lines(&mut self, _: usize) {}
+
+    /// Erase `count` chars in current line following cursor.
+    ///
+    /// Erase means resetting to the default state (default colors, no content,
+    /// no mode flags).
+    fn erase_chars(&mut self, _: Column) {}
+
+    /// Delete `count` chars.
+    ///
+    /// Deleting a character is like the delete key on the keyboard - everything
+    /// to the right of the deleted things is shifted left.
+    fn delete_chars(&mut self, _: usize) {}
+
+    /// Move backward `count` tabs.
+    fn move_backward_tabs(&mut self, _count: u16) {}
+
+    /// Move forward `count` tabs.
+    fn move_forward_tabs(&mut self, _count: u16) {}
+
+    /// Save current cursor position.
+    fn save_cursor_position(&mut self) {}
+
+    /// Restore cursor position.
+    fn restore_cursor_position(&mut self) {}
+
+    /// Clear current line.
+    fn clear_line(&mut self, _mode: u16) {}
+
+    /// Clear screen.
+    // fn clear_screen(&mut self, _mode: ClearMode) {}
+
+    /// Clear tab stops.
+    // fn clear_tabs(&mut self, _mode: TabulationClearMode) {}
+
+    /// Reset terminal state.
+    fn reset_state(&mut self) {}
+
+    /// Reverse Index.
+    ///
+    /// Move the active position to the same horizontal position on the
+    /// preceding line. If the active position is at the top margin, a scroll
+    /// down is performed.
+    fn reverse_index(&mut self) {}
+
+    /// Set a terminal attribute.
+    fn terminal_attribute(&mut self, _attr: Attr) {}
+
+    /// Set mode.
+    fn set_mode(&mut self, _mode: Mode) {}
+
+    /// Unset mode.
+    fn unset_mode(&mut self, _: Mode) {}
+
+    /// DECSTBM - Set the terminal scrolling region.
+    fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
+
+    /// DECKPAM - Set keypad to applications mode (ESCape instead of digits).
+    fn set_keypad_application_mode(&mut self) {}
+
+    /// DECKPNM - Set keypad to numeric mode (digits instead of ESCape seq).
+    fn unset_keypad_application_mode(&mut self) {}
+
+    /// Set one of the graphic character sets, G0 to G3, as the active charset.
+    ///
+    /// 'Invoke' one of G0 to G3 in the GL area. Also referred to as shift in,
+    /// shift out and locking shift depending on the set being activated.
+    fn set_active_charset(&mut self, _: CharsetIndex) {}
+
+    /// Assign a graphic character set to G0, G1, G2 or G3.
+    ///
+    /// 'Designate' a graphic character set as one of G0 to G3, so that it can
+    /// later be 'invoked' by `set_active_charset`.
+    fn configure_charset(&mut self, _: CharsetIndex, _: StandardCharset) {}
+
+    /// Set an indexed color value.
+    // fn set_color(&mut self, _: usize, _: Rgb) {}
+
+    /// Respond to a color query escape sequence.
+    fn dynamic_color_sequence(&mut self, _: String, _: usize, _: &str) {}
+
+    /// Reset an indexed color to original value.
+    fn reset_color(&mut self, _: usize) {}
+
+    /// Store data into clipboard.
+    fn clipboard_store(&mut self, _: u8, _: &[u8]) {}
+
+    /// Load data from clipboard.
+    fn clipboard_load(&mut self, _: u8, _: &str) {}
+
+    /// Run the decaln routine.
+    fn decaln(&mut self) {}
+
+    /// Push a title onto the stack.
+    fn push_title(&mut self) {}
+
+    /// Pop the last title from the stack.
+    fn pop_title(&mut self) {}
+
+    /// Report text area size in pixels.
+    fn text_area_size_pixels(&mut self) {}
+
+    /// Report text area size in characters.
+    fn text_area_size_chars(&mut self) {}
 }
 
-struct Performer {
-    handler: Crosswords,
+#[derive(Debug, Default)]
+struct ProcessorState {
+    /// Last processed character for repetition.
+    preceding_char: Option<char>,
+
+    /// DCS sequence waiting for termination.
+    dcs: Option<Dcs>,
+
+    /// State for synchronized terminal updates.
+    sync_state: SyncState,
 }
 
-impl Performer {
-    fn new(columns: usize, rows: usize) -> Performer {
-        let crosswords: Crosswords = Crosswords::new(columns, rows);
+/// Maximum number of bytes read in one synchronized update (2MiB).
+const SYNC_BUFFER_SIZE: usize = 0x20_0000;
 
-        Performer {
-            handler: crosswords,
+#[derive(Debug)]
+struct SyncState {
+    /// Expiration time of the synchronized update.
+    timeout: Option<Instant>,
+
+    /// Sync DCS waiting for termination sequence.
+    pending_dcs: Option<Dcs>,
+
+    /// Bytes read during the synchronized update.
+    buffer: Vec<u8>,
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
+            pending_dcs: None,
+            timeout: None,
         }
     }
 }
 
-impl vte::Perform for Performer {
+/// Pending DCS sequence.
+#[derive(Debug)]
+enum Dcs {
+    /// Begin of the synchronized update.
+    SyncStart,
+
+    /// End of the synchronized update.
+    SyncEnd,
+}
+
+#[derive(Default)]
+pub struct ParserProcessor {
+    state: ProcessorState,
+    parser: vte::Parser,
+}
+
+impl ParserProcessor {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Process a new byte from the PTY.
+    #[inline]
+    pub fn advance<H>(&mut self, handler: &mut H, byte: u8)
+    where
+        H: Handler,
+    {
+        if self.state.sync_state.timeout.is_none() {
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, byte);
+        } else {
+            self.advance_sync(handler, byte);
+        }
+    }
+
+    /// End a synchronized update.
+    pub fn stop_sync<H>(&mut self, handler: &mut H)
+    where
+        H: Handler,
+    {
+        // Process all synchronized bytes.
+        for i in 0..self.state.sync_state.buffer.len() {
+            let byte = self.state.sync_state.buffer[i];
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance(&mut performer, byte);
+        }
+
+        // Resetting state after processing makes sure we don't interpret buffered sync escapes.
+        self.state.sync_state.buffer.clear();
+        self.state.sync_state.timeout = None;
+    }
+
+    /// Synchronized update expiration time.
+    #[inline]
+    pub fn sync_timeout(&self) -> Option<&Instant> {
+        self.state.sync_state.timeout.as_ref()
+    }
+
+    /// Number of bytes in the synchronization buffer.
+    #[inline]
+    pub fn sync_bytes_count(&self) -> usize {
+        self.state.sync_state.buffer.len()
+    }
+
+    /// Process a new byte during a synchronized update.
+    #[cold]
+    fn advance_sync<H>(&mut self, handler: &mut H, byte: u8)
+    where
+        H: Handler,
+    {
+        self.state.sync_state.buffer.push(byte);
+
+        // Handle sync DCS escape sequences.
+        match self.state.sync_state.pending_dcs {
+            Some(_) => self.advance_sync_dcs_end(handler, byte),
+            None => self.advance_sync_dcs_start(),
+        }
+    }
+
+    /// Find the start of sync DCS sequences.
+    fn advance_sync_dcs_start(&mut self) {
+        // Get the last few bytes for comparison.
+        let len = self.state.sync_state.buffer.len();
+        let offset = len.saturating_sub(SYNC_ESCAPE_START_LEN);
+        let end = &self.state.sync_state.buffer[offset..];
+
+        // Check for extension/termination of the synchronized update.
+        if end == SYNC_START_ESCAPE_START {
+            self.state.sync_state.pending_dcs = Some(Dcs::SyncStart);
+        } else if end == SYNC_END_ESCAPE_START || len >= SYNC_BUFFER_SIZE - 1 {
+            self.state.sync_state.pending_dcs = Some(Dcs::SyncEnd);
+        }
+    }
+
+    /// Parse the DCS termination sequence for synchronized updates.
+    fn advance_sync_dcs_end<H>(&mut self, handler: &mut H, byte: u8)
+    where
+        H: Handler,
+    {
+        match byte {
+            // Ignore DCS passthrough characters.
+            0x00..=0x17 | 0x19 | 0x1c..=0x7f | 0xa0..=0xff => (),
+            // Cancel the DCS sequence.
+            0x18 | 0x1a | 0x80..=0x9f => self.state.sync_state.pending_dcs = None,
+            // Dispatch on ESC.
+            0x1b => match self.state.sync_state.pending_dcs.take() {
+                Some(Dcs::SyncStart) => {
+                    self.state.sync_state.timeout =
+                        Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
+                }
+                Some(Dcs::SyncEnd) => self.stop_sync(handler),
+                None => (),
+            },
+        }
+    }
+}
+
+struct Performer<'a, H: Handler> {
+    state: &'a mut ProcessorState,
+    handler: &'a mut H,
+}
+
+impl<'a, H: Handler + 'a> Performer<'a, H> {
+    /// Create a performer.
+    #[inline]
+    pub fn new<'b>(
+        state: &'b mut ProcessorState,
+        handler: &'b mut H,
+    ) -> Performer<'b, H> {
+        Performer { state, handler }
+    }
+}
+
+impl<U: Handler> vte::Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
-        // println!("[print] {c:?}");
+        println!("[print] {c:?}");
         self.handler.input(c);
-        // let mut s = self.visible_rows.lock().unwrap();
-        // *s = self.handler.visible_rows();
+        self.state.preceding_char = Some(c);
     }
 
     fn execute(&mut self, byte: u8) {
-        // println!("[execute] {byte:04x}");
+        println!("[execute] {byte:04x}");
 
         match byte {
             C0::HT => self.handler.put_tab(1),
@@ -61,7 +419,29 @@ impl vte::Perform for Performer {
         ignore: bool,
         action: char,
     ) {
+        if ignore || intermediates.len() > 1 {
+            println!("unhandled");
+            return;
+        }
+
+        let mut params_iter = params.iter();
+        let handler = &mut self.handler;
+
+        let mut next_param_or = |default: u16| match params_iter.next() {
+            Some(&[param, ..]) if param != 0 => param,
+            _ => default,
+        };
+
         match (action, intermediates) {
+            ('b', []) => {
+                if let Some(c) = self.state.preceding_char {
+                    for _ in 0..next_param_or(1) {
+                        handler.input(c);
+                    }
+                } else {
+                    println!("tried to repeat with no preceding char");
+                }
+            }
             ('s', [b'=']) => {
                 // Start a synchronized update. The end is handled with a separate parser.
                 if params.iter().next().map_or(false, |param| param[0] == 1) {
@@ -82,8 +462,16 @@ impl vte::Perform for Performer {
         // println!("[put] {byte:02x}");
     }
 
+    #[inline]
     fn unhook(&mut self) {
-        // println!("[unhook]");
+        match self.state.dcs {
+            Some(Dcs::SyncStart) => {
+                self.state.sync_state.timeout =
+                    Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
+            }
+            Some(Dcs::SyncEnd) => (),
+            _ => println!("[unhandled unhook]"),
+        }
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
@@ -119,8 +507,7 @@ impl vte::Perform for Performer {
                         .trim()
                         .to_owned();
                     self.handler.set_title(Some(title));
-                    // println!("{:?} title", Some(title));
-                    // return;
+                    return;
                 }
                 unhandled(params);
             }

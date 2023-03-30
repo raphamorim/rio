@@ -12,6 +12,7 @@ description = "Rio termina app"
 wgpu = { workspace = true }
 tokio = { version = "1.26.0", features = ["full"] }
 winit = "0.28.3"
+libc = "0.2.140"
 image = { version = "0.24.5", default-features = false, features = ["ico"] }
 bytemuck = { workspace = true }
 renderer = { path = "../renderer" }
