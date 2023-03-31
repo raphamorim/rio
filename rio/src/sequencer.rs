@@ -39,6 +39,7 @@ impl Sequencer {
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
         let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
+        term.configure();
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             // if Self::skip_event(&event) {
@@ -50,6 +51,7 @@ impl Sequencer {
                     crate::event::RioEventType::Rio(event) => match event {
                         crate::event::RioEvent::Wakeup => {
                             println!("renderiza td");
+                            term.render(self.config.colors.background.1);
                         }
                         crate::event::RioEvent::Title(title) => {
                             // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
@@ -61,10 +63,9 @@ impl Sequencer {
                     _ => {}
                 },
                 winit::event::Event::Resumed => {
-                    term.configure();
                     // Should render once the loop is resumed for first time
                     // Then wait for instructions or user inputs
-                    term.render(self.config.colors.background.1);
+                    // term.render(self.config.colors.background.1);
                 }
 
                 winit::event::Event::WindowEvent {

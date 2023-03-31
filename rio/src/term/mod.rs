@@ -2,6 +2,7 @@ use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
 use crate::performer::Machine;
+use crate::renderer::{Renderer, RendererStyles};
 use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
@@ -15,9 +16,59 @@ struct RenderContext {
     adapter: wgpu::Adapter,
     queue: wgpu::Queue,
     staging_belt: wgpu::util::StagingBelt,
+    renderer: Renderer
 }
 
 impl RenderContext {
+    pub fn new(
+            device: wgpu::Device,
+            device_copy: wgpu::Device,
+            scale: f32,
+            queue: wgpu::Queue,
+            adapter: wgpu::Adapter,
+            surface: wgpu::Surface,
+            instance: wgpu::Instance,
+            staging_belt: wgpu::util::StagingBelt,
+            config: &Rc<config::Config>,
+            width: u32,
+            height: u32) -> RenderContext {
+        let caps = surface.get_capabilities(&adapter);
+        let formats = caps.formats;
+        let format = *formats.last().expect("No supported formats for surface");
+        let alpha_modes = caps.alpha_modes;
+        let alpha_mode = alpha_modes[0];
+
+        surface.configure(
+            &device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format,
+                width: width,
+                height: height,
+                view_formats: vec![],
+                alpha_mode,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
+
+        let renderer_styles = RendererStyles::new(
+            scale,
+            width,
+            height,
+            config.style.font_size,
+        );
+        let renderer = Renderer::new(device_copy, format, config, renderer_styles).expect("Create renderer");
+        RenderContext {
+            device,
+            queue,
+            adapter,
+            surface,
+            instance,
+            staging_belt,
+            renderer
+        }
+    }
+
     pub fn configure(&self, size: winit::dpi::PhysicalSize<u32>) {
         let caps = self.surface.get_capabilities(&self.adapter);
         let formats = caps.formats;
@@ -42,6 +93,7 @@ impl RenderContext {
 
 pub struct Term {
     render_context: RenderContext,
+    terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
 }
 
 impl Term {
@@ -82,32 +134,41 @@ impl Term {
         })
         .await;
 
-        let staging_belt = wgpu::util::StagingBelt::new(64);
+        let (device_copy, queue_copy) = (async {
+            adapter
+                .request_device(&wgpu::DeviceDescriptor::default(), None)
+                .await
+                .expect("Request device")
+        })
+        .await;
 
-        let render_context = RenderContext {
+        let staging_belt = wgpu::util::StagingBelt::new(1024);
+
+        let scale = winit_window.scale_factor() as f32;
+        let size = winit_window.inner_size();
+
+        let render_context = RenderContext::new(
             device,
+            device_copy,
+            scale,
             queue,
             adapter,
             surface,
             instance,
             staging_belt,
-        };
-
-        let size = winit_window.inner_size();
-        // let scale = winit_window.scale_factor() as f32;
-        render_context.configure(size);
+            config,
+            size.width,
+            size.height,
+        );
 
         let event_proxy_clone = event_proxy.clone();
-        let event_proxy_clone_2 = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
-            Arc::new(FairMutex::new(Crosswords::new(80, 25, event_proxy)));
+            Arc::new(FairMutex::new(Crosswords::new(config.columns.into(), config.rows.into(), event_proxy)));
 
-        let machine = Machine::new(terminal, pty, event_proxy_clone)?;
-
+        let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
         machine.spawn();
-        // terminal: Arc<FairMutex<Crosswords<U>>>, pty: T, event_proxy: U
 
-        Ok(Term { render_context })
+        Ok(Term { render_context, terminal })
     }
 
     pub fn configure(&self) {
@@ -149,20 +210,22 @@ impl Term {
             depth_stencil_attachment: None,
         });
 
-        // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
-        // self.renderer
-        //     .term(self.visible_rows_arc.lock().unwrap().to_vec());
+        let mut terminal = self.terminal.lock();
+        let visible_rows = terminal.visible_rows();
+        // std::sync::Mutex::unlock(terminal);
 
-        // self.renderer
-        //     .brush
-        //     .draw_queued(
-        //         &self.device,
-        //         &mut self.staging_belt,
-        //         &mut encoder,
-        //         view,
-        //         (self.size.width, self.size.height),
-        //     )
-        //     .expect("Draw queued");
+        // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
+        self.render_context.renderer
+            .term(visible_rows);
+
+        // drop(terminal);
+
+        self.render_context.renderer.draw_queued(
+            &self.render_context.device,
+            &mut self.render_context.staging_belt,
+            &mut encoder,
+            view,
+        );
 
         self.render_context.staging_belt.finish();
         self.render_context.queue.submit(Some(encoder.finish()));

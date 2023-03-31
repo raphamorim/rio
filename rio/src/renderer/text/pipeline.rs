@@ -1,6 +1,6 @@
 mod cache;
 
-use crate::text::Region;
+use crate::renderer::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
 
