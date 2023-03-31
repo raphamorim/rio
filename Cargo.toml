@@ -3,7 +3,6 @@ members = [
   "teletypewriter",
   "colors",
   "config",
-  "renderer",
   "rio"
 ]
 resolver = "2"

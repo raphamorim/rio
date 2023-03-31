@@ -38,6 +38,12 @@ extern "C" {
         winsize: *const Winsize,
     ) -> libc::pid_t;
 
+    fn waitpid(
+        pid: libc::pid_t,
+        status: *mut libc::c_int,
+        options: libc::c_int
+    ) -> libc::pid_t;
+
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
@@ -84,8 +90,14 @@ impl io::Read for Pty {
                 buf.len() as libc::size_t,
             )
         } {
-            n if n >= 0 => Ok(n as usize),
-            _ => Err(io::Error::last_os_error()),
+            n if n >= 0 => {
+                println!("pegou");
+                Ok(n as usize)
+            },
+            _ => {
+                println!("quebrou");
+                Err(io::Error::last_os_error())
+            },
         }
     }
 }
@@ -312,9 +324,19 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
                 id: Arc::new(main),
                 ptsname,
                 pid: Arc::new(id),
-            };
+            }; 
 
-            let mut signals = Signals::new([sigconsts::SIGWINCH]).unwrap();
+            unsafe {
+                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+            libc::signal(libc::SIGHUP, libc::SIG_DFL);
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            libc::signal(libc::SIGALRM, libc::SIG_DFL);
+                set_nonblocking(main);
+            }
+
+            let signals = Signals::new([sigconsts::SIGWINCH]).unwrap();
             Pty {
                 child,
                 signals,
@@ -325,6 +347,13 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
         }
         _ => panic!("Fork failed."),
     }
+}
+
+unsafe fn set_nonblocking(fd: libc::c_int) {
+    use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
+
+    let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    assert_eq!(res, 0);
 }
 
 #[derive(Debug, Clone)]
@@ -347,6 +376,23 @@ impl Child {
             _ => Ok(()),
         }
     }
+
+    /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
+    /// https://linux.die.net/man/2/waitpid
+    pub fn waitpid(&self) -> Result<Option<i32>, String> {
+        let mut status = 0 as libc::c_int;
+        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns. 
+        let res = unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
+        if res <= -1 {
+            return Err(String::from("error"));
+        }
+
+        if res == 0 && status == 0 {
+            return Ok(None);
+        }
+
+        return Ok(Some(status));
+    }
 }
 
 impl Deref for Child {
@@ -359,7 +405,8 @@ impl Deref for Child {
 impl Drop for Child {
     fn drop(&mut self) {
         unsafe {
-            libc::close(*self.id);
+            // libc::close(*self.id);
+            libc::kill(*self.id as i32, libc::SIGHUP);
         }
     }
 }
@@ -397,20 +444,21 @@ pub trait EventedPty: ProcessReadWrite {
 impl EventedPty for Pty {
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
-        self.signals.pending().next().and_then(|signal| {
-            if signal != sigconsts::SIGCHLD {
-                return None;
-            }
 
-            // match self.child.try_wait() {
-            //     Err(e) => {
-            //         std::process::exit(1);
-            //     },
-            //     Ok(None) => None,
-            None
-            // Ok(_) => Some(ChildEvent::Exited),
-            // }
-        })
+        // self.signals.pending().next().and_then(|signal| {
+        //     println!("{:?}", signal);
+        //     if signal != sigconsts::SIGCHLD {
+        //         return None;
+        //     }
+
+            match self.child.waitpid() {
+                Err(_e) => {
+                    std::process::exit(1);
+                },
+                Ok(None) => None,
+                Ok(Some(..)) => Some(ChildEvent::Exited),
+            }
+        // })
     }
 
     #[inline]

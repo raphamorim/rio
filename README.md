@@ -23,7 +23,7 @@ Website: https://raphamorim.io/rio
 
 > If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 > 
-> Rio would not be possible without [few acknowledgements](#acknowledgements).
+> Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since Rio's term handler, ANSI parser, events and grid was forked originally.
 > 
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
@@ -251,7 +251,6 @@ Basic features are under development for MacOs right now.
 
 ## Acknowledgments
 
-- Term and Grid system was built originally on Alacritty's code https://github.com/alacritty/alacritty/blob/766a3b5582fa8ee13506c0f23c9c145ff0012078/alacritty_terminal/src/grid/mod.rs
 - Text glyph render is from https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol

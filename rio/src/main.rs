@@ -1,3 +1,4 @@
+mod renderer;
 mod crosswords;
 mod event;
 mod performer;

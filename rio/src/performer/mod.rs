@@ -27,11 +27,9 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     receiver: Receiver,
     pty: T,
     stream: mio::net::TcpStream,
-    events: mio::Events,
     poll: mio::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
-    hold: bool,
 }
 
 #[derive(Default)]
@@ -114,18 +112,15 @@ where
         let poll = mio::Poll::new()?;
         let addr: std::net::SocketAddr = "127.0.0.1:0".parse()?;
         let server = mio::net::TcpListener::bind(addr)?;
-        let events = mio::Events::with_capacity(3);
         let stream = mio::net::TcpStream::connect(server.local_addr()?)?;
         Ok(Machine {
             sender,
             receiver,
             poll,
-            events,
             stream,
             pty,
             terminal,
             event_proxy,
-            hold: true,
         })
     }
 
@@ -143,7 +138,9 @@ where
             match self.pty.reader().read(&mut buf[unprocessed..]) {
                 // This is received on Windows/macOS when no more data is readable from the PTY.
                 Ok(0) if unprocessed == 0 => break,
-                Ok(got) => unprocessed += got,
+                Ok(got) => {
+                    unprocessed += got
+                },
                 Err(err) => match err.kind() {
                     ErrorKind::Interrupted | ErrorKind::WouldBlock => {
                         // Go back to mio if we're caught up on parsing and the PTY would block.
@@ -315,11 +312,11 @@ where
                 }
 
                 for event in events.iter() {
-                    println!(
-                        "{:?} {:?}",
-                        event,
-                        event.token() == self.pty.child_event_token()
-                    );
+                    // println!(
+                    //     "{:?} {:?}",
+                    //     event,
+                    //     event.token() == self.pty.child_event_token()
+                    // );
                     match event.token() {
                         // token if token == mio::Token(channel_token) => {
                         //     if !self.channel_event(mio::Token(channel_token), &mut state)
@@ -329,62 +326,54 @@ where
                         //     }
                         // }
                         token if token == self.pty.child_event_token() => {
-                            println!("pty");
-                            // if let Some(pty::ChildEvent::Exited) =
-                            //     self.pty.next_child_event()
-                            // {
-                            if self.hold {
-                                // With hold enabled, make sure the PTY is drained.
-                                let _ = self.pty_read(&mut state, &mut buf);
-                            } else {
-                                // Without hold, shutdown the terminal.
-                                // self.terminal.lock().exit();
+                            if let Some(teletypewriter::ChildEvent::Exited) =
+                                self.pty.next_child_event()
+                            {
+                                self.pty_read(&mut state, &mut buf);
+                                self.event_proxy.send_event(RioEvent::Wakeup);
+                                break 'event_loop;
                             }
-
-                            self.event_proxy.send_event(RioEvent::Wakeup);
-                            break 'event_loop;
-                            // }
                         }
 
-                        // token
-                        //     if token == self.pty.read_token()
-                        //         || token == self.pty.write_token() =>
-                        // {
-                        //     #[cfg(unix)]
-                        //     if UnixReady::from(event.readiness()).is_hup() {
-                        //         // Don't try to do I/O on a dead PTY.
-                        //         continue;
-                        //     }
+                        token
+                            if token == self.pty.read_token()
+                                || token == self.pty.write_token() =>
+                        {
+                            #[cfg(unix)]
+                            // if UnixReady::from(event.readiness()).is_hup() {
+                            //     // Don't try to do I/O on a dead PTY.
+                            //     continue;
+                            // }
 
-                        //     if event.readiness().is_readable() {
-                        //         if let Err(err) =
-                        //             self.pty_read(&mut state, &mut buf, pipe.as_mut())
-                        //         {
-                        //             // On Linux, a `read` on the master side of a PTY can fail
-                        //             // with `EIO` if the client side hangs up.  In that case,
-                        //             // just loop back round for the inevitable `Exited` event.
-                        //             // This sucks, but checking the process is either racy or
-                        //             // blocking.
-                        //             #[cfg(target_os = "linux")]
-                        //             if err.raw_os_error() == Some(libc::EIO) {
-                        //                 continue;
-                        //             }
+                            if event.is_readable() {
+                                if let Err(err) =
+                                    self.pty_read(&mut state, &mut buf)
+                                {
+                                    // On Linux, a `read` on the master side of a PTY can fail
+                                    // with `EIO` if the client side hangs up.  In that case,
+                                    // just loop back round for the inevitable `Exited` event.
+                                    // This sucks, but checking the process is either racy or
+                                    // blocking.
+                                    #[cfg(target_os = "linux")]
+                                    if err.raw_os_error() == Some(libc::EIO) {
+                                        continue;
+                                    }
 
-                        //             error!(
-                        //                 "Error reading from PTY in event loop: {}",
-                        //                 err
-                        //             );
-                        //             break 'event_loop;
-                        //         }
-                        //     }
+                                    println!(
+                                        "Error reading from PTY in event loop: {}",
+                                        err
+                                    );
+                                    break 'event_loop;
+                                }
+                            }
 
-                        //     if event.readiness().is_writable() {
-                        //         if let Err(err) = self.pty_write(&mut state) {
-                        //             error!("Error writing to PTY in event loop: {}", err);
-                        //             break 'event_loop;
-                        //         }
-                        //     }
-                        // }
+                            if event.is_writable() {
+                                if let Err(err) = self.pty_write(&mut state) {
+                                    println!("Error writing to PTY in event loop: {}", err);
+                                    break 'event_loop;
+                                }
+                            }
+                        }
                         _ => (),
                     }
                 }
@@ -395,9 +384,9 @@ where
                     interest.add(Interest::WRITABLE);
                 }
                 // Reregister with new interest.
-                // self.pty
-                // .reregister(&self.poll, interest, poll_opts)
-                // .unwrap();
+                self.pty
+                    .reregister(&self.poll.registry(), tokens, Interest::READABLE)
+                    .unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
