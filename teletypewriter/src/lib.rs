@@ -1,7 +1,6 @@
 extern crate libc;
 
 use mio::unix::EventedFd;
-use mio::Token;
 use signal_hook::consts as sigconsts;
 use signal_hook_mio::v0_6::Signals;
 use std::ffi::{CStr, CString};
@@ -120,13 +119,20 @@ impl ProcessReadWrite for Pty {
 
     #[inline]
     fn register(
-        &mut self, poll: &mio::Poll,         token: &mut dyn Iterator<Item = mio::Token>,
+        &mut self,
+        poll: &mio::Poll,
+        token: &mut dyn Iterator<Item = mio::Token>,
         interest: mio::Ready,
         poll_opts: mio::PollOpt,
     ) -> io::Result<()> {
         self.token = token.next().unwrap();
-        poll.register(&EventedFd(&self.file.as_raw_fd()), self.token, interest, poll_opts)?;
-        
+        poll.register(
+            &EventedFd(&self.file.as_raw_fd()),
+            self.token,
+            interest,
+            poll_opts,
+        )?;
+
         self.signals_token = token.next().unwrap();
         poll.register(
             &self.signals,
@@ -139,10 +145,15 @@ impl ProcessReadWrite for Pty {
     fn reregister(
         &mut self,
         poll: &mio::Poll,
-                interest: mio::Ready,
+        interest: mio::Ready,
         poll_opts: mio::PollOpt,
     ) -> io::Result<()> {
-        poll.reregister(&EventedFd(&self.file.as_raw_fd()), self.token, interest, poll_opts)?;
+        poll.reregister(
+            &EventedFd(&self.file.as_raw_fd()),
+            self.token,
+            interest,
+            poll_opts,
+        )?;
 
         poll.reregister(
             &self.signals,
@@ -153,7 +164,7 @@ impl ProcessReadWrite for Pty {
     }
 
     fn deregister(&mut self, poll: &mio::Poll) -> io::Result<()> {
-                poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
         poll.deregister(&self.signals)
     }
 }
@@ -219,7 +230,12 @@ pub trait ProcessReadWrite {
         _: mio::Ready,
         _: mio::PollOpt,
     ) -> io::Result<()>;
-    fn reregister(&mut self, _: &mio::Poll, _: mio::Ready, _: mio::PollOpt) -> io::Result<()>;
+    fn reregister(
+        &mut self,
+        _: &mio::Poll,
+        _: mio::Ready,
+        _: mio::PollOpt,
+    ) -> io::Result<()>;
     fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
 }
 
@@ -351,8 +367,8 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
                 child,
                 signals,
                 file: unsafe { File::from_raw_fd(main) },
-                token: mio::Token::from(mio::Token(0)),
-                signals_token: mio::Token::from(mio::Token(0)),
+                token: mio::Token(0),
+                signals_token: mio::Token(0),
             }
         }
         _ => panic!("Fork failed."),
@@ -370,6 +386,7 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
 #[derive(Debug, Clone)]
 pub struct Child {
     id: Arc<libc::c_int>,
+    #[allow(dead_code)]
     ptsname: String,
     pid: Arc<libc::pid_t>,
 }
@@ -403,7 +420,7 @@ impl Child {
             return Ok(None);
         }
 
-        return Ok(Some(status));
+        Ok(Some(status))
     }
 }
 
@@ -418,7 +435,7 @@ impl Drop for Child {
     fn drop(&mut self) {
         unsafe {
             // libc::close(*self.id);
-            libc::kill(*self.id as i32, libc::SIGHUP);
+            libc::kill(*self.id, libc::SIGHUP);
         }
     }
 }

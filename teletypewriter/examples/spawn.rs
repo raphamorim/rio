@@ -6,16 +6,15 @@ use std::io::Read;
 use std::io::Write;
 // use std::io::BufRead;
 use std::io::BufReader;
-use teletypewriter::pty;
+use teletypewriter::create_pty;
 
 fn main() -> std::io::Result<()> {
     env::set_var("TERM", "rio");
 
     let shell = Cow::Borrowed("bash");
-    let (process, mut w, ptyname, pid) = pty(&shell, 80, 25);
-    println!("{ptyname:?} {pid:?}");
+    let process = create_pty(&shell, 80, 25);
 
-    w.write_all(b"1").unwrap();
+    process.writer().write_all(b"1").unwrap();
     w.write_all(b"2").unwrap();
     w.write_all(b"ls\n").unwrap();
     w.write_all(b"echo 1\n").unwrap();

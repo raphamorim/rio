@@ -391,7 +391,7 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
 
 impl<U: Handler> vte::Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
-        println!("[print] {c:?}");
+        // println!("[print] {c:?}");
         self.handler.input(c);
         self.state.preceding_char = Some(c);
     }
