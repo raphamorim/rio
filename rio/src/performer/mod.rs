@@ -1,17 +1,14 @@
 mod control;
 pub mod handler;
 
-use mio::{self, Events, PollOpt, Ready};
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
-use mio_extras::channel::{self, Receiver, Sender};
-
-
-use std::os::fd::AsRawFd;
+use mio::{self, Events, PollOpt, Ready};
+use mio_extras::channel;
 
 use crate::event::{Msg, RioEvent};
-use mio::{Token};
+
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
@@ -21,22 +18,9 @@ use std::time::Instant;
 
 use std::io::{ErrorKind, Write};
 
-const PIPE_RECV: Token = Token(2);
-const PIPE_SEND: Token = Token(1);
-const PIPE_PTY: Token = Token(0);
-
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
-
-pub type MsgSender<T> = std::sync::mpsc::Sender<T>;
-pub type MsgReceiver<T> = std::sync::mpsc::Receiver<T>;
-
-fn unbounded<T>() -> (MsgSender<T>, MsgReceiver<T>) {
-    // TODO: Implemente Sync for mio Events
-    // tokio::sync::mpsc::channel::<T>(READ_BUFFER_SIZE)
-    std::sync::mpsc::channel::<T>()
-}
 
 pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     sender: channel::Sender<Msg>,
@@ -216,15 +200,19 @@ where
     #[inline]
     fn channel_event(&mut self, token: mio::Token, state: &mut State) -> bool {
         if !self.should_keep_alive(state) {
-            // let interesets = Interest::WRITABLE.add(Interest::AIO);            
+            // let interesets = Interest::WRITABLE.add(Interest::AIO);
             return false;
         }
 
         // let interesets = Interest::WRITABLE.add(Interest::AIO);
 
         self.poll
-            
-            .reregister(&mut self.receiver, token,  Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
+            .reregister(
+                &mut self.receiver,
+                token,
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::oneshot(),
+            )
             .unwrap();
 
         true
@@ -272,17 +260,24 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-                        let mut tokens = (0..).map(Into::into);
+            let mut tokens = (0..).map(Into::into);
 
             let poll_opts = PollOpt::edge() | PollOpt::oneshot();
 
             let channel_token = tokens.next().unwrap();
             self.poll
-                
-                .register(&mut self.receiver, channel_token,  Ready::readable(), poll_opts).unwrap();
+                .register(
+                    &mut self.receiver,
+                    channel_token,
+                    Ready::readable(),
+                    poll_opts,
+                )
+                .unwrap();
 
             // Register TTY through EventedRW interface.
-            self.pty.register(&self.poll, &mut tokens, Ready::readable(), poll_opts).unwrap();
+            self.pty
+                .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)
+                .unwrap();
 
             let mut events = Events::with_capacity(1024);
 
@@ -307,8 +302,6 @@ where
                 }
 
                 for event in events.iter() {
-                    println!("{:?} {:?}", event, event.token());
-
                     match event.token() {
                         token if token == channel_token => {
                             // In case should shutdown by message
@@ -330,7 +323,6 @@ where
                             if token == self.pty.read_token()
                                 || token == self.pty.write_token() =>
                         {
-                            println!("caiu aki");
                             #[cfg(unix)]
                             // if UnixReady::from(event.readiness()).is_hup() {
                             //     // Don't try to do I/O on a dead PTY.
@@ -371,12 +363,14 @@ where
                 }
 
                 // Register write interest if necessary.
-                                let mut interest = Ready::readable();
+                let mut interest = Ready::readable();
                 if state.needs_write() {
                     interest.insert(Ready::writable());
                 }
                 // Reregister with new interest.
-                self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
+                self.pty
+                    .reregister(&self.poll, interest, poll_opts)
+                    .unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
