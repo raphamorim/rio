@@ -1,3 +1,4 @@
+use crate::event::Msg;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
@@ -16,22 +17,23 @@ struct RenderContext {
     adapter: wgpu::Adapter,
     queue: wgpu::Queue,
     staging_belt: wgpu::util::StagingBelt,
-    renderer: Renderer
+    renderer: Renderer,
 }
 
 impl RenderContext {
     pub fn new(
-            device: wgpu::Device,
-            device_copy: wgpu::Device,
-            scale: f32,
-            queue: wgpu::Queue,
-            adapter: wgpu::Adapter,
-            surface: wgpu::Surface,
-            instance: wgpu::Instance,
-            staging_belt: wgpu::util::StagingBelt,
-            config: &Rc<config::Config>,
-            width: u32,
-            height: u32) -> RenderContext {
+        device: wgpu::Device,
+        device_copy: wgpu::Device,
+        scale: f32,
+        queue: wgpu::Queue,
+        adapter: wgpu::Adapter,
+        surface: wgpu::Surface,
+        instance: wgpu::Instance,
+        staging_belt: wgpu::util::StagingBelt,
+        config: &Rc<config::Config>,
+        width: u32,
+        height: u32,
+    ) -> RenderContext {
         let caps = surface.get_capabilities(&adapter);
         let formats = caps.formats;
         let format = *formats.last().expect("No supported formats for surface");
@@ -51,13 +53,10 @@ impl RenderContext {
             },
         );
 
-        let renderer_styles = RendererStyles::new(
-            scale,
-            width,
-            height,
-            config.style.font_size,
-        );
-        let renderer = Renderer::new(device_copy, format, config, renderer_styles).expect("Create renderer");
+        let renderer_styles =
+            RendererStyles::new(scale, width, height, config.style.font_size);
+        let renderer = Renderer::new(device_copy, format, config, renderer_styles)
+            .expect("Create renderer");
         RenderContext {
             device,
             queue,
@@ -65,7 +64,7 @@ impl RenderContext {
             surface,
             instance,
             staging_belt,
-            renderer
+            renderer,
         }
     }
 
@@ -94,6 +93,7 @@ impl RenderContext {
 pub struct Term {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
+    channel: std::sync::mpsc::Sender<Msg>,
 }
 
 impl Term {
@@ -162,13 +162,19 @@ impl Term {
         );
 
         let event_proxy_clone = event_proxy.clone();
-        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
-            Arc::new(FairMutex::new(Crosswords::new(config.columns.into(), config.rows.into(), event_proxy)));
+        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> = Arc::new(FairMutex::new(
+            Crosswords::new(config.columns.into(), config.rows.into(), event_proxy),
+        ));
 
         let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
+        let channel = machine.channel();
         machine.spawn();
 
-        Ok(Term { render_context, terminal })
+        Ok(Term {
+            render_context,
+            terminal,
+            channel,
+        })
     }
 
     pub fn configure(&self) {
@@ -177,6 +183,52 @@ impl Term {
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.render_context.configure(new_size);
+    }
+
+    pub fn input_char(&mut self, character: char) {
+        println!("input_char: {}", character);
+        let val: Cow<'static, [u8]> = Cow::<'static, [u8]>::Owned((&[character as u8]).to_vec());
+        println!("{:?}", self.channel);
+        self.channel.send(Msg::Input(val.into()));
+    }
+
+    pub fn skeleton(&mut self, color: wgpu::Color) {
+        // TODO: WGPU caching
+        let mut encoder = self.render_context.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("Skeleton"),
+            },
+        );
+        let frame = self
+            .render_context
+            .surface
+            .get_current_texture()
+            .expect("Get next frame");
+        let view = &frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render -> Clear frame"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(color),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+        self.render_context.renderer.draw_queued(
+            &self.render_context.device,
+            &mut self.render_context.staging_belt,
+            &mut encoder,
+            view,
+        );
+        self.render_context.staging_belt.finish();
+        self.render_context.queue.submit(Some(encoder.finish()));
+        frame.present();
+        self.render_context.staging_belt.recall();
     }
 
     pub fn render(&mut self, color: wgpu::Color) {
@@ -212,11 +264,13 @@ impl Term {
 
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
+        // println!("{:?}", terminal.visible_rows_to_string());
+        drop(terminal);
+        // let a =
         // std::sync::Mutex::unlock(terminal);
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
-        self.render_context.renderer
-            .term(visible_rows);
+        self.render_context.renderer.term(visible_rows);
 
         // drop(terminal);
 

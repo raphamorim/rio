@@ -2,7 +2,6 @@ extern crate libc;
 
 use mio::unix::SourceFd;
 use mio::Interest;
-use mio::Registry;
 use mio::Token;
 use signal_hook::consts as sigconsts;
 use signal_hook_mio::v0_8::Signals;
@@ -10,6 +9,7 @@ use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
 use std::ops::Deref;
+use std::os::fd::AsRawFd;
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
 use std::process::Command;
@@ -41,7 +41,7 @@ extern "C" {
     fn waitpid(
         pid: libc::pid_t,
         status: *mut libc::c_int,
-        options: libc::c_int
+        options: libc::c_int,
     ) -> libc::pid_t;
 
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
@@ -51,7 +51,6 @@ pub struct Pty {
     child: Child,
     file: File,
     token: mio::Token,
-    #[allow(dead_code)]
     signals_token: mio::Token,
     signals: Signals,
 }
@@ -90,40 +89,9 @@ impl io::Read for Pty {
                 buf.len() as libc::size_t,
             )
         } {
-            n if n >= 0 => {
-                println!("pegou");
-                Ok(n as usize)
-            },
-            _ => {
-                println!("quebrou");
-                Err(io::Error::last_os_error())
-            },
+            n if n >= 0 => Ok(n as usize),
+            _ => Err(io::Error::last_os_error()),
         }
-    }
-}
-
-impl mio::event::Source for Pty {
-    #[inline]
-    fn register(
-        &mut self,
-        registry: &Registry,
-        token: Token,
-        interests: Interest,
-    ) -> io::Result<()> {
-        SourceFd(&self.child).register(registry, token, interests)
-    }
-
-    fn reregister(
-        &mut self,
-        registry: &Registry,
-        token: Token,
-        interests: Interest,
-    ) -> io::Result<()> {
-        SourceFd(&self.child).reregister(registry, token, interests)
-    }
-
-    fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
-        SourceFd(&self.child).deregister(registry)
     }
 }
 
@@ -149,6 +117,42 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn write_token(&self) -> mio::Token {
         self.token
+    }
+
+    #[inline]
+    fn register(&mut self, poll: &mio::Poll, token: Token) -> io::Result<()> {
+        self.token = token;
+        poll.registry().register(
+            &mut SourceFd(&self.file.as_raw_fd()),
+            token,
+            Interest::READABLE,
+        )?;
+        self.signals_token = token;
+        poll.registry().register(
+            &mut self.signals,
+            self.signals_token,
+            Interest::READABLE,
+        )
+    }
+
+    fn reregister(
+        &mut self,
+        poll: &mio::Poll,
+        interest: mio::Interest,
+    ) -> io::Result<()> {
+        poll.registry().reregister(
+            &mut SourceFd(&self.file.as_raw_fd()),
+            self.token,
+            interest,
+        )?;
+        poll.registry()
+            .register(&mut self.signals, self.signals_token, interest)
+    }
+
+    fn deregister(&mut self, poll: &mio::Poll) -> io::Result<()> {
+        poll.registry()
+            .deregister(&mut SourceFd(&self.file.as_raw_fd()))?;
+        poll.registry().deregister(&mut self.signals)
     }
 }
 
@@ -205,6 +209,10 @@ pub trait ProcessReadWrite {
     fn read_token(&self) -> mio::Token;
     fn writer(&mut self) -> &mut Self::Writer;
     fn write_token(&self) -> mio::Token;
+
+    fn register(&mut self, _: &mio::Poll, _: mio::Token) -> io::Result<()>;
+    fn reregister(&mut self, _: &mio::Poll, _: mio::Interest) -> io::Result<()>;
+    fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {
@@ -324,15 +332,9 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
                 id: Arc::new(main),
                 ptsname,
                 pid: Arc::new(id),
-            }; 
+            };
 
             unsafe {
-                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
-            libc::signal(libc::SIGHUP, libc::SIG_DFL);
-            libc::signal(libc::SIGINT, libc::SIG_DFL);
-            libc::signal(libc::SIGQUIT, libc::SIG_DFL);
-            libc::signal(libc::SIGTERM, libc::SIG_DFL);
-            libc::signal(libc::SIGALRM, libc::SIG_DFL);
                 set_nonblocking(main);
             }
 
@@ -349,6 +351,7 @@ pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
     }
 }
 
+// https://man7.org/linux/man-pages/man2/fcntl.2.html
 unsafe fn set_nonblocking(fd: libc::c_int) {
     use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
 
@@ -381,8 +384,9 @@ impl Child {
     /// https://linux.die.net/man/2/waitpid
     pub fn waitpid(&self) -> Result<Option<i32>, String> {
         let mut status = 0 as libc::c_int;
-        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns. 
-        let res = unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
+        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
+        let res =
+            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
         if res <= -1 {
             return Err(String::from("error"));
         }
@@ -444,21 +448,19 @@ pub trait EventedPty: ProcessReadWrite {
 impl EventedPty for Pty {
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
-
-        // self.signals.pending().next().and_then(|signal| {
-        //     println!("{:?}", signal);
-        //     if signal != sigconsts::SIGCHLD {
-        //         return None;
-        //     }
+        self.signals.pending().next().and_then(|signal| {
+            if signal != sigconsts::SIGCHLD {
+                return None;
+            }
 
             match self.child.waitpid() {
                 Err(_e) => {
                     std::process::exit(1);
-                },
+                }
                 Ok(None) => None,
                 Ok(Some(..)) => Some(ChildEvent::Exited),
             }
-        // })
+        })
     }
 
     #[inline]
