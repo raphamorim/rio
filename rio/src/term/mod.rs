@@ -93,7 +93,7 @@ impl RenderContext {
 pub struct Term {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    channel: crate::performer::channel::Sender<Msg>,
+    channel: mio_extras::channel::Sender<Msg>,
 }
 
 impl Term {

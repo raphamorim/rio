@@ -61,7 +61,7 @@ struct SenderCtl {
 
 /// Tracks messages received on a channel in order to track readiness.
 struct ReceiverCtl {
-    registration: LazyCell<mio::net::TcpStream>,
+    registration: LazyCell<mio::unix::pipe::Receiver>,
     inner: Arc<Inner>,
 }
 
@@ -245,7 +245,7 @@ impl ReceiverCtl {
         if first == 1 {
             // Unset readiness
             if let Some(interest) = self.inner.interest.borrow() {
-                interest.add(Interest::READABLE);
+                interest.remove(Interest::READABLE);
             }
         }
 
@@ -278,11 +278,15 @@ impl Source for ReceiverCtl {
             ));
         }
 
-        let address: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let listener = TcpListener::bind(address).unwrap();
-        let mut stream = TcpStream::connect(listener.local_addr()?)?;
+        // let address: SocketAddr = "127.0.0.1:34255".parse().unwrap();
+        // let listener = TcpListener::bind(address).unwrap();
+        // listener.set_nonblocking(true).expect("Cannot set non-blocking");
+        // let mut stream = TcpStream::connect(listener.local_addr()?)?;
+        // let (mut stream1, stream2) = mio::net::UnixStream::pair()?;
+        let (sender, mut receiver) = mio::unix::pipe::new()?;
+        receiver.set_nonblocking(true).expect("Cannot set non-blocking");
 
-        registry.register(&mut stream, token, interest)?;
+        registry.register(&mut receiver, token, interest)?;
 
         if self.inner.pending.load(Ordering::Relaxed) > 0 {
             // TODO: Don't drop readiness
@@ -290,7 +294,7 @@ impl Source for ReceiverCtl {
         }
 
         self.registration
-            .fill(stream)
+            .fill(receiver)
             .expect("unexpected state encountered");
         self.inner
             .interest
