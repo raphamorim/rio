@@ -1,7 +1,7 @@
-mod renderer;
 mod crosswords;
 mod event;
 mod performer;
+mod renderer;
 mod scheduler;
 mod sequencer;
 mod term;

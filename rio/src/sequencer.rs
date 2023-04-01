@@ -1,16 +1,11 @@
 use crate::event::EventP;
 use crate::event::EventProxy;
-use crate::term::Term;
-
-use std::error::Error;
-
 use crate::scheduler::Scheduler;
+use crate::term::Term;
+use std::error::Error;
 use std::rc::Rc;
-
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
-// https://vt100.net/emu/dec_ansi_parser
-// use mio::net::UnixStream;
 pub struct Sequencer {
     // term: Term,
     config: Rc<config::Config>,
@@ -39,7 +34,7 @@ impl Sequencer {
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
         let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
-        term.configure();
+        term.skeleton(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             // if Self::skip_event(&event) {
@@ -65,7 +60,6 @@ impl Sequencer {
                 winit::event::Event::Resumed => {
                     // Should render once the loop is resumed for first time
                     // Then wait for instructions or user inputs
-                    // term.render(self.config.colors.background.1);
                 }
 
                 winit::event::Event::WindowEvent {
@@ -107,7 +101,7 @@ impl Sequencer {
                     ..
                 } => {
                     // println!("character: {:?}", character);
-                    // input_stream.input_character(character, &mut rio.write_process);
+                    term.input_char(character);
                 }
 
                 winit::event::Event::WindowEvent {

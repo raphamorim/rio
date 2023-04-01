@@ -18,15 +18,30 @@ use std::time::Instant;
 
 use std::io::{ErrorKind, Write};
 
+const PIPE_RECV: Token = Token(0);
+const PIPE_SEND: Token = Token(1);
+const PIPE_PTY: Token = Token(2);
+
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
+pub type MsgSender<T> = std::sync::mpsc::Sender<T>;
+pub type MsgReceiver<T> = std::sync::mpsc::Receiver<T>;
+
+fn unbounded<T>() -> (MsgSender<T>, MsgReceiver<T>) {
+    // TODO: Implemente Sync for mio Events
+    // tokio::sync::mpsc::channel::<T>(READ_BUFFER_SIZE)
+    std::sync::mpsc::channel::<T>()
+}
+
 pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
-    sender: Sender,
-    receiver: Receiver,
+    sender: MsgSender<Msg>,
+    receiver: MsgReceiver<Msg>,
+    mio_sender: mio::unix::pipe::Sender,
+    mio_receiver: mio::unix::pipe::Receiver,
+    waker: Arc<mio::Waker>,
     pty: T,
-    stream: mio::net::TcpStream,
     poll: mio::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
@@ -100,7 +115,7 @@ impl Writing {
 
 impl<T, U> Machine<T, U>
 where
-    T: teletypewriter::EventedPty + Send + mio::event::Source + 'static,
+    T: teletypewriter::EventedPty + Send + 'static,
     U: EventListener + Send + 'static,
 {
     pub fn new(
@@ -108,16 +123,23 @@ where
         pty: T,
         event_proxy: U,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
-        let (sender, receiver) = mio::unix::pipe::new()?;
+        let (mut sender, mut receiver) = unbounded::<Msg>();
         let poll = mio::Poll::new()?;
-        let addr: std::net::SocketAddr = "127.0.0.1:0".parse()?;
-        let server = mio::net::TcpListener::bind(addr)?;
-        let stream = mio::net::TcpStream::connect(server.local_addr()?)?;
+
+        let event_loop_waker = Arc::new(mio::Waker::new(poll.registry(), PIPE_SEND)?);
+
+        let (mut mio_sender, mut mio_receiver) = mio::unix::pipe::new()?;
+
+        poll.registry().register(&mut mio_receiver, PIPE_RECV, Interest::READABLE)?;
+        poll.registry().register(&mut mio_sender, PIPE_SEND, Interest::WRITABLE)?;
+
         Ok(Machine {
             sender,
             receiver,
+            mio_sender,
+            mio_receiver,
+            waker: event_loop_waker,
             poll,
-            stream,
             pty,
             terminal,
             event_proxy,
@@ -138,9 +160,7 @@ where
             match self.pty.reader().read(&mut buf[unprocessed..]) {
                 // This is received on Windows/macOS when no more data is readable from the PTY.
                 Ok(0) if unprocessed == 0 => break,
-                Ok(got) => {
-                    unprocessed += got
-                },
+                Ok(got) => unprocessed += got,
                 Err(err) => match err.kind() {
                     ErrorKind::Interrupted | ErrorKind::WouldBlock => {
                         // Go back to mio if we're caught up on parsing and the PTY would block.
@@ -187,34 +207,21 @@ where
         Ok(())
     }
 
-    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
-        // while let Ok(msg) = self.receiver.try_recv() {
-        //     match msg {
-        //         Msg::Input(input) => state.write_list.push_back(input),
-        //         // Msg::Resize(window_size) => self.pty.on_resize(window_size),
-        //         Msg::Shutdown => return false,
-        //     }
-        // }
+    fn should_keep_alive(&mut self, state: &mut State) -> bool {
+        println!("lendo");
+        while let Ok(msg) = self.receiver.try_recv() {
+            println!("msg chegou: {:?}", msg);
+            match msg {
+                Msg::Input(input) => {
+                    println!("input {:?}", input);
+                    state.write_list.push_back(input);
+                },
+                Msg::Resize(window_size) => {},
+                Msg::Shutdown => return false,
+            }
+        }
 
-        // Read from the receiver using a direct libc call
-        let mut buf = [0; 512];
-        let n = self
-            .receiver
-            .try_io(|| {
-                let buf_ptr = &mut buf as *mut _ as *mut _;
-                let res =
-                    unsafe { libc::read(self.receiver.as_raw_fd(), buf_ptr, buf.len()) };
-                if res != -1 {
-                    Ok(res as usize)
-                } else {
-                    // If EAGAIN or EWOULDBLOCK is set by libc::read, the closure
-                    // should return `WouldBlock` error.
-                    Err(io::Error::last_os_error())
-                }
-            })
-            .unwrap_or(0);
-
-        eprintln!("read {} bytes", n);
+        println!("aki {:?}", state.write_list);
 
         true
     }
@@ -222,16 +229,15 @@ where
     /// Returns a `bool` indicating whether or not the event loop should continue running.
     #[inline]
     fn channel_event(&mut self, token: mio::Token, state: &mut State) -> bool {
-        if !self.drain_recv_channel(state) {
-            return false;
-        }
+        // if self.drain_recv_channel(state) {
+        return self.should_keep_alive(state);
+        // }
 
-        self.poll
-            .registry()
-            .reregister(&mut self.receiver, token, Interest::READABLE)
-            .unwrap();
+        // self.poll
+        //     .registry()
+        //     .reregister(&mut self.receiver, token, Interest::READABLE)
+            // .unwrap();
 
-        true
     }
 
     #[inline]
@@ -267,8 +273,12 @@ where
         Ok(())
     }
 
-    pub fn channel(&self) -> i32 {
-        self.sender.as_raw_fd()
+    pub fn channel(&self) -> MsgSender<Msg> {
+        self.sender.clone()
+    }
+
+    pub fn channel_mio(&mut self) -> &mut Sender {
+        self.mio_sender.by_ref()
     }
 
     pub fn spawn(mut self) {
@@ -276,17 +286,15 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let mut tokens = Token(0);
-            let register = self
-                .poll
-                .registry()
-                .register(&mut self.receiver, tokens, Interest::READABLE)
-                .unwrap();
+            let mut tokens = PIPE_PTY;
+            // let register = self
+            //     .poll
+            //     .registry()
+            //     .register(&mut self.mio_receiver, tokens, Interest::READABLE)
+            //     .unwrap();
 
             // Register TTY through EventedRW interface.
-            self.pty
-                .register(&self.poll.registry(), tokens, Interest::READABLE)
-                .unwrap();
+            self.pty.register(&self.poll, tokens).unwrap();
 
             let mut events = Events::with_capacity(1024);
             let mut channel_token = 0;
@@ -312,43 +320,45 @@ where
                 }
 
                 for event in events.iter() {
-                    // println!(
-                    //     "{:?} {:?}",
-                    //     event,
-                    //     event.token() == self.pty.child_event_token()
-                    // );
+                    println!(
+                        "{:?} {:?}",
+                        event,
+                        event.token()
+                    );
+
                     match event.token() {
-                        // token if token == mio::Token(channel_token) => {
-                        //     if !self.channel_event(mio::Token(channel_token), &mut state)
-                        //     {
-                        //         println!("quebrou");
-                        //         break 'event_loop;
-                        //     }
-                        // }
-                        token if token == self.pty.child_event_token() => {
-                            if let Some(teletypewriter::ChildEvent::Exited) =
-                                self.pty.next_child_event()
+                        PIPE_RECV if event.is_read_closed() => {
+                            // Detected that the sender was dropped.
+                            break 'event_loop;
+                        },
+                        token if token == PIPE_SEND => {
+                            if !self.should_keep_alive(&mut state)
                             {
-                                self.pty_read(&mut state, &mut buf);
-                                self.event_proxy.send_event(RioEvent::Wakeup);
                                 break 'event_loop;
                             }
+                        }
+                        token if token == self.pty.child_event_token() => {
+                            // if let Some(teletypewriter::ChildEvent::Exited) =
+                            //     self.pty.next_child_event()
+                            // {
+                            self.pty_read(&mut state, &mut buf);
+                            self.event_proxy.send_event(RioEvent::Wakeup);
+                            // break 'event_loop;
+                            // }
                         }
 
                         token
                             if token == self.pty.read_token()
                                 || token == self.pty.write_token() =>
                         {
+                            println!("caiu aki");
                             #[cfg(unix)]
                             // if UnixReady::from(event.readiness()).is_hup() {
                             //     // Don't try to do I/O on a dead PTY.
                             //     continue;
                             // }
-
                             if event.is_readable() {
-                                if let Err(err) =
-                                    self.pty_read(&mut state, &mut buf)
-                                {
+                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
                                     // On Linux, a `read` on the master side of a PTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
                                     // just loop back round for the inevitable `Exited` event.
@@ -369,7 +379,10 @@ where
 
                             if event.is_writable() {
                                 if let Err(err) = self.pty_write(&mut state) {
-                                    println!("Error writing to PTY in event loop: {}", err);
+                                    println!(
+                                        "Error writing to PTY in event loop: {}",
+                                        err
+                                    );
                                     break 'event_loop;
                                 }
                             }
@@ -384,14 +397,14 @@ where
                     interest.add(Interest::WRITABLE);
                 }
                 // Reregister with new interest.
-                self.pty
-                    .reregister(&self.poll.registry(), tokens, Interest::READABLE)
-                    .unwrap();
+                // self.pty
+                //     .reregister(&self.poll, interest)
+                //     .unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.registry().deregister(&mut self.receiver);
-            let _ = self.pty.deregister(&self.poll.registry());
+            let _ = self.poll.registry().deregister(&mut self.mio_receiver);
+            let _ = self.pty.deregister(&self.poll);
 
             (self, state)
         });

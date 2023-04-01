@@ -2,12 +2,12 @@ mod frames;
 mod shared;
 mod text;
 
-use std::rc::Rc;
+use crate::crosswords::{row::Row, square::Square};
 use colors::{AnsiColor, NamedColor};
 use config::Config;
-use crate::crosswords::{row::Row, square::Square};
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText, Section, Text};
+use std::rc::Rc;
 
 pub struct Style {
     pub screen_position: (f32, f32),
@@ -184,15 +184,20 @@ impl Renderer {
         }
     }
 
-    pub fn draw_queued(&mut self, device: &wgpu::Device, staging_belt: &mut wgpu::util::StagingBelt, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        self.brush
-            .draw_queued(
-                &device,
-                staging_belt,
-                encoder,
-                view,
-                (self.styles.width, self.styles.height),
-            );
+    pub fn draw_queued(
+        &mut self,
+        device: &wgpu::Device,
+        staging_belt: &mut wgpu::util::StagingBelt,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
+        self.brush.draw_queued(
+            &device,
+            staging_belt,
+            encoder,
+            view,
+            (self.styles.width, self.styles.height),
+        );
     }
 
     pub fn topbar(&mut self, command: String) {
