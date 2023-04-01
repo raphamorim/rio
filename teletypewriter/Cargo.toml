@@ -11,6 +11,7 @@ authors = { workspace = true }
 [dependencies]
 libc = "0.2.140"
 dirs = "5.0"
-mio = { version = "0.8.6", features = ["os-poll"] }
+mio = "0.6.20"
+mio-extras = "2"
 signal-hook = "0.3.10"
-signal-hook-mio = { version = "0.2.3", features = ["support-v0_8"] }
+signal-hook-mio = { version = "0.2.1", features = ["support-v0_6"] }

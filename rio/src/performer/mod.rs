@@ -1,16 +1,17 @@
-pub mod channel;
 mod control;
 pub mod handler;
 
+use mio::{self, Events, PollOpt, Ready};
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
-use crate::performer::channel::channel;
-use mio::unix::pipe::{Receiver, Sender};
+use mio_extras::channel::{self, Receiver, Sender};
+
+
 use std::os::fd::AsRawFd;
 
 use crate::event::{Msg, RioEvent};
-use mio::{Events, Interest, Token};
+use mio::{Token};
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
@@ -20,9 +21,9 @@ use std::time::Instant;
 
 use std::io::{ErrorKind, Write};
 
-const PIPE_RECV: Token = Token(0);
+const PIPE_RECV: Token = Token(2);
 const PIPE_SEND: Token = Token(1);
-const PIPE_PTY: Token = Token(2);
+const PIPE_PTY: Token = Token(0);
 
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
@@ -123,10 +124,8 @@ where
         event_proxy: U,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         // let (mut sender, mut receiver) = unbounded::<Msg>();
-        let (mut sender, mut receiver) = channel::<Msg>();
+        let (sender, receiver) = channel::channel();
         let poll = mio::Poll::new()?;
-
-        // poll.registry().register(&mut sender, PIPE_SEND, Interest::WRITABLE)?;
 
         Ok(Machine {
             sender,
@@ -210,21 +209,22 @@ where
             }
         }
 
-        println!("state: {:?}", state.write_list);
-
         true
     }
 
     /// Returns a `bool` indicating whether or not the event loop should continue running.
     #[inline]
-    fn channel_event(&mut self, state: &mut State) -> bool {
+    fn channel_event(&mut self, token: mio::Token, state: &mut State) -> bool {
         if !self.should_keep_alive(state) {
+            // let interesets = Interest::WRITABLE.add(Interest::AIO);            
             return false;
         }
 
+        // let interesets = Interest::WRITABLE.add(Interest::AIO);
+
         self.poll
-            .registry()
-            .reregister(&mut self.receiver, PIPE_RECV, Interest::READABLE)
+            
+            .reregister(&mut self.receiver, token,  Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
             .unwrap();
 
         true
@@ -272,18 +272,19 @@ where
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
-            let mut tokens = PIPE_PTY;
+                        let mut tokens = (0..).map(Into::into);
 
+            let poll_opts = PollOpt::edge() | PollOpt::oneshot();
+
+            let channel_token = tokens.next().unwrap();
             self.poll
-                .registry()
-                .register(&mut self.receiver, PIPE_RECV, Interest::READABLE)
-                .unwrap();
+                
+                .register(&mut self.receiver, channel_token,  Ready::readable(), poll_opts).unwrap();
 
             // Register TTY through EventedRW interface.
-            self.pty.register(&self.poll, tokens).unwrap();
+            self.pty.register(&self.poll, &mut tokens, Ready::readable(), poll_opts).unwrap();
 
             let mut events = Events::with_capacity(1024);
-            let mut channel_token = 0;
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
@@ -309,14 +310,11 @@ where
                     println!("{:?} {:?}", event, event.token());
 
                     match event.token() {
-                        token if token == PIPE_RECV => {
-                            if !self.channel_event(&mut state) {
+                        token if token == channel_token => {
+                            // In case should shutdown by message
+                            if !self.channel_event(channel_token, &mut state) {
                                 break 'event_loop;
                             }
-
-                            // if event.is_read_closed() {
-                            //     break 'event_loop;
-                            // }
                         }
                         token if token == self.pty.child_event_token() => {
                             // if let Some(teletypewriter::ChildEvent::Exited) =
@@ -338,7 +336,7 @@ where
                             //     // Don't try to do I/O on a dead PTY.
                             //     continue;
                             // }
-                            if event.is_readable() {
+                            if event.readiness().is_readable() {
                                 if let Err(err) = self.pty_read(&mut state, &mut buf) {
                                     // On Linux, a `read` on the master side of a PTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
@@ -358,7 +356,7 @@ where
                                 }
                             }
 
-                            if event.is_writable() {
+                            if event.readiness().is_writable() {
                                 if let Err(err) = self.pty_write(&mut state) {
                                     println!(
                                         "Error writing to PTY in event loop: {}",
@@ -373,18 +371,16 @@ where
                 }
 
                 // Register write interest if necessary.
-                let mut interest = Interest::READABLE;
+                                let mut interest = Ready::readable();
                 if state.needs_write() {
-                    interest.add(Interest::WRITABLE);
+                    interest.insert(Ready::writable());
                 }
                 // Reregister with new interest.
-                // self.pty
-                //     .reregister(&self.poll, interest)
-                //     .unwrap();
+                self.pty.reregister(&self.poll, interest, poll_opts).unwrap();
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.registry().deregister(&mut self.receiver);
+            let _ = self.poll.deregister(&mut self.receiver);
             let _ = self.pty.deregister(&self.poll);
 
             (self, state)

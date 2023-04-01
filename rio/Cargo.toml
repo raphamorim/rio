@@ -15,7 +15,8 @@ winit = "0.28.3"
 libc = "0.2.140"
 image = { version = "0.24.5", default-features = false, features = ["ico"] }
 bytemuck = { workspace = true }
-mio = { version = "0.8.6", features = ["os-poll", "os-ext", "net"] }
+mio = "0.6.20"
+mio-extras = "2"
 parking_lot = "0.12"
 vte = "0.11.0"
 teletypewriter = { workspace = true }

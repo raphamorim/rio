@@ -1,5 +1,5 @@
 pub mod sync;
-use mio::unix::pipe::Sender;
+use mio_extras::channel::Sender;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -137,7 +137,7 @@ pub trait EventListener {
 }
 
 // pub struct Notifier(pub Sender<Msg>);
-pub struct Notifier(pub Sender);
+pub struct Notifier(pub Sender<Msg>);
 
 /// Byte sequences are sent to a `Notify` in response to some events.
 pub trait Notify {

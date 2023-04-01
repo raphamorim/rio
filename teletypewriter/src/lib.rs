@@ -1,10 +1,9 @@
 extern crate libc;
 
-use mio::unix::SourceFd;
-use mio::Interest;
+use mio::unix::EventedFd;
 use mio::Token;
 use signal_hook::consts as sigconsts;
-use signal_hook_mio::v0_8::Signals;
+use signal_hook_mio::v0_6::Signals;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
@@ -120,39 +119,42 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn register(&mut self, poll: &mio::Poll, token: Token) -> io::Result<()> {
-        self.token = token;
-        poll.registry().register(
-            &mut SourceFd(&self.file.as_raw_fd()),
-            token,
-            Interest::READABLE,
-        )?;
-        self.signals_token = token;
-        poll.registry().register(
-            &mut self.signals,
+    fn register(
+        &mut self, poll: &mio::Poll,         token: &mut dyn Iterator<Item = mio::Token>,
+        interest: mio::Ready,
+        poll_opts: mio::PollOpt,
+    ) -> io::Result<()> {
+        self.token = token.next().unwrap();
+        poll.register(&EventedFd(&self.file.as_raw_fd()), self.token, interest, poll_opts)?;
+        
+        self.signals_token = token.next().unwrap();
+        poll.register(
+            &self.signals,
             self.signals_token,
-            Interest::READABLE,
+            mio::Ready::readable(),
+            mio::PollOpt::level(),
         )
     }
 
     fn reregister(
         &mut self,
         poll: &mio::Poll,
-        interest: mio::Interest,
+                interest: mio::Ready,
+        poll_opts: mio::PollOpt,
     ) -> io::Result<()> {
-        poll.registry().reregister(
-            &mut SourceFd(&self.file.as_raw_fd()),
-            self.token,
-            interest,
-        )?;
-        poll.registry()
-            .register(&mut self.signals, self.signals_token, interest)
+        poll.reregister(&EventedFd(&self.file.as_raw_fd()), self.token, interest, poll_opts)?;
+
+        poll.reregister(
+            &self.signals,
+            self.signals_token,
+            mio::Ready::readable(),
+            mio::PollOpt::level(),
+        )
     }
 
     fn deregister(&mut self, poll: &mio::Poll) -> io::Result<()> {
-        poll.registry()
-            .deregister(&mut SourceFd(&self.file.as_raw_fd()))?;
-        poll.registry().deregister(&mut self.signals)
+                poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        poll.deregister(&self.signals)
     }
 }
 
@@ -210,8 +212,14 @@ pub trait ProcessReadWrite {
     fn writer(&mut self) -> &mut Self::Writer;
     fn write_token(&self) -> mio::Token;
 
-    fn register(&mut self, _: &mio::Poll, _: mio::Token) -> io::Result<()>;
-    fn reregister(&mut self, _: &mio::Poll, _: mio::Interest) -> io::Result<()>;
+    fn register(
+        &mut self,
+        _: &mio::Poll,
+        _: &mut dyn Iterator<Item = mio::Token>,
+        _: mio::Ready,
+        _: mio::PollOpt,
+    ) -> io::Result<()>;
+    fn reregister(&mut self, _: &mio::Poll, _: mio::Ready, _: mio::PollOpt) -> io::Result<()>;
     fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
 }
 
