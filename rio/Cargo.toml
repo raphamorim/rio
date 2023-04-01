@@ -26,6 +26,7 @@ unicode-width = "0.1.5"
 bitflags = "2.0.2"
 serde = { workspace = true }
 glyph_brush = "0.7.7"
+lazycell = "1"
 
 [package.metadata.bundle]
 name = "Rio"
