@@ -1,7 +1,7 @@
-use crate::event::Msg;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
+use crate::event::Msg;
 use crate::performer::Machine;
 use crate::renderer::{Renderer, RendererStyles};
 use std::borrow::Cow;
@@ -93,7 +93,7 @@ impl RenderContext {
 pub struct Term {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    channel: std::sync::mpsc::Sender<Msg>,
+    channel: crate::performer::channel::Sender<Msg>,
 }
 
 impl Term {
@@ -187,8 +187,9 @@ impl Term {
 
     pub fn input_char(&mut self, character: char) {
         println!("input_char: {}", character);
-        let val: Cow<'static, [u8]> = Cow::<'static, [u8]>::Owned((&[character as u8]).to_vec());
-        println!("{:?}", self.channel);
+        let val: Cow<'static, [u8]> =
+            Cow::<'static, [u8]>::Owned((&[character as u8]).to_vec());
+        // println!("{:?}", self.channel);
         self.channel.send(Msg::Input(val.into()));
     }
 
