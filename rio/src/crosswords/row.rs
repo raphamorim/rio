@@ -1,3 +1,4 @@
+use core::cmp::min;
 use crate::crosswords::square::{CrosswordsSquare, ResetDiscriminant};
 use crate::crosswords::Column;
 use std::cmp::max;
@@ -55,6 +56,28 @@ impl<T: Clone + Default> Row<T> {
         }
 
         self.inner.resize_with(columns, T::default);
+    }
+
+    pub fn shrink(&mut self, columns: usize) -> Option<Vec<T>>
+    where
+        T: CrosswordsSquare,
+    {
+        if self.inner.len() <= columns {
+            return None;
+        }
+
+        // Split off cells for a new row.
+        let mut new_row = self.inner.split_off(columns);
+        let index = new_row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
+        new_row.truncate(index);
+
+        self.occ = min(self.occ, columns);
+
+        if new_row.is_empty() {
+            None
+        } else {
+            Some(new_row)
+        }
     }
 
     /// Reset all cells in the row to the `template` cell.
@@ -119,6 +142,14 @@ impl<T> Row<T> {
         let mut split = self.inner.split_off(at);
         std::mem::swap(&mut split, &mut self.inner);
         split
+    }
+
+    #[inline]
+    pub fn is_clear(&self) -> bool
+    where
+        T: CrosswordsSquare,
+    {
+        self.inner.iter().all(CrosswordsSquare::is_empty)
     }
 }
 

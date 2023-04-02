@@ -19,6 +19,10 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
+use std::cmp::max;
+use std::cmp::min;
+use std::cmp::{Ordering};
+use std::mem;
 use crate::performer::handler::Handler;
 use attr::*;
 use bitflags::bitflags;
@@ -193,6 +197,211 @@ impl<U> Crosswords<U> {
         }
     }
 
+    pub fn resize(&mut self, reflow: bool, lines: usize, columns: usize)
+    {
+        println!("resize");
+        // Use empty template cell for resetting cells due to resize.
+        let template = mem::take(&mut self.cursor.template);
+
+        match self.rows.cmp(&lines) {
+            Ordering::Less => self.grow_lines(lines),
+            Ordering::Greater => self.storage.shrink_lines(lines),
+            Ordering::Equal => (),
+        }
+
+        println!("{:?}", columns);
+
+        match self.cols.cmp(&columns) {
+            Ordering::Less => {
+                // self.grow_columns(reflow, columns)
+            },
+            Ordering::Greater => {
+                self.shrink_columns(reflow, columns);
+            },
+            Ordering::Equal => (),
+        }
+
+        // Restore template cell.
+        self.cursor.template = template;
+    }
+
+    fn grow_lines(&mut self, target: usize)
+    {
+        let lines_added = target - self.rows;
+
+        // Need to resize before updating buffer.
+        self.storage.grow_visible_lines(target);
+        self.rows = target;
+
+        let history_size = self.history_size();
+        let from_history = min(history_size, lines_added);
+
+        // Move existing lines up for every line that couldn't be pulled from history.
+        if from_history != lines_added {
+            let delta = lines_added - from_history;
+            self.scroll_up(&(Line(0)..Line(target as i32)), delta);
+        }
+
+        // Move cursor down for every line pulled from history.
+        // self.saved_cursor.point.line += from_history;
+        self.cursor.pos.row += from_history;
+
+        self.scroll = self.scroll.saturating_sub(lines_added);
+        self.decrease_scroll_limit(lines_added);
+    }
+
+    fn decrease_scroll_limit(&mut self, count: usize) {
+        let count = min(count, self.history_size());
+        if count != 0 {
+            self.storage.shrink_lines(min(count, self.history_size()));
+            self.scroll = min(self.scroll, self.history_size());
+        }
+    }
+
+    fn shrink_columns(&mut self, reflow: bool, cols: usize) {
+        self.cols = cols;
+
+        // Remove the linewrap special case, by moving the cursor outside of the grid.
+        if self.cursor.should_wrap && reflow {
+            self.cursor.should_wrap = false;
+            self.cursor.pos.col += 1;
+        }
+
+        let mut new_raw = Vec::with_capacity(self.storage.len());
+        let mut buffered: Option<Vec<Square>> = None;
+
+        let mut rows = self.storage.take_all();
+        for (i, mut row) in rows.drain(..).enumerate().rev() {
+            // Append lines left over from the previous row.
+            if let Some(buffered) = buffered.take() {
+                // Add a column for every cell added before the cursor, if it goes beyond the new
+                // width it is then later reflown.
+                let cursor_buffer_line = self.rows - self.cursor.pos.row.0 as usize - 1;
+                if i == cursor_buffer_line {
+                    self.cursor.pos.col += buffered.len();
+                }
+
+                row.append_front(buffered);
+            }
+
+            loop {
+                // Remove all cells which require reflowing.
+                let mut wrapped = match row.shrink(cols) {
+                    Some(wrapped) if reflow => wrapped,
+                    _ => {
+                        let cursor_buffer_line = self.rows - self.cursor.pos.row.0 as usize - 1;
+                        if reflow && i == cursor_buffer_line && self.cursor.pos.col > cols {
+                            // If there are empty cells before the cursor, we assume it is explicit
+                            // whitespace and need to wrap it like normal content.
+                            Vec::new()
+                        } else {
+                            // Since it fits, just push the existing line without any reflow.
+                            new_raw.push(row);
+                            break;
+                        }
+                    },
+                };
+
+                // Insert spacer if a wide char would be wrapped into the last column.
+                if row.len() >= cols
+                    // && row[Column(cols - 1)].flags().contains(Flags::WIDE_CHAR)
+                {
+                    let mut spacer = Square::default();
+                    // spacer.flags_mut().insert(Flags::LEADING_WIDE_CHAR_SPACER);
+
+                    let wide_char = mem::replace(&mut row[Column(cols - 1)], spacer);
+                    wrapped.insert(0, wide_char);
+                }
+
+                // Remove wide char spacer before shrinking.
+                let len = wrapped.len();
+                // if len > 0 && wrapped[len - 1].flags().contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+                if len > 0 {
+                    if len == 1 {
+                        // row[Column(cols - 1)].flags_mut().insert(Flags::WRAPLINE);
+                        new_raw.push(row);
+                        break;
+                    } else {
+                        // Remove the leading spacer from the end of the wrapped row.
+                        // wrapped[len - 2].flags_mut().insert(Flags::WRAPLINE);
+                        wrapped.truncate(len - 1);
+                    }
+                }
+
+                new_raw.push(row);
+
+                // Set line as wrapped if cells got removed.
+                if let Some(cell) = new_raw.last_mut().and_then(|r| r.last_mut()) {
+                    // cell.flags_mut().insert(Flags::WRAPLINE);
+                }
+
+                if wrapped
+                    .last()
+                    .map(|c| i >= 1)
+                    // .map(|c| c.flags().contains(Flags::WRAPLINE) && i >= 1)
+                    .unwrap_or(false)
+                    && wrapped.len() < cols
+                {
+                    // Make sure previous wrap flag doesn't linger around.
+                    if let Some(cell) = wrapped.last_mut() {
+                        // cell.flags_mut().remove(Flags::WRAPLINE);
+                    }
+
+                    // Add removed cells to start of next row.
+                    buffered = Some(wrapped);
+                    break;
+                } else {
+                    // Reflow cursor if a line below it is deleted.
+                    let cursor_buffer_line = self.rows - self.cursor.pos.row.0 as usize - 1;
+                    if (i == cursor_buffer_line && self.cursor.pos.col < cols)
+                        || i < cursor_buffer_line
+                    {
+                        self.cursor.pos.row = max(self.cursor.pos.row - 1, Line(0));
+                    }
+
+                    // Reflow the cursor if it is on this line beyond the width.
+                    if i == cursor_buffer_line && self.cursor.pos.col >= cols {
+                        // Since only a single new line is created, we subtract only `columns`
+                        // from the cursor instead of reflowing it completely.
+                        self.cursor.pos.col -= cols;
+                    }
+
+                    // Make sure new row is at least as long as new width.
+                    let occ = wrapped.len();
+                    if occ < cols {
+                        wrapped.resize_with(cols, Square::default);
+                    }
+                    row = Row::from_vec(wrapped, occ);
+
+                    if i < self.scroll {
+                        // Since we added a new line, rotate up the viewport.
+                        self.scroll += 1;
+                    }
+                }
+            }
+        }
+
+        // Reverse iterator and use it as the new grid storage.
+        let mut reversed: Vec<Row<Square>> = new_raw.drain(..).rev().collect();
+        reversed.truncate(self.scroll_limit + self.rows);
+        self.storage.replace_inner(reversed);
+
+        // Reflow the primary cursor, or clamp it if reflow is disabled.
+        if !reflow {
+            self.cursor.pos.col = min(self.cursor.pos.col, Column(cols - 1));
+        } else if self.cursor.pos.col == cols
+            // && !self[self.cursor.pos.line][Column(cols - 1)].flags().contains(Flags::WRAPLINE)
+        {
+            self.cursor.should_wrap = true;
+            self.cursor.pos.col -= 1;
+        } else {
+            // self.cursor.pos = self.cursor.pos.grid_clamp(self, Boundary::Cursor);
+        }
+
+        // Clamp the saved cursor to the grid.
+        // self.saved_cursor.pos.column = min(self.saved_cursor.point.column, Column(cols - 1));
+    }
+
     #[inline]
     pub fn wrapline(&mut self) {
         if !self.mode.contains(Mode::LINE_WRAP) {
@@ -231,12 +440,12 @@ impl<U> Crosswords<U> {
     }
 
     // pub fn scroll_display(&mut self, scroll: Scroll) {
-    //     self.display_offset = match scroll {
+    //     self.scroll = match scroll {
     //         Scroll::Delta(count) => {
-    //             min(max((self.display_offset as i32) + count, 0) as usize, self.history_size())
+    //             min(max((self.scroll as i32) + count, 0) as usize, self.history_size())
     //         },
-    //         Scroll::PageUp => min(self.display_offset + self.lines, self.history_size()),
-    //         Scroll::PageDown => self.display_offset.saturating_sub(self.lines),
+    //         Scroll::PageUp => min(self.scroll + self.lines, self.history_size()),
+    //         Scroll::PageDown => self.scroll.saturating_sub(self.lines),
     //         Scroll::Top => self.history_size(),
     //         Scroll::Bottom => 0,
     //     };
@@ -588,6 +797,23 @@ impl<U> Handler for Crosswords<U> {
         // }
         // let range = self.cursor.pos.row..=self.cursor.pos.row;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+    }
+
+    #[inline]
+    fn text_area_size_pixels(&mut self) {
+        println!("text_area_size_pixels");
+        // self.event_proxy.send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
+            // let height = window_size.num_lines * window_size.cell_height;
+            // let width = window_size.num_cols * window_size.cell_width;
+            // format!("\x1b[4;{height};{width}t")
+        // })));
+    }
+
+    #[inline]
+    fn text_area_size_chars(&mut self) {
+        let text = format!("\x1b[8;{};{}t", self.screen_lines(), self.columns());
+        println!("text_area_size_chars {:?}", text);
+        // self.event_proxy.send_event(Event::PtyWrite(text));
     }
 
     // fn to_arr_u8(&mut self, line: Line) -> Row<Square> {

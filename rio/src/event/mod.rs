@@ -20,10 +20,10 @@ pub enum Msg {
 
 #[derive(Copy, Clone, Debug)]
 pub struct WindowSize {
-    pub num_lines: u16,
-    pub num_cols: u16,
-    pub cell_width: u16,
-    pub cell_height: u16,
+    pub rows: u16,
+    pub columns: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
 #[derive(Clone)]
