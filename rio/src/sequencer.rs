@@ -1,8 +1,8 @@
-use crate::event::EventP;
-use crate::event::EventProxy;
+use crate::event::{ RioEventType, EventP, EventProxy, RioEvent };
 use crate::term::Term;
 use std::error::Error;
 use std::rc::Rc;
+use winit::event::{ Event, MouseScrollDelta, WindowEvent };
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 
@@ -38,10 +38,10 @@ impl Sequencer {
             // }
 
             match event {
-                winit::event::Event::UserEvent(EventP { payload, .. }) => {
-                    if let crate::event::RioEventType::Rio(event) = payload {
+                Event::UserEvent(EventP { payload, .. }) => {
+                    if let RioEventType::Rio(event) = payload {
                         match event {
-                            crate::event::RioEvent::Wakeup => {
+                            RioEvent::Wakeup => {
                                 if self.config.advanced.disable_render_when_unfocused
                                     && is_focused
                                 {
@@ -49,7 +49,7 @@ impl Sequencer {
                                 }
                                 term.render(self.config.colors.background.1);
                             }
-                            crate::event::RioEvent::Title(_title) => {
+                            RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
                                 // self.ctx.window().set_title(title);
                                 // }
@@ -58,53 +58,63 @@ impl Sequencer {
                         }
                     }
                 }
-                winit::event::Event::Resumed => {
+                Event::Resumed => {
                     // Should render once the loop is resumed for first time
                     // Then wait for instructions or user inputs
                 }
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
                     ..
                 } => *control_flow = winit::event_loop::ControlFlow::Exit,
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event: winit::event::WindowEvent::ModifiersChanged(modifiers),
                     ..
                 } => term.propagate_modifiers_state(modifiers),
 
-                // event::Event::WindowEvent {
-                //     event: event::WindowEvent::MouseWheel { delta, .. },
-                //     ..
-                // } => {
-                //     let mut scroll_y: f64 = 0.0;
-                //     match delta {
-                //         winit::event::MouseScrollDelta::LineDelta(_x, _y) => {
-                //             // scroll_y = y;
-                //         }
+                Event::WindowEvent {
+                    event: WindowEvent::MouseWheel { delta, .. },
+                    ..
+                } => {
+                    let mut scroll_y: f64 = 0.0;
+                    match delta {
+                        MouseScrollDelta::LineDelta(_x, _y) => {
+                            // scroll_y = y;
+                        }
 
-                //         winit::event::MouseScrollDelta::PixelDelta(pixel_delta) => {
-                //             scroll_y = pixel_delta.y;
-                //         }
-                //     }
+                        MouseScrollDelta::PixelDelta(mut lpos) => {
+                            match delta {
+                                // TouchPhase::Started => {
+                                //     // Reset offset to zero.
+                                //     self.ctx.mouse_mut().accumulated_scroll = Default::default();
+                                // },
+                                // winit::event::TouchPhase::Moved => {
+                                //     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
+                                //     // (cosine is larger that 0.9) we consider this scrolling as horizontal.
+                                //     if lpos.x.abs() / lpos.x.hypot(lpos.y) > 0.9 {
+                                //         lpos.y = 0.;
+                                //     } else {
+                                //         lpos.x = 0.;
+                                //     }
 
-                //     // hacky
-                //     if scroll_y < 0.0 {
-                //         rio.set_text_scroll(-3.0_f32);
-                //         // winit_window.request_redraw();
-                //     }
-                //     if scroll_y > 0.0 {
-                //         rio.set_text_scroll(3.0_f32);
-                //     }
-                // }
-                winit::event::Event::WindowEvent {
+                                //     self.scroll_terminal(lpos.x, lpos.y);
+                                // },
+                                _ => (),
+                            }
+                        },
+                    }
+
+                    
+                }
+                Event::WindowEvent {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
                     term.input_char(character);
                 }
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::KeyboardInput {
                             input:
@@ -127,14 +137,14 @@ impl Sequencer {
                     }
                 },
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event: winit::event::WindowEvent::Focused(focused),
                     ..
                 } => {
                     is_focused = focused;
                 }
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event: winit::event::WindowEvent::Resized(new_size),
                     ..
                 } => {
@@ -142,7 +152,7 @@ impl Sequencer {
                     term.render(self.config.colors.background.1);
                 }
 
-                winit::event::Event::WindowEvent {
+                Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::ScaleFactorChanged {
                             new_inner_size,
@@ -152,10 +162,11 @@ impl Sequencer {
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
                     term.set_scale(scale_factor_f32, *new_inner_size);
+                    term.render(self.config.colors.background.1);
                 }
 
-                winit::event::Event::MainEventsCleared { .. } => {}
-                winit::event::Event::RedrawRequested { .. } => {}
+                Event::MainEventsCleared { .. } => {}
+                Event::RedrawRequested { .. } => {}
                 _ => {
                     // let next_frame_time =
                     // std::time::Instant::now() + std::time::Duration::from_nanos(500_000);

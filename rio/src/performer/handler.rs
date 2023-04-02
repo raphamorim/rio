@@ -616,7 +616,15 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
 
         match (action, intermediates) {
             ('K', []) => handler.clear_line(next_param_or(0)),
-            ('J', []) => {}
+            ('J', []) => {},
+            ('t', []) => match next_param_or(1) as usize {
+                14 => handler.text_area_size_pixels(),
+                18 => handler.text_area_size_chars(),
+                // 22 => handler.push_title(),
+                // 23 => handler.pop_title(),
+                _ => println!("aaa"),
+            },
+
             ('m', []) => {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);

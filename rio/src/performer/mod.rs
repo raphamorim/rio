@@ -189,7 +189,7 @@ where
                     state.write_list.push_back(input);
                 }
                 Msg::Resize(window_size) => {
-                    self.pty.set_winsize(window_size.columns, window_size.rows, window_size.width, window_size.height);
+                    self.pty.set_winsize(window_size);
                 }
                 Msg::Shutdown => return false,
             }

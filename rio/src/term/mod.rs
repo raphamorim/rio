@@ -127,7 +127,13 @@ impl Term {
         event_proxy: EventProxy,
     ) -> Result<Term, Box<dyn Error>> {
         let shell = std::env::var("SHELL")?;
-        let pty = create_pty(&Cow::Borrowed(&shell), config.columns, config.rows);
+        let size = winit_window.inner_size();
+        let scale = winit_window.scale_factor();
+        let width = (size.width as u16) * (scale as u16);
+        let height = (size.height as u16) * (scale as u16);
+        let pty = create_pty(&Cow::Borrowed(&shell), width, height, config.columns, config.rows);
+
+        println!("original: {:?} {:?} {:?}", width, height, scale);
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -150,8 +156,7 @@ impl Term {
             .await
             .expect("Request adapter");
 
-        let scale = winit_window.scale_factor() as f32;
-        let size = winit_window.inner_size();
+        let scale = scale as f32;
 
         let render_context =
             RenderContext::new(scale, adapter, surface, config, size).await;
@@ -294,13 +299,18 @@ impl Term {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        let new_h = self.render_context.renderer.config.columns - 40;
-        let new_w = self.render_context.renderer.config.rows - 10;
-        match self.messenger.send_resize(new_h, new_w, 0, 0) {
-            Ok(new_window) => {
+        let scale = self.render_context.renderer.scale() as u16;
+        let cols = self.render_context.renderer.config.columns;
+        let rows = self.render_context.renderer.config.rows;
+
+        let width = (new_size.width as u16) * scale;
+        let height = (new_size.height as u16) * scale;
+        match self.messenger.send_resize(width, height, cols, rows) {
+            Ok(_new_window) => {
                 // let mut terminal = self.terminal.lock();
-                // terminal.resize(true, 25, 30);
+                // terminal.resize(true, cols.into(), rows.into());
                 // drop(terminal);
             }
             Err(_) => {}
