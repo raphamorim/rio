@@ -62,8 +62,11 @@ theme = "Basic"
 [advanced]
 tab-character-active = '●'
 tab-character-inactive = '■'
-enable-fps-counter = false
 disable-renderer-when-unfocused = false
+
+[developer]
+enable-fps-counter = false
+enable-logs = false
 
 [colors]
 background       = '#151515'
@@ -179,15 +182,6 @@ font-size = 16.0
 
 ### Advanced
 
-#### `enable-fps-counter`
-
-This property enables frame per second counter.
-
-```toml
-[style]
-enable-fps-counter = false
-```
-
 #### `tab-character-active`
 
 This property sets a `char` for an active tab.
@@ -213,6 +207,26 @@ This property disable renderer processes until focus on Rio term again.
 ```toml
 [style]
 disable-renderer-when-unfocused = false
+```
+
+## Developer
+
+#### `enable-fps-counter`
+
+This property enables frame per second counter.
+
+```toml
+[style]
+enable-fps-counter = false
+```
+
+#### `enable-logs`
+
+This property enables Rio logging.
+
+```toml
+[style]
+enable-logs = false
 ```
 
 ## Colors
