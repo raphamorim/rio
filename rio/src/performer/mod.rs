@@ -188,7 +188,7 @@ where
                 Msg::Input(input) => {
                     state.write_list.push_back(input);
                 }
-                Msg::Resize(window_size) => {}
+                Msg::Resize(_window_size) => {}
                 Msg::Shutdown => return false,
             }
         }
@@ -208,7 +208,7 @@ where
 
         self.poll
             .reregister(
-                &mut self.receiver,
+                &self.receiver,
                 token,
                 Ready::readable(),
                 PollOpt::edge() | PollOpt::oneshot(),
@@ -266,12 +266,7 @@ where
 
             let channel_token = tokens.next().unwrap();
             self.poll
-                .register(
-                    &mut self.receiver,
-                    channel_token,
-                    Ready::readable(),
-                    poll_opts,
-                )
+                .register(&self.receiver, channel_token, Ready::readable(), poll_opts)
                 .unwrap();
 
             // Register TTY through EventedRW interface.
@@ -313,7 +308,7 @@ where
                             // if let Some(teletypewriter::ChildEvent::Exited) =
                             //     self.pty.next_child_event()
                             // {
-                            self.pty_read(&mut state, &mut buf);
+                            let _ = self.pty_read(&mut state, &mut buf);
                             self.event_proxy.send_event(RioEvent::Wakeup);
                             // break 'event_loop;
                             // }
@@ -374,7 +369,7 @@ where
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.deregister(&mut self.receiver);
+            let _ = self.poll.deregister(&self.receiver);
             let _ = self.pty.deregister(&self.poll);
 
             (self, state)

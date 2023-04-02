@@ -57,6 +57,7 @@ impl RendererStyles {
         }
     }
 
+    #[allow(dead_code)]
     pub fn refresh_styles(&mut self, width: u32, height: u32, scale: f32) {
         *self = Self::mount_styles(scale, width, height, self.font_size);
     }
@@ -95,10 +96,12 @@ impl Renderer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn refresh_styles(&mut self, width: u32, height: u32, scale: f32) {
         self.styles.refresh_styles(width, height, scale);
     }
 
+    #[allow(dead_code)]
     pub fn get_current_scale(&self) -> f32 {
         self.styles.scale
     }
@@ -191,8 +194,8 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
-        self.brush.draw_queued(
-            &device,
+        let _ = self.brush.draw_queued(
+            device,
             staging_belt,
             encoder,
             view,
@@ -200,8 +203,9 @@ impl Renderer {
         );
     }
 
+    #[allow(dead_code)]
     pub fn topbar(&mut self, command: String) {
-        let fps_text = if self.config.advanced.enable_fps_counter {
+        let fps_text = if self.config.developer.enable_fps_counter {
             format!(" fps_{:?}", self.fps.tick())
         } else {
             String::from("")

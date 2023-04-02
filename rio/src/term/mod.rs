@@ -1,9 +1,12 @@
+mod ansi;
+mod messenger;
+
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
-use crate::event::Msg;
 use crate::performer::Machine;
 use crate::renderer::{Renderer, RendererStyles};
+use crate::term::messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
@@ -13,7 +16,6 @@ use teletypewriter::create_pty;
 struct RenderContext {
     device: wgpu::Device,
     surface: wgpu::Surface,
-    instance: wgpu::Instance,
     adapter: wgpu::Adapter,
     queue: wgpu::Queue,
     staging_belt: wgpu::util::StagingBelt,
@@ -21,18 +23,12 @@ struct RenderContext {
 }
 
 impl RenderContext {
-    pub fn new(
-        device: wgpu::Device,
-        device_copy: wgpu::Device,
+    pub async fn new(
         scale: f32,
-        queue: wgpu::Queue,
         adapter: wgpu::Adapter,
         surface: wgpu::Surface,
-        instance: wgpu::Instance,
-        staging_belt: wgpu::util::StagingBelt,
         config: &Rc<config::Config>,
-        width: u32,
-        height: u32,
+        size: winit::dpi::PhysicalSize<u32>,
     ) -> RenderContext {
         let caps = surface.get_capabilities(&adapter);
         let formats = caps.formats;
@@ -40,13 +36,31 @@ impl RenderContext {
         let alpha_modes = caps.alpha_modes;
         let alpha_mode = alpha_modes[0];
 
+        let (device, queue) = (async {
+            adapter
+                .request_device(&wgpu::DeviceDescriptor::default(), None)
+                .await
+                .expect("Request device")
+        })
+        .await;
+
+        let (device_copy, _queue_copy) = (async {
+            adapter
+                .request_device(&wgpu::DeviceDescriptor::default(), None)
+                .await
+                .expect("Request device")
+        })
+        .await;
+
+        let staging_belt = wgpu::util::StagingBelt::new(1024);
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format,
-                width: width,
-                height: height,
+                width: size.width,
+                height: size.height,
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -54,7 +68,7 @@ impl RenderContext {
         );
 
         let renderer_styles =
-            RendererStyles::new(scale, width, height, config.style.font_size);
+            RendererStyles::new(scale, size.width, size.height, config.style.font_size);
         let renderer = Renderer::new(device_copy, format, config, renderer_styles)
             .expect("Create renderer");
         RenderContext {
@@ -62,7 +76,6 @@ impl RenderContext {
             queue,
             adapter,
             surface,
-            instance,
             staging_belt,
             renderer,
         }
@@ -93,7 +106,7 @@ impl RenderContext {
 pub struct Term {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    channel: mio_extras::channel::Sender<Msg>,
+    messenger: Messenger,
 }
 
 impl Term {
@@ -126,40 +139,11 @@ impl Term {
             .await
             .expect("Request adapter");
 
-        let (device, queue) = (async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
-                .await
-                .expect("Request device")
-        })
-        .await;
-
-        let (device_copy, queue_copy) = (async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
-                .await
-                .expect("Request device")
-        })
-        .await;
-
-        let staging_belt = wgpu::util::StagingBelt::new(1024);
-
         let scale = winit_window.scale_factor() as f32;
         let size = winit_window.inner_size();
 
-        let render_context = RenderContext::new(
-            device,
-            device_copy,
-            scale,
-            queue,
-            adapter,
-            surface,
-            instance,
-            staging_belt,
-            config,
-            size.width,
-            size.height,
-        );
+        let render_context =
+            RenderContext::new(scale, adapter, surface, config, size).await;
 
         let event_proxy_clone = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> = Arc::new(FairMutex::new(
@@ -173,24 +157,44 @@ impl Term {
         Ok(Term {
             render_context,
             terminal,
-            channel,
+            messenger: Messenger::new(channel),
         })
-    }
-
-    pub fn configure(&self) {
-        // self.machine.spawn();
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.render_context.configure(new_size);
     }
 
+    #[inline]
+    pub fn propagate_modifiers_state(&mut self, state: winit::event::ModifiersState) {
+        self.messenger.set_modifiers(state);
+    }
+
+    #[inline]
     pub fn input_char(&mut self, character: char) {
-        println!("input_char: {}", character);
-        let val: Cow<'static, [u8]> =
-            Cow::<'static, [u8]>::Owned((&[character as u8]).to_vec());
-        // println!("{:?}", self.channel);
-        self.channel.send(Msg::Input(val.into()));
+        if self.render_context.renderer.config.developer.enable_logs {
+            println!("input_char: Received character {}", character);
+        }
+
+        self.messenger.send_character(character);
+    }
+
+    #[inline]
+    pub fn input_keycode(
+        &mut self,
+        // _scancode: u32,
+        virtual_keycode: Option<winit::event::VirtualKeyCode>,
+    ) {
+        let logs = self.render_context.renderer.config.developer.enable_logs;
+        if logs {
+            println!("input_keycode: received keycode {:?}", virtual_keycode);
+        }
+
+        if let Some(keycode) = virtual_keycode {
+            let _ = self.messenger.send_keycode(keycode);
+        } else if logs {
+            println!("input_keycode: keycode not as Some");
+        }
     }
 
     pub fn skeleton(&mut self, color: wgpu::Color) {
@@ -233,8 +237,6 @@ impl Term {
     }
 
     pub fn render(&mut self, color: wgpu::Color) {
-        println!("rendering");
-
         let mut encoder = self.render_context.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
                 label: Some("Redraw"),
@@ -289,7 +291,12 @@ impl Term {
     }
 
     // https://docs.rs/winit/latest/winit/dpi/
-    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
+    #[allow(dead_code)]
+    pub fn set_scale(
+        &mut self,
+        _new_scale: f32,
+        _new_size: winit::dpi::PhysicalSize<u32>,
+    ) {
         // if self.renderer.get_current_scale() != new_scale {
         //     // self.scale = new_scale;
         //     self.renderer.refresh_styles(
