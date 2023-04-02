@@ -1,3 +1,4 @@
+use crate::event::WindowSize;
 use crate::term::ansi;
 use std::borrow::Cow;
 
@@ -52,14 +53,6 @@ impl Messenger {
     }
 
     pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
-        // println!(
-        //     "set_modifiers {:?} {:?} {:?} {:?} {:?}",
-        //     modifiers,
-        //     modifiers.shift(),
-        //     modifiers.logo(),
-        //     modifiers.alt(),
-        //     modifiers.ctrl()
-        // );
         self.modifiers = modifiers;
     }
 
@@ -77,10 +70,25 @@ impl Messenger {
         let _ = self.channel.send(Msg::Input(val));
     }
 
+    #[inline]
+    pub fn send_resize(&self, columns: u16, rows: u16, width: u16, height: u16) -> Result<WindowSize, String> {
+        let new_size = WindowSize{
+            rows,
+            columns,
+            width,
+            height,
+        };
+
+        match self.channel.send(Msg::Resize(new_size)) {
+            Ok(..) => Ok(new_size),
+            Err(..) => Err("Error sending message".to_string())
+        }
+    }
+
     pub fn send_keycode(
         &mut self,
-        // _scancode: u32,
         virtual_keycode: VirtualKeyCode,
+        // _scancode: u32,
     ) -> Result<(), String> {
         match winit_key_to_char(virtual_keycode, self.modifiers.shift()) {
             Some(key_char) => {

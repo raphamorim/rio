@@ -96,14 +96,25 @@ impl Renderer {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn refresh_styles(&mut self, width: u32, height: u32, scale: f32) {
+    #[inline]
+    pub fn update_size(&mut self, width: u32, height: u32) {
+        self.styles.refresh_styles(width, height, self.styles.scale);
+    }
+
+    #[inline]
+    pub fn update_scale(&mut self, width: u32, height: u32, scale: f32) {
         self.styles.refresh_styles(width, height, scale);
     }
 
     #[allow(dead_code)]
-    pub fn get_current_scale(&self) -> f32 {
+    #[inline]
+    pub fn scale(&self) -> f32 {
         self.styles.scale
+    }
+
+    #[inline]
+    pub fn size(&self) -> (u32, u32) {
+        (self.styles.width, self.styles.height)
     }
 
     #[inline]

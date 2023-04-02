@@ -260,8 +260,10 @@ Basic features are under development for MacOs right now.
 | Platform | Development Status |
 | --- | --- |
 | MacOs | In development 👷 |
-| Linux | Not started yet |
+| Linux | In development 👷 * |
 | Windows | Not started yet |
+
+_* Development and tests are targeting Wayland, probably is not stable on X11 yet._
 
 ## Acknowledgments
 

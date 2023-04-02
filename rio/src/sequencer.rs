@@ -5,15 +5,12 @@ use std::error::Error;
 use std::rc::Rc;
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
+
 pub struct Sequencer {
-    // term: Term,
     config: Rc<config::Config>,
 }
 
 impl Sequencer {
-    /// Create a new event processor.
-    ///
-    /// Takes a writer which is expected to be hooked up to the write end of a PTY.
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
@@ -104,7 +101,6 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    // println!("character: {:?}", character);
                     term.input_char(character);
                 }
 
@@ -113,12 +109,9 @@ impl Sequencer {
                         winit::event::WindowEvent::KeyboardInput {
                             input:
                                 winit::event::KeyboardInput {
-                                    // semantic meaning of the key
                                     virtual_keycode,
-                                    // physical key pressed
                                     // scancode,
                                     state,
-                                    // modifiers,
                                     ..
                                 },
                             ..
@@ -158,23 +151,11 @@ impl Sequencer {
                     ..
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
-                    // if rio.get_scale() != scale_factor_f32 {
                     term.set_scale(scale_factor_f32, *new_inner_size);
-                    // }
                 }
 
-                winit::event::Event::MainEventsCleared { .. } => {
-                    // winit_window.request_redraw();
-                }
-
-                winit::event::Event::RedrawRequested { .. } => {
-                    // if rio.renderer.config.advanced.disable_render_when_unfocused
-                    //     && is_focused
-                    // {
-                    //     return;
-                    // }
-                    // term.render(self.config.colors.background.1);
-                }
+                winit::event::Event::MainEventsCleared { .. } => {}
+                winit::event::Event::RedrawRequested { .. } => {}
                 _ => {
                     // let next_frame_time =
                     // std::time::Instant::now() + std::time::Duration::from_nanos(500_000);
@@ -185,10 +166,6 @@ impl Sequencer {
             }
         });
 
-        // if exit_code == 0 {
         Ok(())
-        // } else {
-        //     Err(format!("Event loop terminated with code: {}", exit_code).into())
-        // }
     }
 }

@@ -118,6 +118,11 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
+    fn set_winsize(&mut self, columns: u16, rows: u16, width: u16, height: u16) {
+        let _ = self.child.set_winsize(columns, rows, width, height);
+    }
+
+    #[inline]
     fn register(
         &mut self,
         poll: &mio::Poll,
@@ -222,6 +227,7 @@ pub trait ProcessReadWrite {
     fn read_token(&self) -> mio::Token;
     fn writer(&mut self) -> &mut Self::Writer;
     fn write_token(&self) -> mio::Token;
+    fn set_winsize(&mut self, _: u16, _: u16, _: u16, _: u16);
 
     fn register(
         &mut self,
@@ -392,12 +398,21 @@ pub struct Child {
 }
 
 impl Child {
-    pub fn set_winsize(&self, width: u16, height: u16) -> io::Result<()> {
+    pub fn set_winsize(&self, columns: u16, rows: u16, width: u16, height: u16) -> io::Result<()> {
+        //  let ws_row = self.num_lines as libc::c_ushort;
+        // let ws_col = self.num_cols as libc::c_ushort;
+        // let ws_xpixel = ws_col * self.cell_width as libc::c_ushort;
+        // let ws_ypixel = ws_row * self.cell_height as libc::c_ushort;
+        // winsize { ws_row, ws_col, ws_xpixel, ws_ypixel }
+
+        let ws_row = rows as libc::c_ushort;
+        let ws_col = columns as libc::c_ushort;
+
         let winsize = Winsize {
-            ws_row: height as libc::c_ushort,
-            ws_col: width as libc::c_ushort,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
+            ws_row,
+            ws_col,
+            ws_xpixel: ws_col * width as libc::c_ushort,
+            ws_ypixel: ws_row * height as libc::c_ushort,
         };
         match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
             -1 => Err(io::Error::last_os_error()),

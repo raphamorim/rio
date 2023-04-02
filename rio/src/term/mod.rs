@@ -81,20 +81,31 @@ impl RenderContext {
         }
     }
 
-    pub fn configure(&self, size: winit::dpi::PhysicalSize<u32>) {
+    pub fn update_size(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        self.renderer.update_size(size.width, size.height);
+        self.configure();
+    }
+
+    pub fn update_scale(&mut self, size: winit::dpi::PhysicalSize<u32>, scale: f32) {
+        self.renderer.update_scale(size.width, size.height, scale);
+        self.configure();
+    }
+
+    pub fn configure(&self) {
         let caps = self.surface.get_capabilities(&self.adapter);
         let formats = caps.formats;
         let format = *formats.last().expect("No supported formats for surface");
         let alpha_modes = caps.alpha_modes;
         let alpha_mode = alpha_modes[0];
+        let (width, height) = self.renderer.size();
 
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format,
-                width: size.width,
-                height: size.height,
+                width,
+                height,
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -159,10 +170,6 @@ impl Term {
             terminal,
             messenger: Messenger::new(channel),
         })
-    }
-
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.render_context.configure(new_size);
     }
 
     #[inline]
@@ -267,15 +274,10 @@ impl Term {
 
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
-        // println!("{:?}", terminal.visible_rows_to_string());
         drop(terminal);
-        // let a =
-        // std::sync::Mutex::unlock(terminal);
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
         self.render_context.renderer.term(visible_rows);
-
-        // drop(terminal);
 
         self.render_context.renderer.draw_queued(
             &self.render_context.device,
@@ -290,23 +292,30 @@ impl Term {
         self.render_context.staging_belt.recall();
     }
 
+    #[inline]
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.render_context.update_size(new_size);
+        let new_h = self.render_context.renderer.config.columns - 40;
+        let new_w = self.render_context.renderer.config.rows - 10;
+        match self.messenger.send_resize(new_h, new_w, 0, 0) {
+            Ok(new_window) => {
+                // let mut terminal = self.terminal.lock();
+                // terminal.resize(true, 25, 30);
+                // drop(terminal);
+            }
+            Err(_) => {}
+        }
+    }
+
     // https://docs.rs/winit/latest/winit/dpi/
     #[allow(dead_code)]
     pub fn set_scale(
         &mut self,
-        _new_scale: f32,
-        _new_size: winit::dpi::PhysicalSize<u32>,
+        new_scale: f32,
+        new_size: winit::dpi::PhysicalSize<u32>,
     ) {
-        // if self.renderer.get_current_scale() != new_scale {
-        //     // self.scale = new_scale;
-        //     self.renderer.refresh_styles(
-        //         new_size.width as f32,
-        //         new_size.height as f32,
-        //         new_scale,
-        //     );
-        //     self.size = new_size;
-
-        //     self.configure_surface();
-        // }
+        if self.render_context.renderer.scale() != new_scale {
+            self.render_context.update_scale(new_size, new_scale);
+        }
     }
 }
