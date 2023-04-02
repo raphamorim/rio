@@ -80,6 +80,7 @@ pub struct Crosswords<U> {
     scroll_region: ScrollRegion,
     storage: Storage<Square>,
     tabs: TabStops,
+    #[allow(dead_code)]
     event_proxy: U,
     window_title: Option<String>,
 }
@@ -212,6 +213,7 @@ impl<U> Crosswords<U> {
         // self.damage_cursor();
     }
 
+    #[allow(dead_code)]
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
         if current_history_size > history_size {
@@ -222,6 +224,7 @@ impl<U> Crosswords<U> {
         self.scroll_limit = history_size;
     }
 
+    #[allow(dead_code)]
     #[inline]
     pub fn cursor(&self) -> (Column, Line) {
         (self.cursor.pos.col, self.cursor.pos.row)
@@ -317,6 +320,7 @@ impl<U> Crosswords<U> {
         // self.mark_fully_damaged();
     }
 
+    #[allow(dead_code)]
     pub fn rows(&mut self) -> usize {
         self.storage.len()
     }
@@ -341,6 +345,7 @@ impl<U> Crosswords<U> {
         // cursor_cell.extra = extra;
     }
 
+    #[allow(dead_code)]
     pub fn visible_rows_to_string(&mut self) -> String {
         let mut text = String::from("");
 
@@ -426,10 +431,10 @@ impl<U> Handler for Crosswords<U> {
         }
     }
 
-    fn set_title(&mut self, window_title: Option<String>) -> () {
+    fn set_title(&mut self, window_title: Option<String>) {
         self.window_title = window_title;
 
-        let title: String = match &self.window_title {
+        let _title: String = match &self.window_title {
             Some(title) => title.to_string(),
             None => String::from(""),
         };

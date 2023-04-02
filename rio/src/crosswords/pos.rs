@@ -21,6 +21,7 @@ pub struct Cursor<T> {
 pub enum StandardCharset {
     #[default]
     Ascii,
+    #[allow(dead_code)]
     SpecialCharacterAndLineDrawing,
 }
 
@@ -33,8 +34,11 @@ pub enum CharsetIndex {
     /// Default set, is designated as ASCII at startup.
     #[default]
     G0,
+    #[allow(dead_code)]
     G1,
+    #[allow(dead_code)]
     G2,
+    #[allow(dead_code)]
     G3,
 }
 

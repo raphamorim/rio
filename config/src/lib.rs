@@ -58,8 +58,6 @@ pub struct Advanced {
     pub tab_character_inactive: char,
     #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
     pub disable_render_when_unfocused: bool,
-    #[serde(default = "bool::default", rename = "enable-fps-counter")]
-    pub enable_fps_counter: bool,
 }
 
 impl Default for Advanced {
@@ -68,9 +66,16 @@ impl Default for Advanced {
             tab_character_active: default_tab_character_active(),
             tab_character_inactive: default_tab_character_inactive(),
             disable_render_when_unfocused: false,
-            enable_fps_counter: false,
         }
     }
+}
+
+#[derive(Debug, Default, PartialEq, Clone, Deserialize)]
+pub struct Developer {
+    #[serde(default = "bool::default", rename = "enable-fps-counter")]
+    pub enable_fps_counter: bool,
+    #[serde(default = "bool::default", rename = "enable-logs")]
+    pub enable_logs: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -91,6 +96,8 @@ pub struct Config {
     pub colors: Colors,
     #[serde(default = "Advanced::default")]
     pub advanced: Advanced,
+    #[serde(default = "Developer::default")]
+    pub developer: Developer,
 }
 
 impl Config {
@@ -156,6 +163,7 @@ impl Default for Config {
                 font: Font::default(),
             },
             advanced: Advanced::default(),
+            developer: Developer::default(),
         }
     }
 }
@@ -223,7 +231,9 @@ mod tests {
             default_tab_character_inactive()
         );
         assert!(!result.advanced.disable_render_when_unfocused);
-        assert!(!result.advanced.enable_fps_counter);
+        // Developer
+        assert!(!result.developer.enable_fps_counter);
+        assert!(!result.developer.enable_logs);
     }
 
     #[test]
@@ -251,7 +261,10 @@ mod tests {
             tab-character-active = '●'
             tab-character-inactive = '■'
             disable-render-when-unfocused = false
+
+            [developer]
             enable-fps-counter = false
+            enable-logs = false
         "#,
         );
 
@@ -266,6 +279,8 @@ mod tests {
         assert_eq!(result.colors, Colors::default());
         // Advanced
         assert_eq!(result.advanced, Advanced::default());
+        // Developer
+        assert_eq!(result.developer, Developer::default());
     }
 
     #[test]
@@ -511,7 +526,6 @@ mod tests {
 
             [advanced]
             disable-render-when-unfocused = true
-            enable-fps-counter = true
             tab-character-active = '▲'
             tab-character-inactive = '●'
         "#,
@@ -526,7 +540,35 @@ mod tests {
         assert!(result.advanced.disable_render_when_unfocused);
         assert_eq!(result.advanced.tab_character_active, '▲');
         assert_eq!(result.advanced.tab_character_inactive, '●');
-        assert!(result.advanced.enable_fps_counter);
+
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_developer() {
+        let result = create_temporary_config(
+            "change-developer",
+            r#"
+            performance = "Low"
+
+            [developer]
+            enable-fps-counter = true
+            enable-logs = true
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.rows, default_rows());
+        assert_eq!(result.columns, default_columns());
+        // Developer
+        assert!(result.developer.enable_logs);
+        assert!(result.developer.enable_fps_counter);
 
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

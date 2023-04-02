@@ -2,14 +2,13 @@ mod crosswords;
 mod event;
 mod performer;
 mod renderer;
-mod scheduler;
 mod sequencer;
 mod term;
 mod window;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
 
-pub fn setup_environment_variables(config: &config::Config) {
+pub fn setup_environment_variables(_config: &config::Config) {
     let terminfo = if teletypewriter::terminfo_exists("rio") {
         "rio"
     } else {

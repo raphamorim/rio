@@ -1,23 +1,20 @@
 // todo: https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/std/io/struct.Chars.html
 
 use std::borrow::Cow;
-use std::env;
 use std::io::Read;
 use std::io::Write;
 // use std::io::BufRead;
 use std::io::BufReader;
-use teletypewriter::create_pty;
+use teletypewriter::{create_pty, ProcessReadWrite, Pty};
 
 fn main() -> std::io::Result<()> {
-    env::set_var("TERM", "rio");
-
     let shell = Cow::Borrowed("bash");
-    let process = create_pty(&shell, 80, 25);
+    let mut process: Pty = create_pty(&shell, 80, 25);
 
     process.writer().write_all(b"1").unwrap();
-    w.write_all(b"2").unwrap();
-    w.write_all(b"ls\n").unwrap();
-    w.write_all(b"echo 1\n").unwrap();
+    process.writer().write_all(b"2").unwrap();
+    process.writer().write_all(b"ls\n").unwrap();
+    process.writer().write_all(b"echo 1\n").unwrap();
 
     // let mut reader = BufReader::new(process);
     // let mut stream = BufWriter::new(process_w);

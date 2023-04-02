@@ -1,5 +1,5 @@
 pub mod sync;
-use mio_extras::channel::Sender;
+
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -11,10 +11,10 @@ pub enum Msg {
     /// Data that should be written to the PTY.
     Input(Cow<'static, [u8]>),
 
-    /// Indicates that the `EventLoop` should shut down, as Alacritty is shutting down.
+    #[allow(dead_code)]
     Shutdown,
 
-    /// Instruction to resize the PTY.
+    #[allow(dead_code)]
     Resize(WindowSize),
 }
 
@@ -136,38 +136,6 @@ pub trait EventListener {
     fn send_event(&self, _event: RioEvent) {}
 }
 
-// pub struct Notifier(pub Sender<Msg>);
-pub struct Notifier(pub Sender<Msg>);
-
-/// Byte sequences are sent to a `Notify` in response to some events.
-pub trait Notify {
-    /// Notify that an escape sequence should be written to the PTY.
-    ///
-    /// TODO this needs to be able to error somehow.
-    fn notify<B: Into<Cow<'static, [u8]>>>(&self, _: B);
-}
-
-impl Notify for Notifier {
-    fn notify<B>(&self, bytes: B)
-    where
-        B: Into<Cow<'static, [u8]>>,
-    {
-        let bytes = bytes.into();
-        // terminal hangs if we send 0 bytes through.
-        if bytes.len() == 0 {
-            return;
-        }
-
-        // let _ = self.0.send(Msg::Input(bytes));
-    }
-}
-
-impl OnResize for Notifier {
-    fn on_resize(&mut self, window_size: WindowSize) {
-        // let _ = self.0.send(Msg::Resize(window_size));
-    }
-}
-
 pub struct VoidListener;
 
 impl EventListener for VoidListener {}
@@ -182,7 +150,7 @@ impl EventProxy {
         Self { proxy }
     }
 
-    /// Send an event to the event loop.
+    #[allow(dead_code)]
     pub fn send_event(&self, event: RioEventType) {
         let _ = self.proxy.send_event(EventP::new(event));
     }

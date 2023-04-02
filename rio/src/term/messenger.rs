@@ -1,11 +1,14 @@
-use crate::window::ansi;
-use std::io::Write;
+use crate::term::ansi;
+use std::borrow::Cow;
+
+use crate::event::Msg;
+
 // use teletypewriter::Process;
 use winit::event::ModifiersState;
 use winit::event::VirtualKeyCode;
 
 // As defined in: http://www.unicode.org/faq/private_use.html
-fn is_private_use_character(c: char) -> bool {
+pub fn is_private_use_character(c: char) -> bool {
     matches!(
         c,
         '\u{E000}'..='\u{F8FF}'
@@ -35,14 +38,16 @@ fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<u8
     })
 }
 
-pub struct Input {
+pub struct Messenger {
     modifiers: ModifiersState,
+    channel: mio_extras::channel::Sender<Msg>,
 }
 
-impl Input {
-    pub fn new() -> Input {
-        Input {
+impl Messenger {
+    pub fn new(channel: mio_extras::channel::Sender<Msg>) -> Messenger {
+        Messenger {
             modifiers: ModifiersState::default(),
+            channel,
         }
     }
 
@@ -58,28 +63,31 @@ impl Input {
         self.modifiers = modifiers;
     }
 
-    pub fn input_character(&mut self, character: char) {
+    pub fn send_character(&mut self, character: char) {
         if !is_private_use_character(character) && character != '\r' && character != '\n'
         {
-            // stream.write_all(&[character as u8]).unwrap();
-            // stream.flush().unwrap();
+            self.send(character as u8);
         }
     }
 
-    pub fn keydown(
+    #[inline]
+    fn send(&self, character: u8) {
+        let val: Cow<'static, [u8]> = Cow::<'static, [u8]>::Owned(([character]).to_vec());
+
+        let _ = self.channel.send(Msg::Input(val));
+    }
+
+    pub fn send_keycode(
         &mut self,
-        _scancode: u32,
-        virtual_keycode: Option<VirtualKeyCode>,
-        // stream: &mut Process,
-    ) {
-        if let Some(keycode) = virtual_keycode {
-            match winit_key_to_char(keycode, self.modifiers.shift()) {
-                Some(key_char) => {
-                    // stream.write_all(&[key_char]).unwrap();
-                    // stream.flush().unwrap();
-                }
-                None => println!("key unimplemented!()"),
+        // _scancode: u32,
+        virtual_keycode: VirtualKeyCode,
+    ) -> Result<(), String> {
+        match winit_key_to_char(virtual_keycode, self.modifiers.shift()) {
+            Some(key_char) => {
+                self.send(key_char);
+                Ok(())
             }
+            None => Err("key unimplemented!()".to_string()),
         }
     }
 }

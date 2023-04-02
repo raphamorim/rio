@@ -1,6 +1,5 @@
 use crate::event::EventP;
 use crate::event::EventProxy;
-use crate::scheduler::Scheduler;
 use crate::term::Term;
 use std::error::Error;
 use std::rc::Rc;
@@ -27,13 +26,13 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let scheduler = Scheduler::new(proxy.clone());
         let window_builder = crate::window::create_window_builder(
             "Rio",
             (self.config.width, self.config.height),
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
         let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
+        let mut is_focused = false;
         term.skeleton(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
@@ -42,21 +41,26 @@ impl Sequencer {
             // }
 
             match event {
-                winit::event::Event::UserEvent(EventP { payload, .. }) => match payload {
-                    crate::event::RioEventType::Rio(event) => match event {
-                        crate::event::RioEvent::Wakeup => {
-                            println!("renderiza td");
-                            term.render(self.config.colors.background.1);
+                winit::event::Event::UserEvent(EventP { payload, .. }) => {
+                    if let crate::event::RioEventType::Rio(event) = payload {
+                        match event {
+                            crate::event::RioEvent::Wakeup => {
+                                if self.config.advanced.disable_render_when_unfocused
+                                    && is_focused
+                                {
+                                    return;
+                                }
+                                term.render(self.config.colors.background.1);
+                            }
+                            crate::event::RioEvent::Title(_title) => {
+                                // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
+                                // self.ctx.window().set_title(title);
+                                // }
+                            }
+                            _ => {}
                         }
-                        crate::event::RioEvent::Title(title) => {
-                            // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
-                            // self.ctx.window().set_title(title);
-                            // }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                },
+                    }
+                }
                 winit::event::Event::Resumed => {
                     // Should render once the loop is resumed for first time
                     // Then wait for instructions or user inputs
@@ -67,10 +71,10 @@ impl Sequencer {
                     ..
                 } => *control_flow = winit::event_loop::ControlFlow::Exit,
 
-                // winit::event::Event::WindowEvent {
-                //     event: winit::event::WindowEvent::ModifiersChanged(modifiers),
-                //     ..
-                // } => input_stream.set_modifiers(modifiers),
+                winit::event::Event::WindowEvent {
+                    event: winit::event::WindowEvent::ModifiersChanged(modifiers),
+                    ..
+                } => term.propagate_modifiers_state(modifiers),
 
                 // event::Event::WindowEvent {
                 //     event: event::WindowEvent::MouseWheel { delta, .. },
@@ -112,7 +116,7 @@ impl Sequencer {
                                     // semantic meaning of the key
                                     virtual_keycode,
                                     // physical key pressed
-                                    scancode,
+                                    // scancode,
                                     state,
                                     // modifiers,
                                     ..
@@ -122,13 +126,7 @@ impl Sequencer {
                     ..
                 } => match state {
                     winit::event::ElementState::Pressed => {
-                        // println!("{:?} {:?}", scancode, Some(virtual_keycode));
-                        // input_stream.keydown(
-                        //     scancode,
-                        //     virtual_keycode,
-                        //     &mut rio.write_process,
-                        // );
-                        // winit_window.request_redraw();
+                        term.input_keycode(virtual_keycode);
                     }
 
                     winit::event::ElementState::Released => {
@@ -140,16 +138,15 @@ impl Sequencer {
                     event: winit::event::WindowEvent::Focused(focused),
                     ..
                 } => {
-                    // is_focused = focused;
+                    is_focused = focused;
                 }
 
                 winit::event::Event::WindowEvent {
                     event: winit::event::WindowEvent::Resized(new_size),
                     ..
                 } => {
-                    // rio.set_size(new_size);
                     term.resize(new_size);
-                    // winit_window.request_redraw();
+                    term.render(self.config.colors.background.1);
                 }
 
                 winit::event::Event::WindowEvent {
@@ -162,7 +159,7 @@ impl Sequencer {
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
                     // if rio.get_scale() != scale_factor_f32 {
-                    // rio.set_scale(scale_factor_f32, *new_inner_size);
+                    term.set_scale(scale_factor_f32, *new_inner_size);
                     // }
                 }
 
