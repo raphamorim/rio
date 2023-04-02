@@ -197,9 +197,8 @@ impl<U> Crosswords<U> {
         }
     }
 
-    pub fn resize(&mut self, reflow: bool, lines: usize, columns: usize)
+    pub fn resize(&mut self, reflow: bool, columns: usize, lines: usize)
     {
-        println!("resize");
         // Use empty template cell for resetting cells due to resize.
         let template = mem::take(&mut self.cursor.template);
 
@@ -208,8 +207,6 @@ impl<U> Crosswords<U> {
             Ordering::Greater => self.storage.shrink_lines(lines),
             Ordering::Equal => (),
         }
-
-        println!("{:?}", columns);
 
         match self.cols.cmp(&columns) {
             Ordering::Less => {

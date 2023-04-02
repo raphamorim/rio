@@ -1,5 +1,6 @@
 pub mod sync;
 
+use teletypewriter::WinsizeBuilder;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -15,15 +16,7 @@ pub enum Msg {
     Shutdown,
 
     #[allow(dead_code)]
-    Resize(WindowSize),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct WindowSize {
-    pub rows: u16,
-    pub columns: u16,
-    pub width: u16,
-    pub height: u16,
+    Resize(WinsizeBuilder),
 }
 
 #[derive(Clone)]
@@ -56,7 +49,7 @@ pub enum RioEvent {
     PtyWrite(String),
 
     /// Request to write the text area size.
-    TextAreaSizeRequest(Arc<dyn Fn(WindowSize) -> String + Sync + Send + 'static>),
+    TextAreaSizeRequest(Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>),
 
     /// Cursor blinking state has changed.
     CursorBlinkingChange,
@@ -128,7 +121,7 @@ impl From<EventP> for winit::event::Event<'_, EventP> {
 }
 
 pub trait OnResize {
-    fn on_resize(&mut self, window_size: WindowSize);
+    fn on_resize(&mut self, window_size: WinsizeBuilder);
 }
 
 /// Event Loop for notifying the renderer about terminal events.

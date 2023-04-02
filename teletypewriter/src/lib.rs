@@ -118,8 +118,8 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn set_winsize(&mut self, columns: u16, rows: u16, width: u16, height: u16) {
-        let _ = self.child.set_winsize(columns, rows, width, height);
+    fn set_winsize(&mut self, winsize: WinsizeBuilder) {
+        let _ = self.child.set_winsize(winsize);
     }
 
     #[inline]
@@ -227,7 +227,7 @@ pub trait ProcessReadWrite {
     fn read_token(&self) -> mio::Token;
     fn writer(&mut self) -> &mut Self::Writer;
     fn write_token(&self) -> mio::Token;
-    fn set_winsize(&mut self, _: u16, _: u16, _: u16, _: u16);
+    fn set_winsize(&mut self, _: WinsizeBuilder);
 
     fn register(
         &mut self,
@@ -324,13 +324,13 @@ pub fn create_termp(utf8: bool) -> libc::termios {
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty(name: &str, width: u16, height: u16) -> Pty {
+pub fn create_pty(name: &str, width: u16, height: u16, columns: u16, rows: u16) -> Pty {
     let mut main = 0;
     let winsize = Winsize {
-        ws_row: height as libc::c_ushort,
-        ws_col: width as libc::c_ushort,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
+        ws_row: rows as libc::c_ushort,
+        ws_col: columns as libc::c_ushort,
+        ws_xpixel: height as libc::c_ushort,
+        ws_ypixel: width as libc::c_ushort,
     };
     let term = create_termp(true);
 
@@ -390,6 +390,30 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
 }
 
 #[derive(Debug, Clone)]
+pub struct WinsizeBuilder {
+    pub rows: u16,
+    pub cols: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl WinsizeBuilder {
+    fn build(&self) -> Winsize {
+        let ws_row = self.rows as libc::c_ushort;
+        let ws_col = self.cols as libc::c_ushort;
+
+        Winsize {
+            ws_row,
+            ws_col,
+            // ws_xpixel: ws_col * width as libc::c_ushort,
+            // ws_ypixel: ws_row * height as libc::c_ushort,
+            ws_xpixel: 0 as libc::c_ushort,
+            ws_ypixel: 0 as libc::c_ushort,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Child {
     id: Arc<libc::c_int>,
     #[allow(dead_code)]
@@ -398,22 +422,29 @@ pub struct Child {
 }
 
 impl Child {
-    pub fn set_winsize(&self, columns: u16, rows: u16, width: u16, height: u16) -> io::Result<()> {
-        //  let ws_row = self.num_lines as libc::c_ushort;
-        // let ws_col = self.num_cols as libc::c_ushort;
-        // let ws_xpixel = ws_col * self.cell_width as libc::c_ushort;
-        // let ws_ypixel = ws_row * self.cell_height as libc::c_ushort;
-        // winsize { ws_row, ws_col, ws_xpixel, ws_ypixel }
+    /// The tcgetwinsize function fills in the winsize structure pointed to by
+    ///  gws with values that represent the size of the terminal window for which
+    ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
+    ///  returns zero (0).
 
-        let ws_row = rows as libc::c_ushort;
-        let ws_col = columns as libc::c_ushort;
+    ///  The tcsetwinsize function sets the terminal window size, for the terminal
+    ///  referenced by fd, to the sizes from the winsize structure pointed to by
+    ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
 
-        let winsize = Winsize {
-            ws_row,
-            ws_col,
-            ws_xpixel: ws_col * width as libc::c_ushort,
-            ws_ypixel: ws_row * height as libc::c_ushort,
-        };
+    ///  The winsize structure, defined in <termios.h>, contains (at least) the
+    ///  following four fields
+
+    ///  unsigned short ws_row;      /* Number of rows, in characters */
+    ///  unsigned short ws_col;      /* Number of columns, in characters */
+    ///  unsigned short ws_xpixel;   /* Width, in pixels */
+    ///  unsigned short ws_ypixel;   /* Height, in pixels */
+
+    /// If the actual window size of the controlling terminal of a process
+    /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
+    /// simply changing the sizes using tcsetwinsize() does not necessarily
+    /// change the actual window size, and if not, will not generate a SIGWINCH.
+    pub fn set_winsize(&self, winsize_builder: WinsizeBuilder) -> io::Result<()> {
+        let winsize: Winsize = winsize_builder.build();
         match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
             -1 => Err(io::Error::last_os_error()),
             _ => Ok(()),
