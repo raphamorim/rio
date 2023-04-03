@@ -10,7 +10,7 @@ pub struct Layout {
     scale_factor: f32,
     width: u16,
     height: u16,
-    padding: Delta<u8>
+    padding: Delta<u8>,
 }
 
 impl Layout {
@@ -19,7 +19,7 @@ impl Layout {
             width,
             height,
             scale_factor,
-            padding: Delta::<u8>::default()
+            padding: Delta::<u8>::default(),
         }
     }
 

@@ -1,8 +1,8 @@
-use crate::event::{ RioEventType, EventP, EventProxy, RioEvent };
+use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
 use crate::term::Term;
 use std::error::Error;
 use std::rc::Rc;
-use winit::event::{ Event, MouseScrollDelta, WindowEvent };
+use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 
@@ -102,10 +102,8 @@ impl Sequencer {
                                 // },
                                 _ => (),
                             }
-                        },
+                        }
                     }
-
-                    
                 }
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),

@@ -616,7 +616,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
 
         match (action, intermediates) {
             ('K', []) => handler.clear_line(next_param_or(0)),
-            ('J', []) => {},
+            ('J', []) => {}
             ('t', []) => match next_param_or(1) as usize {
                 14 => handler.text_area_size_pixels(),
                 18 => handler.text_area_size_chars(),

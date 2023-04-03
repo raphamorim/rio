@@ -1,10 +1,10 @@
 mod ansi;
 mod messenger;
 
-use crate::layout::Layout;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
+use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::renderer::{Renderer, RendererStyles};
 use crate::term::messenger::Messenger;
@@ -178,7 +178,7 @@ impl Term {
             render_context,
             terminal,
             layout,
-            messenger
+            messenger,
         })
     }
 
@@ -306,8 +306,15 @@ impl Term {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        let (c, l) = self.layout.compute(new_size.width as f32, new_size.height as f32);
-        let _ = self.messenger.send_resize(new_size.width as u16, new_size.height as u16, c as u16, l as u16);
+        let (c, l) = self
+            .layout
+            .compute(new_size.width as f32, new_size.height as f32);
+        let _ = self.messenger.send_resize(
+            new_size.width as u16,
+            new_size.height as u16,
+            c as u16,
+            l as u16,
+        );
         let mut terminal = self.terminal.lock();
         // Reflow will be on
         terminal.resize(true, c, l);
@@ -316,11 +323,7 @@ impl Term {
 
     // https://docs.rs/winit/latest/winit/dpi/
     #[allow(dead_code)]
-    pub fn set_scale(
-        &mut self,
-        new_scale: f32,
-        new_size: winit::dpi::PhysicalSize<u32>,
-    ) {
+    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
         if self.render_context.renderer.scale() != new_scale {
             self.render_context.update_scale(new_size, new_scale);
         }

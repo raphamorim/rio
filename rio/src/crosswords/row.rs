@@ -1,6 +1,6 @@
-use core::cmp::min;
 use crate::crosswords::square::{CrosswordsSquare, ResetDiscriminant};
 use crate::crosswords::Column;
+use core::cmp::min;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
 use std::{ptr, slice};
@@ -68,7 +68,10 @@ impl<T: Clone + Default> Row<T> {
 
         // Split off cells for a new row.
         let mut new_row = self.inner.split_off(columns);
-        let index = new_row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
+        let index = new_row
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map_or(0, |i| i + 1);
         new_row.truncate(index);
 
         self.occ = min(self.occ, columns);

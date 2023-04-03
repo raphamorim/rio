@@ -1,6 +1,6 @@
 mod crosswords;
-mod layout;
 mod event;
+mod layout;
 mod performer;
 mod renderer;
 mod sequencer;
