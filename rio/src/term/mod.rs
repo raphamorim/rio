@@ -1,6 +1,7 @@
 mod ansi;
 mod messenger;
 
+use crate::layout::Layout;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
@@ -118,6 +119,7 @@ pub struct Term {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
     messenger: Messenger,
+    layout: Layout,
 }
 
 impl Term {
@@ -129,11 +131,12 @@ impl Term {
         let shell = std::env::var("SHELL")?;
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
-        let width = (size.width as u16) * (scale as u16);
-        let height = (size.height as u16) * (scale as u16);
-        let pty = create_pty(&Cow::Borrowed(&shell), width, height, config.columns, config.rows);
 
-        println!("original: {:?} {:?} {:?}", width, height, scale);
+        let layout = Layout::new(size.width as u16, size.height as u16, scale as f32);
+        let (columns, rows) = layout.compute(size.width as f32, size.height as f32);
+        let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
+
+        println!("original: {:?} {:?}", columns, rows);
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -163,17 +166,19 @@ impl Term {
 
         let event_proxy_clone = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> = Arc::new(FairMutex::new(
-            Crosswords::new(config.columns.into(), config.rows.into(), event_proxy),
+            Crosswords::new(columns.into(), rows.into(), event_proxy),
         ));
 
         let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
         let channel = machine.channel();
         machine.spawn();
+        let messenger = Messenger::new(channel);
 
         Ok(Term {
             render_context,
             terminal,
-            messenger: Messenger::new(channel),
+            layout,
+            messenger
         })
     }
 
@@ -301,20 +306,12 @@ impl Term {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        let scale = self.render_context.renderer.scale() as u16;
-        let cols = self.render_context.renderer.config.columns;
-        let rows = self.render_context.renderer.config.rows;
-
-        let width = (new_size.width as u16) * scale;
-        let height = (new_size.height as u16) * scale;
-        match self.messenger.send_resize(width, height, cols, rows) {
-            Ok(_new_window) => {
-                // let mut terminal = self.terminal.lock();
-                // terminal.resize(true, cols.into(), rows.into());
-                // drop(terminal);
-            }
-            Err(_) => {}
-        }
+        let (c, l) = self.layout.compute(new_size.width as f32, new_size.height as f32);
+        let _ = self.messenger.send_resize(new_size.width as u16, new_size.height as u16, c as u16, l as u16);
+        let mut terminal = self.terminal.lock();
+        // Reflow will be on
+        terminal.resize(true, c, l);
+        drop(terminal);
     }
 
     // https://docs.rs/winit/latest/winit/dpi/

@@ -39,6 +39,9 @@ use unicode_width::UnicodeWidthChar;
 
 pub type NamedColor = colors::NamedColor;
 
+pub const MIN_COLUMNS: usize = 2;
+pub const MIN_VISIBLE_ROWS: usize = 1;
+
 bitflags! {
     #[derive(Debug, Clone)]
     pub struct Mode: u32 {

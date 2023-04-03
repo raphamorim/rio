@@ -117,6 +117,7 @@ impl Sequencer {
                 Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::KeyboardInput {
+                            is_synthetic: false,
                             input:
                                 winit::event::KeyboardInput {
                                     virtual_keycode,
@@ -148,8 +149,12 @@ impl Sequencer {
                     event: winit::event::WindowEvent::Resized(new_size),
                     ..
                 } => {
+                    if new_size.width == 0 || new_size.height == 0 {
+                        return;
+                    }
+
                     term.resize(new_size);
-                    term.render(self.config.colors.background.1);
+                    // term.render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
