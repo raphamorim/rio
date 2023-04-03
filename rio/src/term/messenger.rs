@@ -1,6 +1,6 @@
-use teletypewriter::WinsizeBuilder;
 use crate::term::ansi;
 use std::borrow::Cow;
+use teletypewriter::WinsizeBuilder;
 
 use crate::event::Msg;
 
@@ -71,8 +71,14 @@ impl Messenger {
     }
 
     #[inline]
-    pub fn send_resize(&self, width: u16, height: u16, cols: u16, rows: u16) -> Result<&str, String> {
-        let new_size = WinsizeBuilder{
+    pub fn send_resize(
+        &self,
+        width: u16,
+        height: u16,
+        cols: u16,
+        rows: u16,
+    ) -> Result<&str, String> {
+        let new_size = WinsizeBuilder {
             rows,
             cols,
             width,
@@ -81,7 +87,7 @@ impl Messenger {
 
         match self.channel.send(Msg::Resize(new_size)) {
             Ok(..) => Ok("Resized"),
-            Err(..) => Err("Error sending message".to_string())
+            Err(..) => Err("Error sending message".to_string()),
         }
     }
 

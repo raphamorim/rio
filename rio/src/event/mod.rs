@@ -1,10 +1,10 @@
 pub mod sync;
 
-use teletypewriter::WinsizeBuilder;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
+use teletypewriter::WinsizeBuilder;
 use winit::event_loop::EventLoopProxy;
 
 #[derive(Debug)]
