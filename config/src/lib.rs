@@ -86,10 +86,6 @@ pub struct Config {
     pub width: u16,
     #[serde(default = "default_height")]
     pub height: u16,
-    #[serde(default = "default_columns")]
-    pub columns: u16,
-    #[serde(default = "default_rows")]
-    pub rows: u16,
     #[serde(default = "Style::default")]
     pub style: Style,
     #[serde(default = "Colors::default")]
@@ -153,9 +149,6 @@ impl Default for Config {
             performance: Performance::default(),
             width: default_width(),
             height: default_height(),
-            // MacOs default
-            columns: default_columns(),
-            rows: default_rows(),
             colors: Colors::default(),
             style: Style {
                 font_size: default_font_size(),
@@ -196,8 +189,8 @@ mod tests {
     #[test]
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path("/tmp/it-should-never-exist");
-        assert_eq!(config.rows, default_rows());
-        assert_eq!(config.columns, default_columns());
+        assert_eq!(config.width, default_width());
+        assert_eq!(config.height, default_height());
     }
 
     #[test]
@@ -212,8 +205,6 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Style
         assert_eq!(result.style.font, Font::default());
         assert_eq!(result.style.font_size, default_font_size());
@@ -271,8 +262,6 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Style
         assert_eq!(result.style, Style::default());
         // Colors
@@ -300,8 +289,6 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Style
         assert_eq!(result.style.font, Font::default());
         assert_eq!(result.style.font_size, default_font_size());
@@ -325,8 +312,6 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Style
         assert_eq!(result.style.font, Font::Firamono);
         assert_eq!(result.style.font_size, default_font_size());
@@ -351,34 +336,6 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, 400);
         assert_eq!(result.height, 500);
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
-        // Style
-        assert_eq!(result.style.font, Font::Firamono);
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
-        // Colors
-        assert_eq!(result.colors.background, colors::defaults::background());
-        assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
-        assert_eq!(result.colors.cursor, colors::defaults::cursor());
-    }
-
-    #[test]
-    fn test_change_config_rows_columns() {
-        let result = create_temporary_config(
-            "change-rows-columns",
-            r#"
-            rows = 40
-            columns = 100
-        "#,
-        );
-
-        assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, 40);
-        assert_eq!(result.columns, 100);
         // Style
         assert_eq!(result.style.font, Font::Firamono);
         assert_eq!(result.style.font_size, default_font_size());
@@ -407,8 +364,6 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Style
         assert_eq!(result.style.font, Font::Novamono);
         assert_eq!(result.style.font_size, 14.0);
@@ -534,8 +489,6 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Advanced
         assert!(result.advanced.disable_render_when_unfocused);
         assert_eq!(result.advanced.tab_character_active, '▲');
@@ -564,8 +517,6 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
-        assert_eq!(result.rows, default_rows());
-        assert_eq!(result.columns, default_columns());
         // Developer
         assert!(result.developer.enable_logs);
         assert!(result.developer.enable_fps_counter);

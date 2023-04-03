@@ -324,13 +324,13 @@ pub fn create_termp(utf8: bool) -> libc::termios {
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty(name: &str, width: u16, height: u16, columns: u16, rows: u16) -> Pty {
+pub fn create_pty(name: &str, columns: u16, rows: u16) -> Pty {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
         ws_col: columns as libc::c_ushort,
-        ws_xpixel: height as libc::c_ushort,
-        ws_ypixel: width as libc::c_ushort,
+        ws_xpixel: 0 as libc::c_ushort,
+        ws_ypixel: 0 as libc::c_ushort,
     };
     let term = create_termp(true);
 
@@ -401,14 +401,16 @@ impl WinsizeBuilder {
     fn build(&self) -> Winsize {
         let ws_row = self.rows as libc::c_ushort;
         let ws_col = self.cols as libc::c_ushort;
+        let ws_xpixel = self.width as libc::c_ushort;
+        let ws_ypixel = self.height as libc::c_ushort;
 
         Winsize {
             ws_row,
             ws_col,
             // ws_xpixel: ws_col * width as libc::c_ushort,
             // ws_ypixel: ws_row * height as libc::c_ushort,
-            ws_xpixel: 0 as libc::c_ushort,
-            ws_ypixel: 0 as libc::c_ushort,
+            ws_xpixel,
+            ws_ypixel,
         }
     }
 }
