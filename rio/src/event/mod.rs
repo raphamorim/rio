@@ -51,6 +51,8 @@ pub enum RioEvent {
     /// Request to write the text area size.
     TextAreaSizeRequest(Arc<dyn Fn(WinsizeBuilder) -> String + Sync + Send + 'static>),
 
+    Resized,
+
     /// Cursor blinking state has changed.
     CursorBlinkingChange,
 
@@ -78,6 +80,7 @@ impl Debug for RioEvent {
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::Wakeup => write!(f, "Wakeup"),
             RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::Resized => write!(f, "Resized"),
             RioEvent::Exit => write!(f, "Exit"),
         }
     }

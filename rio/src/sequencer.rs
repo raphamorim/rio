@@ -42,6 +42,7 @@ impl Sequencer {
                     if let RioEventType::Rio(event) = payload {
                         match event {
                             RioEvent::Wakeup => {
+                                println!("render");
                                 if self.config.advanced.disable_render_when_unfocused
                                     && is_focused
                                 {
@@ -53,6 +54,10 @@ impl Sequencer {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
                                 // self.ctx.window().set_title(title);
                                 // }
+                            }
+                            RioEvent::Resized => {
+                                term.compute_resize();
+                                term.render(self.config.colors.background.1);
                             }
                             _ => {}
                         }
@@ -152,7 +157,7 @@ impl Sequencer {
                     }
 
                     term.resize(new_size);
-                    // term.render(self.config.colors.background.1);
+                    term.render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
@@ -165,7 +170,7 @@ impl Sequencer {
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
                     term.set_scale(scale_factor_f32, *new_inner_size);
-                    term.render(self.config.colors.background.1);
+                    // term.render(self.config.colors.background.1);
                 }
 
                 Event::MainEventsCleared { .. } => {}

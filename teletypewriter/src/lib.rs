@@ -118,8 +118,8 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn set_winsize(&mut self, winsize: WinsizeBuilder) {
-        let _ = self.child.set_winsize(winsize);
+    fn set_winsize(&mut self, winsize: WinsizeBuilder) -> Result<(), std::io::Error> {
+        self.child.set_winsize(winsize)
     }
 
     #[inline]
@@ -227,7 +227,7 @@ pub trait ProcessReadWrite {
     fn read_token(&self) -> mio::Token;
     fn writer(&mut self) -> &mut Self::Writer;
     fn write_token(&self) -> mio::Token;
-    fn set_winsize(&mut self, _: WinsizeBuilder);
+    fn set_winsize(&mut self, _: WinsizeBuilder) -> Result<(), io::Error>;
 
     fn register(
         &mut self,

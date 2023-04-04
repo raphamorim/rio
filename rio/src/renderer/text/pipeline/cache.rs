@@ -20,7 +20,7 @@ impl Cache {
                 height,
                 depth_or_array_layers: 1,
             },
-            view_formats: &[wgpu::TextureFormat::R8Unorm],
+            view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,

@@ -8,16 +8,20 @@ pub struct Delta<T: Default> {
 
 pub struct Layout {
     scale_factor: f32,
-    width: u16,
-    height: u16,
+    width: f32,
+    height: f32,
+    pub columns: usize,
+    pub rows: usize,
     padding: Delta<u8>,
 }
 
 impl Layout {
-    pub fn new(width: u16, height: u16, scale_factor: f32) -> Layout {
+    pub fn new(width: f32, height: f32, scale_factor: f32) -> Layout {
         Layout {
             width,
             height,
+            columns: 80,
+            rows: 25,
             scale_factor,
             padding: Delta::<u8>::default(),
         }
@@ -34,25 +38,29 @@ impl Layout {
         self.scale_factor = scale_factor;
     }
 
-    pub fn set_size(&mut self, width: u16, height: u16) {
+    pub fn set_size(&mut self, width: f32, height: f32) {
         self.width = width;
         self.height = height;
     }
 
     // $ tput columns
     // $ tput lines
-    pub fn compute(&self, width: f32, height: f32) -> (usize, usize) {
+
+    pub fn compute(&mut self) -> (usize, usize) {
         let (padding_x, padding_y) = self.padding();
         // let a_lines = (height - 2. * padding_y) / scale;
-        let mut a_lines = (height - 2. * padding_y) / self.scale_factor;
+        let mut a_lines = (self.height - 2. * padding_y) / self.scale_factor;
         a_lines = a_lines / 22.;
         let a_screen_lines = std::cmp::max(a_lines as usize, MIN_VISIBLE_ROWS);
 
-        let mut a_columns = (width - 2. * padding_x) / self.scale_factor;
+        let mut a_columns = (self.width - 2. * padding_x) / self.scale_factor;
         a_columns = a_columns / 10.;
         let a_columns = std::cmp::max(a_columns as usize, MIN_COLUMNS);
 
         println!("compute: {:?} {:?}", a_columns, a_screen_lines);
+
+        self.columns = a_columns;
+        self.rows = a_screen_lines;
 
         (a_columns, a_screen_lines)
     }

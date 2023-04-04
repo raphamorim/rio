@@ -41,6 +41,7 @@ impl Pipeline<()> {
     pub fn new(
         device: &wgpu::Device,
         filter_mode: wgpu::FilterMode,
+        multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
         cache_width: u32,
         cache_height: u32,
@@ -48,6 +49,7 @@ impl Pipeline<()> {
         build(
             device,
             filter_mode,
+            multisample,
             render_format,
             None,
             cache_width,
@@ -78,6 +80,7 @@ impl Pipeline<wgpu::DepthStencilState> {
     pub fn new(
         device: &wgpu::Device,
         filter_mode: wgpu::FilterMode,
+        multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
         depth_stencil_state: wgpu::DepthStencilState,
         cache_width: u32,
@@ -86,6 +89,7 @@ impl Pipeline<wgpu::DepthStencilState> {
         build(
             device,
             filter_mode,
+            multisample,
             render_format,
             Some(depth_stencil_state),
             cache_width,
@@ -191,6 +195,7 @@ const IDENTITY_MATRIX: [f32; 16] = [
 fn build<D>(
     device: &wgpu::Device,
     filter_mode: wgpu::FilterMode,
+    multisample: wgpu::MultisampleState,
     render_format: wgpu::TextureFormat,
     depth_stencil: Option<wgpu::DepthStencilState>,
     cache_width: u32,
@@ -296,8 +301,8 @@ fn build<D>(
             strip_index_format: Some(wgpu::IndexFormat::Uint16),
             ..Default::default()
         },
+        multisample,
         depth_stencil,
-        multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
