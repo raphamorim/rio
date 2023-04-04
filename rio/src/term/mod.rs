@@ -21,6 +21,8 @@ struct RenderContext {
     queue: wgpu::Queue,
     staging_belt: wgpu::util::StagingBelt,
     renderer: Renderer,
+    format: wgpu::TextureFormat,
+    alpha_mode: wgpu::CompositeAlphaMode,
 }
 
 impl RenderContext {
@@ -53,7 +55,7 @@ impl RenderContext {
         })
         .await;
 
-        let staging_belt = wgpu::util::StagingBelt::new(1024);
+        let staging_belt = wgpu::util::StagingBelt::new(2048);
 
         surface.configure(
             &device,
@@ -65,6 +67,7 @@ impl RenderContext {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
+                // present_mode: wgpu::PresentMode::Fifo,
             },
         );
 
@@ -79,17 +82,41 @@ impl RenderContext {
             surface,
             staging_belt,
             renderer,
+            format,
+            alpha_mode,
         }
     }
 
     pub fn update_size(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         self.renderer.update_size(size.width, size.height);
-        self.configure();
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.format,
+                width: size.width,
+                height: size.height,
+                view_formats: vec![],
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
     }
 
     pub fn update_scale(&mut self, size: winit::dpi::PhysicalSize<u32>, scale: f32) {
         self.renderer.update_scale(size.width, size.height, scale);
-        self.configure();
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.format,
+                width: size.width,
+                height: size.height,
+                view_formats: vec![],
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
     }
 
     pub fn configure(&self) {
@@ -132,8 +159,8 @@ impl Term {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
 
-        let layout = Layout::new(size.width as u16, size.height as u16, scale as f32);
-        let (columns, rows) = layout.compute(size.width as f32, size.height as f32);
+        let mut layout = Layout::new(size.width as f32, size.height as f32, scale as f32);
+        let (columns, rows) = layout.compute();
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
         println!("original: {:?} {:?}", columns, rows);
@@ -193,6 +220,8 @@ impl Term {
             println!("input_char: Received character {}", character);
         }
 
+        println!("???");
+
         self.messenger.send_character(character);
     }
 
@@ -207,6 +236,8 @@ impl Term {
             println!("input_keycode: received keycode {:?}", virtual_keycode);
         }
 
+        println!("???");
+
         if let Some(keycode) = virtual_keycode {
             let _ = self.messenger.send_keycode(keycode);
         } else if logs {
@@ -214,6 +245,7 @@ impl Term {
         }
     }
 
+    #[inline]
     pub fn skeleton(&mut self, color: wgpu::Color) {
         // TODO: WGPU caching
         let mut encoder = self.render_context.device.create_command_encoder(
@@ -232,7 +264,7 @@ impl Term {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render -> Clear frame"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
+                view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(color),
@@ -253,6 +285,7 @@ impl Term {
         self.render_context.staging_belt.recall();
     }
 
+    #[inline]
     pub fn render(&mut self, color: wgpu::Color) {
         let mut encoder = self.render_context.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
@@ -304,21 +337,28 @@ impl Term {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        println!("new_size: {:?} {:?}", new_size.width, new_size.height);
+        // println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        let (c, l) = self
-            .layout
-            .compute(new_size.width as f32, new_size.height as f32);
+        self.layout
+            .set_size(new_size.width as f32, new_size.height as f32);
+        let (c, l) = self.layout.compute();
+
         let _ = self.messenger.send_resize(
             new_size.width as u16,
             new_size.height as u16,
             c as u16,
             l as u16,
         );
+    }
+
+    pub fn compute_resize(&mut self) {
         let mut terminal = self.terminal.lock();
-        // Reflow will be on
-        terminal.resize(true, c, l);
-        drop(terminal);
+        println!(
+            "compute_resize {} {}",
+            self.layout.columns, self.layout.rows
+        );
+        terminal.resize(true, self.layout.columns, self.layout.rows);
+        // drop(terminal);
     }
 
     // https://docs.rs/winit/latest/winit/dpi/

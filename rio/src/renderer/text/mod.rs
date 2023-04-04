@@ -207,6 +207,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     fn new(
         device: &wgpu::Device,
         filter_mode: wgpu::FilterMode,
+        multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
         raw_builder: glyph_brush::GlyphBrushBuilder<F, H>,
     ) -> Self {
@@ -216,6 +217,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
             pipeline: Pipeline::<()>::new(
                 device,
                 filter_mode,
+                multisample,
                 render_format,
                 cache_width,
                 cache_height,
@@ -318,6 +320,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     fn new(
         device: &wgpu::Device,
         filter_mode: wgpu::FilterMode,
+        multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
         depth_stencil_state: wgpu::DepthStencilState,
         raw_builder: glyph_brush::GlyphBrushBuilder<F, H>,
@@ -328,6 +331,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
             pipeline: Pipeline::<wgpu::DepthStencilState>::new(
                 device,
                 filter_mode,
+                multisample,
                 render_format,
                 depth_stencil_state,
                 cache_width,

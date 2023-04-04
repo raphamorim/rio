@@ -90,6 +90,135 @@ pub struct Crosswords<U> {
     #[allow(dead_code)]
     event_proxy: U,
     window_title: Option<String>,
+    damage: TermDamageState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineDamageBounds {
+    /// Damaged line number.
+    pub line: usize,
+
+    /// Leftmost damaged column.
+    pub left: usize,
+
+    /// Rightmost damaged column.
+    pub right: usize,
+}
+
+impl LineDamageBounds {
+    #[inline]
+    pub fn undamaged(line: usize, num_cols: usize) -> Self {
+        Self {
+            line,
+            left: num_cols,
+            right: 0,
+        }
+    }
+
+    #[inline]
+    pub fn reset(&mut self, num_cols: usize) {
+        *self = Self::undamaged(self.line, num_cols);
+    }
+
+    #[inline]
+    pub fn expand(&mut self, left: usize, right: usize) {
+        self.left = std::cmp::min(self.left, left);
+        self.right = std::cmp::max(self.right, right);
+    }
+
+    #[inline]
+    pub fn is_damaged(&self) -> bool {
+        self.left <= self.right
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TermDamageState {
+    /// Hint whether terminal should be damaged entirely regardless of the actual damage changes.
+    is_fully_damaged: bool,
+
+    /// Information about damage on terminal lines.
+    lines: Vec<LineDamageBounds>,
+
+    /// Old terminal cursor point.
+    last_cursor: Pos,
+
+    /// Last Vi cursor point.
+    last_vi_cursor_point: Option<Pos>,
+    // Old selection range.
+    // last_selection: Option<SelectionRange>,
+}
+
+impl TermDamageState {
+    fn new(num_cols: usize, num_lines: usize) -> Self {
+        let lines = (0..num_lines)
+            .map(|line| LineDamageBounds::undamaged(line, num_cols))
+            .collect();
+
+        Self {
+            is_fully_damaged: true,
+            lines,
+            last_cursor: Default::default(),
+            last_vi_cursor_point: Default::default(),
+            // last_selection: Default::default(),
+        }
+    }
+
+    #[inline]
+    fn resize(&mut self, num_cols: usize, num_lines: usize) {
+        // Reset point, so old cursor won't end up outside of the viewport.
+        self.last_cursor = Default::default();
+        self.last_vi_cursor_point = None;
+        // self.last_selection = None;
+        self.is_fully_damaged = true;
+
+        self.lines.clear();
+        self.lines.reserve(num_lines);
+        for line in 0..num_lines {
+            self.lines.push(LineDamageBounds::undamaged(line, num_cols));
+        }
+    }
+
+    /// Damage point inside of the viewport.
+    #[inline]
+    fn damage_point(&mut self, point: Pos) {
+        // self.damage_line(point.line, point.column.0, point.column.0);
+    }
+
+    /// Expand `line`'s damage to span at least `left` to `right` column.
+    #[inline]
+    fn damage_line(&mut self, line: usize, left: usize, right: usize) {
+        self.lines[line].expand(left, right);
+    }
+
+    fn damage_selection(
+        &mut self,
+        // selection: SelectionRange,
+        display_offset: usize,
+        num_cols: usize,
+    ) {
+        let display_offset = display_offset as i32;
+        let last_visible_line = self.lines.len() as i32 - 1;
+
+        // Don't damage invisible selection.
+        // if selection.end.line.0 + display_offset < 0
+        //     || selection.start.line.0.abs() < display_offset - last_visible_line
+        // {
+        //     return;
+        // };
+
+        // let start = std::cmp::max(selection.start.line.0 + display_offset, 0);
+        // let end = (selection.end.line.0 + display_offset).clamp(0, last_visible_line);
+        // for line in start as usize..=end as usize {
+        //     self.damage_line(line, 0, num_cols - 1);
+        // }
+    }
+
+    /// Reset information about terminal damage.
+    fn reset(&mut self, num_cols: usize) {
+        self.is_fully_damaged = false;
+        self.lines.iter_mut().for_each(|line| line.reset(num_cols));
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +326,7 @@ impl<U> Crosswords<U> {
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
+            damage: TermDamageState::new(cols, rows),
         }
     }
 
@@ -901,25 +1031,21 @@ impl<U> Handler for Crosswords<U> {
         }
     }
 
-    // #[inline]
-    // fn damage_row(&mut self, line: usize, left: usize, right: usize) {
-    //     self.storage[line.into()].expand(left, right);
-    // }
-
     fn carriage_return(&mut self) {
         let new_col = 0;
-        // let row = self.cursor.pos.row.0 as usize;
-        // self.damage_row(row, new_col, self.cursor.pos.col.0);
+        let row = self.cursor.pos.row.0 as usize;
+        self.damage.damage_line(row, new_col, self.cursor.pos.col.0);
         self.cursor.pos.col = Column(new_col);
         self.cursor.should_wrap = false;
     }
 
     #[inline]
     fn clear_line(&mut self, mode: u16) {
+        println!("clean");
         let cursor = &self.cursor;
-        let _bg = cursor.template.bg;
+        let bg = cursor.template.bg;
         let pos = &cursor.pos;
-        let (_left, _right) = match mode {
+        let (left, right) = match mode {
             // Right
             0 => {
                 if self.cursor.should_wrap {
@@ -934,10 +1060,12 @@ impl<U> Handler for Crosswords<U> {
             _ => todo!(),
         };
 
-        // self.damage.damage_line(pos.row.0 as usize, left.0, right.0 - 1);
+        self.damage
+            .damage_line(pos.row.0 as usize, left.0, right.0 - 1);
         // let row = &mut self[pos.row];
-        // for cell in &mut row[left..right] {
-        // *cell = bg.into();
+        // for square in &mut row[left..right] {
+        // *square = bg.into();
+        // *square = Square::default();
         // }
         // let range = self.cursor.pos.row..=self.cursor.pos.row;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
