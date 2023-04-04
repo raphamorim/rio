@@ -1,5 +1,34 @@
+use crate::crosswords::Column;
+use crate::crosswords::Row;
+use bitflags::bitflags;
 use colors::{AnsiColor, NamedColor};
 use std::sync::Arc;
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Flags: u16 {
+        const INVERSE                   = 0b0000_0000_0000_0001;
+        const BOLD                      = 0b0000_0000_0000_0010;
+        const ITALIC                    = 0b0000_0000_0000_0100;
+        const BOLD_ITALIC               = 0b0000_0000_0000_0110;
+        const UNDERLINE                 = 0b0000_0000_0000_1000;
+        const WRAPLINE                  = 0b0000_0000_0001_0000;
+        const WIDE_CHAR                 = 0b0000_0000_0010_0000;
+        const WIDE_CHAR_SPACER          = 0b0000_0000_0100_0000;
+        const DIM                       = 0b0000_0000_1000_0000;
+        const DIM_BOLD                  = 0b0000_0000_1000_0010;
+        const HIDDEN                    = 0b0000_0001_0000_0000;
+        const STRIKEOUT                 = 0b0000_0010_0000_0000;
+        const LEADING_WIDE_CHAR_SPACER  = 0b0000_0100_0000_0000;
+        const DOUBLE_UNDERLINE          = 0b0000_1000_0000_0000;
+        const UNDERCURL                 = 0b0001_0000_0000_0000;
+        const DOTTED_UNDERLINE          = 0b0010_0000_0000_0000;
+        const DASHED_UNDERLINE          = 0b0100_0000_0000_0000;
+        // const ALL_UNDERLINES            = Self::UNDERLINE.bits | Self::DOUBLE_UNDERLINE.bits
+        //                                 | Self::UNDERCURL.bits | Self::DOTTED_UNDERLINE.bits
+        //                                 | Self::DASHED_UNDERLINE.bits;
+    }
+}
 
 /// Dynamically allocated cell content.
 ///
@@ -21,6 +50,7 @@ pub struct Square {
     pub fg: AnsiColor,
     pub bg: AnsiColor,
     pub extra: Option<Arc<CellExtra>>,
+    pub flags: Flags,
 }
 
 impl Default for Square {
@@ -31,6 +61,7 @@ impl Default for Square {
             bg: AnsiColor::Named(NamedColor::Black),
             fg: AnsiColor::Named(NamedColor::Foreground),
             extra: None,
+            flags: Flags::empty(),
         }
     }
 }
@@ -48,20 +79,36 @@ impl Square {
         let extra = self.extra.get_or_insert(Default::default());
         Arc::make_mut(extra).zerowidth.push(character);
     }
+
+    #[inline(never)]
+    pub fn clear_wide(&mut self) {
+        self.flags.remove(Flags::WIDE_CHAR);
+        if let Some(extra) = self.extra.as_mut() {
+            Arc::make_mut(extra).zerowidth = Vec::new();
+        }
+        self.c = ' ';
+    }
 }
 
 pub trait CrosswordsSquare: Sized {
-    /// Check if the cell contains any content.
     fn is_empty(&self) -> bool;
-
-    /// Perform an opinionated cell reset based on a template cell.
     fn reset(&mut self, template: &Self);
+    fn flags(&self) -> &Flags;
+    fn flags_mut(&mut self) -> &mut Flags;
 }
 
 impl CrosswordsSquare for Square {
     #[inline]
     fn is_empty(&self) -> bool {
         (self.c == ' ' || self.c == '\t')
+            && !self.flags.intersects(
+                Flags::INVERSE
+                    // | Flags::ALL_UNDERLINES
+                    | Flags::STRIKEOUT
+                    | Flags::WRAPLINE
+                    | Flags::WIDE_CHAR_SPACER
+                    | Flags::LEADING_WIDE_CHAR_SPACER,
+            )
             && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
     }
 
@@ -71,6 +118,43 @@ impl CrosswordsSquare for Square {
             bg: template.bg,
             ..Square::default()
         };
+    }
+
+    #[inline]
+    fn flags(&self) -> &Flags {
+        &self.flags
+    }
+
+    #[inline]
+    fn flags_mut(&mut self) -> &mut Flags {
+        &mut self.flags
+    }
+}
+
+pub trait LineLength {
+    /// Calculate the occupied line length.
+    fn line_length(&self) -> Column;
+}
+
+impl LineLength for Row<Square> {
+    fn line_length(&self) -> Column {
+        let mut length = Column(0);
+
+        if self[Column(self.len() - 1)].flags.contains(Flags::WRAPLINE) {
+            return Column(self.len());
+        }
+
+        for (index, cell) in self[..].iter().rev().enumerate() {
+            if cell.c != ' '
+                || cell.extra.as_ref().map(|extra| extra.zerowidth.is_empty())
+                    == Some(false)
+            {
+                length = Column(self.len() - index);
+                break;
+            }
+        }
+
+        length
     }
 }
 

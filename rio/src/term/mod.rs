@@ -220,8 +220,6 @@ impl Term {
             println!("input_char: Received character {}", character);
         }
 
-        println!("???");
-
         self.messenger.send_character(character);
     }
 
@@ -235,8 +233,6 @@ impl Term {
         if logs {
             println!("input_keycode: received keycode {:?}", virtual_keycode);
         }
-
-        println!("???");
 
         if let Some(keycode) = virtual_keycode {
             let _ = self.messenger.send_keycode(keycode);
@@ -357,8 +353,9 @@ impl Term {
             "compute_resize {} {}",
             self.layout.columns, self.layout.rows
         );
-        terminal.resize(true, self.layout.columns, self.layout.rows);
-        // drop(terminal);
+        terminal.resize(self.layout.columns, self.layout.rows);
+        // println!("{:?}", terminal.visible_rows_to_string());
+        drop(terminal);
     }
 
     // https://docs.rs/winit/latest/winit/dpi/

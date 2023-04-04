@@ -126,6 +126,55 @@ impl Pos {
     fn new(row: Line, col: Column) -> Pos {
         Self { row, col }
     }
+
+    #[inline]
+    pub fn sub<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
+    where
+        D: Dimensions,
+    {
+        let cols = dimensions.columns();
+        let line_changes = (rhs + cols - 1).saturating_sub(self.col.0) / cols;
+        self.row -= line_changes;
+        self.col = Column((cols + self.col.0 - rhs % cols) % cols);
+        self.grid_clamp(dimensions, boundary)
+    }
+
+    #[inline]
+    pub fn add<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
+    where
+        D: Dimensions,
+    {
+        let cols = dimensions.columns();
+        self.row += (rhs + self.col.0) / cols;
+        self.col = Column((self.col.0 + rhs) % cols);
+        self.grid_clamp(dimensions, boundary)
+    }
+
+    pub fn grid_clamp<D>(mut self, dimensions: &D, boundary: Boundary) -> Self
+    where
+        D: Dimensions,
+    {
+        let last_column = dimensions.last_column();
+        self.col = min(self.col, last_column);
+
+        let topmost_line = dimensions.topmost_line();
+        let bottommost_line = dimensions.bottommost_line();
+
+        match boundary {
+            Boundary::Cursor if self.row < 0 => Pos::new(Line(0), Column(0)),
+            Boundary::Grid if self.row < topmost_line => {
+                Pos::new(topmost_line, Column(0))
+            }
+            Boundary::Cursor | Boundary::Grid if self.row > bottommost_line => {
+                Pos::new(bottommost_line, last_column)
+            }
+            Boundary::None => {
+                self.row = self.row.grid_clamp(dimensions, boundary);
+                self
+            }
+            _ => self,
+        }
+    }
 }
 
 /// A line.

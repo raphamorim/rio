@@ -19,6 +19,7 @@ pub mod row;
 pub mod square;
 pub mod storage;
 
+use crate::crosswords::square::CrosswordsSquare;
 use crate::performer::handler::Handler;
 use attr::*;
 use bitflags::bitflags;
@@ -80,11 +81,12 @@ pub struct Crosswords<U> {
     active_charset: CharsetIndex,
     cols: usize,
     cursor: Cursor<Square>,
+    saved_cursor: Cursor<Square>,
     mode: Mode,
     rows: usize,
     scroll: usize,
     scroll_limit: usize,
-    scroll_region: ScrollRegion,
+    scroll_region: Range<Line>,
     storage: Storage<Square>,
     tabs: TabStops,
     #[allow(dead_code)]
@@ -307,17 +309,17 @@ impl<U> IndexMut<Pos> for Crosswords<U> {
 
 impl<U> Crosswords<U> {
     pub fn new(cols: usize, rows: usize, event_proxy: U) -> Crosswords<U> {
+        let scroll_region = Line(0)..Line(rows as i32);
+
         Crosswords {
             cols,
             rows,
             storage: Storage::with_capacity(rows, cols),
             cursor: Cursor::default(),
+            saved_cursor: Cursor::default(),
             active_charset: CharsetIndex::default(),
             scroll: 0,
-            scroll_region: ScrollRegion {
-                start: pos::Line(0),
-                end: pos::Line(rows.try_into().unwrap()),
-            },
+            scroll_region,
             event_proxy,
             window_title: std::option::Option::Some(String::from("")),
             tabs: TabStops::new(cols),
@@ -330,7 +332,62 @@ impl<U> Crosswords<U> {
         }
     }
 
-    pub fn resize(&mut self, reflow: bool, columns: usize, lines: usize) {
+    pub fn resize(&mut self, num_cols: usize, num_lines: usize) {
+        let old_cols = self.columns();
+        let old_lines = self.screen_lines();
+
+        if old_cols == num_cols && old_lines == num_lines {
+            println!("Term::resize dimensions unchanged");
+            return;
+        }
+
+        println!("Old cols is {} and lines is {}", old_cols, old_lines);
+        println!(
+            "New num_cols is {} and num_lines is {}",
+            num_cols, num_lines
+        );
+
+        // Move vi mode cursor with the content.
+        let history_size = self.history_size();
+        let mut delta = num_lines as i32 - old_lines as i32;
+        let min_delta = std::cmp::min(0, num_lines as i32 - self.cursor.pos.row.0 - 1);
+        delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
+        // self.vi_mode_cursor.point.line += delta;
+
+        // let is_alt = self.mode.contains(TermMode::ALT_SCREEN);
+        // self.resize_grid(!is_alt, num_lines, num_cols);
+        self.resize_grid(true, num_cols, num_lines);
+        // self.inactive_grid.resize(is_alt, num_lines, num_cols);
+
+        // Invalidate selection and tabs only when necessary.
+        if old_cols != num_cols {
+            // self.selection = None;
+
+            // Recreate tabs list.
+            self.tabs.resize(num_cols);
+        }
+        //  else if let Some(selection) = self.selection.take() {
+        //     let max_lines = cmp::max(num_lines, old_lines) as i32;
+        //     let range = Line(0)..Line(max_lines);
+        //     self.selection = selection.rotate(self, &range, -delta);
+        // }
+
+        // Clamp vi cursor to viewport.
+        // let vi_point = self.vi_mode_cursor.point;
+        let viewport_top = Line(-(self.scroll as i32));
+        let viewport_bottom = viewport_top + self.bottommost_line();
+        // self.vi_mode_cursor.point.line =
+        // cmp::max(cmp::min(vi_point.line, viewport_bottom), viewport_top);
+        // self.vi_mode_cursor.point.column = cmp::min(vi_point.column, self.last_column());
+
+        // Reset scrolling region.
+        self.scroll_region = Line(0)..Line(self.screen_lines() as i32);
+
+        // Resize damage information.
+        self.damage.resize(num_cols, num_lines);
+    }
+
+    fn resize_grid(&mut self, reflow: bool, columns: usize, lines: usize) {
         // Use empty template cell for resetting cells due to resize.
         let template = mem::take(&mut self.cursor.template);
 
@@ -342,9 +399,7 @@ impl<U> Crosswords<U> {
 
         match self.cols.cmp(&columns) {
             Ordering::Less => self.grow_columns(reflow, columns),
-            Ordering::Greater => {
-                self.shrink_columns(reflow, columns);
-            }
+            Ordering::Greater => self.shrink_columns(reflow, columns),
             Ordering::Equal => (),
         }
 
@@ -369,7 +424,7 @@ impl<U> Crosswords<U> {
         }
 
         // Move cursor down for every line pulled from history.
-        // self.saved_cursor.pos.row += from_history;
+        self.saved_cursor.pos.row += from_history;
         self.cursor.pos.row += from_history;
 
         self.scroll = self.scroll.saturating_sub(lines_added);
@@ -432,10 +487,14 @@ impl<U> Crosswords<U> {
 
                 // Insert spacer if a wide char would be wrapped into the last column.
                 if row.len() >= cols
-                // && row[Column(cols - 1)].flags().contains(Flags::WIDE_CHAR)
+                    && row[Column(cols - 1)]
+                        .flags()
+                        .contains(square::Flags::WIDE_CHAR)
                 {
                     let mut spacer = Square::default();
-                    // spacer.flags_mut().insert(Flags::LEADING_WIDE_CHAR_SPACER);
+                    spacer
+                        .flags_mut()
+                        .insert(square::Flags::LEADING_WIDE_CHAR_SPACER);
 
                     let wide_char = mem::replace(&mut row[Column(cols - 1)], spacer);
                     wrapped.insert(0, wide_char);
@@ -443,15 +502,20 @@ impl<U> Crosswords<U> {
 
                 // Remove wide char spacer before shrinking.
                 let len = wrapped.len();
-                // if len > 0 && wrapped[len - 1].flags().contains(Flags::LEADING_WIDE_CHAR_SPACER) {
-                if len > 0 {
+                if len > 0
+                    && wrapped[len - 1]
+                        .flags()
+                        .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
+                {
                     if len == 1 {
-                        // row[Column(cols - 1)].flags_mut().insert(Flags::WRAPLINE);
+                        row[Column(cols - 1)]
+                            .flags_mut()
+                            .insert(square::Flags::WRAPLINE);
                         new_raw.push(row);
                         break;
                     } else {
                         // Remove the leading spacer from the end of the wrapped row.
-                        // wrapped[len - 2].flags_mut().insert(Flags::WRAPLINE);
+                        wrapped[len - 2].flags_mut().insert(square::Flags::WRAPLINE);
                         wrapped.truncate(len - 1);
                     }
                 }
@@ -460,19 +524,18 @@ impl<U> Crosswords<U> {
 
                 // Set line as wrapped if cells got removed.
                 if let Some(cell) = new_raw.last_mut().and_then(|r| r.last_mut()) {
-                    // cell.flags_mut().insert(Flags::WRAPLINE);
+                    cell.flags_mut().insert(square::Flags::WRAPLINE);
                 }
 
                 if wrapped
                     .last()
-                    .map(|c| i >= 1)
-                    // .map(|c| c.flags().contains(Flags::WRAPLINE) && i >= 1)
+                    .map(|c| c.flags().contains(square::Flags::WRAPLINE) && i >= 1)
                     .unwrap_or(false)
                     && wrapped.len() < cols
                 {
                     // Make sure previous wrap flag doesn't linger around.
                     if let Some(cell) = wrapped.last_mut() {
-                        // cell.flags_mut().remove(Flags::WRAPLINE);
+                        cell.flags_mut().remove(square::Flags::WRAPLINE);
                     }
 
                     // Add removed cells to start of next row.
@@ -519,29 +582,36 @@ impl<U> Crosswords<U> {
         if !reflow {
             self.cursor.pos.col = min(self.cursor.pos.col, Column(cols - 1));
         } else if self.cursor.pos.col == cols
-        // && !self[self.cursor.pos.line][Column(cols - 1)].flags().contains(Flags::WRAPLINE)
+            && !self.cursor_cell().flags().contains(square::Flags::WRAPLINE)
         {
             self.cursor.should_wrap = true;
             self.cursor.pos.col -= 1;
         } else {
-            // self.cursor.pos = self.cursor.pos.grid_clamp(self, Boundary::Cursor);
+            self.cursor.pos = self
+                .cursor
+                .pos
+                .clone()
+                .grid_clamp(self, pos::Boundary::Cursor);
         }
 
         // Clamp the saved cursor to the grid.
-        // self.saved_cursor.pos.column = min(self.saved_cursor.pos.col, Column(cols - 1));
+        self.saved_cursor.pos.col = min(self.saved_cursor.pos.col, Column(cols - 1));
     }
 
     fn grow_columns(&mut self, reflow: bool, columns: usize) {
         // Check if a row needs to be wrapped.
         let should_reflow = |row: &Row<Square>| -> bool {
             let len = Column(row.len());
-            reflow && len.0 > 0 && len < columns // && row[len - 1].flags().contains(Flags::WRAPLINE)
+            reflow
+                && len.0 > 0
+                && len < columns
+                && row[len - 1].flags().contains(square::Flags::WRAPLINE)
         };
 
         self.cols = columns;
 
         let mut reversed: Vec<Row<Square>> = Vec::with_capacity(self.storage.len());
-        let mut cursor_line_delta: i32 = 0;
+        let mut cursor_line_delta = 0;
 
         // Remove the linewrap special case, by moving the cursor outside of the grid.
         if self.cursor.should_wrap && reflow {
@@ -563,13 +633,15 @@ impl<U> Crosswords<U> {
 
             // Remove wrap flag before appending additional cells.
             if let Some(cell) = last_row.last_mut() {
-                // cell.flags_mut().remove(Flags::WRAPLINE);
+                cell.flags_mut().remove(square::Flags::WRAPLINE);
             }
 
             // Remove leading spacers when reflowing wide char to the previous line.
             let mut last_len = last_row.len();
             if last_len >= 1
-            // && last_row[Column(last_len - 1)].flags().contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                && last_row[Column(last_len - 1)]
+                    .flags()
+                    .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
             {
                 last_row.shrink(last_len - 1);
                 last_len -= 1;
@@ -581,19 +653,24 @@ impl<U> Crosswords<U> {
 
             // Insert leading spacer when there's not enough room for reflowing wide char.
             let mut cells = row.front_split_off(len);
-            // if row[Column(len - 1)].flags().contains(Flags::WIDE_CHAR) {
-            //     num_wrapped -= 1;
+            if row[Column(len - 1)]
+                .flags()
+                .contains(square::Flags::WIDE_CHAR)
+            {
+                num_wrapped -= 1;
 
-            //     let mut cells = row.front_split_off(len - 1);
+                let mut cells = row.front_split_off(len - 1);
 
-            //     let mut spacer = Square::default();
-            //     // spacer.flags_mut().insert(Flags::LEADING_WIDE_CHAR_SPACER);
-            //     cells.push(spacer);
+                let mut spacer = Square::default();
+                spacer
+                    .flags_mut()
+                    .insert(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                cells.push(spacer);
 
-            //     cells
-            // } else {
-            // row.front_split_off(len)
-            // };
+                cells
+            } else {
+                row.front_split_off(len)
+            };
 
             // Add removed cells to previous row and reflow content.
             last_row.inner.append(&mut cells);
@@ -602,25 +679,28 @@ impl<U> Crosswords<U> {
 
             if i == cursor_buffer_line && reflow {
                 // Resize cursor's line and reflow the cursor if necessary.
-                // let mut target = self.cursor.point.sub(self, Boundary::Cursor, num_wrapped);
+                let mut target =
+                    self.cursor
+                        .pos
+                        .clone()
+                        .sub(self, pos::Boundary::Cursor, num_wrapped);
 
                 // Clamp to the last column, if no content was reflown with the cursor.
-                // if target.column.0 == 0 && row.is_clear() {
-                self.cursor.should_wrap = true;
-                // target = target.sub(self, Boundary::Cursor, 1);
-                // }
-                // self.cursor.pos.col = target.column;
+                if target.col.0 == 0 && row.is_clear() {
+                    self.cursor.should_wrap = true;
+                    target = target.sub(self, pos::Boundary::Cursor, 1);
+                }
+                self.cursor.pos.col = target.col;
 
                 // Get required cursor line changes. Since `num_wrapped` is smaller than `columns`
                 // this will always be either `0` or `1`.
-                // let line_delta = self.cursor.pos.row - target.line;
+                let line_delta = self.cursor.pos.row - target.row;
 
-                // if line_delta != 0 && row.is_clear() {
-                if row.is_clear() {
+                if line_delta != 0 && row.is_clear() {
                     continue;
                 }
 
-                // cursor_line_delta += line_delta.0 as usize;
+                cursor_line_delta += line_delta.0 as usize;
             } else if row.is_clear() {
                 if i < self.scroll {
                     // Since we removed a line, rotate down the viewport.
@@ -638,7 +718,7 @@ impl<U> Crosswords<U> {
 
             if let Some(cell) = last_row.last_mut() {
                 // Set wrap flag if next line still has cells.
-                // cell.flags_mut().insert(Flags::WRAPLINE);
+                cell.flags_mut().insert(square::Flags::WRAPLINE);
             }
 
             reversed.push(row);
@@ -656,9 +736,9 @@ impl<U> Crosswords<U> {
         if cursor_line_delta != 0 {
             let cursor_buffer_line = self.rows - self.cursor.pos.row.0 as usize - 1;
             let available = min(cursor_buffer_line, reversed.len() - self.rows);
-            // let overflow = cursor_line_delta.saturating_sub(available);
-            // reversed.truncate(reversed.len() + overflow - cursor_line_delta);
-            // self.cursor.pos.row = max(self.cursor.pos.row - overflow, Line(0));
+            let overflow = cursor_line_delta.saturating_sub(available);
+            reversed.truncate(reversed.len() + overflow - cursor_line_delta);
+            self.cursor.pos.row = max(self.cursor.pos.row - overflow, Line(0));
         }
 
         // Reverse iterator and fill all rows that are still too short.
@@ -677,12 +757,18 @@ impl<U> Crosswords<U> {
     }
 
     #[inline]
+    pub fn cursor_cell(&mut self) -> &mut Square {
+        let position = self.cursor.pos.clone();
+        &mut self[position]
+    }
+
+    #[inline]
     pub fn wrapline(&mut self) {
         if !self.mode.contains(Mode::LINE_WRAP) {
             return;
         }
 
-        // self.cursor_cell().flags.insert(Flags::WRAPLINE);
+        self.cursor_cell().flags.insert(square::Flags::WRAPLINE);
 
         if self.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
@@ -817,14 +903,14 @@ impl<U> Crosswords<U> {
         let c = self.cursor.charsets[self.active_charset].map(c);
         let fg = self.cursor.template.fg;
         let bg = self.cursor.template.bg;
-        //     let flags = self.grid.cursor.template.flags;
+        let flags = self.cursor.template.flags;
         //     let extra = self.grid.cursor.template.extra.clone();
 
         let mut cursor_square = self.cursor_square();
         cursor_square.c = c;
         cursor_square.fg = fg;
         cursor_square.bg = bg;
-        // cursor_cell.flags = flags;
+        cursor_square.flags = flags;
         // cursor_cell.extra = extra;
     }
 
@@ -872,17 +958,20 @@ impl<U> Handler for Crosswords<U> {
             Attr::Reset => {
                 cursor.template.fg = AnsiColor::Named(NamedColor::Foreground);
                 cursor.template.bg = AnsiColor::Named(NamedColor::Background);
-                // cursor.template.flags = Flags::empty();
+                cursor.template.flags = square::Flags::empty();
                 // cursor.template.set_underline_color(None);
             }
-            // Attr::Reverse => cursor.template.flags.insert(Flags::INVERSE),
-            // Attr::CancelReverse => cursor.template.flags.remove(Flags::INVERSE),
-            // Attr::Bold => cursor.template.flags.insert(Flags::BOLD),
-            // Attr::CancelBold => cursor.template.flags.remove(Flags::BOLD),
-            // Attr::Dim => cursor.template.flags.insert(Flags::DIM),
-            // Attr::CancelBoldDim => cursor.template.flags.remove(Flags::BOLD | Flags::DIM),
-            // Attr::Italic => cursor.template.flags.insert(Flags::ITALIC),
-            // Attr::CancelItalic => cursor.template.flags.remove(Flags::ITALIC),
+            Attr::Reverse => cursor.template.flags.insert(square::Flags::INVERSE),
+            Attr::CancelReverse => cursor.template.flags.remove(square::Flags::INVERSE),
+            Attr::Bold => cursor.template.flags.insert(square::Flags::BOLD),
+            Attr::CancelBold => cursor.template.flags.remove(square::Flags::BOLD),
+            Attr::Dim => cursor.template.flags.insert(square::Flags::DIM),
+            Attr::CancelBoldDim => cursor
+                .template
+                .flags
+                .remove(square::Flags::BOLD | square::Flags::DIM),
+            Attr::Italic => cursor.template.flags.insert(square::Flags::ITALIC),
+            Attr::CancelItalic => cursor.template.flags.remove(square::Flags::ITALIC),
             // Attr::Underline => {
             //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
             //     cursor.template.flags.insert(Flags::UNDERLINE);
@@ -924,17 +1013,11 @@ impl<U> Handler for Crosswords<U> {
         // title
     }
 
-    /// Move lines at the bottom toward the top.
-
-    /// Text moves up; clear at top
-
     fn input(&mut self, c: char) {
         let width = match c.width() {
             Some(width) => width,
             None => return,
         };
-
-        let row = self.cursor.pos.row;
 
         // Handle zero-width characters.
         if width == 0 {
@@ -945,10 +1028,13 @@ impl<U> Handler for Crosswords<U> {
             }
 
             // // Put zerowidth characters over first fullwidth character cell.
-            // let row = self.cursor.pos.row;
-            // if self[row][column].flags.contains(Flags::WIDE_CHAR_SPACER) {
-            //     column.0 = column.saturating_sub(1);
-            // }
+            let row = self.cursor.pos.row;
+            if self[row][column]
+                .flags
+                .contains(square::Flags::WIDE_CHAR_SPACER)
+            {
+                column.0 = column.saturating_sub(1);
+            }
 
             self[row][column].push_zerowidth(c);
             return;
@@ -960,10 +1046,27 @@ impl<U> Handler for Crosswords<U> {
 
         if width == 1 {
             self.write_at_cursor(c);
-        } else if self.cursor.pos.col == self.cols {
-            // Place cursor to beginning if hits the max of cols
-            self.cursor.pos.row += 1;
-            self.cursor.pos.col = pos::Column(0);
+        } else {
+            if self.cursor.pos.col + 1 >= self.cols {
+                self.cursor.should_wrap = true;
+                return;
+            }
+
+            self.cursor.template.flags.insert(square::Flags::WIDE_CHAR);
+            self.write_at_cursor(c);
+            self.cursor.template.flags.remove(square::Flags::WIDE_CHAR);
+
+            // Write spacer to cell following the wide glyph.
+            self.cursor.pos.col += 1;
+            self.cursor
+                .template
+                .flags
+                .insert(square::Flags::WIDE_CHAR_SPACER);
+            self.write_at_cursor(' ');
+            self.cursor
+                .template
+                .flags
+                .remove(square::Flags::WIDE_CHAR_SPACER);
         }
 
         if self.cursor.pos.col + 1 < self.cols {
@@ -1041,7 +1144,6 @@ impl<U> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_line(&mut self, mode: u16) {
-        println!("clean");
         let cursor = &self.cursor;
         let bg = cursor.template.bg;
         let pos = &cursor.pos;
@@ -1062,11 +1164,12 @@ impl<U> Handler for Crosswords<U> {
 
         self.damage
             .damage_line(pos.row.0 as usize, left.0, right.0 - 1);
-        // let row = &mut self[pos.row];
-        // for square in &mut row[left..right] {
-        // *square = bg.into();
-        // *square = Square::default();
-        // }
+        let a = pos.row.clone();
+        let row = &mut self[a];
+        for square in &mut row[left..right] {
+            // *square = bg.into();
+            *square = Square::default();
+        }
         // let range = self.cursor.pos.row..=self.cursor.pos.row;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
     }
@@ -1087,10 +1190,6 @@ impl<U> Handler for Crosswords<U> {
         println!("text_area_size_chars {:?}", text);
         // self.event_proxy.send_event(Event::PtyWrite(text));
     }
-
-    // fn to_arr_u8(&mut self, line: Line) -> Row<Square> {
-    //     self.storage[line]
-    // }
 }
 
 #[cfg(test)]

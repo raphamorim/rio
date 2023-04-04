@@ -50,7 +50,7 @@ impl Layout {
         let (padding_x, padding_y) = self.padding();
         // let a_lines = (height - 2. * padding_y) / scale;
         let mut a_lines = (self.height - 2. * padding_y) / self.scale_factor;
-        a_lines = a_lines / 22.;
+        a_lines = a_lines / 17.5;
         let a_screen_lines = std::cmp::max(a_lines as usize, MIN_VISIBLE_ROWS);
 
         let mut a_columns = (self.width - 2. * padding_x) / self.scale_factor;
