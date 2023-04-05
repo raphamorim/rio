@@ -71,12 +71,6 @@ bitflags! {
 }
 
 #[derive(Debug, Clone)]
-struct ScrollRegion {
-    start: Line,
-    end: Line,
-}
-
-#[derive(Debug, Clone)]
 pub struct Crosswords<U> {
     active_charset: CharsetIndex,
     cols: usize,
@@ -1164,8 +1158,8 @@ impl<U> Handler for Crosswords<U> {
 
         self.damage
             .damage_line(pos.row.0 as usize, left.0, right.0 - 1);
-        let a = pos.row.clone();
-        let row = &mut self[a];
+        let position = pos.row;
+        let row = &mut self[position];
         for square in &mut row[left..right] {
             // *square = bg.into();
             *square = Square::default();
@@ -1226,6 +1220,103 @@ mod tests {
         assert_eq!(cw[Line(8)].occ, 0);
         assert_eq!(cw[Line(9)][Column(0)].c, ' '); // was 1.
         assert_eq!(cw[Line(9)].occ, 0);
+    }
+
+    #[test]
+    fn resize_shrink_column() {
+        // 5 columns and 5 lines
+        let mut cw = Crosswords::new(5, 5, VoidListener {});
+
+        cw[Line(0)][Column(0)].c = 'f';
+        cw[Line(0)][Column(1)].c = 'i';
+        cw[Line(0)][Column(2)].c = 'r';
+        cw[Line(0)][Column(3)].c = 's';
+        cw[Line(0)][Column(4)].c = 't';
+
+        cw[Line(1)][Column(0)].c = ' ';
+        cw[Line(1)][Column(1)].c = '~';
+        cw[Line(1)][Column(2)].c = ' ';
+        cw[Line(1)][Column(3)].c = '1';
+        cw[Line(1)][Column(4)].c = ' ';
+
+        // Before:
+        // |first| <- visible
+        // | ~ 1 | <- visible
+        cw.resize(4, 5);
+        // After:
+        // |firs|
+        // |t   | <- visible
+        // | ~ 1| <- visible
+        assert_eq!(cw[Line(0)][Column(0)].c, 't');
+        assert_eq!(cw[Line(0)][Column(1)].c, ' ');
+        assert_eq!(cw[Line(0)][Column(2)].c, ' ');
+        assert_eq!(cw[Line(0)][Column(3)].c, ' ');
+
+        assert_eq!(cw[Line(1)][Column(0)].c, ' ');
+        assert_eq!(cw[Line(1)][Column(1)].c, '~');
+        assert_eq!(cw[Line(1)][Column(2)].c, ' ');
+        assert_eq!(cw[Line(1)][Column(3)].c, '1');
+
+        // 3 columns and 2 lines (max lines should increase)
+        let mut cw = Crosswords::new(3, 2, VoidListener {});
+
+        cw[Line(0)][Column(0)].c = 'a';
+        cw[Line(0)][Column(1)].c = 'b';
+        cw[Line(0)][Column(2)].c = 'c';
+
+        cw[Line(1)][Column(0)].c = 'd';
+        cw[Line(1)][Column(1)].c = 'e';
+        cw[Line(1)][Column(2)].c = 'f';
+
+        // Before:
+        // |abc| <- visible
+        // |def| <- visible
+        cw.resize(2, 2);
+        // After:
+        // |ab|
+        // |c |
+        // |de| <- visible
+        // |f | <- visible
+        assert_eq!(cw[Line(0)][Column(0)].c, 'd');
+        assert_eq!(cw[Line(0)][Column(1)].c, 'e');
+        assert_eq!(cw[Line(1)][Column(0)].c, 'f');
+        assert_eq!(cw[Line(1)][Column(1)].c, ' ');
+
+        // 3 columns and 2 lines (max lines should increase)
+        let mut cw = Crosswords::new(3, 10, VoidListener {});
+
+        cw[Line(0)][Column(0)].c = '1';
+        cw[Line(0)][Column(1)].c = '2';
+        cw[Line(0)][Column(2)].c = '2';
+        cw[Line(1)][Column(0)].c = '3';
+        cw[Line(1)][Column(1)].c = '4';
+        cw[Line(0)][Column(2)].c = '2';
+        cw[Line(2)][Column(0)].c = ' ';
+        cw[Line(2)][Column(1)].c = ' ';
+
+        // Before:
+        // |123| <- visible
+        // |456| <- visible
+        // |   | <- visible
+        // ...
+        cw.resize(2, 10);
+        // After:
+        // |12| <- visible
+        // |3 | <- visible
+        // |45| <- visible
+        // |6 | <- visible
+        // |  | <- visible
+        // ...
+        assert_eq!(cw[Line(0)][Column(0)].c, '1');
+        assert_eq!(cw[Line(0)][Column(1)].c, '2');
+        assert_eq!(cw[Line(1)][Column(0)].c, '3');
+        assert_eq!(cw[Line(1)][Column(1)].c, ' ');
+        assert_eq!(cw[Line(2)][Column(0)].c, '4');
+        assert_eq!(cw[Line(2)][Column(1)].c, '5');
+        assert_eq!(cw[Line(3)][Column(0)].c, '6');
+        assert_eq!(cw[Line(3)][Column(1)].c, ' ');
+        assert_eq!(cw[Line(4)][Column(0)].c, ' ');
+        assert_eq!(cw[Line(4)][Column(1)].c, ' ');
     }
 
     #[test]

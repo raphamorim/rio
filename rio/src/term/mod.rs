@@ -17,7 +17,6 @@ use teletypewriter::create_pty;
 struct RenderContext {
     device: wgpu::Device,
     surface: wgpu::Surface,
-    adapter: wgpu::Adapter,
     queue: wgpu::Queue,
     staging_belt: wgpu::util::StagingBelt,
     renderer: Renderer,
@@ -78,7 +77,6 @@ impl RenderContext {
         RenderContext {
             device,
             queue,
-            adapter,
             surface,
             staging_belt,
             renderer,
@@ -114,28 +112,6 @@ impl RenderContext {
                 height: size.height,
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-    }
-
-    pub fn configure(&self) {
-        let caps = self.surface.get_capabilities(&self.adapter);
-        let formats = caps.formats;
-        let format = *formats.last().expect("No supported formats for surface");
-        let alpha_modes = caps.alpha_modes;
-        let alpha_mode = alpha_modes[0];
-        let (width, height) = self.renderer.size();
-
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format,
-                width,
-                height,
-                view_formats: vec![],
-                alpha_mode,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
@@ -193,7 +169,7 @@ impl Term {
 
         let event_proxy_clone = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> = Arc::new(FairMutex::new(
-            Crosswords::new(columns.into(), rows.into(), event_proxy),
+            Crosswords::new(columns, rows, event_proxy),
         ));
 
         let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
@@ -260,7 +236,7 @@ impl Term {
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render -> Clear frame"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(color),

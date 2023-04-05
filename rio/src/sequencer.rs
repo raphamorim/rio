@@ -157,7 +157,7 @@ impl Sequencer {
                     }
 
                     term.resize(new_size);
-                    term.render(self.config.colors.background.1);
+                    // term.render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
