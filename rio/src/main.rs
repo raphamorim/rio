@@ -1,3 +1,4 @@
+mod ansi;
 mod crosswords;
 mod event;
 mod layout;

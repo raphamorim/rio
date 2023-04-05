@@ -37,6 +37,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::ptr;
 use storage::Storage;
 use unicode_width::UnicodeWidthChar;
+use crate::ansi::mode::Mode as AnsiMode;
 
 pub type NamedColor = colors::NamedColor;
 
@@ -67,6 +68,15 @@ bitflags! {
         const VI                  = 0b0001_0000_0000_0000_0000;
         const URGENCY_HINTS       = 0b0010_0000_0000_0000_0000;
         const ANY                 = u32::MAX;
+    }
+}
+
+impl Default for Mode {
+    fn default() -> Mode {
+        Mode::SHOW_CURSOR
+            | Mode::LINE_WRAP
+            | Mode::ALTERNATE_SCROLL
+            | Mode::URGENCY_HINTS
     }
 }
 
@@ -348,9 +358,8 @@ impl<U> Crosswords<U> {
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
         // self.vi_mode_cursor.point.line += delta;
 
-        // let is_alt = self.mode.contains(TermMode::ALT_SCREEN);
-        // self.resize_grid(!is_alt, num_lines, num_cols);
-        self.resize_grid(true, num_cols, num_lines);
+        let is_alt = self.mode.contains(Mode::ALT_SCREEN);
+        self.resize_grid(!is_alt, num_lines, num_cols);
         // self.inactive_grid.resize(is_alt, num_lines, num_cols);
 
         // Invalidate selection and tabs only when necessary.
@@ -423,6 +432,11 @@ impl<U> Crosswords<U> {
 
         self.scroll = self.scroll.saturating_sub(lines_added);
         self.decrease_scroll_limit(lines_added);
+    }
+
+    #[inline]
+    pub fn mode(&self) -> &Mode {
+        &self.mode
     }
 
     fn decrease_scroll_limit(&mut self, count: usize) {
@@ -938,9 +952,92 @@ impl<U> Crosswords<U> {
 
         visible_rows
     }
+
+    pub fn swap_alt(&mut self) {
+        if !self.mode.contains(Mode::ALT_SCREEN) {
+            // Set alt screen cursor to the current primary screen cursor.
+            // self.inactive_grid.cursor = self.grid.cursor.clone();
+
+            // Drop information about the primary screens saved cursor.
+            self.saved_cursor = self.cursor.clone();
+
+            // Reset alternate screen contents.
+            // self.inactive_grid.reset_region(..);
+        }
+
+        // mem::swap(&mut self.grid, &mut self.inactive_grid);
+        self.mode ^= Mode::ALT_SCREEN;
+        // self.selection = None;
+        // self.mark_fully_damaged();
+    }
+
+
 }
 
 impl<U> Handler for Crosswords<U> {
+    #[inline]
+    fn set_mode(&mut self, mode: AnsiMode) {
+        match mode {
+            AnsiMode::UrgencyHints => self.mode.insert(Mode::URGENCY_HINTS),
+            AnsiMode::SwapScreenAndSetRestoreCursor => {
+                if !self.mode.contains(Mode::ALT_SCREEN) {
+                    self.swap_alt();
+                }
+            },
+            AnsiMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
+            AnsiMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
+            // Mouse protocols are mutually exclusive.
+            AnsiMode::ReportMouseClicks => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_REPORT_CLICK);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            AnsiMode::ReportCellMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_DRAG);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            AnsiMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_MOTION);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            },
+            AnsiMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
+            AnsiMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
+            // Mouse encodings are mutually exclusive.
+            AnsiMode::SgrMouse => {
+                self.mode.remove(Mode::UTF8_MOUSE);
+                self.mode.insert(Mode::SGR_MOUSE);
+            },
+            AnsiMode::Utf8Mouse => {
+                self.mode.remove(Mode::SGR_MOUSE);
+                self.mode.insert(Mode::UTF8_MOUSE);
+            },
+            AnsiMode::AlternateScroll => self.mode.insert(Mode::ALTERNATE_SCROLL),
+            AnsiMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
+            AnsiMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
+            AnsiMode::Origin => self.mode.insert(Mode::ORIGIN),
+            AnsiMode::ColumnMode => {
+                // self.deccolm(),
+            }
+            AnsiMode::Insert => self.mode.insert(Mode::INSERT),
+            AnsiMode::BlinkingCursor => {
+                // let style = self.cursor_style.get_or_insert(self.default_cursor_style);
+                // style.blinking = true;
+                // self.event_proxy.send_event(Event::CursorBlinkingChange);
+            },
+        }
+    }
+
+    #[inline]
+    fn insert_blank_lines(&mut self, lines: usize) {
+        println!("insert_blank_lines still unfinished");
+        let origin = self.cursor.pos.row;
+        if self.scroll_region.contains(&origin) {
+            // self.scroll_down_relative(origin, lines);
+        }
+    }
+
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let cursor = &mut self.cursor;
@@ -1042,8 +1139,17 @@ impl<U> Handler for Crosswords<U> {
             self.write_at_cursor(c);
         } else {
             if self.cursor.pos.col + 1 >= self.cols {
-                self.cursor.should_wrap = true;
-                return;
+                if self.mode.contains(Mode::LINE_WRAP) {
+                    // Insert placeholder before wide char if glyph does not fit in this row.
+                    self.cursor.template.flags.insert(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.write_at_cursor(' ');
+                    self.cursor.template.flags.remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                    self.wrapline();
+                } else {
+                    // Prevent out of bounds crash when linewrapping is disabled.
+                    self.cursor.should_wrap = true;
+                    return
+                }
             }
 
             self.cursor.template.flags.insert(square::Flags::WIDE_CHAR);
@@ -1067,6 +1173,15 @@ impl<U> Handler for Crosswords<U> {
             self.cursor.pos.col += 1;
         } else {
             self.cursor.should_wrap = true;
+        }
+    }
+
+    #[inline]
+    fn newline(&mut self) {
+        self.linefeed();
+
+        if self.mode.contains(Mode::LINE_FEED_NEW_LINE) {
+            self.carriage_return();
         }
     }
 
@@ -1224,8 +1339,8 @@ mod tests {
 
     #[test]
     fn resize_shrink_column() {
-        // 5 columns and 5 lines
-        let mut cw = Crosswords::new(5, 5, VoidListener {});
+        // 5 columns and 3 lines
+        let mut cw = Crosswords::new(5, 3, VoidListener {});
 
         cw[Line(0)][Column(0)].c = 'f';
         cw[Line(0)][Column(1)].c = 'i';
@@ -1242,7 +1357,7 @@ mod tests {
         // Before:
         // |first| <- visible
         // | ~ 1 | <- visible
-        cw.resize(4, 5);
+        cw.resize(4, 3);
         // After:
         // |firs|
         // |t   | <- visible

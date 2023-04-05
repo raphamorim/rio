@@ -1,7 +1,7 @@
+use crate::ansi::mode::Mode;
 use crate::crosswords::pos::CharsetIndex;
 use crate::crosswords::pos::Column;
 use crate::crosswords::pos::StandardCharset;
-use crate::crosswords::Mode;
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
@@ -615,6 +615,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         };
 
         match (action, intermediates) {
+            ('@', []) => handler.insert_blank(next_param_or(1) as usize),
             ('K', []) => handler.clear_line(next_param_or(0)),
             ('J', []) => {}
             ('t', []) => match next_param_or(1) as usize {
@@ -622,9 +623,17 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 18 => handler.text_area_size_chars(),
                 // 22 => handler.push_title(),
                 // 23 => handler.pop_title(),
-                _ => println!("aaa"),
+                _ => {},
             },
-
+            ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
+            ('h', intermediates) => {
+                for param in params_iter.map(|param| param[0]) {
+                    match Mode::from_primitive(intermediates.first(), param) {
+                        Some(mode) => handler.set_mode(mode),
+                        None => println!("unhandled set mode"),
+                    }
+                }
+            },
             ('m', []) => {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);
