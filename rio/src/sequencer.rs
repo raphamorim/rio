@@ -55,10 +55,6 @@ impl Sequencer {
                                 // self.ctx.window().set_title(title);
                                 // }
                             }
-                            RioEvent::Resized => {
-                                term.compute_resize();
-                                term.render(self.config.colors.background.1);
-                            }
                             _ => {}
                         }
                     }
@@ -157,7 +153,7 @@ impl Sequencer {
                     }
 
                     term.resize(new_size);
-                    // term.render(self.config.colors.background.1);
+                    term.render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
