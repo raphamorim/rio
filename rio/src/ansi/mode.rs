@@ -86,7 +86,7 @@ impl Mode {
                 _ => {
                     println!("[unimplemented] primitive mode: {}", num);
                     return None;
-                },
+                }
             })
         } else {
             Some(match num {

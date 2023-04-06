@@ -1,4 +1,4 @@
-use crate::crosswords::dimensions::Dimensions;
+use crate::crosswords::grid::Dimensions;
 use std::cmp::{max, min, Ord, Ordering};
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Index, IndexMut, Sub, SubAssign};
@@ -115,18 +115,19 @@ pub enum Boundary {
     None,
 }
 
-#[derive(Debug, Default, Clone, PartialOrd, PartialEq, Eq)]
-pub struct Pos {
-    pub row: Line,
-    pub col: Column,
+#[derive(Debug, Clone, Copy, Default, Eq, PartialOrd, PartialEq)]
+pub struct Pos<L = Line, C = Column> {
+    pub row: L,
+    pub col: C,
+}
+
+impl<L, C> Pos<L, C> {
+    pub fn new(row: L, col: C) -> Pos<L, C> {
+        Pos { row, col }
+    }
 }
 
 impl Pos {
-    #[allow(dead_code)]
-    fn new(row: Line, col: Column) -> Pos {
-        Self { row, col }
-    }
-
     #[inline]
     pub fn sub<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
     where

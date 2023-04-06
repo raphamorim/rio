@@ -1,3 +1,4 @@
+use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -13,6 +14,23 @@ pub struct Layout {
     pub columns: usize,
     pub rows: usize,
     padding: Delta<u8>,
+}
+
+impl Dimensions for Layout {
+    #[inline]
+    fn columns(&self) -> usize {
+        self.columns
+    }
+
+    #[inline]
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+
+    #[inline]
+    fn total_lines(&self) -> usize {
+        self.screen_lines()
+    }
 }
 
 impl Layout {
