@@ -174,7 +174,7 @@ impl TermDamageState {
 
     /// Damage point inside of the viewport.
     #[inline]
-    fn damage_point(&mut self, point: Pos) {
+    fn damage_point(&mut self, _point: Pos) {
         // self.damage_line(point.line, point.column.0, point.column.0);
     }
 
@@ -347,18 +347,15 @@ impl<U> Crosswords<U> {
     }
 
     #[inline]
-    pub fn cursor_cell(&mut self) -> &mut Square {
-        let position = self.grid.cursor.pos.clone();
-        &mut self.grid[position]
-    }
-
-    #[inline]
     pub fn wrapline(&mut self) {
         if !self.mode.contains(Mode::LINE_WRAP) {
             return;
         }
 
-        self.cursor_cell().flags.insert(square::Flags::WRAPLINE);
+        self.grid
+            .cursor_cell()
+            .flags
+            .insert(square::Flags::WRAPLINE);
 
         if self.grid.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
@@ -528,7 +525,7 @@ impl<U> Handler for Crosswords<U> {
             AnsiMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
             AnsiMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
             AnsiMode::Origin => self.mode.insert(Mode::ORIGIN),
-            AnsiMode::ColumnMode => {
+            AnsiMode::Column => {
                 // self.deccolm(),
             }
             AnsiMode::Insert => self.mode.insert(Mode::INSERT),

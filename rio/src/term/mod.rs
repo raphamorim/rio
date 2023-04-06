@@ -1,7 +1,6 @@
 mod ansi;
 mod messenger;
 
-use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
@@ -332,6 +331,9 @@ impl Term {
     pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
         if self.render_context.renderer.scale() != new_scale {
             self.render_context.update_scale(new_size, new_scale);
+            self.layout.set_scale(new_scale);
+            self.layout
+                .set_size(new_size.width as f32, new_size.height as f32);
         }
     }
 }

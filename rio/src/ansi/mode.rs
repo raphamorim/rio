@@ -13,7 +13,7 @@ pub enum Mode {
     /// * erases all data in page memory
     /// * resets DECLRMM to unavailable
     /// * clears data from the status line (if set to host-writable)
-    ColumnMode = 3,
+    Column = 3,
     /// IRM Insert Mode.
     ///
     /// NB should be part of non-private mode enum.
@@ -68,7 +68,7 @@ impl Mode {
         if private {
             Some(match num {
                 1 => Mode::CursorKeys,
-                3 => Mode::ColumnMode,
+                3 => Mode::Column,
                 6 => Mode::Origin,
                 7 => Mode::LineWrap,
                 12 => Mode::BlinkingCursor,

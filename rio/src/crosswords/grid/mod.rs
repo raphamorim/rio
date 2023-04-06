@@ -236,8 +236,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // Determine how many lines to scroll up by.
         let end = Pos::new(Line(self.lines as i32 - 1), Column(self.columns()));
         let mut iter = self.iter_from(end);
-        while let Some(cell) = iter.prev() {
-            if !cell.is_empty() || cell.pos.row < 0 {
+        while let Some(square) = iter.prev() {
+            if !square.is_empty() || square.pos.row < 0 {
                 break;
             }
         }
@@ -508,12 +508,12 @@ pub struct GridIterator<'a, T> {
 
 impl<'a, T> GridIterator<'a, T> {
     /// Current iteratior position.
-    pub fn point(&self) -> Pos {
+    pub fn pos(&self) -> Pos {
         self.current
     }
 
     /// Cell at the current iteratior position.
-    pub fn cell(&self) -> &'a T {
+    pub fn square(&self) -> &'a T {
         &self.grid[self.current]
     }
 }

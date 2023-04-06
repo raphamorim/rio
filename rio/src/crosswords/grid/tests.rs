@@ -134,8 +134,8 @@ fn test_iter() {
 
     assert_eq!(None, iter.prev());
     assert_indexed(1, iter.next());
-    assert_eq!(Column(1), iter.point().col);
-    assert_eq!(0, iter.point().row);
+    assert_eq!(Column(1), iter.pos().col);
+    assert_eq!(0, iter.pos().row);
 
     assert_indexed(2, iter.next());
     assert_indexed(3, iter.next());
@@ -143,15 +143,15 @@ fn test_iter() {
 
     // Test line-wrapping.
     assert_indexed(5, iter.next());
-    assert_eq!(Column(0), iter.point().col);
-    assert_eq!(1, iter.point().row);
+    assert_eq!(Column(0), iter.pos().col);
+    assert_eq!(1, iter.pos().row);
 
     assert_indexed(4, iter.prev());
-    assert_eq!(Column(4), iter.point().col);
-    assert_eq!(0, iter.point().row);
+    assert_eq!(Column(4), iter.pos().col);
+    assert_eq!(0, iter.pos().row);
 
     // Make sure iter.cell() returns the current iterator position.
-    assert_eq!(&4, iter.cell());
+    assert_eq!(&4, iter.square());
 
     // Test that iter ends at end of grid.
     let mut final_iter = grid.iter_from(Pos {
