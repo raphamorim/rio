@@ -14,6 +14,7 @@
     - [Style](#style)
     - [Advanced](#advanced)
     - [Colors](#colors)
+    - [Developer](#developer)
 - [Status](#development-status)
 - [Acknowledgments](#acknowledgments)
 
@@ -23,7 +24,7 @@ Website: https://raphamorim.io/rio
 
 > If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 > 
-> Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally built from Alacritty code.
+> Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
 > 
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
@@ -138,26 +139,6 @@ Set terminal window width.
 # <width> Set default width
 # default: 662
 width = 800
-```
-
-#### `columns`
-
-Define the column width of your console window. This mode is system dependant, and returns an error if you specify a column width that is not supported by your operating system.
-
-```toml
-# <width> Set default width
-# default: 80 (macOs)
-columns = 80
-```
-
-#### `rows`
-
-Define the row height of your console window. This mode is system dependant, and returns an error if you specify a row height that is not supported by your operating system. 
-
-```toml
-# <width> Set default width
-# default: 25 (macOs)
-rows = 25
 ```
 
 ### Style
