@@ -1,4 +1,5 @@
-use crate::crosswords::square::{CrosswordsSquare, ResetDiscriminant};
+use crate::crosswords::grid::GridSquare;
+use crate::crosswords::square::ResetDiscriminant;
 use crate::crosswords::Column;
 use core::cmp::min;
 use std::cmp::max;
@@ -60,7 +61,7 @@ impl<T: Clone + Default> Row<T> {
 
     pub fn shrink(&mut self, columns: usize) -> Option<Vec<T>>
     where
-        T: CrosswordsSquare,
+        T: GridSquare,
     {
         if self.inner.len() <= columns {
             return None;
@@ -87,7 +88,7 @@ impl<T: Clone + Default> Row<T> {
     #[inline]
     pub fn reset<D>(&mut self, template: &T)
     where
-        T: ResetDiscriminant<D> + CrosswordsSquare,
+        T: ResetDiscriminant<D> + GridSquare,
         D: PartialEq,
     {
         debug_assert!(!self.inner.is_empty());
@@ -131,6 +132,15 @@ impl<T> Row<T> {
     }
 
     #[inline]
+    pub fn append(&mut self, vec: &mut Vec<T>)
+    where
+        T: GridSquare,
+    {
+        self.occ += vec.len();
+        self.inner.append(vec);
+    }
+
+    #[inline]
     pub fn append_front(&mut self, mut vec: Vec<T>) {
         self.occ += vec.len();
 
@@ -150,9 +160,9 @@ impl<T> Row<T> {
     #[inline]
     pub fn is_clear(&self) -> bool
     where
-        T: CrosswordsSquare,
+        T: GridSquare,
     {
-        self.inner.iter().all(CrosswordsSquare::is_empty)
+        self.inner.iter().all(GridSquare::is_empty)
     }
 }
 

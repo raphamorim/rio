@@ -1,3 +1,4 @@
+use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
 use crate::crosswords::Row;
 use bitflags::bitflags;
@@ -90,14 +91,7 @@ impl Square {
     }
 }
 
-pub trait CrosswordsSquare: Sized {
-    fn is_empty(&self) -> bool;
-    fn reset(&mut self, template: &Self);
-    fn flags(&self) -> &Flags;
-    fn flags_mut(&mut self) -> &mut Flags;
-}
-
-impl CrosswordsSquare for Square {
+impl GridSquare for Square {
     #[inline]
     fn is_empty(&self) -> bool {
         (self.c == ' ' || self.c == '\t')

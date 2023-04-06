@@ -282,8 +282,8 @@ impl<T> IndexMut<Line> for Storage<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::crosswords::row::Row;
-    use crate::crosswords::storage::{Storage, MAX_CACHE_SIZE};
+    use crate::crosswords::grid::row::Row;
+    use crate::crosswords::grid::storage::{Storage, MAX_CACHE_SIZE};
     use crate::crosswords::{Column, Line};
 
     #[test]

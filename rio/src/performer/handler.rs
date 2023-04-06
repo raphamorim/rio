@@ -623,7 +623,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 18 => handler.text_area_size_chars(),
                 // 22 => handler.push_title(),
                 // 23 => handler.pop_title(),
-                _ => {},
+                _ => {}
             },
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
             ('h', intermediates) => {
@@ -633,7 +633,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                         None => println!("unhandled set mode"),
                     }
                 }
-            },
+            }
             ('m', []) => {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);

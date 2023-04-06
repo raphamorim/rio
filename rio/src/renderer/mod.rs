@@ -2,7 +2,8 @@ mod frames;
 mod shared;
 mod text;
 
-use crate::crosswords::{row::Row, square::Square};
+use crate::crosswords::grid::row::Row;
+use crate::crosswords::square::Square;
 use colors::{AnsiColor, NamedColor};
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;

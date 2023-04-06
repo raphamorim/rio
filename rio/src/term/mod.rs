@@ -1,6 +1,7 @@
 mod ansi;
 mod messenger;
 
+use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
@@ -168,9 +169,8 @@ impl Term {
             RenderContext::new(scale, adapter, surface, config, size).await;
 
         let event_proxy_clone = event_proxy.clone();
-        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> = Arc::new(FairMutex::new(
-            Crosswords::new(columns, rows, event_proxy),
-        ));
+        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
+            Arc::new(FairMutex::new(Crosswords::new(columns, rows, event_proxy)));
 
         let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
         let channel = machine.channel();
@@ -329,7 +329,7 @@ impl Term {
             "compute_resize {} {}",
             self.layout.columns, self.layout.rows
         );
-        terminal.resize(self.layout.columns, self.layout.rows);
+        terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
         // println!("{:?}", terminal.visible_rows_to_string());
         drop(terminal);
     }
