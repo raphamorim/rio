@@ -188,12 +188,9 @@ where
                 Msg::Input(input) => {
                     state.write_list.push_back(input);
                 }
-                Msg::Resize(window_size) => match self.pty.set_winsize(window_size) {
-                    Ok(..) => {
-                        self.event_proxy.send_event(RioEvent::Resized);
-                    }
-                    Err(..) => {}
-                },
+                Msg::Resize(window_size) => {
+                    self.pty.set_winsize(window_size);
+                }
                 Msg::Shutdown => return false,
             }
         }

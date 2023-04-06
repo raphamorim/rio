@@ -315,23 +315,16 @@ impl Term {
             .set_size(new_size.width as f32, new_size.height as f32);
         let (c, l) = self.layout.compute();
 
+        let mut terminal = self.terminal.lock();
+        terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
+        drop(terminal);
+
         let _ = self.messenger.send_resize(
             new_size.width as u16,
             new_size.height as u16,
             c as u16,
             l as u16,
         );
-    }
-
-    pub fn compute_resize(&mut self) {
-        let mut terminal = self.terminal.lock();
-        println!(
-            "compute_resize {} {}",
-            self.layout.columns, self.layout.rows
-        );
-        terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
-        // println!("{:?}", terminal.visible_rows_to_string());
-        drop(terminal);
     }
 
     // https://docs.rs/winit/latest/winit/dpi/
