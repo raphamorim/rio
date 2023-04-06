@@ -326,6 +326,7 @@ impl<T> Grid<T> {
 
     /// This is used only for truncating before saving ref-tests.
     #[inline]
+    #[allow(unused)]
     pub fn truncate(&mut self) {
         self.raw.truncate();
     }
@@ -360,6 +361,7 @@ impl<T> Grid<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn display_offset(&self) -> usize {
         self.display_offset
     }
@@ -508,11 +510,13 @@ pub struct GridIterator<'a, T> {
 
 impl<'a, T> GridIterator<'a, T> {
     /// Current iteratior position.
+    #[allow(unused)]
     pub fn pos(&self) -> Pos {
         self.current
     }
 
     /// Cell at the current iteratior position.
+    #[allow(unused)]
     pub fn square(&self) -> &'a T {
         &self.grid[self.current]
     }

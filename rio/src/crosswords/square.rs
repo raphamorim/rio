@@ -82,6 +82,7 @@ impl Square {
     }
 
     #[inline(never)]
+    #[allow(unused)]
     pub fn clear_wide(&mut self) {
         self.flags.remove(Flags::WIDE_CHAR);
         if let Some(extra) = self.extra.as_mut() {

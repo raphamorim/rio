@@ -141,6 +141,7 @@ impl Pos {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn add<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
     where
         D: Dimensions,
