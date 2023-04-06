@@ -1,8 +1,6 @@
 # Rio: ⚡ terminal app 
 
-> Example using [Lucario color scheme](github.com/raphamorim/lucario/).
-
-![Demo using Lucario](docs/demo-macos-lucario.png)
+![Demo MacOs](docs/demo-macos.png)
 
 ## Summary
 

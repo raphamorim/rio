@@ -78,31 +78,30 @@ impl Sequencer {
                     event: WindowEvent::MouseWheel { delta, .. },
                     ..
                 } => {
-                    let mut scroll_y: f64 = 0.0;
                     match delta {
                         MouseScrollDelta::LineDelta(_x, _y) => {
                             // scroll_y = y;
                         }
 
-                        MouseScrollDelta::PixelDelta(mut lpos) => {
-                            match delta {
-                                // TouchPhase::Started => {
-                                //     // Reset offset to zero.
-                                //     self.ctx.mouse_mut().accumulated_scroll = Default::default();
-                                // },
-                                // winit::event::TouchPhase::Moved => {
-                                //     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
-                                //     // (cosine is larger that 0.9) we consider this scrolling as horizontal.
-                                //     if lpos.x.abs() / lpos.x.hypot(lpos.y) > 0.9 {
-                                //         lpos.y = 0.;
-                                //     } else {
-                                //         lpos.x = 0.;
-                                //     }
+                        MouseScrollDelta::PixelDelta(mut _lpos) => {
+                            // match delta {
+                            // TouchPhase::Started => {
+                            //     // Reset offset to zero.
+                            //     self.ctx.mouse_mut().accumulated_scroll = Default::default();
+                            // },
+                            // winit::event::TouchPhase::Moved => {
+                            //     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
+                            //     // (cosine is larger that 0.9) we consider this scrolling as horizontal.
+                            //     if lpos.x.abs() / lpos.x.hypot(lpos.y) > 0.9 {
+                            //         lpos.y = 0.;
+                            //     } else {
+                            //         lpos.x = 0.;
+                            //     }
 
-                                //     self.scroll_terminal(lpos.x, lpos.y);
-                                // },
-                                _ => (),
-                            }
+                            //     self.scroll_terminal(lpos.x, lpos.y);
+                            // },
+                            // _ => (),
+                            // }
                         }
                     }
                 }

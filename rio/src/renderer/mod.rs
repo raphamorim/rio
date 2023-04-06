@@ -114,11 +114,6 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn size(&self) -> (u32, u32) {
-        (self.styles.width, self.styles.height)
-    }
-
-    #[inline]
     fn process_row(&self, square: &Square) -> OwnedText {
         let content: String = square.c.to_string();
 

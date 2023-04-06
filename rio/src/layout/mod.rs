@@ -52,7 +52,7 @@ impl Layout {
         (padding_x, padding_y)
     }
 
-    pub fn set_scale_factor(&mut self, scale_factor: f32) {
+    pub fn set_scale(&mut self, scale_factor: f32) {
         self.scale_factor = scale_factor;
     }
 
@@ -68,11 +68,11 @@ impl Layout {
         let (padding_x, padding_y) = self.padding();
         // let a_lines = (height - 2. * padding_y) / scale;
         let mut a_lines = (self.height - 2. * padding_y) / self.scale_factor;
-        a_lines = a_lines / 17.5;
+        a_lines /= 17.5;
         let a_screen_lines = std::cmp::max(a_lines as usize, MIN_VISIBLE_ROWS);
 
         let mut a_columns = (self.width - 2. * padding_x) / self.scale_factor;
-        a_columns = a_columns / 8.5;
+        a_columns /= 8.5;
         let a_columns = std::cmp::max(a_columns as usize, MIN_COLUMNS);
 
         // println!("compute: {:?} {:?}", a_columns, a_screen_lines);
