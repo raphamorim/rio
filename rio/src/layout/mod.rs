@@ -72,7 +72,7 @@ impl Layout {
         let a_screen_lines = std::cmp::max(a_lines as usize, MIN_VISIBLE_ROWS);
 
         let mut a_columns = (self.width - 2. * padding_x) / self.scale_factor;
-        a_columns = a_columns / 10.;
+        a_columns = a_columns / 8.;
         let a_columns = std::cmp::max(a_columns as usize, MIN_COLUMNS);
 
         println!("compute: {:?} {:?}", a_columns, a_screen_lines);

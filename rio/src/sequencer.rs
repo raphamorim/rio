@@ -57,7 +57,7 @@ impl Sequencer {
                             }
                             RioEvent::Resized => {
                                 term.compute_resize();
-                                // term.render(self.config.colors.background.1);
+                                term.render(self.config.colors.background.1);
                             }
                             _ => {}
                         }
