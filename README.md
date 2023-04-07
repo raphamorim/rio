@@ -240,9 +240,11 @@ Basic features are under development for MacOs right now.
 
 | Platform | Development Status |
 | --- | --- |
-| MacOs | In development 👷 |
-| Linux | In development 👷 * |
-| Windows | Not started yet |
+| MacOs _as desktop application_ | In development 👷 |
+| Linux _as desktop application_ | In development 👷 * |
+| Windows _as desktop application_ | Not started yet |
+| Web Browser _(tests on Chrome and Firefox)_ | Not started yet |
+| Nintendo Switch | Not started yet |
 
 _* Development and tests are targeting Wayland, probably is not stable on X11 yet._
 

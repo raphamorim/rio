@@ -98,9 +98,6 @@ impl Renderer {
                 let square = &row.inner[column];
                 let text = self.process_row(square, style);
                 row_text.push(text);
-                // for c in square.zerowidth().into_iter().flatten() {
-                //     text.push(*c);
-                // }
 
                 // Render last column and break row
                 if column == (columns - 1) {

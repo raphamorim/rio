@@ -169,3 +169,13 @@ impl ResetDiscriminant<AnsiColor> for Square {
         self.bg
     }
 }
+
+impl From<AnsiColor> for Square {
+    #[inline]
+    fn from(color: AnsiColor) -> Self {
+        Self {
+            bg: color,
+            ..Square::default()
+        }
+    }
+}
