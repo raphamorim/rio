@@ -1,34 +1,24 @@
 use core::ops::{Index, IndexMut};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
 pub enum StandardCharset {
+    #[default]
     Ascii,
     SpecialCharacterAndLineDrawing,
-}
-
-impl Default for StandardCharset {
-    fn default() -> Self {
-        StandardCharset::Ascii
-    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct Charsets([StandardCharset; 4]);
 
 /// Identifiers which can be assigned to a graphic character set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]
 pub enum CharsetIndex {
     /// Default set, is designated as ASCII at startup.
+    #[default]
     G0,
     G1,
     G2,
     G3,
-}
-
-impl Default for CharsetIndex {
-    fn default() -> Self {
-        CharsetIndex::G0
-    }
 }
 
 impl Index<CharsetIndex> for Charsets {

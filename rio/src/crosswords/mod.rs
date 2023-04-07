@@ -303,11 +303,12 @@ impl<U> Crosswords<U> {
         println!("New cols is {} and lines is {}", num_cols, num_lines);
 
         // Move vi mode cursor with the content.
-        let history_size = self.history_size();
-        let mut delta = num_lines as i32 - old_lines as i32;
-        let min_delta =
-            std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
-        delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
+        // let history_size = self.history_size();
+        // let mut delta = num_lines as i32 - old_lines as i32;
+        // let min_delta =
+        //     std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
+
+        // delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
         // self.vi_mode_cursor.pos.row += delta;
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
@@ -694,7 +695,7 @@ impl<U> Handler for Crosswords<U> {
         let end = std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        let bg = self.grid.cursor.template.bg;
+        // let bg = self.grid.cursor.template.bg;
         let line = cursor.pos.row;
         self.damage.damage_line(line.0 as usize, start.0, end.0);
         let row = &mut self.grid[line];
@@ -708,7 +709,7 @@ impl<U> Handler for Crosswords<U> {
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
         let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        // let bg = cursor.template.bg;
 
         // Ensure deleting within terminal bounds.
         let count = std::cmp::min(count, columns);
@@ -936,7 +937,7 @@ impl<U> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_screen(&mut self, mode: ClearMode) {
-        let bg = self.grid.cursor.template.bg;
+        // let bg = self.grid.cursor.template.bg;
 
         let screen_lines = self.grid.screen_lines();
 
@@ -957,7 +958,7 @@ impl<U> Handler for Crosswords<U> {
                     *cell = Square::default();
                 }
 
-                let range = Line(0)..=cursor.row;
+                // let range = Line(0)..=cursor.row;
                 // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::Below => {
@@ -971,19 +972,19 @@ impl<U> Handler for Crosswords<U> {
                     self.grid.reset_region((cursor.row + 1)..);
                 }
 
-                let range = cursor.row..Line(screen_lines as i32);
+                // let range = cursor.row..Line(screen_lines as i32);
                 // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::All => {
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
                 } else {
-                    let old_offset = self.grid.display_offset();
+                    // let old_offset = self.grid.display_offset();
 
                     self.grid.clear_viewport();
 
                     // Compute number of lines scrolled by clearing the viewport.
-                    let lines = self.grid.display_offset().saturating_sub(old_offset);
+                    // let lines = self.grid.display_offset().saturating_sub(old_offset);
 
                     // self.vi_mode_cursor.pos.row =
                     // (self.vi_mode_cursor.pos.row - lines).grid_clamp(self, Boundary::Grid);

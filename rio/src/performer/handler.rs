@@ -628,6 +628,18 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
             ('@', []) => handler.insert_blank(next_param_or(1) as usize),
             ('K', []) => handler.clear_line(next_param_or(0)),
+            ('g', []) => {
+                let mode = match next_param_or(0) {
+                    0 => TabulationClearMode::Current,
+                    3 => TabulationClearMode::All,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_tabs(mode);
+            }
             ('H', []) | ('f', []) => {
                 let y = next_param_or(1) as i32;
                 let x = next_param_or(1) as usize;
