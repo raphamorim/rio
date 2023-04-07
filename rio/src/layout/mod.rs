@@ -123,6 +123,11 @@ impl Layout {
         self
     }
 
+    pub fn update(&mut self) -> &mut Self {
+        update_styles(self);
+        self
+    }
+
     // $ tput columns
     // $ tput lines
     pub fn compute(&mut self) -> (usize, usize) {

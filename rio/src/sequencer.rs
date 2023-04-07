@@ -42,7 +42,6 @@ impl Sequencer {
                     if let RioEventType::Rio(event) = payload {
                         match event {
                             RioEvent::Wakeup => {
-                                println!("render");
                                 if self.config.advanced.disable_render_when_unfocused
                                     && is_focused
                                 {

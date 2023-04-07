@@ -18,6 +18,7 @@ pub mod pos;
 pub mod square;
 
 use crate::ansi::mode::Mode as AnsiMode;
+use crate::ansi::{ClearMode, TabulationClearMode};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::grid::Grid;
 use crate::performer::handler::Handler;
@@ -175,7 +176,7 @@ impl TermDamageState {
     /// Damage point inside of the viewport.
     #[inline]
     fn damage_point(&mut self, _point: Pos) {
-        // self.damage_line(point.line, point.column.0, point.column.0);
+        // self.damage_line(pos.row, pos.col.0, pos.col.0);
     }
 
     /// Expand `line`'s damage to span at least `left` to `right` column.
@@ -307,7 +308,7 @@ impl<U> Crosswords<U> {
         let min_delta =
             std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
-        // self.vi_mode_cursor.point.line += delta;
+        // self.vi_mode_cursor.pos.row += delta;
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.resize(!is_alt, num_lines, num_cols);
@@ -330,9 +331,9 @@ impl<U> Crosswords<U> {
         // let vi_point = self.vi_mode_cursor.point;
         // let viewport_top = Line(-(self.scroll as i32));
         // let viewport_bottom = viewport_top + self.bottommost_line();
-        // self.vi_mode_cursor.point.line =
-        // cmp::max(cmp::min(vi_point.line, viewport_bottom), viewport_top);
-        // self.vi_mode_cursor.point.column = cmp::min(vi_point.column, self.last_column());
+        // self.vi_mode_cursor.pos.row =
+        // cmp::max(cmp::min(vi_pos.row, viewport_bottom), viewport_top);
+        // self.vi_mode_cursor.pos.col = cmp::min(vi_pos.col, self.last_column());
 
         // Reset scrolling region.
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -382,7 +383,34 @@ impl<U> Crosswords<U> {
     }
 
     #[inline]
-    pub fn scroll_up_from_origin(&mut self, origin: Line, mut lines: usize) {
+    fn scroll_down_relative(&mut self, origin: Line, mut lines: usize) {
+        // println!("Scrolling down relative: origin={}, lines={}", origin, lines);
+
+        lines = std::cmp::min(
+            lines,
+            (self.scroll_region.end - self.scroll_region.start).0 as usize,
+        );
+        lines = std::cmp::min(lines, (self.scroll_region.end - origin).0 as usize);
+
+        let region = origin..self.scroll_region.end;
+
+        // Scroll selection.
+        // self.selection =
+        //     self.selection.take().and_then(|s| s.rotate(self, &region, -(lines as i32)));
+
+        // Scroll vi mode cursor.
+        // let line = &mut self.vi_mode_cursor.pos.row;
+        // if region.start <= *line && region.end > *line {
+        // *line = std::cmp::min(*line + lines, region.end - 1);
+        // }
+
+        // Scroll between origin and bottom
+        self.grid.scroll_down(&region, lines);
+        // self.mark_fully_damaged();
+    }
+
+    #[inline]
+    pub fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
         // println!("Scrolling up: origin={origin}, lines={lines}");
 
         lines = std::cmp::min(
@@ -538,11 +566,186 @@ impl<U> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_blank_lines(&mut self, _lines: usize) {
-        println!("insert_blank_lines still unfinished");
+    fn unset_mode(&mut self, mode: AnsiMode) {
+        match mode {
+            AnsiMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
+            AnsiMode::SwapScreenAndSetRestoreCursor => {
+                if self.mode.contains(Mode::ALT_SCREEN) {
+                    self.swap_alt();
+                }
+            }
+            AnsiMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
+            AnsiMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
+            AnsiMode::ReportMouseClicks => {
+                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            }
+            AnsiMode::ReportCellMouseMotion => {
+                self.mode.remove(Mode::MOUSE_DRAG);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            }
+            AnsiMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MOTION);
+                // self.event_proxy.send_event(Event::MouseCursorDirty);
+            }
+            AnsiMode::ReportFocusInOut => self.mode.remove(Mode::FOCUS_IN_OUT),
+            AnsiMode::BracketedPaste => self.mode.remove(Mode::BRACKETED_PASTE),
+            AnsiMode::SgrMouse => self.mode.remove(Mode::SGR_MOUSE),
+            AnsiMode::Utf8Mouse => self.mode.remove(Mode::UTF8_MOUSE),
+            AnsiMode::AlternateScroll => self.mode.remove(Mode::ALTERNATE_SCROLL),
+            AnsiMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
+            AnsiMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
+            AnsiMode::Origin => self.mode.remove(Mode::ORIGIN),
+            AnsiMode::Column => {
+                // self.deccolm(),
+            }
+            AnsiMode::Insert => {
+                self.mode.remove(Mode::INSERT);
+                // self.mark_fully_damaged();
+            }
+            AnsiMode::BlinkingCursor => {
+                // let style = self.cursor_style.get_or_insert(self.default_cursor_style);
+                // style.blinking = false;
+                // self.event_proxy.send_event(Event::CursorBlinkingChange);
+            }
+        }
+    }
+
+    #[inline]
+    fn goto(&mut self, line: Line, col: Column) {
+        let (y_offset, max_y) = if self.mode.contains(Mode::ORIGIN) {
+            (self.scroll_region.start, self.scroll_region.end - 1)
+        } else {
+            (Line(0), self.grid.bottommost_line())
+        };
+
+        // self.damage_cursor();
+        self.grid.cursor.pos.row =
+            std::cmp::max(std::cmp::min(line + y_offset, max_y), Line(0));
+        self.grid.cursor.pos.col = std::cmp::min(col, self.grid.last_column());
+        // self.damage_cursor();
+        self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
+    fn goto_line(&mut self, line: Line) {
+        self.goto(line, self.grid.cursor.pos.col)
+    }
+
+    #[inline]
+    fn goto_col(&mut self, col: Column) {
+        self.goto(self.grid.cursor.pos.row, col)
+    }
+
+    #[inline]
+    fn decaln(&mut self) {
+        for line in (0..self.grid.screen_lines()).map(Line::from) {
+            for column in 0..self.grid.columns() {
+                let cell = &mut self.grid[line][Column(column)];
+                *cell = Square::default();
+                cell.c = 'E';
+            }
+        }
+
+        // self.mark_fully_damaged();
+    }
+
+    #[inline]
+    fn move_up(&mut self, lines: usize) {
+        self.goto(self.grid.cursor.pos.row - lines, self.grid.cursor.pos.col)
+    }
+
+    #[inline]
+    fn move_down(&mut self, lines: usize) {
+        self.goto(self.grid.cursor.pos.row + lines, self.grid.cursor.pos.col)
+    }
+
+    #[inline]
+    fn move_down_and_cr(&mut self, lines: usize) {
+        self.goto(self.grid.cursor.pos.row + lines, Column(0))
+    }
+
+    #[inline]
+    fn move_up_and_cr(&mut self, lines: usize) {
+        self.goto(self.grid.cursor.pos.row - lines, Column(0))
+    }
+
+    #[inline]
+    fn scroll_up(&mut self, lines: usize) {
+        let origin = self.scroll_region.start;
+        self.scroll_up_relative(origin, lines);
+    }
+
+    #[inline]
+    fn delete_lines(&mut self, lines: usize) {
+        let origin = self.grid.cursor.pos.row;
+        let lines = std::cmp::min(self.grid.screen_lines() - origin.0 as usize, lines);
+
+        if lines > 0 && self.scroll_region.contains(&origin) {
+            self.scroll_up_relative(origin, lines);
+        }
+    }
+
+    #[inline]
+    fn erase_chars(&mut self, count: Column) {
+        let cursor = &self.grid.cursor;
+
+        let start = cursor.pos.col;
+        let end = std::cmp::min(start + count, Column(self.grid.columns()));
+
+        // Cleared cells have current background color set.
+        let bg = self.grid.cursor.template.bg;
+        let line = cursor.pos.row;
+        self.damage.damage_line(line.0 as usize, start.0, end.0);
+        let row = &mut self.grid[line];
+        for cell in &mut row[start..end] {
+            // *cell = bg.into();
+            *cell = Square::default();
+        }
+    }
+
+    #[inline]
+    fn delete_chars(&mut self, count: usize) {
+        let columns = self.grid.columns();
+        let cursor = &self.grid.cursor;
+        let bg = cursor.template.bg;
+
+        // Ensure deleting within terminal bounds.
+        let count = std::cmp::min(count, columns);
+
+        let start = cursor.pos.col.0;
+        let end = std::cmp::min(start + count, columns - 1);
+        let num_cells = columns - end;
+
+        let line = cursor.pos.row;
+        self.damage
+            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+        let row = &mut self.grid[line][..];
+
+        for offset in 0..num_cells {
+            row.swap(start + offset, end + offset);
+        }
+
+        // Clear last `count` cells in the row. If deleting 1 char, need to delete
+        // 1 cell.
+        let end = columns - count;
+        for cell in &mut row[end..] {
+            // *cell = bg.into();
+            *cell = Square::default();
+        }
+    }
+
+    #[inline]
+    fn scroll_down(&mut self, lines: usize) {
+        let origin = self.scroll_region.start;
+        self.scroll_down_relative(origin, lines);
+    }
+
+    #[inline]
+    fn insert_blank_lines(&mut self, lines: usize) {
         let origin = self.grid.cursor.pos.row;
         if self.scroll_region.contains(&origin) {
-            // self.scroll_down_relative(origin, lines);
+            self.scroll_down_relative(origin, lines);
         }
     }
 
@@ -731,10 +934,94 @@ impl<U> Handler for Crosswords<U> {
         }
     }
 
+    #[inline]
+    fn clear_screen(&mut self, mode: ClearMode) {
+        let bg = self.grid.cursor.template.bg;
+
+        let screen_lines = self.grid.screen_lines();
+
+        match mode {
+            ClearMode::Above => {
+                let cursor = self.grid.cursor.pos;
+
+                // If clearing more than one line.
+                if cursor.row > 1 {
+                    // Fully clear all lines before the current line.
+                    self.grid.reset_region(..cursor.row);
+                }
+
+                // Clear up to the current column in the current line.
+                let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
+                for cell in &mut self.grid[cursor.row][..end] {
+                    // *cell = bg.into();
+                    *cell = Square::default();
+                }
+
+                let range = Line(0)..=cursor.row;
+                // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+            }
+            ClearMode::Below => {
+                let cursor = self.grid.cursor.pos;
+                for cell in &mut self.grid[cursor.row][cursor.col..] {
+                    // *cell = bg.into();
+                    *cell = Square::default();
+                }
+
+                if (cursor.row.0 as usize) < screen_lines - 1 {
+                    self.grid.reset_region((cursor.row + 1)..);
+                }
+
+                let range = cursor.row..Line(screen_lines as i32);
+                // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+            }
+            ClearMode::All => {
+                if self.mode.contains(Mode::ALT_SCREEN) {
+                    self.grid.reset_region(..);
+                } else {
+                    let old_offset = self.grid.display_offset();
+
+                    self.grid.clear_viewport();
+
+                    // Compute number of lines scrolled by clearing the viewport.
+                    let lines = self.grid.display_offset().saturating_sub(old_offset);
+
+                    // self.vi_mode_cursor.pos.row =
+                    // (self.vi_mode_cursor.pos.row - lines).grid_clamp(self, Boundary::Grid);
+                }
+
+                // self.selection = None;
+            }
+            ClearMode::Saved if self.history_size() > 0 => {
+                self.grid.clear_history();
+
+                // self.vi_mode_cursor.pos.row =
+                // self.vi_mode_cursor.pos.row.grid_clamp(self, Boundary::Cursor);
+
+                // self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
+            }
+            // We have no history to clear.
+            ClearMode::Saved => (),
+        }
+
+        // self.mark_fully_damaged();
+    }
+
+    #[inline]
+    fn clear_tabs(&mut self, mode: TabulationClearMode) {
+        match mode {
+            TabulationClearMode::Current => {
+                self.tabs[self.grid.cursor.pos.col] = false;
+            }
+            TabulationClearMode::All => {
+                self.tabs.clear_all();
+            }
+        }
+    }
+
     fn linefeed(&mut self) {
         let next = self.grid.cursor.pos.row + 1;
         if next == self.scroll_region.end {
-            self.scroll_up_from_origin(self.scroll_region.start, 1);
+            self.scroll_up_relative(self.scroll_region.start, 1);
         } else if next < self.grid.screen_lines() {
             self.grid.cursor.pos.row += 1;
         }

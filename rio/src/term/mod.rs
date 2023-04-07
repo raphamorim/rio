@@ -26,7 +26,7 @@ struct RenderContext {
 
 impl RenderContext {
     pub async fn new(
-        scale: f32,
+        _scale: f32,
         adapter: wgpu::Adapter,
         surface: wgpu::Surface,
         config: &Rc<config::Config>,
@@ -298,9 +298,10 @@ impl Term {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        // println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        self.layout.set_size(new_size.width, new_size.height);
+        self.layout
+            .set_size(new_size.width, new_size.height)
+            .update();
         let (c, l) = self.layout.compute();
 
         let mut terminal = self.terminal.lock();
@@ -318,9 +319,10 @@ impl Term {
     // https://docs.rs/winit/latest/winit/dpi/
     #[allow(dead_code)]
     pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.render_context.update_size(new_size);
         self.layout
             .set_scale(new_scale)
-            .set_size(new_size.width, new_size.height);
-        self.render_context.update_size(new_size);
+            .set_size(new_size.width, new_size.height)
+            .update();
     }
 }
