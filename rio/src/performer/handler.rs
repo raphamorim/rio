@@ -1,5 +1,6 @@
 use crate::ansi::mode::Mode;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
+use colors::ColorRgb;
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
@@ -25,6 +26,81 @@ const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
 /// Start of the DCS sequence for terminating synchronized updates.
 const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
     [b'\x1b', b'P', b'=', b'2', b's'];
+
+fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
+    if !color.is_empty() && color[0] == b'#' {
+        parse_legacy_color(&color[1..])
+    } else if color.len() >= 4 && &color[..4] == b"rgb:" {
+        parse_rgb_color(&color[4..])
+    } else {
+        None
+    }
+}
+
+/// Parse colors in `rgb:r(rrr)/g(ggg)/b(bbb)` format.
+fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
+    let colors = std::str::from_utf8(color)
+        .ok()?
+        .split('/')
+        .collect::<Vec<_>>();
+
+    if colors.len() != 3 {
+        return None;
+    }
+
+    // Scale values instead of filling with `0`s.
+    let scale = |input: &str| {
+        if input.len() > 4 {
+            None
+        } else {
+            let max = u32::pow(16, input.len() as u32) - 1;
+            let value = u32::from_str_radix(input, 16).ok()?;
+            Some((255 * value / max) as u8)
+        }
+    };
+
+    Some(ColorRgb {
+        r: scale(colors[0])?,
+        g: scale(colors[1])?,
+        b: scale(colors[2])?,
+    })
+}
+
+/// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
+fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
+    let item_len = color.len() / 3;
+
+    // Truncate/Fill to two byte precision.
+    let color_from_slice = |slice: &[u8]| {
+        let col = usize::from_str_radix(std::str::from_utf8(slice).ok()?, 16).ok()? << 4;
+        Some((col >> (4 * slice.len().saturating_sub(1))) as u8)
+    };
+
+    Some(ColorRgb {
+        r: color_from_slice(&color[0..item_len])?,
+        g: color_from_slice(&color[item_len..item_len * 2])?,
+        b: color_from_slice(&color[item_len * 2..])?,
+    })
+}
+
+fn parse_number(input: &[u8]) -> Option<u8> {
+    if input.is_empty() {
+        return None;
+    }
+    let mut num: u8 = 0;
+    for c in input {
+        let c = *c as char;
+        if let Some(digit) = c.to_digit(10) {
+            num = match num.checked_mul(10).and_then(|v| v.checked_add(digit as u8)) {
+                Some(v) => v,
+                None => return None,
+            }
+        } else {
+            return None;
+        }
+    }
+    Some(num)
+}
 
 pub trait Handler {
     /// OSC to set window title.
@@ -187,7 +263,7 @@ pub trait Handler {
     fn configure_charset(&mut self, _: CharsetIndex, _: StandardCharset) {}
 
     /// Set an indexed color value.
-    // fn set_color(&mut self, _: usize, _: Rgb) {}
+    fn set_color(&mut self, _: usize, _: ColorRgb) {}
 
     /// Respond to a color query escape sequence.
     fn dynamic_color_sequence(&mut self, _: String, _: usize, _: &str) {}
@@ -477,7 +553,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
         println!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
 
-        let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
         fn unhandled(params: &[&[u8]]) {
             let mut buf = String::new();
@@ -516,27 +592,31 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             b"4" => {
                 if params.len() <= 1 || params.len() % 2 == 0 {
                     unhandled(params);
-                    // return;
+                    return;
                 }
 
-                // for chunk in params[1..].chunks(2) {
-                // let index = match parse_number(chunk[0]) {
-                //     Some(index) => index,
-                //     None => {
-                //         unhandled(params);
-                //         continue;
-                //     },
-                // };
+                for chunk in params[1..].chunks(2) {
+                    let index = match parse_number(chunk[0]) {
+                        Some(index) => index,
+                        None => {
+                            unhandled(params);
+                            continue;
+                        }
+                    };
 
-                // if let Some(c) = xparse_color(chunk[1]) {
-                //     self.handler.set_color(index as usize, c);
-                // } else if chunk[1] == b"?" {
-                //     let prefix = format!("4;{index}");
-                //     self.handler.dynamic_color_sequence(prefix, index as usize, terminator);
-                // } else {
-                //     unhandled(params);
-                // }
-                // }
+                    if let Some(c) = xparse_color(chunk[1]) {
+                        self.handler.set_color(index as usize, c);
+                    } else if chunk[1] == b"?" {
+                        let prefix = format!("4;{index}");
+                        self.handler.dynamic_color_sequence(
+                            prefix,
+                            index as usize,
+                            terminator,
+                        );
+                    } else {
+                        unhandled(params);
+                    }
+                }
             }
 
             b"10" | b"11" | b"12" => {
@@ -570,6 +650,24 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     // }
                 }
                 unhandled(params);
+            }
+
+            b"104" => {
+                // Reset all color indexes when no parameters are given.
+                if params.len() == 1 || params[1].is_empty() {
+                    for i in 0..256 {
+                        self.handler.reset_color(i);
+                    }
+                    return;
+                }
+
+                // Reset color indexes given as parameters.
+                for param in &params[1..] {
+                    match parse_number(param) {
+                        Some(index) => self.handler.reset_color(index as usize),
+                        None => unhandled(params),
+                    }
+                }
             }
 
             // Reset foreground color.

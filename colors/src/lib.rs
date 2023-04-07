@@ -9,6 +9,12 @@ pub type ColorWGPU = wgpu::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
+pub struct ColorRgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Format {
     SRGB0_255,

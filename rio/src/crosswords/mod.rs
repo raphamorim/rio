@@ -25,6 +25,7 @@ use crate::performer::handler::Handler;
 use attr::*;
 use bitflags::bitflags;
 use colors::AnsiColor;
+use colors::{ColorRgb, Colors};
 use grid::row::Row;
 use pos::CharsetIndex;
 use pos::{Column, Cursor, Line, Pos};
@@ -83,6 +84,7 @@ pub struct Crosswords<U> {
     tabs: TabStops,
     #[allow(dead_code)]
     event_proxy: U,
+    colors: Colors,
     window_title: Option<String>,
     damage: TermDamageState,
 }
@@ -280,6 +282,7 @@ impl<U> Crosswords<U> {
             active_charset: CharsetIndex::default(),
             scroll_region,
             event_proxy,
+            colors: Colors::default(),
             window_title: Option::Some(String::from("")),
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
@@ -341,11 +344,6 @@ impl<U> Crosswords<U> {
 
         // Resize damage information.
         self.damage.resize(num_cols, num_lines);
-    }
-
-    #[inline]
-    pub fn mode(&self) -> &Mode {
-        &self.mode
     }
 
     #[inline]
@@ -481,15 +479,6 @@ impl<U> Crosswords<U> {
         }
 
         visible_rows
-    }
-
-    pub fn grid(&self) -> &Grid<Square> {
-        &self.grid
-    }
-
-    /// Mutable access to the raw grid data structure.
-    pub fn grid_mut(&mut self) -> &mut Grid<Square> {
-        &mut self.grid
     }
 
     pub fn swap_alt(&mut self) {
@@ -695,13 +684,12 @@ impl<U> Handler for Crosswords<U> {
         let end = std::cmp::min(start + count, Column(self.grid.columns()));
 
         // Cleared cells have current background color set.
-        // let bg = self.grid.cursor.template.bg;
+        let bg = self.grid.cursor.template.bg;
         let line = cursor.pos.row;
         self.damage.damage_line(line.0 as usize, start.0, end.0);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
-            // *cell = bg.into();
-            *cell = Square::default();
+            *cell = bg.into();
         }
     }
 
@@ -709,7 +697,7 @@ impl<U> Handler for Crosswords<U> {
     fn delete_chars(&mut self, count: usize) {
         let columns = self.grid.columns();
         let cursor = &self.grid.cursor;
-        // let bg = cursor.template.bg;
+        let bg = cursor.template.bg;
 
         // Ensure deleting within terminal bounds.
         let count = std::cmp::min(count, columns);
@@ -731,8 +719,7 @@ impl<U> Handler for Crosswords<U> {
         // 1 cell.
         let end = columns - count;
         for cell in &mut row[end..] {
-            // *cell = bg.into();
-            *cell = Square::default();
+            *cell = bg.into();
         }
     }
 
@@ -937,7 +924,7 @@ impl<U> Handler for Crosswords<U> {
 
     #[inline]
     fn clear_screen(&mut self, mode: ClearMode) {
-        // let bg = self.grid.cursor.template.bg;
+        let bg = self.grid.cursor.template.bg;
 
         let screen_lines = self.grid.screen_lines();
 
@@ -954,8 +941,7 @@ impl<U> Handler for Crosswords<U> {
                 // Clear up to the current column in the current line.
                 let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
                 for cell in &mut self.grid[cursor.row][..end] {
-                    // *cell = bg.into();
-                    *cell = Square::default();
+                    *cell = bg.into();
                 }
 
                 // let range = Line(0)..=cursor.row;
@@ -964,8 +950,7 @@ impl<U> Handler for Crosswords<U> {
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
-                    // *cell = bg.into();
-                    *cell = Square::default();
+                    *cell = bg.into();
                 }
 
                 if (cursor.row.0 as usize) < screen_lines - 1 {
@@ -1028,6 +1013,27 @@ impl<U> Handler for Crosswords<U> {
         }
     }
 
+    /// Set the indexed color value.
+    // #[inline]
+    // fn set_color(&mut self, index: usize, color: ColorRgb) {
+    //     // Damage terminal if the color changed and it's not the cursor.
+    //     if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
+    //         // self.mark_fully_damaged();
+    //     }
+
+    //     self.colors[index] = Some(color);
+    // }
+
+    // #[inline]
+    // fn reset_color(&mut self, index: usize) {
+    //     // Damage terminal if the color changed and it's not the cursor.
+    //     if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
+    //         // self.mark_fully_damaged();
+    //     }
+
+    //     self.colors[index] = None;
+    // }
+
     #[inline]
     fn bell(&mut self) {
         println!("[unimplemented] Bell");
@@ -1081,7 +1087,7 @@ impl<U> Handler for Crosswords<U> {
     #[inline]
     fn clear_line(&mut self, mode: u16) {
         let cursor = &self.grid.cursor;
-        let _bg = cursor.template.bg;
+        let bg = cursor.template.bg;
         let pos = &cursor.pos;
         let (left, right) = match mode {
             // Right
@@ -1103,8 +1109,7 @@ impl<U> Handler for Crosswords<U> {
         let position = pos.row;
         let row = &mut self.grid[position];
         for square in &mut row[left..right] {
-            // *square = bg.into();
-            *square = Square::default();
+            *square = bg.into();
         }
         // let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));

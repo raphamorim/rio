@@ -125,8 +125,6 @@ impl Term {
         let (columns, rows) = layout.compute();
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
-        println!("original: {:?} {:?}", columns, rows);
-
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
