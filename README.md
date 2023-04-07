@@ -1,5 +1,7 @@
 # Rio: ⚡ terminal app 
 
+> tl;dr: Rio is built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
+
 ![Demo MacOs](docs/demo-macos.png)
 
 ## Summary
