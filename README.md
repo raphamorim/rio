@@ -25,7 +25,9 @@ Website: https://raphamorim.io/rio
 > If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 > 
 > Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
-> 
+>
+> The default color palette is based on the colors of [ui.dev](https://ui.dev/).
+>
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
 
@@ -70,17 +72,17 @@ enable-fps-counter = false
 enable-logs = false
 
 [colors]
-background       = '#151515'
-black            = '#FFFFFF'
+background       = '#0F0D0E'
+black            = '#231F20'
 blue             = '#006EE6'
-cursor           = '#8E12CC'
-cyan             = '#FFFFFF'
-foreground       = '#FFFFFF'
-green            = '#FFFFFF'
-magenta          = '#FFFFFF'
-red              = '#FFFFFF'
+cursor           = '#F38BA3'
+cyan             = '#88DAF2'
+foreground       = '#F9F4DA'
+green            = '#0BA95B'
+magenta          = '#7B5EA7'
+red              = '#ED203D'
 tabs             = '#FFFFFF'
-tabs-active      = '#F8A145'
+tabs-active      = '#FC7428'
 white            = '#FFFFFF'
 yellow           = '#FFFFFF'
 dim-black        = '#FFFFFF'
