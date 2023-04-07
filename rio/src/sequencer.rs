@@ -165,7 +165,7 @@ impl Sequencer {
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
                     term.set_scale(scale_factor_f32, *new_inner_size);
-                    // term.render(self.config.colors.background.1);
+                    term.render(self.config.colors.background.1);
                 }
 
                 Event::MainEventsCleared { .. } => {}

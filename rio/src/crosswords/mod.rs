@@ -188,10 +188,10 @@ impl TermDamageState {
         &mut self,
         // selection: SelectionRange,
         display_offset: usize,
-        num_cols: usize,
+        _num_cols: usize,
     ) {
-        let display_offset = display_offset as i32;
-        let last_visible_line = self.lines.len() as i32 - 1;
+        let _display_offset = display_offset as i32;
+        let _last_visible_line = self.lines.len() as i32 - 1;
 
         // Don't damage invisible selection.
         // if selection.end.line.0 + display_offset < 0
@@ -538,7 +538,7 @@ impl<U> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_blank_lines(&mut self, lines: usize) {
+    fn insert_blank_lines(&mut self, _lines: usize) {
         println!("insert_blank_lines still unfinished");
         let origin = self.grid.cursor.pos.row;
         if self.scroll_region.contains(&origin) {
@@ -793,7 +793,7 @@ impl<U> Handler for Crosswords<U> {
     #[inline]
     fn clear_line(&mut self, mode: u16) {
         let cursor = &self.grid.cursor;
-        let bg = cursor.template.bg;
+        let _bg = cursor.template.bg;
         let pos = &cursor.pos;
         let (left, right) = match mode {
             // Right
