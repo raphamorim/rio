@@ -1,4 +1,3 @@
-mod control;
 pub mod handler;
 
 use crate::crosswords::Crosswords;

@@ -8,7 +8,7 @@ use crate::layout::Style;
 use colors::{AnsiColor, NamedColor};
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::{OwnedSection, OwnedText, Section, Text};
+use glyph_brush::{OwnedSection, OwnedText};
 use std::rc::Rc;
 
 pub struct Renderer {

@@ -1,12 +1,11 @@
 use crate::ansi::mode::Mode;
-use crate::crosswords::pos::CharsetIndex;
-use crate::crosswords::pos::Column;
-use crate::crosswords::pos::StandardCharset;
+use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
 
-use crate::performer::control::C0;
+use crate::ansi::control::C0;
+use crate::ansi::{ClearMode, TabulationClearMode};
 use colors::{AnsiColor, NamedColor};
 use std::fmt::Write;
 
@@ -41,13 +40,13 @@ pub trait Handler {
     fn input(&mut self, _c: char) {}
 
     /// Set cursor to position.
-    // fn goto(&mut self, _: Line, _: Column) {}
+    fn goto(&mut self, _: Line, _: Column) {}
 
     /// Set cursor to specific row.
-    // fn goto_line(&mut self, _: Line) {}
+    fn goto_line(&mut self, _: Line) {}
 
     /// Set cursor to specific column.
-    // fn goto_col(&mut self, _: Column) {}
+    fn goto_col(&mut self, _: Column) {}
 
     /// Insert blank characters in current line starting from cursor.
     fn insert_blank(&mut self, _: usize) {}
@@ -65,10 +64,10 @@ pub trait Handler {
     fn device_status(&mut self, _: usize) {}
 
     /// Move cursor forward `cols`.
-    // fn move_forward(&mut self, _: Column) {}
+    fn move_forward(&mut self, _: Column) {}
 
     /// Move cursor backward `cols`.
-    // fn move_backward(&mut self, _: Column) {}
+    fn move_backward(&mut self, _: Column) {}
 
     /// Move cursor down `rows` and set to column 1.
     fn move_down_and_cr(&mut self, _: usize) {}
@@ -103,7 +102,7 @@ pub trait Handler {
     fn set_horizontal_tabstop(&mut self) {}
 
     /// Scroll up `rows` rows.
-    // fn scroll_up(&mut self, _: usize) {}
+    fn scroll_up(&mut self, _: usize) {}
 
     /// Scroll down `rows` rows.
     fn scroll_down(&mut self, _: usize) {}
@@ -142,10 +141,10 @@ pub trait Handler {
     fn clear_line(&mut self, _mode: u16) {}
 
     /// Clear screen.
-    // fn clear_screen(&mut self, _mode: ClearMode) {}
+    fn clear_screen(&mut self, _mode: ClearMode) {}
 
     /// Clear tab stops.
-    // fn clear_tabs(&mut self, _mode: TabulationClearMode) {}
+    fn clear_tabs(&mut self, _mode: TabulationClearMode) {}
 
     /// Reset terminal state.
     fn reset_state(&mut self) {}
@@ -407,8 +406,8 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             C0::LF | C0::VT | C0::FF => self.handler.linefeed(),
             C0::BEL => self.handler.bell(),
             C0::SUB => self.handler.substitute(),
-            // C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
-            // C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
+            C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
+            C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
             _ => println!("[unhandled] execute byte={byte:02x}"),
         }
     }
@@ -573,11 +572,14 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 unhandled(params);
             }
 
-            b"110" => {}
+            // Reset foreground color.
+            b"110" => self.handler.reset_color(NamedColor::Foreground as usize),
 
-            b"111" => {}
+            // Reset background color.
+            b"111" => self.handler.reset_color(NamedColor::Background as usize),
 
-            b"112" => {}
+            // Reset text cursor color.
+            b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
             _ => unhandled(params),
         }
@@ -615,9 +617,36 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         };
 
         match (action, intermediates) {
+            ('C', []) | ('a', []) => {
+                handler.move_forward(Column(next_param_or(1) as usize))
+            }
+            ('d', []) => handler.goto_line(Line(next_param_or(1) as i32 - 1)),
+            ('D', []) => handler.move_backward(Column(next_param_or(1) as usize)),
+            ('A', []) => handler.move_up(next_param_or(1) as usize),
+            ('E', []) => handler.move_down_and_cr(next_param_or(1) as usize),
+            ('F', []) => handler.move_up_and_cr(next_param_or(1) as usize),
+            ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
             ('@', []) => handler.insert_blank(next_param_or(1) as usize),
             ('K', []) => handler.clear_line(next_param_or(0)),
-            ('J', []) => {}
+            ('H', []) | ('f', []) => {
+                let y = next_param_or(1) as i32;
+                let x = next_param_or(1) as usize;
+                handler.goto(Line(y - 1), Column(x - 1));
+            }
+            ('J', []) => {
+                let mode = match next_param_or(0) {
+                    0 => ClearMode::Below,
+                    1 => ClearMode::Above,
+                    2 => ClearMode::All,
+                    3 => ClearMode::Saved,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_screen(mode);
+            }
             ('t', []) => match next_param_or(1) as usize {
                 14 => handler.text_area_size_pixels(),
                 18 => handler.text_area_size_chars(),
@@ -626,6 +655,14 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 _ => {}
             },
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
+            ('l', intermediates) => {
+                for param in params_iter.map(|param| param[0]) {
+                    match Mode::from_primitive(intermediates.first(), param) {
+                        Some(mode) => handler.unset_mode(mode),
+                        None => csi_unhandled!(),
+                    }
+                }
+            }
             ('h', intermediates) => {
                 for param in params_iter.map(|param| param[0]) {
                     match Mode::from_primitive(intermediates.first(), param) {
@@ -634,6 +671,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     }
                 }
             }
+            ('M', []) => handler.delete_lines(next_param_or(1) as usize),
             ('m', []) => {
                 if params.is_empty() {
                     handler.terminal_attribute(Attr::Reset);
@@ -646,6 +684,12 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     }
                 }
             }
+            ('n', []) => handler.device_status(next_param_or(0) as usize),
+            ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            ('S', []) => handler.scroll_up(next_param_or(1) as usize),
+            ('s', []) => handler.save_cursor_position(),
+            ('T', []) => handler.scroll_down(next_param_or(1) as usize),
+            ('X', []) => handler.erase_chars(Column(next_param_or(1) as usize)),
             _ => {}
         };
     }

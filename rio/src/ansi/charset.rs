@@ -1,3 +1,5 @@
+use core::ops::{Index, IndexMut};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StandardCharset {
     Ascii,
