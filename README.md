@@ -26,8 +26,6 @@ Website: https://raphamorim.io/rio
 > 
 > Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
 >
-> The default color palette is based on the colors of [ui.dev](https://ui.dev/).
->
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
 
@@ -250,6 +248,7 @@ _* Development and tests are targeting Wayland, probably is not stable on X11 ye
 
 ## Acknowledgments
 
+- The default color palette is based on the colors of [ui.dev](https://ui.dev/).
 - Text glyph render is from https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
