@@ -7,13 +7,33 @@ pub struct Delta<T: Default> {
     pub y: T,
 }
 
+const PADDING_X: f32 = 10.0;
+const PADDING_Y: f32 = 30.0;
+
 pub struct Layout {
     scale_factor: f32,
     width: f32,
     height: f32,
+    pub width_u32: u32,
+    pub height_u32: u32,
+    pub font_size: f32,
     pub columns: usize,
     pub rows: usize,
-    padding: Delta<u8>,
+    padding: Delta<f32>,
+    pub styles: LayoutStyles,
+}
+
+#[derive(Default, Copy, Clone)]
+pub struct Style {
+    pub screen_position: (f32, f32),
+    pub bounds: (f32, f32),
+    pub text_scale: f32,
+}
+
+#[derive(Default)]
+pub struct LayoutStyles {
+    pub term: Style,
+    pub tabs_active: Style,
 }
 
 impl Dimensions for Layout {
@@ -33,53 +53,91 @@ impl Dimensions for Layout {
     }
 }
 
+fn update_styles(layout: &mut Layout) {
+    let new_styles = LayoutStyles {
+        term: Style {
+            screen_position: (
+                layout.padding.x * layout.scale_factor,
+                (layout.padding.y * layout.scale_factor),
+            ),
+            bounds: (
+                layout.width * layout.scale_factor,
+                layout.height * layout.scale_factor,
+            ),
+            text_scale: layout.font_size * layout.scale_factor,
+        },
+        // TODO: Fix tabs style
+        tabs_active: Style {
+            screen_position: (80.0 * layout.scale_factor, (8.0 * layout.scale_factor)),
+            bounds: (
+                layout.width - (40.0 * layout.scale_factor),
+                layout.height * layout.scale_factor,
+            ),
+            text_scale: 15.0 * layout.scale_factor,
+        },
+    };
+    layout.styles = new_styles;
+}
+
 impl Layout {
-    pub fn new(width: f32, height: f32, scale_factor: f32) -> Layout {
-        Layout {
+    pub fn new(width: f32, height: f32, scale_factor: f32, font_size: f32) -> Layout {
+        let styles = LayoutStyles::default();
+
+        let mut layout = Layout {
             width,
+            width_u32: width as u32,
             height,
+            height_u32: height as u32,
             columns: 80,
             rows: 25,
             scale_factor,
-            padding: Delta::<u8>::default(),
-        }
+            font_size,
+            styles,
+            padding: Delta {
+                x: PADDING_X,
+                y: PADDING_Y,
+            },
+        };
+
+        update_styles(&mut layout);
+        layout
     }
 
     #[inline]
     fn padding(&self) -> (f32, f32) {
-        let padding_x = (f32::from(self.padding.x) * self.scale_factor).floor();
-        let padding_y = (f32::from(self.padding.y) * self.scale_factor).floor();
+        let padding_x = ((self.padding.x) * self.scale_factor).floor();
+        let padding_y = ((self.padding.y) * self.scale_factor).floor();
         (padding_x, padding_y)
     }
 
-    pub fn set_scale(&mut self, scale_factor: f32) {
+    pub fn set_scale(&mut self, scale_factor: f32) -> &mut Self {
         self.scale_factor = scale_factor;
+        self
     }
 
-    pub fn set_size(&mut self, width: f32, height: f32) {
-        self.width = width;
-        self.height = height;
+    pub fn set_size(&mut self, width: u32, height: u32) -> &mut Self {
+        self.width_u32 = width;
+        self.height_u32 = height;
+        self.width = width as f32;
+        self.height = height as f32;
+        self
     }
 
     // $ tput columns
     // $ tput lines
-
     pub fn compute(&mut self) -> (usize, usize) {
         let (padding_x, padding_y) = self.padding();
-        // let a_lines = (height - 2. * padding_y) / scale;
-        let mut a_lines = (self.height - 2. * padding_y) / self.scale_factor;
-        a_lines /= 17.5;
-        let a_screen_lines = std::cmp::max(a_lines as usize, MIN_VISIBLE_ROWS);
+        let mut rows = (self.height - padding_y) / self.scale_factor;
+        rows /= self.font_size;
+        let visible_rows = std::cmp::max(rows as usize, MIN_VISIBLE_ROWS);
 
-        let mut a_columns = (self.width - 2. * padding_x) / self.scale_factor;
-        a_columns /= 8.5;
-        let a_columns = std::cmp::max(a_columns as usize, MIN_COLUMNS);
+        let mut visible_columns = (self.width - 2. * padding_x) / self.scale_factor;
+        visible_columns /= self.font_size / 2.;
+        let visible_columns = std::cmp::max(visible_columns as usize, MIN_COLUMNS);
 
-        // println!("compute: {:?} {:?}", a_columns, a_screen_lines);
+        self.columns = visible_columns;
+        self.rows = visible_rows;
 
-        self.columns = a_columns;
-        self.rows = a_screen_lines;
-
-        (a_columns, a_screen_lines)
+        (visible_columns, visible_rows)
     }
 }

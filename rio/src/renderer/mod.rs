@@ -1,75 +1,20 @@
-mod frames;
+// mod frames;
 mod shared;
 mod text;
 
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::square::Square;
+use crate::layout::Style;
 use colors::{AnsiColor, NamedColor};
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText, Section, Text};
 use std::rc::Rc;
 
-pub struct Style {
-    pub screen_position: (f32, f32),
-    pub bounds: (f32, f32),
-    pub text_scale: f32,
-}
-
-pub struct RendererStyles {
-    pub scale: f32,
-    pub font_size: f32,
-    pub term: Style,
-    pub tabs_active: Style,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl RendererStyles {
-    pub fn new(scale: f32, width: u32, height: u32, font_size: f32) -> RendererStyles {
-        Self::mount_styles(scale, width, height, font_size)
-    }
-
-    #[inline]
-    fn mount_styles(
-        scale: f32,
-        width: u32,
-        height: u32,
-        font_size: f32,
-    ) -> RendererStyles {
-        let yspacing = 30.0;
-        let width_f32 = width as f32;
-        let height_f32 = height as f32;
-        RendererStyles {
-            height,
-            width,
-            scale,
-            font_size,
-            term: Style {
-                screen_position: (10.0 * scale, (yspacing * scale)),
-                bounds: (width_f32 - ((font_size + 5.0) * scale), height_f32 * scale),
-                text_scale: font_size * scale,
-            },
-            tabs_active: Style {
-                screen_position: (80.0 * scale, (8.0 * scale)),
-                bounds: (width_f32 - (40.0 * scale), height_f32 * scale),
-                text_scale: 15.0 * scale,
-            },
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn refresh_styles(&mut self, width: u32, height: u32, scale: f32) {
-        *self = Self::mount_styles(scale, width, height, self.font_size);
-    }
-}
-
 pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Rc<Config>,
-    styles: RendererStyles,
-    /// This field is used if monochrome is true, so skip color processing per squares
-    fps: frames::Counter,
+    // fps: frames::Counter,
 }
 
 impl Renderer {
@@ -77,18 +22,16 @@ impl Renderer {
         device: wgpu::Device,
         format: wgpu::TextureFormat,
         config: &Rc<Config>,
-        styles: RendererStyles,
     ) -> Result<Renderer, String> {
         match FontArc::try_from_slice(shared::FONT_FIRAMONO) {
             Ok(font_data) => {
                 let brush =
                     text::GlyphBrushBuilder::using_font(font_data).build(&device, format);
-                let fps = frames::Counter::new();
+                // let fps = frames::Counter::new();
                 Ok(Renderer {
                     brush,
                     config: config.clone(),
-                    styles,
-                    fps,
+                    // fps,
                 })
             }
             Err(err_message) => Err(format!(
@@ -98,23 +41,7 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn update_size(&mut self, width: u32, height: u32) {
-        self.styles.refresh_styles(width, height, self.styles.scale);
-    }
-
-    #[inline]
-    pub fn update_scale(&mut self, width: u32, height: u32, scale: f32) {
-        self.styles.refresh_styles(width, height, scale);
-    }
-
-    #[allow(dead_code)]
-    #[inline]
-    pub fn scale(&self) -> f32 {
-        self.styles.scale
-    }
-
-    #[inline]
-    fn process_row(&self, square: &Square) -> OwnedText {
+    fn process_row(&self, square: &Square, style: Style) -> OwnedText {
         let content: String = square.c.to_string();
 
         // println!("{:?}", square.fg);
@@ -159,17 +86,17 @@ impl Renderer {
 
         OwnedText::new(content)
             .with_color(fg_color)
-            .with_scale(self.styles.term.text_scale)
+            .with_scale(style.text_scale)
     }
 
-    pub fn term(&mut self, rows: Vec<Row<Square>>) {
+    pub fn term(&mut self, rows: Vec<Row<Square>>, style: Style) {
         let mut line_height: f32 = 1.0;
         for row in rows {
             let mut row_text: Vec<OwnedText> = vec![];
             let columns: usize = row.len();
             for column in 0..columns {
                 let square = &row.inner[column];
-                let text = self.process_row(square);
+                let text = self.process_row(square, style);
                 row_text.push(text);
                 // for c in square.zerowidth().into_iter().flatten() {
                 //     text.push(*c);
@@ -179,15 +106,15 @@ impl Renderer {
                 if column == (columns - 1) {
                     self.brush.queue(&OwnedSection {
                         screen_position: (
-                            self.styles.term.screen_position.0,
-                            self.styles.term.screen_position.1 + line_height,
+                            style.screen_position.0,
+                            style.screen_position.1 + line_height,
                         ),
-                        bounds: self.styles.term.bounds,
+                        bounds: style.bounds,
                         text: row_text,
                         layout: glyph_brush::Layout::default_single_line(),
                     });
 
-                    line_height += self.styles.term.text_scale;
+                    line_height += style.text_scale;
                     row_text = vec![];
                 }
             }
@@ -200,59 +127,56 @@ impl Renderer {
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
+        size: (u32, u32),
     ) {
-        let _ = self.brush.draw_queued(
-            device,
-            staging_belt,
-            encoder,
-            view,
-            (self.styles.width, self.styles.height),
-        );
+        let _ =
+            self.brush
+                .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
     }
 
-    #[allow(dead_code)]
-    pub fn topbar(&mut self, command: String) {
-        let fps_text = if self.config.developer.enable_fps_counter {
-            format!(" fps_{:?}", self.fps.tick())
-        } else {
-            String::from("")
-        };
+    // #[allow(dead_code)]
+    // pub fn topbar(&mut self, command: String) {
+    //     let fps_text = if self.config.developer.enable_fps_counter {
+    //         format!(" fps_{:?}", self.fps.tick())
+    //     } else {
+    //         String::from("")
+    //     };
 
-        self.brush.queue(Section {
-            screen_position: self.styles.tabs_active.screen_position,
-            bounds: self.styles.tabs_active.bounds,
-            text: vec![
-                Text::new(&command)
-                    .with_color(self.config.colors.tabs_active)
-                    .with_scale(self.styles.tabs_active.text_scale),
-                Text::new("■ vim ■ zsh ■ docker")
-                    .with_color([0.89020, 0.54118, 0.33725, 1.0])
-                    .with_scale(self.styles.tabs_active.text_scale),
-                Text::new(&fps_text)
-                    .with_color(self.config.colors.foreground)
-                    .with_scale(self.styles.tabs_active.text_scale),
-            ],
-            layout: glyph_brush::Layout::default_single_line(),
-            // ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-            // .v_align(glyph_brush::VerticalAlign::Center)
-            // .h_align(glyph_brush::HorizontalAlign::Left)
-        });
+    //     self.brush.queue(Section {
+    //         screen_position: self.styles.tabs_active.screen_position,
+    //         bounds: self.styles.tabs_active.bounds,
+    //         text: vec![
+    //             Text::new(&command)
+    //                 .with_color(self.config.colors.tabs_active)
+    //                 .with_scale(self.styles.tabs_active.text_scale),
+    //             Text::new("■ vim ■ zsh ■ docker")
+    //                 .with_color([0.89020, 0.54118, 0.33725, 1.0])
+    //                 .with_scale(self.styles.tabs_active.text_scale),
+    //             Text::new(&fps_text)
+    //                 .with_color(self.config.colors.foreground)
+    //                 .with_scale(self.styles.tabs_active.text_scale),
+    //         ],
+    //         layout: glyph_brush::Layout::default_single_line(),
+    //         // ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+    //         // .v_align(glyph_brush::VerticalAlign::Center)
+    //         // .h_align(glyph_brush::HorizontalAlign::Left)
+    //     });
 
-        // self.brush.queue(Section {
-        //     screen_position: ((self.size.width as f32 - 20.0) * scale, (8.0 * scale)),
-        //     bounds: (
-        //         (self.size.width as f32) - (40.0 * scale),
-        //         (self.size.height as f32) * scale,
-        //     ),
-        //     text: vec![Text::new("■ vim ■ zsh ■ docker")
-        //         //(157,165,237)
-        //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
-        //         .with_scale(14.0 * scale)],
-        //     layout: glyph_brush::Layout::default()
-        //         // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-        //         // .v_align(glyph_brush::VerticalAlign::Center)
-        //         .h_align(glyph_brush::HorizontalAlign::Right),
-        //     ..Section::default()
-        // });
-    }
+    //     // self.brush.queue(Section {
+    //     //     screen_position: ((self.size.width as f32 - 20.0) * scale, (8.0 * scale)),
+    //     //     bounds: (
+    //     //         (self.size.width as f32) - (40.0 * scale),
+    //     //         (self.size.height as f32) * scale,
+    //     //     ),
+    //     //     text: vec![Text::new("■ vim ■ zsh ■ docker")
+    //     //         //(157,165,237)
+    //     //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
+    //     //         .with_scale(14.0 * scale)],
+    //     //     layout: glyph_brush::Layout::default()
+    //     //         // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+    //     //         // .v_align(glyph_brush::VerticalAlign::Center)
+    //     //         .h_align(glyph_brush::HorizontalAlign::Right),
+    //     //     ..Section::default()
+    //     // });
+    // }
 }

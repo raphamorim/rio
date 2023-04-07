@@ -6,7 +6,7 @@ use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
-use crate::renderer::{Renderer, RendererStyles};
+use crate::renderer::Renderer;
 use crate::term::messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
@@ -70,10 +70,8 @@ impl RenderContext {
             },
         );
 
-        let renderer_styles =
-            RendererStyles::new(scale, size.width, size.height, config.style.font_size);
-        let renderer = Renderer::new(device_copy, format, config, renderer_styles)
-            .expect("Create renderer");
+        let renderer =
+            Renderer::new(device_copy, format, config).expect("Create renderer");
         RenderContext {
             device,
             queue,
@@ -86,23 +84,6 @@ impl RenderContext {
     }
 
     pub fn update_size(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        self.renderer.update_size(size.width, size.height);
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.format,
-                width: size.width,
-                height: size.height,
-                view_formats: vec![],
-                alpha_mode: self.alpha_mode,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-    }
-
-    pub fn update_scale(&mut self, size: winit::dpi::PhysicalSize<u32>, scale: f32) {
-        self.renderer.update_scale(size.width, size.height, scale);
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -135,7 +116,12 @@ impl Term {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
 
-        let mut layout = Layout::new(size.width as f32, size.height as f32, scale as f32);
+        let mut layout = Layout::new(
+            size.width as f32,
+            size.height as f32,
+            scale as f32,
+            config.style.font_size,
+        );
         let (columns, rows) = layout.compute();
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
@@ -249,6 +235,7 @@ impl Term {
             &mut self.render_context.staging_belt,
             &mut encoder,
             view,
+            (self.layout.width_u32, self.layout.height_u32),
         );
         self.render_context.staging_belt.finish();
         self.render_context.queue.submit(Some(encoder.finish()));
@@ -291,13 +278,16 @@ impl Term {
         drop(terminal);
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
-        self.render_context.renderer.term(visible_rows);
+        self.render_context
+            .renderer
+            .term(visible_rows, self.layout.styles.term);
 
         self.render_context.renderer.draw_queued(
             &self.render_context.device,
             &mut self.render_context.staging_belt,
             &mut encoder,
             view,
+            (self.layout.width_u32, self.layout.height_u32),
         );
 
         self.render_context.staging_belt.finish();
@@ -310,8 +300,7 @@ impl Term {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         // println!("new_size: {:?} {:?}", new_size.width, new_size.height);
         self.render_context.update_size(new_size);
-        self.layout
-            .set_size(new_size.width as f32, new_size.height as f32);
+        self.layout.set_size(new_size.width, new_size.height);
         let (c, l) = self.layout.compute();
 
         let mut terminal = self.terminal.lock();
@@ -329,11 +318,9 @@ impl Term {
     // https://docs.rs/winit/latest/winit/dpi/
     #[allow(dead_code)]
     pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
-        if self.render_context.renderer.scale() != new_scale {
-            self.render_context.update_scale(new_size, new_scale);
-            self.layout.set_scale(new_scale);
-            self.layout
-                .set_size(new_size.width as f32, new_size.height as f32);
-        }
+        self.layout
+            .set_scale(new_scale)
+            .set_size(new_size.width, new_size.height);
+        self.render_context.update_size(new_size);
     }
 }
