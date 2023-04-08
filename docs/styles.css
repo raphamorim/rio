@@ -1,3 +1,13 @@
+/*background = '#0F0D0E'
+foreground = '#F9F4DA'
+cursor = '#F38BA3'
+green = '#0BA95B'
+red = '#ED203D'
+blue = '#12B5E5'
+yellow = '#FCBA28'
+magenta = '#7B5EA7'*/
+
+
 /* silkscreen-regular - latin */
 @font-face {
   font-family: 'Silkscreen';
@@ -17,8 +27,8 @@ body {
   padding: 0;
   line-height: 1.8em;
   /*background: #333;*/
-  background: #000;
-  color: white;
+  background: #F38BA3;
+  color: #F9F4DA;
   text-rendering: optimizeLegibility;
   -moz-osx-font-smoothing: grayscale;
   font-family: Helvetica;
@@ -31,28 +41,20 @@ body {
   margin: 0 auto;
 }
 
-/*
-  stack:
-  #D35100
-  #F07900
-  #F8A145
-  bg text: #151515
-*/
-
 section.highlight {
-  background: #333;
+  background: #F38BA3;
   padding-bottom: 60px;
 }
 
 section.features {
-  border-top: 20px solid #F8A145;
-  background: #000;
-  padding-bottom: 100px;
+  border-top: 20px solid #FCBA28;
+  background: #0F0D0E;
+  padding: 40px 0;
 }
 
 section.usage {
   border-top: 20px solid #333;
-  background: #F8A145;
+  background: #ED203D;
 }
 
 section.usage .twitter {
@@ -72,31 +74,31 @@ section.usage .twitter .twitter-tweet {
 }
 
 section.features a {
-  color: orange;
+  color: #12B5E5;
   font-weight: 500;
 }
 
 section h2 {
   font-family: 'Silkscreen', helvetica;
   font-size: 25px;
-  color: #999;
+  color: #0F0D0E;
   padding-left: 15px;
-  background: #000;
+  background: #12B5E5;
 }
 
 section.features .container div {
-  background: #151515;
+  background: #0F0D0E;
   padding: 20px 45px;
   font-size: 16px;
   font-family: monospace;
-  color: rgba(255,255,255,.7);
+  color: #F9F4DA;
 }
 
 .rio {
   max-width: 600px;
-  height: 400px;
+  height: 230px;
   margin: 0 20px;
-  background: #151515;
+  background: #0F0D0E;
   border-radius: 8px;
   line-height: 1.5;
   font-size: 14px;
@@ -141,7 +143,7 @@ section.features .container div {
 /* The typewriter cursor effect */
 @keyframes blink-caret {
   to { border-color: transparent }
-  from, 50% { border-color: orange; }
+  from, 50% { border-color: #F38BA3; }
   100% { border-color: transparent; }
 }
 
@@ -158,7 +160,7 @@ section.features .container div {
 }
 
 .layer-3 {
-  background: #222;
+  background: #0F0D0E;
   position: relative;
   height: 10px;
 }
@@ -189,36 +191,23 @@ section.features .container div {
 
 .info .block:nth-of-type(3) a {
   font-size: 14px;
-  color: orange;
+  color: #FCBA28;
   text-decoration: none;
   box-shadow: 1px 1px 15px 1px rgba(0, 0, 0, .9);
 }
 
 .info h1 {
   font-size: 60px;
-  color: #D35100;
+  color: #F9F4DA;
   font-family: 'Silkscreen', helvetica;
 }
 
 .terminal-header {
   height: 30px;
   margin-top: -42px;
-  background: #D35100;
   display: flex;
   align-items: center;
   text-align: center;
-}
-
-.terminal-subheader {
-  margin-top: -42px;
-  background: #F07900;
-  height: 6px;
-}
-
-.terminal-sub-subheader {
-  background: #F8A145;
-  margin-top: -42px;
-  height: 6px;
 }
 
 .terminal-icon:first-of-type {
