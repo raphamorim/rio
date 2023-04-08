@@ -47,14 +47,14 @@ section.highlight {
 }
 
 section.features {
-  border-top: 20px solid #FCBA28;
+  border-top: 20px solid #12B5E5;
   background: #0F0D0E;
   padding: 40px 0;
 }
 
 section.usage {
-  border-top: 20px solid #333;
-  background: #ED203D;
+  border-top: 20px solid #ED203D;
+  background: #12B5E5;
 }
 
 section.usage .twitter {
@@ -83,7 +83,7 @@ section h2 {
   font-size: 25px;
   color: #0F0D0E;
   padding-left: 15px;
-  background: #12B5E5;
+  background: #FCBA28;
 }
 
 section.features .container div {
