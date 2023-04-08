@@ -25,6 +25,7 @@ use crate::performer::handler::Handler;
 use attr::*;
 use bitflags::bitflags;
 use colors::AnsiColor;
+#[allow(unused)]
 use colors::{ColorRgb, Colors};
 use grid::row::Row;
 use pos::CharsetIndex;
@@ -84,6 +85,7 @@ pub struct Crosswords<U> {
     tabs: TabStops,
     #[allow(dead_code)]
     event_proxy: U,
+    #[allow(dead_code)]
     colors: Colors,
     window_title: Option<String>,
     damage: TermDamageState,
@@ -112,6 +114,7 @@ impl LineDamageBounds {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn reset(&mut self, num_cols: usize) {
         *self = Self::undamaged(num_cols, self.line);
     }
@@ -123,6 +126,7 @@ impl LineDamageBounds {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_damaged(&self) -> bool {
         self.left <= self.right
     }
@@ -177,6 +181,7 @@ impl TermDamageState {
 
     /// Damage point inside of the viewport.
     #[inline]
+    #[allow(dead_code)]
     fn damage_point(&mut self, _point: Pos) {
         // self.damage_line(pos.row, pos.col.0, pos.col.0);
     }
@@ -187,6 +192,7 @@ impl TermDamageState {
         self.lines[line].expand(left, right);
     }
 
+    #[allow(dead_code)]
     fn damage_selection(
         &mut self,
         // selection: SelectionRange,
@@ -211,6 +217,7 @@ impl TermDamageState {
     }
 
     /// Reset information about terminal damage.
+    #[allow(dead_code)]
     fn reset(&mut self, num_cols: usize) {
         self.is_fully_damaged = false;
         self.lines.iter_mut().for_each(|line| line.reset(num_cols));

@@ -17,10 +17,15 @@ use storage::Storage;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {
+    #[allow(dead_code)]
     Delta(i32),
+    #[allow(dead_code)]
     PageUp,
+    #[allow(dead_code)]
     PageDown,
+    #[allow(dead_code)]
     Top,
+    #[allow(dead_code)]
     Bottom,
 }
 
@@ -74,6 +79,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     /// Update the size of the scrollback history.
+    #[allow(dead_code)]
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
         if current_history_size > history_size {
@@ -83,6 +89,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         self.max_scroll_limit = history_size;
     }
 
+    #[allow(dead_code)]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         self.display_offset = match scroll {
             Scroll::Delta(count) => min(
@@ -255,6 +262,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     /// Completely reset the grid state.
+    #[allow(dead_code)]
     pub fn reset<D>(&mut self)
     where
         T: ResetDiscriminant<D>,
@@ -312,6 +320,7 @@ impl<T> Grid<T> {
 
     /// This is used only for initializing after loading ref-tests.
     #[inline]
+    #[allow(dead_code)]
     pub fn initialize_all(&mut self)
     where
         T: GridSquare + Clone + Default,
@@ -347,6 +356,7 @@ impl<T> Grid<T> {
     /// This is slightly more optimized than calling `Grid::iter_from` in combination with
     /// `Iterator::take_while`.
     #[inline]
+    #[allow(dead_code)]
     pub fn display_iter(&self) -> GridIterator<'_, T> {
         let last_column = self.last_column();
         let start = Pos::new(Line(-(self.display_offset() as i32) - 1), last_column);
