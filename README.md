@@ -29,13 +29,17 @@ Website: https://raphamorim.io/rio
 
 A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
 
-Below some of Rio's features:
+Below some of work in progress Rio's features:
 
+- Renderer based on Redux state machine.
+- WebAssembly plugin system.
 - Cross-platform.
 - Configurable (Render level, colors, icons, fonts).
 - Offloads rendering to the GPU for lower system load.
 - Uses threaded rendering for absolutely minimal latency.
 - Tabs support.
+
+Rio renderer is based on redux state machine, lines that has not updated will not suffer a redraw. Looking for the minimal rendering process in most of the time. Rio is also designed to support WebAssembly runtime so in the future you will be able to define how a tab system will work with a WASM plugin written in your favorite language.
 
 Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. **[More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)**
 
