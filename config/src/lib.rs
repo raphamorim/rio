@@ -238,10 +238,14 @@ mod tests {
             width = 662
 
             [colors]
-            background = '#151515'
-            foreground = '#FFFFFF'
-            cursor = '#8E12CC'
-            tabs-active = '#F8A145'
+            background = '#0F0D0E'
+            foreground = '#F9F4DA'
+            cursor = '#F38BA3'
+            tabs-active = '#FC7428'
+            green = '#0BA95B'
+            red = '#ED203D'
+            blue = '#12B5E5'
+            yellow = '#FCBA28'
 
             [style]
             font = "Firamono"
