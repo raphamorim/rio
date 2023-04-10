@@ -1,3 +1,4 @@
+pub mod window;
 mod ansi;
 mod messenger;
 
@@ -8,7 +9,7 @@ use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::renderer::Renderer;
-use crate::term::messenger::Messenger;
+use messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
@@ -100,19 +101,19 @@ impl RenderContext {
     }
 }
 
-pub struct Term {
+pub struct Screen {
     render_context: RenderContext,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
     messenger: Messenger,
     layout: Layout,
 }
 
-impl Term {
+impl Screen {
     pub async fn new(
         winit_window: &winit::window::Window,
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
-    ) -> Result<Term, Box<dyn Error>> {
+    ) -> Result<Screen, Box<dyn Error>> {
         let shell = std::env::var("SHELL")?;
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -161,7 +162,7 @@ impl Term {
         machine.spawn();
         let messenger = Messenger::new(channel);
 
-        Ok(Term {
+        Ok(Screen {
             render_context,
             terminal,
             layout,
@@ -296,7 +297,7 @@ impl Term {
     }
 
     #[inline]
-    pub fn scroll_terminal(&mut self, _new_scroll_x_px: f64, new_scroll_y_px: f64) {
+    pub fn scroll(&mut self, _new_scroll_x_px: f64, new_scroll_y_px: f64) {
         // let width = self.layout.width as f64;
         // let height = self.layout.height as f64;
 

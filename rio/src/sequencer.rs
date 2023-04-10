@@ -1,5 +1,5 @@
 use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
-use crate::term::Term;
+use crate::screen::{ Screen, window::create_window_builder };
 use std::error::Error;
 use std::rc::Rc;
 use winit::event::TouchPhase;
@@ -24,14 +24,14 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = crate::window::create_window_builder(
+        let window_builder = create_window_builder(
             "Rio",
             (self.config.width, self.config.height),
         );
         let winit_window = window_builder.build(&event_loop).unwrap();
-        let mut term = Term::new(&winit_window, &self.config, event_proxy).await?;
+        let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
         let mut is_focused = false;
-        term.skeleton(self.config.colors.background.1);
+        screen.skeleton(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             // if Self::skip_event(&event) {
@@ -48,7 +48,7 @@ impl Sequencer {
                                 {
                                     return;
                                 }
-                                term.render(self.config.colors.background.1);
+                                screen.render(self.config.colors.background.1);
                             }
                             RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
@@ -56,8 +56,8 @@ impl Sequencer {
                                 // }
                             }
                             RioEvent::MouseCursorDirty => {
-                                term.layout().reset_mouse();
-                                term.render(self.config.colors.background.1);
+                                screen.layout().reset_mouse();
+                                screen.render(self.config.colors.background.1);
                             }
                             _ => {}
                         }
@@ -76,7 +76,7 @@ impl Sequencer {
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::ModifiersChanged(modifiers),
                     ..
-                } => term.propagate_modifiers_state(modifiers),
+                } => screen.propagate_modifiers_state(modifiers),
 
                 Event::WindowEvent {
                     event: WindowEvent::MouseWheel { delta, phase, .. },
@@ -91,7 +91,7 @@ impl Sequencer {
                             match phase {
                                 TouchPhase::Started => {
                                     // Reset offset to zero.
-                                    // term.ctx.mouse_mut().accumulated_scroll = Default::default();
+                                    // screen.ctx.mouse_mut().accumulated_scroll = Default::default();
                                 }
                                 TouchPhase::Moved => {
                                     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
@@ -102,7 +102,7 @@ impl Sequencer {
                                         lpos.x = 0.;
                                     }
 
-                                    term.scroll_terminal(lpos.x, lpos.y);
+                                    screen.scroll(lpos.x, lpos.y);
                                 }
                                 _ => (),
                             }
@@ -113,7 +113,7 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    term.input_char(character);
+                    screen.input_char(character);
                 }
 
                 Event::WindowEvent {
@@ -132,7 +132,7 @@ impl Sequencer {
                     ..
                 } => match state {
                     winit::event::ElementState::Pressed => {
-                        term.input_keycode(virtual_keycode);
+                        screen.input_keycode(virtual_keycode);
                     }
 
                     winit::event::ElementState::Released => {
@@ -155,8 +155,8 @@ impl Sequencer {
                         return;
                     }
 
-                    term.resize(new_size);
-                    term.render(self.config.colors.background.1);
+                    screen.resize(new_size);
+                    screen.render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
@@ -168,8 +168,8 @@ impl Sequencer {
                     ..
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
-                    term.set_scale(scale_factor_f32, *new_inner_size);
-                    term.render(self.config.colors.background.1);
+                    screen.set_scale(scale_factor_f32, *new_inner_size);
+                    screen.render(self.config.colors.background.1);
                 }
 
                 Event::MainEventsCleared { .. } => {}

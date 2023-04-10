@@ -1,7 +1,6 @@
-use crate::term::ansi;
 use std::borrow::Cow;
 use teletypewriter::WinsizeBuilder;
-
+use crate::screen::ansi;
 use crate::event::Msg;
 
 // use teletypewriter::Process;
