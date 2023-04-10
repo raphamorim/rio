@@ -63,6 +63,11 @@ impl Messenger {
         }
     }
 
+    pub fn write_to_pty<B: Into<Cow<'static, [u8]>> + std::fmt::Debug>(&self, data: B) {
+        println!("{:?}", data);
+        let _ = self.channel.send(Msg::Input(data.into()));
+    }
+
     #[inline]
     fn send(&self, character: u8) {
         let val: Cow<'static, [u8]> = Cow::<'static, [u8]>::Owned(([character]).to_vec());

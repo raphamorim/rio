@@ -1,5 +1,8 @@
+mod mouse;
+
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
+use mouse::{AccumulatedScroll, Mouse};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delta<T: Default> {
@@ -12,11 +15,12 @@ const PADDING_Y: f32 = 30.0;
 
 pub struct Layout {
     scale_factor: f32,
-    width: f32,
-    height: f32,
+    pub width: f32,
+    pub height: f32,
     pub width_u32: u32,
     pub height_u32: u32,
     pub font_size: f32,
+    pub mouse: Mouse,
     pub columns: usize,
     pub rows: usize,
     padding: Delta<f32>,
@@ -92,6 +96,10 @@ impl Layout {
             rows: 25,
             scale_factor,
             font_size,
+            mouse: Mouse {
+                multiplier: 3.0,
+                ..Mouse::default()
+            },
             styles,
             padding: Delta {
                 x: PADDING_X,
@@ -126,6 +134,14 @@ impl Layout {
     pub fn update(&mut self) -> &mut Self {
         update_styles(self);
         self
+    }
+
+    pub fn reset_mouse(&mut self) {
+        self.mouse.accumulated_scroll = AccumulatedScroll::default();
+    }
+
+    pub fn mouse_mut(&mut self) -> &mut Mouse {
+        &mut self.mouse
     }
 
     // $ tput columns

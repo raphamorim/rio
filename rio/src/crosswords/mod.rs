@@ -21,6 +21,8 @@ use crate::ansi::mode::Mode as AnsiMode;
 use crate::ansi::{ClearMode, TabulationClearMode};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::grid::Grid;
+use crate::crosswords::grid::Scroll;
+use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
 use attr::*;
 use bitflags::bitflags;
@@ -83,11 +85,10 @@ pub struct Crosswords<U> {
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
     tabs: TabStops,
-    #[allow(dead_code)]
     event_proxy: U,
     #[allow(dead_code)]
     colors: Colors,
-    window_title: Option<String>,
+    title: Option<String>,
     damage: TermDamageState,
 }
 
@@ -290,7 +291,7 @@ impl<U> Crosswords<U> {
             scroll_region,
             event_proxy,
             colors: Colors::default(),
-            window_title: Option::Some(String::from("")),
+            title: None,
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
@@ -298,6 +299,27 @@ impl<U> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
         }
+    }
+
+    pub fn scroll_display(&mut self, scroll: Scroll)
+    where
+        U: EventListener,
+    {
+        // let old_display_offset = self.grid.display_offset();
+        self.grid.scroll_display(scroll);
+        self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+
+        // Clamp vi mode cursor to the viewport.
+        // let viewport_start = -(self.grid.display_offset() as i32);
+        // let viewport_end = viewport_start + self.grid.bottommost_line().0;
+        // let vi_cursor_line = &mut self.vi_mode_cursor.point.line.0;
+        // *vi_cursor_line = cmp::min(viewport_end, cmp::max(viewport_start, *vi_cursor_line));
+        // self.vi_mode_recompute_selection();
+
+        // Damage everything if display offset changed.
+        // if old_display_offset != self.grid().display_offset() {
+        // self.mark_fully_damaged();
+        // }
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
@@ -308,10 +330,6 @@ impl<U> Crosswords<U> {
             println!("Term::resize dimensions unchanged");
             return;
         }
-
-        println!("Old cols is {} and lines is {}", old_cols, old_lines);
-        println!("New cols is {} and lines is {}", num_cols, num_lines);
-
         // Move vi mode cursor with the content.
         // let history_size = self.history_size();
         // let mut delta = num_lines as i32 - old_lines as i32;
@@ -478,10 +496,23 @@ impl<U> Crosswords<U> {
         text
     }
 
+    pub fn scroll(&self) -> usize {
+        self.grid.display_offset()
+    }
+
     #[inline]
     pub fn visible_rows(&mut self) -> Vec<Row<Square>> {
         let mut visible_rows = vec![];
-        for row in self.scroll_region.start.0..self.scroll_region.end.0 {
+        let mut start = self.scroll_region.start.0;
+        let mut end = self.scroll_region.end.0;
+
+        let scroll = self.scroll() as i32;
+        if scroll != 0 {
+            start -= scroll;
+            end -= scroll;
+        }
+
+        for row in start..end {
             visible_rows.push(self.grid[Line(row)].to_owned());
         }
 
@@ -563,7 +594,10 @@ impl<U> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn unset_mode(&mut self, mode: AnsiMode) {
+    fn unset_mode(&mut self, mode: AnsiMode)
+    // where
+    //     U: EventListener,
+    {
         match mode {
             AnsiMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
             AnsiMode::SwapScreenAndSetRestoreCursor => {
@@ -575,7 +609,7 @@ impl<U> Handler for Crosswords<U> {
             AnsiMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
             AnsiMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                // self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportCellMouseMotion => {
                 self.mode.remove(Mode::MOUSE_DRAG);
@@ -790,20 +824,20 @@ impl<U> Handler for Crosswords<U> {
             //     cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
             // },
             // Attr::CancelUnderline => cursor.template.flags.remove(Flags::ALL_UNDERLINES),
-            // Attr::Hidden => cursor.template.flags.insert(Flags::HIDDEN),
-            // Attr::CancelHidden => cursor.template.flags.remove(Flags::HIDDEN),
-            // Attr::Strike => cursor.template.flags.insert(Flags::STRIKEOUT),
-            // Attr::CancelStrike => cursor.template.flags.remove(Flags::STRIKEOUT),
+            Attr::Hidden => cursor.template.flags.insert(square::Flags::HIDDEN),
+            Attr::CancelHidden => cursor.template.flags.remove(square::Flags::HIDDEN),
+            Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
+            Attr::CancelStrike => cursor.template.flags.remove(square::Flags::STRIKEOUT),
             _ => {
                 println!("Term got unhandled attr: {:?}", attr);
             }
         }
     }
 
-    fn set_title(&mut self, window_title: Option<String>) {
-        self.window_title = window_title;
+    fn set_title(&mut self, title: Option<String>) {
+        self.title = title;
 
-        let _title: String = match &self.window_title {
+        let _title: String = match &self.title {
             Some(title) => title.to_string(),
             None => String::from(""),
         };

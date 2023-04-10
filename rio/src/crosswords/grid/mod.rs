@@ -17,7 +17,6 @@ use storage::Storage;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {
-    #[allow(dead_code)]
     Delta(i32),
     #[allow(dead_code)]
     PageUp,
