@@ -59,17 +59,17 @@ impl Messenger {
     pub fn send_character(&mut self, character: char) {
         if !is_private_use_character(character) && character != '\r' && character != '\n'
         {
-            self.send(character as u8);
+            self.send_write_char(character as u8);
         }
     }
 
-    pub fn write_to_pty<B: Into<Cow<'static, [u8]>> + std::fmt::Debug>(&self, data: B) {
-        println!("{:?}", data);
+    #[allow(dead_code)]
+    fn send_write<B: Into<Cow<'static, [u8]>>>(&self, data: B) {
         let _ = self.channel.send(Msg::Input(data.into()));
     }
 
     #[inline]
-    fn send(&self, character: u8) {
+    fn send_write_char(&self, character: u8) {
         let val: Cow<'static, [u8]> = Cow::<'static, [u8]>::Owned(([character]).to_vec());
 
         let _ = self.channel.send(Msg::Input(val));
@@ -103,7 +103,7 @@ impl Messenger {
     ) -> Result<(), String> {
         match winit_key_to_char(virtual_keycode, self.modifiers.shift()) {
             Some(key_char) => {
-                self.send(key_char);
+                self.send_write_char(key_char);
                 Ok(())
             }
             None => Err("key unimplemented!()".to_string()),
