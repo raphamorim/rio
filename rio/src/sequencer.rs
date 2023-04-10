@@ -1,5 +1,5 @@
 use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
-use crate::screen::{ Screen, window::create_window_builder };
+use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
 use std::rc::Rc;
 use winit::event::TouchPhase;
@@ -24,10 +24,8 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = create_window_builder(
-            "Rio",
-            (self.config.width, self.config.height),
-        );
+        let window_builder =
+            create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
         let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
         let mut is_focused = false;
