@@ -2,6 +2,7 @@ use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
 use crate::term::Term;
 use std::error::Error;
 use std::rc::Rc;
+use winit::event::TouchPhase;
 use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
@@ -54,6 +55,10 @@ impl Sequencer {
                                 // self.ctx.window().set_title(title);
                                 // }
                             }
+                            RioEvent::MouseCursorDirty => {
+                                term.layout().reset_mouse();
+                                term.render(self.config.colors.background.1);
+                            }
                             _ => {}
                         }
                     }
@@ -74,7 +79,7 @@ impl Sequencer {
                 } => term.propagate_modifiers_state(modifiers),
 
                 Event::WindowEvent {
-                    event: WindowEvent::MouseWheel { delta, .. },
+                    event: WindowEvent::MouseWheel { delta, phase, .. },
                     ..
                 } => {
                     match delta {
@@ -82,25 +87,25 @@ impl Sequencer {
                             // scroll_y = y;
                         }
 
-                        MouseScrollDelta::PixelDelta(mut _lpos) => {
-                            // match delta {
-                            // TouchPhase::Started => {
-                            //     // Reset offset to zero.
-                            //     self.ctx.mouse_mut().accumulated_scroll = Default::default();
-                            // },
-                            // winit::event::TouchPhase::Moved => {
-                            //     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
-                            //     // (cosine is larger that 0.9) we consider this scrolling as horizontal.
-                            //     if lpos.x.abs() / lpos.x.hypot(lpos.y) > 0.9 {
-                            //         lpos.y = 0.;
-                            //     } else {
-                            //         lpos.x = 0.;
-                            //     }
+                        MouseScrollDelta::PixelDelta(mut lpos) => {
+                            match phase {
+                                TouchPhase::Started => {
+                                    // Reset offset to zero.
+                                    // term.ctx.mouse_mut().accumulated_scroll = Default::default();
+                                }
+                                TouchPhase::Moved => {
+                                    // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
+                                    // (cosine is larger that 0.9) we consider this scrolling as horizontal.
+                                    if lpos.x.abs() / lpos.x.hypot(lpos.y) > 0.9 {
+                                        lpos.y = 0.;
+                                    } else {
+                                        lpos.x = 0.;
+                                    }
 
-                            //     self.scroll_terminal(lpos.x, lpos.y);
-                            // },
-                            // _ => (),
-                            // }
+                                    term.scroll_terminal(lpos.x, lpos.y);
+                                }
+                                _ => (),
+                            }
                         }
                     }
                 }

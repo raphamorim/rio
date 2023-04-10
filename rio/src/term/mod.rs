@@ -1,6 +1,7 @@
 mod ansi;
 mod messenger;
 
+use crate::crosswords::grid::Scroll;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
@@ -292,6 +293,67 @@ impl Term {
         self.render_context.queue.submit(Some(encoder.finish()));
         frame.present();
         self.render_context.staging_belt.recall();
+    }
+
+    #[inline]
+    pub fn scroll_terminal(&mut self, _new_scroll_x_px: f64, new_scroll_y_px: f64) {
+        // let width = self.layout.width as f64;
+        // let height = self.layout.height as f64;
+
+        // if self
+        //     .ctx
+        //     .terminal()
+        //     .mode()
+        //     .contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
+        //     && !self.ctx.modifiers().shift()
+        // {
+        // // let multiplier = f64::from(self.ctx.config().terminal_config.scrolling.multiplier);
+
+        // // self.layout.mouse_mut().accumulated_scroll.x += new_scroll_x_px;//* multiplier;
+        // // self.layout.mouse_mut().accumulated_scroll.y += new_scroll_y_px;// * multiplier;
+
+        // // // The chars here are the same as for the respective arrow keys.
+        // let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
+        // let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
+
+        // // let lines = (self.layout.cursor.accumulated_scroll.y / self.layout.font_size as f64).abs() as usize;
+        // let lines = 1;
+        // let columns = (self.layout.cursor.accumulated_scroll.x / width).abs() as usize;
+
+        // let mut content = Vec::with_capacity(3 * (lines + columns));
+
+        // for _ in 0..lines {
+        //     content.push(0x1b);
+        //     content.push(b'O');
+        //     content.push(line_cmd);
+        // }
+
+        // for _ in 0..columns {
+        //     content.push(0x1b);
+        //     content.push(b'O');
+        //     content.push(column_cmd);
+        // }
+
+        // println!("{:?} {:?} {:?} {:?}", content, lines, columns, self.layout.cursor);
+        // if content.len() > 0 {
+        //     self.messenger.write_to_pty(content);
+        // }
+        // }
+
+        self.layout.mouse_mut().accumulated_scroll.y +=
+            new_scroll_y_px * self.layout.mouse.multiplier;
+        let lines = (self.layout.mouse.accumulated_scroll.y
+            / self.layout.font_size as f64) as i32;
+
+        if lines != 0 {
+            let mut terminal = self.terminal.lock();
+            terminal.scroll_display(Scroll::Delta(lines));
+            drop(terminal);
+        }
+    }
+
+    pub fn layout(&mut self) -> &mut Layout {
+        &mut self.layout
     }
 
     #[inline]
