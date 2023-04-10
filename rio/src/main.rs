@@ -4,8 +4,8 @@ mod event;
 mod layout;
 mod performer;
 mod renderer;
-mod sequencer;
 mod screen;
+mod sequencer;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
 

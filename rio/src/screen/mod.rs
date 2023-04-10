@@ -1,6 +1,6 @@
-pub mod window;
 mod ansi;
 mod messenger;
+pub mod window;
 
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::Crosswords;
