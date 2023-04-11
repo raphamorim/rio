@@ -16,8 +16,6 @@ jobs:
         target:
           - x86_64-apple-darwin
     env:
-      RUSTUP_UNPACK_RAM: "26214400"
-      RUSTUP_IO_THREADS: "1"
       RUSTFLAGS: "-C target-cpu=native"
       RUST_BACKTRACE: full
 
