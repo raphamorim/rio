@@ -4,6 +4,7 @@ use std::ffi::c_void;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardType {
     Clipboard,
+    #[allow(unused)]
     Selection,
 }
 
@@ -77,6 +78,7 @@ impl Default for Clipboard {
 }
 
 impl Clipboard {
+    #[allow(unused)]
     pub fn set(&mut self, ty: ClipboardType, text: impl Into<String>) {
         let clipboard = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(provider)) => provider,
