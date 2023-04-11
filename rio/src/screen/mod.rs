@@ -1,4 +1,5 @@
 mod ansi;
+mod clipboard;
 mod messenger;
 pub mod window;
 
@@ -9,6 +10,7 @@ use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::renderer::Renderer;
+use clipboard::{Clipboard, ClipboardType};
 use messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
@@ -16,7 +18,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use teletypewriter::create_pty;
 
-struct RenderContext {
+struct Context {
     device: wgpu::Device,
     surface: wgpu::Surface,
     queue: wgpu::Queue,
@@ -26,14 +28,14 @@ struct RenderContext {
     alpha_mode: wgpu::CompositeAlphaMode,
 }
 
-impl RenderContext {
+impl Context {
     pub async fn new(
         _scale: f32,
         adapter: wgpu::Adapter,
         surface: wgpu::Surface,
         config: &Rc<config::Config>,
         size: winit::dpi::PhysicalSize<u32>,
-    ) -> RenderContext {
+    ) -> Context {
         let caps = surface.get_capabilities(&adapter);
         let formats = caps.formats;
         let format = *formats.last().expect("No supported formats for surface");
@@ -74,7 +76,7 @@ impl RenderContext {
 
         let renderer =
             Renderer::new(device_copy, format, config).expect("Create renderer");
-        RenderContext {
+        Context {
             device,
             queue,
             surface,
@@ -102,10 +104,11 @@ impl RenderContext {
 }
 
 pub struct Screen {
-    render_context: RenderContext,
+    ctx: Context,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
     messenger: Messenger,
     layout: Layout,
+    clipboard: Clipboard,
 }
 
 impl Screen {
@@ -150,8 +153,7 @@ impl Screen {
 
         let scale = scale as f32;
 
-        let render_context =
-            RenderContext::new(scale, adapter, surface, config, size).await;
+        let ctx = Context::new(scale, adapter, surface, config, size).await;
 
         let event_proxy_clone = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
@@ -161,12 +163,14 @@ impl Screen {
         let channel = machine.channel();
         machine.spawn();
         let messenger = Messenger::new(channel);
+        let clipboard = Clipboard::new();
 
         Ok(Screen {
-            render_context,
+            ctx,
             terminal,
             layout,
             messenger,
+            clipboard,
         })
     }
 
@@ -177,11 +181,16 @@ impl Screen {
 
     #[inline]
     pub fn input_char(&mut self, character: char) {
-        if self.render_context.renderer.config.developer.enable_logs {
+        if self.ctx.renderer.config.developer.enable_logs {
             println!("input_char: Received character {}", character);
         }
 
-        self.messenger.send_character(character);
+        if self.messenger.is_logo_pressed() && character == 'v' {
+            let content = self.clipboard.get(ClipboardType::Clipboard);
+            self.messenger.send_bytes(content.as_bytes().to_vec());
+        } else {
+            self.messenger.send_character(character);
+        }
     }
 
     #[inline]
@@ -190,7 +199,7 @@ impl Screen {
         // _scancode: u32,
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
     ) {
-        let logs = self.render_context.renderer.config.developer.enable_logs;
+        let logs = self.ctx.renderer.config.developer.enable_logs;
         if logs {
             println!("input_keycode: received keycode {:?}", virtual_keycode);
         }
@@ -205,13 +214,14 @@ impl Screen {
     #[inline]
     pub fn skeleton(&mut self, color: wgpu::Color) {
         // TODO: WGPU caching
-        let mut encoder = self.render_context.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor {
-                label: Some("Skeleton"),
-            },
-        );
+        let mut encoder =
+            self.ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Skeleton"),
+                });
         let frame = self
-            .render_context
+            .ctx
             .surface
             .get_current_texture()
             .expect("Get next frame");
@@ -230,29 +240,30 @@ impl Screen {
             })],
             depth_stencil_attachment: None,
         });
-        self.render_context.renderer.draw_queued(
-            &self.render_context.device,
-            &mut self.render_context.staging_belt,
+        self.ctx.renderer.draw_queued(
+            &self.ctx.device,
+            &mut self.ctx.staging_belt,
             &mut encoder,
             view,
             (self.layout.width_u32, self.layout.height_u32),
         );
-        self.render_context.staging_belt.finish();
-        self.render_context.queue.submit(Some(encoder.finish()));
+        self.ctx.staging_belt.finish();
+        self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();
-        self.render_context.staging_belt.recall();
+        self.ctx.staging_belt.recall();
     }
 
     #[inline]
     pub fn render(&mut self, color: wgpu::Color) {
-        let mut encoder = self.render_context.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor {
-                label: Some("Redraw"),
-            },
-        );
+        let mut encoder =
+            self.ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Redraw"),
+                });
 
         let frame = self
-            .render_context
+            .ctx
             .surface
             .get_current_texture()
             .expect("Get next frame");
@@ -278,22 +289,22 @@ impl Screen {
         drop(terminal);
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
-        self.render_context
+        self.ctx
             .renderer
             .term(visible_rows, self.layout.styles.term);
 
-        self.render_context.renderer.draw_queued(
-            &self.render_context.device,
-            &mut self.render_context.staging_belt,
+        self.ctx.renderer.draw_queued(
+            &self.ctx.device,
+            &mut self.ctx.staging_belt,
             &mut encoder,
             view,
             (self.layout.width_u32, self.layout.height_u32),
         );
 
-        self.render_context.staging_belt.finish();
-        self.render_context.queue.submit(Some(encoder.finish()));
+        self.ctx.staging_belt.finish();
+        self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();
-        self.render_context.staging_belt.recall();
+        self.ctx.staging_belt.recall();
     }
 
     #[inline]
@@ -359,7 +370,7 @@ impl Screen {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.render_context.update_size(new_size);
+        self.ctx.update_size(new_size);
         self.layout
             .set_size(new_size.width, new_size.height)
             .update();
@@ -380,7 +391,7 @@ impl Screen {
     // https://docs.rs/winit/latest/winit/dpi/
     #[allow(dead_code)]
     pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
-        self.render_context.update_size(new_size);
+        self.ctx.update_size(new_size);
         self.layout
             .set_scale(new_scale)
             .set_size(new_size.width, new_size.height)

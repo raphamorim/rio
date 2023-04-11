@@ -55,6 +55,10 @@ impl Messenger {
         self.modifiers = modifiers;
     }
 
+    pub fn is_logo_pressed(&self) -> bool {
+        self.modifiers.logo()
+    }
+
     pub fn send_character(&mut self, character: char) {
         if !is_private_use_character(character) && character != '\r' && character != '\n'
         {
@@ -62,7 +66,10 @@ impl Messenger {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn send_bytes(&mut self, string: Vec<u8>) {
+        self.send_write(string);
+    }
+
     fn send_write<B: Into<Cow<'static, [u8]>>>(&self, data: B) {
         let _ = self.channel.send(Msg::Input(data.into()));
     }
