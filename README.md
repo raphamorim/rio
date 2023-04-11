@@ -1,6 +1,10 @@
-# Rio: ⚡ terminal app 
+# Rio term
 
-> tl;dr: Rio is built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
+> tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
+
+![Rio banner](docs/banner.png)
+
+## Demo
 
 ![Demo MacOs](docs/demo-macos.png)
 
@@ -216,7 +220,11 @@ enable-logs = false
 
 ## Colors
 
-Default color palette demo:
+Rio default colors:
+
+![Default colors](docs/rio-colors.png)
+
+> The image above was produced by [coolors.co](https://coolors.co/).
 
 Usage example running the following bash script:
 
