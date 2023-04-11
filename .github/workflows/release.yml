@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-macos-x86:
+    runs-on: macOS-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-apple-darwin
+    env:
+      RUSTUP_UNPACK_RAM: "26214400"
+      RUSTUP_IO_THREADS: "1"
+      RUSTFLAGS: "-C target-cpu=native"
+      RUST_BACKTRACE: full
+
+    name: Test OSX
+    steps:
+      - name: Checkout source Git repo
+        uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: rustup component add rustfmt clippy
+      - run: cargo fetch
+      - run: mkdir release
+      - run: make pack-osx-x86
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/macos-x86.zip

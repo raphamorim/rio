@@ -11,10 +11,17 @@ run:
 dev:
 	cargo run
 
-pack-osx:
-	# cargo build --target x86_64-apple-darwin
+pack-osx-arm:
 	cargo build -p rio --target aarch64-apple-darwin --release
 	cd rio && cargo bundle --release
+	cp -r ./target/release/bundle/osx/* ./build/macos-arm64
+	zip -r ./build/macos-arm64.zip ./build/macos-arm64
+
+pack-osx-x86:
+	cargo build -p rio --target aarch64-apple-darwin --release
+	cd rio && cargo bundle --release
+	cp -r ./target/release/bundle/osx/* ./build/macos-x86
+	zip -r ./build/macos-x86.zip ./build/macos-x86
 
 lint:
 	cargo fmt -- --check --color always
