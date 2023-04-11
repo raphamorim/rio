@@ -181,7 +181,7 @@ section.features .container div {
   justify-content: center;*/
   position: relative;
   margin: 0 auto;
-  margin-top: 40px;
+  margin-top: 20px;
   font-family: 'Silkscreen', helvetica;
 }
 
@@ -232,6 +232,10 @@ section.features .container div {
 
 .terminal-icon + .terminal-icon {
   margin-left: 8px;
+}
+
+#logo {
+  margin-bottom: -100px;
 }
 
 .list {
