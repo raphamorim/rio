@@ -262,6 +262,7 @@ _* Development and tests are targeting Wayland, probably is not stable on X11 ye
 
 ## Acknowledgments
 
+- Rio logo was made using _Adobe Sketchbook_ on iPad.
 - The default color palette is based on the colors of [ui.dev](https://ui.dev/).
 - Text glyph render is from https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
