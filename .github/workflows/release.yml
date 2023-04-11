@@ -10,6 +10,7 @@ env:
 
 jobs:
   release-macos-x86:
+    name: Release x86_64-apple-darwin
     runs-on: macOS-latest
     strategy:
       matrix:
@@ -19,15 +20,13 @@ jobs:
       RUSTFLAGS: "-C target-cpu=native"
       RUST_BACKTRACE: full
 
-    name: Test OSX
     steps:
       - name: Checkout source Git repo
         uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-      - run: rustup component add rustfmt clippy
-      - run: cargo fetch
       - run: mkdir release
+      - run: cargo install cargo-bundle
       - run: make pack-osx-x86
       - name: Release
         uses: softprops/action-gh-release@v1
