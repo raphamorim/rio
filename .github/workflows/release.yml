@@ -33,4 +33,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: build/macos-x86.zip
+          files: |
+            build/macos-x86.zip
+            LICENSE
