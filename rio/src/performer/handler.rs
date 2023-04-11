@@ -652,6 +652,19 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 unhandled(params);
             }
 
+            // Set clipboard.
+            b"52" => {
+                if params.len() < 3 {
+                    return unhandled(params);
+                }
+
+                let clipboard = params[1].first().unwrap_or(&b'c');
+                match params[2] {
+                    b"?" => self.handler.clipboard_load(*clipboard, terminator),
+                    base64 => self.handler.clipboard_store(*clipboard, base64),
+                }
+            }
+
             b"104" => {
                 // Reset all color indexes when no parameters are given.
                 if params.len() == 1 || params[1].is_empty() {

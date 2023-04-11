@@ -1,3 +1,4 @@
+use crate::clipboard::{Clipboard, ClipboardType};
 use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
 use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
@@ -9,12 +10,14 @@ use winit::platform::run_return::EventLoopExtRunReturn;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
+    clipboard: Clipboard,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
+            clipboard: Clipboard::new(),
         }
     }
 
@@ -56,6 +59,14 @@ impl Sequencer {
                             RioEvent::MouseCursorDirty => {
                                 screen.layout().reset_mouse();
                                 screen.render(self.config.colors.background.1);
+                            }
+                            RioEvent::ClipboardLoad(clipboard_type, format) => {
+                                if is_focused {
+                                    let text = format(
+                                        self.clipboard.get(clipboard_type).as_str(),
+                                    );
+                                    screen.messenger.send_bytes(text.into_bytes());
+                                }
                             }
                             _ => {}
                         }
@@ -111,7 +122,14 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    screen.input_char(character);
+                    // This is a MacOS platform keybinding, it should belong
+                    // somewhere else than sequencer
+                    if screen.messenger.is_logo_pressed() && character == 'v' {
+                        let content = self.clipboard.get(ClipboardType::Clipboard);
+                        screen.messenger.send_bytes(content.as_bytes().to_vec());
+                    } else {
+                        screen.messenger.send_character(character);
+                    }
                 }
 
                 Event::WindowEvent {

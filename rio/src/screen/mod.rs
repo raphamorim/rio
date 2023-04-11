@@ -1,5 +1,4 @@
 mod ansi;
-mod clipboard;
 mod messenger;
 pub mod window;
 
@@ -10,7 +9,6 @@ use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::renderer::Renderer;
-use clipboard::{Clipboard, ClipboardType};
 use messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
@@ -106,9 +104,8 @@ impl Context {
 pub struct Screen {
     ctx: Context,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    messenger: Messenger,
+    pub messenger: Messenger,
     layout: Layout,
-    clipboard: Clipboard,
 }
 
 impl Screen {
@@ -163,34 +160,18 @@ impl Screen {
         let channel = machine.channel();
         machine.spawn();
         let messenger = Messenger::new(channel);
-        let clipboard = Clipboard::new();
 
         Ok(Screen {
             ctx,
             terminal,
             layout,
             messenger,
-            clipboard,
         })
     }
 
     #[inline]
     pub fn propagate_modifiers_state(&mut self, state: winit::event::ModifiersState) {
         self.messenger.set_modifiers(state);
-    }
-
-    #[inline]
-    pub fn input_char(&mut self, character: char) {
-        if self.ctx.renderer.config.developer.enable_logs {
-            println!("input_char: Received character {}", character);
-        }
-
-        if self.messenger.is_logo_pressed() && character == 'v' {
-            let content = self.clipboard.get(ClipboardType::Clipboard);
-            self.messenger.send_bytes(content.as_bytes().to_vec());
-        } else {
-            self.messenger.send_character(character);
-        }
     }
 
     #[inline]
@@ -207,7 +188,7 @@ impl Screen {
         if let Some(keycode) = virtual_keycode {
             let _ = self.messenger.send_keycode(keycode);
         } else if logs {
-            println!("input_keycode: keycode not as Some");
+            println!("input_keycode: error keycode not as Some");
         }
     }
 

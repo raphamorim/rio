@@ -1,5 +1,6 @@
 pub mod sync;
 
+use crate::clipboard::ClipboardType;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -31,13 +32,16 @@ pub enum RioEvent {
     ResetTitle,
 
     /// Request to store a text string in the clipboard.
-    // ClipboardStore(ClipboardType, String),
+    ClipboardStore(ClipboardType, String),
 
     /// Request to write the contents of the clipboard to the PTY.
     ///
     /// The attached function is a formatter which will corectly transform the clipboard content
     /// into the expected escape sequence format.
-    // ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
+    ClipboardLoad(
+        ClipboardType,
+        Arc<dyn Fn(&str) -> String + Sync + Send + 'static>,
+    ),
 
     /// Request to write the RGB value of a color to the PTY.
     ///
@@ -67,8 +71,10 @@ pub enum RioEvent {
 impl Debug for RioEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            // RioEvent::ClipboardStore(ty, text) => write!(f, "ClipboardStore({ty:?}, {text})"),
-            // RioEvent::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
+            RioEvent::ClipboardStore(ty, text) => {
+                write!(f, "ClipboardStore({ty:?}, {text})")
+            }
+            RioEvent::ClipboardLoad(ty, _) => write!(f, "ClipboardLoad({ty:?})"),
             RioEvent::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
             // RioEvent::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
             RioEvent::PtyWrite(text) => write!(f, "PtyWrite({text})"),
