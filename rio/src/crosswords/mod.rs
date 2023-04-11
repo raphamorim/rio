@@ -19,12 +19,14 @@ pub mod square;
 
 use crate::ansi::mode::Mode as AnsiMode;
 use crate::ansi::{ClearMode, TabulationClearMode};
+use crate::clipboard::ClipboardType;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::grid::Grid;
 use crate::crosswords::grid::Scroll;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
 use attr::*;
+use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
 use colors::AnsiColor;
 #[allow(unused)]
@@ -37,6 +39,7 @@ use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
+use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
 pub type NamedColor = colors::NamedColor;
@@ -78,7 +81,10 @@ impl Default for Mode {
 }
 
 #[derive(Debug, Clone)]
-pub struct Crosswords<U> {
+pub struct Crosswords<U>
+where
+    U: EventListener,
+{
     active_charset: CharsetIndex,
     mode: Mode,
     grid: Grid<Square>,
@@ -277,7 +283,7 @@ impl IndexMut<Column> for TabStops {
     }
 }
 
-impl<U> Crosswords<U> {
+impl<U: EventListener> Crosswords<U> {
     pub fn new(cols: usize, rows: usize, event_proxy: U) -> Crosswords<U> {
         let grid = Grid::new(rows, cols, 10_000);
         let alt = Grid::new(rows, cols, 0);
@@ -301,10 +307,7 @@ impl<U> Crosswords<U> {
         }
     }
 
-    pub fn scroll_display(&mut self, scroll: Scroll)
-    where
-        U: EventListener,
-    {
+    pub fn scroll_display(&mut self, scroll: Scroll) {
         // let old_display_offset = self.grid.display_offset();
         self.grid.scroll_display(scroll);
         self.event_proxy.send_event(RioEvent::MouseCursorDirty);
@@ -538,7 +541,7 @@ impl<U> Crosswords<U> {
     }
 }
 
-impl<U> Handler for Crosswords<U> {
+impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
         match mode {
@@ -594,10 +597,7 @@ impl<U> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn unset_mode(&mut self, mode: AnsiMode)
-    // where
-    //     U: EventListener,
-    {
+    fn unset_mode(&mut self, mode: AnsiMode) {
         match mode {
             AnsiMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
             AnsiMode::SwapScreenAndSetRestoreCursor => {
@@ -1086,6 +1086,25 @@ impl<U> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn clipboard_load(&mut self, clipboard: u8, terminator: &str) {
+        let clipboard_type = match clipboard {
+            b'c' => ClipboardType::Clipboard,
+            b'p' | b's' => ClipboardType::Selection,
+            _ => return,
+        };
+
+        let terminator = terminator.to_owned();
+
+        self.event_proxy.send_event(RioEvent::ClipboardLoad(
+            clipboard_type,
+            Arc::new(move |text| {
+                let base64 = general_purpose::STANDARD.encode(text);
+                format!("\x1b]52;{};{}{}", clipboard as char, base64, terminator)
+            }),
+        ));
+    }
+
+    #[inline]
     fn put_tab(&mut self, mut count: u16) {
         // A tab after the last column is the same as a linebreak.
         if self.grid.cursor.should_wrap {
@@ -1174,7 +1193,7 @@ impl<U> Handler for Crosswords<U> {
             self.grid.columns()
         );
         println!("text_area_size_chars {:?}", text);
-        // self.event_proxy.send_event(Event::PtyWrite(text));
+        self.event_proxy.send_event(RioEvent::PtyWrite(text));
     }
 }
 

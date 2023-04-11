@@ -1,4 +1,5 @@
 mod ansi;
+mod clipboard;
 mod crosswords;
 mod event;
 mod layout;
