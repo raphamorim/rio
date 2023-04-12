@@ -350,7 +350,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
         self.ctx.update_size(new_size);
         self.layout
             .set_size(new_size.width, new_size.height)
@@ -367,15 +367,19 @@ impl Screen {
             c as u16,
             l as u16,
         );
+        self
     }
 
-    // https://docs.rs/winit/latest/winit/dpi/
-    #[allow(dead_code)]
-    pub fn set_scale(&mut self, new_scale: f32, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn set_scale(
+        &mut self,
+        new_scale: f32,
+        new_size: winit::dpi::PhysicalSize<u32>,
+    ) -> &mut Self {
         self.ctx.update_size(new_size);
         self.layout
             .set_scale(new_scale)
             .set_size(new_size.width, new_size.height)
             .update();
+        self
     }
 }
