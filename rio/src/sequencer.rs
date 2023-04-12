@@ -7,6 +7,8 @@ use winit::event::TouchPhase;
 use winit::event::{Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
+#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+use winit::platform::wayland::EventLoopWindowTargetExtWayland;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
@@ -171,8 +173,9 @@ impl Sequencer {
                         return;
                     }
 
-                    screen.resize(new_size);
-                    screen.render(self.config.colors.background.1);
+                    screen
+                        .resize(new_size)
+                        .render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
@@ -183,19 +186,15 @@ impl Sequencer {
                         },
                     ..
                 } => {
-                    let scale_factor_f32 = scale_factor as f32;
-                    screen.set_scale(scale_factor_f32, *new_inner_size);
-                    screen.render(self.config.colors.background.1);
+                    screen
+                        .set_scale(scale_factor as f32, *new_inner_size)
+                        .render(self.config.colors.background.1);
                 }
 
                 Event::MainEventsCleared { .. } => {}
                 Event::RedrawRequested { .. } => {}
                 _ => {
-                    // let next_frame_time =
-                    // std::time::Instant::now() + std::time::Duration::from_nanos(500_000);
-                    // *control_flow = winit::event_loop::ControlFlow::WaitUntil(next_frame_time);
                     *control_flow = winit::event_loop::ControlFlow::Wait;
-                    // return;
                 }
             }
         });
