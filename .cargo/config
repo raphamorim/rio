@@ -1,4 +1,5 @@
 [alias]
-testrenderer = "test --release -p renderer --"
-testconfig = "test --release -p config --"
-pubcrates = "publish -p teletypewriter --"
+test-colors = "test --release -p colors --"
+test-config = "test --release -p config --"
+test-rio = "test --release -p rio --"
+publish-all = "publish -p teletypewriter --"
