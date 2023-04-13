@@ -104,7 +104,7 @@ pub fn dim_red() -> ColorArray {
 }
 
 pub fn dim_white() -> ColorArray {
-    [1.0, 1.0, 1.0, 1.0]
+    [1.0, 1.0, 1.0, 0.8]
 }
 
 pub fn dim_yellow() -> ColorArray {

@@ -52,12 +52,8 @@ fn default_shell_command(shell: &str) {
     let args = CString::new("--login").unwrap();
     let args_pointer = args.as_ptr() as *const i8;
     unsafe {
-        libc::execvp(
-            command_pointer,
-            vec![args_pointer].as_ptr(),
-        );
+        libc::execvp(command_pointer, vec![args_pointer].as_ptr());
     }
-
 }
 
 #[cfg(not(target_os = "macos"))]

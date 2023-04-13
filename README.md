@@ -267,3 +267,4 @@ _* Development and tests are targeting Wayland, probably is not stable on X11 ye
 - Text glyph render is from https://github.com/hecrj/wgpu_glyph
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
+- https://en.wikipedia.org/wiki/ANSI_escape_code
