@@ -130,6 +130,14 @@ impl Sequencer {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         screen.messenger.send_bytes(content.as_bytes().to_vec());
                     } else {
+                        // if self.ctx.terminal().grid().display_offset() != 0 {
+                        //     self.ctx.scroll(Scroll::Bottom);
+                        // }
+                        // self.ctx.clear_selection();
+
+                        let utf8_len = character.len_utf8();
+                        let mut bytes = vec![0; utf8_len];
+                        character.encode_utf8(&mut bytes[..]);
                         screen.messenger.send_character(character);
                     }
                 }

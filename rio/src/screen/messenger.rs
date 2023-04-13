@@ -17,23 +17,31 @@ pub fn is_private_use_character(c: char) -> bool {
     )
 }
 
-fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<u8> {
+fn winit_key_to_char(key_code: VirtualKeyCode, is_shift_down: bool) -> Option<Vec<u8>> {
     Some(match (key_code, is_shift_down) {
-        (VirtualKeyCode::Grave, false) => b'`',
-        (VirtualKeyCode::Grave, true) => b'~',
-        (VirtualKeyCode::Apostrophe, false) => b'\'',
-        (VirtualKeyCode::Apostrophe, true) => b'"',
-        (VirtualKeyCode::Numpad0, false) => ansi::KEYPAD0,
-        (VirtualKeyCode::Numpad1, false) => ansi::KEYPAD1,
-        (VirtualKeyCode::Numpad2, false) => ansi::KEYPAD2,
-        (VirtualKeyCode::Numpad3, false) => ansi::KEYPAD3,
-        (VirtualKeyCode::Numpad4, false) => ansi::KEYPAD4,
-        (VirtualKeyCode::Numpad5, false) => ansi::KEYPAD5,
-        (VirtualKeyCode::Numpad6, false) => ansi::KEYPAD6,
-        (VirtualKeyCode::Numpad7, false) => ansi::KEYPAD7,
-        (VirtualKeyCode::Numpad8, false) => ansi::KEYPAD8,
-        (VirtualKeyCode::Numpad9, false) => ansi::KEYPAD9,
-        (VirtualKeyCode::Return, _) => ansi::RETURN,
+        (VirtualKeyCode::Grave, false) => vec![b'`'],
+        (VirtualKeyCode::Grave, true) => vec![b'~'],
+        (VirtualKeyCode::Apostrophe, false) => vec![b'\''],
+        (VirtualKeyCode::Apostrophe, true) => vec![b'"'],
+        (VirtualKeyCode::Numpad0, false) => vec![ansi::KEYPAD0],
+        // (VirtualKeyCode::Numpad1, false) => ansi::KEYPAD1,
+        // (VirtualKeyCode::Numpad2, false) => ansi::KEYPAD2,
+        // (VirtualKeyCode::Numpad3, false) => ansi::KEYPAD3,
+        // (VirtualKeyCode::Numpad4, false) => ansi::KEYPAD4,
+        // (VirtualKeyCode::Numpad5, false) => ansi::KEYPAD5,
+        // (VirtualKeyCode::Numpad6, false) => ansi::KEYPAD6,
+        // (VirtualKeyCode::Numpad7, false) => ansi::KEYPAD7,
+        // (VirtualKeyCode::Numpad8, false) => ansi::KEYPAD8,
+        // (VirtualKeyCode::Numpad9, false) => ansi::KEYPAD9,
+        (VirtualKeyCode::Up, _) => b"\x1bOA".to_vec(),
+        // (VirtualKeyCode::Up, _) => b"\x1b[A".to_vec(),
+        (VirtualKeyCode::Down, _) => b"\x1bOB".to_vec(),
+        // (VirtualKeyCode::Down, _) => b"\x1b[B".to_vec(),
+        (VirtualKeyCode::Right, _) => b"\x1bOC".to_vec(),
+        // (VirtualKeyCode::Right, _) => b"\x1b[D".to_vec(),
+        (VirtualKeyCode::Left, _) => b"\x1bOD".to_vec(),
+        // (VirtualKeyCode::Left, _) => b"\x1b[D".to_vec(),
+        (VirtualKeyCode::Return, _) => vec![ansi::RETURN],
         _ => return None,
     })
 }
@@ -109,7 +117,8 @@ impl Messenger {
     ) -> Result<(), String> {
         match winit_key_to_char(virtual_keycode, self.modifiers.shift()) {
             Some(key_char) => {
-                self.send_write_char(key_char);
+                self.send_bytes(key_char);
+
                 Ok(())
             }
             None => Err("key unimplemented!()".to_string()),
