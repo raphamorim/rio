@@ -37,14 +37,14 @@ identifier = "com.raphaelamorim.rio"
 #icon = ["src/32x32.png", "128x128.png", "128x128@2x.png"]
 icon = ["src/screen/window/resources/images/logo-macos.ico"]
 version = "1.0.0"
-resources = ["./src/assets"]
+resources = ["src/screen/window/resources"]
 copyright = "Copyright (c) Raphael Amorim 2023. All rights reserved."
 category = "Developer Tool"
-short_description = "Terminal App"
+short_description = "A terminal application"
 long_description = """
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
 eiusmod tempor incididunt ut labore et dolore magna aliqua.  Ut
 enim ad minim veniam, quis nostrud exercitation ullamco laboris
 nisi ut aliquip ex ea commodo consequat.
 """
-deb_depends = ["libgl1-mesa-glx", "libsdl2-2.0-0 (>= 2.0.5)"]
+# deb_depends = ["libgl1-mesa-glx", "libsdl2-2.0-0 (>= 2.0.5)"]

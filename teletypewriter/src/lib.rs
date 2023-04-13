@@ -45,6 +45,36 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
+#[cfg(target_os = "macos")]
+fn default_shell_command(shell: &str) {
+    let command_shell_string = CString::new(shell).unwrap();
+    let command_pointer = command_shell_string.as_ptr() as *const i8;
+    let args = CString::new("--login").unwrap();
+    let args_pointer = args.as_ptr() as *const i8;
+    unsafe {
+        libc::execvp(
+            command_pointer,
+            vec![args_pointer].as_ptr(),
+        );
+    }
+
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_shell_command(shell: &str) {
+    let command_shell_string = CString::new(shell).unwrap();
+    let command_pointer = command_shell_string.as_ptr() as *const i8;
+    // let home = std::env::var("HOME").unwrap();
+    // let args = CString::new(home).unwrap();
+    // let args_pointer = args.as_ptr() as *const i8;
+    unsafe {
+        libc::execvp(
+            command_pointer,
+            vec![command_pointer, std::ptr::null()].as_ptr(),
+        );
+    }
+}
+
 pub struct Pty {
     child: Child,
     file: File,
@@ -324,7 +354,7 @@ pub fn create_termp(utf8: bool) -> libc::termios {
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty(name: &str, columns: u16, rows: u16) -> Pty {
+pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -343,17 +373,7 @@ pub fn create_pty(name: &str, columns: u16, rows: u16) -> Pty {
         )
     } {
         0 => {
-            let command_name_string = CString::new(name).unwrap();
-            let command_pointer = command_name_string.as_ptr() as *const i8;
-            // let home = std::env::var("HOME").unwrap();
-            // let args = CString::new(home).unwrap();
-            // let args_pointer = args.as_ptr() as *const i8;
-            unsafe {
-                libc::execvp(
-                    command_pointer,
-                    vec![command_pointer, std::ptr::null()].as_ptr(),
-                );
-            }
+            default_shell_command(shell);
             unreachable!();
         }
         id if id > 0 => {
