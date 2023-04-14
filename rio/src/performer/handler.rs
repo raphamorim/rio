@@ -817,10 +817,60 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         };
     }
 
-    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
-        println!(
-            "[esc_dispatch] intermediates={intermediates:?}, ignore={ignore:?}, byte={byte:02x}"
-        );
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        macro_rules! unhandled {
+            () => {{
+                println!(
+                    "[unhandled] esc_dispatch ints={:?}, byte={:?} ({:02x})",
+                    intermediates, byte as char, byte
+                );
+            }};
+        }
+
+        macro_rules! configure_charset {
+            ($charset:path, $intermediates:expr) => {{
+                let index: CharsetIndex = match $intermediates {
+                    [b'('] => CharsetIndex::G0,
+                    [b')'] => CharsetIndex::G1,
+                    [b'*'] => CharsetIndex::G2,
+                    [b'+'] => CharsetIndex::G3,
+                    _ => {
+                        unhandled!();
+                        return;
+                    }
+                };
+                self.handler.configure_charset(index, $charset)
+            }};
+        }
+
+        match (byte, intermediates) {
+            (b'B', intermediates) => {
+                configure_charset!(StandardCharset::Ascii, intermediates)
+            }
+            (b'D', []) => self.handler.linefeed(),
+            (b'E', []) => {
+                self.handler.linefeed();
+                self.handler.carriage_return();
+            }
+            (b'H', []) => self.handler.set_horizontal_tabstop(),
+            (b'M', []) => self.handler.reverse_index(),
+            (b'Z', []) => self.handler.identify_terminal(None),
+            (b'c', []) => self.handler.reset_state(),
+            (b'0', intermediates) => {
+                configure_charset!(
+                    StandardCharset::SpecialCharacterAndLineDrawing,
+                    intermediates
+                )
+            }
+            (b'7', []) => self.handler.save_cursor_position(),
+            (b'8', [b'#']) => self.handler.decaln(),
+            (b'8', []) => self.handler.restore_cursor_position(),
+            (b'=', []) => self.handler.set_keypad_application_mode(),
+            (b'>', []) => self.handler.unset_keypad_application_mode(),
+            // String terminator, do nothing (parser handles as string terminator).
+            (b'\\', []) => (),
+            _ => unhandled!(),
+        }
     }
 }
 
