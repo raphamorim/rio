@@ -11,7 +11,7 @@ pub struct Delta<T: Default> {
 }
 
 const PADDING_X: f32 = 10.0;
-const PADDING_Y: f32 = 30.0;
+const PADDING_Y: f32 = 50.0;
 
 pub struct Layout {
     scale_factor: f32,

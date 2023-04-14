@@ -397,12 +397,6 @@ impl<U: EventListener> Crosswords<U> {
         // self.damage_cursor();
     }
 
-    #[allow(dead_code)]
-    #[inline]
-    pub fn cursor(&self) -> (Column, Line) {
-        (self.grid.cursor.pos.col, self.grid.cursor.pos.row)
-    }
-
     pub fn history_size(&self) -> usize {
         self.grid
             .total_lines()
@@ -520,6 +514,11 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         visible_rows
+    }
+
+    #[inline]
+    pub fn cursor(&mut self) -> (Column, Line) {
+        (self.grid.cursor.pos.col, self.grid.cursor.pos.row)
     }
 
     pub fn swap_alt(&mut self) {

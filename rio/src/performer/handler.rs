@@ -707,7 +707,6 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         should_ignore: bool,
         action: char,
     ) {
-        println!("csi");
         macro_rules! csi_unhandled {
             () => {{
                 println!(

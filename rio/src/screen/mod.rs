@@ -267,11 +267,13 @@ impl Screen {
 
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
+        let cursor_position = terminal.cursor();
         drop(terminal);
 
         // self.renderer.topbar(self.windows_title_arc.lock().unwrap().to_string());
         self.ctx
             .renderer
+            .set_cursor(cursor_position)
             .term(visible_rows, self.layout.styles.term);
 
         self.ctx.renderer.draw_queued(

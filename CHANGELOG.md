@@ -1,8 +1,8 @@
-# Changelog
+# Rio Changelog
 
-## 0.1.0
+## 0.0.1
 
-- Definition of default colors.
+- Initial definition of Rio default colors.
 - Set and reset color by ANSI parser.
 - Clear/Tabs functionalities.
 - Grid introduction.
