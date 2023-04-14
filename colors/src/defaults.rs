@@ -68,7 +68,9 @@ pub fn magenta() -> ColorArray {
 }
 
 pub fn tabs() -> ColorArray {
-    [1.0, 1.0, 1.0, 1.0]
+    ColorBuilder::from_hex(String::from("#F9C5D1"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
 }
 
 pub fn white() -> ColorArray {
@@ -78,25 +80,25 @@ pub fn white() -> ColorArray {
 }
 
 pub fn dim_black() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#1c191a"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#1C191A"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_blue() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#0e91b7"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#0E91B7"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_cyan() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#93d4e7"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#93D4E7"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_foreground() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#ecdc8a"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#ECDC8A"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
@@ -108,77 +110,79 @@ pub fn dim_green() -> ColorArray {
 }
 
 pub fn dim_magenta() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#624a87"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#624A87"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_red() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#c7102a"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#C7102A"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_white() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#c1c1c1"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#C1C1C1"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn dim_yellow() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#e6a003"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#E6A003"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_black() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#2c2728"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#2C2728"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_blue() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#44c9f0"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_cyan() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#7be1ff"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#7BE1FF"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_foreground() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#f2efe2"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#F2EFE2"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_green() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#0ed372"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#0ED372"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_magenta() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#9e88be"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#9E88BE"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_red() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#f25e73"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#F25E73"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn light_white() -> ColorArray {
-    [1.0, 1.0, 1.0, 1.0]
+    ColorBuilder::from_hex(String::from("#FFFFFF"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
 }
 
 pub fn light_yellow() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#fdd170"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#FDF170"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
