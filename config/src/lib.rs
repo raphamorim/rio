@@ -86,6 +86,8 @@ pub struct Config {
     pub width: u16,
     #[serde(default = "default_height")]
     pub height: u16,
+    #[serde(default = "default_cursor")]
+    pub cursor: char,
     #[serde(default = "Style::default")]
     pub style: Style,
     #[serde(default = "Colors::default")]
@@ -149,6 +151,7 @@ impl Default for Config {
             performance: Performance::default(),
             width: default_width(),
             height: default_height(),
+            cursor: default_cursor(),
             colors: Colors::default(),
             style: Style {
                 font_size: default_font_size(),
@@ -236,6 +239,7 @@ mod tests {
             performance = "High"
             height = 438
             width = 662
+            cursor = '█'
 
             [colors]
             background = '#0F0D0E'
@@ -266,6 +270,7 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
+        assert_eq!(result.cursor, default_cursor());
         // Style
         assert_eq!(result.style, Style::default());
         // Colors
@@ -316,6 +321,30 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
+        // Style
+        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_config_cursor() {
+        let result = create_temporary_config(
+            "change-cursor",
+            r#"
+            cursor = '_'
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.cursor, '_');
         // Style
         assert_eq!(result.style.font, Font::Firamono);
         assert_eq!(result.style.font_size, default_font_size());

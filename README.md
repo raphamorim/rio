@@ -75,7 +75,6 @@ disable-renderer-when-unfocused = false
 
 [developer]
 enable-fps-counter = false
-enable-logs = false
 
 [colors]
 background       = '#0F0D0E'
@@ -87,28 +86,28 @@ foreground       = '#F9F4DA'
 green            = '#0BA95B'
 magenta          = '#7B5EA7'
 red              = '#ED203D'
-tabs             = '#FFFFFF'
+tabs             = '#F9C5D1'
 tabs-active      = '#FC7428'
-white            = '#FFFFFF'
-yellow           = '#FFFFFF'
-dim-black        = '#FFFFFF'
-dim-blue         = '#FFFFFF'
-dim-cyan         = '#FFFFFF'
-dim-foreground   = '#FFFFFF'
-dim-green        = '#FFFFFF'
-dim-magenta      = '#FFFFFF'
-dim-red          = '#FFFFFF'
-dim-white        = '#FFFFFF'
-dim-yellow       = '#FFFFFF'
-light-black      = '#FFFFFF'
-light-blue       = '#FFFFFF'
-light-cyan       = '#FFFFFF'
-light-foreground = '#FFFFFF'
-light-green      = '#FFFFFF'
-light-magenta    = '#FFFFFF'
-light-red        = '#FFFFFF'
+white            = '#F1F1F1'
+yellow           = '#FCBA28'
+dim-black        = '#1C191A'
+dim-blue         = '#0E91B7'
+dim-cyan         = '#93D4E7'
+dim-foreground   = '#ECDC8A'
+dim-green        = '#098749'
+dim-magenta      = '#624A87'
+dim-red          = '#C7102A'
+dim-white        = '#C1C1C1'
+dim-yellow       = '#E6A003'
+light-black      = '#2C2728'
+light-blue       = '#44C9F0'
+light-cyan       = '#7BE1FF'
+light-foreground = '#F2EFE2'
+light-green      = '#0ED372'
+light-magenta    = '#9E88BE'
+light-red        = '#F25E73'
 light-white      = '#FFFFFF'
-light-yellow     = '#FFFFFF'
+light-yellow     = '#FDF170'
 ```
 
 #### `performance`
@@ -147,6 +146,23 @@ Set terminal window width.
 # <width> Set default width
 # default: 662
 width = 800
+```
+
+#### `cursor`
+
+Set cursor character.
+
+```toml
+# default: '█'
+
+# (Underline)
+cursor: '_'
+
+# (Beam)
+cursor: '|'
+
+# Other possibilities
+cursor: '❤' # (U+2764)
 ```
 
 ### Style
@@ -207,15 +223,6 @@ This property enables frame per second counter.
 ```toml
 [style]
 enable-fps-counter = false
-```
-
-#### `enable-logs`
-
-This property enables Rio logging.
-
-```toml
-[style]
-enable-logs = false
 ```
 
 ## Colors

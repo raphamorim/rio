@@ -74,6 +74,7 @@ impl Context {
 
         let renderer =
             Renderer::new(device_copy, format, config).expect("Create renderer");
+
         Context {
             device,
             queue,

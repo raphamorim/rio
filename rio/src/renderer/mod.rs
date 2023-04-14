@@ -2,8 +2,8 @@
 mod shared;
 mod text;
 
-use crate::crosswords::pos;
 use crate::crosswords::grid::row::Row;
+use crate::crosswords::pos;
 use crate::crosswords::square::Square;
 use crate::layout::Style;
 use colors::{AnsiColor, NamedColor};
@@ -12,10 +12,16 @@ use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText};
 use std::rc::Rc;
 
+#[derive(Default)]
+struct Cursor {
+    position: (pos::Column, pos::Line),
+    content: char,
+}
+
 pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Rc<Config>,
-    cursor: (pos::Column, pos::Line),
+    cursor: Cursor,
     // fps: frames::Counter,
 }
 
@@ -31,7 +37,10 @@ impl Renderer {
                     text::GlyphBrushBuilder::using_font(font_data).build(&device, format);
                 // let fps = frames::Counter::new();
                 Ok(Renderer {
-                    cursor: (pos::Column(0), pos::Line(0)),
+                    cursor: Cursor {
+                        content: config.cursor,
+                        position: (pos::Column(0), pos::Line(0)),
+                    },
                     brush,
                     config: config.clone(),
                     // fps,
@@ -91,22 +100,30 @@ impl Renderer {
     }
 
     pub fn set_cursor(&mut self, cursor: (pos::Column, pos::Line)) -> &mut Self {
-        self.cursor = cursor;
+        self.cursor.position = cursor;
         self
     }
 
     #[inline]
-    fn render_row(&mut self, row: &Row<Square>, style: Style, line_height: f32, has_cursor: bool) {
+    fn render_row(
+        &mut self,
+        row: &Row<Square>,
+        style: Style,
+        line_height: f32,
+        has_cursor: bool,
+    ) {
         let mut row_text: Vec<OwnedText> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
             let square = &row.inner[column];
             let text = self.process_row(square, style);
-            
-            if has_cursor && column == self.cursor.0 {
-                row_text.push(OwnedText::new("█")
-                    .with_color(self.config.colors.cursor)
-                    .with_scale(style.text_scale))
+
+            if has_cursor && column == self.cursor.position.0 {
+                row_text.push(
+                    OwnedText::new(self.cursor.content)
+                        .with_color(self.config.colors.cursor)
+                        .with_scale(style.text_scale),
+                )
             } else {
                 row_text.push(text);
             }
@@ -121,7 +138,7 @@ impl Renderer {
                     bounds: style.bounds,
                     text: row_text,
                     layout: glyph_brush::Layout::default_single_line()
-                        .v_align(glyph_brush::VerticalAlign::Bottom)
+                        .v_align(glyph_brush::VerticalAlign::Bottom),
                 });
 
                 break;
@@ -132,7 +149,7 @@ impl Renderer {
     #[inline]
     pub fn term(&mut self, rows: Vec<Row<Square>>, style: Style) {
         let mut line_height: f32 = 0.0;
-        let cursor_row = self.cursor.1;
+        let cursor_row = self.cursor.position.1;
         for (i, row) in rows.iter().enumerate() {
             self.render_row(row, style, line_height, cursor_row == i);
             line_height += style.text_scale;
