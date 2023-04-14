@@ -518,6 +518,18 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn cursor(&mut self) -> (Column, Line) {
+        // let vi_mode = term.mode().contains(TermMode::VI);
+        // let mut point = if vi_mode { term.vi_mode_cursor.point } else { term.grid.cursor.point };
+        // if term.grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
+        //     point.column -= 1;
+        // }
+
+        // // Cursor shape.
+        // let shape = if !vi_mode && !term.mode().contains(TermMode::SHOW_CURSOR) {
+        //     CursorShape::Hidden
+        // } else {
+        //     term.cursor_style().shape
+        // };
         (self.grid.cursor.pos.col, self.grid.cursor.pos.row)
     }
 
@@ -778,6 +790,48 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn insert_blank(&mut self, count: usize) {
+        let cursor = &self.grid.cursor;
+        let bg = cursor.template.bg;
+
+        // Ensure inserting within terminal bounds
+        let count = std::cmp::min(count, self.grid.columns() - cursor.pos.col.0);
+
+        let source = cursor.pos.col;
+        let destination = cursor.pos.col.0 + count;
+        let num_cells = self.grid.columns() - destination;
+
+        let line = cursor.pos.row;
+        self.damage
+            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+
+        let row = &mut self.grid[line][..];
+
+        for offset in (0..num_cells).rev() {
+            row.swap(destination + offset, source.0 + offset);
+        }
+
+        // Cells were just moved out toward the end of the line;
+        // fill in between source and dest with blanks.
+        for cell in &mut row[source.0..destination] {
+            *cell = bg.into();
+        }
+    }
+
+    #[inline]
+    fn reverse_index(&mut self) {
+        // If cursor is at the top.
+        if self.grid.cursor.pos.row == self.scroll_region.start {
+            self.scroll_down(1);
+        } else {
+            // self.damage.damage_cursor();
+            self.grid.cursor.pos.row =
+                std::cmp::max(self.grid.cursor.pos.row - 1, Line(0));
+            // self.damage_cursor();
+        }
+    }
+
+    #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let cursor = &mut self.grid.cursor;
         // println!("{:?}", attr);
@@ -957,8 +1011,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn backspace(&mut self) {
         if self.grid.cursor.pos.col > Column(0) {
-            self.grid.cursor.should_wrap = false;
+            let line = self.grid.cursor.pos.row.0 as usize;
+            let column = self.grid.cursor.pos.col.0;
             self.grid.cursor.pos.col -= 1;
+            self.grid.cursor.should_wrap = false;
+            self.damage.damage_line(line, column - 1, column);
         }
     }
 
