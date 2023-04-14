@@ -2,6 +2,7 @@
 mod shared;
 mod text;
 
+use crate::crosswords::pos;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::square::Square;
 use crate::layout::Style;
@@ -14,6 +15,7 @@ use std::rc::Rc;
 pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Rc<Config>,
+    cursor: (pos::Column, pos::Line),
     // fps: frames::Counter,
 }
 
@@ -29,6 +31,7 @@ impl Renderer {
                     text::GlyphBrushBuilder::using_font(font_data).build(&device, format);
                 // let fps = frames::Counter::new();
                 Ok(Renderer {
+                    cursor: (pos::Column(0), pos::Line(0)),
                     brush,
                     config: config.clone(),
                     // fps,
@@ -43,8 +46,6 @@ impl Renderer {
     #[inline]
     fn process_row(&self, square: &Square, style: Style) -> OwnedText {
         let content: String = square.c.to_string();
-
-        // println!("{:?}", square.fg);
 
         let fg_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
@@ -89,32 +90,52 @@ impl Renderer {
             .with_scale(style.text_scale)
     }
 
-    pub fn term(&mut self, rows: Vec<Row<Square>>, style: Style) {
-        let mut line_height: f32 = 1.0;
-        for row in rows {
-            let mut row_text: Vec<OwnedText> = vec![];
-            let columns: usize = row.len();
-            for column in 0..columns {
-                let square = &row.inner[column];
-                let text = self.process_row(square, style);
+    pub fn set_cursor(&mut self, cursor: (pos::Column, pos::Line)) -> &mut Self {
+        self.cursor = cursor;
+        self
+    }
+
+    #[inline]
+    fn render_row(&mut self, row: &Row<Square>, style: Style, line_height: f32, has_cursor: bool) {
+        let mut row_text: Vec<OwnedText> = vec![];
+        let columns: usize = row.len();
+        for column in 0..columns {
+            let square = &row.inner[column];
+            let text = self.process_row(square, style);
+            
+            if has_cursor && column == self.cursor.0 {
+                row_text.push(OwnedText::new("█")
+                    .with_color(self.config.colors.cursor)
+                    .with_scale(style.text_scale))
+            } else {
                 row_text.push(text);
-
-                // Render last column and break row
-                if column == (columns - 1) {
-                    self.brush.queue(&OwnedSection {
-                        screen_position: (
-                            style.screen_position.0,
-                            style.screen_position.1 + line_height,
-                        ),
-                        bounds: style.bounds,
-                        text: row_text,
-                        layout: glyph_brush::Layout::default_single_line(),
-                    });
-
-                    line_height += style.text_scale;
-                    row_text = vec![];
-                }
             }
+
+            // Render last column and break row
+            if column == (columns - 1) {
+                self.brush.queue(&OwnedSection {
+                    screen_position: (
+                        style.screen_position.0,
+                        style.screen_position.1 + line_height,
+                    ),
+                    bounds: style.bounds,
+                    text: row_text,
+                    layout: glyph_brush::Layout::default_single_line()
+                        .v_align(glyph_brush::VerticalAlign::Bottom)
+                });
+
+                break;
+            }
+        }
+    }
+
+    #[inline]
+    pub fn term(&mut self, rows: Vec<Row<Square>>, style: Style) {
+        let mut line_height: f32 = 0.0;
+        let cursor_row = self.cursor.1;
+        for (i, row) in rows.iter().enumerate() {
+            self.render_row(row, style, line_height, cursor_row == i);
+            line_height += style.text_scale;
         }
     }
 
@@ -131,7 +152,6 @@ impl Renderer {
                 .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
     }
 
-    // #[allow(dead_code)]
     // pub fn topbar(&mut self, command: String) {
     //     let fps_text = if self.config.developer.enable_fps_counter {
     //         format!(" fps_{:?}", self.fps.tick())
