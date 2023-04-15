@@ -2,6 +2,7 @@
 
 ## 0.0.1
 
+- Basic move/goto functionalities.
 - Initial definition of Rio default colors.
 - Set and reset color by ANSI parser.
 - Clear/Tabs functionalities.
