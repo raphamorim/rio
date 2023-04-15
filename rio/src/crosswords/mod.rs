@@ -18,7 +18,7 @@ pub mod pos;
 pub mod square;
 
 use crate::ansi::mode::Mode as AnsiMode;
-use crate::ansi::{ClearMode, TabulationClearMode};
+use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
 use crate::clipboard::ClipboardType;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::grid::Grid;
@@ -516,6 +516,19 @@ impl<U: EventListener> Crosswords<U> {
         visible_rows
     }
 
+    fn deccolm(&mut self)
+    where
+        U: EventListener,
+    {
+        // Setting 132 column font makes no sense, but run the other side effects.
+        // Clear scrolling region.
+        self.set_scrolling_region(1, None);
+
+        // Clear grid.
+        self.grid.reset_region(..);
+        // self.mark_fully_damaged();
+    }
+
     #[inline]
     pub fn cursor(&mut self) -> (Column, Line) {
         // let vi_mode = term.mode().contains(TermMode::VI);
@@ -595,9 +608,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
             AnsiMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
             AnsiMode::Origin => self.mode.insert(Mode::ORIGIN),
-            AnsiMode::Column => {
-                // self.deccolm(),
-            }
+            AnsiMode::Column => self.deccolm(),
             AnsiMode::Insert => self.mode.insert(Mode::INSERT),
             AnsiMode::BlinkingCursor => {
                 // let style = self.grid.cursor_style.get_or_insert(self.default_cursor_style);
@@ -638,9 +649,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
             AnsiMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
             AnsiMode::Origin => self.mode.remove(Mode::ORIGIN),
-            AnsiMode::Column => {
-                // self.deccolm(),
-            }
+            AnsiMode::Column => self.deccolm(),
             AnsiMode::Insert => {
                 self.mode.remove(Mode::INSERT);
                 // self.mark_fully_damaged();
@@ -1201,43 +1210,62 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn clear_line(&mut self, mode: u16) {
+    fn clear_line(&mut self, mode: LineClearMode) {
         let cursor = &self.grid.cursor;
         let bg = cursor.template.bg;
-        let pos = &cursor.pos;
+        let point = cursor.pos;
+
         let (left, right) = match mode {
-            // Right
-            0 => {
-                if self.grid.cursor.should_wrap {
-                    return;
-                }
-                (pos.col, Column(self.grid.columns()))
-            }
-            // Left
-            1 => (Column(0), pos.col + 1),
-            // All
-            2 => (Column(0), Column(self.grid.columns())),
-            _ => todo!(),
+            LineClearMode::Right if cursor.should_wrap => return,
+            LineClearMode::Right => (point.col, Column(self.grid.columns())),
+            LineClearMode::Left => (Column(0), point.col + 1),
+            LineClearMode::All => (Column(0), Column(self.grid.columns())),
         };
 
         self.damage
-            .damage_line(pos.row.0 as usize, left.0, right.0 - 1);
-        let position = pos.row;
-        let row = &mut self.grid[position];
-        for square in &mut row[left..right] {
-            *square = bg.into();
+            .damage_line(point.row.0 as usize, left.0, right.0 - 1);
+
+        let row = &mut self.grid[point.row];
+        for cell in &mut row[left..right] {
+            *cell = bg.into();
         }
-        // let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
+
+        // let range = self.grid.cursor.point.line..=self.grid.cursor.point.line;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+    }
+
+    #[inline]
+    fn set_scrolling_region(&mut self, top: usize, bottom: Option<usize>) {
+        // Fallback to the last line as default.
+        let bottom = bottom.unwrap_or_else(|| self.grid.screen_lines());
+
+        if top >= bottom {
+            println!("Invalid scrolling region: ({};{})", top, bottom);
+            return;
+        }
+
+        // Bottom should be included in the range, but range end is not
+        // usually included. One option would be to use an inclusive
+        // range, but instead we just let the open range end be 1
+        // higher.
+        let start = Line(top as i32 - 1);
+        let end = Line(bottom as i32);
+
+        println!("Setting scrolling region: ({};{})", start, end);
+
+        let screen_lines = Line(self.grid.screen_lines() as i32);
+        self.scroll_region.start = std::cmp::min(start, screen_lines);
+        self.scroll_region.end = std::cmp::min(end, screen_lines);
+        self.goto(Line(0), Column(0));
     }
 
     #[inline]
     fn text_area_size_pixels(&mut self) {
         println!("text_area_size_pixels");
-        // self.event_proxy.send_event(Event::TextAreaSizeRequest(Arc::new(move |window_size| {
-        // let height = window_size.num_lines * window_size.cell_height;
-        // let width = window_size.num_cols * window_size.cell_width;
-        // format!("\x1b[4;{height};{width}t")
+        // self.event_proxy.send_event(RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
+        //     let height = window_size.num_lines * window_size.cell_height;
+        //     let width = window_size.num_cols * window_size.cell_width;
+        //     format!("\x1b[4;{height};{width}t")
         // })));
     }
 

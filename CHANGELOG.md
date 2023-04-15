@@ -9,4 +9,5 @@
 - Desktop delta scroll (up and down, without scrollbar UI component).
 - `Teletypewriter` 2.0.0 usage for macos and linux.
 - Resize support.
+- $SHELL login on macos, by default: `/bin/zsh --login` (if $SHELL is settled as other could as run `/bin/bash --login`, `/bin/fish --login` ...)
 - Cursor initial support (without VI mode).

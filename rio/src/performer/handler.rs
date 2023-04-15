@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::crosswords::attr::Attr;
 
 use crate::ansi::control::C0;
-use crate::ansi::{ClearMode, TabulationClearMode};
+use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
 use colors::{AnsiColor, NamedColor};
 use std::fmt::Write;
 
@@ -214,7 +214,7 @@ pub trait Handler {
     fn restore_cursor_position(&mut self) {}
 
     /// Clear current line.
-    fn clear_line(&mut self, _mode: u16) {}
+    fn clear_line(&mut self, _mode: LineClearMode) {}
 
     /// Clear screen.
     fn clear_screen(&mut self, _mode: ClearMode) {}
@@ -500,28 +500,11 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             return;
         }
 
-        let mut params_iter = params.iter();
-        let handler = &mut self.handler;
-
-        let mut next_param_or = |default: u16| match params_iter.next() {
-            Some(&[param, ..]) if param != 0 => param,
-            _ => default,
-        };
-
         match (action, intermediates) {
-            ('b', []) => {
-                if let Some(c) = self.state.preceding_char {
-                    for _ in 0..next_param_or(1) {
-                        handler.input(c);
-                    }
-                } else {
-                    println!("tried to repeat with no preceding char");
-                }
-            }
             ('s', [b'=']) => {
                 // Start a synchronized update. The end is handled with a separate parser.
                 if params.iter().next().map_or(false, |param| param[0] == 1) {
-                    // self.state.dcs = Some(Dcs::SyncStart);
+                    self.state.dcs = Some(Dcs::SyncStart);
                 }
             }
             _ => println!(
@@ -535,7 +518,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
     }
 
     fn put(&mut self, _byte: u8) {
-        // println!("[put] {byte:02x}");
+        println!("[put] {_byte:02x}");
     }
 
     #[inline]
@@ -728,17 +711,31 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         };
 
         match (action, intermediates) {
+            ('@', []) => handler.insert_blank(next_param_or(1) as usize),
+            ('A', []) => handler.move_up(next_param_or(1) as usize),
+            ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
+            ('b', []) => {
+                if let Some(c) = self.state.preceding_char {
+                    for _ in 0..next_param_or(1) {
+                        handler.input(c);
+                    }
+                } else {
+                    println!("tried to repeat with no preceding char");
+                }
+            }
             ('C', []) | ('a', []) => {
                 handler.move_forward(Column(next_param_or(1) as usize))
             }
-            ('d', []) => handler.goto_line(Line(next_param_or(1) as i32 - 1)),
+            ('c', intermediates) if next_param_or(0) == 0 => {
+                handler.identify_terminal(intermediates.first().map(|&i| i as char))
+            }
             ('D', []) => handler.move_backward(Column(next_param_or(1) as usize)),
-            ('A', []) => handler.move_up(next_param_or(1) as usize),
+            ('d', []) => handler.goto_line(Line(next_param_or(1) as i32 - 1)),
             ('E', []) => handler.move_down_and_cr(next_param_or(1) as usize),
             ('F', []) => handler.move_up_and_cr(next_param_or(1) as usize),
-            ('B', []) | ('e', []) => handler.move_down(next_param_or(1) as usize),
-            ('@', []) => handler.insert_blank(next_param_or(1) as usize),
-            ('K', []) => handler.clear_line(next_param_or(0)),
+            ('G', []) | ('`', []) => {
+                handler.goto_col(Column(next_param_or(1) as usize - 1))
+            }
             ('g', []) => {
                 let mode = match next_param_or(0) {
                     0 => TabulationClearMode::Current,
@@ -756,6 +753,15 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 let x = next_param_or(1) as usize;
                 handler.goto(Line(y - 1), Column(x - 1));
             }
+            ('h', intermediates) => {
+                for param in params_iter.map(|param| param[0]) {
+                    match Mode::from_primitive(intermediates.first(), param) {
+                        Some(mode) => handler.set_mode(mode),
+                        None => csi_unhandled!(),
+                    }
+                }
+            }
+            ('I', []) => handler.move_forward_tabs(next_param_or(1)),
             ('J', []) => {
                 let mode = match next_param_or(0) {
                     0 => ClearMode::Below,
@@ -770,27 +776,25 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
 
                 handler.clear_screen(mode);
             }
-            ('t', []) => match next_param_or(1) as usize {
-                14 => handler.text_area_size_pixels(),
-                18 => handler.text_area_size_chars(),
-                // 22 => handler.push_title(),
-                // 23 => handler.pop_title(),
-                _ => {}
-            },
+            ('K', []) => {
+                let mode = match next_param_or(0) {
+                    0 => LineClearMode::Right,
+                    1 => LineClearMode::Left,
+                    2 => LineClearMode::All,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.clear_line(mode);
+            }
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
             ('l', intermediates) => {
                 for param in params_iter.map(|param| param[0]) {
                     match Mode::from_primitive(intermediates.first(), param) {
                         Some(mode) => handler.unset_mode(mode),
                         None => csi_unhandled!(),
-                    }
-                }
-            }
-            ('h', intermediates) => {
-                for param in params_iter.map(|param| param[0]) {
-                    match Mode::from_primitive(intermediates.first(), param) {
-                        Some(mode) => handler.set_mode(mode),
-                        None => println!("unhandled set mode"),
                     }
                 }
             }
@@ -809,11 +813,47 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            // ('q', [b' ']) => {
+            //     // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
+            //     let cursor_style_id = next_param_or(0);
+            //     let shape = match cursor_style_id {
+            //         0 => None,
+            //         1 | 2 => Some(CursorShape::Block),
+            //         3 | 4 => Some(CursorShape::Underline),
+            //         5 | 6 => Some(CursorShape::Beam),
+            //         _ => {
+            //             csi_unhandled!();
+            //             return;
+            //         },
+            //     };
+            //     let cursor_style =
+            //         shape.map(|shape| CursorStyle { shape, blinking: cursor_style_id % 2 == 1 });
+
+            //     handler.set_cursor_style(cursor_style);
+            // },
+            ('r', []) => {
+                let top = next_param_or(1) as usize;
+                let bottom = params_iter
+                    .next()
+                    .map(|param| param[0] as usize)
+                    .filter(|&param| param != 0);
+
+                handler.set_scrolling_region(top, bottom);
+            }
             ('S', []) => handler.scroll_up(next_param_or(1) as usize),
             ('s', []) => handler.save_cursor_position(),
             ('T', []) => handler.scroll_down(next_param_or(1) as usize),
+            ('t', []) => match next_param_or(1) as usize {
+                14 => handler.text_area_size_pixels(),
+                18 => handler.text_area_size_chars(),
+                22 => handler.push_title(),
+                23 => handler.pop_title(),
+                _ => csi_unhandled!(),
+            },
+            ('u', []) => handler.restore_cursor_position(),
             ('X', []) => handler.erase_chars(Column(next_param_or(1) as usize)),
-            _ => {}
+            ('Z', []) => handler.move_backward_tabs(next_param_or(1)),
+            _ => csi_unhandled!(),
         };
     }
 

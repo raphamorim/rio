@@ -21,3 +21,13 @@ pub enum TabulationClearMode {
     /// Clear all stops.
     All,
 }
+
+#[derive(Debug)]
+pub enum LineClearMode {
+    /// Clear right of cursor.
+    Right,
+    /// Clear left of cursor.
+    Left,
+    /// Clear entire line.
+    All,
+}
