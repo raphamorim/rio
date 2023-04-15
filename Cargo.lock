@@ -301,7 +301,7 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "colors"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "regex",
  "serde",
@@ -316,7 +316,7 @@ checksum = "bf43edc576402991846b093a7ca18a3477e0ef9c588cde84964b5d3e43016642"
 
 [[package]]
 name = "config"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "colors",
  "dirs",
@@ -1470,7 +1470,7 @@ checksum = "f1382d1f0a252c4bf97dc20d979a2fdd05b024acd7c2ed0f7595d7817666a157"
 
 [[package]]
 name = "rio"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64",
  "bitflags 2.0.2",
@@ -1691,7 +1691,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "1.0.5"
+version = "2.0.0"
 dependencies = [
  "dirs",
  "libc",
