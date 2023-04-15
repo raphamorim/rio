@@ -19,7 +19,7 @@ mio = "0.6.20"
 base64 = "0.21.0"
 mio-extras = "2"
 parking_lot = "0.12"
-vte = "0.11.0"
+vte = { version = "0.11.0", default-features = false }
 copypasta = { version = "0.8.1", default-features = false }
 teletypewriter = { workspace = true }
 colors = { path = "../colors" }
