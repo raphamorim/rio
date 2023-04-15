@@ -33,6 +33,7 @@ bitflags! {
 }
 
 /// Counter for hyperlinks without explicit ID.
+#[allow(dead_code)]
 static HYPERLINK_ID_SUFFIX: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,15 +42,18 @@ pub struct Hyperlink {
 }
 
 impl Hyperlink {
+    #[allow(dead_code)]
     pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
         let inner = Arc::new(HyperlinkInner::new(id, uri));
         Self { inner }
     }
 
+    #[allow(dead_code)]
     pub fn id(&self) -> &str {
         &self.inner.id
     }
 
+    #[allow(dead_code)]
     pub fn uri(&self) -> &str {
         &self.inner.uri
     }
@@ -65,6 +69,7 @@ struct HyperlinkInner {
 }
 
 impl HyperlinkInner {
+    #[allow(dead_code)]
     pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
         let id = match id {
             Some(id) => id.to_string(),
@@ -141,6 +146,7 @@ impl Square {
         self.c = ' ';
     }
 
+    #[allow(dead_code)]
     pub fn set_underline_color(&mut self, color: Option<colors::AnsiColor>) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
@@ -157,11 +163,13 @@ impl Square {
 
     /// Underline color stored in this cell.
     #[inline]
+    #[allow(dead_code)]
     pub fn underline_color(&self) -> Option<colors::AnsiColor> {
         self.extra.as_ref()?.underline_color
     }
 
     /// Set hyperlink.
+    #[allow(dead_code)]
     pub fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         let should_drop = hyperlink.is_none()
             && self.extra.as_ref().map_or(true, |extra| {
@@ -178,6 +186,7 @@ impl Square {
 
     /// Hyperlink stored in this cell.
     #[inline]
+    #[allow(dead_code)]
     pub fn hyperlink(&self) -> Option<Hyperlink> {
         self.extra.as_ref()?.hyperlink.clone()
     }

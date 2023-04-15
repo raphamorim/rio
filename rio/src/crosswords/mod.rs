@@ -91,6 +91,7 @@ where
     scroll_region: Range<Line>,
     tabs: TabStops,
     event_proxy: U,
+    #[allow(dead_code)]
     colors: Colors,
     title: Option<String>,
     damage: TermDamageState,
