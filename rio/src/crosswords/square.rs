@@ -3,6 +3,7 @@ use crate::crosswords::Column;
 use crate::crosswords::Row;
 use bitflags::bitflags;
 use colors::{AnsiColor, NamedColor};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 bitflags! {
@@ -25,9 +26,58 @@ bitflags! {
         const UNDERCURL                 = 0b0001_0000_0000_0000;
         const DOTTED_UNDERLINE          = 0b0010_0000_0000_0000;
         const DASHED_UNDERLINE          = 0b0100_0000_0000_0000;
-        // const ALL_UNDERLINES            = Self::UNDERLINE.bits | Self::DOUBLE_UNDERLINE.bits
-        //                                 | Self::UNDERCURL.bits | Self::DOTTED_UNDERLINE.bits
-        //                                 | Self::DASHED_UNDERLINE.bits;
+        const ALL_UNDERLINES            = Self::UNDERLINE.bits() | Self::DOUBLE_UNDERLINE.bits()
+                                        | Self::UNDERCURL.bits() | Self::DOTTED_UNDERLINE.bits()
+                                        | Self::DASHED_UNDERLINE.bits();
+    }
+}
+
+/// Counter for hyperlinks without explicit ID.
+static HYPERLINK_ID_SUFFIX: AtomicU32 = AtomicU32::new(0);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Hyperlink {
+    inner: Arc<HyperlinkInner>,
+}
+
+impl Hyperlink {
+    pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
+        let inner = Arc::new(HyperlinkInner::new(id, uri));
+        Self { inner }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    pub fn uri(&self) -> &str {
+        &self.inner.uri
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct HyperlinkInner {
+    /// Identifier for the given hyperlink.
+    id: String,
+
+    /// Resource identifier of the hyperlink.
+    uri: String,
+}
+
+impl HyperlinkInner {
+    pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
+        let id = match id {
+            Some(id) => id.to_string(),
+            None => {
+                let mut id = HYPERLINK_ID_SUFFIX
+                    .fetch_add(1, Ordering::Relaxed)
+                    .to_string();
+                id.push_str("_rio");
+                id
+            }
+        };
+
+        Self { id, uri }
     }
 }
 
@@ -39,9 +89,9 @@ bitflags! {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CellExtra {
     zerowidth: Vec<char>,
-    // underline_color: Option<colors::AnsiColor>,
+    underline_color: Option<colors::AnsiColor>,
 
-    // hyperlink: Option<Hyperlink>,
+    hyperlink: Option<Hyperlink>,
 }
 
 /// Content and attributes of a single cell in the terminal grid.
@@ -90,6 +140,47 @@ impl Square {
         }
         self.c = ' ';
     }
+
+    pub fn set_underline_color(&mut self, color: Option<colors::AnsiColor>) {
+        // If we reset color and we don't have zerowidth we should drop extra storage.
+        if color.is_none()
+            && self.extra.as_ref().map_or(true, |extra| {
+                extra.zerowidth.is_empty() && extra.hyperlink.is_none()
+            })
+        {
+            self.extra = None;
+        } else {
+            let extra = self.extra.get_or_insert(Default::default());
+            Arc::make_mut(extra).underline_color = color;
+        }
+    }
+
+    /// Underline color stored in this cell.
+    #[inline]
+    pub fn underline_color(&self) -> Option<colors::AnsiColor> {
+        self.extra.as_ref()?.underline_color
+    }
+
+    /// Set hyperlink.
+    pub fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+        let should_drop = hyperlink.is_none()
+            && self.extra.as_ref().map_or(true, |extra| {
+                extra.zerowidth.is_empty() && extra.underline_color.is_none()
+            });
+
+        if should_drop {
+            self.extra = None;
+        } else {
+            let extra = self.extra.get_or_insert(Default::default());
+            Arc::make_mut(extra).hyperlink = hyperlink;
+        }
+    }
+
+    /// Hyperlink stored in this cell.
+    #[inline]
+    pub fn hyperlink(&self) -> Option<Hyperlink> {
+        self.extra.as_ref()?.hyperlink.clone()
+    }
 }
 
 impl GridSquare for Square {
@@ -98,7 +189,7 @@ impl GridSquare for Square {
         (self.c == ' ' || self.c == '\t')
             && !self.flags.intersects(
                 Flags::INVERSE
-                    // | Flags::ALL_UNDERLINES
+                    | Flags::ALL_UNDERLINES
                     | Flags::STRIKEOUT
                     | Flags::WRAPLINE
                     | Flags::WIDE_CHAR_SPACER
@@ -177,5 +268,40 @@ impl From<AnsiColor> for Square {
             bg: color,
             ..Square::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::mem;
+
+    use crate::crosswords::grid::row::Row;
+    use crate::crosswords::pos::Column;
+
+    #[test]
+    fn test_square_size_is_below_cap() {
+        // Expected cell size on 64-bit architectures.
+        const EXPECTED_SIZE: usize = 24;
+
+        // Ensure that cell size isn't growning by accident.
+        assert!(mem::size_of::<Square>() <= EXPECTED_SIZE);
+    }
+
+    #[test]
+    fn test_line_length_works() {
+        let mut row = Row::<Square>::new(10);
+        row[Column(5)].c = 'a';
+
+        assert_eq!(row.line_length(), Column(6));
+    }
+
+    #[test]
+    fn test_line_length_works_with_wrapline() {
+        let mut row = Row::<Square>::new(10);
+        row[Column(9)].flags.insert(super::Flags::WRAPLINE);
+
+        assert_eq!(row.line_length(), Column(10));
     }
 }

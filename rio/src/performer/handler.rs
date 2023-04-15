@@ -604,33 +604,33 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
 
             b"10" | b"11" | b"12" => {
                 if params.len() >= 2 {
-                    // if let Some(mut dynamic_code) = parse_number(params[0]) {
-                    //     for param in &params[1..] {
-                    //         // 10 is the first dynamic color, also the foreground.
-                    //         let offset = dynamic_code as usize - 10;
-                    //         let index = NamedColor::Foreground as usize + offset;
+                    if let Some(mut dynamic_code) = parse_number(params[0]) {
+                        for param in &params[1..] {
+                            // 10 is the first dynamic color, also the foreground.
+                            let offset = dynamic_code as usize - 10;
+                            let index = NamedColor::Foreground as usize + offset;
 
-                    //         // End of setting dynamic colors.
-                    //         if index > NamedColor::Cursor as usize {
-                    //             unhandled(params);
-                    //             break;
-                    //         }
+                            // End of setting dynamic colors.
+                            if index > NamedColor::Cursor as usize {
+                                unhandled(params);
+                                break;
+                            }
 
-                    //         if let Some(color) = xparse_color(param) {
-                    //             self.handler.set_color(index, color);
-                    //         } else if param == b"?" {
-                    //             self.handler.dynamic_color_sequence(
-                    //                 dynamic_code.to_string(),
-                    //                 index,
-                    //                 terminator,
-                    //             );
-                    //         } else {
-                    //             unhandled(params);
-                    //         }
-                    //         dynamic_code += 1;
-                    //     }
-                    //     return;
-                    // }
+                            if let Some(color) = xparse_color(param) {
+                                self.handler.set_color(index, color);
+                            } else if param == b"?" {
+                                self.handler.dynamic_color_sequence(
+                                    dynamic_code.to_string(),
+                                    index,
+                                    terminator,
+                                );
+                            } else {
+                                unhandled(params);
+                            }
+                            dynamic_code += 1;
+                        }
+                        return;
+                    }
                 }
                 unhandled(params);
             }
@@ -690,6 +690,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         should_ignore: bool,
         action: char,
     ) {
+        println!("[csi_dispatch] {params:?} {action:?}");
         macro_rules! csi_unhandled {
             () => {{
                 println!(

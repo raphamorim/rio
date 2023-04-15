@@ -29,7 +29,6 @@ use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
 use colors::AnsiColor;
-#[allow(unused)]
 use colors::{ColorRgb, Colors};
 use grid::row::Row;
 use pos::CharsetIndex;
@@ -92,7 +91,6 @@ where
     scroll_region: Range<Line>,
     tabs: TabStops,
     event_proxy: U,
-    #[allow(dead_code)]
     colors: Colors,
     title: Option<String>,
     damage: TermDamageState,
@@ -188,7 +186,6 @@ impl TermDamageState {
 
     /// Damage point inside of the viewport.
     #[inline]
-    #[allow(dead_code)]
     fn damage_point(&mut self, pos: Pos) {
         self.damage_line(pos.row.0 as usize, pos.col.0, pos.col.0);
     }
@@ -224,7 +221,6 @@ impl TermDamageState {
     }
 
     /// Reset information about terminal damage.
-    #[allow(dead_code)]
     fn reset(&mut self, num_cols: usize) {
         self.is_fully_damaged = false;
         self.lines.iter_mut().for_each(|line| line.reset(num_cols));
@@ -249,7 +245,6 @@ impl TabStops {
 
     /// Remove all tabstops.
     #[inline]
-    #[allow(unused)]
     fn clear_all(&mut self) {
         unsafe {
             ptr::write_bytes(self.tabs.as_mut_ptr(), 0, self.tabs.len());
@@ -258,7 +253,6 @@ impl TabStops {
 
     /// Increase tabstop capacity.
     #[inline]
-    #[allow(unused)]
     fn resize(&mut self, columns: usize) {
         let mut index = self.tabs.len();
         self.tabs.resize_with(columns, || {
@@ -477,14 +471,14 @@ impl<U: EventListener> Crosswords<U> {
         let fg = self.grid.cursor.template.fg;
         let bg = self.grid.cursor.template.bg;
         let flags = self.grid.cursor.template.flags;
-        //     let extra = self.grid.cursor.template.extra.clone();
+        let extra = self.grid.cursor.template.extra.clone();
 
         let mut cursor_square = self.grid.cursor_square();
         cursor_square.c = c;
         cursor_square.fg = fg;
         cursor_square.bg = bg;
         cursor_square.flags = flags;
-        // cursor_cell.extra = extra;
+        cursor_square.extra = extra;
     }
 
     #[allow(dead_code)]
@@ -695,6 +689,31 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn move_forward(&mut self, cols: Column) {
+        let last_column =
+            std::cmp::min(self.grid.cursor.pos.col + cols, self.grid.last_column());
+
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage
+            .damage_line(cursor_line, self.grid.cursor.pos.col.0, last_column.0);
+
+        self.grid.cursor.pos.col = last_column;
+        self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
+    fn move_backward(&mut self, cols: Column) {
+        let column = self.grid.cursor.pos.col.saturating_sub(cols.0);
+
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage
+            .damage_line(cursor_line, column, self.grid.cursor.pos.col.0);
+
+        self.grid.cursor.pos.col = Column(column);
+        self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
     fn goto_line(&mut self, line: Line) {
         self.goto(line, self.grid.cursor.pos.col)
     }
@@ -718,18 +737,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn move_up(&mut self, lines: usize) {
-        self.goto(self.grid.cursor.pos.row - lines, self.grid.cursor.pos.col)
+    fn move_up(&mut self, rows: usize) {
+        self.goto(self.grid.cursor.pos.row - rows, self.grid.cursor.pos.col)
     }
 
     #[inline]
-    fn move_down(&mut self, lines: usize) {
-        self.goto(self.grid.cursor.pos.row + lines, self.grid.cursor.pos.col)
+    fn move_down(&mut self, rows: usize) {
+        self.goto(self.grid.cursor.pos.row + rows, self.grid.cursor.pos.col)
     }
 
     #[inline]
-    fn move_down_and_cr(&mut self, lines: usize) {
-        self.goto(self.grid.cursor.pos.row + lines, Column(0))
+    fn move_down_and_cr(&mut self, rows: usize) {
+        self.goto(self.grid.cursor.pos.row + rows, Column(0))
     }
 
     #[inline]
@@ -863,12 +882,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match attr {
             Attr::Foreground(color) => cursor.template.fg = color,
             Attr::Background(color) => cursor.template.bg = color,
-            // Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
+            Attr::UnderlineColor(color) => cursor.template.set_underline_color(color),
             Attr::Reset => {
                 cursor.template.fg = AnsiColor::Named(NamedColor::Foreground);
                 cursor.template.bg = AnsiColor::Named(NamedColor::Background);
                 cursor.template.flags = square::Flags::empty();
-                // cursor.template.set_underline_color(None);
+                cursor.template.set_underline_color(None);
             }
             Attr::Reverse => cursor.template.flags.insert(square::Flags::INVERSE),
             Attr::CancelReverse => cursor.template.flags.remove(square::Flags::INVERSE),
@@ -881,27 +900,38 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .remove(square::Flags::BOLD | square::Flags::DIM),
             Attr::Italic => cursor.template.flags.insert(square::Flags::ITALIC),
             Attr::CancelItalic => cursor.template.flags.remove(square::Flags::ITALIC),
-            // Attr::Underline => {
-            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-            //     cursor.template.flags.insert(Flags::UNDERLINE);
-            // },
-            // Attr::DoubleUnderline => {
-            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-            //     cursor.template.flags.insert(Flags::DOUBLE_UNDERLINE);
-            // },
-            // Attr::Undercurl => {
-            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-            //     cursor.template.flags.insert(Flags::UNDERCURL);
-            // },
-            // Attr::DottedUnderline => {
-            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-            //     cursor.template.flags.insert(Flags::DOTTED_UNDERLINE);
-            // },
-            // Attr::DashedUnderline => {
-            //     cursor.template.flags.remove(Flags::ALL_UNDERLINES);
-            //     cursor.template.flags.insert(Flags::DASHED_UNDERLINE);
-            // },
-            // Attr::CancelUnderline => cursor.template.flags.remove(Flags::ALL_UNDERLINES),
+            Attr::Underline => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(square::Flags::UNDERLINE);
+            }
+            Attr::DoubleUnderline => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
+                cursor
+                    .template
+                    .flags
+                    .insert(square::Flags::DOUBLE_UNDERLINE);
+            }
+            Attr::Undercurl => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
+                cursor.template.flags.insert(square::Flags::UNDERCURL);
+            }
+            Attr::DottedUnderline => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
+                cursor
+                    .template
+                    .flags
+                    .insert(square::Flags::DOTTED_UNDERLINE);
+            }
+            Attr::DashedUnderline => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES);
+                cursor
+                    .template
+                    .flags
+                    .insert(square::Flags::DASHED_UNDERLINE);
+            }
+            Attr::CancelUnderline => {
+                cursor.template.flags.remove(square::Flags::ALL_UNDERLINES)
+            }
             Attr::Hidden => cursor.template.flags.insert(square::Flags::HIDDEN),
             Attr::CancelHidden => cursor.template.flags.remove(square::Flags::HIDDEN),
             Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
@@ -1138,15 +1168,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     /// Set the indexed color value.
-    // #[inline]
-    // fn set_color(&mut self, index: usize, color: ColorRgb) {
-    //     // Damage terminal if the color changed and it's not the cursor.
-    //     if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
-    //         // self.mark_fully_damaged();
-    //     }
+    #[inline]
+    fn set_color(&mut self, index: usize, color: ColorRgb) {
+        println!("set_color: {} {:?}", index, color);
+        // Damage terminal if the color changed and it's not the cursor.
+        // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
+        // self.mark_fully_damaged();
+        // }
 
-    //     self.colors[index] = Some(color);
-    // }
+        // self.colors[index] = Some(color);
+    }
 
     // #[inline]
     // fn reset_color(&mut self, index: usize) {
@@ -1248,7 +1279,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             *cell = bg.into();
         }
 
-        // let range = self.grid.cursor.point.line..=self.grid.cursor.point.line;
+        // let range = self.grid.cursor.pos.row..=self.grid.cursor.point.line;
         // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
     }
 
