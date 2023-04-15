@@ -9,6 +9,7 @@ pub type ColorWGPU = wgpu::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
+#[derive(Debug)]
 pub struct ColorRgb {
     pub r: u8,
     pub g: u8,

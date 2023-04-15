@@ -25,7 +25,6 @@ pub mod C0 {
     #[allow(dead_code)]
     pub const ACK: u8 = 0x06;
     /// Bell, triggers the bell, buzzer, or beeper on the terminal.
-    #[allow(dead_code)]
     pub const BEL: u8 = 0x07;
     /// Backspace, can be used to define overstruck characters.
     pub const BS: u8 = 0x08;
