@@ -189,8 +189,8 @@ impl TermDamageState {
     /// Damage point inside of the viewport.
     #[inline]
     #[allow(dead_code)]
-    fn damage_point(&mut self, _point: Pos) {
-        // self.damage_line(pos.row, pos.col.0, pos.col.0);
+    fn damage_point(&mut self, pos: Pos) {
+        self.damage_line(pos.row.0 as usize, pos.col.0, pos.col.0);
     }
 
     /// Expand `line`'s damage to span at least `left` to `right` column.
@@ -307,8 +307,17 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    pub fn mark_fully_damaged(&mut self) {
+        self.damage.is_fully_damaged = true;
+    }
+
+    #[allow(dead_code)]
+    pub fn reset_damage(&mut self) {
+        self.damage.reset(self.grid.columns());
+    }
+
     pub fn scroll_display(&mut self, scroll: Scroll) {
-        // let old_display_offset = self.grid.display_offset();
+        let old_display_offset = self.grid.display_offset();
         self.grid.scroll_display(scroll);
         self.event_proxy.send_event(RioEvent::MouseCursorDirty);
 
@@ -320,9 +329,9 @@ impl<U: EventListener> Crosswords<U> {
         // self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed.
-        // if old_display_offset != self.grid().display_offset() {
-        // self.mark_fully_damaged();
-        // }
+        if old_display_offset != self.grid.display_offset() {
+            self.mark_fully_damaged();
+        }
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
@@ -388,19 +397,26 @@ impl<U: EventListener> Crosswords<U> {
         if self.grid.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
         } else {
-            // self.damage_cursor();
+            self.damage_cursor();
             self.grid.cursor.pos.row += 1;
         }
 
         self.grid.cursor.pos.col = Column(0);
         self.grid.cursor.should_wrap = false;
-        // self.damage_cursor();
+        self.damage_cursor();
     }
 
     pub fn history_size(&self) -> usize {
         self.grid
             .total_lines()
             .saturating_sub(self.grid.screen_lines())
+    }
+
+    #[inline]
+    fn damage_cursor(&mut self) {
+        // The normal cursor coordinates are always in viewport.
+        let point = Pos::new(Line(self.grid.cursor.pos.row.0), self.grid.cursor.pos.col);
+        self.damage.damage_point(point);
     }
 
     #[inline]
@@ -427,7 +443,7 @@ impl<U: EventListener> Crosswords<U> {
 
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 
     #[inline]
@@ -453,7 +469,7 @@ impl<U: EventListener> Crosswords<U> {
         // if (top <= *line) && region.end > *line {
         // *line = cmp::max(*line - lines, top);
         // }
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 
     pub fn write_at_cursor(&mut self, c: char) {
@@ -526,7 +542,7 @@ impl<U: EventListener> Crosswords<U> {
 
         // Clear grid.
         self.grid.reset_region(..);
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 
     #[inline]
@@ -561,7 +577,7 @@ impl<U: EventListener> Crosswords<U> {
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
         // self.selection = None;
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 }
 
@@ -652,7 +668,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::Column => self.deccolm(),
             AnsiMode::Insert => {
                 self.mode.remove(Mode::INSERT);
-                // self.mark_fully_damaged();
+                self.mark_fully_damaged();
             }
             AnsiMode::BlinkingCursor => {
                 // let style = self.cursor_style.get_or_insert(self.default_cursor_style);
@@ -670,11 +686,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             (Line(0), self.grid.bottommost_line())
         };
 
-        // self.damage_cursor();
+        self.damage_cursor();
         self.grid.cursor.pos.row =
             std::cmp::max(std::cmp::min(line + y_offset, max_y), Line(0));
         self.grid.cursor.pos.col = std::cmp::min(col, self.grid.last_column());
-        // self.damage_cursor();
+        self.damage_cursor();
         self.grid.cursor.should_wrap = false;
     }
 
@@ -698,7 +714,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 
     #[inline]
@@ -833,10 +849,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if self.grid.cursor.pos.row == self.scroll_region.start {
             self.scroll_down(1);
         } else {
-            // self.damage.damage_cursor();
+            self.damage_cursor();
             self.grid.cursor.pos.row =
                 std::cmp::max(self.grid.cursor.pos.row - 1, Line(0));
-            // self.damage_cursor();
+            self.damage_cursor();
         }
     }
 
@@ -1095,7 +1111,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Saved => (),
         }
 
-        // self.mark_fully_damaged();
+        self.mark_fully_damaged();
     }
 
     #[inline]
@@ -1115,7 +1131,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if next == self.scroll_region.end {
             self.scroll_up_relative(self.scroll_region.start, 1);
         } else if next < self.grid.screen_lines() {
+            self.damage_cursor();
             self.grid.cursor.pos.row += 1;
+            self.damage_cursor();
         }
     }
 
