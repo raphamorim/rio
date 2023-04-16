@@ -1,3 +1,5 @@
+use log::warn;
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Mode {
     /// ?1
@@ -84,7 +86,7 @@ impl Mode {
                 1049 => Mode::SwapScreenAndSetRestoreCursor,
                 2004 => Mode::BracketedPaste,
                 _ => {
-                    println!("[unimplemented] primitive mode: {}", num);
+                    warn!("[unimplemented] primitive mode: {}", num);
                     return None;
                 }
             })

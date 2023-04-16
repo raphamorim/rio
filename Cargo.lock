@@ -1483,11 +1483,12 @@ dependencies = [
  "image",
  "lazycell",
  "libc",
+ "log",
  "mio 0.6.23",
  "mio-extras",
  "parking_lot",
  "serde",
- "teletypewriter",
+ "teletypewriter 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "unicode-width",
  "vte",
@@ -1692,6 +1693,20 @@ dependencies = [
 [[package]]
 name = "teletypewriter"
 version = "2.0.0"
+dependencies = [
+ "dirs",
+ "libc",
+ "mio 0.6.23",
+ "mio-extras",
+ "signal-hook",
+ "signal-hook-mio",
+]
+
+[[package]]
+name = "teletypewriter"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c5436d9be8a7b16403a69c4c4fc600f6bc361d145e94945641360432a36dd1d"
 dependencies = [
  "dirs",
  "libc",

@@ -31,6 +31,7 @@ use bitflags::bitflags;
 use colors::AnsiColor;
 use colors::{ColorRgb, Colors};
 use grid::row::Row;
+use log::{debug, info, warn};
 use pos::CharsetIndex;
 use pos::{Column, Cursor, Line, Pos};
 use square::Square;
@@ -334,7 +335,7 @@ impl<U: EventListener> Crosswords<U> {
         let old_lines = self.grid.screen_lines();
 
         if old_cols == num_cols && old_lines == num_lines {
-            println!("Term::resize dimensions unchanged");
+            info!("Term::resize dimensions unchanged");
             return;
         }
         // Move vi mode cursor with the content.
@@ -416,7 +417,10 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     fn scroll_down_relative(&mut self, origin: Line, mut lines: usize) {
-        // println!("Scrolling down relative: origin={}, lines={}", origin, lines);
+        debug!(
+            "Scrolling down relative: origin={}, lines={}",
+            origin, lines
+        );
 
         lines = std::cmp::min(
             lines,
@@ -443,7 +447,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn scroll_up_relative(&mut self, origin: Line, mut lines: usize) {
-        // println!("Scrolling up: origin={origin}, lines={lines}");
+        debug!("Scrolling up: origin={origin}, lines={lines}");
 
         lines = std::cmp::min(
             lines,
@@ -938,7 +942,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
             Attr::CancelStrike => cursor.template.flags.remove(square::Flags::STRIKEOUT),
             _ => {
-                println!("Term got unhandled attr: {:?}", attr);
+                warn!("Term got unhandled attr: {:?}", attr);
             }
         }
     }
@@ -1171,7 +1175,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     /// Set the indexed color value.
     #[inline]
     fn set_color(&mut self, index: usize, color: ColorRgb) {
-        println!("set_color: {} {:?}", index, color);
+        info!("set_color: {} {:?}", index, color);
         // Damage terminal if the color changed and it's not the cursor.
         // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
         // self.mark_fully_damaged();
@@ -1192,12 +1196,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        println!("[unimplemented] Bell");
+        warn!("[unimplemented] Bell");
     }
 
     #[inline]
     fn substitute(&mut self) {
-        println!("[unimplemented] Substitute");
+        warn!("[unimplemented] Substitute");
     }
 
     #[inline]
@@ -1290,7 +1294,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let bottom = bottom.unwrap_or_else(|| self.grid.screen_lines());
 
         if top >= bottom {
-            println!("Invalid scrolling region: ({};{})", top, bottom);
+            warn!("Invalid scrolling region: ({};{})", top, bottom);
             return;
         }
 
@@ -1301,7 +1305,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let start = Line(top as i32 - 1);
         let end = Line(bottom as i32);
 
-        println!("Setting scrolling region: ({};{})", start, end);
+        info!("Setting scrolling region: ({};{})", start, end);
 
         let screen_lines = Line(self.grid.screen_lines() as i32);
         self.scroll_region.start = std::cmp::min(start, screen_lines);
@@ -1311,7 +1315,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn text_area_size_pixels(&mut self) {
-        println!("text_area_size_pixels");
+        info!("text_area_size_pixels");
         // self.event_proxy.send_event(RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
         //     let height = window_size.num_lines * window_size.cell_height;
         //     let width = window_size.num_cols * window_size.cell_width;
@@ -1326,7 +1330,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.screen_lines(),
             self.grid.columns()
         );
-        println!("text_area_size_chars {:?}", text);
+        info!("text_area_size_chars {:?}", text);
         self.event_proxy.send_event(RioEvent::PtyWrite(text));
     }
 }

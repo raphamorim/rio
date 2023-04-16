@@ -75,6 +75,7 @@ disable-renderer-when-unfocused = false
 
 [developer]
 enable-fps-counter = false
+log-level = 'OFF'
 
 [colors]
 background       = '#0F0D0E'
@@ -215,6 +216,15 @@ disable-renderer-when-unfocused = false
 ```
 
 ## Developer
+
+#### `log-level`
+
+This property enables log level filter. Default is `OFF`.
+
+```toml
+[style]
+log-level = 'INFO'
+```
 
 #### `enable-fps-counter`
 

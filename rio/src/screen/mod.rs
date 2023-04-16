@@ -9,6 +9,7 @@ use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::renderer::Renderer;
+use log::warn;
 use messenger::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
@@ -181,15 +182,12 @@ impl Screen {
         // _scancode: u32,
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
     ) {
-        let logs = self.ctx.renderer.config.developer.enable_logs;
-        if logs {
-            println!("input_keycode: received keycode {:?}", virtual_keycode);
-        }
+        warn!("input_keycode: received keycode {:?}", virtual_keycode);
 
         if let Some(keycode) = virtual_keycode {
             let _ = self.messenger.send_keycode(keycode);
-        } else if logs {
-            println!("input_keycode: error keycode not as Some");
+        } else {
+            warn!("input_keycode: error keycode not as Some");
         }
     }
 
