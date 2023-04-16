@@ -2,8 +2,6 @@ use crate::event::Msg;
 use crate::screen::ansi;
 use std::borrow::Cow;
 use teletypewriter::WinsizeBuilder;
-
-// use teletypewriter::Process;
 use winit::event::ModifiersState;
 use winit::event::VirtualKeyCode;
 

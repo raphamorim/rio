@@ -10,3 +10,4 @@ authors = { workspace = true }
 regex = "1.7.2"
 serde = { workspace = true }
 wgpu = { workspace = true }
+log = { workspace = true }

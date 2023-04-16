@@ -10,7 +10,7 @@ mod screen;
 mod sequencer;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
-use log::{LevelFilter, SetLoggerError};
+use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
 use std::str::FromStr;
 
@@ -20,13 +20,15 @@ pub fn setup_environment_variables(_config: &config::Config) {
     } else {
         "xterm-256color"
     };
+
+    info!("[setup_environment_variables] terminfo: {terminfo}");
+
     std::env::set_var("TERM", terminfo);
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
-
-    if std::env::var("SHELL").is_err() {
-        std::env::set_var("TERM", "bash")
-    }
+    // Temporary approach for macos
+    // https://pubs.opengroup.org/onlinepubs/7908799/xbd/envvar.html
+    std::env::set_var("LC_CTYPE", "UTF-8");
 
     #[cfg(target_os = "macos")]
     std::env::set_current_dir(dirs::home_dir().unwrap()).unwrap();
@@ -46,8 +48,6 @@ fn setup_logs_by_filter_level(log_level: LevelFilter) -> Result<(), SetLoggerErr
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = config::Config::load();
-    setup_environment_variables(&config);
-
     let filter_level =
         LevelFilter::from_str(&config.developer.log_level).unwrap_or(LevelFilter::Off);
 
@@ -55,6 +55,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if setup_logs.is_err() {
         println!("unable to configure log level");
     }
+
+    setup_environment_variables(&config);
 
     let window_event_loop =
         winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();

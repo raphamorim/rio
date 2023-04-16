@@ -103,6 +103,27 @@ fn parse_number(input: &[u8]) -> Option<u8> {
     Some(num)
 }
 
+fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<AnsiColor> {
+    match params.next() {
+        Some(2) => Some(AnsiColor::Spec(ColorRgb {
+            r: u8::try_from(params.next()?).ok()?,
+            g: u8::try_from(params.next()?).ok()?,
+            b: u8::try_from(params.next()?).ok()?,
+        })),
+        Some(5) => Some(AnsiColor::Indexed(u8::try_from(params.next()?).ok()?)),
+        _ => None,
+    }
+}
+
+#[inline]
+fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
+    let rgb_start = if params.len() > 4 { 2 } else { 1 };
+    let rgb_iter = params[rgb_start..].iter().copied();
+    let mut iter = std::iter::once(params[0]).chain(rgb_iter);
+
+    parse_sgr_color(&mut iter)
+}
+
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
@@ -917,7 +938,6 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
 fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     let mut attrs = Vec::with_capacity(params.size_hint().0);
 
-    #[allow(clippy::while_let_on_iterator)]
     while let Some(param) = params.next() {
         let attr = match param {
             [0] => Some(Attr::Reset),
@@ -951,13 +971,13 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [35] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Magenta))),
             [36] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Cyan))),
             [37] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::White))),
-            // [38] => {
-            //     // let mut iter = params.map(|param| param[0]);
-            //     // parse_sgr_color(&mut iter).map(Attr::Foreground)
-            // }
-            // [38, params @ ..] => {
-            //     // handle_colon_rgb(params).map(Attr::Foreground)
-            // }
+            [38] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(Attr::Foreground)
+            }
+            [38, params @ ..] => {
+                handle_colon_rgb(params).map(Attr::Foreground)
+            }
             [39] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Foreground))),
             [40] => Some(Attr::Background(AnsiColor::Named(NamedColor::Black))),
             [41] => Some(Attr::Background(AnsiColor::Named(NamedColor::Red))),
@@ -967,19 +987,19 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [45] => Some(Attr::Background(AnsiColor::Named(NamedColor::Magenta))),
             [46] => Some(Attr::Background(AnsiColor::Named(NamedColor::Cyan))),
             [47] => Some(Attr::Background(AnsiColor::Named(NamedColor::White))),
-            // [48] => {
-            //     let mut iter = params.map(|param| param[0]);
-            //     parse_sgr_color(&mut iter).map(Attr::Background)
-            // },
-            // [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
+            [48] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(Attr::Background)
+            },
+            [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
             [49] => Some(Attr::Background(AnsiColor::Named(NamedColor::Background))),
-            // [58] => {
-            //     let mut iter = params.map(|param| param[0]);
-            //     parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
-            // },
-            // [58, params @ ..] => {
-            //     handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
-            // },
+            [58] => {
+                let mut iter = params.map(|param| param[0]);
+                parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
+            },
+            [58, params @ ..] => {
+                handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
+            },
             [59] => Some(Attr::UnderlineColor(None)),
             [90] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlack))),
             [91] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightRed))),
