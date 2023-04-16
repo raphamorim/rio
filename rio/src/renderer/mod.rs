@@ -4,9 +4,9 @@ mod text;
 
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
-use crate::crosswords::square::Square;
+use crate::crosswords::square::{ Square, Flags };
 use crate::layout::Style;
-use colors::{AnsiColor, NamedColor};
+use colors::{AnsiColor, NamedColor, term::{List, TermColors}};
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText};
@@ -22,6 +22,7 @@ pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
     pub config: Rc<Config>,
     cursor: Cursor,
+    colors: List,
     // fps: frames::Counter,
 }
 
@@ -36,7 +37,10 @@ impl Renderer {
                 let brush =
                     text::GlyphBrushBuilder::using_font(font_data).build(&device, format);
                 // let fps = frames::Counter::new();
+                let term_colors = TermColors::default();
+                let colors = List::from(&term_colors);
                 Ok(Renderer {
+                    colors,
                     cursor: Cursor {
                         content: config.cursor,
                         position: (pos::Column(0), pos::Line(0)),
@@ -55,6 +59,7 @@ impl Renderer {
     #[inline]
     fn process_row(&self, square: &Square, style: Style) -> OwnedText {
         let content: String = square.c.to_string();
+        let flags = square.flags;
 
         let fg_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
@@ -92,7 +97,64 @@ impl Renderer {
             AnsiColor::Named(NamedColor::Red) => self.config.colors.red,
             AnsiColor::Named(NamedColor::White) => self.config.colors.white,
             AnsiColor::Named(NamedColor::Yellow) => self.config.colors.yellow,
+            AnsiColor::Spec(rgb) => {
+                self.config.colors.foreground
+            },
+            AnsiColor::Indexed(index) => {
+                let index = match (
+                    flags & Flags::DIM_BOLD,
+                    index,
+                ) {
+                    (Flags::DIM, 8..=15) => index as usize - 8,
+                    (Flags::DIM, 0..=7) => NamedColor::DimBlack as usize + index as usize,
+                    _ => index as usize,
+                };
+
+                self.colors[index]
+            }
         };
+
+        let bg = match square.bg {
+            AnsiColor::Spec(rgb) => self.config.colors.foreground,
+            AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
+            AnsiColor::Named(NamedColor::Background) => self.config.colors.background.0,
+            AnsiColor::Named(NamedColor::Blue) => self.config.colors.blue,
+            AnsiColor::Named(NamedColor::LightBlack) => self.config.colors.light_black,
+            AnsiColor::Named(NamedColor::LightBlue) => self.config.colors.light_blue,
+            AnsiColor::Named(NamedColor::LightCyan) => self.config.colors.light_cyan,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.config.colors.light_foreground
+            }
+            AnsiColor::Named(NamedColor::LightGreen) => self.config.colors.light_green,
+            AnsiColor::Named(NamedColor::LightMagenta) => {
+                self.config.colors.light_magenta
+            }
+            AnsiColor::Named(NamedColor::LightRed) => self.config.colors.light_red,
+            AnsiColor::Named(NamedColor::LightWhite) => self.config.colors.light_white,
+            AnsiColor::Named(NamedColor::LightYellow) => self.config.colors.light_yellow,
+            AnsiColor::Named(NamedColor::Cursor) => self.config.colors.cursor,
+            AnsiColor::Named(NamedColor::Cyan) => self.config.colors.cyan,
+            AnsiColor::Named(NamedColor::DimBlack) => self.config.colors.dim_black,
+            AnsiColor::Named(NamedColor::DimBlue) => self.config.colors.dim_blue,
+            AnsiColor::Named(NamedColor::DimCyan) => self.config.colors.dim_cyan,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.config.colors.dim_foreground
+            }
+            AnsiColor::Named(NamedColor::DimGreen) => self.config.colors.dim_green,
+            AnsiColor::Named(NamedColor::DimMagenta) => self.config.colors.dim_magenta,
+            AnsiColor::Named(NamedColor::DimRed) => self.config.colors.dim_red,
+            AnsiColor::Named(NamedColor::DimWhite) => self.config.colors.dim_white,
+            AnsiColor::Named(NamedColor::DimYellow) => self.config.colors.dim_yellow,
+            AnsiColor::Named(NamedColor::Foreground) => self.config.colors.foreground,
+            AnsiColor::Named(NamedColor::Green) => self.config.colors.green,
+            AnsiColor::Named(NamedColor::Magenta) => self.config.colors.magenta,
+            AnsiColor::Named(NamedColor::Red) => self.config.colors.red,
+            AnsiColor::Named(NamedColor::White) => self.config.colors.white,
+            AnsiColor::Named(NamedColor::Yellow) => self.config.colors.yellow,
+            AnsiColor::Indexed(idx) => self.colors[idx as usize],
+        };
+
+        // println!("{:?}", bg);
 
         OwnedText::new(content)
             .with_color(fg_color)

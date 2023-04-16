@@ -1,5 +1,9 @@
 # Rio Changelog
 
+## 0.0.2
+
+- `log-level` as configurable (`DEBUG`, `INFO`, `TRACE`, `ERROR`, `WARN` and `OFF`). `OFF` by default.
+
 ## 0.0.1
 
 - Basic move/goto functionalities.

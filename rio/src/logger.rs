@@ -17,7 +17,7 @@ impl log::Log for Logger {
         // }
 
         let line = format!(
-            "\x1b[93m[{}]\x1b[0m {}: {}\0",
+            "\x1b[35m[{}]\x1b[0m \x1b[34m{}\x1b[0m {}\0",
             record.level(),
             record.target(),
             record.args()

@@ -1,5 +1,6 @@
 // Produces WGPU Color based on ColorBuilder
 pub mod defaults;
+pub mod term;
 
 use regex::Regex;
 use serde::{de, Deserialize};
@@ -9,7 +10,7 @@ pub type ColorWGPU = wgpu::Color;
 pub type ColorArray = [f32; 4];
 pub type ColorComposition = (ColorArray, ColorWGPU);
 
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct ColorRgb {
     pub r: u8,
     pub g: u8,
@@ -25,6 +26,8 @@ pub enum Format {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnsiColor {
     Named(NamedColor),
+    Spec(ColorRgb),
+    Indexed(u8),
 }
 
 #[derive(Debug, Copy, Deserialize, PartialEq, Clone)]

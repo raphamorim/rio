@@ -380,6 +380,35 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
+    fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
+        warn!("Requested write of escape sequence for color code {}: color[{}]", prefix, index);        
+    }
+
+    /// Toggle the vi mode.
+    #[inline]
+    pub fn toggle_vi_mode(&mut self)
+    where
+        U: EventListener,
+    {
+        self.mode ^= Mode::VI;
+
+        if self.mode.contains(Mode::VI) {
+            let display_offset = self.grid.display_offset() as i32;
+            if self.grid.cursor.pos.row > self.grid.bottommost_line() - display_offset {
+                // Move cursor to top-left if terminal cursor is not visible.
+                let point = Pos::new(Line(-display_offset), Column(0));
+                // self.vi_mode_cursor = ViModeCursor::new(point);
+            } else {
+                // Reset vi mode cursor position to match primary cursor.
+                // self.vi_mode_cursor = ViModeCursor::new(self.grid.cursor.point);
+            }
+        }
+
+        // Update UI about cursor blinking state changes.
+        self.event_proxy.send_event(RioEvent::CursorBlinkingChange);
+    }
+
+    #[inline]
     pub fn wrapline(&mut self) {
         if !self.mode.contains(Mode::LINE_WRAP) {
             return;
@@ -1176,6 +1205,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_color(&mut self, index: usize, color: ColorRgb) {
         info!("set_color: {} {:?}", index, color);
+        panic!("aaa");
         // Damage terminal if the color changed and it's not the cursor.
         // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
         // self.mark_fully_damaged();
