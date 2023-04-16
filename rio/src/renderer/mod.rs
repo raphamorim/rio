@@ -1,6 +1,7 @@
 // mod frames;
 mod shared;
 mod text;
+mod quad;
 
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
@@ -11,6 +12,7 @@ use colors::{
     AnsiColor, NamedColor,
 };
 use config::Config;
+use glyph_brush::GlyphCruncher;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText};
 use std::rc::Rc;
@@ -23,6 +25,7 @@ struct Cursor {
 
 pub struct Renderer {
     pub brush: text::GlyphBrush<()>,
+    pub quad: quad::Pipeline,
     pub config: Rc<Config>,
     cursor: Cursor,
     colors: List,
@@ -39,6 +42,7 @@ impl Renderer {
             Ok(font_data) => {
                 let brush =
                     text::GlyphBrushBuilder::using_font(font_data).build(&device, format);
+                let quad = quad::Pipeline::new(&device, format);
                 // let fps = frames::Counter::new();
                 let term_colors = TermColors::default();
                 let colors = List::from(&term_colors);
@@ -48,6 +52,7 @@ impl Renderer {
                         content: config.cursor,
                         position: (pos::Column(0), pos::Line(0)),
                     },
+                    quad,
                     brush,
                     config: config.clone(),
                     // fps,
@@ -191,7 +196,7 @@ impl Renderer {
 
             // Render last column and break row
             if column == (columns - 1) {
-                self.brush.queue(&OwnedSection {
+                let section = &OwnedSection {
                     screen_position: (
                         style.screen_position.0,
                         style.screen_position.1 + line_height,
@@ -200,7 +205,11 @@ impl Renderer {
                     text: row_text,
                     layout: glyph_brush::Layout::default_single_line()
                         .v_align(glyph_brush::VerticalAlign::Bottom),
-                });
+                };
+
+                println!("{:?}", self.brush.glyph_bounds(section));
+
+                self.brush.queue(section);
 
                 break;
             }
@@ -228,6 +237,22 @@ impl Renderer {
         let _ =
             self.brush
                 .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
+
+        let rect = quad::Rectangle{
+            height: 100,
+            width: 400,
+            x: 200,
+            y: 200
+        };
+
+        let custom_quad = quad::Quad {
+            color: [1.0,1.0,1.0,1.0],
+            position: [1.0, 1.0],
+            size: [20.0, 20.0],
+            ..quad::Quad::default()
+        };
+
+        let _ = self.quad.draw(device, staging_belt, encoder, view, &[custom_quad], quad::transformation::Transformation::translate(1.0, 1.0), 1.0, rect); 
     }
 
     // pub fn topbar(&mut self, command: String) {
