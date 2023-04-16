@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-// https://github.com/hecrj/wgpu_glyph
+// From https://github.com/hecrj/wgpu_glyph
 // #[deny(unused_results)]
 mod builder;
 mod pipeline;

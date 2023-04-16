@@ -51,7 +51,7 @@ impl Sequencer {
                                 {
                                     return;
                                 }
-                                screen.render(self.config.colors.background.1);
+                                screen.render();
                             }
                             RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
@@ -60,7 +60,7 @@ impl Sequencer {
                             }
                             RioEvent::MouseCursorDirty => {
                                 screen.layout().reset_mouse();
-                                screen.render(self.config.colors.background.1);
+                                screen.render();
                             }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
                                 if is_focused {
@@ -183,7 +183,7 @@ impl Sequencer {
 
                     screen
                         .resize(new_size)
-                        .render(self.config.colors.background.1);
+                        .render();
                 }
 
                 Event::WindowEvent {
@@ -196,7 +196,7 @@ impl Sequencer {
                 } => {
                     screen
                         .set_scale(scale_factor as f32, *new_inner_size)
-                        .render(self.config.colors.background.1);
+                        .render();
                 }
 
                 Event::MainEventsCleared { .. } => {}
