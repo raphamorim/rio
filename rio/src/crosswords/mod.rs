@@ -380,12 +380,22 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
-        warn!("Requested write of escape sequence for color code {}: color[{}]", prefix, index);        
+    #[allow(dead_code)]
+    fn dynamic_color_sequence(
+        &mut self,
+        prefix: String,
+        index: usize,
+        _terminator: &str,
+    ) {
+        warn!(
+            "Requested write of escape sequence for color code {}: color[{}]",
+            prefix, index
+        );
     }
 
     /// Toggle the vi mode.
     #[inline]
+    #[allow(dead_code)]
     pub fn toggle_vi_mode(&mut self)
     where
         U: EventListener,
@@ -396,7 +406,7 @@ impl<U: EventListener> Crosswords<U> {
             let display_offset = self.grid.display_offset() as i32;
             if self.grid.cursor.pos.row > self.grid.bottommost_line() - display_offset {
                 // Move cursor to top-left if terminal cursor is not visible.
-                let point = Pos::new(Line(-display_offset), Column(0));
+                let _point = Pos::new(Line(-display_offset), Column(0));
                 // self.vi_mode_cursor = ViModeCursor::new(point);
             } else {
                 // Reset vi mode cursor position to match primary cursor.

@@ -1,11 +1,9 @@
-use crate::ColorRgb;
 use crate::ColorArray;
+use crate::ColorRgb;
 use std::ops::{Index, IndexMut};
 
-use log::trace;
-
-use crate::NamedColor;
 use crate::defaults;
+use crate::NamedColor;
 
 /// Number of terminal colors.
 pub const COUNT: usize = 269;
@@ -15,14 +13,14 @@ pub const COUNT: usize = 269;
 /// The color range of a 256 color terminal consists of 4 parts,
 /// often 5, in which case you actually get 258 colors:
 ///
-/// Color numbers 0 to 7 are the default terminal colors, the actual RGB 
+/// Color numbers 0 to 7 are the default terminal colors, the actual RGB
 /// value of which is not standardized and can often be configured.
 ///
 /// Color numbers 8 to 15 are the "bright" colors. Most of the time these are a
-/// lighter shade of the color with index - 8. They are also not standardized and 
+/// lighter shade of the color with index - 8. They are also not standardized and
 /// can often be configured. Depending on terminal and shell, they are often used instead of or in conjunction with bold font faces.
 ///
-/// Color numbers 16 to 231 are RGB colors. 
+/// Color numbers 16 to 231 are RGB colors.
 /// These 216 colors are defined by 6 values on each of the three RGB axes.
 /// That is, instead of values 0 - 255, each color only ranges from 0 - 5.
 ///
@@ -30,7 +28,7 @@ pub const COUNT: usize = 269;
 /// number = 16 + 36 * r + 6 * g + b
 /// with r, g and b in the range 0 - 5.
 ///
-/// The color numbers 232 to 255 are grayscale with 24 shades 
+/// The color numbers 232 to 255 are grayscale with 24 shades
 /// of gray from dark to light.
 ///
 /// The default colors for foreground and background.
@@ -134,13 +132,12 @@ impl List {
         for r in 0..6 {
             for g in 0..6 {
                 for b in 0..6 {
-                    
-                        let rgb = ColorRgb {
-                            r: if r == 0 { 0 } else { r * 40 + 55 },
-                            b: if b == 0 { 0 } else { b * 40 + 55 },
-                            g: if g == 0 { 0 } else { g * 40 + 55 },
-                        };
-                        self[index] = [rgb.r.into(), rgb.g.into(), rgb.b.into(), 1.0];
+                    let rgb = ColorRgb {
+                        r: if r == 0 { 0 } else { r * 40 + 55 },
+                        b: if b == 0 { 0 } else { b * 40 + 55 },
+                        g: if g == 0 { 0 } else { g * 40 + 55 },
+                    };
+                    self[index] = [rgb.r.into(), rgb.g.into(), rgb.b.into(), 1.0];
                     index += 1;
                 }
             }
@@ -154,7 +151,11 @@ impl List {
 
         for i in 0..24 {
             let value = i * 10 + 8;
-            let rgb = ColorRgb { r: value, g: value, b: value };
+            let rgb = ColorRgb {
+                r: value,
+                g: value,
+                b: value,
+            };
             self[index] = [rgb.r.into(), rgb.g.into(), rgb.b.into(), 1.0];
             index += 1;
         }
