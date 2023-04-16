@@ -4,9 +4,12 @@ mod text;
 
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
-use crate::crosswords::square::{ Square, Flags };
+use crate::crosswords::square::{Flags, Square};
 use crate::layout::Style;
-use colors::{AnsiColor, NamedColor, term::{List, TermColors}};
+use colors::{
+    term::{List, TermColors},
+    AnsiColor, NamedColor,
+};
 use config::Config;
 use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::{OwnedSection, OwnedText};
@@ -97,14 +100,9 @@ impl Renderer {
             AnsiColor::Named(NamedColor::Red) => self.config.colors.red,
             AnsiColor::Named(NamedColor::White) => self.config.colors.white,
             AnsiColor::Named(NamedColor::Yellow) => self.config.colors.yellow,
-            AnsiColor::Spec(rgb) => {
-                self.config.colors.foreground
-            },
+            AnsiColor::Spec(_rgb) => self.config.colors.foreground,
             AnsiColor::Indexed(index) => {
-                let index = match (
-                    flags & Flags::DIM_BOLD,
-                    index,
-                ) {
+                let index = match (flags & Flags::DIM_BOLD, index) {
                     (Flags::DIM, 8..=15) => index as usize - 8,
                     (Flags::DIM, 0..=7) => NamedColor::DimBlack as usize + index as usize,
                     _ => index as usize,
@@ -114,8 +112,9 @@ impl Renderer {
             }
         };
 
+        #[allow(unused)]
         let bg = match square.bg {
-            AnsiColor::Spec(rgb) => self.config.colors.foreground,
+            AnsiColor::Spec(_rgb) => self.config.colors.foreground,
             AnsiColor::Named(NamedColor::Black) => self.config.colors.black,
             AnsiColor::Named(NamedColor::Background) => self.config.colors.background.0,
             AnsiColor::Named(NamedColor::Blue) => self.config.colors.blue,

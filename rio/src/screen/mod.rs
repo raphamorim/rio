@@ -234,7 +234,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render(&mut self, color: wgpu::Color) {
+    pub fn render(&mut self, _color: wgpu::Color) {
         let mut encoder =
             self.ctx
                 .device
@@ -251,18 +251,18 @@ impl Screen {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render -> Clear frame"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        // encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //     label: Some("Render -> Clear frame"),
+        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        //         view,
+        //         resolve_target: None,
+        //         ops: wgpu::Operations {
+        //             load: wgpu::LoadOp::Clear(color),
+        //             store: true,
+        //         },
+        //     })],
+        //     depth_stencil_attachment: None,
+        // });
 
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();

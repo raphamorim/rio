@@ -975,9 +975,7 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
                 let mut iter = params.map(|param| param[0]);
                 parse_sgr_color(&mut iter).map(Attr::Foreground)
             }
-            [38, params @ ..] => {
-                handle_colon_rgb(params).map(Attr::Foreground)
-            }
+            [38, params @ ..] => handle_colon_rgb(params).map(Attr::Foreground),
             [39] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::Foreground))),
             [40] => Some(Attr::Background(AnsiColor::Named(NamedColor::Black))),
             [41] => Some(Attr::Background(AnsiColor::Named(NamedColor::Red))),
@@ -990,16 +988,16 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
             [48] => {
                 let mut iter = params.map(|param| param[0]);
                 parse_sgr_color(&mut iter).map(Attr::Background)
-            },
+            }
             [48, params @ ..] => handle_colon_rgb(params).map(Attr::Background),
             [49] => Some(Attr::Background(AnsiColor::Named(NamedColor::Background))),
             [58] => {
                 let mut iter = params.map(|param| param[0]);
                 parse_sgr_color(&mut iter).map(|color| Attr::UnderlineColor(Some(color)))
-            },
+            }
             [58, params @ ..] => {
                 handle_colon_rgb(params).map(|color| Attr::UnderlineColor(Some(color)))
-            },
+            }
             [59] => Some(Attr::UnderlineColor(None)),
             [90] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightBlack))),
             [91] => Some(Attr::Foreground(AnsiColor::Named(NamedColor::LightRed))),
