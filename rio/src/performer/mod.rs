@@ -3,6 +3,7 @@ pub mod handler;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
+use log::error;
 use mio::{self, Events, PollOpt, Ready};
 use mio_extras::channel;
 
@@ -336,7 +337,7 @@ where
                                         continue;
                                     }
 
-                                    println!(
+                                    error!(
                                         "Error reading from PTY in event loop: {}",
                                         err
                                     );
@@ -346,10 +347,7 @@ where
 
                             if event.readiness().is_writable() {
                                 if let Err(err) = self.pty_write(&mut state) {
-                                    println!(
-                                        "Error writing to PTY in event loop: {}",
-                                        err
-                                    );
+                                    error!("Error writing to PTY in event loop: {}", err);
                                     break 'event_loop;
                                 }
                             }

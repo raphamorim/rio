@@ -8,6 +8,10 @@ pub fn default_height() -> u16 {
     438
 }
 
+pub fn default_log_level() -> String {
+    String::from("OFF")
+}
+
 pub fn default_cursor() -> char {
     '█'
 }

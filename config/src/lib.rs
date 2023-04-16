@@ -70,12 +70,21 @@ impl Default for Advanced {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize)]
 pub struct Developer {
     #[serde(default = "bool::default", rename = "enable-fps-counter")]
     pub enable_fps_counter: bool,
-    #[serde(default = "bool::default", rename = "enable-logs")]
-    pub enable_logs: bool,
+    #[serde(default = "default_log_level", rename = "log-level")]
+    pub log_level: String,
+}
+
+impl Default for Developer {
+    fn default() -> Developer {
+        Developer {
+            log_level: default_log_level(),
+            enable_fps_counter: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -226,8 +235,8 @@ mod tests {
         );
         assert!(!result.advanced.disable_render_when_unfocused);
         // Developer
+        assert_eq!(result.developer.log_level, default_log_level());
         assert!(!result.developer.enable_fps_counter);
-        assert!(!result.developer.enable_logs);
     }
 
     #[test]
@@ -263,7 +272,7 @@ mod tests {
 
             [developer]
             enable-fps-counter = false
-            enable-logs = false
+            log-level = "OFF"
         "#,
         );
 
@@ -543,7 +552,7 @@ mod tests {
 
             [developer]
             enable-fps-counter = true
-            enable-logs = true
+            log-level = "INFO"
         "#,
         );
 
@@ -551,7 +560,7 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         // Developer
-        assert!(result.developer.enable_logs);
+        assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);
 
         // Colors

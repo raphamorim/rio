@@ -1,6 +1,7 @@
 use crate::ansi::mode::Mode;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use colors::ColorRgb;
+use log::{info, warn};
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
@@ -473,7 +474,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        println!("[execute] {byte:04x}");
+        info!("[execute] {byte:04x}");
 
         match byte {
             C0::HT => self.handler.put_tab(1),
@@ -484,7 +485,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             C0::SUB => self.handler.substitute(),
             C0::SI => self.handler.set_active_charset(CharsetIndex::G0),
             C0::SO => self.handler.set_active_charset(CharsetIndex::G1),
-            _ => println!("[unhandled] execute byte={byte:02x}"),
+            _ => warn!("[unhandled] execute byte={byte:02x}"),
         }
     }
 
@@ -496,7 +497,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         action: char,
     ) {
         if ignore || intermediates.len() > 1 {
-            println!("unhandled");
+            warn!("unhandled");
             return;
         }
 
@@ -507,18 +508,15 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     self.state.dcs = Some(Dcs::SyncStart);
                 }
             }
-            _ => println!(
+            _ => warn!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
                 params, intermediates, ignore, action
             ),
         }
-        // println!(
-        //     "[hook] params={params:?}, intermediates={intermediates:?}, ignore={ignore:?}, char={c:?}"
-        // );
     }
 
     fn put(&mut self, _byte: u8) {
-        println!("[put] {_byte:02x}");
+        info!("[put] {_byte:02x}");
     }
 
     #[inline]
@@ -529,12 +527,12 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
             }
             Some(Dcs::SyncEnd) => (),
-            _ => println!("[unhandled unhook]"),
+            _ => warn!("[unhandled unhook]"),
         }
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        println!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+        info!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
 
         let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
@@ -547,7 +545,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 }
                 buf.push_str("],");
             }
-            println!("[unhandled osc_dispatch]: [{}] at line {}", &buf, line!());
+            warn!("[unhandled osc_dispatch]: [{}] at line {}", &buf, line!());
         }
 
         if params.is_empty() || params[0].is_empty() {
@@ -690,10 +688,10 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
         should_ignore: bool,
         action: char,
     ) {
-        println!("[csi_dispatch] {params:?} {action:?}");
+        info!("[csi_dispatch] {params:?} {action:?}");
         macro_rules! csi_unhandled {
             () => {{
-                println!(
+                warn!(
                     "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, should_ignore={should_ignore:?}, action={action:?}"
                 );
             }};
@@ -721,7 +719,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                         handler.input(c);
                     }
                 } else {
-                    println!("tried to repeat with no preceding char");
+                    warn!("tried to repeat with no preceding char");
                 }
             }
             ('C', []) | ('a', []) => {
@@ -861,7 +859,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
         macro_rules! unhandled {
             () => {{
-                println!(
+                warn!(
                     "[unhandled] esc_dispatch ints={:?}, byte={:?} ({:02x})",
                     intermediates, byte as char, byte
                 );

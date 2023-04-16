@@ -406,6 +406,11 @@ impl ColorBuilder {
         }
     }
 
+    pub fn sub_alpha(&mut self, alpha: f64) -> &mut Self {
+        self.alpha -= alpha;
+        self
+    }
+
     pub fn to_arr(&self) -> ColorArray {
         [
             self.red as f32,

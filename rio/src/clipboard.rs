@@ -1,3 +1,5 @@
+use log::warn;
+
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use std::ffi::c_void;
 
@@ -87,7 +89,7 @@ impl Clipboard {
         };
 
         clipboard.set_contents(text.into()).unwrap_or_else(|err| {
-            println!("Unable to store text in clipboard: {}", err);
+            warn!("Unable to store text in clipboard: {}", err);
         });
     }
 
@@ -99,7 +101,7 @@ impl Clipboard {
 
         match clipboard.get_contents() {
             Err(err) => {
-                println!("Unable to load text from clipboard: {}", err);
+                warn!("Unable to load text from clipboard: {}", err);
                 String::new()
             }
             Ok(text) => text,
