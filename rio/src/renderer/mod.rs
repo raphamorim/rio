@@ -240,46 +240,21 @@ impl Renderer {
         size: (u32, u32),
     ) {
 
-        let custom_quad = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [0.0, 0.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
+        let custom_quad = [
+    
 
-        let custom_quad_2 = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [100.0, 10.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-        let custom_quad_3 = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [300.0, 10.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-        let custom_quad = scene::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [-600.0, 100.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-
+            scene::Quad { position: [-0.0868241, 0.49240386] }, // A
+            scene::Quad { position: [-0.49513406, 0.06958647] }, // B
+            scene::Quad { position: [-0.21918549, -0.44939706] }, // C
+            scene::Quad { position: [0.35966998, -0.3473291] }, // D
+            scene::Quad { position: [0.44147372, 0.2347359] }, // E
+        ];
 
             // Draw the scene
             self.scene.draw(
             device,
             view,
-            &[custom_quad],
+            &custom_quad,
             encoder,
             staging_belt,
             );
@@ -287,53 +262,6 @@ impl Renderer {
         let _ =
             self.brush
                 .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
-
-        let rect = quad::Rectangle {
-            height: 600,
-            width: 600,
-            x: 0,
-            y: 0,
-        };
-
-        let custom_quad = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [0.0, 0.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-
-        let custom_quad_2 = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [100.0, 10.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-        let custom_quad_3 = quad::Quad {
-            color: self.config.colors.cursor,
-            border_color: self.config.colors.cursor,
-            position: [300.0, 10.0],
-            size: [400.0, 100.0],
-            border_radius: [1.0, 1.0, 1.0, 1.0],
-            border_width: 1.2,
-        };
-
-        let transformation =
-            quad::transformation::Transformation::orthographic(1324, 876);
-
-        let _ = self.quad.draw(
-            device,
-            staging_belt,
-            encoder,
-            view,
-            &[custom_quad, custom_quad_2, custom_quad_3],
-            transformation,
-            2.0,
-            rect,
-        );
     }
 
     // pub fn topbar(&mut self, command: String) {
