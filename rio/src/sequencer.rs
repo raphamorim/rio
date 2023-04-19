@@ -181,9 +181,7 @@ impl Sequencer {
                         return;
                     }
 
-                    screen
-                        .resize(new_size)
-                        .render();
+                    screen.resize(new_size).render();
                 }
 
                 Event::WindowEvent {
