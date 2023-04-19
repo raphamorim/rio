@@ -8,21 +8,6 @@ use wgpu::Color;
 pub struct Quad {
     /// The position of the [`Quad`].
     pub position: [f32; 2],
-
-    /// The size of the [`Quad`].
-    pub size: [f32; 2],
-
-    /// The color of the [`Quad`], in __linear RGB__.
-    pub color: [f32; 4],
-
-    /// The border color of the [`Quad`], in __linear RGB__.
-    pub border_color: [f32; 4],
-
-    /// The border radius of the [`Quad`].
-    pub border_radius: [f32; 4],
-
-    /// The border width of the [`Quad`].
-    pub border_width: f32,
 }
 
 #[allow(unsafe_code)]
@@ -134,7 +119,6 @@ impl Scene {
             );
 
             instance_buffer.copy_from_slice(instance_bytes);
-{
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("quad render pass"),
@@ -150,10 +134,10 @@ impl Scene {
                 });
 
             render_pass.set_pipeline(&self.pipeline);
-            render_pass
-                .set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.set_vertex_buffer(0, self.vertices.slice(..));
             render_pass.set_vertex_buffer(1, self.instances.slice(..));
+            render_pass
+                .set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
 
             // render_pass.set_scissor_rect(
             //     bounds.x,
@@ -163,9 +147,8 @@ impl Scene {
             //     bounds.height,
             // );
 
-            render_pass.draw_indexed(0..QUAD_INDICES.len() as u32, 0, 0..amount as u32);
-            // render_pass.draw(0..3, 0..1);
-        }
+            render_pass.draw_indexed(0..3 as u32, 0, 0..amount as u32);
+            render_pass.draw(0..3, 0..1);
 
             i += MAX_INSTANCES;
         }
@@ -218,11 +201,6 @@ fn build_pipeline(
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array!(
                         1 => Float32x2,
-                        2 => Float32x2,
-                        3 => Float32x4,
-                        4 => Float32x4,
-                        5 => Float32x4,
-                        6 => Float32,
                     ),
                 },
             ],
