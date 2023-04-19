@@ -24,7 +24,6 @@ struct Context {
     staging_belt: wgpu::util::StagingBelt,
     renderer: Renderer,
     format: wgpu::TextureFormat,
-    alpha_mode: wgpu::CompositeAlphaMode,
 }
 
 impl Context {
@@ -38,8 +37,6 @@ impl Context {
         let caps = surface.get_capabilities(&adapter);
         let formats = caps.formats;
         let format = *formats.last().expect("No supported formats for surface");
-        let alpha_modes = caps.alpha_modes;
-        let alpha_mode = alpha_modes[0];
 
         let (device, queue) = (async {
             adapter
@@ -57,7 +54,7 @@ impl Context {
         })
         .await;
 
-        let staging_belt = wgpu::util::StagingBelt::new(2048);
+        let staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
 
         surface.configure(
             &device,
@@ -67,7 +64,7 @@ impl Context {
                 width: size.width,
                 height: size.height,
                 view_formats: vec![],
-                alpha_mode,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 present_mode: wgpu::PresentMode::AutoVsync,
                 // present_mode: wgpu::PresentMode::Fifo,
             },
@@ -83,7 +80,6 @@ impl Context {
             staging_belt,
             renderer,
             format,
-            alpha_mode,
         }
     }
 
@@ -96,7 +92,7 @@ impl Context {
                 width: size.width,
                 height: size.height,
                 view_formats: vec![],
-                alpha_mode: self.alpha_mode,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
@@ -220,13 +216,6 @@ impl Screen {
             })],
             depth_stencil_attachment: None,
         });
-        self.ctx.renderer.draw_queued(
-            &self.ctx.device,
-            &mut self.ctx.staging_belt,
-            &mut encoder,
-            view,
-            (self.layout.width_u32, self.layout.height_u32),
-        );
         self.ctx.staging_belt.finish();
         self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();
@@ -235,44 +224,49 @@ impl Screen {
 
     #[inline]
     pub fn render(&mut self) {
-        let mut encoder =
+        match self.ctx.surface.get_current_texture() {
+            Ok(frame) => {
+            let mut encoder =
+                self.ctx
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+            let view = &frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+
+            let mut terminal = self.terminal.lock();
+            let visible_rows = terminal.visible_rows();
+            let cursor_position = terminal.cursor();
+            drop(terminal);
+
             self.ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Redraw"),
-                });
+                .renderer
+                .set_cursor(cursor_position)
+                .term(visible_rows, self.layout.styles.term);
 
-        let frame = self
-            .ctx
-            .surface
-            .get_current_texture()
-            .expect("Get next frame");
-        let view = &frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            self.ctx.renderer.draw_queued(
+                &self.ctx.device,
+                &mut self.ctx.staging_belt,
+                &mut encoder,
+                view,
+                (self.layout.width_u32, self.layout.height_u32),
+            );
 
-        let mut terminal = self.terminal.lock();
-        let visible_rows = terminal.visible_rows();
-        let cursor_position = terminal.cursor();
-        drop(terminal);
-
-        self.ctx
-            .renderer
-            .set_cursor(cursor_position)
-            .term(visible_rows, self.layout.styles.term);
-
-        self.ctx.renderer.draw_queued(
-            &self.ctx.device,
-            &mut self.ctx.staging_belt,
-            &mut encoder,
-            view,
-            (self.layout.width_u32, self.layout.height_u32),
-        );
-
-        self.ctx.staging_belt.finish();
-        self.ctx.queue.submit(Some(encoder.finish()));
-        frame.present();
-        self.ctx.staging_belt.recall();
+            self.ctx.staging_belt.finish();
+            self.ctx.queue.submit(Some(encoder.finish()));
+            frame.present();
+            self.ctx.staging_belt.recall();
+        },
+        Err(error) => match error {
+            wgpu::SurfaceError::OutOfMemory => {
+                panic!("Swapchain error: {error}. Rendering cannot continue.")
+            }
+            _ => {
+                // Try rendering again next frame.
+            }
+        }
+    }
     }
 
     #[inline]
