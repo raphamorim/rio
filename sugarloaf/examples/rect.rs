@@ -8,8 +8,8 @@ use winit::{
     window::WindowBuilder,
 };
 
-use renderer::renderer::{ Renderer, Renderable, RendererTarget };
 use renderer::components::rect::Rect;
+use renderer::renderer::{Renderable, Renderer, RendererTarget};
 
 #[tokio::main]
 async fn main() {
@@ -22,7 +22,12 @@ async fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut renderer = Renderer::new(RendererTarget::Desktop, &window, wgpu::PowerPreference::HighPerformance).await;
+    let mut renderer = Renderer::new(
+        RendererTarget::Desktop,
+        &window,
+        wgpu::PowerPreference::HighPerformance,
+    )
+    .await;
     let mut rect = Rect::init(renderer.get_context());
     renderer.add_component(&mut rect);
 
@@ -33,7 +38,7 @@ async fn main() {
             Event::Resumed => {
                 // renderer.add_component(&mut rect);
                 // window.request_redraw();
-            },
+            }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::KeyboardInput {
@@ -45,8 +50,8 @@ async fn main() {
                         },
                     ..
                 } => {
-                    // 
-                },
+                    //
+                }
                 _ => (),
             },
             Event::RedrawRequested { .. } => {

@@ -6,7 +6,7 @@ pub struct Context {
     pub staging_belt: wgpu::util::StagingBelt,
     pub format: wgpu::TextureFormat,
     pub size: winit::dpi::PhysicalSize<u32>,
-    pub scale: f32
+    pub scale: f32,
 }
 
 impl Context {
