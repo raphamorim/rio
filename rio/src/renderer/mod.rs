@@ -1,14 +1,14 @@
 // mod frames;
 mod quad;
+mod scene;
 mod shared;
 mod text;
-mod scene;
 
-use crate::renderer::scene::Scene;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
 use crate::layout::Style;
+use crate::renderer::scene::Scene;
 use colors::{
     term::{List, TermColors},
     AnsiColor, NamedColor,
@@ -239,29 +239,67 @@ impl Renderer {
         view: &wgpu::TextureView,
         size: (u32, u32),
     ) {
-
         let custom_quad = [
-    
-
-            scene::Quad { position: [-0.0868241, 0.49240386] }, // A
-            scene::Quad { position: [-0.49513406, 0.06958647] }, // B
-            scene::Quad { position: [-0.21918549, -0.44939706] }, // C
-            scene::Quad { position: [0.35966998, -0.3473291] }, // D
-            scene::Quad { position: [0.44147372, 0.2347359] }, // E
+            scene::Quad {
+                position: [0.0, 0.0],
+            },
+            scene::Quad {
+                position: [0.3, 0.3],
+            },
+            scene::Quad {
+                position: [1.3, 1.3],
+            },
+            scene::Quad {
+                position: [-1.3, -1.3],
+            },
         ];
 
-            // Draw the scene
-            self.scene.draw(
-            device,
-            view,
-            &custom_quad,
-            encoder,
-            staging_belt,
-            );
+        // Draw the scene
+        self.scene
+            .draw(device, view, &custom_quad, encoder, staging_belt);
 
         let _ =
             self.brush
                 .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
+
+        let custom_quad = quad::layer::Quad {
+            color: self.config.colors.cursor,
+            border_color: self.config.colors.cursor,
+            position: [0.0, 0.0],
+            size: [100.0, 100.0],
+            border_radius: [1.0, 1.0, 1.0, 1.0],
+            border_width: 1.2,
+        };
+
+        let custom_quad_2 = quad::layer::Quad {
+            color: [1., 1., 1., 1.],
+            border_color: [1., 1., 1., 1.],
+            position: [100.0, 10.0],
+            size: [400.0, 100.0],
+            border_radius: [1.0, 1.0, 1.0, 1.0],
+            border_width: 1.2,
+        };
+        let custom_quad_3 = quad::layer::Quad {
+            color: self.config.colors.cursor,
+            border_color: self.config.colors.cursor,
+            position: [300.0, 10.0],
+            size: [400.0, 100.0],
+            border_radius: [1.0, 1.0, 1.0, 1.0],
+            border_width: 1.2,
+        };
+
+        let transformation =
+            quad::transformation::Transformation::identity();
+
+        let _ = self.quad.draw(
+            device,
+            staging_belt,
+            encoder,
+            &[custom_quad, custom_quad_2, custom_quad_3],
+            transformation,
+            2.0,
+            view,
+        );
     }
 
     // pub fn topbar(&mut self, command: String) {

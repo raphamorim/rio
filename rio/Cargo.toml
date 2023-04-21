@@ -11,8 +11,8 @@ description = "Rio termina app"
 [dependencies]
 wgpu = { workspace = true }
 tokio = { version = "1.26.0", features = ["full"] }
-winit = "0.28.3"
-libc = "0.2.140"
+winit = { workspace = true }
+libc = "0.2.141"
 image = { version = "0.24.5", default-features = false, features = ["ico"] }
 glam = "0.21.3"
 bytemuck = { workspace = true }
