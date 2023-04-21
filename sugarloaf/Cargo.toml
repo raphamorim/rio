@@ -1,0 +1,18 @@
+[package]
+name = "sugarloaf"
+description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
+version = "0.0.1"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+documentation = "https://docs.rs/crate/teletypewriter/latest"
+authors = { workspace = true }
+
+[dependencies]
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+winit = { workspace = true }
+glyph_brush = "0.7.7"
+
+[dev-dependencies]
+tokio = { workspace = true }
