@@ -1,4 +1,2 @@
-#format_code_in_doc_comments = true
-#format_strings = true
-#wrap_comments = true
 max_width = 90
+newline_style = "Unix"

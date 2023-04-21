@@ -15,9 +15,7 @@ pub trait Renderable: 'static + Sized {
         // These downlevel limits will allow the code to run on all possible hardware
         wgpu::Limits::downlevel_webgl2_defaults()
     }
-    fn init(
-        context: &Context,
-    ) -> Self;
+    fn init(context: &Context) -> Self;
     fn resize(
         &mut self,
         config: &wgpu::SurfaceConfiguration,
@@ -31,39 +29,40 @@ pub trait Renderable: 'static + Sized {
         device: &wgpu::Device,
         view: &wgpu::TextureView,
         queue: &wgpu::Queue,
-        staging_belt: &mut wgpu::util::StagingBelt
+        staging_belt: &mut wgpu::util::StagingBelt,
     );
 }
 
-
 pub enum RendererTarget {
     Desktop,
-    Web
+    Web,
 }
 
 pub struct Renderer<'a, R: Renderable> {
     pub ctx: Context,
-    queue: Vec<&'a mut R>
+    queue: Vec<&'a mut R>,
 }
 
 impl<'a, R: Renderable> Renderer<'a, R> {
     pub async fn new(
         target: RendererTarget,
         winit_window: &winit::window::Window,
-        power_preference: wgpu::PowerPreference) -> Renderer<R> {
+        power_preference: wgpu::PowerPreference,
+    ) -> Renderer<R> {
         let ctx = match target {
             RendererTarget::Desktop => Context::new(winit_window, power_preference).await,
-            RendererTarget::Web => { todo!("web not implemented");}
+            RendererTarget::Web => {
+                todo!("web not implemented");
+            }
         };
 
-        Renderer {
-            ctx,
-            queue: vec![]
-        }
+        Renderer { ctx, queue: vec![] }
     }
 
     pub fn add_component(&mut self, renderable_item: &'a mut R)
-    where R: Renderable {
+    where
+        R: Renderable,
+    {
         self.queue.push(renderable_item);
     }
 
@@ -86,10 +85,16 @@ impl<'a, R: Renderable> Renderer<'a, R> {
 
                 if self.queue.len() > 0 {
                     for item in self.queue.iter_mut() {
-                        item.queue_render(&mut encoder, &self.ctx.device, view, &mut self.ctx.queue, &mut self.ctx.staging_belt);
+                        item.queue_render(
+                            &mut encoder,
+                            &self.ctx.device,
+                            view,
+                            &mut self.ctx.queue,
+                            &mut self.ctx.staging_belt,
+                        );
                     }
                 }
-                
+
                 self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

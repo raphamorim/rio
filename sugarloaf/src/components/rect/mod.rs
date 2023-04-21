@@ -1,5 +1,5 @@
-use crate::Renderable;
 use crate::context::Context;
+use crate::Renderable;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
@@ -62,9 +62,7 @@ const IDENTITY_MATRIX: [f32; 16] = [
 ];
 
 impl Renderable for Rect {
-    fn init<'a>(
-        context: &'a Context,
-    ) -> Self {
+    fn init<'a>(context: &'a Context) -> Self {
         let width = &context.size.width;
         let height = &context.size.height;
         // let_adapter: &wgpu::Adapter,
