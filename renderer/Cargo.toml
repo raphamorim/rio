@@ -1,0 +1,14 @@
+[package]
+name = "renderer"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+
+[dependencies]
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+glam = "0.23.0"
+winit = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

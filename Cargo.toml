@@ -3,6 +3,7 @@ members = [
   "teletypewriter",
   "colors",
   "config",
+  "renderer",
   "rio"
 ]
 resolver = "2"
@@ -16,7 +17,9 @@ repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 
 [workspace.dependencies]
+tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.15.1"
+winit = "0.28.3"
 serde = { version = "1.0.158", features = ["derive"] }
 bytemuck = { version = "1.9", features = [ "derive" ] }
 # teletypewriter = { version = "2.0.0" }

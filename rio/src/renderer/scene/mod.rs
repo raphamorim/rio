@@ -1,7 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use std::mem;
 use wgpu::util::DeviceExt;
-use wgpu::Color;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
@@ -15,7 +14,6 @@ unsafe impl bytemuck::Zeroable for Quad {}
 
 #[allow(unsafe_code)]
 unsafe impl bytemuck::Pod for Quad {}
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -50,32 +48,34 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new(
-        device: &wgpu::Device,
-        texture_format: wgpu::TextureFormat,
-    ) -> Scene {
+    pub fn new(device: &wgpu::Device, texture_format: wgpu::TextureFormat) -> Scene {
         let pipeline = build_pipeline(device, texture_format);
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("quad vertex buffer"),
+            label: Some("scene vertex buffer"),
             contents: bytemuck::cast_slice(&QUAD_VERTS),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("quad index buffer"),
+            label: Some("scene index buffer"),
             contents: bytemuck::cast_slice(&QUAD_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("quad instance buffer"),
+            label: Some("scene instance buffer"),
             size: mem::size_of::<Quad>() as u64 * MAX_INSTANCES as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        Scene { pipeline, instances, indices, vertices }
+        Scene {
+            pipeline,
+            instances,
+            indices,
+            vertices,
+        }
     }
 
     // pub fn clear<'a>(
@@ -97,7 +97,14 @@ impl Scene {
     //     })
     // }
 
-    pub fn draw<'a>(&'a self, device: &wgpu::Device, view: &wgpu::TextureView, instances: &[Quad], encoder: &mut wgpu::CommandEncoder, staging_belt: &mut wgpu::util::StagingBelt) {
+    pub fn draw<'a>(
+        &'a self,
+        device: &wgpu::Device,
+        view: &wgpu::TextureView,
+        instances: &[Quad],
+        encoder: &mut wgpu::CommandEncoder,
+        staging_belt: &mut wgpu::util::StagingBelt,
+    ) {
         // render_pass.set_pipeline(&self.pipeline);
         // render_pass.draw(0..3, 0..1);
 
@@ -119,9 +126,12 @@ impl Scene {
             );
 
             instance_buffer.copy_from_slice(instance_bytes);
+
+            println!("{:?}", self.instances);
+
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("quad render pass"),
+                    label: Some("scene render pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
@@ -133,11 +143,12 @@ impl Scene {
                     depth_stencil_attachment: None,
                 });
 
+            render_pass.push_debug_group("Prepare data for draw.");
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_vertex_buffer(0, self.vertices.slice(..));
-            render_pass.set_vertex_buffer(1, self.instances.slice(..));
             render_pass
                 .set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, self.vertices.slice(..));
+            render_pass.set_vertex_buffer(1, self.instances.slice(..));
 
             // render_pass.set_scissor_rect(
             //     bounds.x,
@@ -147,8 +158,10 @@ impl Scene {
             //     bounds.height,
             // );
 
-            render_pass.draw_indexed(0..3 as u32, 0, 0..amount as u32);
-            render_pass.draw(0..3, 0..1);
+            // println!("{:?}", i);
+            render_pass.pop_debug_group();
+            render_pass.insert_debug_marker("Draw!");
+            render_pass.draw_indexed(0..QUAD_INDICES.len() as u32, 0, 0..amount as u32);
 
             i += MAX_INSTANCES;
         }
@@ -201,30 +214,31 @@ fn build_pipeline(
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array!(
                         1 => Float32x2,
+                        2 => Float32x2,
                     ),
                 },
             ],
         },
         fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: texture_format,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                        }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: texture_format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
                 }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             front_face: wgpu::FrontFace::Ccw,

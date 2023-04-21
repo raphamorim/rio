@@ -66,7 +66,6 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 present_mode: wgpu::PresentMode::AutoVsync,
-                // present_mode: wgpu::PresentMode::Fifo,
             },
         );
 
@@ -127,7 +126,8 @@ impl Screen {
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
+            // dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
+            ..Default::default()
         });
 
         let surface: wgpu::Surface =
@@ -226,47 +226,46 @@ impl Screen {
     pub fn render(&mut self) {
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
-            let mut encoder =
+                let mut encoder = self.ctx.device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor { label: None },
+                );
+
+                let view = &frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
+                let mut terminal = self.terminal.lock();
+                let visible_rows = terminal.visible_rows();
+                let cursor_position = terminal.cursor();
+                drop(terminal);
+
                 self.ctx
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                    .renderer
+                    .set_cursor(cursor_position)
+                    .term(visible_rows, self.layout.styles.term);
 
-            let view = &frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+                self.ctx.renderer.draw_queued(
+                    &self.ctx.device,
+                    &mut self.ctx.staging_belt,
+                    &mut encoder,
+                    view,
+                    (self.layout.width_u32, self.layout.height_u32),
+                );
 
-            let mut terminal = self.terminal.lock();
-            let visible_rows = terminal.visible_rows();
-            let cursor_position = terminal.cursor();
-            drop(terminal);
-
-            self.ctx
-                .renderer
-                .set_cursor(cursor_position)
-                .term(visible_rows, self.layout.styles.term);
-
-            self.ctx.renderer.draw_queued(
-                &self.ctx.device,
-                &mut self.ctx.staging_belt,
-                &mut encoder,
-                view,
-                (self.layout.width_u32, self.layout.height_u32),
-            );
-
-            self.ctx.staging_belt.finish();
-            self.ctx.queue.submit(Some(encoder.finish()));
-            frame.present();
-            self.ctx.staging_belt.recall();
-        },
-        Err(error) => match error {
-            wgpu::SurfaceError::OutOfMemory => {
-                panic!("Swapchain error: {error}. Rendering cannot continue.")
+                self.ctx.staging_belt.finish();
+                self.ctx.queue.submit(Some(encoder.finish()));
+                frame.present();
+                self.ctx.staging_belt.recall();
             }
-            _ => {
-                // Try rendering again next frame.
-            }
+            Err(error) => match error {
+                wgpu::SurfaceError::OutOfMemory => {
+                    panic!("Swapchain error: {error}. Rendering cannot continue.")
+                }
+                _ => {
+                    // Wait for rendering next frame.
+                }
+            },
         }
-    }
     }
 
     #[inline]
