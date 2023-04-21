@@ -1,4 +1,5 @@
 pub mod components;
 pub mod context;
 pub mod renderer;
-pub mod renderable;
+
+pub use renderer::{ Renderer, Renderable, RendererTarget };

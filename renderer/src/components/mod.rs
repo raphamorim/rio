@@ -1,1 +1,2 @@
-pub mod vertical_rect;
+pub mod rect;
+pub mod text;
