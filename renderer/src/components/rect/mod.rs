@@ -1,7 +1,7 @@
-use crate::renderable::Renderable;
+use crate::Renderable;
 use crate::context::Context;
 use bytemuck::{Pod, Zeroable};
-use std::{borrow::Cow, f32::consts, future::Future, mem, pin::Pin, task};
+use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
 const MAX_INSTANCES: usize = 10_000;
@@ -38,15 +38,15 @@ unsafe impl bytemuck::Pod for Quad {}
 fn create_vertices() -> Vec<Vertex> {
     let vertex_data = [
         vertex([0.0, 0.0]),
-        vertex([1.0, 0.0]),
-        vertex([1.0, 1.0]),
-        vertex([0.0, 1.0]),
+        vertex([0.025, 0.0]),
+        vertex([0.025, 0.05]),
+        vertex([0.0, 0.05]),
     ];
 
     vertex_data.to_vec()
 }
 
-pub struct VerticalRect {
+pub struct Rect {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     instances: wgpu::Buffer,
@@ -57,32 +57,11 @@ pub struct VerticalRect {
     current_transform: [f32; 16],
 }
 
-impl VerticalRect {
-    fn generate_matrix(width: f32, height: f32) -> glam::Mat4 {
-        // let aspect_ratio = width / height;
-        // let projection = glam::Mat4::perspective_rh(consts::FRAC_PI_4, aspect_ratio, 1.0, 10.0);
-        // let view = glam::Mat4::look_at_rh(
-        //     glam::Vec3::new(1.5f32, -4.0, 3.0),
-        //     glam::Vec3::ZERO,
-        //     glam::Vec3::Z,
-        // );
-        // projection * view
-
-        glam::Mat4::IDENTITY
-
-        // glam::Mat4::orthographic_rh_gl(
-        //     0.0, (width as f32) * 2.0,
-        //     (height as f32) * 2.0, 0.0,
-        //     -1.0, 1.0
-        // )
-    }
-}
-
 const IDENTITY_MATRIX: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
-impl Renderable for VerticalRect {
+impl Renderable for Rect {
     fn init<'a>(
         context: &'a Context,
     ) -> Self {
@@ -138,11 +117,11 @@ impl Renderable for VerticalRect {
             });
 
         // Create other resources
-        let mx_total = Self::generate_matrix(*width as f32, *height as f32);
-        let mx_ref: &[f32; 16] = mx_total.as_ref();
+        // let mx_total = Self::generate_matrix(*width as f32, *height as f32);
+        // let mx_ref: &[f32; 16] = mx_total.as_ref();
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&mx_ref.as_ref()),
+            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -162,7 +141,7 @@ impl Renderable for VerticalRect {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("vertical-rect.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rect.wgsl"))),
         });
 
         let vertex_buffers = [
@@ -216,7 +195,7 @@ impl Renderable for VerticalRect {
         });
 
         // Done
-        VerticalRect {
+        Rect {
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),
@@ -238,9 +217,7 @@ impl Renderable for VerticalRect {
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        let mx_total = Self::generate_matrix(config.width as f32, config.height as f32);
-        let mx_ref: &[f32; 16] = mx_total.as_ref();
-        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(mx_ref));
+        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     }
 
     // fn draw(&mut self,
@@ -261,8 +238,6 @@ impl Renderable for VerticalRect {
         _staging_belt: &mut wgpu::util::StagingBelt,
     ) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
-        // let mut encoder = device
-        //     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         // if transform != pipeline.current_transform {
         //     let mut transform_view = staging_belt.write_buffer(
@@ -287,13 +262,13 @@ impl Renderable for VerticalRect {
             Quad {
                 position: [0.6, -0.3],
                 color: [0.0, 1.0, 0.0, 1.0],
-                size: [0.001, 0.001],
+                size: [0.0, 0.0],
             },
-            // Quad {
-            //     position: [-1.3, -1.3],
-            //     color: [0.0, 1.0, 1.0, 1.0],
-            //     size: [0.10, 0.10],
-            // },
+            Quad {
+                position: [1.3, -1.3],
+                color: [0.0, 1.0, 1.0, 1.0],
+                size: [0.10, 0.10],
+            },
         ];
 
         let mut i = 0;

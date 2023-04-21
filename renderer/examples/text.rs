@@ -1,7 +1,6 @@
 extern crate tokio;
 
 use winit::platform::run_return::EventLoopExtRunReturn;
-use renderer::renderable::Renderable;
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -9,23 +8,24 @@ use winit::{
     window::WindowBuilder,
 };
 
-use renderer::renderer::{ Renderer, RendererTarget };
-use renderer::components::vertical_rect::VerticalRect;
+use renderer::{ Renderer, Renderable, RendererTarget };
+use renderer::components::rect::Rect;
 
 #[tokio::main]
 async fn main() {
     let mut event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
-        .with_title("VerticalRect example")
+        .with_title("Text example")
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
 
     let mut renderer = Renderer::new(RendererTarget::Desktop, &window, wgpu::PowerPreference::HighPerformance).await;
-    let mut vertical_rect = VerticalRect::init(renderer.get_context());
-    renderer.add_component(&mut vertical_rect);
+    let mut rect = Rect::init(renderer.get_context());
+    // let mut rect = Text::init(renderer.get_context());
+    renderer.add_component(&mut rect);
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();

@@ -1,9 +1,15 @@
-# 
+# Rio Renderer
 
 ## Examples
 
-### Desktop vertical-rect
+### Desktop rect
 
 ```bash
-cargo run --example vertical-rect
+cargo run --example rect
+```
+
+### Desktop text
+
+```bash
+cargo run --example text
 ```
