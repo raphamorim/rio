@@ -1,9 +1,9 @@
 [workspace]
 members = [
   "teletypewriter",
+  "sugarloaf",
   "colors",
   "config",
-  "renderer",
   "rio"
 ]
 resolver = "2"
