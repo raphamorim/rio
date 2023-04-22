@@ -115,9 +115,6 @@ impl Renderable for Rect {
                 push_constant_ranges: &[],
             });
 
-        // Create other resources
-        // let mx_total = Self::generate_matrix(*width as f32, *height as f32);
-        // let mx_ref: &[f32; 16] = mx_total.as_ref();
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
             contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
@@ -219,25 +216,16 @@ impl Renderable for Rect {
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     }
 
-    // fn draw(&mut self,
-    //     device: &wgpu::Device,
-    //     view: &wgpu::TextureView,
-    //     instances: &[Quad],
-    //     encoder: &mut wgpu::CommandEncoder,
-    //     staging_belt: &mut wgpu::util::StagingBelt) {
-
-    // }
-
-    fn queue_render(
+    fn render(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
         view: &wgpu::TextureView,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
     ) {
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        // device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         if transform != self.current_transform {
             let mut transform_view = staging_belt.write_buffer(
@@ -257,7 +245,7 @@ impl Renderable for Rect {
             Quad {
                 position: [0.0, 0.0],
                 color: [1.0, 1.0, 0.0, 1.0],
-                size: [1.0, 1.0],
+                size: [0.0, 0.0],
             },
             Quad {
                 position: [0.6, -0.3],
@@ -280,17 +268,16 @@ impl Renderable for Rect {
 
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
-            queue.write_buffer(&self.instances, 0, instance_bytes);
+            // queue.write_buffer(&self.instances, 0, instance_bytes);
+            let mut instance_buffer = staging_belt.write_buffer(
+                encoder,
+                &self.instances,
+                0,
+                wgpu::BufferSize::new(instance_bytes.len() as u64).unwrap(),
+                device,
+            );
 
-            // let mut instance_buffer = staging_belt.write_buffer(
-            //     encoder,
-            //     &self.instances,
-            //     0,
-            //     wgpu::BufferSize::new(instance_bytes.len() as u64).unwrap(),
-            //     device,
-            // );
-
-            // instance_buffer.copy_from_slice(instance_bytes);
+            instance_buffer.copy_from_slice(instance_bytes);
 
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

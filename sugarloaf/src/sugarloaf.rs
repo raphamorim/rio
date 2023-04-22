@@ -18,24 +18,25 @@ pub enum RendererTarget {
 }
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
-    [
-        2.0 / width as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        -2.0 / height as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        -1.0,
-        1.0,
-        0.0,
-        1.0,
-    ]
+    // [
+    //     2.0 / width as f32,
+    //     0.0,
+    //     0.0,
+    //     0.0,
+    //     0.0,
+    //     -2.0 / height as f32,
+    //     0.0,
+    //     0.0,
+    //     0.0,
+    //     0.0,
+    //     1.0,
+    //     0.0,
+    //     -1.0,
+    //     1.0,
+    //     0.0,
+    //     1.0,
+    // ]
+    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,]
 }
 
 pub trait Renderable: 'static + Sized {
@@ -61,7 +62,7 @@ pub trait Renderable: 'static + Sized {
         queue: &wgpu::Queue,
     );
     fn update(&mut self, event: winit::event::WindowEvent);
-    fn queue_render(
+    fn render(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
@@ -278,7 +279,7 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
 
                 if !self.queue.is_empty() {
                     for item in self.queue.iter_mut() {
-                        item.queue_render(
+                        item.render(
                             &mut encoder,
                             &self.ctx.device,
                             view,
