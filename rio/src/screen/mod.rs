@@ -1,3 +1,4 @@
+mod state;
 mod ansi;
 mod messenger;
 pub mod window;
@@ -8,101 +9,22 @@ use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
-use crate::renderer::Renderer;
 use log::{info, warn};
 use messenger::Messenger;
+use state::State;
 use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
 use teletypewriter::create_pty;
-
-struct Context {
-    device: wgpu::Device,
-    surface: wgpu::Surface,
-    queue: wgpu::Queue,
-    staging_belt: wgpu::util::StagingBelt,
-    renderer: Renderer,
-    format: wgpu::TextureFormat,
-}
-
-impl Context {
-    pub async fn new(
-        _scale: f32,
-        adapter: wgpu::Adapter,
-        surface: wgpu::Surface,
-        config: &Rc<config::Config>,
-        size: winit::dpi::PhysicalSize<u32>,
-    ) -> Context {
-        let caps = surface.get_capabilities(&adapter);
-        let formats = caps.formats;
-        let format = *formats.last().expect("No supported formats for surface");
-
-        let (device, queue) = (async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
-                .await
-                .expect("Request device")
-        })
-        .await;
-
-        let (device_copy, _queue_copy) = (async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
-                .await
-                .expect("Request device")
-        })
-        .await;
-
-        let staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format,
-                width: size.width,
-                height: size.height,
-                view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-
-        let renderer =
-            Renderer::new(device_copy, format, config).expect("Create renderer");
-
-        Context {
-            device,
-            queue,
-            surface,
-            staging_belt,
-            renderer,
-            format,
-        }
-    }
-
-    pub fn update_size(&mut self, size: winit::dpi::PhysicalSize<u32>) {
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.format,
-                width: size.width,
-                height: size.height,
-                view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-    }
-}
+use sugarloaf::{Sugarloaf, RendererTarget};
 
 pub struct Screen {
-    ctx: Context,
+    sugarloaf: Sugarloaf,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
     pub messenger: Messenger,
     layout: Layout,
+    state: State,
 }
 
 impl Screen {
@@ -126,7 +48,7 @@ impl Screen {
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            // dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
+            dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
             ..Default::default()
         });
 
@@ -137,18 +59,14 @@ impl Screen {
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .expect("Request adapter");
+        let sugarloaf = Sugarloaf::new(
+            RendererTarget::Desktop,
+            winit_window,
+            power_preference,
+        )
+        .await?;
 
-        let scale = scale as f32;
-
-        let ctx = Context::new(scale, adapter, surface, config, size).await;
+        let state = State::new(config);
 
         let event_proxy_clone = event_proxy.clone();
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
@@ -160,10 +78,11 @@ impl Screen {
         let messenger = Messenger::new(channel);
 
         Ok(Screen {
-            ctx,
+            sugarloaf,
             terminal,
             layout,
             messenger,
+            state,
         })
     }
 
@@ -188,84 +107,69 @@ impl Screen {
     }
 
     #[inline]
-    pub fn skeleton(&mut self, color: wgpu::Color) {
-        // TODO: WGPU caching
-        let mut encoder =
-            self.ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Skeleton"),
-                });
-        let frame = self
-            .ctx
-            .surface
-            .get_current_texture()
-            .expect("Get next frame");
-        let view = &frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render -> Clear frame"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
-        self.ctx.staging_belt.finish();
-        self.ctx.queue.submit(Some(encoder.finish()));
-        frame.present();
-        self.ctx.staging_belt.recall();
+    pub fn skeleton(&mut self, color: colors::ColorWGPU) {
+        self.sugarloaf.skeleton(color);
     }
 
     #[inline]
     pub fn render(&mut self) {
-        match self.ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
+        let mut terminal = self.terminal.lock();
+        let visible_rows = terminal.visible_rows();
+        let cursor_position = terminal.cursor();
+        drop(terminal);
 
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+        self.state.update(visible_rows, cursor_position, &mut self.sugarloaf, self.layout.styles.term);
 
-                let mut terminal = self.terminal.lock();
-                let visible_rows = terminal.visible_rows();
-                let cursor_position = terminal.cursor();
-                drop(terminal);
+        self.sugarloaf.render();
 
-                self.ctx
-                    .renderer
-                    .set_cursor(cursor_position)
-                    .term(visible_rows, self.layout.styles.term);
+        // self.sugarloaf.set_cursor(cursor_position, false);
 
-                self.ctx.renderer.draw_queued(
-                    &self.ctx.device,
-                    &mut self.ctx.staging_belt,
-                    &mut encoder,
-                    view,
-                    (self.layout.width_u32, self.layout.height_u32),
-                );
+        //     let mut line_height: f32 = 0.0;
+        // let cursor_row = self.cursor.position.1;
+        // for (i, row) in rows.iter().enumerate() {
+        //     self.render_row(row, style, line_height, cursor_row == i);
+        //     line_height += style.text_scale;
+        // }
 
-                self.ctx.staging_belt.finish();
-                self.ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
-                self.ctx.staging_belt.recall();
-            }
-            Err(error) => match error {
-                wgpu::SurfaceError::OutOfMemory => {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
-                _ => {
-                    // Wait for rendering next frame.
-                }
-            },
-        }
+        // let mut row_text: Vec<OwnedText> = vec![];
+        // let columns: usize = row.len();
+        // for column in 0..columns {
+        //     let square = &row.inner[column];
+        //     let sugar = self.create_sugar(square);
+
+        //     // self.sugarloaf.add(sugar);
+
+        //     if has_cursor && column == self.cursor.position.0 {
+        //         self.sugarloaf.sugar((self.cursor.content, self.named_colors.cursor, self.named_colors.cursor));
+        //     } else {
+        //         self.sugarloaf.sugar(self.create_sugar(square));
+        //     }
+
+        //     // Render last column and break row
+        //     if column == (columns - 1) {
+        //         let section = &OwnedSection {
+        //             screen_position: (
+        //                 style.screen_position.0,
+        //                 style.screen_position.1 + line_height,
+        //             ),
+        //             bounds: style.bounds,
+        //             text: row_text,
+        //             layout: glyph_brush::Layout::default_single_line()
+        //                 .v_align(glyph_brush::VerticalAlign::Bottom),
+        //         };
+
+        //         // println!("{:?}", self.brush.glyph_bounds(section));
+
+        //         self.brush.queue(section);
+
+        //         break;
+        //     }
+        // }
+
+        // self.sugarloaf
+        //     .set_cursor(cursor_position)
+        //     .term(visible_rows, self.layout.styles.term)
+        //     .render();
     }
 
     #[inline]
@@ -331,10 +235,10 @@ impl Screen {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
-        self.ctx.update_size(new_size);
-        self.layout
-            .set_size(new_size.width, new_size.height)
-            .update();
+        // self.ctx.update_size(new_size);
+        // self.layout
+        //     .set_size(new_size.width, new_size.height)
+        //     .update();
         let (c, l) = self.layout.compute();
 
         let mut terminal = self.terminal.lock();
@@ -355,7 +259,8 @@ impl Screen {
         new_scale: f32,
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
-        self.ctx.update_size(new_size);
+        // self.sugarloaf.update_size(new_size);
+        // self.ctx.update_size(new_size);
         self.layout
             .set_scale(new_scale)
             .set_size(new_size.width, new_size.height)

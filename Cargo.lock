@@ -1476,17 +1476,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1382d1f0a252c4bf97dc20d979a2fdd05b024acd7c2ed0f7595d7817666a157"
 
 [[package]]
-name = "renderer"
-version = "0.0.1"
-dependencies = [
- "bytemuck",
- "glyph_brush",
- "tokio",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "rio"
 version = "0.0.1"
 dependencies = [
@@ -1507,6 +1496,7 @@ dependencies = [
  "mio-extras",
  "parking_lot",
  "serde",
+ "sugarloaf",
  "teletypewriter",
  "tokio",
  "unicode-width",
@@ -1686,6 +1676,19 @@ name = "strict-num"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df65f20698aeed245efdde3628a6b559ea1239bbb871af1b6e3b58c413b2bd1"
+
+[[package]]
+name = "sugarloaf"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "colors",
+ "config",
+ "glyph_brush",
+ "tokio",
+ "wgpu",
+ "winit",
+]
 
 [[package]]
 name = "syn"

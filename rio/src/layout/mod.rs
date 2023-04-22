@@ -3,6 +3,7 @@ mod mouse;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
 use mouse::{AccumulatedScroll, Mouse};
+use sugarloaf::SugarloafStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delta<T: Default> {
@@ -24,20 +25,13 @@ pub struct Layout {
     pub columns: usize,
     pub rows: usize,
     padding: Delta<f32>,
-    pub styles: LayoutStyles,
-}
-
-#[derive(Default, Copy, Clone)]
-pub struct Style {
-    pub screen_position: (f32, f32),
-    pub bounds: (f32, f32),
-    pub text_scale: f32,
+    pub styles: Styles,
 }
 
 #[derive(Default)]
-pub struct LayoutStyles {
-    pub term: Style,
-    pub tabs_active: Style,
+pub struct Styles {
+    pub term: SugarloafStyle,
+    pub tabs_active: SugarloafStyle,
 }
 
 impl Dimensions for Layout {
@@ -58,8 +52,8 @@ impl Dimensions for Layout {
 }
 
 fn update_styles(layout: &mut Layout) {
-    let new_styles = LayoutStyles {
-        term: Style {
+    let new_styles = Styles {
+        term: SugarloafStyle {
             screen_position: (
                 layout.padding.x * layout.scale_factor,
                 (layout.padding.y * layout.scale_factor),
@@ -71,7 +65,7 @@ fn update_styles(layout: &mut Layout) {
             text_scale: layout.font_size * layout.scale_factor,
         },
         // TODO: Fix tabs style
-        tabs_active: Style {
+        tabs_active: SugarloafStyle {
             screen_position: (80.0 * layout.scale_factor, (8.0 * layout.scale_factor)),
             bounds: (
                 layout.width - (40.0 * layout.scale_factor),
@@ -85,7 +79,7 @@ fn update_styles(layout: &mut Layout) {
 
 impl Layout {
     pub fn new(width: f32, height: f32, scale_factor: f32, font_size: f32) -> Layout {
-        let styles = LayoutStyles::default();
+        let styles = Styles::default();
 
         let mut layout = Layout {
             width,

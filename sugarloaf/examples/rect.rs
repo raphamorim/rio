@@ -9,7 +9,7 @@ use winit::{
 };
 
 use renderer::components::rect::Rect;
-use renderer::renderer::{Renderable, Renderer, RendererTarget};
+use renderer::renderer::{Renderable, CustomRenderer, RendererTarget};
 
 #[tokio::main]
 async fn main() {
@@ -22,7 +22,7 @@ async fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut renderer = Renderer::new(
+    let mut renderer = CustomRenderer::new(
         RendererTarget::Desktop,
         &window,
         wgpu::PowerPreference::HighPerformance,
