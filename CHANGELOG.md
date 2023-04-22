@@ -3,6 +3,7 @@
 ## 0.0.2
 
 - `log-level` as configurable (`DEBUG`, `INFO`, `TRACE`, `ERROR`, `WARN` and `OFF`). `OFF` by default.
+- Introduction of rendering engine called Sugarloaf.
 
 ## 0.0.1
 
