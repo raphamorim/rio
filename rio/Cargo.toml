@@ -25,6 +25,7 @@ copypasta = { version = "0.8.1", default-features = false }
 teletypewriter = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
+sugarloaf = { path = "../sugarloaf" }
 dirs = "5.0"
 unicode-width = "0.1.5"
 bitflags = "2.0.2"

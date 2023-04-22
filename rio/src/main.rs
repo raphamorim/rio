@@ -5,7 +5,6 @@ mod event;
 mod layout;
 mod logger;
 mod performer;
-mod renderer;
 mod screen;
 mod sequencer;
 use crate::event::EventP;

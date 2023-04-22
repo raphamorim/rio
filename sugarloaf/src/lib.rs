@@ -1,5 +1,8 @@
+mod tools;
+mod shared;
 pub mod components;
 pub mod context;
-pub mod renderer;
+pub mod sugarloaf;
+pub mod core;
 
-pub use renderer::{Renderable, Renderer, RendererTarget};
+pub use sugarloaf::{Renderable, SugarloafStyle, Sugarloaf, CustomRenderer, RendererTarget};
