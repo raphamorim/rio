@@ -1,8 +1,10 @@
-mod tools;
-mod shared;
 pub mod components;
 pub mod context;
-pub mod sugarloaf;
 pub mod core;
+mod shared;
+mod sugarloaf;
+mod tools;
 
-pub use sugarloaf::{Renderable, SugarloafStyle, Sugarloaf, CustomRenderer, RendererTarget};
+pub use crate::sugarloaf::{
+    CustomRenderer, Renderable, RendererTarget, Sugarloaf, SugarloafStyle,
+};
