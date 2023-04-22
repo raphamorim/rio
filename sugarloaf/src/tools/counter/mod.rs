@@ -19,6 +19,7 @@ impl Counter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn tick(&mut self) -> usize {
         let now = Instant::now();
         let a_second_ago = now - Duration::from_secs(1);

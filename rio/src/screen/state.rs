@@ -1,26 +1,21 @@
-use sugarloaf::Sugarloaf;
-use config::Style;
-use colors::{
-    Colors, ColorArray
-};
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
+use colors::Colors;
 use colors::{
     term::{List, TermColors},
     AnsiColor, NamedColor,
 };
 use config::Config;
-use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::GlyphCruncher;
-use glyph_brush::{OwnedSection, OwnedText};
 use std::rc::Rc;
-use sugarloaf::core::{Sugar, SugarStack, SugarPile};
+use sugarloaf::core::{Sugar, SugarStack};
+use sugarloaf::Sugarloaf;
 
 #[derive(Default)]
 struct Cursor {
     position: (pos::Column, pos::Line),
     content: char,
+    #[allow(dead_code)]
     hidden: bool,
 }
 
@@ -46,10 +41,10 @@ impl State {
     pub fn new(config: &Rc<Config>) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
-                
+
         State {
             colors,
-            named_colors: config.colors.clone(),
+            named_colors: config.colors,
             cursor: Cursor {
                 content: config.cursor,
                 position: (pos::Column(0), pos::Line(0)),
@@ -75,9 +70,7 @@ impl State {
                 self.named_colors.light_foreground
             }
             AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
-            AnsiColor::Named(NamedColor::LightMagenta) => {
-                self.named_colors.light_magenta
-            }
+            AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
             AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
             AnsiColor::Named(NamedColor::LightWhite) => self.named_colors.light_white,
             AnsiColor::Named(NamedColor::LightYellow) => self.named_colors.light_yellow,
@@ -124,9 +117,7 @@ impl State {
                 self.named_colors.light_foreground
             }
             AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
-            AnsiColor::Named(NamedColor::LightMagenta) => {
-                self.named_colors.light_magenta
-            }
+            AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
             AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
             AnsiColor::Named(NamedColor::LightWhite) => self.named_colors.light_white,
             AnsiColor::Named(NamedColor::LightYellow) => self.named_colors.light_yellow,
@@ -155,16 +146,12 @@ impl State {
         Sugar {
             content,
             foreground_color,
-            background_color
+            background_color,
         }
     }
 
     #[inline]
-    fn create_sugar_stack(
-        &mut self,
-        row: &Row<Square>,
-        has_cursor: bool,
-    ) -> SugarStack {
+    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
@@ -174,7 +161,7 @@ impl State {
                 stack.push(Sugar {
                     content: self.cursor.content.to_string(),
                     foreground_color: self.named_colors.cursor,
-                    background_color: self.named_colors.cursor
+                    background_color: self.named_colors.cursor,
                 });
             } else {
                 stack.push(self.create_sugar_from_square(square));
@@ -182,7 +169,7 @@ impl State {
 
             // Render last column and break row
             if column == (columns - 1) {
-                break
+                break;
             }
         }
 
@@ -190,7 +177,13 @@ impl State {
     }
 
     #[inline]
-    pub fn update(&mut self, rows: Vec<Row<Square>>, cursor: (pos::Column, pos::Line), sugarloaf: &mut Sugarloaf, style: sugarloaf::SugarloafStyle) {
+    pub fn update(
+        &mut self,
+        rows: Vec<Row<Square>>,
+        cursor: (pos::Column, pos::Line),
+        sugarloaf: &mut Sugarloaf,
+        style: sugarloaf::SugarloafStyle,
+    ) {
         self.cursor.position = cursor;
         for (i, row) in rows.iter().enumerate() {
             let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i);

@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::Renderable;
 use bytemuck::{Pod, Zeroable};
+use std::num::NonZeroU64;
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
@@ -62,23 +63,23 @@ const IDENTITY_MATRIX: [f32; 16] = [
 ];
 
 impl Renderable for Rect {
-    fn init<'a>(context: &'a Context) -> Self {
-        let width = &context.size.width;
-        let height = &context.size.height;
+    fn init(context: &Context) -> Self {
+        // let width = &context.size.width;
+        // let height = &context.size.height;
         // let_adapter: &wgpu::Adapter,
         let device = &context.device;
         let _queue = &context.queue;
         let view_formats = context.format;
 
         // Create the vertex and index buffers
-        let vertex_size = mem::size_of::<Vertex>();
+        // let vertex_size = mem::size_of::<Vertex>();
         let vertex_data = create_vertices();
 
-        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        // let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: None,
+        //     contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+        //     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        // });
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -211,7 +212,7 @@ impl Renderable for Rect {
 
     fn resize(
         &mut self,
-        config: &wgpu::SurfaceConfiguration,
+        _config: &wgpu::SurfaceConfiguration,
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
@@ -233,23 +234,24 @@ impl Renderable for Rect {
         device: &wgpu::Device,
         view: &wgpu::TextureView,
         queue: &wgpu::Queue,
-        _staging_belt: &mut wgpu::util::StagingBelt,
+        staging_belt: &mut wgpu::util::StagingBelt,
+        transform: [f32; 16],
     ) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
 
-        // if transform != pipeline.current_transform {
-        //     let mut transform_view = staging_belt.write_buffer(
-        //         encoder,
-        //         &pipeline.transform,
-        //         0,
-        //         unsafe { NonZeroU64::new_unchecked(16 * 4) },
-        //         device,
-        //     );
+        if transform != self.current_transform {
+            let mut transform_view = staging_belt.write_buffer(
+                encoder,
+                &self.uniform_buf,
+                0,
+                unsafe { NonZeroU64::new_unchecked(16 * 4) },
+                device,
+            );
 
-        //     transform_view.copy_from_slice(bytemuck::cast_slice(&transform));
+            transform_view.copy_from_slice(bytemuck::cast_slice(&transform));
 
-        //     pipeline.current_transform = transform;
-        // }
+            self.current_transform = transform;
+        }
 
         let instances = [
             Quad {

@@ -8,5 +8,5 @@ pub type SugarStack = Vec<Sugar>;
 pub type SugarPile = Vec<SugarStack>;
 
 pub fn empty_sugar_pile() -> SugarPile {
-	vec![vec![]]
+    vec![vec![]]
 }

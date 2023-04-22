@@ -1,6 +1,6 @@
-mod state;
 mod ansi;
 mod messenger;
+mod state;
 pub mod window;
 
 use crate::crosswords::grid::Scroll;
@@ -16,8 +16,8 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
+use sugarloaf::{RendererTarget, Sugarloaf};
 use teletypewriter::create_pty;
-use sugarloaf::{Sugarloaf, RendererTarget};
 
 pub struct Screen {
     sugarloaf: Sugarloaf,
@@ -46,25 +46,14 @@ impl Screen {
         let (columns, rows) = layout.compute();
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
-            ..Default::default()
-        });
-
-        let surface: wgpu::Surface =
-            unsafe { instance.create_surface(&winit_window).unwrap() };
         let power_preference: wgpu::PowerPreference = match config.performance {
             config::Performance::High => wgpu::PowerPreference::HighPerformance,
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let sugarloaf = Sugarloaf::new(
-            RendererTarget::Desktop,
-            winit_window,
-            power_preference,
-        )
-        .await?;
+        let sugarloaf =
+            Sugarloaf::new(RendererTarget::Desktop, winit_window, power_preference)
+                .await?;
 
         let state = State::new(config);
 
@@ -118,7 +107,12 @@ impl Screen {
         let cursor_position = terminal.cursor();
         drop(terminal);
 
-        self.state.update(visible_rows, cursor_position, &mut self.sugarloaf, self.layout.styles.term);
+        self.state.update(
+            visible_rows,
+            cursor_position,
+            &mut self.sugarloaf,
+            self.layout.styles.term,
+        );
 
         self.sugarloaf.render();
 

@@ -8,8 +8,8 @@ use winit::{
     window::WindowBuilder,
 };
 
-use renderer::components::rect::Rect;
-use renderer::renderer::{Renderable, CustomRenderer, RendererTarget};
+use sugarloaf::components::rect::Rect;
+use sugarloaf::{CustomRenderer, Renderable, RendererTarget};
 
 #[tokio::main]
 async fn main() {

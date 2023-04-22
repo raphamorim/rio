@@ -1,9 +1,8 @@
 use crate::components::text;
-use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::GlyphCruncher;
-use glyph_brush::{OwnedSection, OwnedText};
 use crate::context::Context;
-use crate::core::{ empty_sugar_pile, SugarPile, SugarStack, Sugar };
+use crate::core::SugarStack;
+use glyph_brush::ab_glyph::FontArc;
+use glyph_brush::{OwnedSection, OwnedText};
 
 #[derive(Default, Copy, Clone)]
 pub struct SugarloafStyle {
@@ -16,6 +15,27 @@ pub struct SugarloafStyle {
 pub enum RendererTarget {
     Desktop,
     Web,
+}
+
+pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
+    [
+        2.0 / width as f32,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.0 / height as f32,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        -1.0,
+        1.0,
+        0.0,
+        1.0,
+    ]
 }
 
 pub trait Renderable: 'static + Sized {
@@ -48,13 +68,13 @@ pub trait Renderable: 'static + Sized {
         view: &wgpu::TextureView,
         queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
+        transform: [f32; 16],
     );
 }
 
 pub struct Sugarloaf {
     pub ctx: Context,
     brush: text::GlyphBrush<()>,
-    pile: SugarPile,
     acc_line: f32,
 }
 
@@ -74,8 +94,8 @@ impl Sugarloaf {
 
         match FontArc::try_from_slice(crate::shared::FONT_FIRAMONO) {
             Ok(font_data) => {
-                let brush =
-                    text::GlyphBrushBuilder::using_font(font_data).build(&ctx.device, ctx.format);
+                let brush = text::GlyphBrushBuilder::using_font(font_data)
+                    .build(&ctx.device, ctx.format);
                 // let quad = quad::Pipeline::new(&device, format);
                 // let fps = frames::Counter::new();
                 // let scene = Scene::new(&device, format);
@@ -84,7 +104,6 @@ impl Sugarloaf {
                     // scene,
                     brush,
                     acc_line: 0.0,
-                    pile: empty_sugar_pile()
                 })
             }
             Err(err_message) => Err(format!(
@@ -94,15 +113,17 @@ impl Sugarloaf {
     }
 
     // pub fn update_size() -> RetType {
-        
+
     // }
 
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
         for sugar in stack.iter() {
-            text.push(OwnedText::new(sugar.content.to_owned())
-                .with_color(sugar.foreground_color)
-                .with_scale(style.text_scale));
+            text.push(
+                OwnedText::new(sugar.content.to_owned())
+                    .with_color(sugar.foreground_color)
+                    .with_scale(style.text_scale),
+            );
         }
 
         self.brush.queue(&OwnedSection {
@@ -111,12 +132,12 @@ impl Sugarloaf {
                 style.screen_position.1 + self.acc_line,
             ),
             bounds: style.bounds,
-            text: text,
+            text,
             layout: glyph_brush::Layout::default_single_line()
                 .v_align(glyph_brush::VerticalAlign::Bottom),
         });
 
-        self.acc_line = self.acc_line + style.text_scale;
+        self.acc_line += style.text_scale;
 
         // println!("{:?}", self.brush.glyph_bounds(section));
     }
@@ -188,23 +209,24 @@ impl Sugarloaf {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                let _ =
-                    self.brush
-                        .draw_queued(&self.ctx.device, &mut self.ctx.staging_belt, &mut encoder, view, (self.ctx.size.width, self.ctx.size.height));
+                let _ = self.brush.draw_queued(
+                    &self.ctx.device,
+                    &mut self.ctx.staging_belt,
+                    &mut encoder,
+                    view,
+                    (self.ctx.size.width, self.ctx.size.height),
+                );
 
                 self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
                 self.ctx.staging_belt.recall();
             }
-            Err(error) => match error {
-                wgpu::SurfaceError::OutOfMemory => {
+            Err(error) => {
+                if error == wgpu::SurfaceError::OutOfMemory {
                     panic!("Swapchain error: {error}. Rendering cannot continue.")
                 }
-                _ => {
-                    // Wait for rendering next frame.
-                }
-            },
+            }
         }
     }
 }
@@ -213,7 +235,6 @@ pub struct CustomRenderer<'a, R: Renderable> {
     pub ctx: Context,
     queue: Vec<&'a mut R>,
 }
-
 
 impl<'a, R: Renderable> CustomRenderer<'a, R> {
     pub async fn new(
@@ -255,14 +276,18 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                if self.queue.len() > 0 {
+                if !self.queue.is_empty() {
                     for item in self.queue.iter_mut() {
                         item.queue_render(
                             &mut encoder,
                             &self.ctx.device,
                             view,
-                            &mut self.ctx.queue,
+                            &self.ctx.queue,
                             &mut self.ctx.staging_belt,
+                            orthographic_projection(
+                                self.ctx.size.width,
+                                self.ctx.size.height,
+                            ),
                         );
                     }
                 }
@@ -272,14 +297,11 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                 frame.present();
                 self.ctx.staging_belt.recall();
             }
-            Err(error) => match error {
-                wgpu::SurfaceError::OutOfMemory => {
+            Err(error) => {
+                if error == wgpu::SurfaceError::OutOfMemory {
                     panic!("Swapchain error: {error}. Rendering cannot continue.")
                 }
-                _ => {
-                    // Wait for rendering next frame.
-                }
-            },
+            }
         }
     }
 }
