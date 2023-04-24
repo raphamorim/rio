@@ -39,21 +39,21 @@ unsafe impl bytemuck::Pod for Quad {}
 fn create_vertices() -> Vec<Vertex> {
     let vertex_data = [
         vertex([0.0, 0.0]),
-        vertex([0.025, 0.0]),
-        vertex([0.025, 0.05]),
-        vertex([0.0, 0.05]),
+        vertex([0.03, 0.0]),
+        vertex([0.03, 0.065]),
+        vertex([0.0, 0.065]),
     ];
 
     vertex_data.to_vec()
 }
 
-pub struct Rect {
+pub struct Row {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     instances: wgpu::Buffer,
     index_count: usize,
     bind_group: wgpu::BindGroup,
-    uniform_buf: wgpu::Buffer,
+    transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
 }
@@ -62,7 +62,7 @@ const IDENTITY_MATRIX: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
-impl Renderable for Rect {
+impl Renderable for Row {
     fn init(context: &Context) -> Self {
         // let width = &context.size.width;
         // let height = &context.size.height;
@@ -75,11 +75,11 @@ impl Renderable for Rect {
         // let vertex_size = mem::size_of::<Vertex>();
         let vertex_data = create_vertices();
 
-        // let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     label: None,
-        //     contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
-        //     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        // });
+        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -115,24 +115,18 @@ impl Renderable for Rect {
                 push_constant_ranges: &[],
             });
 
-        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &uniform_buf,
+                    buffer: &transform,
                     offset: 0,
                     size: None,
                 }),
             }],
-            label: None,
+            label: Some("rect::Pipeline uniforms"),
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -191,12 +185,12 @@ impl Renderable for Rect {
         });
 
         // Done
-        Rect {
+        Row {
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),
             bind_group,
-            uniform_buf,
+            transform,
             pipeline,
             current_transform: [0.0; 16],
             instances,
@@ -213,7 +207,7 @@ impl Renderable for Rect {
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
+        queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     }
 
     fn render(
@@ -224,13 +218,14 @@ impl Renderable for Rect {
         _queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
+        instances: &[Quad],
     ) {
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
 
         if transform != self.current_transform {
             let mut transform_view = staging_belt.write_buffer(
                 encoder,
-                &self.uniform_buf,
+                &self.transform,
                 0,
                 unsafe { NonZeroU64::new_unchecked(16 * 4) },
                 device,
@@ -240,24 +235,6 @@ impl Renderable for Rect {
 
             self.current_transform = transform;
         }
-
-        let instances = [
-            Quad {
-                position: [0.0, 0.0],
-                color: [1.0, 1.0, 0.0, 1.0],
-                size: [0.0, 0.0],
-            },
-            Quad {
-                position: [0.6, -0.3],
-                color: [0.0, 1.0, 0.0, 1.0],
-                size: [0.0, 0.0],
-            },
-            Quad {
-                position: [1.3, -1.3],
-                color: [0.0, 1.0, 1.0, 1.0],
-                size: [0.10, 0.10],
-            },
-        ];
 
         let mut i = 0;
         let total = instances.len();
@@ -292,7 +269,7 @@ impl Renderable for Rect {
                     })],
                     depth_stencil_attachment: None,
                 });
-                rpass.push_debug_group("Prepare data for draw.");
+                // rpass.push_debug_group("Prepare data for draw.");
                 rpass.set_pipeline(&self.pipeline);
                 rpass.set_bind_group(0, &self.bind_group, &[]);
                 rpass.set_index_buffer(
@@ -301,8 +278,8 @@ impl Renderable for Rect {
                 );
                 rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
                 rpass.set_vertex_buffer(1, self.instances.slice(..));
-                rpass.pop_debug_group();
-                rpass.insert_debug_marker("Draw!");
+                // rpass.pop_debug_group();
+                // rpass.insert_debug_marker("Draw!");
                 rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
             }
 

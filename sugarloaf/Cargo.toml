@@ -13,6 +13,7 @@ wgpu = { workspace = true }
 bytemuck = { workspace = true }
 winit = { workspace = true }
 glyph_brush = "0.7.7"
+glam = "0.24.0"
 colors = { path = "../colors" }
 config = { path = "../config" }
 

@@ -1,8 +1,9 @@
+use crate::components::row::{Quad, Row};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::{OwnedSection, OwnedText};
+use glyph_brush::{OwnedSection, GlyphCruncher, OwnedText};
 
 #[derive(Default, Copy, Clone)]
 pub struct SugarloafStyle {
@@ -18,6 +19,9 @@ pub enum RendererTarget {
 }
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
+    // [0.0016666667, 0.0, 0.0, 0.0, 0.0, -0.0025, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, -0.0, 1.0]
+
+    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -0.5, 1.45, -0.0, 1.0,]
     // [
     //     2.0 / width as f32,
     //     0.0,
@@ -36,8 +40,18 @@ pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     //     0.0,
     //     1.0,
     // ]
-    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,]
+    // let a = *glam::Mat4::orthographic_rh_gl(
+    //     0.0, width as f32,
+    //     height as f32, 0.0,
+    //     -1.0, 1.0
+    // ).as_ref();
+    // println!("{a:?}");
+    // a
 }
+
+// 0.0, width as f32,
+//             height as f32, 0.0,
+//             -1.0, 1.0
 
 pub trait Renderable: 'static + Sized {
     fn required_features() -> wgpu::Features {
@@ -70,13 +84,17 @@ pub trait Renderable: 'static + Sized {
         queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
+        instances: &[Quad]
     );
 }
 
 pub struct Sugarloaf {
     pub ctx: Context,
     brush: text::GlyphBrush<()>,
+    row: Row,
+    rows: Vec<Quad>,
     acc_line: f32,
+    acc_line_y: f32,
 }
 
 // TODO: Sugarloaf integrate CustomRenderer (or Renderer) layer usage
@@ -97,14 +115,14 @@ impl Sugarloaf {
             Ok(font_data) => {
                 let brush = text::GlyphBrushBuilder::using_font(font_data)
                     .build(&ctx.device, ctx.format);
-                // let quad = quad::Pipeline::new(&device, format);
-                // let fps = frames::Counter::new();
-                // let scene = Scene::new(&device, format);
+                let row = Row::init(&ctx);
                 Ok(Sugarloaf {
                     ctx,
-                    // scene,
+                    row,
+                    rows: vec![],
                     brush,
                     acc_line: 0.0,
+                    acc_line_y: -0.175,
                 })
             }
             Err(err_message) => Err(format!(
@@ -119,15 +137,26 @@ impl Sugarloaf {
 
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
+        let mut x = 0.030;
         for sugar in stack.iter() {
             text.push(
                 OwnedText::new(sugar.content.to_owned())
                     .with_color(sugar.foreground_color)
                     .with_scale(style.text_scale),
             );
+
+            self.rows.push(Quad {
+                position: [x, self.acc_line_y],
+                color: sugar.background_color,
+                size: [x, 0.10]
+            });
+
+            x += 0.024;
         }
 
-        self.brush.queue(&OwnedSection {
+        self.acc_line_y += -0.0734;
+
+        let section = &OwnedSection {
             screen_position: (
                 style.screen_position.0,
                 style.screen_position.1 + self.acc_line,
@@ -136,35 +165,26 @@ impl Sugarloaf {
             text,
             layout: glyph_brush::Layout::default_single_line()
                 .v_align(glyph_brush::VerticalAlign::Bottom),
-        });
+        };
+
+        println!("{:?}", self.brush.glyph_bounds(section));
+
+        self.brush.queue(section);
 
         self.acc_line += style.text_scale;
-
-        // println!("{:?}", self.brush.glyph_bounds(section));
     }
 
     pub fn get_context(&self) -> &Context {
         &self.ctx
     }
 
-    // #[inline]
-    // pub fn term(&mut self, rows: Vec<Row<Square>>, style: Style) {
-    //     let mut line_height: f32 = 0.0;
-    //     let cursor_row = self.cursor.position.1;
-    //     for (i, row) in rows.iter().enumerate() {
-    //         self.render_row(row, style, line_height, cursor_row == i);
-    //         line_height += style.text_scale;
-    //     }
-    // }
-
     #[inline]
     pub fn skeleton(&mut self, color: wgpu::Color) {
-        // TODO: WGPU caching
         let mut encoder =
             self.ctx
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Skeleton"),
+                    label: Some("Sugarloaf skeleton"),
                 });
         let frame = self
             .ctx
@@ -174,18 +194,18 @@ impl Sugarloaf {
         let view = &frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render -> Clear frame"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        // encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //     label: Some("Render -> Clear frame"),
+        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        //         view,
+        //         resolve_target: None,
+        //         ops: wgpu::Operations {
+        //             load: wgpu::LoadOp::Clear(color),
+        //             store: true,
+        //         },
+        //     })],
+        //     depth_stencil_attachment: None,
+        // });
         self.ctx.staging_belt.finish();
         self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();
@@ -194,10 +214,11 @@ impl Sugarloaf {
 
     fn reset_state(&mut self) {
         self.acc_line = 0.0;
+        self.acc_line_y = -0.175;
     }
 
     #[inline]
-    pub fn render(&mut self) {
+    pub fn render(&mut self,  color: colors::ColorWGPU) {
         self.reset_state();
 
         match self.ctx.surface.get_current_texture() {
@@ -209,6 +230,19 @@ impl Sugarloaf {
                 let view = &frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
+
+                let _ = self.row.render(
+                    &mut encoder,
+                    &self.ctx.device,
+                    view,
+                    &self.ctx.queue,
+                    &mut self.ctx.staging_belt,
+                    orthographic_projection(
+                        self.ctx.size.width,
+                        self.ctx.size.height,
+                    ),
+                    &self.rows
+                );
 
                 let _ = self.brush.draw_queued(
                     &self.ctx.device,
@@ -277,6 +311,39 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
+                let instances = [
+                    Quad {
+                        position: [0.0, 0.0],
+                        color: [1.0, 1.0, 0.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                    Quad {
+                        position: [0.025, 0.0],
+                        color: [0.0, 1.0, 0.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                    Quad {
+                        position: [0.045, 0.0],
+                        color: [0.0, 1.0, 1.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                    Quad {
+                        position: [0.0, -0.05],
+                        color: [0.0, 0.5, 1.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                    Quad {
+                        position: [0.025, -0.05],
+                        color: [1.0, 0.0, 0.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                    Quad {
+                        position: [0.045, -0.05],
+                        color: [0.5, 1.0, 1.0, 1.0],
+                        size: [0.0, 0.0],
+                    },
+                ];
+
                 if !self.queue.is_empty() {
                     for item in self.queue.iter_mut() {
                         item.render(
@@ -289,6 +356,7 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                                 self.ctx.size.width,
                                 self.ctx.size.height,
                             ),
+                            &instances
                         );
                     }
                 }

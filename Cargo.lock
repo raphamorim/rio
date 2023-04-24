@@ -568,6 +568,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "518faa5064866338b013ff9b2350dc318e14cc4fcd6cb8206d7e7c9886c98815"
 
 [[package]]
+name = "glam"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad83ab008a4fa3b31dfa713dd41b5a9bdea1e94e4cf1e2fc274ffbd49b0271d3"
+
+[[package]]
 name = "glow"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1486,7 +1492,7 @@ dependencies = [
  "config",
  "copypasta",
  "dirs",
- "glam",
+ "glam 0.21.3",
  "glyph_brush",
  "image",
  "lazycell",
@@ -1684,6 +1690,7 @@ dependencies = [
  "bytemuck",
  "colors",
  "config",
+ "glam 0.24.0",
  "glyph_brush",
  "tokio",
  "wgpu",
