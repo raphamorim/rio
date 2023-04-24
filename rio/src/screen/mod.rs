@@ -101,7 +101,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render(&mut self) {
+    pub fn render(&mut self, color: colors::ColorWGPU) {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor_position = terminal.cursor();
@@ -114,7 +114,7 @@ impl Screen {
             self.layout.styles.term,
         );
 
-        self.sugarloaf.render();
+        self.sugarloaf.render(color);
 
         // self.sugarloaf.set_cursor(cursor_position, false);
 

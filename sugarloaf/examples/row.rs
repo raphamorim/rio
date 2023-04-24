@@ -8,7 +8,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use sugarloaf::components::rect::Rect;
+use sugarloaf::components::row::Row;
 use sugarloaf::{CustomRenderer, Renderable, RendererTarget};
 
 #[tokio::main]
@@ -16,7 +16,7 @@ async fn main() {
     let mut event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
-        .with_title("Rect example")
+        .with_title("Row example")
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_resizable(true)
         .build(&event_loop)
@@ -28,8 +28,8 @@ async fn main() {
         wgpu::PowerPreference::HighPerformance,
     )
     .await;
-    let mut rect = Rect::init(renderer.get_context());
-    renderer.add_component(&mut rect);
+    let mut row = Row::init(renderer.get_context());
+    renderer.add_component(&mut row);
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
