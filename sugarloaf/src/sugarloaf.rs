@@ -3,7 +3,7 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::{OwnedSection, GlyphCruncher, OwnedText};
+use glyph_brush::{GlyphCruncher, OwnedSection, OwnedText};
 
 #[derive(Default, Copy, Clone)]
 pub struct SugarloafStyle {
@@ -21,7 +21,10 @@ pub enum RendererTarget {
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     // [0.0016666667, 0.0, 0.0, 0.0, 0.0, -0.0025, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, -0.0, 1.0]
 
-    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -0.5, 1.45, -0.0, 1.0,]
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -0.5, 1.45, -0.0,
+        1.0,
+    ]
     // [
     //     2.0 / width as f32,
     //     0.0,
@@ -40,18 +43,7 @@ pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     //     0.0,
     //     1.0,
     // ]
-    // let a = *glam::Mat4::orthographic_rh_gl(
-    //     0.0, width as f32,
-    //     height as f32, 0.0,
-    //     -1.0, 1.0
-    // ).as_ref();
-    // println!("{a:?}");
-    // a
 }
-
-// 0.0, width as f32,
-//             height as f32, 0.0,
-//             -1.0, 1.0
 
 pub trait Renderable: 'static + Sized {
     fn required_features() -> wgpu::Features {
@@ -84,7 +76,7 @@ pub trait Renderable: 'static + Sized {
         queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
-        instances: &[Quad]
+        instances: &[Quad],
     );
 }
 
@@ -131,9 +123,29 @@ impl Sugarloaf {
         }
     }
 
-    // pub fn update_size() -> RetType {
+    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
+        self.ctx.size.width = width;
+        self.ctx.size.height = height;
+        self.ctx.surface.configure(
+            &self.ctx.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.ctx.format,
+                width: width,
+                height: height,
+                view_formats: vec![],
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
 
-    // }
+        self
+    }
+
+    pub fn rescale(&mut self, scale: f32) -> &mut Self {
+        self.ctx.scale = scale;
+        self
+    }
 
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
@@ -145,13 +157,15 @@ impl Sugarloaf {
                     .with_scale(style.text_scale),
             );
 
+            // println!("{:?}", sugar.background_color);
+
             self.rows.push(Quad {
                 position: [x, self.acc_line_y],
                 color: sugar.background_color,
-                size: [x, 0.10]
+                size: [0.14, 0.14],
             });
 
-            x += 0.024;
+            x += 0.0242;
         }
 
         self.acc_line_y += -0.0734;
@@ -167,7 +181,7 @@ impl Sugarloaf {
                 .v_align(glyph_brush::VerticalAlign::Bottom),
         };
 
-        println!("{:?}", self.brush.glyph_bounds(section));
+        // println!("{:?}", self.brush.glyph_bounds(section));
 
         self.brush.queue(section);
 
@@ -194,18 +208,18 @@ impl Sugarloaf {
         let view = &frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        // encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //     label: Some("Render -> Clear frame"),
-        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //         view,
-        //         resolve_target: None,
-        //         ops: wgpu::Operations {
-        //             load: wgpu::LoadOp::Clear(color),
-        //             store: true,
-        //         },
-        //     })],
-        //     depth_stencil_attachment: None,
-        // });
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render -> Clear frame"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(color),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
         self.ctx.staging_belt.finish();
         self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();
@@ -218,7 +232,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn render(&mut self,  color: colors::ColorWGPU) {
+    pub fn render(&mut self, color: colors::ColorWGPU) {
         self.reset_state();
 
         match self.ctx.surface.get_current_texture() {
@@ -231,18 +245,30 @@ impl Sugarloaf {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Clear background frame"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(color),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
+
                 let _ = self.row.render(
                     &mut encoder,
                     &self.ctx.device,
                     view,
                     &self.ctx.queue,
                     &mut self.ctx.staging_belt,
-                    orthographic_projection(
-                        self.ctx.size.width,
-                        self.ctx.size.height,
-                    ),
-                    &self.rows
+                    orthographic_projection(self.ctx.size.width, self.ctx.size.height),
+                    &self.rows,
                 );
+
+                self.rows = vec![];
 
                 let _ = self.brush.draw_queued(
                     &self.ctx.device,
@@ -356,7 +382,7 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                                 self.ctx.size.width,
                                 self.ctx.size.height,
                             ),
-                            &instances
+                            &instances,
                         );
                     }
                 }

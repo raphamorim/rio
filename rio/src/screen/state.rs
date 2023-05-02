@@ -1,10 +1,9 @@
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
-use colors::Colors;
 use colors::{
     term::{List, TermColors},
-    AnsiColor, NamedColor,
+    AnsiColor, Colors, NamedColor,
 };
 use config::Config;
 use std::rc::Rc;

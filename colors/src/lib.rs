@@ -234,40 +234,69 @@ pub fn hex_to_color_wgpu(s: &str) -> ColorWGPU {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum NamedColor {
+    /// Black.
     Black = 0,
-    Background,
-    Blue,
-    LightBlack,
-    LightBlue,
-    LightCyan,
-    LightForeground,
-    LightGreen,
-    LightMagenta,
-    LightRed,
-    LightWhite,
-    LightYellow,
-    Cursor,
-    Cyan,
-    DimBlack,
-    DimBlue,
-    DimCyan,
-    DimForeground,
-    DimGreen,
-    DimMagenta,
-    DimRed,
-    DimWhite,
-    DimYellow,
-    Foreground = 256,
-    Green,
-    Magenta,
+    /// Red.
     Red,
-    White,
+    /// Green.
+    Green,
+    /// Yellow.
     Yellow,
+    /// Blue.
+    Blue,
+    /// Magenta.
+    Magenta,
+    /// Cyan.
+    Cyan,
+    /// White.
+    White,
+    /// Bright black.
+    LightBlack,
+    /// Light red.
+    LightRed,
+    /// Light green.
+    LightGreen,
+    /// Light yellow.
+    LightYellow,
+    /// Light blue.
+    LightBlue,
+    /// Light magenta.
+    LightMagenta,
+    /// Light cyan.
+    LightCyan,
+    /// Light white.
+    LightWhite,
+    /// The foreground color.
+    Foreground = 256,
+    /// The background color.
+    Background,
+    /// Color for the cursor itself.
+    Cursor,
+    /// Dim black.
+    DimBlack,
+    /// Dim red.
+    DimRed,
+    /// Dim green.
+    DimGreen,
+    /// Dim yellow.
+    DimYellow,
+    /// Dim blue.
+    DimBlue,
+    /// Dim magenta.
+    DimMagenta,
+    /// Dim cyan.
+    DimCyan,
+    /// Dim white.
+    DimWhite,
+    /// The bright foreground color.
+    LightForeground,
+    /// Dim foreground.
+    DimForeground,
 }
 
 impl NamedColor {
     #[must_use]
-    pub fn to_bright(self) -> Self {
+    pub fn to_light(self) -> Self {
         match self {
             NamedColor::Foreground => NamedColor::LightForeground,
             NamedColor::Black => NamedColor::LightBlack,
@@ -397,6 +426,23 @@ impl ColorBuilder {
                 blue: (rgb[2] as f64),
                 alpha,
             }),
+        }
+    }
+
+    pub fn from_rgb(rgb: ColorRgb, conversion_type: Format) -> Self {
+        match conversion_type {
+            Format::SRGB0_1 => Self {
+                red: (rgb.r as f64) / 255.0,
+                green: (rgb.g as f64) / 255.0,
+                blue: (rgb.b as f64) / 255.0,
+                alpha: 1.0,
+            },
+            Format::SRGB0_255 => Self {
+                red: (rgb.r as f64),
+                green: (rgb.g as f64),
+                blue: (rgb.b as f64),
+                alpha: 1.0,
+            },
         }
     }
 

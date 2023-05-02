@@ -285,3 +285,4 @@ _* Development and tests are targeting Wayland, probably is not stable on X11 ye
 - https://github.com/wez/wezterm
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
 - https://en.wikipedia.org/wiki/ANSI_escape_code
+- https://www.scratchapixel.com/lessons/3d-basic-rendering/perspective-and-orthographic-projection-matrix/orthographic-projection-matrix.html
