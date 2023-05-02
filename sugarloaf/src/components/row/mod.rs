@@ -47,6 +47,19 @@ fn create_vertices() -> Vec<Vertex> {
     vertex_data.to_vec()
 }
 
+pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
+    color: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::SrcAlpha,
+        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+        operation: wgpu::BlendOperation::Add,
+    },
+    alpha: wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+        operation: wgpu::BlendOperation::Add,
+    },
+});
+
 pub struct Row {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
@@ -163,13 +176,24 @@ impl Renderable for Row {
                 entry_point: "vs_main",
                 buffers: &vertex_buffers,
             },
+            // fragment: Some(wgpu::FragmentState {
+            //     module: &shader,
+            //     entry_point: "fs_main",
+            //     targets: &[Some(view_formats.into())],
+            // }),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[Some(view_formats.into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: context.format,
+                    blend: BLEND,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                front_face: wgpu::FrontFace::Cw,
+                strip_index_format: Some(wgpu::IndexFormat::Uint16),
                 ..Default::default()
             },
             depth_stencil: None,

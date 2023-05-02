@@ -1,5 +1,4 @@
-use crate::ColorArray;
-use crate::ColorRgb;
+use crate::{ColorArray, ColorBuilder, ColorRgb, Format};
 use std::ops::{Index, IndexMut};
 
 use crate::defaults;
@@ -90,6 +89,8 @@ impl<'a> From<&'a TermColors> for List {
         list.fill_cube();
         list.fill_gray_ramp();
 
+        println!("{:?}", list);
+
         list
     }
 }
@@ -137,7 +138,9 @@ impl List {
                         b: if b == 0 { 0 } else { b * 40 + 55 },
                         g: if g == 0 { 0 } else { g * 40 + 55 },
                     };
-                    self[index] = [rgb.r.into(), rgb.g.into(), rgb.b.into(), 1.0];
+
+                    let arr = ColorBuilder::from_rgb(rgb, Format::SRGB0_1).to_arr();
+                    self[index] = arr;
                     index += 1;
                 }
             }
@@ -156,7 +159,8 @@ impl List {
                 g: value,
                 b: value,
             };
-            self[index] = [rgb.r.into(), rgb.g.into(), rgb.b.into(), 1.0];
+            let arr = ColorBuilder::from_rgb(rgb, Format::SRGB0_1).to_arr();
+            self[index] = arr;
             index += 1;
         }
 

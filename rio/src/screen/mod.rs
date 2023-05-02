@@ -229,10 +229,10 @@ impl Screen {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
-        // self.ctx.update_size(new_size);
-        // self.layout
-        //     .set_size(new_size.width, new_size.height)
-        //     .update();
+        self.sugarloaf.resize(new_size.width, new_size.height);
+        self.layout
+            .set_size(new_size.width, new_size.height)
+            .update();
         let (c, l) = self.layout.compute();
 
         let mut terminal = self.terminal.lock();
@@ -253,8 +253,10 @@ impl Screen {
         new_scale: f32,
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
-        // self.sugarloaf.update_size(new_size);
-        // self.ctx.update_size(new_size);
+        self.sugarloaf
+            .resize(new_size.width, new_size.height)
+            .rescale(new_scale);
+
         self.layout
             .set_scale(new_scale)
             .set_size(new_size.width, new_size.height)

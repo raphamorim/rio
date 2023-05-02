@@ -181,7 +181,9 @@ impl Sequencer {
                         return;
                     }
 
-                    screen.resize(new_size).render(self.config.colors.background.1);
+                    screen
+                        .resize(new_size)
+                        .render(self.config.colors.background.1);
                 }
 
                 Event::WindowEvent {
