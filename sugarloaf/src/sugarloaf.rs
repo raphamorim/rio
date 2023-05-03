@@ -258,15 +258,15 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                let _ = self.row.render(
-                    &mut encoder,
-                    &self.ctx.device,
-                    view,
-                    &self.ctx.queue,
-                    &mut self.ctx.staging_belt,
-                    orthographic_projection(self.ctx.size.width, self.ctx.size.height),
-                    &self.rows,
-                );
+                // let _ = self.row.render(
+                //     &mut encoder,
+                //     &self.ctx.device,
+                //     view,
+                //     &self.ctx.queue,
+                //     &mut self.ctx.staging_belt,
+                //     orthographic_projection(self.ctx.size.width, self.ctx.size.height),
+                //     &self.rows,
+                // );
 
                 self.rows = vec![];
 
