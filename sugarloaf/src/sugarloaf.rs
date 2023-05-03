@@ -3,7 +3,7 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
 use glyph_brush::ab_glyph::FontArc;
-use glyph_brush::{GlyphCruncher, OwnedSection, OwnedText};
+use glyph_brush::{OwnedSection, OwnedText};
 
 #[derive(Default, Copy, Clone)]
 pub struct SugarloafStyle {
@@ -18,7 +18,7 @@ pub enum RendererTarget {
     Web,
 }
 
-pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
+pub fn orthographic_projection(_width: u32, _height: u32) -> [f32; 16] {
     // [0.0016666667, 0.0, 0.0, 0.0, 0.0, -0.0025, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, -0.0, 1.0]
 
     [
@@ -73,7 +73,6 @@ pub trait Renderable: 'static + Sized {
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
         view: &wgpu::TextureView,
-        queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
         instances: &[Quad],
@@ -83,6 +82,7 @@ pub trait Renderable: 'static + Sized {
 pub struct Sugarloaf {
     pub ctx: Context,
     brush: text::GlyphBrush<()>,
+    #[allow(dead_code)]
     row: Row,
     rows: Vec<Quad>,
     acc_line: f32,
@@ -131,8 +131,8 @@ impl Sugarloaf {
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: self.ctx.format,
-                width: width,
-                height: height,
+                width,
+                height,
                 view_formats: vec![],
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -376,7 +376,6 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                             &mut encoder,
                             &self.ctx.device,
                             view,
-                            &self.ctx.queue,
                             &mut self.ctx.staging_belt,
                             orthographic_projection(
                                 self.ctx.size.width,

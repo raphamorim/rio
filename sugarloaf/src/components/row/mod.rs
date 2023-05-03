@@ -82,7 +82,6 @@ impl Renderable for Row {
         // let_adapter: &wgpu::Adapter,
         let device = &context.device;
         let _queue = &context.queue;
-        let view_formats = context.format;
 
         // Create the vertex and index buffers
         // let vertex_size = mem::size_of::<Vertex>();
@@ -176,11 +175,6 @@ impl Renderable for Row {
                 entry_point: "vs_main",
                 buffers: &vertex_buffers,
             },
-            // fragment: Some(wgpu::FragmentState {
-            //     module: &shader,
-            //     entry_point: "fs_main",
-            //     targets: &[Some(view_formats.into())],
-            // }),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -239,7 +233,6 @@ impl Renderable for Row {
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
         view: &wgpu::TextureView,
-        _queue: &wgpu::Queue,
         staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
         instances: &[Quad],
