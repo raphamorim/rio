@@ -51,9 +51,13 @@ impl Screen {
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let sugarloaf =
-            Sugarloaf::new(RendererTarget::Desktop, winit_window, power_preference)
-                .await?;
+        let sugarloaf = Sugarloaf::new(
+            RendererTarget::Desktop,
+            winit_window,
+            power_preference,
+            config.style.font.to_string(),
+        )
+        .await?;
 
         let state = State::new(config);
 

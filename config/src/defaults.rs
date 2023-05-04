@@ -12,6 +12,10 @@ pub fn default_log_level() -> String {
     String::from("OFF")
 }
 
+pub fn default_font() -> String {
+    String::from("Monaco")
+}
+
 pub fn default_cursor() -> char {
     '█'
 }

@@ -2,7 +2,7 @@ use crate::components::row::{Quad, Row};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
-use glyph_brush::ab_glyph::FontArc;
+use crate::font::Font;
 use glyph_brush::{OwnedSection, OwnedText};
 
 #[derive(Default, Copy, Clone)]
@@ -95,6 +95,7 @@ impl Sugarloaf {
         target: RendererTarget,
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
+        font_name: String,
     ) -> Result<Sugarloaf, String> {
         let ctx = match target {
             RendererTarget::Desktop => Context::new(winit_window, power_preference).await,
@@ -103,9 +104,9 @@ impl Sugarloaf {
             }
         };
 
-        match FontArc::try_from_slice(crate::shared::FONT_FIRAMONO) {
-            Ok(font_data) => {
-                let brush = text::GlyphBrushBuilder::using_font(font_data)
+        match Font::new(font_name) {
+            Ok(font) => {
+                let brush = text::GlyphBrushBuilder::using_font(font.arc)
                     .build(&ctx.device, ctx.format);
                 let row = Row::init(&ctx);
                 Ok(Sugarloaf {
@@ -262,7 +263,6 @@ impl Sugarloaf {
                 //     &mut encoder,
                 //     &self.ctx.device,
                 //     view,
-                //     &self.ctx.queue,
                 //     &mut self.ctx.staging_belt,
                 //     orthographic_projection(self.ctx.size.width, self.ctx.size.height),
                 //     &self.rows,

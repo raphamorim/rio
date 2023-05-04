@@ -4,6 +4,7 @@
 
 - `log-level` as configurable (`DEBUG`, `INFO`, `TRACE`, `ERROR`, `WARN` and `OFF`). `OFF` by default.
 - Introduction of rendering engine called Sugarloaf.
+- System font loader (tested and implemented for MacOs).
 
 ## 0.0.1
 

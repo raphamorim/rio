@@ -64,7 +64,7 @@ height = 438
 width = 662
 
 [style]
-font = "Firamono"
+font = "Monaco"
 font-size = 16
 theme = "Basic"
 
@@ -170,11 +170,11 @@ cursor: '❤' # (U+2764)
 
 #### `font`
 
-This property will change later to an actual font path. Currently Rio has 2 fonts builtin: `Firamono`, `Novamono`.
+If the font family in the system isn't found will fallback to a pre-built "Firamono".
 
 ```toml
 [style]
-font = "Firamono"
+font = "Monaco"
 ```
 
 #### `font-size`
