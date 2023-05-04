@@ -19,19 +19,13 @@ pub enum Theme {
     Basic,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
-pub enum Font {
-    #[default]
-    Firamono,
-    Novamono,
-}
-
-#[derive(Copy, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
     #[serde(rename = "font-size")]
     pub font_size: f32,
     pub theme: Theme,
-    pub font: Font,
+    #[serde(default = "default_font")]
+    pub font: String,
 }
 
 impl Default for Style {
@@ -39,7 +33,7 @@ impl Default for Style {
         Style {
             font_size: default_font_size(),
             theme: Theme::default(),
-            font: Font::default(),
+            font: default_font(),
         }
     }
 }
@@ -165,7 +159,7 @@ impl Default for Config {
             style: Style {
                 font_size: default_font_size(),
                 theme: Theme::default(),
-                font: Font::default(),
+                font: default_font(),
             },
             advanced: Advanced::default(),
             developer: Developer::default(),
@@ -218,7 +212,7 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         // Style
-        assert_eq!(result.style.font, Font::default());
+        assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::default());
         // Colors
@@ -261,7 +255,7 @@ mod tests {
             yellow = '#FCBA28'
 
             [style]
-            font = "Firamono"
+            font = "Monaco"
             font-size = 16
             theme = "Basic"
 
@@ -308,7 +302,7 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         // Style
-        assert_eq!(result.style.font, Font::default());
+        assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::default());
         // Colors
@@ -331,7 +325,7 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         // Style
-        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
@@ -355,7 +349,7 @@ mod tests {
         assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, '_');
         // Style
-        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
@@ -379,7 +373,7 @@ mod tests {
         assert_eq!(result.width, 400);
         assert_eq!(result.height, 500);
         // Style
-        assert_eq!(result.style.font, Font::Firamono);
+        assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, Theme::Basic);
         // Colors
@@ -407,7 +401,7 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         // Style
-        assert_eq!(result.style.font, Font::Novamono);
+        assert_eq!(result.style.font, "Novamono");
         assert_eq!(result.style.font_size, 14.0);
         assert_eq!(result.style.theme, Theme::Modern);
         // Colors
