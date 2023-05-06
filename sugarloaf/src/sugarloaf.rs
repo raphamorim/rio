@@ -3,6 +3,9 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
 use crate::font::Font;
+use glyph_brush::ab_glyph::Font as GFont;
+use glyph_brush::ab_glyph::{self, FontArc};
+use glyph_brush::FontId;
 use glyph_brush::{OwnedSection, OwnedText};
 
 #[derive(Default, Copy, Clone)]
@@ -106,8 +109,13 @@ impl Sugarloaf {
 
         match Font::new(font_name) {
             Ok(font) => {
-                let brush = text::GlyphBrushBuilder::using_font(font.arc)
-                    .build(&ctx.device, ctx.format);
+                let brush = text::GlyphBrushBuilder::using_fonts(vec![
+                    font.system,
+                    font.symbol,
+                    font.emojis,
+                    font.unicode,
+                ])
+                .build(&ctx.device, ctx.format);
                 let row = Row::init(&ctx);
                 Ok(Sugarloaf {
                     ctx,
@@ -151,14 +159,33 @@ impl Sugarloaf {
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.030;
+
+        let fonts = self.brush.fonts();
+        let system: &FontArc = &fonts[0];
+        let symbols: &FontArc = &fonts[1];
+        let emojis: &FontArc = &fonts[2];
+        let unicode: &FontArc = &fonts[3];
+        let glyph_zero = ab_glyph::GlyphId(0);
+
         for sugar in stack.iter() {
+            let font_id: FontId = if system.glyph_id(sugar.content) != glyph_zero {
+                FontId(0)
+            } else if symbols.glyph_id(sugar.content) != glyph_zero {
+                FontId(1)
+            } else if emojis.glyph_id(sugar.content) != glyph_zero {
+                FontId(2)
+            } else if unicode.glyph_id(sugar.content) != glyph_zero {
+                FontId(3)
+            } else {
+                FontId(0)
+            };
+
             text.push(
                 OwnedText::new(sugar.content.to_owned())
+                    .with_font_id(font_id)
                     .with_color(sugar.foreground_color)
                     .with_scale(style.text_scale),
             );
-
-            // println!("{:?}", sugar.background_color);
 
             self.rows.push(Quad {
                 position: [x, self.acc_line_y],

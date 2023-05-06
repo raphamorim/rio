@@ -733,6 +733,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn set_active_charset(&mut self, index: CharsetIndex) {
+        self.active_charset = index;
+    }
+
+    #[inline]
     fn move_forward(&mut self, cols: Column) {
         let last_column =
             std::cmp::min(self.grid.cursor.pos.col + cols, self.grid.last_column());

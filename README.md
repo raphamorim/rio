@@ -64,7 +64,7 @@ height = 438
 width = 662
 
 [style]
-font = "Monaco"
+font = "Firamono"
 font-size = 16
 theme = "Basic"
 
@@ -170,7 +170,7 @@ cursor: '❤' # (U+2764)
 
 #### `font`
 
-If the font family in the system isn't found will fallback to a pre-built "Firamono".
+Default font is Firamono.
 
 ```toml
 [style]

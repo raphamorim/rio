@@ -13,7 +13,7 @@ pub fn default_log_level() -> String {
 }
 
 pub fn default_font() -> String {
-    String::from("Monaco")
+    String::from("Firamono")
 }
 
 pub fn default_cursor() -> char {

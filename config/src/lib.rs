@@ -255,7 +255,7 @@ mod tests {
             yellow = '#FCBA28'
 
             [style]
-            font = "Monaco"
+            font = "Firamono"
             font-size = 16
             theme = "Basic"
 
