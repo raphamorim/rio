@@ -8,6 +8,10 @@
 
 ![Demo MacOs](docs/demo-macos.png)
 
+Note: Emojis are rendered with Noto Emoji.
+
+![Demo emoji](docs/demo-emojis.png)
+
 ## Summary
 
 - [About Rio](#about-rio)
