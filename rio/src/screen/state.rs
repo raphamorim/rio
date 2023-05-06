@@ -29,7 +29,7 @@ impl From<Square> for Sugar {
     #[inline]
     fn from(square: Square) -> Sugar {
         Sugar {
-            content: String::from(square.c),
+            content: square.c,
             foreground_color: [0.0, 0.0, 0.0, 1.0],
             background_color: [0.0, 0.0, 0.0, 1.0],
         }
@@ -55,7 +55,6 @@ impl State {
     // TODO: Square.into()
     #[inline]
     fn create_sugar_from_square(&self, square: &Square) -> Sugar {
-        let content: String = square.c.to_string();
         let flags = square.flags;
 
         let foreground_color = match square.fg {
@@ -143,7 +142,7 @@ impl State {
         };
 
         Sugar {
-            content,
+            content: square.c,
             foreground_color,
             background_color,
         }
@@ -158,7 +157,7 @@ impl State {
 
             if has_cursor && column == self.cursor.position.0 {
                 stack.push(Sugar {
-                    content: self.cursor.content.to_string(),
+                    content: self.cursor.content,
                     foreground_color: self.named_colors.cursor,
                     background_color: self.named_colors.cursor,
                 });

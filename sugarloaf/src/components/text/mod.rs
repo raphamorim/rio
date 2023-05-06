@@ -114,9 +114,9 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     ///
     /// The `FontId` corresponds to the index of the font data.
     // #[inline]
-    // pub fn fonts(&self) -> &[F] {
-    //     self.glyph_brush.fonts()
-    // }
+    pub fn fonts(&self) -> &[F] {
+        self.glyph_brush.fonts()
+    }
 
     /// Adds an additional font to the one(s) initially added on build.
     ///
