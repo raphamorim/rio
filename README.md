@@ -4,13 +4,13 @@
 
 ![Rio banner](docs/banner.png)
 
-## Demo
+## Demo Gallery
 
-![Demo MacOs](docs/demo-macos.png)
+| ![Demo MacOs](docs/demo-macos.png) | ![Demo Emojis](docs/demo-emojis.png) |
+| ----------- | ----------- |
+| ![Demo Colors](docs/demo-colors.png) | ![Demo VIM](docs/demo-vim.png) |
 
 Note: Emojis are rendered with Noto Emoji.
-
-![Demo emoji](docs/demo-emojis.png)
 
 ## Summary
 
