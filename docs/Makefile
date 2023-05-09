@@ -1,0 +1,2 @@
+run:
+	jekyll serve --watch
