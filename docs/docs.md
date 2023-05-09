@@ -7,40 +7,14 @@ language: 'en'
 
 ## Summary
 
-- [About Rio](#about-rio)
-- [Configuration file](#configuration-file)
-    - [Performance](#performance)
-    - [Height](#height)
-    - [Width](#width)
-    - [Style](#style)
-    - [Advanced](#advanced)
-    - [Colors](#colors)
-    - [Developer](#developer)
-- [Status](#development-status)
-- [Acknowledgments](#acknowledgments)
+- [The Rio terminal](#about-rio)
+- [The configuration file](#configuration-file)
 
 ## About Rio
 
-Website: https://raphamorim.io/rio
+Rio is a terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
 
-> If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
-> 
-> Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
->
-
-A terminal application that's built with Rust, WebGPU, Tokio runtime. It targets to have the best frame per second experience as long you want, but is also configurable to use as minimal from GPU.
-
-Below some of work in progress Rio's features:
-
-- Renderer based on Redux state machine.
-- WebAssembly plugin system.
-- Cross-platform.
-- Configurable (Render level, colors, icons, fonts).
-- Offloads rendering to the GPU for lower system load.
-- Uses threaded rendering for absolutely minimal latency.
-- Tabs support.
-
-Rio renderer is based on redux state machine, lines that has not updated will not suffer a redraw. Looking for the minimal rendering process in most of the time. Rio is also designed to support WebAssembly runtime so in the future you will be able to define how a tab system will work with a WASM plugin written in your favorite language.
+The terminal renderer is based on redux state machine, lines that has not updated will not suffer a redraw. Looking for the minimal rendering process in most of the time. Rio is also designed to support WebAssembly runtime so in the future you will be able to define how a tab system will work with a WASM plugin written in your favorite language.
 
 Rio uses WGPU, which is an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. **[More info](https://users.rust-lang.org/t/what-is-webgpu-and-is-it-ready-for-use/62331/8)**
 
@@ -50,12 +24,11 @@ It also relies on Rust memory behavior, since Rust is a memory-safe language tha
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-- macOS path: `~/.rio/config.toml`
+In macOS path is in "~/.rio/config.toml".
 
-Default configuration of `config.toml`:
+Default configuration of config.toml:
 
-```toml
-# Rio default configuration file
+{% highlight toml %}
 performance = "High"
 height = 438
 width = 662
@@ -106,128 +79,117 @@ light-magenta    = '#9E88BE'
 light-red        = '#F25E73'
 light-white      = '#FFFFFF'
 light-yellow     = '#FDF170'
-```
+{% endhighlight %}
 
-#### `performance`
+## performance
 
 Set terminal WGPU rendering perfomance.
 
-- High: Adapter that has the highest performance. This is often a discrete GPU.
-- Low: Adapter that uses the least possible power. This is often an integrated GPU.
+• **High**: Adapter that has the highest performance. This is often a discrete GPU.
+
+• **Low**: Adapter that uses the least possible power. This is often an integrated GPU.
 
 See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
 
-```toml
+{% highlight toml %}
 # <performance> Set WGPU rendering perfomance
 # default: High
 # options: High, Low
 # High: Adapter that has the highest performance. This is often a discrete GPU.
 # Low: Adapter that uses the least possible power. This is often an integrated GPU.
 performance = "High"
-```
+{% endhighlight %}
 
-#### `height`
+## height
 
 Set terminal window height.
 
-```toml
+{% highlight toml %}
 # <height> Set default height
 # default: 438
 height = 400
-```
+{% endhighlight %}
 
-#### `width`
+## width
 
 Set terminal window width.
 
-```toml
+{% highlight toml %}
 # <width> Set default width
 # default: 662
 width = 800
-```
+{% endhighlight %}
 
-#### `cursor`
+## cursor
 
-Set cursor character.
+Set cursor character. Default cursor is block ('█').
 
-```toml
-# default: '█'
-
+{% highlight toml %}
 # (Underline)
-cursor: '_'
-
+cursor = '_'
 # (Beam)
-cursor: '|'
+cursor = '|'
+{% endhighlight %}
 
-# Other possibilities
-cursor: '❤' # (U+2764)
-```
-
-### Style
-
-#### `font`
+## font
 
 Default font is Firamono.
 
-```toml
+{% highlight toml %}
 [style]
 font = "Monaco"
-```
+{% endhighlight %}
 
-#### `font-size`
+## font-size
 
 Sets font size.
 
-```toml
+{% highlight toml %}
 [style]
 font-size = 16.0
-```
+{% endhighlight %}
 
-### Advanced
+## tab-character-active
 
-#### `tab-character-active`
+This property sets a character for an active tab.
 
-This property sets a `char` for an active tab.
-
-```toml
+{% highlight toml %}
 [style]
 tab-character-active = '●'
-```
+{% endhighlight %}
 
-#### `tab-character-inactive`
+## tab-character-inactive
 
-This property sets a `char` for an inactive tab.
+This property sets a character for an inactive tab.
 
-```toml
+{% highlight toml %}
 [style]
 tab-character-inactive = '■'
-```
+{% endhighlight %}
 
-#### `disable-renderer-when-unfocused`
+## disable-renderer-when-unfocused
 
 This property disable renderer processes until focus on Rio term again.
 
-```toml
+{% highlight toml %}
 [style]
 disable-renderer-when-unfocused = false
-```
+{% endhighlight %}
 
-## Developer
+## log-level
 
-#### `log-level`
+This property enables log level filter. Default is "OFF".
 
-This property enables log level filter. Default is `OFF`.
-
-```toml
+{% highlight toml %}
 [style]
 log-level = 'INFO'
-```
+{% endhighlight %}
 
-#### `enable-fps-counter`
+## enable-fps-counter
 
 This property enables frame per second counter.
 
-```toml
+{% highlight toml %}
 [style]
 enable-fps-counter = false
-```
+{% endhighlight %}
