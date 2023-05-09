@@ -2,13 +2,13 @@
 
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
 
-![Rio banner](docs/banner.png)
+![Rio banner](docs/assets/banner.png)
 
 ## Demo Gallery
 
-| ![Demo MacOs](docs/demo-macos.png) | ![Demo Emojis](docs/demo-emojis.png) |
+| ![Demo MacOs](resources/demo-macos.png) | ![Demo Emojis](resources/demo-emojis.png) |
 | ----------- | ----------- |
-| ![Demo Colors](docs/demo-colors.png) | ![Demo VIM](docs/demo-vim.png) |
+| ![Demo Colors](resources/demo-colors.png) | ![Demo VIM](resources/demo-vim.png) |
 
 Note: Emojis are rendered with Noto Emoji.
 
@@ -243,7 +243,7 @@ enable-fps-counter = false
 
 Rio default colors:
 
-![Default colors](docs/rio-colors.png)
+![Default colors](resources/rio-colors.png)
 
 > The image above was produced by [coolors.co](https://coolors.co/).
 

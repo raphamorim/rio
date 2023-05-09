@@ -1,0 +1,57 @@
+url: https://raphamorim.io/rio
+
+name: Rio Terminal
+description: A modern terminal for the 21th century. Rio is built over WebGPU, WebAssembly and Rust. The WebGPU API makes it suitable for general purpose graphics and compute on the GPU.
+keywords: "WebGPU, Rust, Terminal, GPU"
+
+domain: raphamorim.io
+commentlinks: true
+twitter-username: raphamorims
+# feedburnerurl: http://feeds.feedburner.com/raphamorim
+# google-analytics-tracking-id: UA-49746836-1
+plugins: []
+
+source:      .
+destination: ./_site
+paginate_path: '/page:num'
+
+future:      true
+lsi:         false
+highlighter: rouge
+markdown:    kramdown
+permalink:   /:title/
+paginate: 5
+
+# Serving
+detach:  false
+port:    4000
+host:    127.0.0.1
+baseurl: "" # does not include hostname
+show_dir_listing: false
+
+maruku:
+  use_tex:    false
+  use_divs:   false
+  png_engine: blahtex
+  png_dir:    images/latex
+  png_url:    /images/latex
+
+rdiscount:
+  extensions: []
+
+kramdown:
+  auto_ids: true,
+  footnote_nr: 1
+  entity_output: as_char
+  toc_levels: 1..6
+  enable_coderay: false
+
+  syntax_highlighter_opts:
+    wrap: div
+    line_numbers: inline
+    line_numbers_start: 1
+    tab_width: 4
+    bold_every: 10
+    css: style
+
+excerpt_separator: "<!-- more -->"

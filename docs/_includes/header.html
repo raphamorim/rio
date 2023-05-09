@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="icon" type="image/x-icon" href="../assets/logo.ico">
+	<title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.name }}</title>
+
+	<link rel="stylesheet" href="../assets/styles.css">
+
+	<!-- Meta OG tags -->
+	<meta property="og:image"
+		content="https://raphamorim.io/rio/assets/banner.png" />
+	<meta property="og:description"
+		content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}" />
+	<meta property="og:title" content="{% if page.title %}{{ page.title }} - {% endif %}{{ site.name }}" />
+
+	<meta name="keywords" content="{% if page.keywords %}{{ page.keywords }}{% else %}{{ site.keywords }}{% endif %}">
+
+	<link rel="canonical" href="{{site.url}}{% if page.url != '/index.html' %}{{ page.url }}{% endif %}" />
+
+	<!-- Twitter Cards -->
+	<meta name="twitter:card" content="summary_large_image">
+	<meta name="twitter:title" content="{% if page.title %}{{ page.title }} - {% endif %}{{ site.name }}">
+	<meta name="twitter:description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}" />
+	<meta name="twitter:url" content="https://raphamorim.io/rio">
+	<meta name="twitter:image" content="https://raphamorim.io/rio/assets/banner.png"/>
+</head>
