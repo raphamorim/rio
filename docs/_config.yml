@@ -7,13 +7,11 @@ keywords: "WebGPU, Rust, Terminal, GPU"
 domain: raphamorim.io
 commentlinks: true
 twitter-username: raphamorims
-# feedburnerurl: http://feeds.feedburner.com/raphamorim
-# google-analytics-tracking-id: UA-49746836-1
-plugins: []
+plugins: [jekyll-paginate, jekyll-gist]
 
 source:      .
 destination: ./_site
-paginate_path: '/page:num'
+paginate_path: "/blog/:num/"
 
 future:      true
 lsi:         false

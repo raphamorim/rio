@@ -1,0 +1,19 @@
+{% include header.html %}
+{% include nav.html %}
+
+<div class="container content">
+  <h1>Nothing to see here yet...</h1>
+
+  {% for post in paginator.posts %}
+    {% unless post.draft %}
+      <li class="post">
+        <a class="post-title-link" href="{{ post.url }}">
+          <h2 class="post-title">{{ post.title }}</h2>
+        </a>
+        <span class="post-date">{{ post.date | date:"%b %d, %Y" }}</span>
+      </li>
+    {% endunless %}
+  {% endfor %}
+</div>
+
+{% include footer.html %}
