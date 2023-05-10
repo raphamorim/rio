@@ -2,4 +2,4 @@
 test-colors = "test --release -p colors --"
 test-config = "test --release -p config --"
 test-rio = "test --release -p rio --"
-publish-all = "publish -p teletypewriter --"
+publish-all = "publish -p teletypewriter -p sugarloaf --"
