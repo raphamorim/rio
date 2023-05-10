@@ -220,6 +220,22 @@ section.features .container div {
     margin: 0 30px;
   }
 
+  #nav #links {
+    width: 260px;
+  }
+
+  #nav #links #links-download {
+    display: none;
+  }
+
+  #nav #nav-logo {
+    margin: 0 10px;
+  }
+
+  #nav #external-links {
+    display: none;
+  }
+
   .terminal-content {
     font-size: 12px;
   }
