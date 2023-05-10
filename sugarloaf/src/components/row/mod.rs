@@ -1,11 +1,45 @@
 use crate::context::Context;
 use crate::Renderable;
 use bytemuck::{Pod, Zeroable};
-use std::num::NonZeroU64;
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
 const MAX_INSTANCES: usize = 10_000;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+struct Uniforms {
+    transform: [f32; 16],
+    scale: f32,
+    _padding: [f32; 3],
+}
+
+impl Uniforms {
+    fn new(transformation: [f32; 16], scale: f32) -> Uniforms {
+        Self {
+            transform: transformation,
+            scale,
+            // Ref: https://github.com/iced-rs/iced/blob/bc62013b6cde52174bf4c4286939cf170bfa7760/wgpu/src/quad.rs#LL295C6-L296C68
+            // Uniforms must be aligned to their largest member,
+            // this uses a mat4x4<f32> which aligns to 16, so align to that
+            _padding: [0.0; 3],
+        }
+    }
+}
+
+impl Default for Uniforms {
+    fn default() -> Self {
+        let identity_matrix: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            1.0,
+        ];
+        Self {
+            transform: identity_matrix,
+            scale: 1.0,
+            _padding: [0.0; 3],
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -69,28 +103,20 @@ pub struct Row {
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
+    scale: f32,
 }
-
-const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-];
 
 impl Renderable for Row {
     fn init(context: &Context) -> Self {
-        // let width = &context.size.width;
-        // let height = &context.size.height;
-        // let_adapter: &wgpu::Adapter,
         let device = &context.device;
         let _queue = &context.queue;
-
-        // Create the vertex and index buffers
-        // let vertex_size = mem::size_of::<Vertex>();
         let vertex_data = create_vertices();
 
-        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let transform = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -115,7 +141,9 @@ impl Renderable for Row {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(64),
+                        min_binding_size: wgpu::BufferSize::new(
+                            mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+                        ),
                     },
                     count: None,
                 }],
@@ -204,6 +232,7 @@ impl Renderable for Row {
 
         // Done
         Row {
+            scale: 1.0,
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),
@@ -223,34 +252,39 @@ impl Renderable for Row {
         &mut self,
         _config: &wgpu::SurfaceConfiguration,
         _device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
     ) {
-        queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
+        // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     }
 
     fn render(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        device: &wgpu::Device,
         view: &wgpu::TextureView,
-        staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
         instances: &[Quad],
+        ctx: &mut Context,
     ) {
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let scale = ctx.scale;
+        let device = &ctx.device;
+        let staging_belt = &mut ctx.staging_belt;
 
-        if transform != self.current_transform {
+        if transform != self.current_transform || scale != self.scale {
+            let uniforms = Uniforms::new(transform, scale);
+
             let mut transform_view = staging_belt.write_buffer(
                 encoder,
                 &self.transform,
                 0,
-                unsafe { NonZeroU64::new_unchecked(16 * 4) },
+                wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64).unwrap(),
                 device,
             );
 
-            transform_view.copy_from_slice(bytemuck::cast_slice(&transform));
+            transform_view.copy_from_slice(bytemuck::bytes_of(&uniforms));
 
             self.current_transform = transform;
+            self.scale = scale;
         }
 
         let mut i = 0;

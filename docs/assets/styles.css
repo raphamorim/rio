@@ -367,7 +367,7 @@ section.features .container div {
   color: #F9F4DA;
 }
 
-@media (max-width: 380px) {
+@media (max-width: 480px) {
   .rio {
     height: 150px;
     margin: 0 30px;

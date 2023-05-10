@@ -21,31 +21,25 @@ pub enum RendererTarget {
     Web,
 }
 
-pub fn orthographic_projection(_width: u32, _height: u32) -> [f32; 16] {
-    // [0.0016666667, 0.0, 0.0, 0.0, 0.0, -0.0025, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, -0.0, 1.0]
-
+pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -0.5, 1.45, -0.0,
+        2.0 / width as f32 * 6.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.0 / height as f32 * 6.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        -1.0,
+        1.0,
+        0.0,
         1.0,
     ]
-    // [
-    //     2.0 / width as f32,
-    //     0.0,
-    //     0.0,
-    //     0.0,
-    //     0.0,
-    //     -2.0 / height as f32,
-    //     0.0,
-    //     0.0,
-    //     0.0,
-    //     0.0,
-    //     1.0,
-    //     0.0,
-    //     -1.0,
-    //     1.0,
-    //     0.0,
-    //     1.0,
-    // ]
 }
 
 pub trait Renderable: 'static + Sized {
@@ -74,11 +68,10 @@ pub trait Renderable: 'static + Sized {
     fn render(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        device: &wgpu::Device,
         view: &wgpu::TextureView,
-        staging_belt: &mut wgpu::util::StagingBelt,
         transform: [f32; 16],
         instances: &[Quad],
+        context: &mut Context,
     );
 }
 
@@ -351,6 +344,30 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
         &self.ctx
     }
 
+    pub fn rescale(&mut self, scale: f32) -> &mut Self {
+        self.ctx.scale = scale;
+        self
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
+        self.ctx.size.width = width;
+        self.ctx.size.height = height;
+        self.ctx.surface.configure(
+            &self.ctx.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.ctx.format,
+                width,
+                height,
+                view_formats: vec![],
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
+
+        self
+    }
+
     pub fn start(&self) {}
 
     pub fn render(&mut self) {
@@ -366,34 +383,14 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
 
                 let instances = [
                     Quad {
-                        position: [0.0, 0.0],
+                        position: [10.0, 20.0],
                         color: [1.0, 1.0, 0.0, 1.0],
-                        size: [0.0, 0.0],
+                        size: [50.0, 50.0],
                     },
                     Quad {
-                        position: [0.025, 0.0],
+                        position: [1.25, 10.0],
                         color: [0.0, 1.0, 0.0, 1.0],
-                        size: [0.0, 0.0],
-                    },
-                    Quad {
-                        position: [0.045, 0.0],
-                        color: [0.0, 1.0, 1.0, 1.0],
-                        size: [0.0, 0.0],
-                    },
-                    Quad {
-                        position: [0.0, -0.05],
-                        color: [0.0, 0.5, 1.0, 1.0],
-                        size: [0.0, 0.0],
-                    },
-                    Quad {
-                        position: [0.025, -0.05],
-                        color: [1.0, 0.0, 0.0, 1.0],
-                        size: [0.0, 0.0],
-                    },
-                    Quad {
-                        position: [0.045, -0.05],
-                        color: [0.5, 1.0, 1.0, 1.0],
-                        size: [0.0, 0.0],
+                        size: [100.0, 100.0],
                     },
                 ];
 
@@ -401,14 +398,13 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                     for item in self.queue.iter_mut() {
                         item.render(
                             &mut encoder,
-                            &self.ctx.device,
                             view,
-                            &mut self.ctx.staging_belt,
                             orthographic_projection(
                                 self.ctx.size.width,
                                 self.ctx.size.height,
                             ),
                             &instances,
+                            &mut self.ctx,
                         );
                     }
                 }

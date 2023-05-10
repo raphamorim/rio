@@ -52,6 +52,16 @@ async fn main() {
                 } => {
                     //
                 }
+                WindowEvent::ScaleFactorChanged {
+                    new_inner_size,
+                    scale_factor,
+                    ..
+                } => {
+                    renderer
+                        .rescale(scale_factor as f32)
+                        .resize(new_inner_size.width, new_inner_size.height)
+                        .render();
+                }
                 _ => (),
             },
             Event::RedrawRequested { .. } => {
