@@ -214,33 +214,6 @@ section.features .container div {
     blink-caret 3.2s step-end;
 }
 
-@media (max-width: 380px) {
-  .rio {
-    height: 150px;
-    margin: 0 30px;
-  }
-
-  #nav #links {
-    width: 260px;
-  }
-
-  #nav #links #links-download {
-    display: none;
-  }
-
-  #nav #nav-logo {
-    margin: 0 10px;
-  }
-
-  #nav #external-links {
-    display: none;
-  }
-
-  .terminal-content {
-    font-size: 12px;
-  }
-}
-
 /* The typing effect */
 @keyframes typing {
   from { width: 0 }
@@ -392,4 +365,40 @@ section.features .container div {
 #nav ul a:hover {
   text-decoration: underline;
   color: #F9F4DA;
+}
+
+@media (max-width: 380px) {
+  .rio {
+    height: 150px;
+    margin: 0 30px;
+  }
+
+  #nav #links {
+    width: 260px;
+  }
+
+  #nav #links #links-download {
+    display: none;
+  }
+
+  #nav #nav-logo {
+    margin: 0 10px;
+  }
+
+  #nav #external-links {
+    display: none;
+  }
+
+  .terminal-content {
+    font-size: 12px;
+  }
+
+  .container.content::before {
+    width: auto;
+    left: 0;
+  }
+
+  .container.content {
+    border-radius: 0px;
+  }
 }
