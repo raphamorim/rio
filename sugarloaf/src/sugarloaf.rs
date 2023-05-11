@@ -1,4 +1,4 @@
-use crate::components::row::{Quad, Row};
+use crate::components::row::{Rect, Row};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::SugarStack;
@@ -23,12 +23,12 @@ pub enum RendererTarget {
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [
-        2.0 / width as f32 * 6.0,
+        2.0 / width as f32,
         0.0,
         0.0,
         0.0,
         0.0,
-        -2.0 / height as f32 * 6.0,
+        -2.0 / height as f32,
         0.0,
         0.0,
         0.0,
@@ -70,7 +70,7 @@ pub trait Renderable: 'static + Sized {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         transform: [f32; 16],
-        instances: &[Quad],
+        instances: &[Rect],
         context: &mut Context,
     );
 }
@@ -80,7 +80,7 @@ pub struct Sugarloaf {
     brush: text::GlyphBrush<()>,
     #[allow(dead_code)]
     row: Row,
-    rows: Vec<Quad>,
+    rows: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
 }
@@ -180,7 +180,7 @@ impl Sugarloaf {
                     .with_scale(style.text_scale),
             );
 
-            self.rows.push(Quad {
+            self.rows.push(Rect {
                 position: [x, self.acc_line_y],
                 color: sugar.background_color,
                 size: [0.14, 0.14],
@@ -382,13 +382,13 @@ impl<'a, R: Renderable> CustomRenderer<'a, R> {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 let instances = [
-                    Quad {
-                        position: [10.0, 20.0],
+                    Rect {
+                        position: [30.0, 20.0],
                         color: [1.0, 1.0, 0.0, 1.0],
                         size: [50.0, 50.0],
                     },
-                    Quad {
-                        position: [1.25, 10.0],
+                    Rect {
+                        position: [200., 200.0],
                         color: [0.0, 1.0, 0.0, 1.0],
                         size: [100.0, 100.0],
                     },

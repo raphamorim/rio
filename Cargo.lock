@@ -1862,7 +1862,6 @@ dependencies = [
  "colors",
  "config",
  "font-kit",
- "glam",
  "glyph_brush",
  "log",
  "tokio",
