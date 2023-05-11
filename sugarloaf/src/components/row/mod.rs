@@ -57,25 +57,26 @@ const QUAD_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct Quad {
-    /// The position of the [`Quad`].
+pub struct Rect {
+    /// The position of the [`Rect`].
     pub position: [f32; 2],
     pub color: [f32; 4],
     pub size: [f32; 2],
 }
 
 #[allow(unsafe_code)]
-unsafe impl bytemuck::Zeroable for Quad {}
+unsafe impl bytemuck::Zeroable for Rect {}
 
 #[allow(unsafe_code)]
-unsafe impl bytemuck::Pod for Quad {}
+unsafe impl bytemuck::Pod for Rect {}
 
-fn create_vertices() -> Vec<Vertex> {
+// TODO: Implement square
+fn create_vertices_rect() -> Vec<Vertex> {
     let vertex_data = [
         vertex([0.0, 0.0]),
-        vertex([0.03, 0.0]),
-        vertex([0.03, 0.065]),
-        vertex([0.0, 0.065]),
+        vertex([0.5, 0.0]),
+        vertex([0.5, 1.0]),
+        vertex([0.0, 1.0]),
     ];
 
     vertex_data.to_vec()
@@ -109,8 +110,7 @@ pub struct Row {
 impl Renderable for Row {
     fn init(context: &Context) -> Self {
         let device = &context.device;
-        let _queue = &context.queue;
-        let vertex_data = create_vertices();
+        let vertex_data = create_vertices_rect();
 
         let transform = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -185,7 +185,7 @@ impl Renderable for Row {
                 }],
             },
             wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<Quad>() as u64,
+                array_stride: mem::size_of::<Rect>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array!(
                     1 => Float32x2,
@@ -225,7 +225,7 @@ impl Renderable for Row {
 
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instances Buffer"),
-            size: mem::size_of::<Quad>() as u64 * MAX_INSTANCES as u64,
+            size: mem::size_of::<Rect>() as u64 * MAX_INSTANCES as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -262,7 +262,7 @@ impl Renderable for Row {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         transform: [f32; 16],
-        instances: &[Quad],
+        instances: &[Rect],
         ctx: &mut Context,
     ) {
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
