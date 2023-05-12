@@ -178,16 +178,6 @@ where
                         suggested
                     };
 
-                    // if log_enabled!(log::Level::Warn) {
-                    //     warn!(
-                    //         "Increasing glyph texture size {old:?} -> {new:?}. \
-                    //          Consider building with `.initial_cache_size({new:?})` to avoid \
-                    //          resizing",
-                    //         old = self.glyph_brush.texture_dimensions(),
-                    //         new = (new_width, new_height),
-                    //     );
-                    // }
-
                     pipeline.increase_cache_size(device, new_width, new_height);
                     self.glyph_brush.resize_texture(new_width, new_height);
                 }

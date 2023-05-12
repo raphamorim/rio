@@ -3,7 +3,7 @@ mod mouse;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
 use mouse::{AccumulatedScroll, Mouse};
-use sugarloaf::SugarloafStyle;
+use sugarloaf::core::SugarloafStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delta<T: Default> {

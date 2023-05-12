@@ -95,7 +95,7 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
-pub struct Row {
+pub struct RectBrush {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     instances: wgpu::Buffer,
@@ -107,7 +107,7 @@ pub struct Row {
     scale: f32,
 }
 
-impl Renderable for Row {
+impl Renderable for RectBrush {
     fn init(context: &Context) -> Self {
         let device = &context.device;
         let vertex_data = create_vertices_rect();
@@ -231,7 +231,7 @@ impl Renderable for Row {
         });
 
         // Done
-        Row {
+        RectBrush {
             scale: 1.0,
             vertex_buf,
             index_buf,

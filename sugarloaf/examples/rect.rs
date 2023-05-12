@@ -8,36 +8,35 @@ use winit::{
     window::WindowBuilder,
 };
 
-use sugarloaf::components::row::Row;
-use sugarloaf::{CustomRenderer, Renderable, RendererTarget};
+use sugarloaf::components::rect::Rect;
+use sugarloaf::{RendererTarget, Sugarloaf};
 
 #[tokio::main]
 async fn main() {
     let mut event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
-        .with_title("Row example")
+        .with_title("Rect example")
         .with_inner_size(LogicalSize::new(1200.0, 800.0))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
 
-    let mut renderer = CustomRenderer::new(
+    let mut sugarloaf = Sugarloaf::new(
         RendererTarget::Desktop,
         &window,
         wgpu::PowerPreference::HighPerformance,
+        "Firamono".to_string(),
     )
-    .await;
-    let mut row = Row::init(renderer.get_context());
-    renderer.add_component(&mut row);
+    .await
+    .expect("Sugarloaf instance should be created");
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
 
         match event {
             Event::Resumed => {
-                // renderer.add_component(&mut rect);
-                // window.request_redraw();
+                window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
@@ -57,15 +56,43 @@ async fn main() {
                     scale_factor,
                     ..
                 } => {
-                    renderer
+                    sugarloaf
                         .rescale(scale_factor as f32)
                         .resize(new_inner_size.width, new_inner_size.height)
-                        .render();
+                        .render(wgpu::Color::BLUE);
                 }
                 _ => (),
             },
             Event::RedrawRequested { .. } => {
-                renderer.render();
+                sugarloaf
+                    .pile_rect(vec![
+                        Rect {
+                            position: [10.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [1.0, 1.0],
+                        },
+                        Rect {
+                            position: [15.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [10.0, 10.0],
+                        },
+                        Rect {
+                            position: [30.0, 20.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [50.0, 50.0],
+                        },
+                        Rect {
+                            position: [200., 200.0],
+                            color: [0.0, 1.0, 0.0, 1.0],
+                            size: [100.0, 100.0],
+                        },
+                        Rect {
+                            position: [500.0, 200.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [200.0, 200.0],
+                        },
+                    ])
+                    .render(wgpu::Color::BLUE);
             }
             _ => {
                 *control_flow = winit::event_loop::ControlFlow::Wait;

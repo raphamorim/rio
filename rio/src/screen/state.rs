@@ -180,7 +180,7 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: (pos::Column, pos::Line),
         sugarloaf: &mut Sugarloaf,
-        style: sugarloaf::SugarloafStyle,
+        style: sugarloaf::core::SugarloafStyle,
     ) {
         self.cursor.position = cursor;
         for (i, row) in rows.iter().enumerate() {
