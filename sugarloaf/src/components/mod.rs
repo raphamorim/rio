@@ -1,2 +1,2 @@
-pub mod row;
+pub mod rect;
 pub mod text;

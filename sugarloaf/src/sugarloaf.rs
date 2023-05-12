@@ -1,19 +1,13 @@
-use crate::components::row::{Rect, Row};
+use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::SugarStack;
+use crate::core::{SugarStack, SugarloafStyle};
 use crate::font::Font;
 use glyph_brush::ab_glyph::Font as GFont;
 use glyph_brush::ab_glyph::{self, FontArc};
 use glyph_brush::FontId;
+use glyph_brush::GlyphCruncher;
 use glyph_brush::{OwnedSection, OwnedText};
-
-#[derive(Default, Copy, Clone)]
-pub struct SugarloafStyle {
-    pub screen_position: (f32, f32),
-    pub bounds: (f32, f32),
-    pub text_scale: f32,
-}
 
 // TODO: Use macro instead
 pub enum RendererTarget {
@@ -77,10 +71,9 @@ pub trait Renderable: 'static + Sized {
 
 pub struct Sugarloaf {
     pub ctx: Context,
-    brush: text::GlyphBrush<()>,
-    #[allow(dead_code)]
-    row: Row,
-    rows: Vec<Rect>,
+    text_brush: text::GlyphBrush<()>,
+    rect_brush: RectBrush,
+    rects: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
 }
@@ -102,19 +95,19 @@ impl Sugarloaf {
 
         match Font::new(font_name) {
             Ok(font) => {
-                let brush = text::GlyphBrushBuilder::using_fonts(vec![
+                let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
                     font.system,
                     font.symbol,
                     font.emojis,
                     font.unicode,
                 ])
                 .build(&ctx.device, ctx.format);
-                let row = Row::init(&ctx);
+                let rect_brush = RectBrush::init(&ctx);
                 Ok(Sugarloaf {
                     ctx,
-                    row,
-                    rows: vec![],
-                    brush,
+                    rect_brush,
+                    rects: vec![],
+                    text_brush,
                     acc_line: 0.0,
                     acc_line_y: -0.175,
                 })
@@ -151,9 +144,9 @@ impl Sugarloaf {
 
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
-        let mut x = 0.030;
+        // let mut x = 0.030;
 
-        let fonts = self.brush.fonts();
+        let fonts = self.text_brush.fonts();
         let system: &FontArc = &fonts[0];
         let symbols: &FontArc = &fonts[1];
         let emojis: &FontArc = &fonts[2];
@@ -180,16 +173,16 @@ impl Sugarloaf {
                     .with_scale(style.text_scale),
             );
 
-            self.rows.push(Rect {
-                position: [x, self.acc_line_y],
-                color: sugar.background_color,
-                size: [0.14, 0.14],
-            });
+            // self.rows.push(Rect {
+            //     position: [x, self.acc_line_y],
+            //     color: sugar.background_color,
+            //     size: [0.14, 0.14],
+            // });
 
-            x += 0.0242;
+            // x += 0.0242;
         }
 
-        self.acc_line_y += -0.0734;
+        // self.acc_line_y += -0.0734;
 
         let section = &OwnedSection {
             screen_position: (
@@ -202,9 +195,10 @@ impl Sugarloaf {
                 .v_align(glyph_brush::VerticalAlign::Bottom),
         };
 
-        // println!("{:?}", self.brush.glyph_bounds(section));
+        // TODO: Remove this line
+        log::debug!("{:?}", self.text_brush.glyph_bounds(section));
 
-        self.brush.queue(section);
+        self.text_brush.queue(section);
 
         self.acc_line += style.text_scale;
     }
@@ -252,6 +246,11 @@ impl Sugarloaf {
         self.acc_line_y = -0.175;
     }
 
+    pub fn pile_rect(&mut self, instances: Vec<Rect>) -> &mut Self {
+        self.rects = instances;
+        self
+    }
+
     #[inline]
     pub fn render(&mut self, color: colors::ColorWGPU) {
         self.reset_state();
@@ -279,135 +278,23 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                // let _ = self.row.render(
-                //     &mut encoder,
-                //     &self.ctx.device,
-                //     view,
-                //     &mut self.ctx.staging_belt,
-                //     orthographic_projection(self.ctx.size.width, self.ctx.size.height),
-                //     &self.rows,
-                // );
+                self.rect_brush.render(
+                    &mut encoder,
+                    view,
+                    orthographic_projection(self.ctx.size.width, self.ctx.size.height),
+                    &self.rects,
+                    &mut self.ctx,
+                );
 
-                self.rows = vec![];
+                self.rects = vec![];
 
-                let _ = self.brush.draw_queued(
+                let _ = self.text_brush.draw_queued(
                     &self.ctx.device,
                     &mut self.ctx.staging_belt,
                     &mut encoder,
                     view,
                     (self.ctx.size.width, self.ctx.size.height),
                 );
-
-                self.ctx.staging_belt.finish();
-                self.ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
-                self.ctx.staging_belt.recall();
-            }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
-            }
-        }
-    }
-}
-
-pub struct CustomRenderer<'a, R: Renderable> {
-    pub ctx: Context,
-    queue: Vec<&'a mut R>,
-}
-
-impl<'a, R: Renderable> CustomRenderer<'a, R> {
-    pub async fn new(
-        target: RendererTarget,
-        winit_window: &winit::window::Window,
-        power_preference: wgpu::PowerPreference,
-    ) -> CustomRenderer<R> {
-        let ctx = match target {
-            RendererTarget::Desktop => Context::new(winit_window, power_preference).await,
-            RendererTarget::Web => {
-                todo!("web not implemented");
-            }
-        };
-
-        CustomRenderer { ctx, queue: vec![] }
-    }
-
-    pub fn add_component(&mut self, renderable_item: &'a mut R)
-    where
-        R: Renderable,
-    {
-        self.queue.push(renderable_item);
-    }
-
-    pub fn get_context(&self) -> &Context {
-        &self.ctx
-    }
-
-    pub fn rescale(&mut self, scale: f32) -> &mut Self {
-        self.ctx.scale = scale;
-        self
-    }
-
-    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.ctx.size.width = width;
-        self.ctx.size.height = height;
-        self.ctx.surface.configure(
-            &self.ctx.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.ctx.format,
-                width,
-                height,
-                view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-
-        self
-    }
-
-    pub fn start(&self) {}
-
-    pub fn render(&mut self) {
-        match self.ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
-
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-
-                let instances = [
-                    Rect {
-                        position: [30.0, 20.0],
-                        color: [1.0, 1.0, 0.0, 1.0],
-                        size: [50.0, 50.0],
-                    },
-                    Rect {
-                        position: [200., 200.0],
-                        color: [0.0, 1.0, 0.0, 1.0],
-                        size: [100.0, 100.0],
-                    },
-                ];
-
-                if !self.queue.is_empty() {
-                    for item in self.queue.iter_mut() {
-                        item.render(
-                            &mut encoder,
-                            view,
-                            orthographic_projection(
-                                self.ctx.size.width,
-                                self.ctx.size.height,
-                            ),
-                            &instances,
-                            &mut self.ctx,
-                        );
-                    }
-                }
 
                 self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));

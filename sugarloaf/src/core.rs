@@ -7,6 +7,13 @@ pub struct Sugar {
 pub type SugarStack = Vec<Sugar>;
 pub type SugarPile = Vec<SugarStack>;
 
+#[derive(Copy, Default, Debug, Clone)]
+pub struct SugarloafStyle {
+    pub screen_position: (f32, f32),
+    pub bounds: (f32, f32),
+    pub text_scale: f32,
+}
+
 pub fn empty_sugar_pile() -> SugarPile {
     vec![vec![]]
 }
