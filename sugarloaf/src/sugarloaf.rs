@@ -76,6 +76,7 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
+    sugar_dimension: (f32, f32),
 }
 
 // TODO: Sugarloaf integrate CustomRenderer (or Renderer) layer usage
@@ -109,7 +110,8 @@ impl Sugarloaf {
                     rects: vec![],
                     text_brush,
                     acc_line: 0.0,
-                    acc_line_y: -0.175,
+                    acc_line_y: 0.0,
+                    sugar_dimension: (0., 0.)
                 })
             }
             Err(err_message) => Err(format!(
@@ -144,7 +146,13 @@ impl Sugarloaf {
 
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
-        // let mut x = 0.030;
+        let mut x = 0.;
+
+        if self.acc_line_y == 0.0 {
+            self.acc_line_y = 20.;
+            println!("{:?}", self.acc_line_y);
+            // self.acc_line_y = self.acc_line_y;
+        }
 
         let fonts = self.text_brush.fonts();
         let system: &FontArc = &fonts[0];
@@ -173,16 +181,17 @@ impl Sugarloaf {
                     .with_scale(style.text_scale),
             );
 
-            // self.rows.push(Rect {
-            //     position: [x, self.acc_line_y],
-            //     color: sugar.background_color,
-            //     size: [0.14, 0.14],
-            // });
+            // Sugar dimension will return 150px
+            // (style.screen_position.1 + self.acc_line) / 2.
 
-            // x += 0.0242;
+            self.rects.push(Rect {
+                position: [style.screen_position.0 - 30. + x, self.acc_line_y],
+                color: sugar.background_color,
+                size: [self.sugar_dimension.0, self.sugar_dimension.0],
+            });
+
+            x += (self.sugar_dimension.0)/ 2.;
         }
-
-        // self.acc_line_y += -0.0734;
 
         let section = &OwnedSection {
             screen_position: (
@@ -195,11 +204,11 @@ impl Sugarloaf {
                 .v_align(glyph_brush::VerticalAlign::Bottom),
         };
 
-        // TODO: Remove this line
-        log::debug!("{:?}", self.text_brush.glyph_bounds(section));
-
         self.text_brush.queue(section);
 
+        println!("{:?}", self.acc_line_y);
+
+        self.acc_line_y = (style.screen_position.1 + self.acc_line) / 2.;
         self.acc_line += style.text_scale;
     }
 
@@ -208,12 +217,12 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn skeleton(&mut self, color: wgpu::Color) {
+    pub fn init(&mut self, color: wgpu::Color, style: SugarloafStyle) {
         let mut encoder =
             self.ctx
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Sugarloaf skeleton"),
+                    label: Some("sugarloaf::init -> Create command encoder"),
                 });
         let frame = self
             .ctx
@@ -224,7 +233,7 @@ impl Sugarloaf {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render -> Clear frame"),
+            label: Some("sugarloaf::init -> Clear frame"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
@@ -235,6 +244,38 @@ impl Sugarloaf {
             })],
             depth_stencil_attachment: None,
         });
+
+        if self.sugar_dimension == (0., 0.) {
+            let text = vec![OwnedText::new(' ')
+                .with_font_id(FontId(0))
+                .with_color([0.,0.,0.,0.])
+                .with_scale(style.text_scale)];
+
+            let section = &OwnedSection {
+                screen_position: (
+                    style.screen_position.0,
+                    style.screen_position.1 + self.acc_line,
+                ),
+                bounds: style.bounds,
+                text,
+                layout: glyph_brush::Layout::default_single_line()
+                    .v_align(glyph_brush::VerticalAlign::Bottom),
+            };
+
+            self.text_brush.queue(section);
+
+            // TODO: Now Sugarloaf depends of run an init operation
+            // and also font has same size for get dimensions.
+            if let Some(rect) = self.text_brush.glyph_bounds(section) {
+                let width = rect.max.x - rect.min.x;
+                let height = rect.max.y - rect.min.y;
+
+                println!("{:?} {:?}", width, height);
+                self.sugar_dimension = (width, height);
+
+            };
+        }
+
         self.ctx.staging_belt.finish();
         self.ctx.queue.submit(Some(encoder.finish()));
         frame.present();

@@ -33,11 +33,24 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
+    let scale_factor = 2.;
+    let font_size = 180.;
+
+    let style = SugarloafStyle {
+        screen_position: (
+            (20. + 10.) * scale_factor,
+            (20. + font_size) * scale_factor,
+        ),
+        text_scale: font_size * scale_factor,
+        bounds: (width * scale_factor, height * scale_factor),
+    };
+
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
 
         match event {
             Event::Resumed => {
+                sugarloaf.init(wgpu::Color::RED, style);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -75,7 +88,7 @@ async fn main() {
                     Sugar {
                         content: 'u',
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                     Sugar {
                         content: 'g',
@@ -85,12 +98,22 @@ async fn main() {
                     Sugar {
                         content: 'a',
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                     Sugar {
                         content: 'r',
                         foreground_color: [1.0, 1.0, 1.0, 1.0],
                         background_color: [0.0, 0.0, 0.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'g',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 0.0, 1.0, 1.0],
+                    },
+                    Sugar {
+                        content: '|',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                 ];
 
@@ -103,7 +126,7 @@ async fn main() {
                     Sugar {
                         content: 'o',
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                     Sugar {
                         content: 'a',
@@ -113,24 +136,51 @@ async fn main() {
                     Sugar {
                         content: 'f',
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 0.0, 1.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'g',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 0.0, 1.0, 1.0],
+                    },
+                    Sugar {
+                        content: '|',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
                     },
                 ];
 
-                let scale_factor = 2.;
-                let font_size = 150.;
-
-                let style = SugarloafStyle {
-                    screen_position: (
-                        (20. + 10.) * scale_factor,
-                        (20. + font_size) * scale_factor,
-                    ),
-                    text_scale: font_size * scale_factor,
-                    bounds: (width * scale_factor, height * scale_factor),
-                };
+                let rio = vec![
+                    Sugar {
+                        content: ' ',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: [0.0, 0.0, 0.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'r',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 0.0, 1.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'i',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: [0.0, 0.0, 0.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'o',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 1.0, 1.0],
+                    },
+                    Sugar {
+                        content: 'g',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 1.0, 0.0, 1.0],
+                    },
+                ];
 
                 sugarloaf.stack(sugar, style);
                 sugarloaf.stack(loaf, style);
+                sugarloaf.stack(rio, style);
                 sugarloaf.render(wgpu::Color::RED);
             }
             _ => {
