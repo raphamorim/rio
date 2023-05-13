@@ -119,6 +119,7 @@ impl Sugarloaf {
         }
     }
 
+    #[allow(unused)]
     pub fn clear(&mut self) {
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -156,7 +157,6 @@ impl Sugarloaf {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.clear();
         self.ctx.size.width = width;
         self.ctx.size.height = height;
         self.ctx.surface.configure(
