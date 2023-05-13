@@ -3,11 +3,8 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::{SugarStack, SugarloafStyle};
 use crate::font::Font;
-use glyph_brush::ab_glyph::Font as GFont;
-use glyph_brush::ab_glyph::{self, FontArc};
-use glyph_brush::FontId;
-use glyph_brush::GlyphCruncher;
-use glyph_brush::{OwnedSection, OwnedText};
+use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
+use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
 
 // TODO: Use macro instead
 pub enum RendererTarget {
@@ -77,6 +74,7 @@ pub struct Sugarloaf {
     acc_line: f32,
     acc_line_y: f32,
     sugar_dimension: (f32, f32),
+    background_color: wgpu::Color,
 }
 
 // TODO: Sugarloaf integrate CustomRenderer (or Renderer) layer usage
@@ -111,7 +109,8 @@ impl Sugarloaf {
                     text_brush,
                     acc_line: 0.0,
                     acc_line_y: 0.0,
-                    sugar_dimension: (0., 0.)
+                    sugar_dimension: (0., 0.),
+                    background_color: wgpu::Color::BLACK,
                 })
             }
             Err(err_message) => Err(format!(
@@ -120,7 +119,44 @@ impl Sugarloaf {
         }
     }
 
+    pub fn clear(&mut self) {
+        match self.ctx.surface.get_current_texture() {
+            Ok(frame) => {
+                let mut encoder = self.ctx.device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor { label: None },
+                );
+
+                let view = &frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("sugarloaf::init -> Clear frame"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(self.background_color),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
+                self.ctx.staging_belt.finish();
+                self.ctx.queue.submit(Some(encoder.finish()));
+                frame.present();
+                self.ctx.staging_belt.recall();
+            }
+            Err(error) => {
+                if error == wgpu::SurfaceError::OutOfMemory {
+                    panic!("Swapchain error: {error}. Rendering cannot continue.")
+                }
+            }
+        }
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
+        self.clear();
         self.ctx.size.width = width;
         self.ctx.size.height = height;
         self.ctx.surface.configure(
@@ -149,9 +185,8 @@ impl Sugarloaf {
         let mut x = 0.;
 
         if self.acc_line_y == 0.0 {
-            self.acc_line_y = 20.;
-            println!("{:?}", self.acc_line_y);
-            // self.acc_line_y = self.acc_line_y;
+            self.acc_line_y =
+                (style.screen_position.1 - style.text_scale) / self.ctx.scale;
         }
 
         let fonts = self.text_brush.fonts();
@@ -181,16 +216,16 @@ impl Sugarloaf {
                     .with_scale(style.text_scale),
             );
 
-            // Sugar dimension will return 150px
-            // (style.screen_position.1 + self.acc_line) / 2.
-
             self.rects.push(Rect {
-                position: [style.screen_position.0 - 30. + x, self.acc_line_y],
+                position: [
+                    (style.screen_position.0 / self.ctx.scale) + x,
+                    self.acc_line_y,
+                ],
                 color: sugar.background_color,
                 size: [self.sugar_dimension.0, self.sugar_dimension.0],
             });
 
-            x += (self.sugar_dimension.0)/ 2.;
+            x += (self.sugar_dimension.0) / self.ctx.scale;
         }
 
         let section = &OwnedSection {
@@ -206,8 +241,6 @@ impl Sugarloaf {
 
         self.text_brush.queue(section);
 
-        println!("{:?}", self.acc_line_y);
-
         self.acc_line_y = (style.screen_position.1 + self.acc_line) / 2.;
         self.acc_line += style.text_scale;
     }
@@ -218,73 +251,77 @@ impl Sugarloaf {
 
     #[inline]
     pub fn init(&mut self, color: wgpu::Color, style: SugarloafStyle) {
-        let mut encoder =
-            self.ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("sugarloaf::init -> Create command encoder"),
+        self.reset_state();
+        self.rects = vec![];
+        self.background_color = color;
+
+        match self.ctx.surface.get_current_texture() {
+            Ok(frame) => {
+                let mut encoder = self.ctx.device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor { label: None },
+                );
+
+                let view = &frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("sugarloaf::init -> Clear frame"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(color),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
                 });
-        let frame = self
-            .ctx
-            .surface
-            .get_current_texture()
-            .expect("Get next frame");
-        let view = &frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("sugarloaf::init -> Clear frame"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(color),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
 
-        if self.sugar_dimension == (0., 0.) {
-            let text = vec![OwnedText::new(' ')
-                .with_font_id(FontId(0))
-                .with_color([0.,0.,0.,0.])
-                .with_scale(style.text_scale)];
+                if self.sugar_dimension == (0., 0.) {
+                    let text = vec![OwnedText::new(' ')
+                        .with_font_id(FontId(0))
+                        .with_color([0., 0., 0., 0.])
+                        .with_scale(style.text_scale)];
 
-            let section = &OwnedSection {
-                screen_position: (
-                    style.screen_position.0,
-                    style.screen_position.1 + self.acc_line,
-                ),
-                bounds: style.bounds,
-                text,
-                layout: glyph_brush::Layout::default_single_line()
-                    .v_align(glyph_brush::VerticalAlign::Bottom),
-            };
+                    let section = &OwnedSection {
+                        screen_position: (
+                            style.screen_position.0,
+                            style.screen_position.1 + self.acc_line,
+                        ),
+                        bounds: style.bounds,
+                        text,
+                        layout: glyph_brush::Layout::default_single_line()
+                            .v_align(glyph_brush::VerticalAlign::Bottom),
+                    };
 
-            self.text_brush.queue(section);
+                    self.text_brush.queue(section);
 
-            // TODO: Now Sugarloaf depends of run an init operation
-            // and also font has same size for get dimensions.
-            if let Some(rect) = self.text_brush.glyph_bounds(section) {
-                let width = rect.max.x - rect.min.x;
-                let height = rect.max.y - rect.min.y;
+                    // TODO: Now Sugarloaf depends of run an init operation
+                    // and also font has same size for get dimensions.
+                    if let Some(rect) = self.text_brush.glyph_bounds(section) {
+                        let width = rect.max.x - rect.min.x;
+                        let height = rect.max.y - rect.min.y;
+                        self.sugar_dimension = (width, height);
+                    };
+                }
 
-                println!("{:?} {:?}", width, height);
-                self.sugar_dimension = (width, height);
-
-            };
+                self.ctx.staging_belt.finish();
+                self.ctx.queue.submit(Some(encoder.finish()));
+                frame.present();
+                self.ctx.staging_belt.recall();
+            }
+            Err(error) => {
+                if error == wgpu::SurfaceError::OutOfMemory {
+                    panic!("Swapchain error: {error}. Rendering cannot continue.")
+                }
+            }
         }
-
-        self.ctx.staging_belt.finish();
-        self.ctx.queue.submit(Some(encoder.finish()));
-        frame.present();
-        self.ctx.staging_belt.recall();
     }
 
     fn reset_state(&mut self) {
         self.acc_line = 0.0;
-        self.acc_line_y = -0.175;
+        self.acc_line_y = 0.0;
     }
 
     pub fn pile_rect(&mut self, instances: Vec<Rect>) -> &mut Self {
@@ -293,7 +330,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn render(&mut self, color: colors::ColorWGPU) {
+    pub fn render(&mut self) {
         self.reset_state();
 
         match self.ctx.surface.get_current_texture() {
@@ -307,12 +344,12 @@ impl Sugarloaf {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Clear background frame"),
+                    label: Some("sugarloaf::render -> Clear frame"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(color),
+                            load: wgpu::LoadOp::Clear(self.background_color),
                             store: true,
                         },
                     })],

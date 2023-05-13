@@ -37,10 +37,7 @@ async fn main() {
     let font_size = 180.;
 
     let style = SugarloafStyle {
-        screen_position: (
-            (20. + 10.) * scale_factor,
-            (20. + font_size) * scale_factor,
-        ),
+        screen_position: ((20. + 10.) * scale_factor, (20. + font_size) * scale_factor),
         text_scale: font_size * scale_factor,
         bounds: (width * scale_factor, height * scale_factor),
     };
@@ -74,7 +71,7 @@ async fn main() {
                     sugarloaf
                         .rescale(scale_factor as f32)
                         .resize(new_inner_size.width, new_inner_size.height)
-                        .render(wgpu::Color::BLACK);
+                        .render();
                 }
                 _ => (),
             },
@@ -181,7 +178,7 @@ async fn main() {
                 sugarloaf.stack(sugar, style);
                 sugarloaf.stack(loaf, style);
                 sugarloaf.stack(rio, style);
-                sugarloaf.render(wgpu::Color::RED);
+                sugarloaf.render();
             }
             _ => {
                 *control_flow = winit::event_loop::ControlFlow::Wait;

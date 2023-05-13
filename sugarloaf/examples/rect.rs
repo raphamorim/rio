@@ -59,7 +59,7 @@ async fn main() {
                     sugarloaf
                         .rescale(scale_factor as f32)
                         .resize(new_inner_size.width, new_inner_size.height)
-                        .render(wgpu::Color::BLUE);
+                        .render();
                 }
                 _ => (),
             },
@@ -92,7 +92,7 @@ async fn main() {
                             size: [200.0, 200.0],
                         },
                     ])
-                    .render(wgpu::Color::BLUE);
+                    .render();
             }
             _ => {
                 *control_flow = winit::event_loop::ControlFlow::Wait;

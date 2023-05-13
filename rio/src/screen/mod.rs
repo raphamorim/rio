@@ -101,11 +101,11 @@ impl Screen {
 
     #[inline]
     pub fn skeleton(&mut self, color: colors::ColorWGPU) {
-        self.sugarloaf.skeleton(color);
+        self.sugarloaf.init(color, self.layout.styles.term);
     }
 
     #[inline]
-    pub fn render(&mut self, color: colors::ColorWGPU) {
+    pub fn render(&mut self) {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor_position = terminal.cursor();
@@ -118,7 +118,7 @@ impl Screen {
             self.layout.styles.term,
         );
 
-        self.sugarloaf.render(color);
+        self.sugarloaf.render();
 
         // self.sugarloaf.set_cursor(cursor_position, false);
 
