@@ -114,7 +114,7 @@ impl Default for Square {
     fn default() -> Square {
         Square {
             c: ' ',
-            bg: AnsiColor::Named(NamedColor::Black),
+            bg: AnsiColor::Named(NamedColor::Background),
             fg: AnsiColor::Named(NamedColor::Foreground),
             extra: None,
             flags: Flags::empty(),
