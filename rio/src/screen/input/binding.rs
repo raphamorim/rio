@@ -1,5 +1,5 @@
 // Cria os bindings e usa struct actions
-// 
+// https://github.com/alacritty/alacritty/blob/828fdab7470c8d16d2edbe2cec919169524cb2bb/alacritty/src/config/bindings.rs#L43
 
 #[derive(ConfigDeserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Action {

@@ -232,7 +232,7 @@ impl Renderable for RectBrush {
 
         // Done
         RectBrush {
-            scale: 1.0,
+            scale: context.scale,
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),

@@ -5,4 +5,4 @@ mod font;
 mod sugarloaf;
 mod tools;
 
-pub use crate::sugarloaf::{Renderable, RendererTarget, Sugarloaf};
+pub use crate::sugarloaf::{Renderable, Sugarloaf};
