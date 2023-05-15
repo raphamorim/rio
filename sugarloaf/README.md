@@ -4,7 +4,7 @@ Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on 
 
 ## Examples
 
-| ![Demo big text](resources/demo-text-small.png) | ![Demo small text](resources/demo-text-big.png) |
+| ![Demo small text](resources/demo-text-small.png) | ![Demo big text](resources/demo-text-big.png) |
 | ----------- | ----------- |
 | ![Demo Rect](resources/demo-rect.png) | ... |
 

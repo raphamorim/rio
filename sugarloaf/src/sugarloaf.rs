@@ -66,6 +66,14 @@ pub trait Renderable: 'static + Sized {
     );
 }
 
+#[derive(Default)]
+struct FontDimensions {
+    default: (f32, f32),
+    symbols: (f32, f32),
+    emojis: (f32, f32),
+    unicode: (f32, f32),
+}
+
 pub struct Sugarloaf {
     pub ctx: Context,
     text_brush: text::GlyphBrush<()>,
@@ -73,7 +81,7 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
-    sugar_dimension: (f32, f32),
+    fonts_dimensions: FontDimensions,
     background_color: wgpu::Color,
 }
 
@@ -109,7 +117,7 @@ impl Sugarloaf {
                     text_brush,
                     acc_line: 0.0,
                     acc_line_y: 0.0,
-                    sugar_dimension: (0., 0.),
+                    fonts_dimensions: FontDimensions::default(),
                     background_color: wgpu::Color::BLACK,
                 })
             }
@@ -197,13 +205,18 @@ impl Sugarloaf {
         let glyph_zero = ab_glyph::GlyphId(0);
 
         for sugar in stack.iter() {
+            let mut add_pos_x = self.fonts_dimensions.default.0;
+
             let font_id: FontId = if system.glyph_id(sugar.content) != glyph_zero {
                 FontId(0)
             } else if symbols.glyph_id(sugar.content) != glyph_zero {
+                add_pos_x = self.fonts_dimensions.symbols.0;
                 FontId(1)
             } else if emojis.glyph_id(sugar.content) != glyph_zero {
+                add_pos_x = self.fonts_dimensions.emojis.0;
                 FontId(2)
             } else if unicode.glyph_id(sugar.content) != glyph_zero {
+                add_pos_x = self.fonts_dimensions.unicode.0;
                 FontId(3)
             } else {
                 FontId(0)
@@ -222,10 +235,10 @@ impl Sugarloaf {
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
-                size: [self.sugar_dimension.0, self.sugar_dimension.0],
+                size: [add_pos_x, self.fonts_dimensions.default.0],
             });
 
-            x += (self.sugar_dimension.0) / self.ctx.scale;
+            x += add_pos_x / self.ctx.scale;
         }
 
         let section = &OwnedSection {
@@ -278,7 +291,7 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                if self.sugar_dimension == (0., 0.) {
+                if self.fonts_dimensions.default == (0., 0.) {
                     let text = vec![OwnedText::new(' ')
                         .with_font_id(FontId(0))
                         .with_color([0., 0., 0., 0.])
@@ -302,7 +315,79 @@ impl Sugarloaf {
                     if let Some(rect) = self.text_brush.glyph_bounds(section) {
                         let width = rect.max.x - rect.min.x;
                         let height = rect.max.y - rect.min.y;
-                        self.sugar_dimension = (width, height);
+                        self.fonts_dimensions.default = (width, height);
+                    };
+
+                    let text = vec![OwnedText::new('⫹')
+                        .with_font_id(FontId(1))
+                        .with_color([0., 0., 0., 0.])
+                        .with_scale(style.text_scale)];
+
+                    let section = &OwnedSection {
+                        screen_position: (
+                            style.screen_position.0,
+                            style.screen_position.1 + self.acc_line,
+                        ),
+                        bounds: style.bounds,
+                        text,
+                        layout: glyph_brush::Layout::default_single_line()
+                            .v_align(glyph_brush::VerticalAlign::Bottom),
+                    };
+
+                    self.text_brush.queue(section);
+
+                    if let Some(rect) = self.text_brush.glyph_bounds(section) {
+                        let width = rect.max.x - rect.min.x;
+                        let height = rect.max.y - rect.min.y;
+                        self.fonts_dimensions.symbols = (width, height);
+                    };
+
+                    let text = vec![OwnedText::new('🥇')
+                        .with_font_id(FontId(2))
+                        .with_color([0., 0., 0., 0.])
+                        .with_scale(style.text_scale)];
+
+                    let section = &OwnedSection {
+                        screen_position: (
+                            style.screen_position.0,
+                            style.screen_position.1 + self.acc_line,
+                        ),
+                        bounds: style.bounds,
+                        text,
+                        layout: glyph_brush::Layout::default_single_line()
+                            .v_align(glyph_brush::VerticalAlign::Bottom),
+                    };
+
+                    self.text_brush.queue(section);
+
+                    if let Some(rect) = self.text_brush.glyph_bounds(section) {
+                        let width = rect.max.x - rect.min.x;
+                        let height = rect.max.y - rect.min.y;
+                        self.fonts_dimensions.emojis = (width, height);
+                    };
+
+                    let text = vec![OwnedText::new('㏑')
+                        .with_font_id(FontId(3))
+                        .with_color([0., 0., 0., 0.])
+                        .with_scale(style.text_scale)];
+
+                    let section = &OwnedSection {
+                        screen_position: (
+                            style.screen_position.0,
+                            style.screen_position.1 + self.acc_line,
+                        ),
+                        bounds: style.bounds,
+                        text,
+                        layout: glyph_brush::Layout::default_single_line()
+                            .v_align(glyph_brush::VerticalAlign::Bottom),
+                    };
+
+                    self.text_brush.queue(section);
+
+                    if let Some(rect) = self.text_brush.glyph_bounds(section) {
+                        let width = rect.max.x - rect.min.x;
+                        let height = rect.max.y - rect.min.y;
+                        self.fonts_dimensions.unicode = (width, height);
                     };
                 }
 
