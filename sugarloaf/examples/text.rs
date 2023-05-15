@@ -173,11 +173,54 @@ async fn main() {
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
                         background_color: [0.0, 1.0, 0.0, 1.0],
                     },
+                    Sugar {
+                        content: '¼',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [1.0, 1.0, 0.0, 1.0],
+                    },
+                    Sugar {
+                        content: '¬',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 1.0, 0.0, 1.0],
+                    },
+                ];
+
+                let special = vec![
+                    // Font Unicode (unicode font)
+                    Sugar {
+                        content: '㏑',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 1.0, 1.0, 1.0],
+                    },
+                    // Font Symbol (apple symbols font)
+                    Sugar {
+                        content: '⫹',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: [0.0, 0.0, 0.0, 1.0],
+                    },
+                    // Font Regular (firamono)
+                    Sugar {
+                        content: 'λ',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 1.0, 1.0, 1.0],
+                    },
+                    // Font Emojis
+                    Sugar {
+                        content: '🥇',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: [0.0, 0.0, 0.0, 1.0],
+                    },
+                    Sugar {
+                        content: '👷',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: [0.0, 0.0, 1.0, 1.0],
+                    },
                 ];
 
                 sugarloaf.stack(sugar, style);
                 sugarloaf.stack(loaf, style);
                 sugarloaf.stack(rio, style);
+                sugarloaf.stack(special, style);
                 sugarloaf.render();
             }
             _ => {
