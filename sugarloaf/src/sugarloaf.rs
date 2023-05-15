@@ -5,12 +5,8 @@ use crate::core::{SugarStack, SugarloafStyle};
 use crate::font::Font;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
-
-// TODO: Use macro instead
-pub enum RendererTarget {
-    Desktop,
-    Web,
-}
+#[cfg(target_arch = "wasm32")]
+use web_sys::{ImageBitmapRenderingContext, OffscreenCanvas};
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [
@@ -90,17 +86,11 @@ pub struct Sugarloaf {
 // TODO: Sugarloaf integrate CustomRenderer (or Renderer) layer usage
 impl Sugarloaf {
     pub async fn new(
-        target: RendererTarget,
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
         font_name: String,
     ) -> Result<Sugarloaf, String> {
-        let ctx = match target {
-            RendererTarget::Desktop => Context::new(winit_window, power_preference).await,
-            RendererTarget::Web => {
-                todo!("web not implemented");
-            }
-        };
+        let ctx = Context::new(winit_window, power_preference).await;
 
         match Font::new(font_name) {
             Ok(font) => {
@@ -190,6 +180,11 @@ impl Sugarloaf {
         self
     }
 
+    pub fn get_bytes(&self) -> Vec<u8> {
+        // TODO
+        vec![]
+    }
+
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.;
@@ -240,7 +235,7 @@ impl Sugarloaf {
                 size: [add_pos_x, self.font_bounds.default.0],
             });
 
-            x += add_pos_x / self.ctx.scale;
+            x += add_pos_x / 2.0;
         }
 
         let section = &OwnedSection {
@@ -256,7 +251,7 @@ impl Sugarloaf {
 
         self.text_brush.queue(section);
 
-        self.acc_line_y = (style.screen_position.1 + self.acc_line) / 2.;
+        self.acc_line_y = (style.screen_position.1 + self.acc_line) / self.ctx.scale;
         self.acc_line += style.text_scale;
     }
 
@@ -264,8 +259,17 @@ impl Sugarloaf {
         &self.ctx
     }
 
+    pub fn get_scale(&self) -> f32 {
+        self.ctx.scale
+    }
+
     #[inline]
-    pub fn get_font_bounds(&mut self, content: char, font_id: FontId, style: SugarloafStyle) -> FontBound {
+    pub fn get_font_bounds(
+        &mut self,
+        content: char,
+        font_id: FontId,
+        style: SugarloafStyle,
+    ) -> FontBound {
         let text = vec![OwnedText::new(content)
             .with_font_id(font_id)
             .with_color([0., 0., 0., 0.])
@@ -290,7 +294,7 @@ impl Sugarloaf {
             return (width, height);
         }
 
-        return (0., 0.);
+        (0., 0.)
     }
 
     #[inline]
@@ -324,16 +328,21 @@ impl Sugarloaf {
 
                 if self.font_bounds.default == (0., 0.) {
                     // Bounds are defined in runtime
-                    self.font_bounds.default = self.get_font_bounds(' ', FontId(0), style);
-                    self.font_bounds.symbols = self.get_font_bounds('⫹', FontId(1), style);
-                    self.font_bounds.emojis = self.get_font_bounds('🥇', FontId(2), style);
-                    self.font_bounds.unicode = self.get_font_bounds('㏑', FontId(3), style);
+                    self.font_bounds.default =
+                        self.get_font_bounds(' ', FontId(0), style);
+                    self.font_bounds.symbols =
+                        // U+2AF9 => \u{2AF9} => ⫹
+                        self.get_font_bounds('\u{2AF9}', FontId(1), style);
+                    self.font_bounds.emojis =
+                        // U+1F947 => \u{1F947} => 🥇
+                        self.get_font_bounds('\u{1F947}', FontId(2), style);
+                    self.font_bounds.unicode =
+                        // U+33D1 => \u{33D1} => ㏑
+                        self.get_font_bounds('\u{33D1}', FontId(3), style);
                 }
 
-                self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
-                self.ctx.staging_belt.recall();
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {

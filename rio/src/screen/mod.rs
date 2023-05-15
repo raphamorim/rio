@@ -16,7 +16,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
 use std::sync::Arc;
-use sugarloaf::{RendererTarget, Sugarloaf};
+use sugarloaf::Sugarloaf;
 use teletypewriter::create_pty;
 
 pub struct Screen {
@@ -52,7 +52,6 @@ impl Screen {
         };
 
         let sugarloaf = Sugarloaf::new(
-            RendererTarget::Desktop,
             winit_window,
             power_preference,
             config.style.font.to_string(),

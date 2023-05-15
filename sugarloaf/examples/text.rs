@@ -9,7 +9,20 @@ use winit::{
 };
 
 use sugarloaf::core::{Sugar, SugarloafStyle};
-use sugarloaf::{RendererTarget, Sugarloaf};
+use sugarloaf::Sugarloaf;
+
+fn compute_styles(
+    scale_factor: f32,
+    font_size: f32,
+    width: f32,
+    height: f32,
+) -> SugarloafStyle {
+    SugarloafStyle {
+        screen_position: ((20. + 10.) * scale_factor, (20. + font_size) * scale_factor),
+        text_scale: font_size * scale_factor,
+        bounds: (width * scale_factor, height * scale_factor),
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -19,13 +32,12 @@ async fn main() {
 
     let window = WindowBuilder::new()
         .with_title("Text example")
-        .with_inner_size(LogicalSize::new(1200.0, 800.0))
+        .with_inner_size(LogicalSize::new(width, height))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
 
     let mut sugarloaf = Sugarloaf::new(
-        RendererTarget::Desktop,
         &window,
         wgpu::PowerPreference::HighPerformance,
         "Firamono".to_string(),
@@ -33,21 +45,16 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    let scale_factor = 2.;
+    let scale_factor = sugarloaf.get_scale();
     let font_size = 180.;
-
-    let style = SugarloafStyle {
-        screen_position: ((20. + 10.) * scale_factor, (20. + font_size) * scale_factor),
-        text_scale: font_size * scale_factor,
-        bounds: (width * scale_factor, height * scale_factor),
-    };
+    let mut styles = compute_styles(scale_factor, font_size, width, height);
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
 
         match event {
             Event::Resumed => {
-                sugarloaf.init(wgpu::Color::RED, style);
+                sugarloaf.init(wgpu::Color::RED, styles);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -68,10 +75,17 @@ async fn main() {
                     scale_factor,
                     ..
                 } => {
+                    let scale_factor_f32 = scale_factor as f32;
+                    styles = compute_styles(
+                        scale_factor_f32,
+                        font_size,
+                        new_inner_size.width as f32,
+                        new_inner_size.height as f32,
+                    );
                     sugarloaf
-                        .rescale(scale_factor as f32)
-                        .resize(new_inner_size.width, new_inner_size.height)
-                        .render();
+                        .rescale(scale_factor_f32)
+                        .resize(new_inner_size.width, new_inner_size.height);
+                    window.request_redraw();
                 }
                 _ => (),
             },
@@ -217,10 +231,10 @@ async fn main() {
                     },
                 ];
 
-                sugarloaf.stack(sugar, style);
-                sugarloaf.stack(loaf, style);
-                sugarloaf.stack(rio, style);
-                sugarloaf.stack(special, style);
+                sugarloaf.stack(sugar, styles);
+                sugarloaf.stack(loaf, styles);
+                sugarloaf.stack(rio, styles);
+                sugarloaf.stack(special, styles);
                 sugarloaf.render();
             }
             _ => {
