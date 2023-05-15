@@ -4,6 +4,24 @@
 
 ![Rio banner](docs/assets/banner.png)
 
+## Development Status
+
+Rio current development version is `0.0.2`.
+
+Basic features are under development for MacOs right now.
+
+| Platform | Development Status | Release plan |
+| --- | --- | --- |
+| MacOs _as desktop application_ | In development 👷 | `0.1.0` |
+| Web Browser _(WebAssembly)_ | In development 👷 | `0.2.0` |
+| Linux _as desktop application_ | In development 👷 * | TBD |
+| Windows _as desktop application_ | Not started yet | --- |
+| Nintendo Switch * | Not started yet | --- |
+
+_* Development and tests are targeting Wayland, probably is not stable on X11 yet._
+
+_* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._
+
 ## Demo Gallery
 
 | ![Demo MacOs](resources/demo-macos.png) | ![Demo Emojis](resources/demo-emojis.png) |
@@ -39,22 +57,6 @@ Read about Rio in the official website: https://raphamorim.io/rio/docs.
 ## Configuration File
 
 Configuration file is documented in Rio official website: https://raphamorim.io/rio/docs#configuration-file.
-
-## Development Status
-
-Basic features are under development for MacOs right now.
-
-| Platform | Development Status |
-| --- | --- |
-| MacOs _as desktop application_ | In development 👷 |
-| Linux _as desktop application_ | In development 👷 * |
-| Windows _as desktop application_ | Not started yet |
-| Web Browser _(WebAssembly)_ | In development 👷 |
-| Nintendo Switch * | Not started yet |
-
-_* Development and tests are targeting Wayland, probably is not stable on X11 yet._
-
-_* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._
 
 ## Acknowledgments
 
