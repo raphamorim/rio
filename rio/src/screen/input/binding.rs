@@ -80,26 +80,26 @@ pub enum Action {
     /// Clear the display buffer(s) to remove history.
     ClearHistory,
 
-    /// Hide the Alacritty window.
+    /// Hide the Rio window.
     Hide,
 
-    /// Hide all windows other than Alacritty on macOS.
+    /// Hide all windows other than Rio on macOS.
     #[cfg(target_os = "macos")]
     HideOtherApplications,
 
-    /// Minimize the Alacritty window.
+    /// Minimize the Rio window.
     Minimize,
 
-    /// Quit Alacritty.
+    /// Quit Rio.
     Quit,
 
     /// Clear warning and error notices.
     ClearLogNotice,
 
-    /// Spawn a new instance of Alacritty.
+    /// Spawn a new instance of Rio.
     SpawnNewInstance,
 
-    /// Create a new Alacritty window.
+    /// Create a new Rio window.
     CreateNewWindow,
 
     /// Toggle fullscreen.
