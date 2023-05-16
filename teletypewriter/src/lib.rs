@@ -565,26 +565,26 @@ impl EventedPty for Pty {
 ///
 /// This function is unsafe because it contains the usage of `libc::ptsname`
 /// from libc that's naturally unsafe.
-#[cfg(target_os = "macos")]
 pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let name_ptr: *mut i8;
-    let c_str: &CStr = unsafe {
-        name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
-    let str_slice: &str = c_str.to_str().unwrap();
-    let str_buf: String = str_slice.to_owned();
+    let c_str: &CStr;
+    #[cfg(target_os = "macos")]
+    {
+        let name_ptr: *mut i8;
+        c_str = unsafe {
+            name_ptr = ptsname(fd as *mut _);
+            CStr::from_ptr(name_ptr)
+        };
+    }
 
-    Ok(str_buf)
-}
+    #[cfg(not(target_os = "macos"))]
+    {
+        let name_ptr: *mut u8;
+        c_str = unsafe {
+            name_ptr = ptsname(fd as *mut _);
+            CStr::from_ptr(name_ptr)
+        };
+    }
 
-#[cfg(not(target_os = "macos"))]
-pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let name_ptr: *mut u8;
-    let c_str: &CStr = unsafe {
-        name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
     let str_slice: &str = c_str.to_str().unwrap();
     let str_buf: String = str_slice.to_owned();
 

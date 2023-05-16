@@ -1,6 +1,7 @@
 mod ansi;
 mod messenger;
 mod state;
+pub mod bindings;
 pub mod window;
 
 use crate::crosswords::grid::Scroll;
@@ -90,6 +91,8 @@ impl Screen {
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
     ) {
         info!("received keycode {:?}", virtual_keycode);
+
+        println!("{:?}", bindings::default_key_bindings());
 
         if let Some(keycode) = virtual_keycode {
             let _ = self.messenger.send_keycode(keycode);
