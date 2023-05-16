@@ -1,4 +1,3 @@
-use crate::clipboard::{Clipboard, ClipboardType};
 use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
 use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
@@ -12,14 +11,12 @@ use winit::platform::wayland::EventLoopWindowTargetExtWayland;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
-    clipboard: Clipboard,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
-            clipboard: Clipboard::new(),
         }
     }
 
@@ -65,7 +62,7 @@ impl Sequencer {
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
                                 if is_focused {
                                     let text = format(
-                                        self.clipboard.get(clipboard_type).as_str(),
+                                        screen.clipboard_get(clipboard_type).as_str(),
                                     );
                                     screen.messenger.send_bytes(text.into_bytes());
                                 }
@@ -124,22 +121,15 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    // This is a MacOS platform keybinding, it should belong
-                    // somewhere else than sequencer
-                    if screen.messenger.is_logo_pressed() && character == 'v' {
-                        let content = self.clipboard.get(ClipboardType::Clipboard);
-                        screen.messenger.send_bytes(content.as_bytes().to_vec());
-                    } else {
-                        // if self.ctx.terminal().grid().display_offset() != 0 {
-                        //     self.ctx.scroll(Scroll::Bottom);
-                        // }
-                        // self.ctx.clear_selection();
+                    // if self.ctx.terminal().grid().display_offset() != 0 {
+                    //     self.ctx.scroll(Scroll::Bottom);
+                    // }
+                    // self.ctx.clear_selection();
 
-                        let utf8_len = character.len_utf8();
-                        let mut bytes = vec![0; utf8_len];
-                        character.encode_utf8(&mut bytes[..]);
-                        screen.messenger.send_character(character);
-                    }
+                    let utf8_len = character.len_utf8();
+                    let mut bytes = vec![0; utf8_len];
+                    character.encode_utf8(&mut bytes[..]);
+                    screen.messenger.send_character(character);
                 }
 
                 Event::WindowEvent {
@@ -149,7 +139,7 @@ impl Sequencer {
                             input:
                                 winit::event::KeyboardInput {
                                     virtual_keycode,
-                                    // scancode,
+                                    scancode,
                                     state,
                                     ..
                                 },
@@ -158,7 +148,7 @@ impl Sequencer {
                     ..
                 } => match state {
                     winit::event::ElementState::Pressed => {
-                        screen.input_keycode(virtual_keycode);
+                        screen.input_keycode(virtual_keycode, scancode);
                     }
 
                     winit::event::ElementState::Released => {
