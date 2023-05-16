@@ -1,16 +1,16 @@
-mod ansi;
+pub mod bindings;
 mod messenger;
 mod state;
-pub mod bindings;
 pub mod window;
 
+use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
 use crate::layout::Layout;
 use crate::performer::Machine;
-use log::{info, warn};
+use crate::screen::bindings::{Action as Act, BindingMode, Key};
 use messenger::Messenger;
 use state::State;
 use std::borrow::Cow;
@@ -26,6 +26,8 @@ pub struct Screen {
     pub messenger: Messenger,
     layout: Layout,
     state: State,
+    bindings: bindings::KeyBindings,
+    clipboard: Clipboard,
 }
 
 impl Screen {
@@ -70,12 +72,17 @@ impl Screen {
         machine.spawn();
         let messenger = Messenger::new(channel);
 
+        let clipboard = Clipboard::new();
+        let bindings = bindings::default_key_bindings();
+
         Ok(Screen {
             sugarloaf,
             terminal,
             layout,
             messenger,
             state,
+            bindings,
+            clipboard,
         })
     }
 
@@ -85,19 +92,44 @@ impl Screen {
     }
 
     #[inline]
+    pub fn clipboard_get(&mut self, clipboard_type: ClipboardType) -> String {
+        self.clipboard.get(clipboard_type)
+    }
+
+    #[inline]
     pub fn input_keycode(
         &mut self,
-        // _scancode: u32,
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
+        scancode: u32,
     ) {
-        info!("received keycode {:?}", virtual_keycode);
+        let terminal = self.terminal.lock();
+        let mode = BindingMode::new(&terminal.mode(), false);
+        let mods = self.messenger.get_modifiers();
 
-        println!("{:?}", bindings::default_key_bindings());
+        for i in 0..self.bindings.len() {
+            let binding = &self.bindings[i];
 
-        if let Some(keycode) = virtual_keycode {
-            let _ = self.messenger.send_keycode(keycode);
-        } else {
-            warn!("error keycode not as Some");
+            let key = match (binding.trigger, virtual_keycode) {
+                (Key::Scancode(_), _) => Key::Scancode(scancode),
+                (_, Some(key)) => Key::Keycode(key),
+                _ => continue,
+            };
+
+            if binding.is_triggered_by(mode.clone(), mods, &key) {
+                match &binding.action {
+                    Act::Esc(s) => {
+                        self.messenger.send_bytes(
+                            s.replace("\r\n", "\r").replace('\n', "\r").into_bytes(),
+                        );
+                    }
+                    Act::Paste => {
+                        let content = self.clipboard.get(ClipboardType::Clipboard);
+                        self.messenger.send_bytes(content.as_bytes().to_vec());
+                    }
+                    Act::ReceiveChar | Act::None => (),
+                    _ => (),
+                }
+            }
         }
     }
 

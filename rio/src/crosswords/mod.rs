@@ -583,6 +583,10 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    pub fn mode(&self) -> Mode {
+        self.mode.clone()
+    }
+
     #[inline]
     pub fn cursor(&mut self) -> (Column, Line) {
         // let vi_mode = term.mode().contains(TermMode::VI);
