@@ -103,7 +103,7 @@ impl Screen {
         scancode: u32,
     ) {
         let terminal = self.terminal.lock();
-        let mode = BindingMode::new(&terminal.mode(), false);
+        let mode = BindingMode::new(&terminal.mode());
         let mods = self.messenger.get_modifiers();
 
         for i in 0..self.bindings.len() {
