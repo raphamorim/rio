@@ -48,9 +48,9 @@ extern "C" {
 #[cfg(target_os = "macos")]
 fn default_shell_command(shell: &str) {
     let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr() as *const i8;
+    let command_pointer = command_shell_string.as_ptr();
     let args = CString::new("--login").unwrap();
-    let args_pointer = args.as_ptr() as *const i8;
+    let args_pointer = args.as_ptr();
     unsafe {
         libc::execvp(command_pointer, vec![args_pointer].as_ptr());
     }
@@ -59,7 +59,7 @@ fn default_shell_command(shell: &str) {
 #[cfg(not(target_os = "macos"))]
 fn default_shell_command(shell: &str) {
     let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr() as *const u8;
+    let command_pointer = command_shell_string.as_ptr();
     // let home = std::env::var("HOME").unwrap();
     // let args = CString::new(home).unwrap();
     // let args_pointer = args.as_ptr() as *const i8;
@@ -566,25 +566,10 @@ impl EventedPty for Pty {
 /// This function is unsafe because it contains the usage of `libc::ptsname`
 /// from libc that's naturally unsafe.
 pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let c_str: &CStr;
-    #[cfg(target_os = "macos")]
-    {
-        let name_ptr: *mut i8;
-        c_str = unsafe {
-            name_ptr = ptsname(fd as *mut _);
-            CStr::from_ptr(name_ptr)
-        };
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let name_ptr: *mut u8;
-        c_str = unsafe {
-            name_ptr = ptsname(fd as *mut _);
-            CStr::from_ptr(name_ptr)
-        };
-    }
-
+    let c_str: &CStr = unsafe {
+        let name_ptr = ptsname(fd as *mut _);
+        CStr::from_ptr(name_ptr)
+    };
     let str_slice: &str = c_str.to_str().unwrap();
     let str_buf: String = str_slice.to_owned();
 
