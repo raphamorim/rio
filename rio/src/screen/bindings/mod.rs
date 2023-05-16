@@ -148,6 +148,7 @@ pub enum Action {
     CopySelection,
 
     /// Paste contents of selection buffer.
+    #[allow(dead_code)]
     PasteSelection,
 
     /// Increase font size.
@@ -203,6 +204,7 @@ pub enum Action {
     ClearLogNotice,
 
     /// Spawn a new instance of Rio.
+    #[allow(dead_code)]
     SpawnNewInstance,
 
     /// Create a new Rio window.
@@ -212,10 +214,12 @@ pub enum Action {
     ToggleFullscreen,
 
     /// Toggle maximized.
+    #[allow(dead_code)]
     ToggleMaximized,
 
     /// Toggle simple fullscreen on macOS.
     #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     ToggleSimpleFullscreen,
 
     /// Clear active selection.
@@ -225,6 +229,7 @@ pub enum Action {
     ToggleViMode,
 
     /// Allow receiving char input.
+    #[allow(dead_code)]
     ReceiveChar,
 
     /// Start a forward buffer search.
@@ -234,6 +239,7 @@ pub enum Action {
     SearchBackward,
 
     /// No action.
+    #[allow(dead_code)]
     None,
 }
 
