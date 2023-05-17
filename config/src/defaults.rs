@@ -12,6 +12,10 @@ pub fn default_env_vars() -> Vec<String> {
     vec![]
 }
 
+pub fn default_option_as_alt() -> String {
+    String::from("None")
+}
+
 pub fn default_log_level() -> String {
     String::from("OFF")
 }

@@ -24,14 +24,6 @@ impl Messenger {
         self.modifiers
     }
 
-    pub fn send_character(&mut self, character: char) {
-        let utf8_len = character.len_utf8();
-        let mut bytes = vec![0; utf8_len];
-        character.encode_utf8(&mut bytes[..]);
-
-        self.send_write(bytes);
-    }
-
     pub fn send_bytes(&mut self, string: Vec<u8>) {
         self.send_write(string);
     }

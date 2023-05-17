@@ -105,7 +105,21 @@ impl Screen {
             return;
         }
 
-        self.messenger.send_character(character);
+        let utf8_len = character.len_utf8();
+        let mut bytes = vec![0; utf8_len];
+        character.encode_utf8(&mut bytes[..]);
+
+        #[cfg(not(target_os = "macos"))]
+        let alt_send_esc = true;
+
+        #[cfg(target_os = "macos")]
+        let alt_send_esc = self.state.option_as_alt;
+
+        if alt_send_esc && self.messenger.get_modifiers().alt() && utf8_len == 1 {
+            bytes.insert(0, b'\x1b');
+        }
+
+        self.messenger.send_bytes(bytes);
     }
 
     #[inline]
