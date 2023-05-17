@@ -5,6 +5,7 @@ mod event;
 mod layout;
 mod logger;
 mod performer;
+mod platform;
 mod screen;
 mod sequencer;
 use crate::event::EventP;
@@ -28,6 +29,8 @@ pub fn setup_environment_variables(config: &config::Config) {
     // Temporary approach for macos
     // https://pubs.opengroup.org/onlinepubs/7908799/xbd/envvar.html
     #[cfg(target_os = "macos")]
+    platform::macos::set_locale_environment();
+
     std::env::set_var("LC_CTYPE", "UTF-8");
 
     #[cfg(target_os = "macos")]

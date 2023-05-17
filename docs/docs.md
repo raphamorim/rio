@@ -141,6 +141,16 @@ Default is an empty array of strings.
 env-vars = ['LC_CTYPE=utf-8', 'LOGNAME=raphael']
 {% endhighlight %}
 
+## option_as_alt
+
+This flag is intended to be used on MacOs.
+
+Possible choices: 'both', 'left' and 'right'.
+
+{% highlight toml %}
+option-as-alt = 'both'
+{% endhighlight %}
+
 ## font
 
 Default font is Firamono.

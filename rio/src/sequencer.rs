@@ -29,6 +29,37 @@ impl Sequencer {
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
+
+        // This will ignore diacritical marks and accent characters from
+        // being processed as received characters. Instead, the input
+        // device's raw character will be placed in event queues with the
+        // Alt modifier set.
+        #[cfg(target_os = "macos")]
+        {
+            // pub enum OptionAsAlt {
+            //     /// The left `Option` key is treated as `Alt`.
+            //     OnlyLeft,
+
+            //     /// The right `Option` key is treated as `Alt`.
+            //     OnlyRight,
+
+            //     /// Both `Option` keys are treated as `Alt`.
+            //     Both,
+
+            //     /// No special handling is applied for `Option` key.
+            //     #[default]
+            //     None,
+            // }
+            use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
+
+            match self.config.option_as_alt.to_lowercase().as_str() {
+                "both" => winit_window.set_option_as_alt(OptionAsAlt::Both),
+                "left" => winit_window.set_option_as_alt(OptionAsAlt::OnlyLeft),
+                "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
+                _ => {}
+            }
+        }
+
         let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
         let mut is_focused = false;
         screen.skeleton(self.config.colors.background.1);

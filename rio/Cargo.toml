@@ -33,6 +33,9 @@ vte = { version = "0.11.0", default-features = false }
 wgpu = { workspace = true }
 winit = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2.2"
+
 [package.metadata.bundle]
 name = "Rio"
 identifier = "com.raphaelamorim.rio"

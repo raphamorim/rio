@@ -19,6 +19,7 @@ struct Cursor {
 }
 
 pub struct State {
+    pub option_as_alt: bool,
     named_colors: Colors,
     cursor: Cursor,
     colors: List,
@@ -41,7 +42,13 @@ impl State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
 
+        let option_as_alt = matches!(
+            config.option_as_alt.to_lowercase().as_str(),
+            "both" | "left" | "right"
+        );
+
         State {
+            option_as_alt,
             colors,
             named_colors: config.colors,
             cursor: Cursor {

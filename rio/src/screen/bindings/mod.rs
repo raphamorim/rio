@@ -320,9 +320,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
             Action::Esc("\x1b[Z".into());
         Back, ModifiersState::ALT,   ~BindingMode::VI;
             Action::Esc("\x1b\x7f".into());
-        // TODO: Backspace is processed as received_char
-        // Back, ModifiersState::SHIFT, ~BindingMode::VI;
-        //     Action::Esc("\x7f".into());
+        Back, ModifiersState::SHIFT, ~BindingMode::VI;
+            Action::Esc("\x7f".into());
         Home,     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         End,      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
         PageUp,   ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollPageUp;
@@ -359,7 +358,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
             Action::Esc("\x1bOD".into());
         Left,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[D".into());
-        // Back,        ~BindingMode::VI; Action::Esc("\x7f".into());
+        Back,        ~BindingMode::VI; Action::Esc("\x7f".into());
         Insert,      ~BindingMode::VI; Action::Esc("\x1b[2~".into());
         Delete,      ~BindingMode::VI; Action::Esc("\x1b[3~".into());
         PageUp,      ~BindingMode::VI; Action::Esc("\x1b[5~".into());
@@ -506,6 +505,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         M, ModifiersState::LOGO; Action::Minimize;
         Q, ModifiersState::LOGO; Action::Quit;
         W, ModifiersState::LOGO; Action::Quit;
+        // N, ModifiersState::ALT,  ~BindingMode::VI;
+        //     Action::Esc("\x7E".into());
     )
 }
 

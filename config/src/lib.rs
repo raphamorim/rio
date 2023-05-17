@@ -93,6 +93,8 @@ pub struct Config {
     pub cursor: char,
     #[serde(default = "default_env_vars", rename = "env-vars")]
     pub env_vars: Vec<String>,
+    #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
+    pub option_as_alt: String,
     #[serde(default = "Style::default")]
     pub style: Style,
     #[serde(default = "Colors::default")]
@@ -153,11 +155,12 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            env_vars: vec![],
+            env_vars: default_env_vars(),
             performance: Performance::default(),
             width: default_width(),
             height: default_height(),
             cursor: default_cursor(),
+            option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
             style: Style {
                 font_size: default_font_size(),
@@ -378,6 +381,30 @@ mod tests {
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, '_');
+        // Style
+        assert_eq!(result.style.font, default_font());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_option_as_alt() {
+        let result = create_temporary_config(
+            "change-option-as-alt",
+            r#"
+            option-as-alt = 'Both'
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.option_as_alt, String::from("Both"));
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
