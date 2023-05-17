@@ -13,7 +13,7 @@ use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
 use std::str::FromStr;
 
-pub fn setup_environment_variables(_config: &config::Config) {
+pub fn setup_environment_variables(config: &config::Config) {
     let terminfo = if teletypewriter::terminfo_exists("rio") {
         "rio"
     } else {
@@ -27,15 +27,23 @@ pub fn setup_environment_variables(_config: &config::Config) {
     std::env::remove_var("DESKTOP_STARTUP_ID");
     // Temporary approach for macos
     // https://pubs.opengroup.org/onlinepubs/7908799/xbd/envvar.html
+    #[cfg(target_os = "macos")]
     std::env::set_var("LC_CTYPE", "UTF-8");
 
     #[cfg(target_os = "macos")]
     std::env::set_current_dir(dirs::home_dir().unwrap()).unwrap();
 
     // Set env vars from config.
-    // for (key, value) in config.env.iter() {
-    //     std::env::set_var(key, value);
-    // }
+    for env_config in config.env_vars.iter() {
+        let mut env_vec = vec![];
+        for config in env_config.split('=') {
+            env_vec.push(config);
+        }
+
+        if env_vec.len() == 2 {
+            std::env::set_var(env_vec[0], env_vec[1]);
+        }
+    }
 }
 
 static LOGGER: Logger = Logger;

@@ -131,6 +131,16 @@ cursor = '_'
 cursor = '|'
 {% endhighlight %}
 
+## env-vars
+
+Set environment variables through Rio terminal.
+
+Default is an empty array of strings.
+
+{% highlight toml %}
+env-vars = ['LC_CTYPE=utf-8', 'LOGNAME=raphael']
+{% endhighlight %}
+
 ## font
 
 Default font is Firamono.

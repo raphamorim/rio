@@ -1,4 +1,4 @@
-pub mod bindings;
+mod bindings;
 mod messenger;
 mod state;
 pub mod window;

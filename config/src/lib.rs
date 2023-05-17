@@ -91,6 +91,8 @@ pub struct Config {
     pub height: u16,
     #[serde(default = "default_cursor")]
     pub cursor: char,
+    #[serde(default = "default_env_vars", rename = "env-vars")]
+    pub env_vars: Vec<String>,
     #[serde(default = "Style::default")]
     pub style: Style,
     #[serde(default = "Colors::default")]
@@ -151,6 +153,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            env_vars: vec![],
             performance: Performance::default(),
             width: default_width(),
             height: default_height(),
@@ -243,6 +246,7 @@ mod tests {
             height = 438
             width = 662
             cursor = '█'
+            env-vars = []
 
             [colors]
             background = '#0F0D0E'
@@ -271,6 +275,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.env_vars, default_env_vars());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, default_cursor());
@@ -324,6 +329,31 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
+        // Style
+        assert_eq!(result.style.font, default_font());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, Theme::Basic);
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_config_environment_variables() {
+        let result = create_temporary_config(
+            "change-env-vars",
+            r#"
+            env-vars = ['A=5', 'B=8']
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        assert_eq!(result.cursor, default_cursor());
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
