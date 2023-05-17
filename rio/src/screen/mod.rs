@@ -5,9 +5,10 @@ pub mod window;
 
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Scroll;
-use crate::crosswords::Crosswords;
+use crate::crosswords::{Crosswords, Mode};
 use crate::event::sync::FairMutex;
 use crate::event::EventProxy;
+use crate::ime::Ime;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
@@ -21,14 +22,15 @@ use sugarloaf::Sugarloaf;
 use teletypewriter::create_pty;
 
 pub struct Screen {
-    sugarloaf: Sugarloaf,
-    terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    pub messenger: Messenger,
-    layout: Layout,
-    state: State,
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
     ignore_chars: bool,
+    layout: Layout,
+    pub ime: Ime,
+    pub messenger: Messenger,
+    state: State,
+    sugarloaf: Sugarloaf,
+    terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
 }
 
 impl Screen {
@@ -75,8 +77,10 @@ impl Screen {
 
         let clipboard = Clipboard::new();
         let bindings = bindings::default_key_bindings();
+        let ime = Ime::new();
 
         Ok(Screen {
+            ime,
             sugarloaf,
             terminal,
             layout,
@@ -99,6 +103,10 @@ impl Screen {
     }
 
     pub fn input_character(&mut self, character: char) {
+        if self.ime.preedit().is_some() {
+            return;
+        }
+
         let ignore_chars = self.ignore_chars;
         // || self.ctx.terminal().mode().contains(TermMode::VI)
         if ignore_chars {
@@ -122,15 +130,22 @@ impl Screen {
         self.messenger.send_bytes(bytes);
     }
 
+    pub fn get_mode(&self) -> Mode {
+        let terminal = self.terminal.lock();
+        terminal.mode()
+    }
+
     #[inline]
     pub fn input_keycode(
         &mut self,
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
         scancode: u32,
     ) {
-        let terminal = self.terminal.lock();
-        let mode = BindingMode::new(&terminal.mode());
-        drop(terminal);
+        if self.ime.preedit().is_some() {
+            return;
+        }
+
+        let mode = BindingMode::new(&self.get_mode());
         let mods = self.messenger.get_modifiers();
         let mut ignore_chars = None;
 
@@ -154,7 +169,8 @@ impl Screen {
                     }
                     Act::Paste => {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
-                        self.messenger.send_bytes(content.as_bytes().to_vec());
+                        self.paste(&content, true);
+                        // self.messenger.send_bytes(content.as_bytes().to_vec());
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -163,6 +179,26 @@ impl Screen {
         }
 
         self.ignore_chars = ignore_chars.unwrap_or(false);
+    }
+
+    #[inline]
+    pub fn paste(&mut self, text: &str, bracketed: bool) {
+        if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            self.messenger.send_bytes(b"\x1b[200~"[..].to_vec());
+
+            // Write filtered escape sequences.
+            //
+            // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
+            // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
+            // bracketed paste on its receival.
+            let filtered = text.replace(['\x1b', '\x03'], "");
+            self.messenger.send_bytes(filtered.into_bytes());
+
+            self.messenger.send_bytes(b"\x1b[201~"[..].to_vec());
+        } else {
+            self.messenger
+                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+        }
     }
 
     #[inline]
@@ -182,58 +218,10 @@ impl Screen {
             cursor_position,
             &mut self.sugarloaf,
             self.layout.styles.term,
+            // self.ime
         );
 
         self.sugarloaf.render();
-
-        // self.sugarloaf.set_cursor(cursor_position, false);
-
-        //     let mut line_height: f32 = 0.0;
-        // let cursor_row = self.cursor.position.1;
-        // for (i, row) in rows.iter().enumerate() {
-        //     self.render_row(row, style, line_height, cursor_row == i);
-        //     line_height += style.text_scale;
-        // }
-
-        // let mut row_text: Vec<OwnedText> = vec![];
-        // let columns: usize = row.len();
-        // for column in 0..columns {
-        //     let square = &row.inner[column];
-        //     let sugar = self.create_sugar(square);
-
-        //     // self.sugarloaf.add(sugar);
-
-        //     if has_cursor && column == self.cursor.position.0 {
-        //         self.sugarloaf.sugar((self.cursor.content, self.named_colors.cursor, self.named_colors.cursor));
-        //     } else {
-        //         self.sugarloaf.sugar(self.create_sugar(square));
-        //     }
-
-        //     // Render last column and break row
-        //     if column == (columns - 1) {
-        //         let section = &OwnedSection {
-        //             screen_position: (
-        //                 style.screen_position.0,
-        //                 style.screen_position.1 + line_height,
-        //             ),
-        //             bounds: style.bounds,
-        //             text: row_text,
-        //             layout: glyph_brush::Layout::default_single_line()
-        //                 .v_align(glyph_brush::VerticalAlign::Bottom),
-        //         };
-
-        //         // println!("{:?}", self.brush.glyph_bounds(section));
-
-        //         self.brush.queue(section);
-
-        //         break;
-        //     }
-        // }
-
-        // self.sugarloaf
-        //     .set_cursor(cursor_position)
-        //     .term(visible_rows, self.layout.styles.term)
-        //     .render();
     }
 
     #[inline]

@@ -2,6 +2,7 @@ mod ansi;
 mod clipboard;
 mod crosswords;
 mod event;
+mod ime;
 mod layout;
 mod logger;
 mod performer;

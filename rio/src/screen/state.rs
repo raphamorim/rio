@@ -1,3 +1,4 @@
+// use crate::ime::Ime;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
@@ -188,6 +189,7 @@ impl State {
         cursor: (pos::Column, pos::Line),
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
+        // ime: Ime
     ) {
         self.cursor.position = cursor;
         for (i, row) in rows.iter().enumerate() {

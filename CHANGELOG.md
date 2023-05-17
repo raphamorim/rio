@@ -2,6 +2,8 @@
 
 ## 0.0.3
 
+- Common Keybindings and keybindings for MacOS 
+- Allow to configure `option-as-alt` for Winit on MacOs. Issue originally bought by Alacritty on Winit (https://github.com/rust-windowing/winit/issues/768).
 - Allow to configure enviroment variables through config file.
 - Stabilization of Sugarloaf renderization on emojis, symbos and unicode.
 

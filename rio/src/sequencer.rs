@@ -1,9 +1,10 @@
 use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
+use crate::ime::Preedit;
 use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
 use std::rc::Rc;
 use winit::event::TouchPhase;
-use winit::event::{Event, MouseScrollDelta, WindowEvent};
+use winit::event::{Event, Ime, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -29,6 +30,9 @@ impl Sequencer {
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
+        winit_window.set_ime_purpose(winit::window::ImePurpose::Terminal);
+        winit_window.set_ime_allowed(true);
+        winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
 
         // This will ignore diacritical marks and accent characters from
         // being processed as received characters. Instead, the input
@@ -181,6 +185,33 @@ impl Sequencer {
 
                     winit::event::ElementState::Released => {
                         // winit_window.request_redraw();
+                    }
+                },
+
+                Event::WindowEvent {
+                    event: WindowEvent::Ime(ime),
+                    ..
+                } => match ime {
+                    Ime::Commit(text) => {
+                        screen.paste(&text, true);
+                    }
+                    Ime::Preedit(text, cursor_offset) => {
+                        println!("{:?}", text);
+                        let preedit = if text.is_empty() {
+                            None
+                        } else {
+                            Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
+                        };
+
+                        if screen.ime.preedit() != preedit.as_ref() {
+                            screen.ime.set_preedit(preedit);
+                        }
+                    }
+                    Ime::Enabled => {
+                        screen.ime.set_enabled(true);
+                    }
+                    Ime::Disabled => {
+                        screen.ime.set_enabled(false);
                     }
                 },
 
