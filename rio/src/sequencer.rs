@@ -126,10 +126,7 @@ impl Sequencer {
                     // }
                     // self.ctx.clear_selection();
 
-                    let utf8_len = character.len_utf8();
-                    let mut bytes = vec![0; utf8_len];
-                    character.encode_utf8(&mut bytes[..]);
-                    screen.messenger.send_character(character);
+                    screen.input_character(character);
                 }
 
                 Event::WindowEvent {
