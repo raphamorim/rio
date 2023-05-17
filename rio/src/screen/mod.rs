@@ -28,6 +28,7 @@ pub struct Screen {
     state: State,
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
+    ignore_chars: bool,
 }
 
 impl Screen {
@@ -83,6 +84,7 @@ impl Screen {
             state,
             bindings,
             clipboard,
+            ignore_chars: false,
         })
     }
 
@@ -96,6 +98,16 @@ impl Screen {
         self.clipboard.get(clipboard_type)
     }
 
+    pub fn input_character(&mut self, character: char) {
+        let ignore_chars = self.ignore_chars;
+        // || self.ctx.terminal().mode().contains(TermMode::VI)
+        if ignore_chars {
+            return;
+        }
+
+        self.messenger.send_character(character);
+    }
+
     #[inline]
     pub fn input_keycode(
         &mut self,
@@ -104,7 +116,9 @@ impl Screen {
     ) {
         let terminal = self.terminal.lock();
         let mode = BindingMode::new(&terminal.mode());
+        drop(terminal);
         let mods = self.messenger.get_modifiers();
+        let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
@@ -116,6 +130,8 @@ impl Screen {
             };
 
             if binding.is_triggered_by(mode.clone(), mods, &key) {
+                *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
+
                 match &binding.action {
                     Act::Esc(s) => {
                         self.messenger.send_bytes(
@@ -131,6 +147,8 @@ impl Screen {
                 }
             }
         }
+
+        self.ignore_chars = ignore_chars.unwrap_or(false);
     }
 
     #[inline]

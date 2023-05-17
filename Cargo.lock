@@ -322,7 +322,7 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "colors"
-version = "0.0.2"
+version = "1.0.0"
 dependencies = [
  "log",
  "regex",
@@ -338,7 +338,7 @@ checksum = "bf43edc576402991846b093a7ca18a3477e0ef9c588cde84964b5d3e43016642"
 
 [[package]]
 name = "config"
-version = "0.0.2"
+version = "1.0.0"
 dependencies = [
  "colors",
  "dirs",

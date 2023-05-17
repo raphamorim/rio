@@ -1,37 +1,37 @@
 [package]
 name = "rio"
-version = { workspace = true }
+version = "0.0.2"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
-description = "Rio termina app"
+description = "Rio terminal app"
 
 [dependencies]
-wgpu = { workspace = true }
-tokio = { version = "1.26.0", features = ["full"] }
-winit = { workspace = true }
-libc = "0.2.141"
-image = { version = "0.24.5", default-features = false, features = ["ico"] }
-bytemuck = { workspace = true }
-mio = "0.6.20"
 base64 = "0.21.0"
-mio-extras = "2"
-parking_lot = "0.12"
-vte = { version = "0.11.0", default-features = false }
-copypasta = { version = "0.8.1", default-features = false }
-teletypewriter = { workspace = true }
+bitflags = "2.0.2"
+bytemuck = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
-sugarloaf = { path = "../sugarloaf" }
+copypasta = { version = "0.8.1", default-features = false }
 dirs = "5.0"
-unicode-width = "0.1.5"
-bitflags = "2.0.2"
-serde = { workspace = true }
 glyph_brush = "0.7.7"
+image = { version = "0.24.5", default-features = false, features = ["ico"] }
 lazycell = "1"
+libc = "0.2.141"
 log = { workspace = true }
+mio = "0.6.20"
+mio-extras = "2"
+parking_lot = "0.12"
+serde = { workspace = true }
+sugarloaf = { path = "../sugarloaf" }
+teletypewriter = { workspace = true }
+tokio = { version = "1.26.0", features = ["full"] }
+unicode-width = "0.1.5"
+vte = { version = "0.11.0", default-features = false }
+wgpu = { workspace = true }
+winit = { workspace = true }
 
 [package.metadata.bundle]
 name = "Rio"
@@ -44,9 +44,6 @@ copyright = "Copyright (c) Raphael Amorim 2023. All rights reserved."
 category = "Developer Tool"
 short_description = "A terminal application"
 long_description = """
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
-eiusmod tempor incididunt ut labore et dolore magna aliqua.  Ut
-enim ad minim veniam, quis nostrud exercitation ullamco laboris
-nisi ut aliquip ex ea commodo consequat.
+Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU. More info in https://raphamorim.io/rio
 """
 # deb_depends = ["libgl1-mesa-glx", "libsdl2-2.0-0 (>= 2.0.5)"]

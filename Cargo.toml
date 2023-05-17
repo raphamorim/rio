@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.2"
+version = "1.0.0"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -17,14 +17,14 @@ repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 
 [workspace.dependencies]
+bytemuck = { version = "1.9", features = [ "derive" ] }
+log = "0.4.17"
+serde = { version = "1.0.158", features = ["derive"] }
+teletypewriter = { path = "teletypewriter" }
+# teletypewriter = { version = "2.0.0" }
 tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.15.1"
 winit = "0.28.3"
-serde = { version = "1.0.158", features = ["derive"] }
-bytemuck = { version = "1.9", features = [ "derive" ] }
-# teletypewriter = { version = "2.0.0" }
-teletypewriter = { path = "teletypewriter" }
-log = "0.4.17"
 
 [profile.release]
 opt-level = "s"
