@@ -2,6 +2,7 @@
 
 ## 0.0.3
 
+- Allow to configure enviroment variables through config file.
 - Stabilization of Sugarloaf renderization on emojis, symbos and unicode.
 
 ## 0.0.2
