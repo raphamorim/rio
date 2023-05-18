@@ -43,15 +43,15 @@ impl Ime {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Preedit {
     /// The preedit text.
-    text: String,
+    pub text: String,
 
     /// Byte offset for cursor start into the preedit text.
     ///
     /// `None` means that the cursor is invisible.
-    cursor_byte_offset: Option<usize>,
+    pub cursor_byte_offset: Option<usize>,
 
     /// The cursor offset from the end of the preedit in char width.
-    cursor_end_offset: Option<usize>,
+    pub cursor_end_offset: Option<usize>,
 }
 
 impl Preedit {

@@ -2,6 +2,7 @@
 
 ## 0.0.3
 
+- Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...]
 - Common Keybindings and keybindings for MacOS 
 - Allow to configure `option-as-alt` for Winit on MacOs. Issue originally bought by Alacritty on Winit (https://github.com/rust-windowing/winit/issues/768).
 - Allow to configure enviroment variables through config file.

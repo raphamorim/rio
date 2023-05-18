@@ -9,6 +9,7 @@ use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use winit::platform::wayland::EventLoopWindowTargetExtWayland;
+use winit::window::ImePurpose;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
@@ -30,9 +31,13 @@ impl Sequencer {
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
-        winit_window.set_ime_purpose(winit::window::ImePurpose::Terminal);
+
+        // https://docs.rs/winit/latest/winit/window/enum.ImePurpose.html#variant.Terminal
+        winit_window.set_ime_purpose(ImePurpose::Terminal);
         winit_window.set_ime_allowed(true);
-        winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
+
+        // TODO: Update ime position based on cursor
+        // winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
 
         // This will ignore diacritical marks and accent characters from
         // being processed as received characters. Instead, the input
@@ -40,20 +45,17 @@ impl Sequencer {
         // Alt modifier set.
         #[cfg(target_os = "macos")]
         {
-            // pub enum OptionAsAlt {
-            //     /// The left `Option` key is treated as `Alt`.
-            //     OnlyLeft,
+            // The left `Option` key is treated as `Alt`.
+            // OnlyLeft,
 
-            //     /// The right `Option` key is treated as `Alt`.
-            //     OnlyRight,
+            // The right `Option` key is treated as `Alt`.
+            // OnlyRight,
 
-            //     /// Both `Option` keys are treated as `Alt`.
-            //     Both,
+            // Both `Option` keys are treated as `Alt`.
+            // Both,
 
-            //     /// No special handling is applied for `Option` key.
-            //     #[default]
-            //     None,
-            // }
+            // No special handling is applied for `Option` key.
+            // None,
             use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
 
             match self.config.option_as_alt.to_lowercase().as_str() {
@@ -196,7 +198,6 @@ impl Sequencer {
                         screen.paste(&text, true);
                     }
                     Ime::Preedit(text, cursor_offset) => {
-                        println!("{:?}", text);
                         let preedit = if text.is_empty() {
                             None
                         } else {
@@ -205,6 +206,7 @@ impl Sequencer {
 
                         if screen.ime.preedit() != preedit.as_ref() {
                             screen.ime.set_preedit(preedit);
+                            screen.render();
                         }
                     }
                     Ime::Enabled => {
