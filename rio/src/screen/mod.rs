@@ -213,12 +213,13 @@ impl Screen {
         let cursor_position = terminal.cursor();
         drop(terminal);
 
+        self.state.set_ime(self.ime.preedit());
+
         self.state.update(
             visible_rows,
             cursor_position,
             &mut self.sugarloaf,
             self.layout.styles.term,
-            // self.ime
         );
 
         self.sugarloaf.render();

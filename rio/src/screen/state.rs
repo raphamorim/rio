@@ -1,7 +1,7 @@
-// use crate::ime::Ime;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
+use crate::ime::Preedit;
 use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
@@ -15,12 +15,14 @@ use sugarloaf::Sugarloaf;
 struct Cursor {
     position: (pos::Column, pos::Line),
     content: char,
+    content_ref: char,
     #[allow(dead_code)]
     hidden: bool,
 }
 
 pub struct State {
     pub option_as_alt: bool,
+    is_ime_enabled: bool,
     named_colors: Colors,
     cursor: Cursor,
     colors: List,
@@ -50,10 +52,12 @@ impl State {
 
         State {
             option_as_alt,
+            is_ime_enabled: false,
             colors,
             named_colors: config.colors,
             cursor: Cursor {
                 content: config.cursor,
+                content_ref: config.cursor,
                 position: (pos::Column(0), pos::Line(0)),
                 hidden: false,
             },
@@ -164,10 +168,18 @@ impl State {
             let square = &row.inner[column];
 
             if has_cursor && column == self.cursor.position.0 {
+                let mut foreground_color = self.named_colors.cursor;
+                let mut background_color = self.named_colors.cursor;
+
+                if self.is_ime_enabled {
+                    foreground_color = self.named_colors.background.0;
+                    background_color = self.named_colors.yellow;
+                }
+
                 stack.push(Sugar {
                     content: self.cursor.content,
-                    foreground_color: self.named_colors.cursor,
-                    background_color: self.named_colors.cursor,
+                    foreground_color,
+                    background_color,
                 });
             } else {
                 stack.push(self.create_sugar_from_square(square));
@@ -182,6 +194,19 @@ impl State {
         stack
     }
 
+    pub fn set_ime(&mut self, ime_preedit: Option<&Preedit>) {
+        if let Some(preedit) = ime_preedit {
+            if let Some(content) = preedit.text.chars().next() {
+                self.cursor.content = content;
+                self.is_ime_enabled = true;
+                return;
+            }
+        }
+
+        self.is_ime_enabled = false;
+        self.cursor.content = self.cursor.content_ref;
+    }
+
     #[inline]
     pub fn update(
         &mut self,
@@ -189,7 +214,6 @@ impl State {
         cursor: (pos::Column, pos::Line),
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
-        // ime: Ime
     ) {
         self.cursor.position = cursor;
         for (i, row) in rows.iter().enumerate() {
