@@ -8,11 +8,15 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  GITHUB_REPOSITORY: raphamorim/rio
 
 jobs:
   release-macos-x86:
     name: Release x86_64-apple-darwin
     runs-on: macOS-latest
+    permissions:
+      contents: write
+      discussions: write
     strategy:
       matrix:
         target:
@@ -31,8 +35,8 @@ jobs:
       - run: make pack-osx-x86
       - name: Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             build/macos-x86.zip
             LICENSE
