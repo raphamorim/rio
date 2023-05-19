@@ -492,6 +492,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         NumpadSubtract, ModifiersState::LOGO; Action::DecreaseFontSize;
         Insert, ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[2;2~".into());
+        Left, ModifiersState::ALT,  ~BindingMode::VI;
+            Action::Esc("\x1bb".into());
+        Right, ModifiersState::ALT,  ~BindingMode::VI;
+            Action::Esc("\x1bf".into());
         K, ModifiersState::LOGO, ~BindingMode::VI;
             Action::Esc("\x0c".into());
         K, ModifiersState::LOGO, ~BindingMode::VI;  Action::ClearHistory;
