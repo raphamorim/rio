@@ -1,9 +1,6 @@
 name: Release
 
-on:
-  push:
-    tags:
-      - "v*.*.*"
+on: workflow_dispatch
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
