@@ -29,6 +29,10 @@ jobs:
       - name: Checkout source Git repo
         uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          cache-targets: "true"
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: mkdir release
       - run: cargo install cargo-bundle

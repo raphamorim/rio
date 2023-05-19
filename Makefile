@@ -12,12 +12,14 @@ dev:
 	cargo run
 
 pack-osx-arm:
+	mkdir -p build
 	cargo build -p rio --target aarch64-apple-darwin --release
 	cd rio && cargo bundle --release
 	cp -r ./target/release/bundle/osx/* ./build/macos-arm64
 	zip -r ./build/macos-arm64.zip ./build/macos-arm64
 
 pack-osx-x86:
+	mkdir -p build
 	cargo build -p rio --target x86_64-apple-darwin --release
 	cd rio && cargo bundle --release
 	cp -r ./target/release/bundle/osx/* ./build/macos-x86
