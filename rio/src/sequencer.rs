@@ -1,10 +1,13 @@
-use crate::event::{EventP, EventProxy, RioEvent, RioEventType};
+use crate::clipboard::ClipboardType;
+use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
 use std::rc::Rc;
-use winit::event::TouchPhase;
-use winit::event::{Event, Ime, MouseScrollDelta, WindowEvent};
+use std::time::{Duration, Instant};
+use winit::event::{
+    ElementState, StartCause, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
+};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -31,6 +34,9 @@ impl Sequencer {
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
+
+        let current_mouse_cursor = winit::window::CursorIcon::Text;
+        winit_window.set_cursor_icon(current_mouse_cursor);
 
         // https://docs.rs/winit/latest/winit/window/enum.ImePurpose.html#variant.Terminal
         winit_window.set_ime_purpose(ImePurpose::Terminal);
@@ -71,10 +77,6 @@ impl Sequencer {
         screen.skeleton(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
-            // if Self::skip_event(&event) {
-            //     return;
-            // }
-
             match event {
                 Event::UserEvent(EventP { payload, .. }) => {
                     if let RioEventType::Rio(event) = payload {
@@ -126,9 +128,101 @@ impl Sequencer {
                 } => screen.propagate_modifiers_state(modifiers),
 
                 Event::WindowEvent {
+                    event: WindowEvent::MouseInput { state, button, .. },
+                    ..
+                } => {
+                    winit_window.set_cursor_visible(true);
+
+                    match button {
+                        MouseButton::Left => screen.mouse_mut().left_button_state = state,
+                        MouseButton::Middle => {
+                            screen.mouse_mut().middle_button_state = state
+                        }
+                        MouseButton::Right => {
+                            screen.mouse_mut().right_button_state = state
+                        }
+                        _ => (),
+                    }
+
+                    match state {
+                        ElementState::Pressed => {
+                            // Process mouse press before bindings to update the `click_state`.
+                            if !screen.messenger.get_modifiers().shift()
+                                && screen.mouse_mode()
+                            {
+                                screen.mouse_mut().click_state = ClickState::None;
+
+                                let code = match button {
+                                    MouseButton::Left => 0,
+                                    MouseButton::Middle => 1,
+                                    MouseButton::Right => 2,
+                                    // Can't properly report more than three buttons..
+                                    MouseButton::Other(_) => return,
+                                };
+
+                                // self.mouse_report(code, ElementState::Pressed);
+                            } else {
+                                // Calculate time since the last click to handle double/triple clicks.
+                                let now = Instant::now();
+                                let elapsed = now - screen.mouse().last_click_timestamp;
+                                screen.mouse_mut().last_click_timestamp = now;
+
+                                let threshold = Duration::from_millis(300);
+                                let mouse = screen.mouse();
+                                screen.mouse_mut().click_state = match mouse.click_state {
+                                    // Reset click state if button has changed.
+                                    _ if button != mouse.last_click_button => {
+                                        screen.mouse_mut().last_click_button = button;
+                                        ClickState::Click
+                                    }
+                                    ClickState::Click if elapsed < threshold => {
+                                        ClickState::DoubleClick
+                                    }
+                                    ClickState::DoubleClick if elapsed < threshold => {
+                                        ClickState::TripleClick
+                                    }
+                                    _ => ClickState::Click,
+                                };
+
+                                // Load mouse point, treating message bar and padding as the closest cell.
+                                let display_offset = screen.display_offset();
+
+                                if let MouseButton::Left = button {
+                                    let point = screen.mouse().position(display_offset);
+                                    screen.on_left_click(point);
+                                    screen.render();
+                                }
+                            }
+                            // screen.process_mouse_bindings(button);
+                        }
+                        ElementState::Released => {
+                            if !screen.messenger.get_modifiers().shift()
+                                && screen.mouse_mode()
+                            {
+                                let code = match button {
+                                    MouseButton::Left => 0,
+                                    MouseButton::Middle => 1,
+                                    MouseButton::Right => 2,
+                                    // Can't properly report more than three buttons.
+                                    MouseButton::Other(_) => return,
+                                };
+                                // self.mouse_report(code, ElementState::Released);
+                                return;
+                            }
+
+                            if let MouseButton::Left | MouseButton::Right = button {
+                                // Copy selection on release, to prevent flooding the display server.
+                                screen.copy_selection(ClipboardType::Selection);
+                            }
+                        }
+                    }
+                }
+
+                Event::WindowEvent {
                     event: WindowEvent::MouseWheel { delta, phase, .. },
                     ..
                 } => {
+                    winit_window.set_cursor_visible(true);
                     match delta {
                         MouseScrollDelta::LineDelta(_x, _y) => {
                             // scroll_y = y;
@@ -160,11 +254,8 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    // if self.ctx.terminal().grid().display_offset() != 0 {
-                    //     self.ctx.scroll(Scroll::Bottom);
-                    // }
+                    screen.scroll_bottom_when_cursor_not_visible();
                     // self.ctx.clear_selection();
-
                     screen.input_character(character);
                 }
 
@@ -183,11 +274,12 @@ impl Sequencer {
                         },
                     ..
                 } => match state {
-                    winit::event::ElementState::Pressed => {
+                    ElementState::Pressed => {
+                        winit_window.set_cursor_visible(false);
                         screen.input_keycode(virtual_keycode, scancode);
                     }
 
-                    winit::event::ElementState::Released => {
+                    ElementState::Released => {
                         // winit_window.request_redraw();
                     }
                 },
@@ -224,6 +316,22 @@ impl Sequencer {
                     ..
                 } => {
                     is_focused = focused;
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position: _, .. },
+                    ..
+                } => {
+                    winit_window.set_cursor_visible(true);
+                    // self.mouse_moved(position);
+                }
+
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::DroppedFile(path),
+                    ..
+                } => {
+                    let path: String = path.to_string_lossy().into();
+                    screen.paste(&(path + " "), true);
                 }
 
                 Event::WindowEvent {

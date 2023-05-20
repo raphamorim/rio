@@ -6,7 +6,6 @@ use std::ffi::c_void;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardType {
     Clipboard,
-    #[allow(unused)]
     Selection,
 }
 
@@ -48,7 +47,6 @@ impl Clipboard {
 
     /// Used for tests and to handle missing clipboard provider when built without the `x11`
     /// feature.
-    #[allow(unused)]
     #[cfg(any(test, not(any(feature = "x11", target_os = "macos", windows))))]
     pub fn new_nop() -> Self {
         Self {
@@ -80,7 +78,6 @@ impl Default for Clipboard {
 }
 
 impl Clipboard {
-    #[allow(unused)]
     pub fn set(&mut self, ty: ClipboardType, text: impl Into<String>) {
         let clipboard = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(provider)) => provider,

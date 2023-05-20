@@ -3,13 +3,14 @@ mod messenger;
 mod state;
 pub mod window;
 
+use crate::selection::{Selection, SelectionType};
 use crate::clipboard::{Clipboard, ClipboardType};
-use crate::crosswords::grid::Scroll;
-use crate::crosswords::{Crosswords, Mode};
+use crate::crosswords::{ Crosswords, Mode, pos::{Pos, Side}, grid::Scroll };
 use crate::event::sync::FairMutex;
-use crate::event::EventProxy;
+use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::layout::Layout;
+use crate::mouse::Mouse;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
 use messenger::Messenger;
@@ -29,6 +30,7 @@ pub struct Screen {
     pub ime: Ime,
     pub messenger: Messenger,
     state: State,
+    mouse: Mouse,
     sugarloaf: Sugarloaf,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
 }
@@ -78,6 +80,7 @@ impl Screen {
         let clipboard = Clipboard::new();
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
+        let mouse = Mouse::default();
 
         Ok(Screen {
             ime,
@@ -88,8 +91,17 @@ impl Screen {
             state,
             bindings,
             clipboard,
+            mouse,
             ignore_chars: false,
         })
+    }
+
+    pub fn mouse(&mut self) -> &Mouse {
+        &self.mouse
+    }
+
+    pub fn mouse_mut(&mut self) -> &mut Mouse {
+        &mut self.mouse
     }
 
     #[inline]
@@ -128,6 +140,26 @@ impl Screen {
         }
 
         self.messenger.send_bytes(bytes);
+    }
+
+    #[inline]
+    pub fn scroll_bottom_when_cursor_not_visible(&self) {
+        let mut terminal = self.terminal.lock();
+        if terminal.display_offset() != 0 {
+            terminal.scroll_display(Scroll::Bottom);
+        }
+    }
+
+    #[inline]
+    pub fn mouse_mode(&self) -> bool {
+        let mode = self.get_mode();
+        mode.intersects(Mode::MOUSE_MODE) && !mode.contains(Mode::VI)
+    }
+
+    #[inline]
+    pub fn display_offset(&self) -> usize {
+        let mut terminal = self.terminal.lock();
+        terminal.display_offset()
     }
 
     pub fn get_mode(&self) -> Mode {
@@ -172,6 +204,13 @@ impl Screen {
                         self.paste(&content, true);
                         // self.messenger.send_bytes(content.as_bytes().to_vec());
                     }
+                    Act::PasteSelection => {
+                        let content = self.clipboard.get(ClipboardType::Selection);
+                        self.paste(&content, true);
+                    }
+                    Act::Copy => {
+                        self.copy_selection(ClipboardType::Clipboard);
+                    }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
                 }
@@ -179,6 +218,102 @@ impl Screen {
         }
 
         self.ignore_chars = ignore_chars.unwrap_or(false);
+    }
+
+    pub fn copy_selection(&mut self, ty: ClipboardType) {
+        let terminal = self.terminal.lock();
+        let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
+            Some(text) => text,
+            None => return,
+        };
+
+        if ty == ClipboardType::Selection {
+            self.clipboard.set(ClipboardType::Clipboard, text.clone());
+        }
+        self.clipboard.set(ty, text);
+    }
+
+    // fn on_mouse_release(&mut self, button: MouseButton) {
+    //     if !self.ctx.modifiers().shift() && self.ctx.mouse_mode() {
+    //         let code = match button {
+    //             MouseButton::Left => 0,
+    //             MouseButton::Middle => 1,
+    //             MouseButton::Right => 2,
+    //             // Can't properly report more than three buttons.
+    //             MouseButton::Other(_) => return,
+    //         };
+    //         self.mouse_report(code, ElementState::Released);
+    //         return;
+    //     }
+
+    //     // Trigger hints highlighted by the mouse.
+    //     let hint = self.ctx.display().highlighted_hint.take();
+    //     if let Some(hint) = hint.as_ref().filter(|_| button == MouseButton::Left) {
+    //         self.ctx.trigger_hint(hint);
+    //     }
+    //     self.ctx.display().highlighted_hint = hint;
+
+    //     let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
+    //     self.ctx.scheduler_mut().unschedule(timer_id);
+
+    //     if let MouseButton::Left | MouseButton::Right = button {
+    //         // Copy selection on release, to prevent flooding the display server.
+    //         self.ctx.copy_selection(ClipboardType::Selection);
+    //     }
+    // }
+
+    fn clear_selection(&mut self) {
+        // Clear the selection on the terminal.
+        let mut terminal = self.terminal.lock();
+        terminal.selection.take();
+    }
+
+    fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
+        self.copy_selection(ClipboardType::Selection);
+        let mut terminal = self.terminal.lock();
+        terminal.selection = Some(Selection::new(ty, point, side));
+    }
+
+    fn selection_is_empty(&self) -> bool {
+        let terminal = self.terminal.lock();
+        terminal.selection.as_ref().map_or(true, Selection::is_empty)
+    }
+
+    pub fn on_left_click(&mut self, point: Pos) {
+        let side = self.mouse().square_side;
+
+        match self.mouse().click_state {
+            ClickState::Click => {
+                // Don't launch URLs if this click cleared the selection.
+                self.mouse_mut().block_hint_launcher = !self.selection_is_empty();
+
+                self.clear_selection();
+
+                // Start new empty selection.
+                if self.messenger.get_modifiers().ctrl() {
+                    println!("on_left_click block {:?}", point);
+                    self.start_selection(SelectionType::Block, point, side);
+                } else {
+                    println!("on_left_click simple {:?}", point);
+                    self.start_selection(SelectionType::Simple, point, side);
+                }
+            },
+            ClickState::DoubleClick => {
+                // self.mouse_mut().block_hint_launcher = true;
+                // self.start_selection(SelectionType::Semantic, point, side);
+            },
+            ClickState::TripleClick => {
+                self.mouse_mut().block_hint_launcher = true;
+                self.start_selection(SelectionType::Lines, point, side);
+            },
+            ClickState::None => (),
+        };
+
+        // Move vi mode cursor to mouse click position.
+        // if self.ctx.terminal().mode().contains(TermMode::VI) && !self.ctx.search_active() {
+        //     self.ctx.terminal_mut().vi_mode_cursor.point = point;
+        //     self.ctx.mark_dirty();
+        // }
     }
 
     #[inline]
@@ -211,6 +346,7 @@ impl Screen {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor_position = terminal.cursor();
+        let selection_range = terminal.selection.clone();
         drop(terminal);
 
         self.state.set_ime(self.ime.preedit());
@@ -220,6 +356,7 @@ impl Screen {
             cursor_position,
             &mut self.sugarloaf,
             self.layout.styles.term,
+            selection_range
         );
 
         self.sugarloaf.render();

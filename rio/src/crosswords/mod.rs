@@ -25,6 +25,7 @@ use crate::crosswords::grid::Grid;
 use crate::crosswords::grid::Scroll;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
+use crate::selection::{Selection, SelectionRange, SelectionType};
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
@@ -34,7 +35,7 @@ use grid::row::Row;
 use log::{debug, info, warn};
 use pos::CharsetIndex;
 use pos::{Column, Cursor, Line, Pos};
-use square::Square;
+use square::{LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -78,24 +79,6 @@ impl Default for Mode {
     fn default() -> Mode {
         Mode::SHOW_CURSOR | Mode::LINE_WRAP | Mode::ALTERNATE_SCROLL | Mode::URGENCY_HINTS
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Crosswords<U>
-where
-    U: EventListener,
-{
-    active_charset: CharsetIndex,
-    mode: Mode,
-    grid: Grid<Square>,
-    inactive_grid: Grid<Square>,
-    scroll_region: Range<Line>,
-    tabs: TabStops,
-    event_proxy: U,
-    #[allow(dead_code)]
-    colors: Colors,
-    title: Option<String>,
-    damage: TermDamageState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,7 +136,7 @@ struct TermDamageState {
     /// Last Vi cursor point.
     last_vi_cursor_point: Option<Pos>,
     // Old selection range.
-    // last_selection: Option<SelectionRange>,
+    last_selection: Option<SelectionRange>,
 }
 
 impl TermDamageState {
@@ -167,7 +150,7 @@ impl TermDamageState {
             lines,
             last_cursor: Default::default(),
             last_vi_cursor_point: Default::default(),
-            // last_selection: Default::default(),
+            last_selection: Default::default(),
         }
     }
 
@@ -176,7 +159,7 @@ impl TermDamageState {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
-        // self.last_selection = None;
+        self.last_selection = None;
         self.is_fully_damaged = true;
 
         self.lines.clear();
@@ -201,25 +184,25 @@ impl TermDamageState {
     #[allow(dead_code)]
     fn damage_selection(
         &mut self,
-        // selection: SelectionRange,
+        selection: SelectionRange,
         display_offset: usize,
-        _num_cols: usize,
+        num_cols: usize,
     ) {
-        let _display_offset = display_offset as i32;
-        let _last_visible_line = self.lines.len() as i32 - 1;
+        let display_offset = display_offset as i32;
+        let last_visible_line = self.lines.len() as i32 - 1;
 
         // Don't damage invisible selection.
-        // if selection.end.line.0 + display_offset < 0
-        //     || selection.start.line.0.abs() < display_offset - last_visible_line
-        // {
-        //     return;
-        // };
+        if selection.end.row.0 + display_offset < 0
+            || selection.start.row.0.abs() < display_offset - last_visible_line
+        {
+            return;
+        };
 
-        // let start = std::cmp::max(selection.start.line.0 + display_offset, 0);
-        // let end = (selection.end.line.0 + display_offset).clamp(0, last_visible_line);
-        // for line in start as usize..=end as usize {
-        //     self.damage_line(line, 0, num_cols - 1);
-        // }
+        let start = std::cmp::max(selection.start.row.0 + display_offset, 0);
+        let end = (selection.end.row.0 + display_offset).clamp(0, last_visible_line);
+        for line in start as usize..=end as usize {
+            self.damage_line(line, 0, num_cols - 1);
+        }
     }
 
     /// Reset information about terminal damage.
@@ -279,14 +262,37 @@ impl IndexMut<Column> for TabStops {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Crosswords<U>
+where
+    U: EventListener,
+{
+    active_charset: CharsetIndex,
+    mode: Mode,
+    pub grid: Grid<Square>,
+    inactive_grid: Grid<Square>,
+    scroll_region: Range<Line>,
+    tabs: TabStops,
+    event_proxy: U,
+    semantic_escape_chars: String,
+    pub selection: Option<Selection>,
+    #[allow(dead_code)]
+    colors: Colors,
+    title: Option<String>,
+    damage: TermDamageState,
+}
+
 impl<U: EventListener> Crosswords<U> {
     pub fn new(cols: usize, rows: usize, event_proxy: U) -> Crosswords<U> {
         let grid = Grid::new(rows, cols, 10_000);
         let alt = Grid::new(rows, cols, 0);
 
         let scroll_region = Line(0)..Line(rows as i32);
+        let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
 
         Crosswords {
+            semantic_escape_chars,
+            selection: None,
             grid,
             inactive_grid: alt,
             active_charset: CharsetIndex::default(),
@@ -312,6 +318,10 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.reset(self.grid.columns());
     }
 
+    pub fn display_offset(&mut self) -> usize {
+        self.grid.display_offset()
+    }
+
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
         self.grid.scroll_display(scroll);
@@ -335,7 +345,7 @@ impl<U: EventListener> Crosswords<U> {
         let old_lines = self.grid.screen_lines();
 
         if old_cols == num_cols && old_lines == num_lines {
-            info!("Term::resize dimensions unchanged");
+            info!("Crosswords::resize dimensions unchanged");
             return;
         }
         // Move vi mode cursor with the content.
@@ -470,8 +480,8 @@ impl<U: EventListener> Crosswords<U> {
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        // self.selection =
-        //     self.selection.take().and_then(|s| s.rotate(self, &region, -(lines as i32)));
+        self.selection =
+            self.selection.take().and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
         // let line = &mut self.vi_mode_cursor.pos.row;
@@ -496,7 +506,7 @@ impl<U: EventListener> Crosswords<U> {
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        // self.selection = self.selection.take().and_then(|s| s.rotate(self, &region, lines as i32));
+        self.selection = self.selection.take().and_then(|s| s.rotate(&self.grid, &region, lines as i32));
 
         self.grid.scroll_up(&region, lines);
 
@@ -547,17 +557,13 @@ impl<U: EventListener> Crosswords<U> {
         text
     }
 
-    pub fn scroll(&self) -> usize {
-        self.grid.display_offset()
-    }
-
     #[inline]
     pub fn visible_rows(&mut self) -> Vec<Row<Square>> {
         let mut visible_rows = vec![];
         let mut start = self.scroll_region.start.0;
         let mut end = self.scroll_region.end.0;
 
-        let scroll = self.scroll() as i32;
+        let scroll = self.display_offset() as i32;
         if scroll != 0 {
             start -= scroll;
             end -= scroll;
@@ -591,7 +597,7 @@ impl<U: EventListener> Crosswords<U> {
     pub fn cursor(&mut self) -> (Column, Line) {
         // let vi_mode = term.mode().contains(TermMode::VI);
         // let mut point = if vi_mode { term.vi_mode_cursor.point } else { term.grid.cursor.point };
-        // if term.grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
+        // if term.grid[point].flags.contains(square::Flags::WIDE_CHAR_SPACER) {
         //     point.column -= 1;
         // }
 
@@ -618,8 +624,168 @@ impl<U: EventListener> Crosswords<U> {
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
-        // self.selection = None;
+        self.selection = None;
         self.mark_fully_damaged();
+    }
+
+    pub fn selection_to_string(&self) -> Option<String> {
+        let selection_range = self.selection.as_ref().and_then(|s| s.to_range(self))?;
+        let SelectionRange { start, end, .. } = selection_range;
+
+        let mut res = String::new();
+
+        match self.selection.as_ref() {
+            Some(Selection {
+                ty: SelectionType::Block,
+                ..
+            }) => {
+                for line in (start.row.0..end.row.0).map(Line::from) {
+                    res += self
+                        .line_to_string(line, start.col..end.col, start.col.0 != 0)
+                        .trim_end();
+                    res += "\n";
+                }
+
+                res += self
+                    .line_to_string(end.row, start.col..end.col, true)
+                    .trim_end();
+            }
+            Some(Selection {
+                ty: SelectionType::Lines,
+                ..
+            }) => {
+                res = self.bounds_to_string(start, end) + "\n";
+            }
+            _ => {
+                res = self.bounds_to_string(start, end);
+            }
+        }
+
+        Some(res)
+    }
+
+    pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
+        let mut res = String::new();
+
+        for line in (start.row.0..=end.row.0).map(Line::from) {
+            let start_col = if line == start.row {
+                start.col
+            } else {
+                Column(0)
+            };
+            let end_col = if line == end.row {
+                end.col
+            } else {
+                self.grid.last_column()
+            };
+
+            res += &self.line_to_string(line, start_col..end_col, line == end.row);
+        }
+
+        res.strip_suffix('\n').map(str::to_owned).unwrap_or(res)
+    }
+
+    /// Convert a single line in the grid to a String.
+    fn line_to_string(
+        &self,
+        line: Line,
+        mut cols: Range<Column>,
+        include_wrapped_wide: bool,
+    ) -> String {
+        let mut text = String::new();
+
+        let grid_line = &self.grid[line];
+        let line_length = std::cmp::min(grid_line.line_length(), cols.end + 1);
+
+        // Include wide char when trailing spacer is selected.
+        if grid_line[cols.start]
+            .flags
+            .contains(square::Flags::WIDE_CHAR_SPACER)
+        {
+            cols.start -= 1;
+        }
+
+        let mut tab_mode = false;
+        for column in (cols.start.0..line_length.0).map(Column::from) {
+            let cell = &grid_line[column];
+
+            // Skip over cells until next tab-stop once a tab was found.
+            if tab_mode {
+                if self.tabs[column] || cell.c != ' ' {
+                    tab_mode = false;
+                } else {
+                    continue;
+                }
+            }
+
+            if cell.c == '\t' {
+                tab_mode = true;
+            }
+
+            if !cell.flags.intersects(
+                square::Flags::WIDE_CHAR_SPACER | square::Flags::LEADING_WIDE_CHAR_SPACER,
+            ) {
+                // Push cells primary character.
+                text.push(cell.c);
+
+                // Push zero-width characters.
+                for c in cell.zerowidth().into_iter().flatten() {
+                    text.push(*c);
+                }
+            }
+        }
+
+        if cols.end >= self.grid.columns() - 1
+            && (line_length.0 == 0
+                || !self.grid[line][line_length - 1]
+                    .flags
+                    .contains(square::Flags::WRAPLINE))
+        {
+            text.push('\n');
+        }
+
+        // If wide char is not part of the selection, but leading spacer is, include it.
+        if line_length == self.grid.columns()
+            && line_length.0 >= 2
+            && grid_line[line_length - 1]
+                .flags
+                .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
+            && include_wrapped_wide
+        {
+            text.push(self.grid[line - 1i32][Column(0)].c);
+        }
+
+        text
+    }
+
+    /// Find the beginning of the current line across linewraps.
+    pub fn row_search_left(&self, mut point: Pos) -> Pos {
+        while point.row > self.grid.topmost_line()
+            && self.grid[point.row - 1i32][self.grid.last_column()]
+                .flags
+                .contains(square::Flags::WRAPLINE)
+        {
+            point.row -= 1;
+        }
+
+        point.col = Column(0);
+
+        point
+    }
+
+    /// Find the end of the current line across linewraps.
+    pub fn row_search_right(&self, mut point: Pos) -> Pos {
+        while point.row + 1 < self.grid.screen_lines()
+            && self.grid[point.row][self.grid.last_column()]
+                .flags
+                .contains(square::Flags::WRAPLINE)
+        {
+            point.row += 1;
+        }
+
+        point.col = self.grid.last_column();
+
+        point
     }
 }
 
@@ -641,7 +807,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.mode.insert(Mode::MOUSE_REPORT_CLICK);
                 // self.event_proxy.send_event(Event::MouseCursorDirty);
             }
-            AnsiMode::ReportCellMouseMotion => {
+            AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_DRAG);
                 // self.event_proxy.send_event(Event::MouseCursorDirty);
@@ -691,7 +857,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.mode.remove(Mode::MOUSE_REPORT_CLICK);
                 // self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
-            AnsiMode::ReportCellMouseMotion => {
+            AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_DRAG);
                 // self.event_proxy.send_event(Event::MouseCursorDirty);
             }
@@ -908,7 +1074,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             row.swap(destination + offset, source.0 + offset);
         }
 
-        // Cells were just moved out toward the end of the line;
+        // Squares were just moved out toward the end of the line;
         // fill in between source and dest with blanks.
         for cell in &mut row[source.0..destination] {
             *cell = bg.into();
@@ -1149,8 +1315,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     *cell = bg.into();
                 }
 
-                // let range = Line(0)..=cursor.row;
-                // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+                let range = Line(0)..=cursor.row;
+                self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
@@ -1162,8 +1328,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.grid.reset_region((cursor.row + 1)..);
                 }
 
-                // let range = cursor.row..Line(screen_lines as i32);
-                // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+                let range = cursor.row..Line(screen_lines as i32);
+                self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::All => {
                 if self.mode.contains(Mode::ALT_SCREEN) {
@@ -1180,7 +1346,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     // (self.vi_mode_cursor.pos.row - lines).grid_clamp(self, Boundary::Grid);
                 }
 
-                // self.selection = None;
+                self.selection = None;
             }
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
@@ -1188,7 +1354,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // self.vi_mode_cursor.pos.row =
                 // self.vi_mode_cursor.pos.row.grid_clamp(self, Boundary::Cursor);
 
-                // self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
+                self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
             }
             // We have no history to clear.
             ClearMode::Saved => (),
@@ -1333,8 +1499,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             *cell = bg.into();
         }
 
-        // let range = self.grid.cursor.pos.row..=self.grid.cursor.point.line;
-        // self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+        let range = self.grid.cursor.pos.row..=self.grid.cursor.pos.row;
+        self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
     }
 
     #[inline]
@@ -1384,9 +1550,51 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 }
 
+/// Terminal test helpers.
+pub mod test {
+    use super::*;
+
+    use serde::{Deserialize, Serialize};
+    use unicode_width::UnicodeWidthChar;
+
+    use crate::crosswords::pos::Column;
+    use crate::event::VoidListener;
+
+    #[derive(Serialize, Deserialize)]
+    pub struct CrosswordsSize {
+        pub columns: usize,
+        pub screen_lines: usize,
+    }
+
+    impl CrosswordsSize {
+        pub fn new(columns: usize, screen_lines: usize) -> Self {
+            Self {
+                columns,
+                screen_lines,
+            }
+        }
+    }
+
+    impl Dimensions for CrosswordsSize {
+        fn total_lines(&self) -> usize {
+            self.screen_lines()
+        }
+
+        fn screen_lines(&self) -> usize {
+            self.screen_lines
+        }
+
+        fn columns(&self) -> usize {
+            self.columns
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crosswords::pos::{Column, Line, Pos, Side};
+    use crate::crosswords::test::CrosswordsSize;
     use crate::event::VoidListener;
 
     #[test]
@@ -1470,5 +1678,173 @@ mod tests {
         assert_eq!(cw.grid[Line(1)][Column(2)].c, ' ');
         assert_eq!(cw.grid[Line(1)][Column(3)].c, 'b');
         assert_eq!(cw.grid[Line(0)][Column(4)].c, ' ');
+    }
+
+    #[test]
+    fn simple_selection_works() {
+        let size = CrosswordsSize::new(5, 5);
+        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let grid = &mut term.grid;
+        for i in 0..4 {
+            if i == 1 {
+                continue;
+            }
+
+            grid[Line(i)][Column(0)].c = '"';
+
+            for j in 1..4 {
+                grid[Line(i)][Column(j)].c = 'a';
+            }
+
+            grid[Line(i)][Column(4)].c = '"';
+        }
+        grid[Line(2)][Column(0)].c = ' ';
+        grid[Line(2)][Column(4)].c = ' ';
+        grid[Line(2)][Column(4)]
+            .flags
+            .insert(square::Flags::WRAPLINE);
+        grid[Line(3)][Column(0)].c = ' ';
+
+        // Multiple lines contain an empty line.
+        term.selection = Some(Selection::new(
+            SelectionType::Simple,
+            Pos {
+                row: Line(0),
+                col: Column(0),
+            },
+            Side::Left,
+        ));
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(2),
+                    col: Column(4),
+                },
+                Side::Right,
+            );
+        }
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\"aaa\"\n\n aaa "))
+        );
+
+        // A wrapline.
+        term.selection = Some(Selection::new(
+            SelectionType::Simple,
+            Pos {
+                row: Line(2),
+                col: Column(0),
+            },
+            Side::Left,
+        ));
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(3),
+                    col: Column(4),
+                },
+                Side::Right,
+            );
+        }
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from(" aaa  aaa\""))
+        );
+    }
+
+    #[test]
+    fn line_selection_works() {
+        let size = CrosswordsSize::new(5, 1);
+        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let mut grid: Grid<Square> = Grid::new(1, 5, 0);
+        for i in 0..5 {
+            grid[Line(0)][Column(i)].c = 'a';
+        }
+        grid[Line(0)][Column(0)].c = '"';
+        grid[Line(0)][Column(3)].c = '"';
+
+        mem::swap(&mut term.grid, &mut grid);
+
+        term.selection = Some(Selection::new(
+            SelectionType::Lines,
+            Pos {
+                row: Line(0),
+                col: Column(3),
+            },
+            Side::Left,
+        ));
+        assert_eq!(term.selection_to_string(), Some(String::from("\"aa\"a\n")));
+    }
+
+    #[test]
+    fn block_selection_works() {
+        let size = CrosswordsSize::new(5, 5);
+        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let grid = &mut term.grid;
+        for i in 1..4 {
+            grid[Line(i)][Column(0)].c = '"';
+
+            for j in 1..4 {
+                grid[Line(i)][Column(j)].c = 'a';
+            }
+
+            grid[Line(i)][Column(4)].c = '"';
+        }
+        grid[Line(2)][Column(2)].c = ' ';
+        grid[Line(2)][Column(4)]
+            .flags
+            .insert(square::Flags::WRAPLINE);
+        grid[Line(3)][Column(4)].c = ' ';
+
+        term.selection = Some(Selection::new(
+            SelectionType::Block,
+            Pos {
+                row: Line(0),
+                col: Column(3),
+            },
+            Side::Left,
+        ));
+
+        // The same column.
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(3),
+                    col: Column(3),
+                },
+                Side::Right,
+            );
+        }
+        assert_eq!(term.selection_to_string(), Some(String::from("\na\na\na")));
+
+        // The first column.
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(3),
+                    col: Column(0),
+                },
+                Side::Left,
+            );
+        }
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\n\"aa\n\"a\n\"aa"))
+        );
+
+        // The last column.
+        if let Some(s) = term.selection.as_mut() {
+            s.update(
+                Pos {
+                    row: Line(3),
+                    col: Column(4),
+                },
+                Side::Right,
+            );
+        }
+        assert_eq!(
+            term.selection_to_string(),
+            Some(String::from("\na\"\na\"\na"))
+        );
     }
 }

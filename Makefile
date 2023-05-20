@@ -11,16 +11,13 @@ run:
 dev:
 	cargo run
 
+# create-dmg macos-arm64/Rio.app 
 pack-osx-arm:
 	mkdir -p build
 	cargo build -p rio --target aarch64-apple-darwin --release
-	cd rio && cargo bundle --release
+	cd rio && MACOSX_DEPLOYMENT_TARGET=10.14 cargo bundle --release
 	cp -r ./target/release/bundle/osx/* ./build/macos-arm64
-	zip -r ./build/macos-arm64.zip ./build/macos-arm64
-	cargo build -p rio --target aarch64-apple-darwin --release
-	cd rio && cargo bundle --release
-	cp -r ./target/release/bundle/osx/* ./build/macos-arm64
-	zip -r ./build/macos-arm64.zip ./build/macos-arm64
+	create-dmg build/macos-arm64/Rio.app
 
 pack-osx-x86:
 	mkdir -p build

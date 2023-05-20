@@ -2,6 +2,20 @@ pub mod charset;
 pub mod control;
 pub mod mode;
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+pub enum CursorShape {
+    /// Cursor is a block like `▒`.
+    Block,
+
+    /// Cursor is an underscore like `_`.
+    Underline,
+
+    /// Cursor is a vertical bar `⎸`.
+    Beam,
+
+    Hidden,
+}
+
 #[derive(Debug)]
 pub enum ClearMode {
     /// Clear below cursor.
