@@ -39,7 +39,7 @@ pub enum Mode {
     /// ?1000
     ReportMouseClicks = 1000,
     /// ?1002
-    ReportCellMouseMotion = 1002,
+    ReportSquareMouseMotion = 1002,
     /// ?1003
     ReportAllMouseMotion = 1003,
     /// ?1004
@@ -76,7 +76,7 @@ impl Mode {
                 12 => Mode::BlinkingCursor,
                 25 => Mode::ShowCursor,
                 1000 => Mode::ReportMouseClicks,
-                1002 => Mode::ReportCellMouseMotion,
+                1002 => Mode::ReportSquareMouseMotion,
                 1003 => Mode::ReportAllMouseMotion,
                 1004 => Mode::ReportFocusInOut,
                 1005 => Mode::Utf8Mouse,

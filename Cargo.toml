@@ -28,7 +28,8 @@ winit = "0.28.3"
 
 [profile.release]
 opt-level = "s"
-lto = true
+lto = "thin"
+debug = 1
 codegen-units = 1
 incremental = false
 

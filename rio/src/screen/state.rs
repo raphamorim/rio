@@ -1,3 +1,4 @@
+use crate::selection::Selection;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
@@ -161,7 +162,7 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
+    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool, has_selection: bool) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
@@ -181,6 +182,13 @@ impl State {
                     foreground_color,
                     background_color,
                 });
+            } else if has_selection {
+                let selected_sugar = Sugar {
+                    content: square.c,
+                    foreground_color: self.named_colors.background.0,
+                    background_color: self.named_colors.light_blue,
+                };
+                stack.push(selected_sugar);
             } else {
                 stack.push(self.create_sugar_from_square(square));
             }
@@ -214,11 +222,29 @@ impl State {
         cursor: (pos::Column, pos::Line),
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
+        selection: Option<Selection>,
     ) {
         self.cursor.position = cursor;
-        for (i, row) in rows.iter().enumerate() {
-            let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i);
-            sugarloaf.stack(sugar_stack, style);
+
+        if let Some(sel) = selection {
+            let range = sel.region();
+            println!("{:?}", range);
+            for (i, row) in rows.iter().enumerate() {
+                let has_selection = false;
+                // if range.contains() {
+
+                // }
+
+                let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i, false);
+                // println!("{:?} {:?}", i, range);
+                sugarloaf.stack(sugar_stack, style);
+            }
+
+        } else {
+            for (i, row) in rows.iter().enumerate() {
+                let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i, false);
+                sugarloaf.stack(sugar_stack, style);
+            }
         }
     }
 

@@ -1,9 +1,17 @@
 # Changelog
 
+## 0.0.4
+
+- Change default cursor icon for Text (`winit::window::CursorIcon`)
+- Scroll bottom when display offset is different than zero.
+- Fix for user interaction "close Rio terminal" using UI interface (`ExitWithCode(0)`).
+- Hide cursor when typing and make it visible again with scroll and cursor interactions.
+- Implementation of paste files to string path.
+
 ## 0.0.3
 
-- Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...]
-- Common Keybindings and keybindings for MacOS 
+- Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...].
+- Common Keybindings and keybindings for MacOS.
 - Allow to configure `option-as-alt` for Winit on MacOs. Issue originally bought by Alacritty on Winit (https://github.com/rust-windowing/winit/issues/768).
 - Allow to configure environment variables through config file.
 - Stabilization of Sugarloaf render on emojis, symbos and unicode.

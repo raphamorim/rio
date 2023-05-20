@@ -3,6 +3,24 @@ use std::cmp::{max, min, Ord, Ordering};
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Index, IndexMut, Sub, SubAssign};
 
+pub type Side = Direction;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Direction {
+    Left,
+    Right,
+}
+
+impl Direction {
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        match self {
+            Side::Right => Side::Left,
+            Side::Left => Side::Right,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Cursor<T> {
     pub pos: Pos,
@@ -21,7 +39,6 @@ pub struct Cursor<T> {
 pub enum StandardCharset {
     #[default]
     Ascii,
-    #[allow(dead_code)]
     SpecialCharacterAndLineDrawing,
 }
 
@@ -34,11 +51,8 @@ pub enum CharsetIndex {
     /// Default set, is designated as ASCII at startup.
     #[default]
     G0,
-    #[allow(dead_code)]
     G1,
-    #[allow(dead_code)]
     G2,
-    #[allow(dead_code)]
     G3,
 }
 
@@ -141,7 +155,6 @@ impl Pos {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn add<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
     where
         D: Dimensions,

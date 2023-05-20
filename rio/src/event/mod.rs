@@ -16,8 +16,15 @@ pub enum Msg {
     #[allow(dead_code)]
     Shutdown,
 
-    #[allow(dead_code)]
     Resize(WinsizeBuilder),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ClickState {
+    None,
+    Click,
+    DoubleClick,
+    TripleClick,
 }
 
 #[derive(Clone)]
