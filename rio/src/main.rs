@@ -5,7 +5,6 @@ mod event;
 mod ime;
 mod layout;
 mod logger;
-mod mouse;
 mod performer;
 mod platform;
 mod screen;

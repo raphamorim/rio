@@ -1,4 +1,4 @@
-mod mouse;
+pub mod mouse;
 
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
@@ -90,10 +90,7 @@ impl Layout {
             rows: 25,
             scale_factor,
             font_size,
-            mouse: Mouse {
-                multiplier: 3.0,
-                ..Mouse::default()
-            },
+            mouse: Mouse::default(),
             styles,
             padding: Delta {
                 x: PADDING_X,

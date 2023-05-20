@@ -21,9 +21,11 @@ use crate::event::EventListener;
 /// A Pos and side within that point.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Anchor {
-    point: Pos,
+    pub point: Pos,
     side: Side,
 }
+
+pub type Region = Range<Anchor>;
 
 impl Anchor {
     fn new(point: Pos, side: Side) -> Anchor {
@@ -55,6 +57,7 @@ impl SelectionRange {
 
 impl SelectionRange {
     /// Check if a point lies within the selection.
+    #[allow(unused)]
     pub fn contains(&self, point: Pos) -> bool {
         self.start.row <= point.row
             && self.end.row >= point.row
@@ -64,8 +67,9 @@ impl SelectionRange {
                 || (self.end.row != point.row && !self.is_block))
     }
 
-    /// Check if the cell at a point is part of the selection.
-    pub fn contains_cell(
+    /// Check if the square at a point is part of the selection.
+    #[allow(unused)]
+    pub fn contains_square(
         &self,
         indexed: &Indexed<&Square>,
         point: Pos,
@@ -101,6 +105,7 @@ impl SelectionRange {
 pub enum SelectionType {
     Simple,
     Block,
+    // Semantic,
     Lines,
 }
 
@@ -133,11 +138,6 @@ impl Selection {
             },
             ty,
         }
-    }
-
-    /// Obtain region
-    pub fn region(self) -> Range<Anchor> {
-        self.region
     }
 
     /// Update the end of the selection.
@@ -234,6 +234,7 @@ impl Selection {
                         && start.side == Side::Left
                         && end.side == Side::Right)
             }
+            // SelectionType::Semantic | SelectionType::Lines => false,
             SelectionType::Lines => false,
         }
     }
@@ -262,7 +263,8 @@ impl Selection {
         range_bottom >= start && range_top <= end
     }
 
-    /// Expand selection sides to include all cells.
+    /// Expand selection sides to include all square.
+    #[allow(unused)]
     pub fn include_all(&mut self) {
         let (start, end) = (self.region.start.point, self.region.end.point);
         let (start_side, end_side) = match self.ty {
@@ -306,8 +308,30 @@ impl Selection {
             SelectionType::Simple => self.range_simple(start, end, columns),
             SelectionType::Block => self.range_block(start, end),
             SelectionType::Lines => Some(Self::range_lines(term, start.point, end.point)),
+            // SelectionType::Semantic => Some(Self::range_semantic(term, start.point, end.point)),
         }
     }
+
+    // fn range_semantic<T>(term: &Term<T>, mut start: Pos, mut end: Pos) -> SelectionRange {
+    //     if start == end {
+    //         if let Some(matching) = term.bracket_search(start) {
+    //             if (matching.row == start.row && matching.col < start.col)
+    //                 || (matching.row < start.row)
+    //             {
+    //                 start = matching;
+    //             } else {
+    //                 end = matching;
+    //             }
+
+    //             return SelectionRange { start, end, is_block: false };
+    //         }
+    //     }
+
+    //     let start = term.semantic_search_left(start);
+    //     let end = term.semantic_search_right(end);
+
+    //     SelectionRange { start, end, is_block: false }
+    // }
 
     fn range_lines<T: EventListener>(
         term: &Crosswords<T>,
@@ -594,6 +618,21 @@ mod tests {
         );
     }
 
+    // #[test]
+    // fn semantic_selection() {
+    //     let size = (10, 5);
+    //     let mut selection =
+    //         Selection::new(SelectionType::Semantic, Pos::new(Line(9), Column(3)), Side::Left);
+    //     selection.update(Pos::new(Line(4), Column(1)), Side::Right);
+    //     selection = selection.rotate(&size, &(Line(0)..Line(size.0 as i32)), 4).unwrap();
+
+    //     assert_eq!(selection.to_range(&term(size.0, size.1)).unwrap(), SelectionRange {
+    //         start: Pos::new(Line(0), Column(1)),
+    //         end: Pos::new(Line(5), Column(3)),
+    //         is_block: false,
+    //     });
+    // }
+
     #[test]
     fn block_selection() {
         let size = (10, 5);
@@ -731,6 +770,7 @@ mod tests {
 
         assert!(selection.intersects_range(..));
         assert!(selection.intersects_range(Line(2)..));
+        assert!(selection.intersects_range(Line(3)..=Line(3)));
         assert!(selection.intersects_range(Line(2)..=Line(4)));
         assert!(selection.intersects_range(Line(2)..=Line(7)));
         assert!(selection.intersects_range(Line(4)..=Line(5)));
