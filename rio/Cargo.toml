@@ -44,8 +44,8 @@ version = "1.0.0"
 resources = ["src/screen/window/resources"]
 copyright = "Copyright (c) Raphael Amorim 2023. All rights reserved."
 category = "Developer Tool"
+osx_minimum_system_version = "10.14"
 short_description = "A terminal application"
 long_description = """
 Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browsers powered by WebAssembly/WebGPU. More info in https://raphamorim.io/rio
 """
-# deb_depends = ["libgl1-mesa-glx", "libsdl2-2.0-0 (>= 2.0.5)"]

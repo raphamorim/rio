@@ -116,7 +116,9 @@ impl Sequencer {
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
                     ..
-                } => *control_flow = winit::event_loop::ControlFlow::Exit,
+                } => {
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::ModifiersChanged(modifiers),
@@ -248,6 +250,15 @@ impl Sequencer {
                         .render();
                 }
 
+                // Emitted when the event loop is being shut down.
+                // This is irreversible - if this event is emitted, it is guaranteed to be the last event that gets emitted.
+                // You generally want to treat this as an “do on quit” event.
+                Event::LoopDestroyed { .. } => {
+                    // TODO: Now we are forcing an exit operation
+                    // but it should be revaluated since CloseRequested in MacOs
+                    // not necessarily exit the process
+                    std::process::exit(0);
+                }
                 Event::MainEventsCleared { .. } => {}
                 Event::RedrawRequested { .. } => {}
                 _ => {

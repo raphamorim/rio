@@ -13,3 +13,12 @@ New versions are created by weekly and monthly basis, so if you are using an uns
 
 - [Download macOS - x86 v0.0.3 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.3/macos-x86.zip)
 - [Download macOS - arm64 v0.0.3 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.3/macos-arm64.zip)
+
+Rio application is not notarized yet, so in case runs into any problem running:
+
+{% highlight toml %}
+xattr -d com.apple.quarantine <path-to-rio-app>
+{% endhighlight %}
+
+<!-- ## Building from the source -->
+
