@@ -269,12 +269,13 @@ where
 {
     active_charset: CharsetIndex,
     mode: Mode,
+    #[allow(unused)]
+    semantic_escape_chars: String,
     pub grid: Grid<Square>,
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
     tabs: TabStops,
     event_proxy: U,
-    semantic_escape_chars: String,
     pub selection: Option<Selection>,
     #[allow(dead_code)]
     colors: Colors,
@@ -338,6 +339,10 @@ impl<U: EventListener> Crosswords<U> {
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
         }
+    }
+
+    pub fn bottommost_line(&self) -> Line {
+        self.grid.bottommost_line()
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
@@ -480,8 +485,10 @@ impl<U: EventListener> Crosswords<U> {
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection =
-            self.selection.take().and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
+        self.selection = self
+            .selection
+            .take()
+            .and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
         // let line = &mut self.vi_mode_cursor.pos.row;
@@ -506,7 +513,10 @@ impl<U: EventListener> Crosswords<U> {
         let region = origin..self.scroll_region.end;
 
         // Scroll selection.
-        self.selection = self.selection.take().and_then(|s| s.rotate(&self.grid, &region, lines as i32));
+        self.selection = self
+            .selection
+            .take()
+            .and_then(|s| s.rotate(&self.grid, &region, lines as i32));
 
         self.grid.scroll_up(&region, lines);
 
@@ -1316,7 +1326,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
 
                 let range = Line(0)..=cursor.row;
-                self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+                self.selection =
+                    self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
@@ -1329,7 +1340,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
 
                 let range = cursor.row..Line(screen_lines as i32);
-                self.selection = self.selection.take().filter(|s| !s.intersects_range(range));
+                self.selection =
+                    self.selection.take().filter(|s| !s.intersects_range(range));
             }
             ClearMode::All => {
                 if self.mode.contains(Mode::ALT_SCREEN) {
@@ -1354,7 +1366,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // self.vi_mode_cursor.pos.row =
                 // self.vi_mode_cursor.pos.row.grid_clamp(self, Boundary::Cursor);
 
-                self.selection = self.selection.take().filter(|s| !s.intersects_range(..Line(0)));
+                self.selection = self
+                    .selection
+                    .take()
+                    .filter(|s| !s.intersects_range(..Line(0)));
             }
             // We have no history to clear.
             ClearMode::Saved => (),
@@ -1554,13 +1569,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 pub mod test {
     use super::*;
 
-    use serde::{Deserialize, Serialize};
-    use unicode_width::UnicodeWidthChar;
-
-    use crate::crosswords::pos::Column;
-    use crate::event::VoidListener;
-
-    #[derive(Serialize, Deserialize)]
     pub struct CrosswordsSize {
         pub columns: usize,
         pub screen_lines: usize,

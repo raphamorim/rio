@@ -1,8 +1,8 @@
-use crate::selection::Selection;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
+use crate::selection::{Region, SelectionRange};
 use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
@@ -162,7 +162,55 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool, has_selection: bool) -> SugarStack {
+    fn create_sugar_stack_with_selection(
+        &mut self,
+        row: &Row<Square>,
+        has_cursor: bool,
+        range: &SelectionRange,
+        line: pos::Line,
+    ) -> SugarStack {
+        let mut stack: Vec<Sugar> = vec![];
+        let columns: usize = row.len();
+        for column in 0..columns {
+            let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
+            let square = &row.inner[column];
+
+            if has_cursor && column == self.cursor.position.0 {
+                let mut foreground_color = self.named_colors.cursor;
+                let mut background_color = self.named_colors.cursor;
+
+                if self.is_ime_enabled {
+                    foreground_color = self.named_colors.background.0;
+                    background_color = self.named_colors.yellow;
+                }
+
+                stack.push(Sugar {
+                    content: self.cursor.content,
+                    foreground_color,
+                    background_color,
+                });
+            } else if is_selected {
+                let selected_sugar = Sugar {
+                    content: square.c,
+                    foreground_color: self.named_colors.background.0,
+                    background_color: self.named_colors.light_blue,
+                };
+                stack.push(selected_sugar);
+            } else {
+                stack.push(self.create_sugar_from_square(square));
+            }
+
+            // Render last column and break row
+            if column == (columns - 1) {
+                break;
+            }
+        }
+
+        stack
+    }
+
+    #[inline]
+    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
@@ -182,13 +230,6 @@ impl State {
                     foreground_color,
                     background_color,
                 });
-            } else if has_selection {
-                let selected_sugar = Sugar {
-                    content: square.c,
-                    foreground_color: self.named_colors.background.0,
-                    background_color: self.named_colors.light_blue,
-                };
-                stack.push(selected_sugar);
             } else {
                 stack.push(self.create_sugar_from_square(square));
             }
@@ -222,29 +263,37 @@ impl State {
         cursor: (pos::Column, pos::Line),
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
-        selection: Option<Selection>,
+        selection: Option<SelectionRange>,
     ) {
         self.cursor.position = cursor;
 
-        if let Some(sel) = selection {
-            let range = sel.region();
-            println!("{:?}", range);
+        if let Some(sel) = &selection {
             for (i, row) in rows.iter().enumerate() {
-                let has_selection = false;
-                // if range.contains() {
+                let has_cursor = self.cursor.position.1 == i;
+                // sel.contains()
+                // let has_selection =
+                //     sel.intersects_range(pos::Line(i as i32)..=pos::Line(i as i32));
 
-                // }
-
-                let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i, false);
-                // println!("{:?} {:?}", i, range);
+                // let sugar_stack = if has_selection {
+                let sugar_stack = self.create_sugar_stack_with_selection(
+                    row,
+                    has_cursor,
+                    sel,
+                    pos::Line(i as i32),
+                );
+                // } else {
+                //     self.create_sugar_stack(row, has_cursor)
+                // };
                 sugarloaf.stack(sugar_stack, style);
             }
 
-        } else {
-            for (i, row) in rows.iter().enumerate() {
-                let sugar_stack = self.create_sugar_stack(row, self.cursor.position.1 == i, false);
-                sugarloaf.stack(sugar_stack, style);
-            }
+            return;
+        }
+
+        for (i, row) in rows.iter().enumerate() {
+            let has_cursor = self.cursor.position.1 == i;
+            let sugar_stack = self.create_sugar_stack(row, has_cursor);
+            sugarloaf.stack(sugar_stack, style);
         }
     }
 

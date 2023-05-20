@@ -3,16 +3,21 @@ mod messenger;
 mod state;
 pub mod window;
 
-use crate::selection::{Selection, SelectionType};
 use crate::clipboard::{Clipboard, ClipboardType};
-use crate::crosswords::{ Crosswords, Mode, pos::{Pos, Side}, grid::Scroll };
+use crate::crosswords::{
+    grid::Scroll,
+    pos::{Pos, Side},
+    Crosswords, Mode,
+};
 use crate::event::sync::FairMutex;
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
+use crate::layout::mouse::Mouse;
 use crate::layout::Layout;
-use crate::mouse::Mouse;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
+use crate::selection::SelectionRange;
+use crate::selection::{Selection, SelectionType};
 use messenger::Messenger;
 use state::State;
 use std::borrow::Cow;
@@ -30,7 +35,6 @@ pub struct Screen {
     pub ime: Ime,
     pub messenger: Messenger,
     state: State,
-    mouse: Mouse,
     sugarloaf: Sugarloaf,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
 }
@@ -80,7 +84,6 @@ impl Screen {
         let clipboard = Clipboard::new();
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
-        let mouse = Mouse::default();
 
         Ok(Screen {
             ime,
@@ -91,17 +94,8 @@ impl Screen {
             state,
             bindings,
             clipboard,
-            mouse,
             ignore_chars: false,
         })
-    }
-
-    pub fn mouse(&mut self) -> &Mouse {
-        &self.mouse
-    }
-
-    pub fn mouse_mut(&mut self) -> &mut Mouse {
-        &mut self.mouse
     }
 
     #[inline]
@@ -262,7 +256,7 @@ impl Screen {
     //     }
     // }
 
-    fn clear_selection(&mut self) {
+    pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
         let mut terminal = self.terminal.lock();
         terminal.selection.take();
@@ -274,38 +268,60 @@ impl Screen {
         terminal.selection = Some(Selection::new(ty, point, side));
     }
 
-    fn selection_is_empty(&self) -> bool {
+    pub fn update_selection_scrolling(&self, mouse_y: f64) {
+        // println!("{:?}", mouse_y);
+    }
+
+    // pub fn update_selection(&mut self, mut point: Pos, side: Side) {
+    pub fn update_selection(&mut self, mut point: Pos) {
+        let mut terminal = self.terminal.lock();
+        let mut selection = match terminal.selection.take() {
+            Some(selection) => selection,
+            None => return,
+        };
+
+        // Treat motion over message bar like motion over the last line.
+        point.row = std::cmp::min(point.row, terminal.bottommost_line());
+
+        // Update selection.
+        // selection.update(point, side);
+        selection.update(point, Side::Left);
+
+        // Move vi cursor and expand selection.
+        if terminal.mode().contains(Mode::VI) {
+            // terminal.vi_mode_cursor.point = point;
+            selection.include_all();
+        }
+
+        terminal.selection = Some(selection);
+    }
+
+    #[inline]
+    pub fn selection_is_empty(&self) -> bool {
         let terminal = self.terminal.lock();
-        terminal.selection.as_ref().map_or(true, Selection::is_empty)
+        terminal.selection.is_none()
     }
 
     pub fn on_left_click(&mut self, point: Pos) {
-        let side = self.mouse().square_side;
+        let side = self.layout.mouse.square_side;
 
-        match self.mouse().click_state {
+        match self.layout.mouse.click_state {
             ClickState::Click => {
-                // Don't launch URLs if this click cleared the selection.
-                self.mouse_mut().block_hint_launcher = !self.selection_is_empty();
-
                 self.clear_selection();
 
                 // Start new empty selection.
                 if self.messenger.get_modifiers().ctrl() {
-                    println!("on_left_click block {:?}", point);
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
-                    println!("on_left_click simple {:?}", point);
                     self.start_selection(SelectionType::Simple, point, side);
                 }
-            },
+            }
             ClickState::DoubleClick => {
-                // self.mouse_mut().block_hint_launcher = true;
                 // self.start_selection(SelectionType::Semantic, point, side);
-            },
+            }
             ClickState::TripleClick => {
-                self.mouse_mut().block_hint_launcher = true;
                 self.start_selection(SelectionType::Lines, point, side);
-            },
+            }
             ClickState::None => (),
         };
 
@@ -337,7 +353,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn skeleton(&mut self, color: colors::ColorWGPU) {
+    pub fn init(&mut self, color: colors::ColorWGPU) {
         self.sugarloaf.init(color, self.layout.styles.term);
     }
 
@@ -346,7 +362,11 @@ impl Screen {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor_position = terminal.cursor();
-        let selection_range = terminal.selection.clone();
+        let mut selection_range: Option<SelectionRange> = None;
+
+        if let Some(selection) = &terminal.selection {
+            selection_range = selection.to_range(&terminal);
+        }
         drop(terminal);
 
         self.state.set_ime(self.ime.preedit());
@@ -356,7 +376,7 @@ impl Screen {
             cursor_position,
             &mut self.sugarloaf,
             self.layout.styles.term,
-            selection_range
+            selection_range,
         );
 
         self.sugarloaf.render();
@@ -419,7 +439,13 @@ impl Screen {
         }
     }
 
-    pub fn layout(&mut self) -> &mut Layout {
+    #[inline]
+    pub fn layout(&mut self) -> &Layout {
+        &self.layout
+    }
+
+    #[inline]
+    pub fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 
