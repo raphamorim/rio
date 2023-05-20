@@ -77,7 +77,7 @@ impl Mouse {
         // let line = min(line, size.bottommost_line().0 as usize);
         let line = min(line, 25 as usize);
 
-        println!("{:?}{:?}{:?}", self.x, col, line);
+        // println!("{:?}{:?}{:?}", self.x, col, line);
 
         self.viewport_to_point(display_offset, Pos::new(line, col))
     }

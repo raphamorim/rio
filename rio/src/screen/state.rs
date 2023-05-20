@@ -179,6 +179,11 @@ impl State {
                 let mut foreground_color = self.named_colors.cursor;
                 let mut background_color = self.named_colors.cursor;
 
+                if is_selected {
+                    foreground_color = self.named_colors.yellow;
+                    background_color = self.named_colors.yellow;
+                }
+
                 if self.is_ime_enabled {
                     foreground_color = self.named_colors.background.0;
                     background_color = self.named_colors.yellow;

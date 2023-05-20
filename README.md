@@ -27,6 +27,7 @@ _* Nintendo Switch development is just for fun, the goal is to have  the rendere
 | ![Demo tmux](resources/demo-tmux.png) | ![Demo emojis](resources/demo-emojis.png) |
 | ----------- | ----------- |
 | ![Demo colors](resources/demo-colors.png) | ![Demo git](resources/demo-git.png) |
+| ![Demo selection](resources/demo-selection.png) |  |
 
 Note: Emojis are rendered with Noto Emoji.
 
