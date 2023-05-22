@@ -1,5 +1,6 @@
 pub mod mouse;
 
+use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
 use mouse::{AccumulatedScroll, Mouse};
@@ -31,7 +32,7 @@ pub struct Layout {
 #[derive(Default)]
 pub struct Styles {
     pub term: SugarloafStyle,
-    pub tabs_active: SugarloafStyle,
+    // pub tabs_active: SugarloafStyle,
 }
 
 impl Dimensions for Layout {
@@ -65,14 +66,14 @@ fn update_styles(layout: &mut Layout) {
             text_scale: layout.font_size * layout.scale_factor,
         },
         // TODO: Fix tabs style
-        tabs_active: SugarloafStyle {
-            screen_position: (80.0 * layout.scale_factor, (8.0 * layout.scale_factor)),
-            bounds: (
-                layout.width - (40.0 * layout.scale_factor),
-                layout.height * layout.scale_factor,
-            ),
-            text_scale: 15.0 * layout.scale_factor,
-        },
+        // tabs_active: SugarloafStyle {
+        //     screen_position: (80.0 * layout.scale_factor, (8.0 * layout.scale_factor)),
+        //     bounds: (
+        //         layout.width - (40.0 * layout.scale_factor),
+        //         layout.height * layout.scale_factor,
+        //     ),
+        //     text_scale: layout.font_size * layout.scale_factor,
+        // },
     };
     layout.styles = new_styles;
 }
@@ -135,8 +136,23 @@ impl Layout {
         &mut self.mouse
     }
 
+    #[inline]
+    pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let text_scale = (self.styles.term.text_scale as usize) + 1;
+        let col = self.mouse.x.saturating_sub(PADDING_X as usize) / self.font_size as usize;
+        let col = std::cmp::min(Column(col), Column(self.columns));
+
+        let line = self.mouse.y.saturating_sub(PADDING_Y as usize) / (text_scale + 2);
+        let line = std::cmp::min(line, self.rows - 1 as usize);
+
+        let point = Pos::new(line, col);
+        let row = Line(point.row as i32) - display_offset;
+        Pos::new(row, point.col)
+    }
+
     // $ tput columns
     // $ tput lines
+    #[inline]
     pub fn compute(&mut self) -> (usize, usize) {
         let (padding_x, padding_y) = self.padding();
         let mut rows = (self.height - padding_y) / self.scale_factor;
