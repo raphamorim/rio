@@ -199,7 +199,7 @@ impl Sequencer {
 
                                 if let MouseButton::Left = button {
                                     let point =
-                                        screen.layout().mouse.position(display_offset);
+                                        screen.layout().mouse_position(display_offset);
                                     screen.on_left_click(point);
                                 }
 
@@ -248,14 +248,14 @@ impl Sequencer {
                     }
 
                     let display_offset = screen.display_offset();
-                    let old_point = screen.layout().mouse.position(display_offset);
+                    let old_point = screen.layout().mouse_position(display_offset);
 
                     let x = x.clamp(0.0, screen.layout().width.into()) as usize;
                     let y = y.clamp(0.0, screen.layout().height.into()) as usize;
                     screen.layout_mut().mouse_mut().x = x;
                     screen.layout_mut().mouse_mut().y = y;
 
-                    let point = screen.layout().mouse.position(display_offset);
+                    let point = screen.layout().mouse_position(display_offset);
                     let cell_changed = old_point != point;
 
                     // If the mouse hasn't changed cells, do nothing.

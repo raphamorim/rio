@@ -105,7 +105,7 @@ impl SelectionRange {
 pub enum SelectionType {
     Simple,
     Block,
-    // Semantic,
+    Semantic,
     Lines,
 }
 
@@ -234,8 +234,7 @@ impl Selection {
                         && start.side == Side::Left
                         && end.side == Side::Right)
             }
-            // SelectionType::Semantic | SelectionType::Lines => false,
-            SelectionType::Lines => false,
+            SelectionType::Semantic | SelectionType::Lines => false,
         }
     }
 
@@ -308,30 +307,44 @@ impl Selection {
             SelectionType::Simple => self.range_simple(start, end, columns),
             SelectionType::Block => self.range_block(start, end),
             SelectionType::Lines => Some(Self::range_lines(term, start.point, end.point)),
-            // SelectionType::Semantic => Some(Self::range_semantic(term, start.point, end.point)),
+            SelectionType::Semantic => {
+                Some(Self::range_semantic(term, start.point, end.point))
+            }
         }
     }
 
-    // fn range_semantic<T>(term: &Term<T>, mut start: Pos, mut end: Pos) -> SelectionRange {
-    //     if start == end {
-    //         if let Some(matching) = term.bracket_search(start) {
-    //             if (matching.row == start.row && matching.col < start.col)
-    //                 || (matching.row < start.row)
-    //             {
-    //                 start = matching;
-    //             } else {
-    //                 end = matching;
-    //             }
+    fn range_semantic<T: EventListener>(
+        term: &Crosswords<T>,
+        mut start: Pos,
+        mut end: Pos,
+    ) -> SelectionRange {
+        if start == end {
+            if let Some(matching) = term.bracket_search(start) {
+                if (matching.row == start.row && matching.col < start.col)
+                    || (matching.row < start.row)
+                {
+                    start = matching;
+                } else {
+                    end = matching;
+                }
 
-    //             return SelectionRange { start, end, is_block: false };
-    //         }
-    //     }
+                return SelectionRange {
+                    start,
+                    end,
+                    is_block: false,
+                };
+            }
+        }
 
-    //     let start = term.semantic_search_left(start);
-    //     let end = term.semantic_search_right(end);
+        let start = term.semantic_search_left(start);
+        let end = term.semantic_search_right(end);
 
-    //     SelectionRange { start, end, is_block: false }
-    // }
+        SelectionRange {
+            start,
+            end,
+            is_block: false,
+        }
+    }
 
     fn range_lines<T: EventListener>(
         term: &Crosswords<T>,
@@ -618,20 +631,28 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn semantic_selection() {
-    //     let size = (10, 5);
-    //     let mut selection =
-    //         Selection::new(SelectionType::Semantic, Pos::new(Line(9), Column(3)), Side::Left);
-    //     selection.update(Pos::new(Line(4), Column(1)), Side::Right);
-    //     selection = selection.rotate(&size, &(Line(0)..Line(size.0 as i32)), 4).unwrap();
+    #[test]
+    fn semantic_selection() {
+        let size = (10, 5);
+        let mut selection = Selection::new(
+            SelectionType::Semantic,
+            Pos::new(Line(9), Column(3)),
+            Side::Left,
+        );
+        selection.update(Pos::new(Line(4), Column(1)), Side::Right);
+        selection = selection
+            .rotate(&size, &(Line(0)..Line(size.0 as i32)), 4)
+            .unwrap();
 
-    //     assert_eq!(selection.to_range(&term(size.0, size.1)).unwrap(), SelectionRange {
-    //         start: Pos::new(Line(0), Column(1)),
-    //         end: Pos::new(Line(5), Column(3)),
-    //         is_block: false,
-    //     });
-    // }
+        assert_eq!(
+            selection.to_range(&term(size.0, size.1)).unwrap(),
+            SelectionRange {
+                start: Pos::new(Line(0), Column(1)),
+                end: Pos::new(Line(5), Column(3)),
+                is_block: false,
+            }
+        );
+    }
 
     #[test]
     fn block_selection() {

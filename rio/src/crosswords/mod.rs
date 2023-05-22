@@ -20,6 +20,7 @@ pub mod square;
 use crate::ansi::mode::Mode as AnsiMode;
 use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
 use crate::clipboard::ClipboardType;
+use crate::crosswords::grid::BidirectionalIterator;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::grid::Grid;
 use crate::crosswords::grid::Scroll;
@@ -47,6 +48,7 @@ pub type NamedColor = colors::NamedColor;
 
 pub const MIN_COLUMNS: usize = 2;
 pub const MIN_VISIBLE_ROWS: usize = 1;
+const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
 
 bitflags! {
     #[derive(Debug, Clone)]
@@ -528,6 +530,102 @@ impl<U: EventListener> Crosswords<U> {
         // *line = cmp::max(*line - lines, top);
         // }
         self.mark_fully_damaged();
+    }
+
+    pub fn bracket_search(&self, point: Pos) -> Option<Pos> {
+        let start_char = self.grid[point].c;
+
+        // Find the matching bracket we're looking for
+        let (forward, end_char) = BRACKET_PAIRS.iter().find_map(|(open, close)| {
+            if open == &start_char {
+                Some((true, *close))
+            } else if close == &start_char {
+                Some((false, *open))
+            } else {
+                None
+            }
+        })?;
+
+        let mut iter = self.grid.iter_from(point);
+
+        // For every character match that equals the starting bracket, we
+        // ignore one bracket of the opposite type.
+        let mut skip_pairs = 0;
+
+        loop {
+            // Check the next cell
+            let cell = if forward { iter.next() } else { iter.prev() };
+
+            // Break if there are no more cells
+            let cell = match cell {
+                Some(cell) => cell,
+                None => break,
+            };
+
+            // Check if the bracket matches
+            if cell.c == end_char && skip_pairs == 0 {
+                return Some(cell.pos);
+            } else if cell.c == start_char {
+                skip_pairs += 1;
+            } else if cell.c == end_char {
+                skip_pairs -= 1;
+            }
+        }
+
+        None
+    }
+
+    pub fn semantic_search_left(&self, mut point: Pos) -> Pos {
+        // Limit the starting point to the last line in the history
+        point.row = std::cmp::max(point.row, self.grid.topmost_line());
+
+        let mut iter = self.grid.iter_from(point);
+        let last_column = self.grid.columns() - 1;
+
+        let wide = square::Flags::WIDE_CHAR
+            | square::Flags::WIDE_CHAR_SPACER
+            | square::Flags::LEADING_WIDE_CHAR_SPACER;
+        while let Some(cell) = iter.prev() {
+            if !cell.flags.intersects(wide) && self.semantic_escape_chars.contains(cell.c)
+            {
+                break;
+            }
+
+            if cell.pos.col == last_column
+                && !cell.flags.contains(square::Flags::WRAPLINE)
+            {
+                break; // cut off if on new line or hit escape char
+            }
+
+            point = cell.pos;
+        }
+
+        point
+    }
+
+    pub fn semantic_search_right(&self, mut point: Pos) -> Pos {
+        // Limit the starting point to the last line in the history
+        point.row = std::cmp::max(point.row, self.grid.topmost_line());
+
+        let wide = square::Flags::WIDE_CHAR
+            | square::Flags::WIDE_CHAR_SPACER
+            | square::Flags::LEADING_WIDE_CHAR_SPACER;
+        let last_column = self.grid.columns() - 1;
+
+        for cell in self.grid.iter_from(point) {
+            if !cell.flags.intersects(wide) && self.semantic_escape_chars.contains(cell.c)
+            {
+                break;
+            }
+
+            point = cell.pos;
+
+            if point.col == last_column && !cell.flags.contains(square::Flags::WRAPLINE) {
+                break; // cut off if on new line or hit escape char
+            }
+        }
+
+        point
     }
 
     pub fn write_at_cursor(&mut self, c: char) {
