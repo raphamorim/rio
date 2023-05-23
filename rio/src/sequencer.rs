@@ -323,6 +323,9 @@ impl Sequencer {
                                         lpos.x = 0.;
                                     }
 
+                                    // TODO: Scroll shouldn't clear selection
+                                    // Should implement update_selection_scrolling later
+                                    screen.clear_selection();
                                     screen.scroll(lpos.x, lpos.y);
                                 }
                                 _ => (),
