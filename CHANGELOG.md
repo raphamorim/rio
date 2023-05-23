@@ -2,9 +2,9 @@
 
 ## 0.0.4
 
-- Copy selection
-- Selection
-- Change default cursor icon for Text (`winit::window::CursorIcon`)
+- Copy feature.
+- Selection feature (selection doesn't work when scrolling yet).
+- Change default cursor icon for Text (`winit::window::CursorIcon`).
 - Scroll bottom when display offset is different than zero.
 - Fix for user interaction "close Rio terminal" using UI interface (`ExitWithCode(0)`).
 - Hide cursor when typing and make it visible again with scroll and cursor interactions.
