@@ -2,10 +2,10 @@ use font_kit::source::SystemSource;
 use glyph_brush::ab_glyph::{FontArc, FontVec};
 use log::warn;
 
-pub const DEFAULT_FONT_NAME: &str = "firamono";
+pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
 
-pub const FONT_FIRAMONO: &[u8; 170204] =
-    include_bytes!("./resources/FiraMono/FiraMono-Regular.ttf");
+pub const FONT_CASCADIA_MONO: &[u8; 624892] =
+    include_bytes!("./resources/CascadiaMono.ttf");
 
 pub const FONT_EMOJI: &[u8; 877988] =
     include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
@@ -58,7 +58,7 @@ impl Font {
 
         if font_name.to_lowercase() == DEFAULT_FONT_NAME {
             return Ok(Font {
-                system: FontArc::try_from_slice(FONT_FIRAMONO).unwrap(),
+                system: FontArc::try_from_slice(FONT_CASCADIA_MONO).unwrap(),
                 symbol: FontArc::new(font_vec_symbol),
                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                 unicode: FontArc::new(font_vec_unicode),

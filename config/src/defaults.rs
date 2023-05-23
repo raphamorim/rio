@@ -21,7 +21,7 @@ pub fn default_log_level() -> String {
 }
 
 pub fn default_font() -> String {
-    String::from("Firamono")
+    String::from("CascadiaMono")
 }
 
 pub fn default_cursor() -> char {

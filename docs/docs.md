@@ -34,7 +34,7 @@ height = 438
 width = 662
 
 [style]
-font = "Firamono"
+font = "CascadiaMono"
 font-size = 16
 theme = "Basic"
 
@@ -153,7 +153,7 @@ option-as-alt = 'both'
 
 ## font
 
-Default font is Firamono.
+Default font is CascadiaMono.
 
 {% highlight toml %}
 [style]
