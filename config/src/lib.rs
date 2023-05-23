@@ -262,7 +262,7 @@ mod tests {
             yellow = '#FCBA28'
 
             [style]
-            font = "Firamono"
+            font = "CascadiaMono"
             font-size = 16
             theme = "Basic"
 
