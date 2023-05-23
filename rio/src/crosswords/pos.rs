@@ -1,3 +1,4 @@
+use crate::ansi::CursorShape;
 use crate::crosswords::grid::Dimensions;
 use std::cmp::{max, min, Ord, Ordering};
 use std::fmt;
@@ -33,6 +34,18 @@ pub struct Cursor<T> {
 
     /// Tracks if the next call to input will need to first handle wrapping.
     pub should_wrap: bool,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CursorState {
+    pub pos: Pos,
+    pub content: CursorShape,
+}
+
+impl CursorState {
+    pub fn is_visible(&self) -> bool {
+        self.content != CursorShape::Hidden
+    }
 }
 
 #[derive(Clone, Default, Copy, Debug, Eq, PartialEq)]

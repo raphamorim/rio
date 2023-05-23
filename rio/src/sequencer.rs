@@ -51,7 +51,7 @@ impl Sequencer {
         // Alt modifier set.
         #[cfg(target_os = "macos")]
         {
-            // OnlyLeft - The left `Option` key is treated as `Alt`. 
+            // OnlyLeft - The left `Option` key is treated as `Alt`.
             // OnlyRight - The right `Option` key is treated as `Alt`.
             // Both - Both `Option` keys are treated as `Alt`.
             // None - No special handling is applied for `Option` key.

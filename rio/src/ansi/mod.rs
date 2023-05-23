@@ -2,7 +2,7 @@ pub mod charset;
 pub mod control;
 pub mod mode;
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Debug, Default, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum CursorShape {
     /// Cursor is a block like `▒`.
     Block,
@@ -13,6 +13,7 @@ pub enum CursorShape {
     /// Cursor is a vertical bar `⎸`.
     Beam,
 
+    #[default]
     Hidden,
 }
 

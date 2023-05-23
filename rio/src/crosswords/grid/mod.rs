@@ -84,7 +84,6 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         self.max_scroll_limit = history_size;
     }
 
-    #[allow(dead_code)]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         self.display_offset = match scroll {
             Scroll::Delta(count) => min(
