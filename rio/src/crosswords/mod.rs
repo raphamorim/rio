@@ -1533,7 +1533,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     /// Set the indexed color value.
     #[inline]
-    fn set_color(&mut self, index: usize, color: ColorRgb) {
+    fn set_color(&mut self, _index: usize, _color: ColorRgb) {
         // Damage terminal if the color changed and it's not the cursor.
         // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
         // self.mark_fully_damaged();
@@ -1694,6 +1694,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 }
 
 /// Terminal test helpers.
+#[cfg(test)]
 pub mod test {
     use super::*;
 
@@ -1776,22 +1777,22 @@ mod tests {
     #[test]
     fn test_linefeed_moving_cursor() {
         let mut cw: Crosswords<VoidListener> = Crosswords::new(1, 3, VoidListener {});
-        let (col, row) = cw.cursor();
-        assert_eq!(col, 0);
-        assert_eq!(row, 0);
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, 0);
+        assert_eq!(cursor.pos.row, 0);
 
         cw.linefeed();
-        let (col, row) = cw.cursor();
-        assert_eq!(col, 0);
-        assert_eq!(row, 1);
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, 0);
+        assert_eq!(cursor.pos.row, 1);
 
         // Keep adding lines but keep cursor at max row
         for _ in 0..20 {
             cw.linefeed();
         }
-        let (col, row) = cw.cursor();
-        assert_eq!(col, 0);
-        assert_eq!(row, 2);
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, 0);
+        assert_eq!(cursor.pos.row, 2);
         assert_eq!(cw.grid.total_lines(), 22);
     }
 

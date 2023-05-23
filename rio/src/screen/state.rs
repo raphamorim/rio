@@ -3,7 +3,7 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
-use crate::selection::{Region, SelectionRange};
+use crate::selection::SelectionRange;
 use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,

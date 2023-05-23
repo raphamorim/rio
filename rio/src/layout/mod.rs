@@ -144,7 +144,7 @@ impl Layout {
         let col = std::cmp::min(Column(col), Column(self.columns));
 
         let line = self.mouse.y.saturating_sub(PADDING_Y as usize) / text_scale;
-        let line = std::cmp::min(line, self.rows - 1 as usize);
+        let line = std::cmp::min(line, self.rows - 1);
 
         let point = Pos::new(line, col);
         let row = Line(point.row as i32) - (display_offset);

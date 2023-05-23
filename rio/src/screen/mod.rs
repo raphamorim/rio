@@ -12,7 +12,6 @@ use crate::crosswords::{
 use crate::event::sync::FairMutex;
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
-use crate::layout::mouse::Mouse;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
@@ -268,7 +267,8 @@ impl Screen {
         terminal.selection = Some(Selection::new(ty, point, side));
     }
 
-    pub fn update_selection_scrolling(&self, mouse_y: f64) {
+    #[allow(dead_code)]
+    pub fn update_selection_scrolling(&self, _mouse_y: f64) {
         // println!("{:?}", mouse_y);
     }
 

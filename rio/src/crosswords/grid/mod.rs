@@ -18,8 +18,11 @@ use storage::Storage;
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {
     Delta(i32),
+    #[allow(unused)]
     PageUp,
+    #[allow(unused)]
     PageDown,
+    #[allow(unused)]
     Top,
     Bottom,
 }
