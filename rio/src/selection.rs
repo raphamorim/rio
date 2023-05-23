@@ -25,8 +25,6 @@ pub struct Anchor {
     side: Side,
 }
 
-pub type Region = Range<Anchor>;
-
 impl Anchor {
     fn new(point: Pos, side: Side) -> Anchor {
         Anchor { point, side }
@@ -45,6 +43,7 @@ pub struct SelectionRange {
 }
 
 impl SelectionRange {
+    #[allow(unused)]
     pub fn new(start: Pos, end: Pos, is_block: bool) -> Self {
         assert!(start <= end);
         Self {

@@ -6,13 +6,12 @@ pub mod mode;
 pub enum CursorShape {
     /// Cursor is a block like `▒`.
     Block,
-
     /// Cursor is an underscore like `_`.
+    #[allow(unused)]
     Underline,
-
     /// Cursor is a vertical bar `⎸`.
+    #[allow(unused)]
     Beam,
-
     #[default]
     Hidden,
 }
