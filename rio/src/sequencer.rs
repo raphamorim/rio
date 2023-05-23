@@ -51,17 +51,10 @@ impl Sequencer {
         // Alt modifier set.
         #[cfg(target_os = "macos")]
         {
-            // The left `Option` key is treated as `Alt`.
-            // OnlyLeft,
-
-            // The right `Option` key is treated as `Alt`.
-            // OnlyRight,
-
-            // Both `Option` keys are treated as `Alt`.
-            // Both,
-
-            // No special handling is applied for `Option` key.
-            // None,
+            // OnlyLeft - The left `Option` key is treated as `Alt`. 
+            // OnlyRight - The right `Option` key is treated as `Alt`.
+            // Both - Both `Option` keys are treated as `Alt`.
+            // None - No special handling is applied for `Option` key.
             use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
 
             match self.config.option_as_alt.to_lowercase().as_str() {
@@ -194,7 +187,7 @@ impl Sequencer {
                                     _ => ClickState::Click,
                                 };
 
-                                // Load mouse point, treating message bar and padding as the closest cell.
+                                // Load mouse point, treating message bar and padding as the closest square.
                                 let display_offset = screen.display_offset();
 
                                 if let MouseButton::Left = button {
@@ -256,18 +249,18 @@ impl Sequencer {
                     screen.layout_mut().mouse_mut().y = y;
 
                     let point = screen.layout().mouse_position(display_offset);
-                    let cell_changed = old_point != point;
+                    let square_changed = old_point != point;
 
                     // If the mouse hasn't changed cells, do nothing.
-                    if !cell_changed
-                    // && screen.layout().mouse.square_side == cell_side
+                    if !square_changed
+                    // && screen.layout().mouse.square_side == square_side
                     // && screen.layout().mouse.inside_text_area == inside_text_area
                     {
                         return;
                     }
 
                     // screen.layout().mouse_mut().inside_text_area = inside_text_area;
-                    // let cell_side = self.cell_side(x);
+                    // let square_side = self.square_side(x);
                     // let square_side = Side::Left;
                     // screen.layout().mouse_mut().square_side = square_side;
 
@@ -282,7 +275,7 @@ impl Sequencer {
                         screen.update_selection(point);
                         screen.render();
                     }
-                    // else if cell_changed
+                    // else if square_changed
                     //     && screen.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
                     // {
                     //     // if lmb_pressed {

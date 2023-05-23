@@ -283,6 +283,7 @@ where
     colors: Colors,
     title: Option<String>,
     damage: TermDamageState,
+    pub vi_mode_cursor: Pos,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -294,6 +295,7 @@ impl<U: EventListener> Crosswords<U> {
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
 
         Crosswords {
+            vi_mode_cursor: Pos::default(),
             semantic_escape_chars,
             selection: None,
             grid,
@@ -331,10 +333,10 @@ impl<U: EventListener> Crosswords<U> {
         self.event_proxy.send_event(RioEvent::MouseCursorDirty);
 
         // Clamp vi mode cursor to the viewport.
-        // let viewport_start = -(self.grid.display_offset() as i32);
-        // let viewport_end = viewport_start + self.grid.bottommost_line().0;
-        // let vi_cursor_line = &mut self.vi_mode_cursor.point.line.0;
-        // *vi_cursor_line = cmp::min(viewport_end, cmp::max(viewport_start, *vi_cursor_line));
+        let viewport_start = -(self.grid.display_offset() as i32);
+        let viewport_end = viewport_start + self.grid.bottommost_line().0;
+        let vi_cursor_line = &mut self.vi_mode_cursor.row.0;
+        *vi_cursor_line = std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
         // self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed.
@@ -356,13 +358,13 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         // Move vi mode cursor with the content.
-        // let history_size = self.history_size();
-        // let mut delta = num_lines as i32 - old_lines as i32;
-        // let min_delta =
-        //     std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
+        let history_size = self.history_size();
+        let mut delta = num_lines as i32 - old_lines as i32;
+        let min_delta =
+            std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
 
-        // delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
-        // self.vi_mode_cursor.pos.row += delta;
+        delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
+        self.vi_mode_cursor.row += delta;
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.resize(!is_alt, num_lines, num_cols);
@@ -370,24 +372,25 @@ impl<U: EventListener> Crosswords<U> {
 
         // Invalidate selection and tabs only when necessary.
         if old_cols != num_cols {
-            // self.selection = None;
+            self.selection = None;
 
             // Recreate tabs list.
             self.tabs.resize(num_cols);
-        }
-        //  else if let Some(selection) = self.selection.take() {
-        //     let max_lines = cmp::max(num_lines, old_lines) as i32;
+        } 
+
+        // else if let Some(selection) = self.selection.take() {
+        //     let max_lines = std::cmp::max(num_lines, old_lines) as i32;
         //     let range = Line(0)..Line(max_lines);
         //     self.selection = selection.rotate(self, &range, -delta);
         // }
 
         // Clamp vi cursor to viewport.
-        // let vi_point = self.vi_mode_cursor.point;
-        // let viewport_top = Line(-(self.scroll as i32));
-        // let viewport_bottom = viewport_top + self.bottommost_line();
-        // self.vi_mode_cursor.pos.row =
-        // cmp::max(cmp::min(vi_pos.row, viewport_bottom), viewport_top);
-        // self.vi_mode_cursor.pos.col = cmp::min(vi_pos.col, self.last_column());
+        let vi_pos = self.vi_mode_cursor;
+        let viewport_top = Line(-(self.grid.display_offset() as i32));
+        let viewport_bottom = viewport_top + self.bottommost_line();
+        self.vi_mode_cursor.row =
+        std::cmp::max(std::cmp::min(vi_pos.row, viewport_bottom), viewport_top);
+        self.vi_mode_cursor.col = std::cmp::min(vi_pos.col, self.grid.last_column());
 
         // Reset scrolling region.
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -423,11 +426,11 @@ impl<U: EventListener> Crosswords<U> {
             let display_offset = self.grid.display_offset() as i32;
             if self.grid.cursor.pos.row > self.grid.bottommost_line() - display_offset {
                 // Move cursor to top-left if terminal cursor is not visible.
-                let _point = Pos::new(Line(-display_offset), Column(0));
-                // self.vi_mode_cursor = ViModeCursor::new(point);
+                let point = Pos::new(Line(-display_offset), Column(0));
+                self.vi_mode_cursor = point;
             } else {
                 // Reset vi mode cursor position to match primary cursor.
-                // self.vi_mode_cursor = ViModeCursor::new(self.grid.cursor.point);
+                self.vi_mode_cursor = self.grid.cursor.pos;
             }
         }
 
@@ -493,10 +496,10 @@ impl<U: EventListener> Crosswords<U> {
             .and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
-        // let line = &mut self.vi_mode_cursor.pos.row;
-        // if region.start <= *line && region.end > *line {
-        // *line = std::cmp::min(*line + lines, region.end - 1);
-        // }
+        let line = &mut self.vi_mode_cursor.row;
+        if region.start <= *line && region.end > *line {
+            *line = std::cmp::min(*line + lines, region.end - 1);
+        }
 
         // Scroll between origin and bottom
         self.grid.scroll_down(&region, lines);
@@ -523,12 +526,12 @@ impl<U: EventListener> Crosswords<U> {
         self.grid.scroll_up(&region, lines);
 
         // // Scroll vi mode cursor.
-        // let viewport_top = Line(-(self.grid.display_offset() as i32));
-        // let top = if region.start == 0 { viewport_top } else { region.start };
-        // let line = &mut self.vi_mode_cursor.pos.row;
-        // if (top <= *line) && region.end > *line {
-        // *line = cmp::max(*line - lines, top);
-        // }
+        let viewport_top = Line(-(self.grid.display_offset() as i32));
+        let top = if region.start == 0 { viewport_top } else { region.start };
+        let line = &mut self.vi_mode_cursor.row;
+        if (top <= *line) && region.end > *line {
+            *line = std::cmp::max(*line - lines, top);
+        }
         self.mark_fully_damaged();
     }
 
@@ -703,17 +706,17 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn cursor(&mut self) -> (Column, Line) {
-        // let vi_mode = term.mode().contains(TermMode::VI);
-        // let mut point = if vi_mode { term.vi_mode_cursor.point } else { term.grid.cursor.point };
-        // if term.grid[point].flags.contains(square::Flags::WIDE_CHAR_SPACER) {
-        //     point.column -= 1;
-        // }
+        let vi_mode = self.mode().contains(Mode::VI);
+        let mut point = if vi_mode { self.vi_mode_cursor } else { self.grid.cursor.pos };
+        if self.grid[point].flags.contains(square::Flags::WIDE_CHAR_SPACER) {
+            point.col -= 1;
+        }
 
         // // Cursor shape.
-        // let shape = if !vi_mode && !term.mode().contains(TermMode::SHOW_CURSOR) {
+        // let shape = if !vi_mode && !self.mode().contains(Mode::SHOW_CURSOR) {
         //     CursorShape::Hidden
         // } else {
-        //     term.cursor_style().shape
+        //     self.cursor_style().shape
         // };
         (self.grid.cursor.pos.col, self.grid.cursor.pos.row)
     }
@@ -1038,6 +1041,26 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.grid.cursor.pos.col = Column(column);
         self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
+    fn move_backward_tabs(&mut self, count: u16) {
+        self.damage_cursor();
+
+        let old_col = self.grid.cursor.pos.col.0;
+        for _ in 0..count {
+            let mut col = self.grid.cursor.pos.col;
+            for i in (0..(col.0)).rev() {
+                if self.tabs[Column(i)] {
+                    col = Column(i);
+                    break;
+                }
+            }
+            self.grid.cursor.pos.col = col;
+        }
+
+        let line = self.grid.cursor.pos.row.0 as usize;
+        self.damage.damage_line(line, self.grid.cursor.pos.col.0, old_col);
     }
 
     #[inline]
@@ -1502,8 +1525,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     /// Set the indexed color value.
     #[inline]
     fn set_color(&mut self, index: usize, color: ColorRgb) {
-        info!("set_color: {} {:?}", index, color);
-        panic!("aaa");
         // Damage terminal if the color changed and it's not the cursor.
         // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
         // self.mark_fully_damaged();

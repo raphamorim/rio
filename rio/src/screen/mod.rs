@@ -289,7 +289,7 @@ impl Screen {
 
         // Move vi cursor and expand selection.
         if terminal.mode().contains(Mode::VI) {
-            // terminal.vi_mode_cursor.point = point;
+            terminal.vi_mode_cursor = point;
             selection.include_all();
         }
 
@@ -317,7 +317,7 @@ impl Screen {
                 }
             }
             ClickState::DoubleClick => {
-                // self.start_selection(SelectionType::Semantic, point, side);
+                self.start_selection(SelectionType::Semantic, point, side);
             }
             ClickState::TripleClick => {
                 self.start_selection(SelectionType::Lines, point, side);

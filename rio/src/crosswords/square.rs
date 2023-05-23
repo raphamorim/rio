@@ -69,7 +69,6 @@ struct HyperlinkInner {
 }
 
 impl HyperlinkInner {
-    #[allow(dead_code)]
     pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
         let id = match id {
             Some(id) => id.to_string(),
@@ -137,7 +136,6 @@ impl Square {
     }
 
     #[inline(never)]
-    #[allow(unused)]
     pub fn clear_wide(&mut self) {
         self.flags.remove(Flags::WIDE_CHAR);
         if let Some(extra) = self.extra.as_mut() {
@@ -146,7 +144,6 @@ impl Square {
         self.c = ' ';
     }
 
-    #[allow(dead_code)]
     pub fn set_underline_color(&mut self, color: Option<colors::AnsiColor>) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
@@ -163,13 +160,11 @@ impl Square {
 
     /// Underline color stored in this cell.
     #[inline]
-    #[allow(dead_code)]
     pub fn underline_color(&self) -> Option<colors::AnsiColor> {
         self.extra.as_ref()?.underline_color
     }
 
     /// Set hyperlink.
-    #[allow(dead_code)]
     pub fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         let should_drop = hyperlink.is_none()
             && self.extra.as_ref().map_or(true, |extra| {
@@ -186,7 +181,6 @@ impl Square {
 
     /// Hyperlink stored in this cell.
     #[inline]
-    #[allow(dead_code)]
     pub fn hyperlink(&self) -> Option<Hyperlink> {
         self.extra.as_ref()?.hyperlink.clone()
     }

@@ -108,7 +108,7 @@ body {
   margin: 40px 0;
 }
 
-.container.content a {
+.container.content a, .testimonial a {
   text-decoration: none;
   color: #12B5E5;
 }
@@ -365,6 +365,106 @@ section.features .container p {
 #nav ul a:hover {
   text-decoration: underline;
   color: #F9F4DA;
+}
+
+.testimonials {
+/*  height: 700px;*/
+  display: flex;
+  padding: 1.2em;
+  margin-bottom: 0em;
+  justify-content: center;
+  flex-wrap: wrap;
+  align-content: space-between;
+}
+
+.testimonial {
+  transform: translatey(0px);
+  animation: float 5s ease-in-out infinite;
+  animation-iteration-count: 2;
+  text-align: center;
+  line-height: 1.2em;
+  font-size: 14px;
+  color: #F9F4DA;
+  background-color: #0F0D0E;
+  padding: 25px;
+  border-radius: 11px;
+  position: relative;
+  box-shadow: 20px 20px #ED203D;
+  width: 220px;
+  height: 220px;
+  margin: 0 30px;
+  margin-bottom: 8em;
+}
+
+.testimonial:after {
+  transform: translatey(0px);
+  animation: float2 5s ease-in-out infinite;
+  content: ".";
+  font-weight: bold;
+  -webkit-text-fill-color: #FCBA28;
+  text-shadow: 22px 22px #F9F4DA;
+  text-align: left;
+  font-size: 55px;
+  width: 55px;
+  height: 11px;
+  line-height: 1.2em;
+  border-radius: 11px;
+  background-color: #FCBA28;
+  position: absolute;
+  display: block;
+  bottom: -30px;
+  left: 0;
+  box-shadow: 22px 22px #F9F4DA;
+  z-index: -2;
+}
+
+.testimonial .text {
+  font-size: 14px;
+  margin-top: 14px;
+}
+
+.testimonial .source {
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 2px;
+  font-size: 9px;
+  margin-top: 14px;
+  color: #FCBA28;
+}
+
+.testimonial .person img {
+  border-radius: 50%;
+  height: 60px;
+  width: 60px;
+}
+
+@keyframes float {
+  0% {
+    transform: translatey(0px);
+  }
+  50% {
+    transform: translatey(-20px);
+  }
+  100% {
+    transform: translatey(0px);
+  }
+}
+
+@keyframes float2 {
+  0% {
+    line-height: 30px;
+    transform: translatey(0px);
+  }
+  55% {
+    transform: translatey(-20px);
+  }
+  60% {
+    line-height: 10px;
+  }
+  100% {
+    line-height: 30px;
+    transform: translatey(0px);
+  }
 }
 
 @media (max-width: 480px) {
