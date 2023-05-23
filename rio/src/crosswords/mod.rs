@@ -17,25 +17,21 @@ pub mod grid;
 pub mod pos;
 pub mod square;
 
-use crate::ansi::mode::Mode as AnsiMode;
-use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
+use crate::ansi::{
+    mode::Mode as AnsiMode, ClearMode, CursorShape, LineClearMode, TabulationClearMode,
+};
 use crate::clipboard::ClipboardType;
-use crate::crosswords::grid::BidirectionalIterator;
-use crate::crosswords::grid::Dimensions;
-use crate::crosswords::grid::Grid;
-use crate::crosswords::grid::Scroll;
+use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use colors::AnsiColor;
-use colors::{ColorRgb, Colors};
+use colors::{AnsiColor, ColorRgb, Colors};
 use grid::row::Row;
 use log::{debug, info, warn};
-use pos::CharsetIndex;
-use pos::{Column, Cursor, Line, Pos};
+use pos::{CharsetIndex, Column, Cursor, CursorState, Line, Pos};
 use square::{LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
@@ -336,7 +332,8 @@ impl<U: EventListener> Crosswords<U> {
         let viewport_start = -(self.grid.display_offset() as i32);
         let viewport_end = viewport_start + self.grid.bottommost_line().0;
         let vi_cursor_line = &mut self.vi_mode_cursor.row.0;
-        *vi_cursor_line = std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
+        *vi_cursor_line =
+            std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
         // self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed.
@@ -376,7 +373,7 @@ impl<U: EventListener> Crosswords<U> {
 
             // Recreate tabs list.
             self.tabs.resize(num_cols);
-        } 
+        }
 
         // else if let Some(selection) = self.selection.take() {
         //     let max_lines = std::cmp::max(num_lines, old_lines) as i32;
@@ -389,7 +386,7 @@ impl<U: EventListener> Crosswords<U> {
         let viewport_top = Line(-(self.grid.display_offset() as i32));
         let viewport_bottom = viewport_top + self.bottommost_line();
         self.vi_mode_cursor.row =
-        std::cmp::max(std::cmp::min(vi_pos.row, viewport_bottom), viewport_top);
+            std::cmp::max(std::cmp::min(vi_pos.row, viewport_bottom), viewport_top);
         self.vi_mode_cursor.col = std::cmp::min(vi_pos.col, self.grid.last_column());
 
         // Reset scrolling region.
@@ -525,9 +522,13 @@ impl<U: EventListener> Crosswords<U> {
 
         self.grid.scroll_up(&region, lines);
 
-        // // Scroll vi mode cursor.
+        // Scroll vi mode cursor.
         let viewport_top = Line(-(self.grid.display_offset() as i32));
-        let top = if region.start == 0 { viewport_top } else { region.start };
+        let top = if region.start == 0 {
+            viewport_top
+        } else {
+            region.start
+        };
         let line = &mut self.vi_mode_cursor.row;
         if (top <= *line) && region.end > *line {
             *line = std::cmp::max(*line - lines, top);
@@ -705,20 +706,27 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn cursor(&mut self) -> (Column, Line) {
+    pub fn cursor(&mut self) -> CursorState {
         let vi_mode = self.mode().contains(Mode::VI);
-        let mut point = if vi_mode { self.vi_mode_cursor } else { self.grid.cursor.pos };
-        if self.grid[point].flags.contains(square::Flags::WIDE_CHAR_SPACER) {
-            point.col -= 1;
+        let mut pos = if vi_mode {
+            self.vi_mode_cursor
+        } else {
+            self.grid.cursor.pos
+        };
+        if self.grid[pos]
+            .flags
+            .contains(square::Flags::WIDE_CHAR_SPACER)
+        {
+            pos.col -= 1;
         }
+        let mut content = CursorShape::Block;
 
         // // Cursor shape.
-        // let shape = if !vi_mode && !self.mode().contains(Mode::SHOW_CURSOR) {
-        //     CursorShape::Hidden
-        // } else {
-        //     self.cursor_style().shape
-        // };
-        (self.grid.cursor.pos.col, self.grid.cursor.pos.row)
+        if !vi_mode && !self.mode().contains(Mode::SHOW_CURSOR) {
+            content = CursorShape::Hidden;
+        }
+
+        CursorState { pos, content }
     }
 
     pub fn swap_alt(&mut self) {
@@ -1060,7 +1068,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage.damage_line(line, self.grid.cursor.pos.col.0, old_col);
+        self.damage
+            .damage_line(line, self.grid.cursor.pos.col.0, old_col);
     }
 
     #[inline]

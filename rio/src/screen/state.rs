@@ -1,5 +1,6 @@
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
+use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::selection::{Region, SelectionRange};
@@ -14,11 +15,9 @@ use sugarloaf::Sugarloaf;
 
 #[derive(Default)]
 struct Cursor {
-    position: (pos::Column, pos::Line),
+    state: CursorState,
     content: char,
     content_ref: char,
-    #[allow(dead_code)]
-    hidden: bool,
 }
 
 pub struct State {
@@ -59,8 +58,7 @@ impl State {
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,
-                position: (pos::Column(0), pos::Line(0)),
-                hidden: false,
+                state: CursorState::default(),
             },
         }
     }
@@ -175,7 +173,7 @@ impl State {
             let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
             let square = &row.inner[column];
 
-            if has_cursor && column == self.cursor.position.0 {
+            if has_cursor && column == self.cursor.state.pos.col {
                 let mut foreground_color = self.named_colors.cursor;
                 let mut background_color = self.named_colors.cursor;
 
@@ -221,7 +219,7 @@ impl State {
         for column in 0..columns {
             let square = &row.inner[column];
 
-            if has_cursor && column == self.cursor.position.0 {
+            if has_cursor && column == self.cursor.state.pos.col {
                 let mut foreground_color = self.named_colors.cursor;
                 let mut background_color = self.named_colors.cursor;
 
@@ -265,30 +263,24 @@ impl State {
     pub fn update(
         &mut self,
         rows: Vec<Row<Square>>,
-        cursor: (pos::Column, pos::Line),
+        cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
         selection: Option<SelectionRange>,
     ) {
-        self.cursor.position = cursor;
+        self.cursor.state = cursor;
+
+        let cursor_is_visible = self.cursor.state.is_visible();
 
         if let Some(sel) = &selection {
             for (i, row) in rows.iter().enumerate() {
-                let has_cursor = self.cursor.position.1 == i;
-                // sel.contains()
-                // let has_selection =
-                //     sel.intersects_range(pos::Line(i as i32)..=pos::Line(i as i32));
-
-                // let sugar_stack = if has_selection {
+                let has_cursor = cursor_is_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack_with_selection(
                     row,
                     has_cursor,
                     sel,
                     pos::Line(i as i32),
                 );
-                // } else {
-                //     self.create_sugar_stack(row, has_cursor)
-                // };
                 sugarloaf.stack(sugar_stack, style);
             }
 
@@ -296,7 +288,7 @@ impl State {
         }
 
         for (i, row) in rows.iter().enumerate() {
-            let has_cursor = self.cursor.position.1 == i;
+            let has_cursor = self.cursor.state.pos.row == i;
             let sugar_stack = self.create_sugar_stack(row, has_cursor);
             sugarloaf.stack(sugar_stack, style);
         }

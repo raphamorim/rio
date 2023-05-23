@@ -361,9 +361,8 @@ impl Screen {
     pub fn render(&mut self) {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
-        let cursor_position = terminal.cursor();
+        let cursor = terminal.cursor();
         let mut selection_range: Option<SelectionRange> = None;
-
         if let Some(selection) = &terminal.selection {
             selection_range = selection.to_range(&terminal);
         }
@@ -373,7 +372,7 @@ impl Screen {
 
         self.state.update(
             visible_rows,
-            cursor_position,
+            cursor,
             &mut self.sugarloaf,
             self.layout.styles.term,
             selection_range,

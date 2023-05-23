@@ -1,7 +1,7 @@
 pub mod mouse;
 
-use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::grid::Dimensions;
+use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::{MIN_COLUMNS, MIN_VISIBLE_ROWS};
 use mouse::{AccumulatedScroll, Mouse};
 use sugarloaf::core::SugarloafStyle;
@@ -139,14 +139,15 @@ impl Layout {
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let text_scale = (self.styles.term.text_scale as usize) + 1;
-        let col = self.mouse.x.saturating_sub(PADDING_X as usize) / self.font_size as usize;
+        let col =
+            self.mouse.x.saturating_sub(PADDING_X as usize) / self.font_size as usize;
         let col = std::cmp::min(Column(col), Column(self.columns));
 
-        let line = self.mouse.y.saturating_sub(PADDING_Y as usize) / (text_scale * 2);
+        let line = self.mouse.y.saturating_sub(PADDING_Y as usize) / text_scale;
         let line = std::cmp::min(line, self.rows - 1 as usize);
 
         let point = Pos::new(line, col);
-        let row = Line(point.row as i32) - display_offset;
+        let row = Line(point.row as i32) - (display_offset);
         Pos::new(row, point.col)
     }
 
