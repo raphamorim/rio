@@ -7,6 +7,10 @@ pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
 pub const FONT_CASCADIA_MONO: &[u8; 624892] =
     include_bytes!("./resources/CascadiaMono.ttf");
 
+#[cfg(not(target_os = "macos"))]
+pub const FONT_DEJAVU_MONO: &[u8; 340712] =
+    include_bytes!("./resources/DejaVuSansMono.ttf");
+
 pub const FONT_EMOJI: &[u8; 877988] =
     include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
 
@@ -17,51 +21,62 @@ pub struct Font {
     pub unicode: FontArc,
 }
 
-// TODO:
-// This code is quite unsafe and needs a proper refactor
-// adding font load fallbacks for all categories.
-//
-// It will also only work on MacOS for now.
-
 impl Font {
-    // TODO: if cfg!(target_os = "macos") {
     pub fn new(font_name: String) -> Result<Font, String> {
-        let font_symbols = SystemSource::new()
-            .select_by_postscript_name("Apple Symbols")
-            .unwrap()
-            .load()
-            .unwrap();
-        let copied_font_symbol = font_symbols.copy_font_data();
-        let Some(copied_font_symbol) = copied_font_symbol else { todo!() };
-        let font_vec_symbol =
-            FontVec::try_from_vec_and_index(copied_font_symbol.to_vec(), 1).unwrap();
+        // TODO:
+        // This code is quite unsafe and needs a proper refactor
+        // adding font load fallbacks for all categories.
 
-        // TODO: Load native emojis
-        // let font_emojis = SystemSource::new()
-        //     .select_by_postscript_name("Apple Color Emoji")
-        //     .unwrap()
-        //     .load()
-        //     .unwrap();
-        // let copied_font_emojis = font_emojis.copy_font_data();
-        // let Some(copied_font_emojis) = copied_font_emojis else { todo!() };
-        // let font_vec_emojis = FontVec::try_from_vec_and_index(copied_font_emojis.to_vec(), 2).unwrap();
+        let font_arc_unicode;
+        let font_arc_symbol;
 
-        let font_unicode = SystemSource::new()
-            .select_by_postscript_name("Arial Unicode MS")
-            .unwrap()
-            .load()
-            .unwrap();
-        let copied_font_unicode = font_unicode.copy_font_data();
-        let Some(copied_font_unicode) = copied_font_unicode else { todo!() };
-        let font_vec_unicode =
-            FontVec::try_from_vec_and_index(copied_font_unicode.to_vec(), 3).unwrap();
+        #[cfg(target_os = "macos")]
+        {
+            let font_symbols = SystemSource::new()
+                .select_by_postscript_name("Apple Symbols")
+                .unwrap()
+                .load()
+                .unwrap();
+            let copied_font_symbol = font_symbols.copy_font_data();
+            let Some(copied_font_symbol) = copied_font_symbol else { todo!() };
+            let font_vec_symbol =
+                FontVec::try_from_vec_and_index(copied_font_symbol.to_vec(), 1).unwrap();
+            font_arc_symbol = FontArc::new(font_vec_symbol);
+
+            // TODO: Load native emojis
+            // let font_emojis = SystemSource::new()
+            //     .select_by_postscript_name("Apple Color Emoji")
+            //     .unwrap()
+            //     .load()
+            //     .unwrap();
+            // let copied_font_emojis = font_emojis.copy_font_data();
+            // let Some(copied_font_emojis) = copied_font_emojis else { todo!() };
+            // let font_vec_emojis = FontVec::try_from_vec_and_index(copied_font_emojis.to_vec(), 2).unwrap();
+
+            let font_unicode = SystemSource::new()
+                .select_by_postscript_name("Arial Unicode MS")
+                .unwrap()
+                .load()
+                .unwrap();
+            let copied_font_unicode = font_unicode.copy_font_data();
+            let Some(copied_font_unicode) = copied_font_unicode else { todo!() };
+            let font_vec_unicode =
+                FontVec::try_from_vec_and_index(copied_font_unicode.to_vec(), 3).unwrap();
+            font_arc_unicode = FontArc::new(font_vec_unicode);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            font_arc_unicode = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
+            font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
+        }
 
         if font_name.to_lowercase() == DEFAULT_FONT_NAME {
             return Ok(Font {
                 system: FontArc::try_from_slice(FONT_CASCADIA_MONO).unwrap(),
-                symbol: FontArc::new(font_vec_symbol),
+                symbol: font_arc_symbol,
                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-                unicode: FontArc::new(font_vec_unicode),
+                unicode: font_arc_unicode,
             });
         }
 
@@ -81,9 +96,9 @@ impl Font {
 
                             return Ok(Font {
                                 system: FontArc::new(font_vec_system),
-                                symbol: FontArc::new(font_vec_symbol),
+                                symbol: font_arc_symbol,
                                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-                                unicode: FontArc::new(font_vec_unicode),
+                                unicode: font_arc_unicode,
                             });
                         }
                     }
