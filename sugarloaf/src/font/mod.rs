@@ -3,16 +3,14 @@ use glyph_brush::ab_glyph::{FontArc, FontVec};
 use log::warn;
 
 pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
-
 pub const FONT_CASCADIA_MONO: &[u8; 624892] =
     include_bytes!("./resources/CascadiaMono.ttf");
+pub const FONT_EMOJI: &[u8; 877988] =
+    include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
 
 #[cfg(not(target_os = "macos"))]
 pub const FONT_DEJAVU_MONO: &[u8; 340712] =
     include_bytes!("./resources/DejaVuSansMono.ttf");
-
-pub const FONT_EMOJI: &[u8; 877988] =
-    include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
 
 pub struct Font {
     pub system: FontArc,

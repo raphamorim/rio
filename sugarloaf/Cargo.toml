@@ -1,7 +1,7 @@
 [package]
 name = "sugarloaf"
 description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
-version = "0.0.2"
+version = "0.0.4"
 edition = { workspace = true }
 license = "MIT"
 repository = "https://github.com/raphamorim/rio"
