@@ -1,4 +1,5 @@
 use crate::clipboard::ClipboardType;
+use crate::scheduler::{TimerId, Topic, Scheduler};
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::screen::{window::create_window_builder, Screen};
@@ -31,6 +32,7 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
+        let mut scheduler = Scheduler::new(proxy);
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
         let winit_window = window_builder.build(&event_loop).unwrap();
@@ -74,13 +76,19 @@ impl Sequencer {
                 Event::UserEvent(EventP { payload, .. }) => {
                     if let RioEventType::Rio(event) = payload {
                         match event {
-                            RioEvent::Wakeup => {
+                            RioEvent::Wakeup | RioEvent::Render => {
                                 if self.config.advanced.disable_render_when_unfocused
                                     && is_focused
                                 {
                                     return;
                                 }
                                 screen.render();
+                            }
+                            RioEvent::PrepareRender(millis) => {
+                                let timer_id = TimerId::new(Topic::Frame, 0);
+                                let event = EventP::new(RioEventType::Rio(RioEvent::Render));
+
+                                scheduler.schedule(event, Duration::from_millis(millis), false, timer_id);
                             }
                             RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
@@ -89,7 +97,6 @@ impl Sequencer {
                             }
                             RioEvent::MouseCursorDirty => {
                                 screen.layout_mut().reset_mouse();
-                                screen.render();
                             }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
                                 if is_focused {
@@ -435,7 +442,9 @@ impl Sequencer {
                     // not necessarily exit the process
                     std::process::exit(0);
                 }
-                Event::MainEventsCleared { .. } => {}
+                Event::MainEventsCleared { .. } => {
+                    scheduler.update();
+                }
                 Event::RedrawRequested { .. } => {}
                 _ => {
                     *control_flow = winit::event_loop::ControlFlow::Wait;

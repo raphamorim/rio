@@ -325,8 +325,8 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
-        self.grid.scroll_display(scroll);
         self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+        self.grid.scroll_display(scroll);
 
         // Clamp vi mode cursor to the viewport.
         let viewport_start = -(self.grid.display_offset() as i32);
@@ -339,6 +339,7 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
+            self.event_proxy.send_event(RioEvent::Render);
         }
     }
 
