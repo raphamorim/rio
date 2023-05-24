@@ -124,7 +124,7 @@ impl From<RioEvent> for RioEventType {
 pub struct EventP {
     /// Event payload.
     pub payload: RioEventType,
-    pub tab_id: u8
+    pub tab_id: u8,
 }
 
 impl EventP {
