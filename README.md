@@ -6,7 +6,7 @@
 
 ## Development Status
 
-Rio current development version is `0.0.2`.
+Rio current development version is `0.0.4`.
 
 Basic features are under development for MacOs right now.
 
