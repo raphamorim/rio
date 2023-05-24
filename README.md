@@ -17,6 +17,7 @@ Basic features are under development for MacOs right now.
 | Linux _as desktop application_ | In development 👷 * | TBD |
 | Windows _as desktop application_ | Not started yet | --- |
 | Nintendo Switch * | Not started yet | --- |
+| Tamagochi * | Not started yet | --- |
 
 _* Development and tests are targeting Wayland, probably is not stable on X11 yet._
 
