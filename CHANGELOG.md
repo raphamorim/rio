@@ -2,6 +2,8 @@
 
 ## 0.0.4
 
+- Fix CPU large usage when scrolling.
+- Task scheduler.
 - Copy feature.
 - Selection feature (selection doesn't work when scrolling yet).
 - Change default cursor icon for Text (`winit::window::CursorIcon`).

@@ -1,7 +1,7 @@
 use crate::clipboard::ClipboardType;
-use crate::scheduler::{TimerId, Topic, Scheduler};
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
+use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
 use std::error::Error;
 use std::rc::Rc;
@@ -86,9 +86,15 @@ impl Sequencer {
                             }
                             RioEvent::PrepareRender(millis) => {
                                 let timer_id = TimerId::new(Topic::Frame, 0);
-                                let event = EventP::new(RioEventType::Rio(RioEvent::Render));
+                                let event =
+                                    EventP::new(RioEventType::Rio(RioEvent::Render));
 
-                                scheduler.schedule(event, Duration::from_millis(millis), false, timer_id);
+                                scheduler.schedule(
+                                    event,
+                                    Duration::from_millis(millis),
+                                    false,
+                                    timer_id,
+                                );
                             }
                             RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {

@@ -1,4 +1,3 @@
-mod scheduler;
 mod ansi;
 mod clipboard;
 mod crosswords;
@@ -8,6 +7,7 @@ mod layout;
 mod logger;
 mod performer;
 mod platform;
+mod scheduler;
 mod screen;
 mod selection;
 mod sequencer;
