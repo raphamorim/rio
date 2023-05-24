@@ -1,3 +1,4 @@
+mod scheduler;
 mod ansi;
 mod clipboard;
 mod crosswords;

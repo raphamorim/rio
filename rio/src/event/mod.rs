@@ -29,6 +29,9 @@ pub enum ClickState {
 
 #[derive(Clone)]
 pub enum RioEvent {
+    PrepareRender(u64),
+    Render,
+
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
 
@@ -90,6 +93,8 @@ impl Debug for RioEvent {
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::Wakeup => write!(f, "Wakeup"),
+            RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
+            RioEvent::Render => write!(f, "Render"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
         }
@@ -106,7 +111,7 @@ pub enum RioEventType {
     BlinkCursor,
     BlinkCursorTimeout,
     SearchNext,
-    Frame,
+    Render,
 }
 
 impl From<RioEvent> for RioEventType {
@@ -119,11 +124,12 @@ impl From<RioEvent> for RioEventType {
 pub struct EventP {
     /// Event payload.
     pub payload: RioEventType,
+    pub tab_id: u8
 }
 
 impl EventP {
     pub fn new(payload: RioEventType) -> Self {
-        Self { payload }
+        Self { payload, tab_id: 0 }
     }
 }
 
