@@ -1790,7 +1790,7 @@ checksum = "f1382d1f0a252c4bf97dc20d979a2fdd05b024acd7c2ed0f7595d7817666a157"
 
 [[package]]
 name = "rio"
-version = "0.0.4"
+version = "0.0.5-rc1"
 dependencies = [
  "base64",
  "bitflags 2.0.2",
@@ -2043,7 +2043,7 @@ checksum = "9df65f20698aeed245efdde3628a6b559ea1239bbb871af1b6e3b58c413b2bd1"
 
 [[package]]
 name = "sugarloaf"
-version = "0.0.4"
+version = "0.0.2"
 dependencies = [
  "bytemuck",
  "colors",

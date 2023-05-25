@@ -21,7 +21,6 @@ bytemuck = { version = "1.9", features = [ "derive" ] }
 log = "0.4.17"
 serde = { version = "1.0.158", features = ["derive"] }
 teletypewriter = { path = "teletypewriter" }
-# teletypewriter = { version = "2.0.0" }
 tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.15.1"
 winit = "0.28.3"
@@ -34,7 +33,6 @@ codegen-units = 1
 incremental = false
 
 [profile.dev]
-# https://jakedeichert.com/blog/reducing-rust-incremental-compilation-times-on-macos-by-70-percent/
 split-debuginfo = "unpacked"
 lto = false
 incremental = true

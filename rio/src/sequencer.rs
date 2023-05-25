@@ -76,7 +76,19 @@ impl Sequencer {
                 Event::UserEvent(EventP { payload, .. }) => {
                     if let RioEventType::Rio(event) = payload {
                         match event {
-                            RioEvent::Wakeup | RioEvent::Render => {
+                            RioEvent::Wakeup => {
+                                let timer_id = TimerId::new(Topic::Frame, 0);
+                                let event =
+                                    EventP::new(RioEventType::Rio(RioEvent::Render));
+
+                                scheduler.schedule(
+                                    event,
+                                    Duration::from_nanos(1_000),
+                                    false,
+                                    timer_id,
+                                );
+                            }
+                            RioEvent::Render => {
                                 if self.config.advanced.disable_render_when_unfocused
                                     && is_focused
                                 {
@@ -249,9 +261,9 @@ impl Sequencer {
                     let rmb_pressed =
                         screen.layout().mouse.right_button_state == ElementState::Pressed;
 
-                    if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
+                    // if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
                         // screen.update_selection_scrolling(y);
-                    }
+                    // }
 
                     let display_offset = screen.display_offset();
                     let old_point = screen.layout().mouse_position(display_offset);
