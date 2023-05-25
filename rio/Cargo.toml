@@ -1,6 +1,6 @@
 [package]
 name = "rio"
-version = "0.0.2"
+version = "0.0.4"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -40,7 +40,7 @@ objc = "0.2.2"
 name = "Rio"
 identifier = "com.raphaelamorim.rio"
 icon = ["src/screen/window/resources/images/logo-macos.ico"]
-version = "1.0.0"
+version = "0.0.4"
 resources = ["src/screen/window/resources"]
 copyright = "Copyright (c) Raphael Amorim 2023. All rights reserved."
 category = "Developer Tool"
