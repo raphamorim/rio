@@ -40,7 +40,7 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        "Firamono".to_string(),
+        sugarloaf::font::DEFAULT_FONT_NAME.to_string(),
     )
     .await
     .expect("Sugarloaf instance should be created");
@@ -48,9 +48,151 @@ async fn main() {
     let scale_factor = sugarloaf.get_scale();
     let font_size = 180.;
     let mut styles = compute_styles(scale_factor, font_size, width, height);
+    println!("{:?}", styles);
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
+
+        let sugar = vec![
+            Sugar {
+                content: 'S',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'u',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'g',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'a',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'r',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'g',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: '|',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+        ];
+
+        let loaf = vec![
+            Sugar {
+                content: 'l',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'o',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'a',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'f',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'g',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: '|',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+        ];
+
+        let rio = vec![
+            Sugar {
+                content: ' ',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'r',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'i',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: 'o',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+            },
+            Sugar {
+                content: 'g',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: '¼',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: '¬',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 0.0, 1.0],
+            },
+        ];
+
+        let special = vec![
+            // Font Unicode (unicode font)
+            Sugar {
+                content: '㏑',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+            },
+            // Font Symbol (apple symbols font)
+            Sugar {
+                content: '⫹',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            // Font Regular (firamono)
+            Sugar {
+                content: 'λ',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+            },
+            // Font Emojis
+            Sugar {
+                content: '🥇',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+            },
+            Sugar {
+                content: '👷',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+            },
+        ];
 
         match event {
             Event::Resumed => {
@@ -90,147 +232,6 @@ async fn main() {
                 _ => (),
             },
             Event::RedrawRequested { .. } => {
-                let sugar = vec![
-                    Sugar {
-                        content: 'S',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'u',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'g',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'a',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'r',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'g',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: '|',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                ];
-
-                let loaf = vec![
-                    Sugar {
-                        content: 'l',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'o',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'a',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'f',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'g',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: '|',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                ];
-
-                let rio = vec![
-                    Sugar {
-                        content: ' ',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'r',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'i',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'o',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 1.0, 1.0],
-                    },
-                    Sugar {
-                        content: 'g',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 1.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: '¼',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [1.0, 1.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: '¬',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 1.0, 0.0, 1.0],
-                    },
-                ];
-
-                let special = vec![
-                    // Font Unicode (unicode font)
-                    Sugar {
-                        content: '㏑',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 1.0, 1.0, 1.0],
-                    },
-                    // Font Symbol (apple symbols font)
-                    Sugar {
-                        content: '⫹',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    // Font Regular (firamono)
-                    Sugar {
-                        content: 'λ',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 1.0, 1.0, 1.0],
-                    },
-                    // Font Emojis
-                    Sugar {
-                        content: '🥇',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 0.0, 0.0, 1.0],
-                    },
-                    Sugar {
-                        content: '👷',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                ];
-
                 sugarloaf.stack(sugar, styles);
                 sugarloaf.stack(loaf, styles);
                 sugarloaf.stack(rio, styles);

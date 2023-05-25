@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.5
+
+- Fix scale issues for 1.0 scale factor or using monitor with different scale factor.
+- Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file.
+
 ## 0.0.4
 
 - Fix CPU large usage when scrolling.
