@@ -1,7 +1,7 @@
 pub mod components;
 pub mod context;
 pub mod core;
-mod font;
+pub mod font;
 mod sugarloaf;
 mod tools;
 

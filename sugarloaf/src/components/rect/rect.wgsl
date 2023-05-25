@@ -38,8 +38,3 @@ fn vs_main(
 fn fs_main(output: VertexOutput) -> @location(0) vec4<f32> {
     return output.color;
 }
-
-@fragment
-fn fs_wire(output: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.5, 0.0, 0.5);
-}

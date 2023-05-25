@@ -141,14 +141,16 @@ impl Context {
         }
     }
 
-    pub fn update_size(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.size.width = width;
+        self.size.height = height;
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: self.format,
-                width: size.width,
-                height: size.height,
+                width,
+                height,
                 view_formats: vec![],
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 present_mode: wgpu::PresentMode::AutoVsync,

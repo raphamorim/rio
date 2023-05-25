@@ -79,11 +79,11 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
+    initial_scale: f32,
     font_bounds: FontBounds,
     background_color: wgpu::Color,
 }
 
-// TODO: Sugarloaf integrate CustomRenderer (or Renderer) layer usage
 impl Sugarloaf {
     pub async fn new(
         winit_window: &winit::window::Window,
@@ -103,6 +103,7 @@ impl Sugarloaf {
                 .build(&ctx.device, ctx.format);
                 let rect_brush = RectBrush::init(&ctx);
                 Ok(Sugarloaf {
+                    initial_scale: ctx.scale,
                     ctx,
                     rect_brush,
                     rects: vec![],
@@ -157,21 +158,7 @@ impl Sugarloaf {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.ctx.size.width = width;
-        self.ctx.size.height = height;
-        self.ctx.surface.configure(
-            &self.ctx.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: self.ctx.format,
-                width,
-                height,
-                view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
-
+        self.ctx.resize(width, height);
         self
     }
 
@@ -180,18 +167,22 @@ impl Sugarloaf {
         self
     }
 
-    pub fn get_bytes(&self) -> Vec<u8> {
-        // TODO
-        vec![]
-    }
-
+    #[inline]
     pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.;
+        let mut mod_size = 1.0;
 
         if self.acc_line_y == 0.0 {
             self.acc_line_y =
                 (style.screen_position.1 - style.text_scale) / self.ctx.scale;
+        }
+
+        // TODO: Rewrite this method to proper use scale and get rid of initial_scale
+        // Is not the most optimal way record original scale and this has been happening due
+        // to not updating correctly scale values
+        if self.initial_scale < 2.0 {
+            mod_size += self.initial_scale;
         }
 
         let fonts = self.text_brush.fonts();
@@ -232,10 +223,10 @@ impl Sugarloaf {
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
-                size: [add_pos_x, self.font_bounds.default.0],
+                size: [add_pos_x * mod_size, self.font_bounds.default.0 * mod_size],
             });
 
-            x += add_pos_x / 2.0;
+            x += add_pos_x / self.initial_scale;
         }
 
         let section = &OwnedSection {
