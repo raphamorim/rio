@@ -11,8 +11,8 @@ You can download Rio terminal for macOS platform, although is not stable and lac
 
 New versions are created by weekly and monthly basis, so if you are using an unstable version make sure to keep updated.
 
-- [Download macOS - x86 v0.0.5-rc0 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.5-rc1/macos-x86.zip)
-- [Download macOS - arm64 v0.0.5-rc0 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.5-rc1/macos-arm64.zip)
+- [Download macOS - x86 v0.0.5-rc1 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.5-rc1/macos-x86.zip)
+- [Download macOS - arm64 v0.0.5-rc1 (unstable)](https://github.com/raphamorim/rio/releases/download/v0.0.5-rc1/macos-arm64.zip)
 
 Rio application is not notarized yet, so in case runs into any problem when opening it:
 
