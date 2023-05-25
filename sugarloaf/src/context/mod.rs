@@ -115,7 +115,7 @@ impl Context {
         })
         .await;
 
-        let staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
+        let staging_belt = wgpu::util::StagingBelt::new(2 * 1024);
 
         surface.configure(
             &device,
