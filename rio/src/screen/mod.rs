@@ -360,27 +360,26 @@ impl Screen {
 
     #[inline]
     pub fn render(&mut self) {
-        if let Some(mut terminal) = self.terminal.try_lock_unfair() {
-            let visible_rows = terminal.visible_rows();
-            let cursor = terminal.cursor();
-            let mut selection_range: Option<SelectionRange> = None;
-            if let Some(selection) = &terminal.selection {
-                selection_range = selection.to_range(&terminal);
-            }
-            // drop(terminal);
-
-            self.state.set_ime(self.ime.preedit());
-
-            self.state.update(
-                visible_rows,
-                cursor,
-                &mut self.sugarloaf,
-                self.layout.styles.term,
-                selection_range,
-            );
-
-            self.sugarloaf.render();
+        let mut terminal = self.terminal.lock();
+        let visible_rows = terminal.visible_rows();
+        let cursor = terminal.cursor();
+        let mut selection_range: Option<SelectionRange> = None;
+        if let Some(selection) = &terminal.selection {
+            selection_range = selection.to_range(&terminal);
         }
+        // drop(terminal);
+
+        self.state.set_ime(self.ime.preedit());
+
+        self.state.update(
+            visible_rows,
+            cursor,
+            &mut self.sugarloaf,
+            self.layout.styles.term,
+            selection_range,
+        );
+
+        self.sugarloaf.render();
     }
 
     #[inline]

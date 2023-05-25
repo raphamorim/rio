@@ -262,7 +262,7 @@ impl Sequencer {
                         screen.layout().mouse.right_button_state == ElementState::Pressed;
 
                     // if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                        // screen.update_selection_scrolling(y);
+                    // screen.update_selection_scrolling(y);
                     // }
 
                     let display_offset = screen.display_offset();
