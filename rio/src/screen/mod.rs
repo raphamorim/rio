@@ -15,7 +15,6 @@ use crate::ime::Ime;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
-use crate::selection::SelectionRange;
 use crate::selection::{Selection, SelectionType};
 use messenger::Messenger;
 use state::State;
@@ -141,6 +140,7 @@ impl Screen {
         if terminal.display_offset() != 0 {
             terminal.scroll_display(Scroll::Bottom);
         }
+        drop(terminal);
     }
 
     #[inline]
@@ -152,12 +152,16 @@ impl Screen {
     #[inline]
     pub fn display_offset(&self) -> usize {
         let mut terminal = self.terminal.lock();
-        terminal.display_offset()
+        let display_offset = terminal.display_offset();
+        drop(terminal);
+        display_offset
     }
 
     pub fn get_mode(&self) -> Mode {
         let terminal = self.terminal.lock();
-        terminal.mode()
+        let mode = terminal.mode();
+        drop(terminal);
+        mode
     }
 
     #[inline]
@@ -219,6 +223,7 @@ impl Screen {
             Some(text) => text,
             None => return,
         };
+        drop(terminal);
 
         if ty == ClipboardType::Selection {
             self.clipboard.set(ClipboardType::Clipboard, text.clone());
@@ -259,12 +264,15 @@ impl Screen {
         // Clear the selection on the terminal.
         let mut terminal = self.terminal.lock();
         terminal.selection.take();
+        drop(terminal);
+        self.state.set_selection(None);
     }
 
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         self.copy_selection(ClipboardType::Selection);
         let mut terminal = self.terminal.lock();
         terminal.selection = Some(Selection::new(ty, point, side));
+        drop(terminal);
     }
 
     #[allow(dead_code)]
@@ -293,14 +301,18 @@ impl Screen {
             selection.include_all();
         }
 
+        self.state.set_selection(selection.to_range(&terminal));
         terminal.selection = Some(selection);
+        drop(terminal);
     }
 
     #[inline]
     #[allow(unused)]
     pub fn selection_is_empty(&self) -> bool {
         let terminal = self.terminal.lock();
-        terminal.selection.is_none()
+        let is_empty = terminal.selection.is_none();
+        drop(terminal);
+        is_empty
     }
 
     pub fn on_left_click(&mut self, point: Pos) {
@@ -363,11 +375,7 @@ impl Screen {
         let mut terminal = self.terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
-        let mut selection_range: Option<SelectionRange> = None;
-        if let Some(selection) = &terminal.selection {
-            selection_range = selection.to_range(&terminal);
-        }
-        // drop(terminal);
+        drop(terminal);
 
         self.state.set_ime(self.ime.preedit());
 
@@ -376,7 +384,6 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             self.layout.styles.term,
-            selection_range,
         );
 
         self.sugarloaf.render();

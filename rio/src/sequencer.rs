@@ -69,6 +69,7 @@ impl Sequencer {
 
         let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
         let mut is_focused = false;
+        let mut should_render = false;
         screen.init(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
@@ -77,16 +78,7 @@ impl Sequencer {
                     if let RioEventType::Rio(event) = payload {
                         match event {
                             RioEvent::Wakeup => {
-                                let timer_id = TimerId::new(Topic::Frame, 0);
-                                let event =
-                                    EventP::new(RioEventType::Rio(RioEvent::Render));
-
-                                scheduler.schedule(
-                                    event,
-                                    Duration::from_nanos(1_000),
-                                    false,
-                                    timer_id,
-                                );
+                                should_render = true;
                             }
                             RioEvent::Render => {
                                 if self.config.advanced.disable_render_when_unfocused
@@ -101,12 +93,14 @@ impl Sequencer {
                                 let event =
                                     EventP::new(RioEventType::Rio(RioEvent::Render));
 
-                                scheduler.schedule(
-                                    event,
-                                    Duration::from_millis(millis),
-                                    false,
-                                    timer_id,
-                                );
+                                if !scheduler.scheduled(timer_id) {
+                                    scheduler.schedule(
+                                        event,
+                                        Duration::from_millis(millis),
+                                        false,
+                                        timer_id,
+                                    );
+                                }
                             }
                             RioEvent::Title(_title) => {
                                 // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
@@ -461,6 +455,12 @@ impl Sequencer {
                     std::process::exit(0);
                 }
                 Event::MainEventsCleared { .. } => {
+                    if should_render {
+                        screen.render();
+                        should_render = false;
+                        return;
+                    }
+
                     scheduler.update();
                 }
                 Event::RedrawRequested { .. } => {}
