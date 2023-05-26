@@ -3,6 +3,7 @@ use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
+use crate::tabs::TabsControl;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -17,12 +18,15 @@ use winit::window::ImePurpose;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
+    #[allow(unused)]
+    tabs: TabsControl,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
+            tabs: TabsControl::new(),
         }
     }
 

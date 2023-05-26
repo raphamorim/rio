@@ -2,6 +2,7 @@
 
 ## 0.0.5
 
+- Perfomance fixes for rendering from teletypewriter updates.
 - Fix scale issues for 1.0 scale factor or using monitor with different scale factor.
 - Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file.
 

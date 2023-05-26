@@ -14,8 +14,8 @@ Basic features are under development for MacOs right now.
 | --- | --- | --- |
 | MacOs _as desktop application_ | In development 👷 | `0.1.0` |
 | Web Browser _(WebAssembly)_ | In development 👷 | `0.2.0` |
-| Linux _as desktop application_ | In development 👷 * | TBD |
-| Windows _as desktop application_ | Not started yet | --- |
+| Linux _as desktop application_ | In development 👷 * | `0.2.0` |
+| Windows _as desktop application_ | Not started yet | TBD |
 | Nintendo Switch * | Not started yet | --- |
 
 _* Development and tests are targeting Wayland, probably is not stable on X11 yet._
