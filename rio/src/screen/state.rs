@@ -26,6 +26,7 @@ pub struct State {
     named_colors: Colors,
     cursor: Cursor,
     colors: List,
+    selection_range: Option<SelectionRange>,
 }
 
 // TODO: Finish from
@@ -54,6 +55,7 @@ impl State {
             option_as_alt,
             is_ime_enabled: false,
             colors,
+            selection_range: None,
             named_colors: config.colors,
             cursor: Cursor {
                 content: config.cursor,
@@ -260,25 +262,29 @@ impl State {
     }
 
     #[inline]
+    pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
+        self.selection_range = selection_range;
+    }
+
+    #[inline]
     pub fn update(
         &mut self,
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
-        selection: Option<SelectionRange>,
     ) {
         self.cursor.state = cursor;
 
         let cursor_is_visible = self.cursor.state.is_visible();
 
-        if let Some(sel) = &selection {
+        if let Some(sel) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = cursor_is_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack_with_selection(
                     row,
                     has_cursor,
-                    sel,
+                    &sel,
                     pos::Line(i as i32),
                 );
                 sugarloaf.stack(sugar_stack, style);

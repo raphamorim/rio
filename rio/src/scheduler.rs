@@ -108,7 +108,6 @@ impl Scheduler {
     }
 
     /// Check if a timer is already scheduled.
-    #[allow(dead_code)]
     pub fn scheduled(&mut self, id: TimerId) -> bool {
         self.timers.iter().any(|timer| timer.id == id)
     }

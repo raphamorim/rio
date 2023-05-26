@@ -708,7 +708,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn cursor(&mut self) -> CursorState {
-        let vi_mode = self.mode().contains(Mode::VI);
+        let vi_mode = self.mode.contains(Mode::VI);
         let mut pos = if vi_mode {
             self.vi_mode_cursor
         } else {
@@ -721,9 +721,8 @@ impl<U: EventListener> Crosswords<U> {
             pos.col -= 1;
         }
         let mut content = CursorShape::Block;
-
         // // Cursor shape.
-        if !vi_mode && !self.mode().contains(Mode::SHOW_CURSOR) {
+        if !vi_mode && !self.mode.contains(Mode::SHOW_CURSOR) {
             content = CursorShape::Hidden;
         }
 
