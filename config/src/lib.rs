@@ -12,18 +12,12 @@ pub enum Performance {
     Low,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
-pub enum Theme {
-    Modern,
-    #[default]
-    Basic,
-}
-
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct Style {
-    #[serde(rename = "font-size")]
+    #[serde(rename = "font-size", default = "default_font_size")]
     pub font_size: f32,
-    pub theme: Theme,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_font")]
     pub font: String,
 }
@@ -32,7 +26,7 @@ impl Default for Style {
     fn default() -> Style {
         Style {
             font_size: default_font_size(),
-            theme: Theme::default(),
+            theme: default_theme(),
             font: default_font(),
         }
     }
@@ -164,7 +158,7 @@ impl Default for Config {
             colors: Colors::default(),
             style: Style {
                 font_size: default_font_size(),
-                theme: Theme::default(),
+                theme: default_theme(),
                 font: default_font(),
             },
             advanced: Advanced::default(),
@@ -220,7 +214,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::default());
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors, Colors::default());
 
@@ -264,7 +258,7 @@ mod tests {
             [style]
             font = "CascadiaMono"
             font-size = 16
-            theme = "Basic"
+            theme = ""
 
             [advanced]
             tab-character-active = '●'
@@ -312,7 +306,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::default());
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -335,7 +329,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -360,7 +354,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -384,7 +378,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -408,7 +402,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -432,7 +426,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, Theme::Basic);
+        assert_eq!(result.style.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -449,7 +443,6 @@ mod tests {
 
             [style]
             font = "Novamono"
-            theme = "Modern"
             font-size = 14.0
         "#,
         );
@@ -460,12 +453,35 @@ mod tests {
         // Style
         assert_eq!(result.style.font, "Novamono");
         assert_eq!(result.style.font_size, 14.0);
-        assert_eq!(result.style.theme, Theme::Modern);
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_theme() {
+        let result = create_temporary_config(
+            "change-theme",
+            r#"
+            [style]
+            theme = "lucario"
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.width, default_width());
+        assert_eq!(result.height, default_height());
+        // Style
+        assert_eq!(result.style.font, default_font());
+        assert_eq!(result.style.font_size, default_font_size());
+        assert_eq!(result.style.theme, "lucario");
+        // Colors
+        // assert_eq!(result.colors.background, colors::defaults::background());
+        // assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        // assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        // assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
     #[test]
