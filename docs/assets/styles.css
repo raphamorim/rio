@@ -85,6 +85,11 @@ body {
   margin: 0 auto;
 }
 
+.container.post {
+  padding: 40px;
+  background: #0F0D0E;
+}
+
 .container.content {
   padding: 40px;
   background: #0F0D0E;
