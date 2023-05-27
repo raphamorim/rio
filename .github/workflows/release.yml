@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*'
+    branches:
+      - '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -59,6 +61,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
+          prerelease: ${{ startsWith(github.ref, 'refs/tags/v') }}
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             build/${{matrix.filename}}
