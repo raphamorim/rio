@@ -28,6 +28,10 @@ pub fn default_cursor() -> char {
     '█'
 }
 
+pub fn default_theme() -> String {
+    String::from("")
+}
+
 pub fn default_font_size() -> f32 {
     16.0
 }
