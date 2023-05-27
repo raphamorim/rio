@@ -216,12 +216,10 @@ pub enum Action {
     WindowCreateNew,
 
     /// Create a new Rio tab.
-    #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     TabCreateNew,
 
     /// Switch to next tab.
-    #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     TabSwitchNext,
 
@@ -482,6 +480,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         //     ViMotion::WordRightEnd;
         // Key5,   ModifiersState::SHIFT, +BindingMode::VI;
         //     ViMotion::Bracket;
+        T, ModifiersState::LOGO; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
     );
 
     bindings.extend(platform_key_bindings());
@@ -510,8 +510,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         K, ModifiersState::LOGO, ~BindingMode::VI;  Action::ClearHistory;
         V, ModifiersState::LOGO, ~BindingMode::VI; Action::Paste;
         N, ModifiersState::LOGO; Action::WindowCreateNew;
-        T, ModifiersState::LOGO; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         F, ModifiersState::CTRL | ModifiersState::LOGO; Action::ToggleFullscreen;
         C, ModifiersState::LOGO; Action::Copy;
         C, ModifiersState::LOGO, +BindingMode::VI; Action::ClearSelection;
