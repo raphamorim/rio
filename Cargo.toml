@@ -9,7 +9,6 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
