@@ -273,8 +273,8 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
-        tab_style: sugarloaf::core::SugarloafStyle,
-        tabs: &TabsControl,
+        _tab_style: sugarloaf::core::SugarloafStyle,
+        _tabs: &TabsControl,
     ) {
         self.cursor.state = cursor;
 
@@ -301,14 +301,14 @@ impl State {
             sugarloaf.stack(sugar_stack, style);
         }
 
-        if tabs.len() > 1 {
-            sugarloaf.tabs(
-                "1, 3, 4".to_string(),
-                tab_style,
-                self.named_colors.tabs,
-                self.named_colors.tabs_active,
-            );
-        }
+        // if tabs.len() > 1 {
+        //     sugarloaf.tabs(
+        //         "1, 3, 4".to_string(),
+        //         tab_style,
+        //         self.named_colors.tabs,
+        //         self.named_colors.tabs_active,
+        //     );
+        // }
     }
 
     // pub fn topbar(&mut self, command: String) {

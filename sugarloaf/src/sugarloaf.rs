@@ -120,6 +120,7 @@ impl Sugarloaf {
         }
     }
 
+    #[allow(unused)]
     pub fn tabs(
         &mut self,
         _text: String,
