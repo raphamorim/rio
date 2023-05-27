@@ -9,3 +9,4 @@ toml = "0.7.3"
 dirs = "5.0"
 colors = { path = "../colors" }
 serde = { workspace = true }
+log = { workspace = true }

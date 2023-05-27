@@ -342,6 +342,7 @@ version = "0.0.1"
 dependencies = [
  "colors",
  "dirs",
+ "log",
  "serde",
  "toml 0.7.3",
 ]
