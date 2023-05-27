@@ -140,6 +140,7 @@ pub enum Action {
     Copy,
 
     #[cfg(not(any(target_os = "macos", windows)))]
+    #[allow(dead_code)]
     /// Store current selection into selection buffer.
     CopySelection,
 
