@@ -14,16 +14,29 @@ env:
   GITHUB_REPOSITORY: raphamorim/rio
 
 jobs:
-  release-macos-x86:
-    name: Release x86_64-apple-darwin
-    runs-on: macOS-latest
+  release:
+    name: Release
     permissions:
       contents: write
       discussions: write
     strategy:
       matrix:
         target:
+          - aarch64-apple-darwin
           - x86_64-apple-darwin
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            make: pack-osx-arm
+            filename: macos-arm64.zip
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            make: pack-osx-x86
+            filename: macos-x86.zip
+
+    # defining OS based on the image of the architecture
+    runs-on: ${{matrix.os}}
+
     env:
       RUSTFLAGS: "-C target-cpu=native"
       RUST_BACKTRACE: full
@@ -31,19 +44,22 @@ jobs:
     steps:
       - name: Checkout source Git repo
         uses: actions/checkout@v3
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
           cache-all-crates: "true"
           cache-targets: "true"
+
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: mkdir release
       - run: cargo install cargo-bundle
-      - run: make pack-osx-x86
+      - run: make ${{matrix.make}}
+
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/macos-x86.zip
+            build/${{matrix.filename}}
             LICENSE
