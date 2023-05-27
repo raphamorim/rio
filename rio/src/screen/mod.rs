@@ -397,7 +397,7 @@ impl Screen {
             &mut self.sugarloaf,
             self.layout.styles.term,
             self.layout.styles.tabs,
-            &self.tabs
+            &self.tabs,
         );
 
         self.sugarloaf.render();

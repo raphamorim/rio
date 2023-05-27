@@ -120,7 +120,13 @@ impl Sugarloaf {
         }
     }
 
-    pub fn tabs(&mut self, text: String, style: SugarloafStyle, color_inactive: [f32;4], color_active: [f32;4]) {
+    pub fn tabs(
+        &mut self,
+        _text: String,
+        style: SugarloafStyle,
+        color_inactive: [f32; 4],
+        color_active: [f32; 4],
+    ) {
         self.text_brush.queue(Section {
             screen_position: style.screen_position,
             bounds: style.bounds,
@@ -157,7 +163,7 @@ impl Sugarloaf {
         //         .h_align(glyph_brush::HorizontalAlign::Right),
         //     ..Section::default()
         // });
-    // }
+        // }
     }
 
     #[allow(unused)]

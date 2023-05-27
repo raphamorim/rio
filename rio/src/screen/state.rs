@@ -1,10 +1,10 @@
-use crate::tabs::TabsControl;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::selection::SelectionRange;
+use crate::tabs::TabsControl;
 use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
@@ -274,7 +274,7 @@ impl State {
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
         tab_style: sugarloaf::core::SugarloafStyle,
-        tabs: &TabsControl
+        tabs: &TabsControl,
     ) {
         self.cursor.state = cursor;
 
@@ -302,7 +302,12 @@ impl State {
         }
 
         if tabs.len() > 1 {
-            sugarloaf.tabs("1, 3, 4".to_string(), tab_style, self.named_colors.tabs, self.named_colors.tabs_active);
+            sugarloaf.tabs(
+                "1, 3, 4".to_string(),
+                tab_style,
+                self.named_colors.tabs,
+                self.named_colors.tabs_active,
+            );
         }
     }
 

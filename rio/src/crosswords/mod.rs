@@ -641,12 +641,17 @@ impl<U: EventListener> Crosswords<U> {
         let extra = self.grid.cursor.template.extra.clone();
 
         let mut cursor_square = self.grid.cursor_square();
-        if cursor_square.flags.intersects(square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER) {
+        if cursor_square
+            .flags
+            .intersects(square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER)
+        {
             // Remove wide char and spacer.
             let wide = cursor_square.flags.contains(square::Flags::WIDE_CHAR);
             let point = self.grid.cursor.pos;
             if wide && point.col < self.grid.last_column() {
-                self.grid[point.row][point.col + 1].flags.remove(square::Flags::WIDE_CHAR_SPACER);
+                self.grid[point.row][point.col + 1]
+                    .flags
+                    .remove(square::Flags::WIDE_CHAR_SPACER);
             } else if point.col > 0 {
                 self.grid[point.row][point.col - 1].clear_wide();
             }
@@ -654,7 +659,9 @@ impl<U: EventListener> Crosswords<U> {
             // Remove leading spacers.
             if point.col <= 1 && point.row != self.grid.topmost_line() {
                 let column = self.grid.last_column();
-                self.grid[point.row - 1i32][column].flags.remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
+                self.grid[point.row - 1i32][column]
+                    .flags
+                    .remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
             }
 
             cursor_square = self.grid.cursor_cell();
