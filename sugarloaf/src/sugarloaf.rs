@@ -4,7 +4,7 @@ use crate::context::Context;
 use crate::core::{SugarStack, SugarloafStyle};
 use crate::font::Font;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
-use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
+use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText, Section, Text};
 #[cfg(target_arch = "wasm32")]
 use web_sys::{ImageBitmapRenderingContext, OffscreenCanvas};
 
@@ -118,6 +118,46 @@ impl Sugarloaf {
                 "Renderer error: could not initialize font {err_message:?}"
             )),
         }
+    }
+
+    pub fn tabs(&mut self, text: String, style: SugarloafStyle, color_inactive: [f32;4], color_active: [f32;4]) {
+        self.text_brush.queue(Section {
+            screen_position: style.screen_position,
+            bounds: style.bounds,
+            text: vec![
+                Text::new("■")
+                    .with_color(color_active)
+                    .with_scale(style.text_scale),
+                Text::new("and more 2 tabs")
+                    .with_color(color_inactive)
+                    .with_scale(style.text_scale),
+                // Text::new(&fps_text)
+                //     .with_color(self.config.colors.foreground)
+                //     .with_scale(self.styles.tabs_active.text_scale),
+            ],
+            layout: glyph_brush::Layout::default_single_line(),
+            // ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+            // .v_align(glyph_brush::VerticalAlign::Center)
+            // .h_align(glyph_brush::HorizontalAlign::Left)
+        });
+
+        // self.brush.queue(Section {
+        //     screen_position: ((self.size.width as f32 - 20.0) * scale, (8.0 * scale)),
+        //     bounds: (
+        //         (self.size.width as f32) - (40.0 * scale),
+        //         (self.size.height as f32) * scale,
+        //     ),
+        //     text: vec![Text::new("■ vim ■ zsh ■ docker")
+        //         //(157,165,237)
+        //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
+        //         .with_scale(14.0 * scale)],
+        //     layout: glyph_brush::Layout::default()
+        //         // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
+        //         // .v_align(glyph_brush::VerticalAlign::Center)
+        //         .h_align(glyph_brush::HorizontalAlign::Right),
+        //     ..Section::default()
+        // });
+    // }
     }
 
     #[allow(unused)]

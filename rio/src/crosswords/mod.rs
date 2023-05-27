@@ -641,6 +641,25 @@ impl<U: EventListener> Crosswords<U> {
         let extra = self.grid.cursor.template.extra.clone();
 
         let mut cursor_square = self.grid.cursor_square();
+        if cursor_square.flags.intersects(square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER) {
+            // Remove wide char and spacer.
+            let wide = cursor_square.flags.contains(square::Flags::WIDE_CHAR);
+            let point = self.grid.cursor.pos;
+            if wide && point.col < self.grid.last_column() {
+                self.grid[point.row][point.col + 1].flags.remove(square::Flags::WIDE_CHAR_SPACER);
+            } else if point.col > 0 {
+                self.grid[point.row][point.col - 1].clear_wide();
+            }
+
+            // Remove leading spacers.
+            if point.col <= 1 && point.row != self.grid.topmost_line() {
+                let column = self.grid.last_column();
+                self.grid[point.row - 1i32][column].flags.remove(square::Flags::LEADING_WIDE_CHAR_SPACER);
+            }
+
+            cursor_square = self.grid.cursor_cell();
+        }
+
         cursor_square.c = c;
         cursor_square.fg = fg;
         cursor_square.bg = bg;
@@ -708,10 +727,15 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn cursor(&mut self) -> CursorState {
+        let mut content = CursorShape::Block;
         let vi_mode = self.mode.contains(Mode::VI);
         let mut pos = if vi_mode {
             self.vi_mode_cursor
         } else {
+            let scroll = self.display_offset() as i32;
+            if scroll != 0 {
+                content = CursorShape::Hidden
+            }
             self.grid.cursor.pos
         };
         if self.grid[pos]
@@ -720,7 +744,6 @@ impl<U: EventListener> Crosswords<U> {
         {
             pos.col -= 1;
         }
-        let mut content = CursorShape::Block;
         // // Cursor shape.
         if !vi_mode && !self.mode.contains(Mode::SHOW_CURSOR) {
             content = CursorShape::Hidden;
@@ -924,17 +947,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_REPORT_CLICK);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_DRAG);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportAllMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_MOTION);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
             AnsiMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
@@ -974,15 +997,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
             AnsiMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                // self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_DRAG);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportAllMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MOTION);
-                // self.event_proxy.send_event(Event::MouseCursorDirty);
+                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
             }
             AnsiMode::ReportFocusInOut => self.mode.remove(Mode::FOCUS_IN_OUT),
             AnsiMode::BracketedPaste => self.mode.remove(Mode::BRACKETED_PASTE),

@@ -13,6 +13,12 @@ pub fn cursor() -> ColorArray {
         .to_arr()
 }
 
+pub fn tabs() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#F9C5D1"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
 pub fn tabs_active() -> ColorArray {
     ColorBuilder::from_hex(String::from("#FC7428"), Format::SRGB0_1)
         .unwrap()
@@ -63,12 +69,6 @@ pub fn cyan() -> ColorArray {
 
 pub fn magenta() -> ColorArray {
     ColorBuilder::from_hex(String::from("#7B5EA7"), Format::SRGB0_1)
-        .unwrap()
-        .to_arr()
-}
-
-pub fn tabs() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F9C5D1"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }

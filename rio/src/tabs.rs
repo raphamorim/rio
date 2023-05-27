@@ -1,12 +1,16 @@
 type TabId = u8;
 const DEFAULT_TABS_CAPACITY: usize = 10;
 
-struct Tab {
+#[derive(Clone)]
+pub struct Tab {
     id: TabId,
 }
 
+pub type Tabs = Vec<Tab>;
+
+#[derive(Clone)]
 pub struct TabsControl {
-    tabs: Vec<Tab>,
+    tabs: Tabs,
     current: TabId,
     capacity: usize,
 }
@@ -57,7 +61,6 @@ impl TabsControl {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn position(&self, tab_id: u8) -> Option<usize> {
         self.tabs.iter().position(|t| t.id == tab_id)
     }
@@ -85,13 +88,23 @@ impl TabsControl {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn current(&self) -> u8 {
         self.current
     }
 
     #[inline]
-    #[allow(unused)]
+    pub fn switch_to_next(&mut self) {
+        if let Some(current_position) = self.position(self.current) {
+            let (left, right) = self.tabs.split_at(current_position + 1);
+            if !right.is_empty() {
+                self.current = right[0].id;
+            } else {
+                self.current = left[0].id;
+            }
+        }
+    }
+
+    #[inline]
     pub fn add_tab(&mut self, redirect: bool) {
         let size = self.tabs.len();
         if size < self.capacity {
@@ -246,5 +259,32 @@ pub mod test {
         // Last tab should not be closed
         tabs_control.close_tab(0);
         assert_eq!(tabs_control.len(), 1);
+    }
+
+    #[test]
+    fn test_switch_to_next() {
+        let mut tabs_control = TabsControl::with_capacity(5);
+        let should_redirect = false;
+
+        tabs_control.add_tab(should_redirect);
+        tabs_control.add_tab(should_redirect);
+        tabs_control.add_tab(should_redirect);
+        tabs_control.add_tab(should_redirect);
+        tabs_control.add_tab(should_redirect);
+        assert_eq!(tabs_control.len(), 5);
+        assert_eq!(tabs_control.current, 0);
+
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 1);
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 2);
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 3);
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 4);
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 0);
+        tabs_control.switch_to_next();
+        assert_eq!(tabs_control.current, 1);
     }
 }
