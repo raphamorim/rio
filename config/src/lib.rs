@@ -539,6 +539,15 @@ mod tests {
 
     #[test]
     fn test_change_theme_with_colors_overwrite() {
+        create_temporary_theme(
+            "lucario-with-colors",
+            r#"
+            [colors]
+            background       = '#2B3E50'
+            foreground       = '#F8F8F2'
+        "#,
+        );
+
         let result = create_temporary_config(
             "change-theme-with-colors",
             r#"
@@ -548,15 +557,6 @@ mod tests {
             [colors]
             background = '#333333'
             foreground = '#333333'
-        "#,
-        );
-
-        create_temporary_theme(
-            "lucario-with-colors",
-            r#"
-            [colors]
-            background       = '#2B3E50'
-            foreground       = '#F8F8F2'
         "#,
         );
 
