@@ -1,0 +1,15 @@
+{% include header.html %}
+<link rel="stylesheet" href="../assets/style-post.css">
+{% include nav.html %}
+
+<div class="container post">
+  <span class="post-date">{{ page.date | date:"%d %b %y" }}</span>
+  <div class="post-title"><h1 class="post-title">{{ page.title }}</h1></div>
+  <span class="post-categories">{{ page.categories | join: " " }}</span>
+  
+  <div class="post-content">
+    {{ content }}
+  </div>
+</div>
+
+{% include footer.html %}

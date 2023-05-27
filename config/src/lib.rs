@@ -1,7 +1,7 @@
 mod defaults;
-
 use crate::defaults::*;
 use colors::Colors;
+use log::warn;
 use serde::Deserialize;
 use std::default::Default;
 
@@ -99,8 +99,20 @@ pub struct Config {
     pub developer: Developer,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Theme {
+    #[serde(default = "Colors::default")]
+    pub colors: Colors,
+}
+
+// Home directory
+fn home_dir_path() -> String {
+    let base_dir_buffer = dirs::home_dir().unwrap();
+    base_dir_buffer.to_str().unwrap_or_default().to_string()
+}
+
 impl Config {
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn load_from_path(path: &str) -> Self {
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
@@ -111,11 +123,37 @@ impl Config {
             Config::default()
         }
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn load_from_path_without_fallback(path: &str) -> Result<Self, String> {
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.style.theme;
+                    if theme.is_empty() {
+                        return Ok(decoded);
+                    }
+
+                    let path = format!("/tmp/{theme}.toml");
+                    if let Ok(loaded_theme) = Config::load_theme(&path) {
+                        decoded.colors = loaded_theme.colors;
+                    } else {
+                        warn!("failed to load theme: {}", theme);
+                    }
+
+                    Ok(decoded)
+                }
+                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+            }
+        } else {
+            Err(String::from("filepath does not exists"))
+        }
+    }
+
+    fn load_theme(path: &str) -> Result<Theme, String> {
+        if std::path::Path::new(&path).exists() {
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Theme>(&content) {
                 Ok(decoded) => Ok(decoded),
                 Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
@@ -125,18 +163,28 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        // Home directory
-        let base_dir_buffer = dirs::home_dir().unwrap();
-        let base_dir = base_dir_buffer.to_str().unwrap();
-
+        let base_dir = home_dir_path();
         let path = format!("{base_dir}/.rio/config.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            match toml::from_str(&content) {
-                Ok(decoded) => decoded,
+            match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.style.theme;
+                    if theme.is_empty() {
+                        return decoded;
+                    }
+
+                    let path = format!("{base_dir}/.rio/themes/{theme}.toml");
+                    if let Ok(loaded_theme) = Config::load_theme(&path) {
+                        decoded.colors = loaded_theme.colors;
+                    } else {
+                        warn!("failed to load theme: {}", theme);
+                    }
+
+                    decoded
+                }
                 Err(err_message) => {
-                    // TODO: Use debug flags
-                    println!("failure to parse config file, failling back to default...\n{err_message:?}");
+                    warn!("failure to parse config file, failling back to default...\n{err_message:?}");
                     Config::default()
                 }
             }
@@ -173,7 +221,6 @@ mod tests {
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
-    #[allow(dead_code)]
     fn create_temporary_config(prefix: &str, toml_str: &str) -> Config {
         let file_name = format!("/tmp/test-rio-{prefix}-config.toml");
         let mut file = std::fs::File::create(&file_name).unwrap();
@@ -183,6 +230,12 @@ mod tests {
             Ok(config) => config,
             Err(e) => panic!("{e}"),
         }
+    }
+
+    fn create_temporary_theme(theme: &str, toml_str: &str) {
+        let file_name = format!("/tmp/{theme}.toml");
+        let mut file = std::fs::File::create(file_name).unwrap();
+        writeln!(file, "{toml_str}").unwrap();
     }
 
     #[test]
@@ -478,10 +531,40 @@ mod tests {
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, "lucario");
         // Colors
-        // assert_eq!(result.colors.background, colors::defaults::background());
-        // assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        // assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
-        // assert_eq!(result.colors.cursor, colors::defaults::cursor());
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_theme_with_colors_overwrite() {
+        create_temporary_theme(
+            "lucario-with-colors",
+            r#"
+            [colors]
+            background       = '#2B3E50'
+            foreground       = '#F8F8F2'
+        "#,
+        );
+
+        let result = create_temporary_config(
+            "change-theme-with-colors",
+            r#"
+            [style]
+            theme = "lucario-with-colors"
+
+            [colors]
+            background = '#333333'
+            foreground = '#333333'
+        "#,
+        );
+
+        // Colors
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+        assert_eq!(result.colors.foreground, hex_to_color_arr("#F8F8F2"));
+        assert_eq!(result.colors.background.0, hex_to_color_arr("#2B3E50"));
     }
 
     #[test]

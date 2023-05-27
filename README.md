@@ -6,19 +6,25 @@
 
 ## Development Status
 
-Rio current development version is `0.0.4`.
+#### Status
 
-Basic features are under development for MacOs right now.
+| Status | Meaning |
+| :-: | --- |
+| 🟢 | Stable and usuable. |
+| 🔵 | Unstable and usuable (minor bugs and incomplete features). |
+| 🟠 | Unstable and usuable (major bugs and incomplete features). |
+| 🟡 | It does builds but provides a very limited usage or is not able to use at all. |
+| 🔴 | Development has not started. |
 
-| Platform | Development Status | Release plan |
-| --- | --- | --- |
-| MacOs _as desktop application_ | In development 👷 | `0.1.0` |
-| Web Browser _(WebAssembly)_ | In development 👷 | `0.2.0` |
-| Linux _as desktop application_ | In development 👷 * | `0.2.0` |
-| Windows _as desktop application_ | Not started yet | TBD |
-| Nintendo Switch * | Not started yet | --- |
+#### Platform
 
-_* Development and tests are targeting Wayland, probably is not stable on X11 yet._
+| Platform | Status | Version introduced |
+| --- | :-: | --- |
+| MacOs _as desktop application_ | 🔵 | `0.0.3` (x86 and arm64) |
+| Web Browser _(WebAssembly)_ | 🟡 | |
+| Linux _as desktop application_ | 🟠 | `0.0.5` (ubuntu) |
+| Windows _as desktop application_ | 🔴 | |
+| Nintendo Switch * | 🔴 | |
 
 _* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._
 
@@ -26,7 +32,7 @@ _* Nintendo Switch development is just for fun, the goal is to have  the rendere
 
 | ![Demo tmux](resources/demo-tmux.png) | <img src="resources/demo-emacs.png" alt="Demo emacs" width="500px"/> |
 | ----------- | ----------- |
-| ![Demo selection](resources/demo-selection.png) | ![Demo colors](resources/demo-colors.png) |
+| ![Demo dracula](themes/screenshots/dracula.png) | ![Demo selection](resources/demo-selection.png) |
 | ![Demo colors](resources/demo-colors.png) | ![Demo git](resources/demo-git.png) |
 
 Note: Emojis are rendered with Noto Emoji.
