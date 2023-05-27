@@ -2,9 +2,11 @@
 
 ## 0.0.5
 
+- Fix font-size dependency for serialization (f278102)
+- Fix cursor visibility on VI mode and scroll (https://github.com/raphamorim/rio/issues/51)
 - Perfomance fixes for rendering from teletypewriter updates.
-- Fix scale issues for 1.0 scale factor or using monitor with different scale factor.
-- Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file.
+- Fix scale issues for 1.0 scale factor or using monitor with different scale factor. (https://github.com/raphamorim/rio/issues/50)
+- Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file. (https://github.com/raphamorim/rio/issues/54)
 
 ## 0.0.4
 
