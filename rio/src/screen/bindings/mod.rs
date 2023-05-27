@@ -139,7 +139,6 @@ pub enum Action {
     /// Store current selection into clipboard.
     Copy,
 
-    #[allow(dead_code)]
     #[cfg(not(any(target_os = "macos", windows)))]
     /// Store current selection into selection buffer.
     CopySelection,
@@ -214,7 +213,17 @@ pub enum Action {
 
     /// Create a new Rio window.
     #[allow(dead_code)]
-    CreateNewWindow,
+    WindowCreateNew,
+
+    /// Create a new Rio tab.
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
+    TabCreateNew,
+
+    /// Switch to next tab.
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
+    TabSwitchNext,
 
     /// Toggle fullscreen.
     #[allow(dead_code)]
@@ -500,7 +509,9 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
             Action::Esc("\x0c".into());
         K, ModifiersState::LOGO, ~BindingMode::VI;  Action::ClearHistory;
         V, ModifiersState::LOGO, ~BindingMode::VI; Action::Paste;
-        N, ModifiersState::LOGO; Action::CreateNewWindow;
+        N, ModifiersState::LOGO; Action::WindowCreateNew;
+        T, ModifiersState::LOGO; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         F, ModifiersState::CTRL | ModifiersState::LOGO; Action::ToggleFullscreen;
         C, ModifiersState::LOGO; Action::Copy;
         C, ModifiersState::LOGO, +BindingMode::VI; Action::ClearSelection;

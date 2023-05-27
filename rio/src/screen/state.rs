@@ -1,3 +1,4 @@
+use crate::tabs::TabsControl;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
@@ -177,11 +178,10 @@ impl State {
 
             if has_cursor && column == self.cursor.state.pos.col {
                 let mut foreground_color = self.named_colors.cursor;
-                let mut background_color = self.named_colors.cursor;
+                let mut background_color = self.named_colors.background.0;
 
                 if is_selected {
                     foreground_color = self.named_colors.yellow;
-                    background_color = self.named_colors.yellow;
                 }
 
                 if self.is_ime_enabled {
@@ -223,7 +223,7 @@ impl State {
 
             if has_cursor && column == self.cursor.state.pos.col {
                 let mut foreground_color = self.named_colors.cursor;
-                let mut background_color = self.named_colors.cursor;
+                let mut background_color = self.named_colors.background.0;
 
                 if self.is_ime_enabled {
                     foreground_color = self.named_colors.background.0;
@@ -273,14 +273,16 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
+        tab_style: sugarloaf::core::SugarloafStyle,
+        tabs: &TabsControl
     ) {
         self.cursor.state = cursor;
 
-        let cursor_is_visible = self.cursor.state.is_visible();
+        let is_cursor_visible = self.cursor.state.is_visible();
 
         if let Some(sel) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
-                let has_cursor = cursor_is_visible && self.cursor.state.pos.row == i;
+                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack_with_selection(
                     row,
                     has_cursor,
@@ -294,24 +296,15 @@ impl State {
         }
 
         for (i, row) in rows.iter().enumerate() {
-            let has_cursor = self.cursor.state.pos.row == i;
+            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             let sugar_stack = self.create_sugar_stack(row, has_cursor);
             sugarloaf.stack(sugar_stack, style);
         }
-    }
 
-    // pub fn draw_queued(
-    //     &mut self,
-    //     device: &wgpu::Device,
-    //     staging_belt: &mut wgpu::util::StagingBelt,
-    //     encoder: &mut wgpu::CommandEncoder,
-    //     view: &wgpu::TextureView,
-    //     size: (u32, u32),
-    // ) {
-    //     let _ =
-    //         self.brush
-    //             .draw_queued(device, staging_belt, encoder, view, (size.0, size.1));
-    // }
+        if tabs.len() > 1 {
+            sugarloaf.tabs("1, 3, 4".to_string(), tab_style, self.named_colors.tabs, self.named_colors.tabs_active);
+        }
+    }
 
     // pub fn topbar(&mut self, command: String) {
     //     let fps_text = if self.config.developer.enable_fps_counter {
@@ -319,42 +312,4 @@ impl State {
     //     } else {
     //         String::from("")
     //     };
-
-    //     self.brush.queue(Section {
-    //         screen_position: self.styles.tabs_active.screen_position,
-    //         bounds: self.styles.tabs_active.bounds,
-    //         text: vec![
-    //             Text::new(&command)
-    //                 .with_color(self.config.colors.tabs_active)
-    //                 .with_scale(self.styles.tabs_active.text_scale),
-    //             Text::new("■ vim ■ zsh ■ docker")
-    //                 .with_color([0.89020, 0.54118, 0.33725, 1.0])
-    //                 .with_scale(self.styles.tabs_active.text_scale),
-    //             Text::new(&fps_text)
-    //                 .with_color(self.config.colors.foreground)
-    //                 .with_scale(self.styles.tabs_active.text_scale),
-    //         ],
-    //         layout: glyph_brush::Layout::default_single_line(),
-    //         // ..Section::default() // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-    //         // .v_align(glyph_brush::VerticalAlign::Center)
-    //         // .h_align(glyph_brush::HorizontalAlign::Left)
-    //     });
-
-    //     // self.brush.queue(Section {
-    //     //     screen_position: ((self.size.width as f32 - 20.0) * scale, (8.0 * scale)),
-    //     //     bounds: (
-    //     //         (self.size.width as f32) - (40.0 * scale),
-    //     //         (self.size.height as f32) * scale,
-    //     //     ),
-    //     //     text: vec![Text::new("■ vim ■ zsh ■ docker")
-    //     //         //(157,165,237)
-    //     //         .with_color([0.89020, 0.54118, 0.33725, 1.0])
-    //     //         .with_scale(14.0 * scale)],
-    //     //     layout: glyph_brush::Layout::default()
-    //     //         // .line_breaker(glyph_brush::BuiltInLineBreaker::UNi)
-    //     //         // .v_align(glyph_brush::VerticalAlign::Center)
-    //     //         .h_align(glyph_brush::HorizontalAlign::Right),
-    //     //     ..Section::default()
-    //     // });
-    // }
 }

@@ -16,6 +16,7 @@ use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
 use crate::selection::{Selection, SelectionType};
+use crate::tabs::TabsControl;
 use messenger::Messenger;
 use state::State;
 use std::borrow::Cow;
@@ -35,6 +36,8 @@ pub struct Screen {
     state: State,
     sugarloaf: Sugarloaf,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
+    #[allow(unused)]
+    tabs: TabsControl,
 }
 
 impl Screen {
@@ -82,8 +85,10 @@ impl Screen {
         let clipboard = Clipboard::new();
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
+        let tabs = TabsControl::new();
 
         Ok(Screen {
+            tabs,
             ime,
             sugarloaf,
             terminal,
@@ -199,7 +204,6 @@ impl Screen {
                     Act::Paste => {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
-                        // self.messenger.send_bytes(content.as_bytes().to_vec());
                     }
                     Act::PasteSelection => {
                         let content = self.clipboard.get(ClipboardType::Selection);
@@ -207,6 +211,14 @@ impl Screen {
                     }
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
+                    }
+                    Act::TabCreateNew => {
+                        self.tabs.add_tab(true);
+                        self.render();
+                    }
+                    Act::TabSwitchNext => {
+                        self.tabs.switch_to_next();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -384,6 +396,8 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             self.layout.styles.term,
+            self.layout.styles.tabs,
+            &self.tabs
         );
 
         self.sugarloaf.render();

@@ -3,7 +3,6 @@ use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
-use crate::tabs::TabsControl;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -18,15 +17,12 @@ use winit::window::ImePurpose;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
-    #[allow(unused)]
-    tabs: TabsControl,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
-            tabs: TabsControl::new(),
         }
     }
 
@@ -72,7 +68,7 @@ impl Sequencer {
         }
 
         let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
-        let mut is_focused = false;
+        let mut is_window_focused = false;
         let mut should_render = false;
         screen.init(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
@@ -86,7 +82,7 @@ impl Sequencer {
                             }
                             RioEvent::Render => {
                                 if self.config.advanced.disable_render_when_unfocused
-                                    && is_focused
+                                    && is_window_focused
                                 {
                                     return;
                                 }
@@ -115,7 +111,7 @@ impl Sequencer {
                                 screen.layout_mut().reset_mouse();
                             }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
-                                if is_focused {
+                                if is_window_focused {
                                     let text = format(
                                         screen.clipboard_get(clipboard_type).as_str(),
                                     );
@@ -219,7 +215,7 @@ impl Sequencer {
                                     screen.on_left_click(point);
                                 }
 
-                                screen.render();
+                                should_render = true;
                             }
                             // screen.process_mouse_bindings(button);
                         }
@@ -296,7 +292,7 @@ impl Sequencer {
                             || !screen.mouse_mode())
                     {
                         screen.update_selection(point);
-                        screen.render();
+                        should_render = true;
                     }
                     // else if square_changed
                     //     && screen.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
@@ -414,7 +410,7 @@ impl Sequencer {
                     event: winit::event::WindowEvent::Focused(focused),
                     ..
                 } => {
-                    is_focused = focused;
+                    is_window_focused = focused;
                 }
 
                 Event::WindowEvent {
@@ -433,7 +429,8 @@ impl Sequencer {
                         return;
                     }
 
-                    screen.resize(new_size).render();
+                    screen.resize(new_size);
+                    should_render = true;
                 }
 
                 Event::WindowEvent {
