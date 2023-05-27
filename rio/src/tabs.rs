@@ -88,6 +88,7 @@ impl TabsControl {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn current(&self) -> u8 {
         self.current
     }
