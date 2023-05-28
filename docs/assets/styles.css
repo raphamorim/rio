@@ -51,6 +51,15 @@ table {
   border-spacing: 0;
 }
 
+:root {
+  --theme_width: 350px;
+  --row_increment: 10px;
+  --theme_border_radius: 16px;
+  --theme_small: 26;
+  --theme_medium: 33;
+  --theme_large: 45;
+}
+
 /* silkscreen-regular - latin */
 @font-face {
   font-family: 'Silkscreen';
@@ -58,11 +67,11 @@ table {
   font-weight: 400;
   src: url('silkscreen/silkscreen-v1-latin-regular.eot'); /* IE9 Compat Modes */
   src: local(''),
-       url('silkscreen/silkscreen-v1-latin-regular.eot?#iefix') format('embedded-opentype'), /* IE6-IE8 */
-       url('silkscreen/silkscreen-v1-latin-regular.woff2') format('woff2'), /* Super Modern Browsers */
-       url('silkscreen/silkscreen-v1-latin-regular.woff') format('woff'), /* Modern Browsers */
-       url('silkscreen/silkscreen-v1-latin-regular.ttf') format('truetype'), /* Safari, Android, iOS */
-       url('silkscreen/silkscreen-v1-latin-regular.svg#Silkscreen') format('svg'); /* Legacy iOS */
+  url('silkscreen/silkscreen-v1-latin-regular.eot?#iefix') format('embedded-opentype'), /* IE6-IE8 */
+  url('silkscreen/silkscreen-v1-latin-regular.woff2') format('woff2'), /* Super Modern Browsers */
+  url('silkscreen/silkscreen-v1-latin-regular.woff') format('woff'), /* Modern Browsers */
+  url('silkscreen/silkscreen-v1-latin-regular.ttf') format('truetype'), /* Safari, Android, iOS */
+  url('silkscreen/silkscreen-v1-latin-regular.svg#Silkscreen') format('svg'); /* Legacy iOS */
 }
 
 body {
@@ -215,8 +224,8 @@ section.features .container p {
   letter-spacing: .15em;
   font-family: 'Silkscreen', helvetica;
   animation:
-    typing 3.2s steps(42, end),
-    blink-caret 3.2s step-end;
+  typing 3.2s steps(42, end),
+  blink-caret 3.2s step-end;
 }
 
 /* The typing effect */
@@ -252,10 +261,10 @@ section.features .container p {
 
 .preview {
 /*  max-width: 1020px;*/
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-top: 60px;
+display: flex;
+align-items: center;
+justify-content: center;
+padding-top: 60px;
 }
 
 .info {
@@ -374,12 +383,12 @@ section.features .container p {
 
 .testimonials {
 /*  height: 700px;*/
-  display: flex;
-  padding: 1.2em;
-  margin-bottom: 0em;
-  justify-content: center;
-  flex-wrap: wrap;
-  align-content: space-between;
+display: flex;
+padding: 1.2em;
+margin-bottom: 0em;
+justify-content: center;
+flex-wrap: wrap;
+align-content: space-between;
 }
 
 .testimonial {
@@ -441,6 +450,80 @@ section.features .container p {
   border-radius: 50%;
   height: 60px;
   width: 60px;
+}
+
+.container.themes {
+  margin-top: 30px;
+  text-align: center;
+}
+
+.container.themes .themes-edit {
+  text-decoration: underline;
+  color: #0F0D0E;
+  font-weight: bold;
+}
+
+.themes-grid {
+  margin: 0;
+  margin-top: 30px;
+  padding: 0;
+  width: 80vw;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--theme_width));
+  grid-auto-rows: var(--row_increment);
+  justify-content: center;
+}
+
+.themes h1 {
+  margin: 20px;
+  font-size: 50px;
+}
+
+.theme {
+  padding: 0;
+  margin: 15px 10px;
+  border-radius: var(--theme_border_radius);
+  background-color: #12B5E5;
+  overflow: hidden;
+}
+
+.theme img {
+  width: 200%;
+  margin-top: 20px;
+}
+
+.theme a {
+  text-decoration: none;
+  color: #F9F4DA;
+}
+
+.theme .theme-name {
+  position: absolute;
+  font-family: 'Silkscreen';
+  font-size: 0.8em;
+  margin-left: 0.8em;
+}
+
+.theme_small {
+  grid-row-end: span var(--theme_small);
+}
+
+.theme_medium {
+  grid-row-end: span var(--theme_medium);
+  background-color: #ED203D;
+}
+
+.theme_large {
+  grid-row-end: span var(--theme_large);
+  background-color: #7B5EA7;
+}
+
+.theme_large:nth-child(even) {
+  background-color: #FCBA28;
 }
 
 @keyframes float {
