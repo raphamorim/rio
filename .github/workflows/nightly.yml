@@ -30,6 +30,7 @@ jobs:
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
         with:
+          custom_tag: nightly
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Release nightly
         uses: softprops/action-gh-release@v1
