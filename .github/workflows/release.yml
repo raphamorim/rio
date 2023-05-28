@@ -30,9 +30,7 @@ jobs:
 
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - run: mkdir release
-      - run: make app-universal
-      - run: make pack-app-universal
+      - run: make release-macos
 
       - name: Release nightly
         uses: softprops/action-gh-release@v1

@@ -37,10 +37,11 @@ $(APP_NAME)-%: $(TARGET)-%
 	@codesign --force --deep --sign - "$(APP_DIR)/$(APP_NAME)"
 	@echo "Created '$(APP_NAME)' in '$(APP_DIR)'"
 
-pack-app-universal:
-	mkdir -p build
-	cp -r ./target/osx/* ./build/macos-rio/
-	zip -r ./build/macos-rio.zip ./build/macos-rio
+release-macos: app-universal
+	mkdir -p release
+	cp -r ./target/release/osx/* ./release/macos-rio/
+	zip -r ./release/macos-rio.zip ./release/macos-rio
+	rm -rf ./release/macos-rio
 
 lint:
 	cargo fmt -- --check --color always
