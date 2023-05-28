@@ -58,10 +58,20 @@ jobs:
       - run: cargo install cargo-bundle
       - run: make ${{matrix.make}}
 
-      - name: Release
+      - name: Release banch main
         uses: softprops/action-gh-release@v1
+        if: github.ref == 'refs/heads/master'
         with:
-          prerelease: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            build/${{matrix.filename}}
+            LICENSE
+
+      - name: Release tag
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             build/${{matrix.filename}}
