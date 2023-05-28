@@ -26,7 +26,6 @@ jobs:
       - run: make release-macos
       - name: Release version
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.event.ref, 'refs/tags/v')
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |

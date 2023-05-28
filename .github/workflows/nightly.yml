@@ -35,7 +35,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Release nightly
         uses: softprops/action-gh-release@v1
-        if: github.ref == 'refs/heads/main'
         with:
           name: nightly
           tag_name: ${{ steps.tag_version.outputs.new_tag }}
