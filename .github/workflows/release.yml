@@ -60,7 +60,7 @@ jobs:
 
       - name: Release banch main
         uses: softprops/action-gh-release@v1
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == '/refs/heads/master'
         with:
           name: night
           prerelease: true
