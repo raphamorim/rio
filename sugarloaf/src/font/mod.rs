@@ -3,8 +3,19 @@ use glyph_brush::ab_glyph::{FontArc, FontVec};
 use log::warn;
 
 pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
-pub const FONT_CASCADIA_MONO: &[u8; 624892] =
-    include_bytes!("./resources/CascadiaMono.ttf");
+
+pub const FONT_CASCADIAMONO_REGULAR: &[u8; 308212] =
+    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Regular.otf");
+
+pub const FONT_CASCADIAMONO_BOLD: &[u8; 312976] =
+    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Bold.otf");
+
+pub const FONT_CASCADIAMONO_ITALIC: &[u8; 191296] =
+    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Italic.otf");
+
+pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8; 193360] =
+    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-BoldItalic.otf");
+
 pub const FONT_EMOJI: &[u8; 877988] =
     include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
 
@@ -12,8 +23,15 @@ pub const FONT_EMOJI: &[u8; 877988] =
 pub const FONT_DEJAVU_MONO: &[u8; 340712] =
     include_bytes!("./resources/DejaVuSansMono.ttf");
 
+pub struct ComposedFontArc {
+    pub regular: FontArc,
+    pub bold: FontArc,
+    pub italic: FontArc,
+    pub bold_italic: FontArc,
+}
+
 pub struct Font {
-    pub system: FontArc,
+    pub text: ComposedFontArc,
     pub symbol: FontArc,
     pub emojis: FontArc,
     pub unicode: FontArc,
@@ -71,7 +89,12 @@ impl Font {
 
         if font_name.to_lowercase() == DEFAULT_FONT_NAME {
             return Ok(Font {
-                system: FontArc::try_from_slice(FONT_CASCADIA_MONO).unwrap(),
+                text: ComposedFontArc {
+                    regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
+                    italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+                },
                 symbol: font_arc_symbol,
                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                 unicode: font_arc_unicode,
@@ -93,7 +116,12 @@ impl Font {
                                     .unwrap();
 
                             return Ok(Font {
-                                system: FontArc::new(font_vec_system),
+                                text: ComposedFontArc {
+                                    regular: FontArc::new(font_vec_system),
+                                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
+                                    italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+                                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+                                },
                                 symbol: font_arc_symbol,
                                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                                 unicode: font_arc_unicode,
