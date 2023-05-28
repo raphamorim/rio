@@ -10,9 +10,9 @@
 
 | Status | Meaning |
 | :-: | --- |
-| 🟢 | Stable and usuable. |
-| 🔵 | Unstable and usuable (minor bugs and incomplete features). |
-| 🟠 | Unstable and usuable (major bugs and incomplete features). |
+| 🟢 | Stable and usable. |
+| 🔵 | Unstable and usable (minor bugs and incomplete features). |
+| 🟠 | Unstable and usable (major bugs and incomplete features). |
 | 🟡 | It does builds but provides a very limited usage or is not able to use at all. |
 | 🔴 | Development has not started. |
 
@@ -34,6 +34,7 @@ _* Nintendo Switch development is just for fun, the goal is to have  the rendere
 | ----------- | ----------- |
 | ![Demo dracula](themes/screenshots/dracula.png) | ![Demo selection](resources/demo-selection.png) |
 | ![Demo colors](resources/demo-colors.png) | ![Demo git](resources/demo-git.png) |
+| ![Demo text styles](resources/demo-text-styles.png) |  |
 
 Note: Emojis are rendered with Noto Emoji.
 

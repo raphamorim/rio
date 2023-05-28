@@ -11,7 +11,7 @@ use colors::{
 };
 use config::Config;
 use std::rc::Rc;
-use sugarloaf::core::{Sugar, SugarStack};
+use sugarloaf::core::{Sugar, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
 #[derive(Default)]
@@ -34,10 +34,24 @@ pub struct State {
 impl From<Square> for Sugar {
     #[inline]
     fn from(square: Square) -> Sugar {
+        let mut style: Option<SugarStyle> = None;
+        let is_italic = square.flags.contains(Flags::ITALIC);
+        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
+        let is_bold = square.flags.contains(Flags::BOLD);
+
+        if is_bold || is_bold_italic || is_italic {
+            style = Some(SugarStyle {
+                is_italic,
+                is_bold_italic,
+                is_bold,
+            });
+        }
+
         Sugar {
             content: square.c,
             foreground_color: [0.0, 0.0, 0.0, 1.0],
             background_color: [0.0, 0.0, 0.0, 1.0],
+            style,
         }
     }
 }
@@ -155,10 +169,24 @@ impl State {
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
         };
 
+        let mut style: Option<SugarStyle> = None;
+        let is_italic = flags.contains(Flags::ITALIC);
+        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
+        let is_bold = flags.contains(Flags::BOLD);
+
+        if is_bold || is_bold_italic || is_italic {
+            style = Some(SugarStyle {
+                is_italic,
+                is_bold_italic,
+                is_bold,
+            });
+        }
+
         Sugar {
             content: square.c,
             foreground_color,
             background_color,
+            style,
         }
     }
 
@@ -193,12 +221,14 @@ impl State {
                     content: self.cursor.content,
                     foreground_color,
                     background_color,
+                    style: None,
                 });
             } else if is_selected {
                 let selected_sugar = Sugar {
                     content: square.c,
                     foreground_color: self.named_colors.background.0,
                     background_color: self.named_colors.light_blue,
+                    style: None,
                 };
                 stack.push(selected_sugar);
             } else {
@@ -234,6 +264,7 @@ impl State {
                     content: self.cursor.content,
                     foreground_color,
                     background_color,
+                    style: None,
                 });
             } else {
                 stack.push(self.create_sugar_from_square(square));
