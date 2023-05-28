@@ -10,9 +10,9 @@
 
 | Status | Meaning |
 | :-: | --- |
-| 🟢 | Stable and usuable. |
-| 🔵 | Unstable and usuable (minor bugs and incomplete features). |
-| 🟠 | Unstable and usuable (major bugs and incomplete features). |
+| 🟢 | Stable and usable. |
+| 🔵 | Unstable and usable (minor bugs and incomplete features). |
+| 🟠 | Unstable and usable (major bugs and incomplete features). |
 | 🟡 | It does builds but provides a very limited usage or is not able to use at all. |
 | 🔴 | Development has not started. |
 
