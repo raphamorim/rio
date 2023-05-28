@@ -25,19 +25,12 @@ jobs:
       discussions: write
 
     steps:
-      - name: Checkout source Git repo
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-          cache-all-crates: "true"
-          cache-targets: "true"
 
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - run: mkdir release
-      - run: cargo install cargo-bundle
       - run: make app-universal
       - run: make pack-app-universal
 
