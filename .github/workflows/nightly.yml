@@ -40,5 +40,5 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/macos-rio.zip
+            release/macos-rio.zip
             LICENSE
