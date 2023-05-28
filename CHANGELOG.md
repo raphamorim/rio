@@ -2,6 +2,7 @@
 
 ## 0.0.5
 
+- Cross build for arm64 and x86
 - Bold and Italic support (https://github.com/raphamorim/rio/issues/33).
 - Theme support (eae39bc81b5b561882b7a37b2c03896633276c27)
 - Fix font-size dependency for serialization (f278102)
