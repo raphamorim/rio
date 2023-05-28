@@ -93,7 +93,8 @@ impl Font {
                     regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                     bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
                     italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
-                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
+                        .unwrap(),
                 },
                 symbol: font_arc_symbol,
                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
@@ -118,9 +119,16 @@ impl Font {
                             return Ok(Font {
                                 text: ComposedFontArc {
                                     regular: FontArc::new(font_vec_system),
-                                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                                    italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
-                                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+                                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD)
+                                        .unwrap(),
+                                    italic: FontArc::try_from_slice(
+                                        FONT_CASCADIAMONO_ITALIC,
+                                    )
+                                    .unwrap(),
+                                    bold_italic: FontArc::try_from_slice(
+                                        FONT_CASCADIAMONO_BOLD_ITALIC,
+                                    )
+                                    .unwrap(),
                                 },
                                 symbol: font_arc_symbol,
                                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),

@@ -270,11 +270,11 @@ impl Sugarloaf {
 
             if font_id == FontId(FONT_ID_REGULAR) {
                 if let Some(style) = &sugar.style {
-                    if style.is_bold_italic == true {
+                    if style.is_bold_italic {
                         font_id = FontId(FONT_ID_BOLD_ITALIC);
-                    } else if style.is_bold == true {
+                    } else if style.is_bold {
                         font_id = FontId(FONT_ID_BOLD);
-                    } else if style.is_italic == true {
+                    } else if style.is_italic {
                         font_id = FontId(FONT_ID_ITALIC);
                     }
                 }
