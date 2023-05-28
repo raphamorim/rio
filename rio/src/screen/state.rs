@@ -11,7 +11,7 @@ use colors::{
 };
 use config::Config;
 use std::rc::Rc;
-use sugarloaf::core::{Sugar, SugarStyle, SugarStack};
+use sugarloaf::core::{Sugar, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
 #[derive(Default)]
