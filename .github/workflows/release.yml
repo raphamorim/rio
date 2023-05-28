@@ -14,6 +14,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
+  RUST_BACKTRACE: full
 
 jobs:
   release:
@@ -22,14 +23,6 @@ jobs:
     permissions:
       contents: write
       discussions: write
-    strategy:
-      matrix:
-        target:
-          - x86_64-apple-darwin
-
-    env:
-      RUSTFLAGS: "-C target-cpu=native"
-      RUST_BACKTRACE: full
 
     steps:
       - name: Checkout source Git repo
@@ -41,7 +34,8 @@ jobs:
           cache-all-crates: "true"
           cache-targets: "true"
 
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - run: mkdir release
       - run: cargo install cargo-bundle
       - run: make app-universal
