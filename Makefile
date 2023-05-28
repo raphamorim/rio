@@ -56,7 +56,7 @@ install:
 build:
 	cargo build --release
 
-# Legacy build
+# Legacy multi build for macOs
 # pack-osx-arm:
 # 	mkdir -p build
 # 	cd rio && cargo bundle --target aarch64-apple-darwin --release --format osx
