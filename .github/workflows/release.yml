@@ -17,6 +17,7 @@ env:
 
 jobs:
   release:
+    runs-on: macos-11.0
     name: Release
     permissions:
       contents: write
@@ -24,20 +25,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - aarch64-apple-darwin
           - x86_64-apple-darwin
-        include:
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            make: pack-osx-arm
-            filename: macos-arm64.zip
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            make: pack-osx-x86
-            filename: macos-x86.zip
-
-    # defining OS based on the image of the architecture
-    runs-on: ${{matrix.os}}
 
     env:
       RUSTFLAGS: "-C target-cpu=native"
@@ -56,24 +44,25 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: mkdir release
       - run: cargo install cargo-bundle
-      - run: make ${{matrix.make}}
+      - run: make app-universal
+      - run: make pack-app-universal
 
-      - name: Release banch main
+      - name: Release nightly
         uses: softprops/action-gh-release@v1
         if: github.ref == 'refs/heads/main'
         with:
-          name: night
+          name: nightly
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/${{matrix.filename}}
+            build/macos-rio.zip
             LICENSE
 
-      - name: Release tag
+      - name: Release version
         uses: softprops/action-gh-release@v1
         if: startsWith(github.event.ref, 'refs/tags/v')
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/${{matrix.filename}}
+            build/macos-rio.zip
             LICENSE
