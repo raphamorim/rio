@@ -3,7 +3,9 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*.*.*'
+    branches:
+      - 'main'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -14,16 +16,29 @@ env:
   GITHUB_REPOSITORY: raphamorim/rio
 
 jobs:
-  release-macos-x86:
-    name: Release x86_64-apple-darwin
-    runs-on: macOS-latest
+  release:
+    name: Release
     permissions:
       contents: write
       discussions: write
     strategy:
       matrix:
         target:
+          - aarch64-apple-darwin
           - x86_64-apple-darwin
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            make: pack-osx-arm
+            filename: macos-arm64.zip
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            make: pack-osx-x86
+            filename: macos-x86.zip
+
+    # defining OS based on the image of the architecture
+    runs-on: ${{matrix.os}}
+
     env:
       RUSTFLAGS: "-C target-cpu=native"
       RUST_BACKTRACE: full
@@ -31,19 +46,34 @@ jobs:
     steps:
       - name: Checkout source Git repo
         uses: actions/checkout@v3
+
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
           cache-all-crates: "true"
           cache-targets: "true"
+
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
       - run: mkdir release
       - run: cargo install cargo-bundle
-      - run: make pack-osx-x86
-      - name: Release
+      - run: make ${{matrix.make}}
+
+      - name: Release banch main
         uses: softprops/action-gh-release@v1
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: night
+          prerelease: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            build/${{matrix.filename}}
+            LICENSE
+
+      - name: Release tag
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/tags/v')
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            build/macos-x86.zip
+            build/${{matrix.filename}}
             LICENSE
