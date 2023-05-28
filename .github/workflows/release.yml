@@ -62,6 +62,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: github.ref == 'refs/heads/master'
         with:
+          name: night
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
