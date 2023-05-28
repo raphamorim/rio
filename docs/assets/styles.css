@@ -457,10 +457,14 @@ align-content: space-between;
   text-align: center;
 }
 
+.container.themes h1 {
+  font-size: 50px;
+  text-align: center;
+}
+
 .container.themes .themes-edit {
   text-decoration: underline;
   color: #0F0D0E;
-  font-weight: bold;
 }
 
 .themes-grid {
