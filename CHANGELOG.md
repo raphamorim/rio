@@ -2,6 +2,7 @@
 
 ## 0.0.5
 
+- Theme support (eae39bc81b5b561882b7a37b2c03896633276c27)
 - Fix font-size dependency for serialization (f278102)
 - Fix cursor visibility on VI mode and scroll (https://github.com/raphamorim/rio/issues/51)
 - Perfomance fixes for rendering from teletypewriter updates.

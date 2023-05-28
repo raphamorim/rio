@@ -84,6 +84,14 @@ pub struct Sugarloaf {
     background_color: wgpu::Color,
 }
 
+const FONT_ID_REGULAR: usize = 0;
+const FONT_ID_SYMBOL: usize = 1;
+const FONT_ID_EMOJIS: usize = 2;
+const FONT_ID_UNICODE: usize = 3;
+const FONT_ID_BOLD: usize = 4;
+const FONT_ID_ITALIC: usize = 5;
+const FONT_ID_BOLD_ITALIC: usize = 6;
+
 impl Sugarloaf {
     pub async fn new(
         winit_window: &winit::window::Window,
@@ -95,10 +103,13 @@ impl Sugarloaf {
         match Font::new(font_name) {
             Ok(font) => {
                 let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
-                    font.system,
+                    font.text.regular,
                     font.symbol,
                     font.emojis,
                     font.unicode,
+                    font.text.bold,
+                    font.text.italic,
+                    font.text.bold_italic,
                 ])
                 .build(&ctx.device, ctx.format);
                 let rect_brush = RectBrush::init(&ctx);
@@ -242,20 +253,32 @@ impl Sugarloaf {
         for sugar in stack.iter() {
             let mut add_pos_x = self.font_bounds.default.0;
 
-            let font_id: FontId = if system.glyph_id(sugar.content) != glyph_zero {
-                FontId(0)
+            let mut font_id: FontId = if system.glyph_id(sugar.content) != glyph_zero {
+                FontId(FONT_ID_REGULAR)
             } else if symbols.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.symbols.0;
-                FontId(1)
+                FontId(FONT_ID_SYMBOL)
             } else if emojis.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.emojis.0;
-                FontId(2)
+                FontId(FONT_ID_EMOJIS)
             } else if unicode.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.unicode.0;
-                FontId(3)
+                FontId(FONT_ID_UNICODE)
             } else {
-                FontId(0)
+                FontId(FONT_ID_REGULAR)
             };
+
+            if font_id == FontId(FONT_ID_REGULAR) {
+                if let Some(style) = &sugar.style {
+                    if style.is_bold_italic == true {
+                        font_id = FontId(FONT_ID_BOLD_ITALIC);
+                    } else if style.is_bold == true {
+                        font_id = FontId(FONT_ID_BOLD);
+                    } else if style.is_italic == true {
+                        font_id = FontId(FONT_ID_ITALIC);
+                    }
+                }
+            }
 
             text.push(
                 OwnedText::new(sugar.content.to_owned())

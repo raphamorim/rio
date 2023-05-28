@@ -41,6 +41,16 @@
   margin-bottom: 18px;
 }
 
+.container.post .post-content h2 {
+  font-weight: lighter;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 26px;
+  text-decoration: underline;
+  line-height: 1.3em;
+  margin: 18px 0;
+}
+
 .container.post .post-content p {
   font-weight: lighter;
   font-style: normal;

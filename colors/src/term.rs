@@ -89,8 +89,6 @@ impl<'a> From<&'a TermColors> for List {
         list.fill_cube();
         list.fill_gray_ramp();
 
-        println!("{:?}", list);
-
         list
     }
 }

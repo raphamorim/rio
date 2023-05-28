@@ -3,7 +3,16 @@ pub struct Sugar {
     pub content: char,
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
+    pub style: Option<SugarStyle>,
 }
+
+#[derive(Debug)]
+pub struct SugarStyle {
+    pub is_italic: bool,
+    pub is_bold: bool,
+    pub is_bold_italic: bool,
+}
+
 pub type SugarStack = Vec<Sugar>;
 pub type SugarPile = Vec<SugarStack>;
 
