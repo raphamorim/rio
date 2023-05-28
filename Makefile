@@ -39,9 +39,9 @@ $(APP_NAME)-%: $(TARGET)-%
 
 release-macos: app-universal
 	mkdir -p release
-	cp -r ./target/release/osx/* ./release/macos-rio/
-	zip -r ./release/macos-rio.zip ./release/macos-rio
-	rm -rf ./release/macos-rio
+	cp -rf ./target/release/osx ./release/
+	zip -r ./release/macos-rio.zip ./release/*
+	rm -rf ./release/osx
 
 lint:
 	cargo fmt -- --check --color always
