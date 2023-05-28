@@ -1,9 +1,9 @@
-name: Release
+name: Release Nightly
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - 'main'
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,7 +13,7 @@ env:
 jobs:
   release:
     runs-on: macos-11.0
-    name: Release Stable
+    name: Release Nightly
     permissions:
       contents: write
       discussions: write
@@ -24,10 +24,12 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - run: make release-macos
-      - name: Release version
+      - name: Release nightly
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main'
         with:
+          name: nightly
+          prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             build/macos-rio.zip
