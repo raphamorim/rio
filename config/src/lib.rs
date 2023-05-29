@@ -164,7 +164,7 @@ impl Config {
 
     pub fn load() -> Self {
         let base_dir = home_dir_path();
-        let path = format!("{base_dir}/.rio/config.toml");
+        let path = format!("{base_dir}/.config/rio/config.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
@@ -174,7 +174,7 @@ impl Config {
                         return decoded;
                     }
 
-                    let path = format!("{base_dir}/.rio/themes/{theme}.toml");
+                    let path = format!("{base_dir}/.config/rio/themes/{theme}.toml");
                     if let Ok(loaded_theme) = Config::load_theme(&path) {
                         decoded.colors = loaded_theme.colors;
                     } else {
