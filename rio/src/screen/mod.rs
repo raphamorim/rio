@@ -3,6 +3,7 @@ mod messenger;
 mod state;
 pub mod window;
 
+use colors::term::List;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::{
     grid::Scroll,
@@ -33,7 +34,7 @@ pub struct Screen {
     layout: Layout,
     pub ime: Ime,
     pub messenger: Messenger,
-    state: State,
+    pub state: State,
     sugarloaf: Sugarloaf,
     terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
     #[allow(unused)]
@@ -165,6 +166,15 @@ impl Screen {
     pub fn get_mode(&self) -> Mode {
         let terminal = self.terminal.lock();
         let mode = terminal.mode();
+        drop(terminal);
+        mode
+    }
+
+    #[inline]
+    #[allow(unused)]
+    pub fn colors(&mut self) -> List {
+        let terminal = self.terminal.lock();
+        let mode = terminal.colors();
         drop(terminal);
         mode
     }

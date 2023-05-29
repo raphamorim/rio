@@ -190,6 +190,8 @@ impl GridSquare for Square {
     #[inline]
     fn is_empty(&self) -> bool {
         (self.c == ' ' || self.c == '\t')
+            && self.bg == AnsiColor::Named(NamedColor::Background)
+            && self.fg == AnsiColor::Named(NamedColor::Foreground)
             && !self.flags.intersects(
                 Flags::INVERSE
                     | Flags::ALL_UNDERLINES

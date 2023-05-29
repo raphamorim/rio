@@ -17,6 +17,8 @@ pub mod grid;
 pub mod pos;
 pub mod square;
 
+use colors::term::List;
+use colors::term::TermColors;
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, LineClearMode, TabulationClearMode,
 };
@@ -276,7 +278,7 @@ where
     event_proxy: U,
     pub selection: Option<Selection>,
     #[allow(dead_code)]
-    colors: Colors,
+    colors: List,
     title: Option<String>,
     damage: TermDamageState,
     pub vi_mode_cursor: Pos,
@@ -289,6 +291,8 @@ impl<U: EventListener> Crosswords<U> {
 
         let scroll_region = Line(0)..Line(rows as i32);
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
+        let term_colors = TermColors::default();
+        let colors = List::from(&term_colors);
 
         Crosswords {
             vi_mode_cursor: Pos::default(),
@@ -299,7 +303,7 @@ impl<U: EventListener> Crosswords<U> {
             active_charset: CharsetIndex::default(),
             scroll_region,
             event_proxy,
-            colors: Colors::default(),
+            colors,
             title: None,
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
@@ -345,6 +349,10 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn bottommost_line(&self) -> Line {
         self.grid.bottommost_line()
+    }
+
+    pub fn colors(&self) -> List {
+        self.colors
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
@@ -395,20 +403,6 @@ impl<U: EventListener> Crosswords<U> {
 
         // Resize damage information.
         self.damage.resize(num_cols, num_lines);
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    fn dynamic_color_sequence(
-        &mut self,
-        prefix: String,
-        index: usize,
-        _terminator: &str,
-    ) {
-        warn!(
-            "Requested write of escape sequence for color code {}: color[{}]",
-            prefix, index
-        );
     }
 
     /// Toggle the vi mode.
@@ -992,6 +986,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn dynamic_color_sequence(
+        &mut self,
+        prefix: String,
+        index: usize,
+        terminator: &str,
+    ) {
+        warn!(
+            "Requested write of escape sequence for color code {}: color[{}]",
+            prefix, index
+        );
+
+        let terminator = terminator.to_owned();
+        self.event_proxy.send_event(RioEvent::ColorRequest(
+            index,
+            Arc::new(move |color| {
+                format!(
+                    "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+                    prefix, color.r, color.g, color.b, terminator
+                )
+            }),
+        ));
+    }
+
+    #[inline]
     fn unset_mode(&mut self, mode: AnsiMode) {
         match mode {
             AnsiMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
@@ -1267,7 +1285,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let cursor = &mut self.grid.cursor;
-        // println!("{:?}", attr);
         match attr {
             Attr::Foreground(color) => cursor.template.fg = color,
             Attr::Background(color) => cursor.template.bg = color,
@@ -1572,15 +1589,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // self.colors[index] = Some(color);
     }
 
-    // #[inline]
-    // fn reset_color(&mut self, index: usize) {
-    //     // Damage terminal if the color changed and it's not the cursor.
-    //     if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
-    //         // self.mark_fully_damaged();
-    //     }
+    #[inline]
+    fn reset_color(&mut self, _index: usize) {
+        // Damage terminal if the color changed and it's not the cursor.
+        // if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
+            // self.mark_fully_damaged();
+        // }
 
-    //     self.colors[index] = None;
-    // }
+        // self.colors[index] = None;
+    }
 
     #[inline]
     fn bell(&mut self) {

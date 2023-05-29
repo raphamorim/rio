@@ -18,8 +18,24 @@ pub struct ColorRgb {
 }
 
 impl ColorRgb {
+    pub fn from_color_arr(arr: ColorArray) -> ColorRgb {
+        ColorRgb {
+            r: (arr[0] * 255.0) as u8,
+            g: (arr[1] * 255.0) as u8,
+            b: (arr[2] * 255.0) as u8,
+        }
+    }
+
     pub fn to_arr(&self) -> ColorArray {
         ColorBuilder::from_rgb(*self, Format::SRGB0_1).to_arr()
+    }
+
+    pub fn to_arr_with_dim(&self) -> ColorArray {
+        let r = (self.r as f32 * 0.66) as u8;
+        let g = (self.g as f32 * 0.66) as u8;
+        let b = (self.b as f32 * 0.66) as u8;
+        let temp_dim_self = Self { r, g, b };
+        ColorBuilder::from_rgb(temp_dim_self, Format::SRGB0_1).to_arr()
     }
 }
 
