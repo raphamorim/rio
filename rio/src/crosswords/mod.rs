@@ -17,8 +17,6 @@ pub mod grid;
 pub mod pos;
 pub mod square;
 
-use colors::term::List;
-use colors::term::TermColors;
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, LineClearMode, TabulationClearMode,
 };
@@ -30,7 +28,9 @@ use crate::selection::{Selection, SelectionRange, SelectionType};
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use colors::{AnsiColor, ColorRgb, Colors};
+use colors::term::List;
+use colors::term::TermColors;
+use colors::{AnsiColor, ColorRgb};
 use grid::row::Row;
 use log::{debug, info, warn};
 use pos::{CharsetIndex, Column, Cursor, CursorState, Line, Pos};
@@ -986,12 +986,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn dynamic_color_sequence(
-        &mut self,
-        prefix: String,
-        index: usize,
-        terminator: &str,
-    ) {
+    fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
         warn!(
             "Requested write of escape sequence for color code {}: color[{}]",
             prefix, index
@@ -1593,7 +1588,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn reset_color(&mut self, _index: usize) {
         // Damage terminal if the color changed and it's not the cursor.
         // if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
-            // self.mark_fully_damaged();
+        // self.mark_fully_damaged();
         // }
 
         // self.colors[index] = None;

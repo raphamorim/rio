@@ -7,8 +7,6 @@ language: 'en'
 
 ## Install
 
-https://github.com/raphamorim/rio/releases
-
 You can download Rio terminal for macOS platform, although is not stable and lacking features since the development of a beta release version is still in process.
 
 New versions are created by weekly and monthly basis, so if you are using an unstable version make sure to keep updated.
@@ -23,3 +21,4 @@ xattr -d com.apple.quarantine <path-to-rio-app>
 
 <!-- ## Building from the source -->
 
+<!-- https://github.com/raphamorim/rio/releases -->

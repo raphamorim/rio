@@ -1,10 +1,9 @@
-use colors::ColorRgb;
-use colors::ColorBuilder;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
+use colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -131,7 +130,7 @@ impl Sequencer {
                                 let color = screen.state.colors[index];
                                 let rgb = ColorRgb::from_color_arr(color);
                                 screen.messenger.send_bytes(format(rgb).into_bytes());
-                            },
+                            }
                             _ => {}
                         }
                     }

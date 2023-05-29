@@ -295,7 +295,7 @@ mod tests {
             performance = "High"
             height = 438
             width = 662
-            cursor = '█'
+            cursor = '▇'
             env-vars = []
 
             [colors]

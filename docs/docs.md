@@ -122,7 +122,7 @@ width = 800
 
 ## cursor
 
-Set cursor character. Default cursor is block ('█').
+Set cursor character. Default cursor is block ('▇').
 
 {% highlight toml %}
 # (Underline)
