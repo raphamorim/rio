@@ -1,7 +1,7 @@
 pub mod sync;
 
-use colors::ColorRgb;
 use crate::clipboard::ClipboardType;
+use colors::ColorRgb;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -58,7 +58,10 @@ pub enum RioEvent {
     ///
     /// The attached function is a formatter which will corectly transform the RGB color into the
     /// expected escape sequence format.
-    ColorRequest(usize, Arc<dyn Fn(ColorRgb) -> String + Sync + Send + 'static>),
+    ColorRequest(
+        usize,
+        Arc<dyn Fn(ColorRgb) -> String + Sync + Send + 'static>,
+    ),
 
     /// Write some text to the PTY.
     PtyWrite(String),

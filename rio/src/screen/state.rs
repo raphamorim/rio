@@ -7,7 +7,7 @@ use crate::selection::SelectionRange;
 use crate::tabs::TabsControl;
 use colors::{
     term::{List, TermColors},
-    AnsiColor, Colors, NamedColor
+    AnsiColor, Colors, NamedColor,
 };
 use config::Config;
 use std::rc::Rc;
@@ -92,7 +92,9 @@ impl State {
             AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
             AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
             AnsiColor::Named(NamedColor::LightCyan) => self.named_colors.light_cyan,
-            AnsiColor::Named(NamedColor::LightForeground) => self.named_colors.light_foreground,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.named_colors.light_foreground
+            }
             AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
             AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
             AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
@@ -103,7 +105,9 @@ impl State {
             AnsiColor::Named(NamedColor::DimBlack) => self.named_colors.dim_black,
             AnsiColor::Named(NamedColor::DimBlue) => self.named_colors.dim_blue,
             AnsiColor::Named(NamedColor::DimCyan) => self.named_colors.dim_cyan,
-            AnsiColor::Named(NamedColor::DimForeground) => self.named_colors.dim_foreground,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.named_colors.dim_foreground
+            }
             AnsiColor::Named(NamedColor::DimGreen) => self.named_colors.dim_green,
             AnsiColor::Named(NamedColor::DimMagenta) => self.named_colors.dim_magenta,
             AnsiColor::Named(NamedColor::DimRed) => self.named_colors.dim_red,
@@ -140,7 +144,9 @@ impl State {
             AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
             AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
             AnsiColor::Named(NamedColor::LightCyan) => self.named_colors.light_cyan,
-            AnsiColor::Named(NamedColor::LightForeground) => self.named_colors.light_foreground,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.named_colors.light_foreground
+            }
             AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
             AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
             AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
@@ -151,7 +157,9 @@ impl State {
             AnsiColor::Named(NamedColor::DimBlack) => self.named_colors.dim_black,
             AnsiColor::Named(NamedColor::DimBlue) => self.named_colors.dim_blue,
             AnsiColor::Named(NamedColor::DimCyan) => self.named_colors.dim_cyan,
-            AnsiColor::Named(NamedColor::DimForeground) => self.named_colors.dim_foreground,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.named_colors.dim_foreground
+            }
             AnsiColor::Named(NamedColor::DimGreen) => self.named_colors.dim_green,
             AnsiColor::Named(NamedColor::DimMagenta) => self.named_colors.dim_magenta,
             AnsiColor::Named(NamedColor::DimRed) => self.named_colors.dim_red,

@@ -3,7 +3,6 @@ mod messenger;
 mod state;
 pub mod window;
 
-use colors::term::List;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::{
     grid::Scroll,
@@ -18,6 +17,7 @@ use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
 use crate::selection::{Selection, SelectionType};
 use crate::tabs::TabsControl;
+use colors::term::List;
 use messenger::Messenger;
 use state::State;
 use std::borrow::Cow;
