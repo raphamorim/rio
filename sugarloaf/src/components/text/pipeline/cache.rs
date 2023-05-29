@@ -1,5 +1,4 @@
 use core::num::NonZeroU64;
-use std::num::NonZeroU32;
 
 pub struct Cache {
     texture: wgpu::Texture,
@@ -97,8 +96,8 @@ impl Cache {
                 buffer: &self.upload_buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: NonZeroU32::new(padded_width as u32),
-                    rows_per_image: NonZeroU32::new(height as u32),
+                    bytes_per_row: Some(padded_width as u32),
+                    rows_per_image: Some(height as u32),
                 },
             },
             wgpu::ImageCopyTexture {

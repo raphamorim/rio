@@ -1,11 +1,13 @@
 ---
 layout: docs
 class: docs
-title: 'Download'
+title: 'Install'
 language: 'en'
 ---
 
-## Download
+## Install
+
+https://github.com/raphamorim/rio/releases
 
 You can download Rio terminal for macOS platform, although is not stable and lacking features since the development of a beta release version is still in process.
 

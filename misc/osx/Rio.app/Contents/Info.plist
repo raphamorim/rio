@@ -19,7 +19,7 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.0.5-rc3</string>
+  <string>0.0.5</string>
   <key>CFBundleVersion</key>
   <string>20230528.115631</string>
   <key>CSResourcesFileMapped</key>

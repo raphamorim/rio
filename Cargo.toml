@@ -16,13 +16,13 @@ repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 
 [workspace.dependencies]
-bytemuck = { version = "1.9", features = [ "derive" ] }
-log = "0.4.17"
-serde = { version = "1.0.158", features = ["derive"] }
+bytemuck = { version = "1.13.1", features = [ "derive" ] }
+log = "0.4.18"
+serde = { version = "1.0.163", features = ["derive"] }
 teletypewriter = { path = "teletypewriter" }
 tokio = { version = "1.26.0", features = ["full"] }
-wgpu = "0.15.1"
-winit = "0.28.3"
+wgpu = "0.16.1"
+winit = "0.28.6"
 
 [profile.release]
 opt-level = "s"
