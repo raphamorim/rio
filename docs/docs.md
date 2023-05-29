@@ -24,7 +24,7 @@ It also relies on Rust memory behavior, since Rust is a memory-safe language tha
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-In macOS path is in "~/.rio/config.toml".
+In macOS and linux path is in "~/.config/rio/config.toml".
 
 Default configuration of config.toml:
 
