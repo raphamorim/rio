@@ -17,6 +17,12 @@ pub struct ColorRgb {
     pub b: u8,
 }
 
+impl ColorRgb {
+    pub fn to_arr(&self) -> ColorArray {
+        ColorBuilder::from_rgb(*self, Format::SRGB0_1).to_arr()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Format {
     SRGB0_255,

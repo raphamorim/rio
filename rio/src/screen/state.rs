@@ -119,7 +119,7 @@ impl State {
             AnsiColor::Named(NamedColor::Red) => self.named_colors.red,
             AnsiColor::Named(NamedColor::White) => self.named_colors.white,
             AnsiColor::Named(NamedColor::Yellow) => self.named_colors.yellow,
-            AnsiColor::Spec(_rgb) => self.named_colors.foreground,
+            AnsiColor::Spec(rgb) => rgb.to_arr(),
             AnsiColor::Indexed(index) => {
                 let index = match (flags & Flags::DIM_BOLD, index) {
                     (Flags::DIM, 8..=15) => index as usize - 8,
@@ -132,7 +132,6 @@ impl State {
         };
 
         let background_color = match square.bg {
-            AnsiColor::Spec(_rgb) => self.named_colors.foreground,
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
             AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
@@ -166,6 +165,7 @@ impl State {
             AnsiColor::Named(NamedColor::Red) => self.named_colors.red,
             AnsiColor::Named(NamedColor::White) => self.named_colors.white,
             AnsiColor::Named(NamedColor::Yellow) => self.named_colors.yellow,
+            AnsiColor::Spec(rgb) => rgb.to_arr(),
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
         };
 
