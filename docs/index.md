@@ -13,7 +13,7 @@ Applications using WPGU run natively on Vulkan, Metal, DirectX 11/12, and OpenGL
 
 ## Is it ready?
 
-Not yet, but you can download an [unstable version for MacOS](/rio/download) (x86 and arm64).
+Not yet, but you can install an unstable version for [MacOS](/rio/install#macos) (x86 and arm64) or [Linux](rio/install#linux).
 
 ## Development status?
 

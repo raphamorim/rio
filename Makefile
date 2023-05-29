@@ -21,6 +21,12 @@ run:
 dev:
 	cargo run
 
+install:
+	cargo fetch
+
+build: install
+	cargo build --release
+
 $(TARGET)-universal:
 	MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
 	MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
@@ -50,12 +56,6 @@ lint:
 test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
-
-install:
-	cargo fetch
-
-build:
-	cargo build --release
 
 # Legacy multi build for macOs
 # pack-osx-arm:
