@@ -65,7 +65,7 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 
 ## Building
 
-### Linux / Windows / BSD
+### Linux / BSD
 
 ```sh
 cargo build --release
