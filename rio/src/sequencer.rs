@@ -1,3 +1,5 @@
+use colors::ColorRgb;
+use colors::ColorBuilder;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -118,6 +120,18 @@ impl Sequencer {
                                     screen.messenger.send_bytes(text.into_bytes());
                                 }
                             }
+                            RioEvent::ColorRequest(index, format) => {
+                                // TODO: colors could be coming terminal as well
+                                // if colors has been declaratively changed
+                                // Rio doesn't cover this case yet.
+                                //
+                                // In the future should try first get
+                                // from Crosswords then state colors
+                                // screen.colors()[index] or screen.state.colors[index]
+                                let color = screen.state.colors[index];
+                                let rgb = ColorRgb::from_color_arr(color);
+                                screen.messenger.send_bytes(format(rgb).into_bytes());
+                            },
                             _ => {}
                         }
                     }

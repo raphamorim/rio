@@ -25,7 +25,7 @@ pub fn default_font() -> String {
 }
 
 pub fn default_cursor() -> char {
-    '█'
+    '▇'
 }
 
 pub fn default_theme() -> String {
