@@ -6,7 +6,7 @@
   <br/>
   {% for post in paginator.posts %}
     {% unless post.draft %}
-      <p><a href="{{ post.url }}">{{ post.title }}</a></p>
+      <p><a href="/rio{{ post.url | relative_url }}">{{ post.title }}</a></p>
     {% endunless %}
   {% endfor %}
 </div>
