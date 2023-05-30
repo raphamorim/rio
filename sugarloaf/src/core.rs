@@ -4,6 +4,7 @@ pub struct Sugar {
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
     pub style: Option<SugarStyle>,
+    pub decoration: Option<SugarDecoration>,
 }
 
 #[derive(Debug)]
@@ -11,7 +12,6 @@ pub struct SugarStyle {
     pub is_italic: bool,
     pub is_bold: bool,
     pub is_bold_italic: bool,
-    pub decoration: Option<SugarDecoration>,
 }
 
 #[derive(Debug)]

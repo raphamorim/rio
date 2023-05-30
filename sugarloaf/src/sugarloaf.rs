@@ -296,16 +296,14 @@ impl Sugarloaf {
                 size: [add_pos_x * mod_size, self.font_bounds.default.0 * mod_size],
             });
 
-            if let Some(Some(decoration)) =
-                sugar.style.as_ref().map(|style| style.decoration.as_ref())
-            {
-                let dx = add_pos_x * mod_size;
-                let dy = self.font_bounds.default.0 * mod_size;
+            if let Some(decoration) = sugar.decoration.as_ref() {
+                let dx = add_pos_x;
+                let dy = self.font_bounds.default.1 / self.ctx.scale;
                 self.rects.push(Rect {
                     position: [
                         (style.screen_position.0 / self.ctx.scale)
                             + x
-                            + dx * decoration.position.0,
+                            + dx * decoration.position.0 / self.ctx.scale,
                         self.acc_line_y + dy * decoration.position.1,
                     ],
                     color: decoration.color,
