@@ -1,3 +1,4 @@
+use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
@@ -11,7 +12,7 @@ use colors::{
 };
 use config::Config;
 use std::rc::Rc;
-use sugarloaf::core::{Sugar, SugarStack, SugarStyle};
+use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
 #[derive(Default)]
@@ -44,7 +45,7 @@ impl From<Square> for Sugar {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                on_cursor: false,
+                decoration: None,
             });
         }
 
@@ -186,7 +187,7 @@ impl State {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                on_cursor: false,
+                decoration: None,
             });
         }
 
@@ -195,6 +196,28 @@ impl State {
             foreground_color,
             background_color,
             style,
+        }
+    }
+
+    #[inline]
+    fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
+        match self.cursor.state.content {
+            CursorShape::Block => Some(SugarDecoration {
+                position: (0.0, 0.0),
+                size: (1.0, 1.0),
+                color: self.named_colors.foreground,
+            }),
+            CursorShape::Underline => Some(SugarDecoration {
+                position: (0.0, 0.95),
+                size: (1.0, 0.05),
+                color: self.named_colors.foreground,
+            }),
+            CursorShape::Beam => Some(SugarDecoration {
+                position: (0.0, 0.0),
+                size: (0.1, 1.0),
+                color: self.named_colors.foreground,
+            }),
+            CursorShape::Hidden => None,
         }
     }
 
@@ -235,19 +258,18 @@ impl State {
                 */
 
                 let mut sugar = self.create_sugar_from_square(square);
+                let deco = self.cursor_to_decoration();
                 sugar.style = match sugar.style {
                     Some(mut style) => {
-                        style.on_cursor = true;
+                        style.decoration = deco;
                         Some(style)
                     }
-                    None => {
-                        Some( SugarStyle {
-                            is_italic: false,
-                            is_bold: false,
-                            is_bold_italic: false,
-                            on_cursor: true,
-                        })
-                    }
+                    None => Some(SugarStyle {
+                        is_italic: false,
+                        is_bold: false,
+                        is_bold_italic: false,
+                        decoration: deco,
+                    }),
                 };
                 stack.push(sugar);
             } else if is_selected {
@@ -297,21 +319,18 @@ impl State {
                 */
 
                 let mut sugar = self.create_sugar_from_square(square);
+                let deco = self.cursor_to_decoration();
                 sugar.style = match sugar.style {
                     Some(mut style) => {
-                        style.on_cursor = true;
+                        style.decoration = deco;
                         Some(style)
                     }
-                    None => {
-                        Some(
-                            SugarStyle {
-                                is_italic: false,
-                                is_bold: false,
-                                is_bold_italic: false,
-                                on_cursor: true,
-                            }
-                        )
-                    }
+                    None => Some(SugarStyle {
+                        is_italic: false,
+                        is_bold: false,
+                        is_bold_italic: false,
+                        decoration: deco,
+                    }),
                 };
                 stack.push(sugar);
             } else {

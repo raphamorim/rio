@@ -11,7 +11,14 @@ pub struct SugarStyle {
     pub is_italic: bool,
     pub is_bold: bool,
     pub is_bold_italic: bool,
-    pub on_cursor: bool,
+    pub decoration: Option<SugarDecoration>,
+}
+
+#[derive(Debug)]
+pub struct SugarDecoration {
+    pub position: (f32, f32),
+    pub size: (f32, f32),
+    pub color: [f32; 4],
 }
 
 pub type SugarStack = Vec<Sugar>;

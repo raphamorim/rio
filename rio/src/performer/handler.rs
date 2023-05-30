@@ -1,4 +1,5 @@
 use crate::ansi::mode::Mode;
+use crate::ansi::CursorShape;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use colors::ColorRgb;
 use log::{info, warn};
@@ -129,10 +130,10 @@ pub trait Handler {
     fn set_title(&mut self, _: Option<String>) {}
 
     /// Set the cursor style.
-    // fn set_cursor_style(&mut self, _: Option<CursorStyle>) {}
+    //fn set_cursor_style(&mut self, _: Option<CursorStyle>) {}
 
     /// Set the cursor shape.
-    // fn set_cursor_shape(&mut self, _shape: CursorShape) {}
+    fn set_cursor_shape(&mut self, _shape: CursorShape) {}
 
     /// A character to be displayed.
     fn input(&mut self, _c: char) {}
@@ -833,24 +834,20 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
-            // ('q', [b' ']) => {
-            //     // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
-            //     let cursor_style_id = next_param_or(0);
-            //     let shape = match cursor_style_id {
-            //         0 => None,
-            //         1 | 2 => Some(CursorShape::Block),
-            //         3 | 4 => Some(CursorShape::Underline),
-            //         5 | 6 => Some(CursorShape::Beam),
-            //         _ => {
-            //             csi_unhandled!();
-            //             return;
-            //         },
-            //     };
-            //     let cursor_style =
-            //         shape.map(|shape| CursorStyle { shape, blinking: cursor_style_id % 2 == 1 });
-
-            //     handler.set_cursor_style(cursor_style);
-            // },
+            ('q', [b' ']) => {
+                // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
+                let cursor_style_id = next_param_or(0);
+                let shape = match cursor_style_id {
+                    0 | 1 | 2 => CursorShape::Block,
+                    3 | 4 => CursorShape::Underline,
+                    5 | 6 => CursorShape::Beam,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+                handler.set_cursor_shape(shape);
+            }
             ('r', []) => {
                 let top = next_param_or(1) as usize;
                 let bottom = params_iter
