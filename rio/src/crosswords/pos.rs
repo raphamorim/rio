@@ -1,8 +1,10 @@
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::Dimensions;
+use config::Config;
 use std::cmp::{max, min, Ord, Ordering};
 use std::fmt;
 use std::ops::{Add, AddAssign, Deref, Index, IndexMut, Sub, SubAssign};
+use std::rc::Rc;
 
 pub type Side = Direction;
 
@@ -43,6 +45,12 @@ pub struct CursorState {
 }
 
 impl CursorState {
+    pub fn new(config: &Rc<Config>) -> CursorState {
+        CursorState {
+            pos: Pos::default(),
+            content: CursorShape::from_char(config.cursor),
+        }
+    }
     pub fn is_visible(&self) -> bool {
         self.content != CursorShape::Hidden
     }
