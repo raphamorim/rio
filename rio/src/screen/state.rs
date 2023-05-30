@@ -45,7 +45,6 @@ impl From<Square> for Sugar {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                decoration: None,
             });
         }
 
@@ -54,6 +53,7 @@ impl From<Square> for Sugar {
             foreground_color: [0.0, 0.0, 0.0, 1.0],
             background_color: [0.0, 0.0, 0.0, 1.0],
             style,
+            decoration: None,
         }
     }
 }
@@ -191,7 +191,6 @@ impl State {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                decoration: None,
             });
         }
 
@@ -200,6 +199,7 @@ impl State {
             foreground_color,
             background_color,
             style,
+            decoration: None,
         }
     }
 
@@ -262,19 +262,7 @@ impl State {
                 */
 
                 let mut sugar = self.create_sugar_from_square(square);
-                let deco = self.cursor_to_decoration();
-                sugar.style = match sugar.style {
-                    Some(mut style) => {
-                        style.decoration = deco;
-                        Some(style)
-                    }
-                    None => Some(SugarStyle {
-                        is_italic: false,
-                        is_bold: false,
-                        is_bold_italic: false,
-                        decoration: deco,
-                    }),
-                };
+                sugar.decoration = self.cursor_to_decoration();
                 stack.push(sugar);
             } else if is_selected {
                 let selected_sugar = Sugar {
@@ -282,6 +270,7 @@ impl State {
                     foreground_color: self.named_colors.background.0,
                     background_color: self.named_colors.light_blue,
                     style: None,
+                    decoration: None,
                 };
                 stack.push(selected_sugar);
             } else {
@@ -323,19 +312,7 @@ impl State {
                 */
 
                 let mut sugar = self.create_sugar_from_square(square);
-                let deco = self.cursor_to_decoration();
-                sugar.style = match sugar.style {
-                    Some(mut style) => {
-                        style.decoration = deco;
-                        Some(style)
-                    }
-                    None => Some(SugarStyle {
-                        is_italic: false,
-                        is_bold: false,
-                        is_bold_italic: false,
-                        decoration: deco,
-                    }),
-                };
+                sugar.decoration = self.cursor_to_decoration();
                 stack.push(sugar);
             } else {
                 stack.push(self.create_sugar_from_square(square));
