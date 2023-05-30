@@ -119,7 +119,7 @@ body {
 }
 
 .container.content ul {
-  margin: 40px 0;
+  margin: 10px;
 }
 
 .container.content a, .testimonial a {
@@ -189,6 +189,22 @@ section h2 {
   color: #0F0D0E;
   padding-left: 15px;
   background: #FCBA28;
+}
+
+section h3 {
+  font-family: helvetica;
+  font-size: 20px;
+  padding-left: 15px;
+  color: #12B5E5;
+  margin: 25px 0 10px 0;
+}
+
+.container span.keyword {
+  background: #FCBA28;
+  color: #0F0D0E;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 5px;
 }
 
 section.features .container p {
@@ -528,6 +544,81 @@ align-content: space-between;
 
 .theme_large:nth-child(even) {
   background-color: #FCBA28;
+}
+
+.container.post {
+  padding: 50px;
+  background: #F9F4DA;
+  color: #0F0D0E;
+}
+
+.container.post div.post-title {
+  background: #0F0D0E;
+  width: 100%;
+}
+
+.container.post h1.post-title {
+  font-size: 40px;
+  color: #0F0D0E;
+  width: fit-content;
+  margin-left: 0.8em;
+  padding: 0.5em;
+  background: #F9F4DA;  
+  font-family: 'Silkscreen', helvetica;
+}
+
+.container.post span.post-date {
+  font-size: 14px;
+}
+
+.container.post span.post-categories {
+  font-size: 12px;
+  font-family: 'Silkscreen', helvetica;
+}
+
+.container.post .post-content {
+  margin-top: 20px;
+}
+
+.container.post .post-content h1 {
+  font-weight: bold;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 32px;
+  line-height: 1.3em;
+  margin-bottom: 18px;
+}
+
+.container.post .post-content h2 {
+  font-weight: lighter;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 24px;
+  text-decoration: underline;
+  line-height: 1.3em;
+  margin: 18px 0;
+}
+
+.container.post .post-content p {
+  font-weight: lighter;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 20px;
+  line-height: 1.3em;
+  margin: 0.8em 0;
+}
+
+.container.post .post-content img {
+  width: 100%;
+}
+
+.container.post a {
+  background: #ED203D;
+  text-decoration: none;
+  color: #F9F4DA;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 5px;
 }
 
 @keyframes float {
