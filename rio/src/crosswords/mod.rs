@@ -281,6 +281,7 @@ where
     colors: List,
     title: Option<String>,
     damage: TermDamageState,
+    pub cursor_shape: CursorShape,
     pub vi_mode_cursor: Pos,
 }
 
@@ -311,6 +312,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
+            cursor_shape: CursorShape::Block,
         }
     }
 
@@ -728,7 +730,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn cursor(&mut self) -> CursorState {
-        let mut content = CursorShape::Block;
+        let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
         let mut pos = if vi_mode {
             self.vi_mode_cursor
@@ -1351,6 +1353,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => String::from(""),
         };
         // title
+    }
+
+    fn set_cursor_shape(&mut self, shape: CursorShape) {
+        self.cursor_shape = shape;
     }
 
     fn input(&mut self, c: char) {
