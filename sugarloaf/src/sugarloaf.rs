@@ -296,6 +296,17 @@ impl Sugarloaf {
                 size: [add_pos_x * mod_size, self.font_bounds.default.0 * mod_size],
             });
 
+            if sugar.style.as_ref().map(|style| style.on_cursor).unwrap_or(false) {
+                self.rects.push( Rect {
+                    position: [
+                        (style.screen_position.0 / self.ctx.scale) + x,
+                        self.acc_line_y,
+                    ],
+                    color: sugar.foreground_color,
+                    size: [add_pos_x * mod_size * 0.1, self.font_bounds.default.0 * mod_size],
+                });
+            }
+
             x += add_pos_x / self.initial_scale;
         }
 
