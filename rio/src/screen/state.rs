@@ -77,9 +77,13 @@ impl State {
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,
-                state: CursorState::default(),
+                state: CursorState::new(config),
             },
         }
+    }
+
+    pub fn get_cursor_state(&self) -> CursorState {
+        self.cursor.state.clone()
     }
 
     // TODO: Square.into()

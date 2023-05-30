@@ -76,7 +76,7 @@ impl Screen {
 
         let event_proxy_clone = event_proxy.clone();
         let mut terminal = Crosswords::new(columns, rows, event_proxy);
-        terminal.cursor_shape = crate::ansi::CursorShape::Beam;
+        terminal.cursor_shape = state.get_cursor_state().content;
         let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
             Arc::new(FairMutex::new(terminal));
 
