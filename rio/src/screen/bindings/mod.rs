@@ -499,7 +499,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
     // from: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
     let mut modifiers = vec![
         ModifiersState::SHIFT,
-        ModifiersState::ALT,
         ModifiersState::SHIFT | ModifiersState::ALT,
         ModifiersState::CTRL,
         ModifiersState::SHIFT | ModifiersState::CTRL,
@@ -507,59 +506,66 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CTRL,
     ];
 
+    // In MacOs we target the same behaviour that Terminal.app has
+    // Terminal.app does not deal with ctlseqs with ALT keys
+    #[cfg(not(target_os = "macos"))]
+    {
+        modifiers.push(ModifiersState::ALT);
+    }
+
     for (index, mods) in modifiers.drain(..).enumerate() {
         let modifiers_code = index + 2;
         bindings.extend(bindings!(
             KeyBinding;
-            Delete, mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            Delete, mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[3;{}~", modifiers_code));
-            Up,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            Up,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}A", modifiers_code));
-            Down,   mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            Down,   mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}B", modifiers_code));
-            Right,  mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            Right,  mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}C", modifiers_code));
-            Left,   mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            Left,   mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}D", modifiers_code));
-            F1,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F1,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}P", modifiers_code));
-            F2,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F2,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}Q", modifiers_code));
-            F3,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F3,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}R", modifiers_code));
-            F4,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F4,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}S", modifiers_code));
-            F5,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F5,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[15;{}~", modifiers_code));
-            F6,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F6,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[17;{}~", modifiers_code));
-            F7,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F7,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[18;{}~", modifiers_code));
-            F8,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F8,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[19;{}~", modifiers_code));
-            F9,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F9,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[20;{}~", modifiers_code));
-            F10,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F10,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[21;{}~", modifiers_code));
-            F11,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F11,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[23;{}~", modifiers_code));
-            F12,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F12,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[24;{}~", modifiers_code));
-            F13,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F13,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[25;{}~", modifiers_code));
-            F14,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F14,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[26;{}~", modifiers_code));
-            F15,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F15,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[28;{}~", modifiers_code));
-            F16,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F16,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[29;{}~", modifiers_code));
-            F17,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F17,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[31;{}~", modifiers_code));
-            F18,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F18,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[32;{}~", modifiers_code));
-            F19,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F19,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[33;{}~", modifiers_code));
-            F20,    mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+            F20,    mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[34;{}~", modifiers_code));
         ));
 
@@ -567,15 +573,15 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         if modifiers_code != 2 {
             bindings.extend(bindings!(
                 KeyBinding;
-                Insert,   mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+                Insert,   mods, ~BindingMode::VI;
                     Action::Esc(format!("\x1b[2;{}~", modifiers_code));
-                PageUp,   mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+                PageUp,   mods, ~BindingMode::VI;
                     Action::Esc(format!("\x1b[5;{}~", modifiers_code));
-                PageDown, mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+                PageDown, mods, ~BindingMode::VI;
                     Action::Esc(format!("\x1b[6;{}~", modifiers_code));
-                End,      mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+                End,      mods, ~BindingMode::VI;
                     Action::Esc(format!("\x1b[1;{}F", modifiers_code));
-                Home,     mods, ~BindingMode::VI, ~BindingMode::SEARCH;
+                Home,     mods, ~BindingMode::VI;
                     Action::Esc(format!("\x1b[1;{}H", modifiers_code));
             ));
         }
