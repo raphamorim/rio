@@ -1,7 +1,12 @@
 # Changelog
 
+## 0.0.6 (In progress)
+
+- Fix panics if custom font is not found #68
+
 ## 0.0.5
 
+- Fix ctlseqs modifiers for bindings.
 - Add RioEvent::ColorRequest events to write color updates on pty.
 - Fix to render specific 24bit colors (#66) by @niuez.
 - Cross build for arm64 and x86
