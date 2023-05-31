@@ -388,6 +388,7 @@ impl Sequencer {
                     }
 
                     ElementState::Released => {
+                        should_render = true;
                         // winit_window.request_redraw();
                     }
                 },
@@ -454,9 +455,8 @@ impl Sequencer {
                         },
                     ..
                 } => {
-                    screen
-                        .set_scale(scale_factor as f32, *new_inner_size)
-                        .render();
+                    screen.set_scale(scale_factor as f32, *new_inner_size);
+                    should_render = true;
                 }
 
                 // Emitted when the event loop is being shut down.

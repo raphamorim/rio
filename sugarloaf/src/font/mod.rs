@@ -38,11 +38,9 @@ pub struct Font {
 }
 
 impl Font {
-    pub fn new(font_name: String) -> Result<Font, String> {
-        // TODO:
-        // This code is quite unsafe and needs a proper refactor
-        // adding font load fallbacks for all categories.
-
+    // TODO: Refactor multiple unwraps in this code
+    // TODO: Use FontAttributes bold and italic
+    pub fn new(font_name: String) -> Font {
         let font_arc_unicode;
         let font_arc_symbol;
 
@@ -87,24 +85,11 @@ impl Font {
             font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
         }
 
-        if font_name.to_lowercase() == DEFAULT_FONT_NAME {
-            return Ok(Font {
-                text: ComposedFontArc {
-                    regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                    italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
-                    bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
-                        .unwrap(),
-                },
-                symbol: font_arc_symbol,
-                emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-                unicode: font_arc_unicode,
-            });
-        }
-
-        let system_fonts = SystemSource::new().select_family_by_name(&font_name);
-        match system_fonts {
-            Ok(system_fonts) => {
+        let is_default_font = font_name.to_lowercase() == DEFAULT_FONT_NAME;
+        if !is_default_font {
+            if let Ok(system_fonts) =
+                SystemSource::new().select_family_by_name(&font_name)
+            {
                 let fonts = system_fonts.fonts();
                 if !fonts.is_empty() {
                     let first_font = fonts[0].load();
@@ -116,7 +101,7 @@ impl Font {
                                 FontVec::try_from_vec_and_index(copied_font.to_vec(), 0)
                                     .unwrap();
 
-                            return Ok(Font {
+                            return Font {
                                 text: ComposedFontArc {
                                     regular: FontArc::new(font_vec_system),
                                     bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD)
@@ -133,17 +118,25 @@ impl Font {
                                 symbol: font_arc_symbol,
                                 emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                                 unicode: font_arc_unicode,
-                            });
+                            };
                         }
                     }
                 }
+            }
+        }
 
-                Err("failed to load font".to_string())
-            }
-            Err(err) => {
-                warn!("failed to load font {font_name} {err:?}");
-                Err(err.to_string())
-            }
+        warn!("failed to load font {font_name}");
+        Font {
+            text: ComposedFontArc {
+                regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+                bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
+                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+                bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
+                    .unwrap(),
+            },
+            symbol: font_arc_symbol,
+            emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
+            unicode: font_arc_unicode,
         }
     }
 }

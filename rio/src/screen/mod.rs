@@ -115,13 +115,7 @@ impl Screen {
     }
 
     pub fn input_character(&mut self, character: char) {
-        if self.ime.preedit().is_some() {
-            return;
-        }
-
-        let ignore_chars = self.ignore_chars;
-        // || self.ctx.terminal().mode().contains(TermMode::VI)
-        if ignore_chars {
+        if self.ime.preedit().is_some() || self.ignore_chars {
             return;
         }
 
