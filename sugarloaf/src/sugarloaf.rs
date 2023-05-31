@@ -100,35 +100,29 @@ impl Sugarloaf {
     ) -> Result<Sugarloaf, String> {
         let ctx = Context::new(winit_window, power_preference).await;
 
-        match Font::new(font_name) {
-            Ok(font) => {
-                let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
-                    font.text.regular,
-                    font.symbol,
-                    font.emojis,
-                    font.unicode,
-                    font.text.bold,
-                    font.text.italic,
-                    font.text.bold_italic,
-                ])
-                .build(&ctx.device, ctx.format);
-                let rect_brush = RectBrush::init(&ctx);
-                Ok(Sugarloaf {
-                    initial_scale: ctx.scale,
-                    ctx,
-                    rect_brush,
-                    rects: vec![],
-                    text_brush,
-                    acc_line: 0.0,
-                    acc_line_y: 0.0,
-                    font_bounds: FontBounds::default(),
-                    background_color: wgpu::Color::BLACK,
-                })
-            }
-            Err(err_message) => Err(format!(
-                "Renderer error: could not initialize font {err_message:?}"
-            )),
-        }
+        let font = Font::new(font_name);
+        let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
+            font.text.regular,
+            font.symbol,
+            font.emojis,
+            font.unicode,
+            font.text.bold,
+            font.text.italic,
+            font.text.bold_italic,
+        ])
+        .build(&ctx.device, ctx.format);
+        let rect_brush = RectBrush::init(&ctx);
+        Ok(Sugarloaf {
+            initial_scale: ctx.scale,
+            ctx,
+            rect_brush,
+            rects: vec![],
+            text_brush,
+            acc_line: 0.0,
+            acc_line_y: 0.0,
+            font_bounds: FontBounds::default(),
+            background_color: wgpu::Color::BLACK,
+        })
     }
 
     #[allow(unused)]
