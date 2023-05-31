@@ -87,41 +87,46 @@ impl Font {
 
         let is_default_font = font_name.to_lowercase() == DEFAULT_FONT_NAME;
         if !is_default_font {
-        if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&font_name) {
-            let fonts = system_fonts.fonts();
-            if !fonts.is_empty() {
-                let first_font = fonts[0].load();
-                if let Ok(font) = first_font {
-                    let copied_font = font.copy_font_data();
-                    if copied_font.is_some() {
-                        let Some(copied_font) = copied_font else { todo!() };
-                        let font_vec_system =
-                            FontVec::try_from_vec_and_index(copied_font.to_vec(), 0)
-                                .unwrap();
+            if let Ok(system_fonts) =
+                SystemSource::new().select_family_by_name(&font_name)
+            {
+                let fonts = system_fonts.fonts();
+                if !fonts.is_empty() {
+                    let first_font = fonts[0].load();
+                    if let Ok(font) = first_font {
+                        let copied_font = font.copy_font_data();
+                        if copied_font.is_some() {
+                            let Some(copied_font) = copied_font else { todo!() };
+                            let font_vec_system =
+                                FontVec::try_from_vec_and_index(copied_font.to_vec(), 0)
+                                    .unwrap();
 
-                        return Font {
-                            text: ComposedFontArc {
-                                regular: FontArc::new(font_vec_system),
-                                bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD)
+                            return Font {
+                                text: ComposedFontArc {
+                                    regular: FontArc::new(font_vec_system),
+                                    bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD)
+                                        .unwrap(),
+                                    italic: FontArc::try_from_slice(
+                                        FONT_CASCADIAMONO_ITALIC,
+                                    )
                                     .unwrap(),
-                                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC)
+                                    bold_italic: FontArc::try_from_slice(
+                                        FONT_CASCADIAMONO_BOLD_ITALIC,
+                                    )
                                     .unwrap(),
-                                bold_italic: FontArc::try_from_slice(
-                                    FONT_CASCADIAMONO_BOLD_ITALIC,
-                                )
-                                .unwrap(),
-                            },
-                            symbol: font_arc_symbol,
-                            emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-                            unicode: font_arc_unicode,
-                        };
+                                },
+                                symbol: font_arc_symbol,
+                                emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
+                                unicode: font_arc_unicode,
+                            };
+                        }
                     }
                 }
-            }}
+            }
         }
 
         warn!("failed to load font {font_name}");
-        return Font {
+        Font {
             text: ComposedFontArc {
                 regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
@@ -132,6 +137,6 @@ impl Font {
             symbol: font_arc_symbol,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
-        };
+        }
     }
 }
