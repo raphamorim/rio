@@ -9,7 +9,7 @@ language: 'en'
 
 You can download Rio terminal application for macOS platform, although is not stable and lacking features since the development of a beta release version is still in process.
 
-- [Download macOS - canary-68a7a39980f670715d717ad1ee300744db2067fd (unstable)](https://github.com/raphamorim/rio/releases/download/canary-68a7a39980f670715d717ad1ee300744db2067fd/macos-rio.zip)
+- [Download macOS - canary-a4c2835c57ba73026152dd9cd7106392d508f3f1 (unstable)](https://github.com/raphamorim/rio/releases/download/canary-a4c2835c57ba73026152dd9cd7106392d508f3f1/macos-rio.zip)
 
 New versions are created by weekly and monthly basis, so if you are using an unstable version please make sure to keep updated.
 
