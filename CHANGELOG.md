@@ -3,6 +3,7 @@
 ## 0.0.6 (In progress)
 
 - Fix panics if custom font is not found #68
+- MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera)
 
 ## 0.0.5
 
