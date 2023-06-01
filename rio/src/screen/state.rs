@@ -88,7 +88,7 @@ impl State {
 
     // TODO: Square.into()
     #[inline]
-    fn create_sugar_from_square(&self, square: &Square) -> Sugar {
+    fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
         let foreground_color = match square.fg {
@@ -209,17 +209,17 @@ impl State {
             CursorShape::Block => Some(SugarDecoration {
                 position: (0.0, 0.0),
                 size: (1.0, 1.0),
-                color: self.named_colors.foreground,
+                color: self.named_colors.cursor,
             }),
             CursorShape::Underline => Some(SugarDecoration {
                 position: (0.0, 0.95),
                 size: (1.0, 0.05),
-                color: self.named_colors.foreground,
+                color: self.named_colors.cursor,
             }),
             CursorShape::Beam => Some(SugarDecoration {
                 position: (0.0, 0.0),
                 size: (0.1, 1.0),
-                color: self.named_colors.foreground,
+                color: self.named_colors.cursor,
             }),
             CursorShape::Hidden => None,
         }
@@ -238,32 +238,8 @@ impl State {
         for column in 0..columns {
             let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
             let square = &row.inner[column];
-
             if has_cursor && column == self.cursor.state.pos.col {
-                /*
-                let mut foreground_color = self.named_colors.cursor;
-                let mut background_color = self.named_colors.background.0;
-
-                if is_selected {
-                    foreground_color = self.named_colors.yellow;
-                }
-
-                if self.is_ime_enabled {
-                    foreground_color = self.named_colors.background.0;
-                    background_color = self.named_colors.yellow;
-                }
-
-                stack.push(Sugar {
-                    content: self.cursor.content,
-                    foreground_color,
-                    background_color,
-                    style: None,
-                });
-                */
-
-                let mut sugar = self.create_sugar_from_square(square);
-                sugar.decoration = self.cursor_to_decoration();
-                stack.push(sugar);
+                stack.push(self.create_cursor(square));
             } else if is_selected {
                 let selected_sugar = Sugar {
                     content: square.c,
@@ -274,7 +250,7 @@ impl State {
                 };
                 stack.push(selected_sugar);
             } else {
-                stack.push(self.create_sugar_from_square(square));
+                stack.push(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -294,28 +270,9 @@ impl State {
             let square = &row.inner[column];
 
             if has_cursor && column == self.cursor.state.pos.col {
-                /*
-                let mut foreground_color = self.named_colors.cursor;
-                let mut background_color = self.named_colors.background.0;
-
-                if self.is_ime_enabled {
-                    foreground_color = self.named_colors.background.0;
-                    background_color = self.named_colors.yellow;
-                }
-
-                stack.push(Sugar {
-                    content: self.cursor.content,
-                    foreground_color,
-                    background_color,
-                    style: None,
-                });
-                */
-
-                let mut sugar = self.create_sugar_from_square(square);
-                sugar.decoration = self.cursor_to_decoration();
-                stack.push(sugar);
+                stack.push(self.create_cursor(square));
             } else {
-                stack.push(self.create_sugar_from_square(square));
+                stack.push(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -325,6 +282,26 @@ impl State {
         }
 
         stack
+    }
+
+    #[inline]
+    fn create_cursor(&self, square: &Square) -> Sugar {
+        let mut cloned_square = square.clone();
+
+        // If IME is enabled we get the current content to cursor
+        if self.is_ime_enabled {
+            cloned_square.c = self.cursor.content;
+        }
+
+        // If IME is enabled or is a block cursor, put background color
+        // when cursor is over the character
+        if self.is_ime_enabled || self.cursor.state.content == CursorShape::Block {
+            cloned_square.fg = AnsiColor::Named(NamedColor::Background);
+        }
+
+        let mut sugar = self.create_sugar(&cloned_square);
+        sugar.decoration = self.cursor_to_decoration();
+        sugar
     }
 
     pub fn set_ime(&mut self, ime_preedit: Option<&Preedit>) {

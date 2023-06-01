@@ -17,7 +17,6 @@ pub enum CursorShape {
 impl CursorShape {
     pub fn from_char(c: char) -> CursorShape {
         match c {
-            '▒' => CursorShape::Block,
             '_' => CursorShape::Underline,
             '|' => CursorShape::Beam,
             _ => CursorShape::Block,

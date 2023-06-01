@@ -123,9 +123,10 @@ impl Font {
                     }
                 }
             }
+
+            warn!("failed to load font {font_name}");
         }
 
-        warn!("failed to load font {font_name}");
         Font {
             text: ComposedFontArc {
                 regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
