@@ -301,7 +301,10 @@ impl Sugarloaf {
                         self.acc_line_y + dy * decoration.position.1,
                     ],
                     color: decoration.color,
-                    size: [(dx * decoration.size.0) * mod_size, (dy * decoration.size.1) * mod_size],
+                    size: [
+                        (dx * decoration.size.0) * mod_size,
+                        (dy * decoration.size.1) * mod_size,
+                    ],
                 });
             }
 
