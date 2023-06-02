@@ -32,7 +32,7 @@ pub struct Screen {
     pub ime: Ime,
     pub state: State,
     sugarloaf: Sugarloaf,
-    context_manager: context::ContextManager,
+    context_manager: context::ContextManager<EventProxy>,
 }
 
 impl Screen {
@@ -88,12 +88,12 @@ impl Screen {
     }
 
     #[inline]
-    pub fn ctx(&self) -> &ContextManager {
+    pub fn ctx(&self) -> &ContextManager<EventProxy> {
         &self.context_manager
     }
 
     #[inline]
-    pub fn ctx_mut(&mut self) -> &mut ContextManager {
+    pub fn ctx_mut(&mut self) -> &mut ContextManager<EventProxy> {
         &mut self.context_manager
     }
 
@@ -216,8 +216,11 @@ impl Screen {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
                     Act::TabCreateNew => {
+                        let redirect = true;
+                        let spawn = true;
                         self.context_manager.add_context(
-                            true,
+                            redirect,
+                            spawn,
                             self.layout.columns,
                             self.layout.rows,
                             self.state.get_cursor_state(),
