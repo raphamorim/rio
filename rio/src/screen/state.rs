@@ -335,11 +335,12 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        style: sugarloaf::core::SugarloafStyle,
+        styles: &crate::layout::Styles,
         tabs_control: &TabsControl,
     ) {
         self.cursor.state = cursor;
 
+        let term_style = styles.term;
         let is_cursor_visible = self.cursor.state.is_visible();
 
         if let Some(sel) = self.selection_range {
@@ -351,7 +352,7 @@ impl State {
                     &sel,
                     pos::Line(i as i32),
                 );
-                sugarloaf.stack(sugar_stack, style);
+                sugarloaf.stack(sugar_stack, term_style);
             }
 
             return;
@@ -360,13 +361,12 @@ impl State {
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             let sugar_stack = self.create_sugar_stack(row, has_cursor);
-            sugarloaf.stack(sugar_stack, style);
+            sugarloaf.stack(sugar_stack, term_style);
         }
 
         if tabs_control.len() > 1 {
             let mut renderable_tabs = vec![];
-            let mut initial_position = 740.;
-
+            let mut initial_position = styles.tabs_initial_position;
             let position_modifier = 20.;
             for tab in tabs_control.tabs().iter() {
                 let mut color = self.named_colors.tabs;
@@ -384,33 +384,6 @@ impl State {
                 renderable_tabs.push(renderable);
             }
             sugarloaf.pile_rect(renderable_tabs);
-            // sugarloaf.pile_rect(vec![
-            //     Rect {
-            //         position: [320.0, 0.0],
-            //         color: self.named_colors.tabs,
-            //         size: [30.0, 16.0],
-            //     },
-            //     Rect {
-            //         position: [340.0, 0.0],
-            //         color: self.named_colors.tabs_active,
-            //         size: [30.0, 26.0],
-            //     },
-            //     Rect {
-            //         position: [360.0, 0.0],
-            //         color: self.named_colors.tabs,
-            //         size: [30.0, 16.0],
-            //     },
-            //     Rect {
-            //         position: [380.0, 0.0],
-            //         color: self.named_colors.tabs,
-            //         size: [30.0, 16.0],
-            //     },
-            //     Rect {
-            //         position: [400.0, 0.0],
-            //         color: self.named_colors.tabs,
-            //         size: [30.0, 16.0],
-            //     }
-            // ]);
         }
     }
 
