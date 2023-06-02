@@ -21,7 +21,7 @@ run:
 dev:
 	cargo run
 
-watch-dev:
+dev-watch:
 	#cargo install cargo-watch
 	cargo watch -- cargo run
 

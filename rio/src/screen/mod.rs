@@ -407,7 +407,7 @@ impl Screen {
             visible_rows,
             cursor,
             &mut self.sugarloaf,
-            self.layout.styles.term,
+            &self.layout.styles,
             &self.tabs,
         );
 

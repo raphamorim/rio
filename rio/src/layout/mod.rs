@@ -13,6 +13,7 @@ pub struct Delta<T: Default> {
 }
 
 const PADDING_X: f32 = 10.0;
+const PADDING_X_TABS: f32 = 30.;
 const PADDING_Y: f32 = 50.0;
 
 pub struct Layout {
@@ -32,6 +33,7 @@ pub struct Layout {
 #[derive(Default)]
 pub struct Styles {
     pub term: SugarloafStyle,
+    pub tabs_initial_position: f32,
 }
 
 impl Dimensions for Layout {
@@ -64,6 +66,7 @@ fn update_styles(layout: &mut Layout) {
             ),
             text_scale: layout.font_size * layout.scale_factor,
         },
+        tabs_initial_position: (layout.width / layout.scale_factor) - PADDING_X_TABS,
     };
     layout.styles = new_styles;
 }
