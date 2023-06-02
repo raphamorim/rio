@@ -1,4 +1,5 @@
 mod bindings;
+mod context;
 mod messenger;
 mod state;
 pub mod window;
@@ -9,23 +10,19 @@ use crate::crosswords::{
     pos::{Pos, Side},
     Crosswords, Mode,
 };
-use crate::event::sync::FairMutex;
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::layout::Layout;
 use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
+use crate::screen::context::ContextManager;
 use crate::selection::{Selection, SelectionType};
-use crate::tabs::TabsControl;
 use colors::term::List;
 use messenger::Messenger;
 use state::State;
-use std::borrow::Cow;
 use std::error::Error;
 use std::rc::Rc;
-use std::sync::Arc;
 use sugarloaf::Sugarloaf;
-use teletypewriter::create_pty;
 
 pub struct Screen {
     bindings: bindings::KeyBindings,
@@ -33,12 +30,9 @@ pub struct Screen {
     ignore_chars: bool,
     layout: Layout,
     pub ime: Ime,
-    pub messenger: Messenger,
     pub state: State,
     sugarloaf: Sugarloaf,
-    terminal: Arc<FairMutex<Crosswords<EventProxy>>>,
-    #[allow(unused)]
-    tabs: TabsControl,
+    context_manager: context::ContextManager,
 }
 
 impl Screen {
@@ -47,7 +41,6 @@ impl Screen {
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
     ) -> Result<Screen, Box<dyn Error>> {
-        let shell = std::env::var("SHELL")?;
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
 
@@ -58,7 +51,6 @@ impl Screen {
             config.style.font_size,
         );
         let (columns, rows) = layout.compute();
-        let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
         let power_preference: wgpu::PowerPreference = match config.performance {
             config::Performance::High => wgpu::PowerPreference::HighPerformance,
@@ -73,30 +65,21 @@ impl Screen {
         .await?;
 
         let state = State::new(config);
-
-        let event_proxy_clone = event_proxy.clone();
-        let mut terminal = Crosswords::new(columns, rows, event_proxy);
-        terminal.cursor_shape = state.get_cursor_state().content;
-        let terminal: Arc<FairMutex<Crosswords<EventProxy>>> =
-            Arc::new(FairMutex::new(terminal));
-
-        let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
-        let channel = machine.channel();
-        machine.spawn();
-        let messenger = Messenger::new(channel);
-
         let clipboard = Clipboard::new();
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
-        let tabs = TabsControl::new();
+        let context_manager = context::ContextManager::start(
+            columns,
+            rows,
+            state.get_cursor_state(),
+            event_proxy,
+        )?;
 
         Ok(Screen {
-            tabs,
+            context_manager,
             ime,
             sugarloaf,
-            terminal,
             layout,
-            messenger,
             state,
             bindings,
             clipboard,
@@ -105,8 +88,18 @@ impl Screen {
     }
 
     #[inline]
+    pub fn ctx(&self) -> &ContextManager {
+        &self.context_manager
+    }
+
+    #[inline]
+    pub fn ctx_mut(&mut self) -> &mut ContextManager {
+        &mut self.context_manager
+    }
+
+    #[inline]
     pub fn propagate_modifiers_state(&mut self, state: winit::event::ModifiersState) {
-        self.messenger.set_modifiers(state);
+        self.ctx_mut().current_mut().messenger.set_modifiers(state);
     }
 
     #[inline]
@@ -129,16 +122,19 @@ impl Screen {
         #[cfg(target_os = "macos")]
         let alt_send_esc = self.state.option_as_alt;
 
-        if alt_send_esc && self.messenger.get_modifiers().alt() && utf8_len == 1 {
+        if alt_send_esc
+            && self.ctx_mut().current().messenger.get_modifiers().alt()
+            && utf8_len == 1
+        {
             bytes.insert(0, b'\x1b');
         }
 
-        self.messenger.send_bytes(bytes);
+        self.ctx_mut().current_mut().messenger.send_bytes(bytes);
     }
 
     #[inline]
-    pub fn scroll_bottom_when_cursor_not_visible(&self) {
-        let mut terminal = self.terminal.lock();
+    pub fn scroll_bottom_when_cursor_not_visible(&mut self) {
+        let mut terminal = self.ctx_mut().current().terminal.lock();
         if terminal.display_offset() != 0 {
             terminal.scroll_display(Scroll::Bottom);
         }
@@ -153,14 +149,15 @@ impl Screen {
 
     #[inline]
     pub fn display_offset(&self) -> usize {
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.ctx().current().terminal.lock();
         let display_offset = terminal.display_offset();
         drop(terminal);
         display_offset
     }
 
+    #[inline]
     pub fn get_mode(&self) -> Mode {
-        let terminal = self.terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let mode = terminal.mode();
         drop(terminal);
         mode
@@ -169,7 +166,7 @@ impl Screen {
     #[inline]
     #[allow(unused)]
     pub fn colors(&mut self) -> List {
-        let terminal = self.terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let mode = terminal.colors();
         drop(terminal);
         mode
@@ -186,7 +183,7 @@ impl Screen {
         }
 
         let mode = BindingMode::new(&self.get_mode());
-        let mods = self.messenger.get_modifiers();
+        let mods = self.ctx_mut().current().messenger.get_modifiers();
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
@@ -203,7 +200,7 @@ impl Screen {
 
                 match &binding.action {
                     Act::Esc(s) => {
-                        self.messenger.send_bytes(
+                        self.context_manager.current_mut().messenger.send_bytes(
                             s.replace("\r\n", "\r").replace('\n', "\r").into_bytes(),
                         );
                     }
@@ -219,18 +216,22 @@ impl Screen {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
                     Act::TabCreateNew => {
-                        self.tabs.add_tab(true);
+                        self.context_manager.add_context(
+                            true,
+                            self.layout.columns,
+                            self.layout.rows,
+                            self.state.get_cursor_state(),
+                        );
                         self.render();
                     }
                     Act::TabSwitchNext => {
-                        self.tabs.switch_to_next();
+                        self.context_manager.switch_to_next();
                         self.render();
                     }
                     Act::TabCloseCurrent => {
-                        let current_tab = self.tabs.current();
-                        self.tabs.switch_to_next();
-                        self.tabs.close_tab(current_tab);
-                        self.render();
+                        let current_context_id = self.context_manager.current_id();
+                        self.context_manager.close_context(current_context_id);
+                        // self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -242,7 +243,7 @@ impl Screen {
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {
-        let terminal = self.terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
             Some(text) => text,
             None => return,
@@ -286,7 +287,7 @@ impl Screen {
 
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.ctx().current().terminal.lock();
         terminal.selection.take();
         drop(terminal);
         self.state.set_selection(None);
@@ -294,7 +295,7 @@ impl Screen {
 
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         self.copy_selection(ClipboardType::Selection);
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.ctx().current().terminal.lock();
         terminal.selection = Some(Selection::new(ty, point, side));
         drop(terminal);
     }
@@ -306,7 +307,7 @@ impl Screen {
 
     // pub fn update_selection(&mut self, mut point: Pos, side: Side) {
     pub fn update_selection(&mut self, mut point: Pos) {
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.context_manager.current().terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
             None => return,
@@ -333,7 +334,7 @@ impl Screen {
     #[inline]
     #[allow(unused)]
     pub fn selection_is_empty(&self) -> bool {
-        let terminal = self.terminal.lock();
+        let terminal = self.context_manager.current().terminal.lock();
         let is_empty = terminal.selection.is_none();
         drop(terminal);
         is_empty
@@ -347,7 +348,7 @@ impl Screen {
                 self.clear_selection();
 
                 // Start new empty selection.
-                if self.messenger.get_modifiers().ctrl() {
+                if self.ctx_mut().current().messenger.get_modifiers().ctrl() {
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
                     self.start_selection(SelectionType::Simple, point, side);
@@ -372,7 +373,10 @@ impl Screen {
     #[inline]
     pub fn paste(&mut self, text: &str, bracketed: bool) {
         if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
-            self.messenger.send_bytes(b"\x1b[200~"[..].to_vec());
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(b"\x1b[200~"[..].to_vec());
 
             // Write filtered escape sequences.
             //
@@ -380,11 +384,19 @@ impl Screen {
             // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
             // bracketed paste on its receival.
             let filtered = text.replace(['\x1b', '\x03'], "");
-            self.messenger.send_bytes(filtered.into_bytes());
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(filtered.into_bytes());
 
-            self.messenger.send_bytes(b"\x1b[201~"[..].to_vec());
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
-            self.messenger
+            self.ctx_mut()
+                .current_mut()
+                .messenger
                 .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
         }
     }
@@ -396,7 +408,7 @@ impl Screen {
 
     #[inline]
     pub fn render(&mut self) {
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.ctx().current().terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
         drop(terminal);
@@ -408,7 +420,7 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             &self.layout.styles,
-            &self.tabs,
+            &self.context_manager,
         );
 
         self.sugarloaf.render();
@@ -455,7 +467,7 @@ impl Screen {
 
         // println!("{:?} {:?} {:?} {:?}", content, lines, columns, self.layout.cursor);
         // if content.len() > 0 {
-        //     self.messenger.write_to_pty(content);
+        //     self.ctx().messenger.write_to_pty(content);
         // }
         // }
 
@@ -465,7 +477,7 @@ impl Screen {
             / self.layout.font_size as f64) as i32;
 
         if lines != 0 {
-            let mut terminal = self.terminal.lock();
+            let mut terminal = self.ctx().current().terminal.lock();
             terminal.scroll_display(Scroll::Delta(lines));
             drop(terminal);
         }
@@ -489,11 +501,11 @@ impl Screen {
             .update();
         let (c, l) = self.layout.compute();
 
-        let mut terminal = self.terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
         drop(terminal);
 
-        let _ = self.messenger.send_resize(
+        let _ = self.ctx_mut().current_mut().messenger.send_resize(
             new_size.width as u16,
             new_size.height as u16,
             c as u16,

@@ -11,7 +11,6 @@ mod scheduler;
 mod screen;
 mod selection;
 mod sequencer;
-mod tabs;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
 use log::{info, LevelFilter, SetLoggerError};
