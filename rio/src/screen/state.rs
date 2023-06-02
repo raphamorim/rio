@@ -5,6 +5,7 @@ use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::screen::context;
+use crate::screen::EventProxy;
 use crate::selection::SelectionRange;
 use colors::{
     term::{List, TermColors},
@@ -336,7 +337,7 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         styles: &crate::layout::Styles,
-        context_manager: &context::ContextManager,
+        context_manager: &context::ContextManager<EventProxy>,
     ) {
         self.cursor.state = cursor;
 

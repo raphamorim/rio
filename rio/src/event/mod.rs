@@ -152,6 +152,7 @@ pub trait EventListener {
     fn send_event(&self, _event: RioEvent) {}
 }
 
+#[derive(Clone)]
 pub struct VoidListener;
 
 impl EventListener for VoidListener {}
