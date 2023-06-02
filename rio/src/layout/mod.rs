@@ -32,7 +32,6 @@ pub struct Layout {
 #[derive(Default)]
 pub struct Styles {
     pub term: SugarloafStyle,
-    pub tabs: SugarloafStyle,
 }
 
 impl Dimensions for Layout {
@@ -59,14 +58,6 @@ fn update_styles(layout: &mut Layout) {
                 layout.padding.x * layout.scale_factor,
                 (layout.padding.y * layout.scale_factor),
             ),
-            bounds: (
-                layout.width * layout.scale_factor,
-                layout.height * layout.scale_factor,
-            ),
-            text_scale: layout.font_size * layout.scale_factor,
-        },
-        tabs: SugarloafStyle {
-            screen_position: (80.0 * layout.scale_factor, (8.0 * layout.scale_factor)),
             bounds: (
                 layout.width * layout.scale_factor,
                 layout.height * layout.scale_factor,

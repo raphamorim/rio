@@ -12,6 +12,7 @@ use colors::{
 };
 use config::Config;
 use std::rc::Rc;
+use sugarloaf::components::rect::Rect;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
@@ -335,8 +336,7 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         style: sugarloaf::core::SugarloafStyle,
-        _tab_style: sugarloaf::core::SugarloafStyle,
-        _tabs: &TabsControl,
+        tabs_control: &TabsControl,
     ) {
         self.cursor.state = cursor;
 
@@ -363,14 +363,55 @@ impl State {
             sugarloaf.stack(sugar_stack, style);
         }
 
-        // if tabs.len() > 1 {
-        //     sugarloaf.tabs(
-        //         "1, 3, 4".to_string(),
-        //         tab_style,
-        //         self.named_colors.tabs,
-        //         self.named_colors.tabs_active,
-        //     );
-        // }
+        if tabs_control.len() > 1 {
+            let mut renderable_tabs = vec![];
+            let mut initial_position = 740.;
+
+            let position_modifier = 20.;
+            for tab in tabs_control.tabs().iter() {
+                let mut color = self.named_colors.tabs;
+                let mut size = 16.0;
+                if tab.id == tabs_control.current() {
+                    color = self.named_colors.tabs_active;
+                    size = 26.0;
+                }
+                let renderable = Rect {
+                    position: [initial_position, 0.0],
+                    color,
+                    size: [30.0, size],
+                };
+                initial_position -= position_modifier;
+                renderable_tabs.push(renderable);
+            }
+            sugarloaf.pile_rect(renderable_tabs);
+            // sugarloaf.pile_rect(vec![
+            //     Rect {
+            //         position: [320.0, 0.0],
+            //         color: self.named_colors.tabs,
+            //         size: [30.0, 16.0],
+            //     },
+            //     Rect {
+            //         position: [340.0, 0.0],
+            //         color: self.named_colors.tabs_active,
+            //         size: [30.0, 26.0],
+            //     },
+            //     Rect {
+            //         position: [360.0, 0.0],
+            //         color: self.named_colors.tabs,
+            //         size: [30.0, 16.0],
+            //     },
+            //     Rect {
+            //         position: [380.0, 0.0],
+            //         color: self.named_colors.tabs,
+            //         size: [30.0, 16.0],
+            //     },
+            //     Rect {
+            //         position: [400.0, 0.0],
+            //         color: self.named_colors.tabs,
+            //         size: [30.0, 16.0],
+            //     }
+            // ]);
+        }
     }
 
     // pub fn topbar(&mut self, command: String) {

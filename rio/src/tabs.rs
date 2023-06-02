@@ -3,7 +3,7 @@ const DEFAULT_TABS_CAPACITY: usize = 10;
 
 #[derive(Clone)]
 pub struct Tab {
-    id: TabId,
+    pub id: TabId,
 }
 
 pub type Tabs = Vec<Tab>;
@@ -36,9 +36,13 @@ impl TabsControl {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.tabs.len()
+    }
+
+    #[inline]
+    pub fn tabs(&self) -> &Tabs {
+        &self.tabs
     }
 
     #[cfg(test)]
@@ -66,7 +70,6 @@ impl TabsControl {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn close_tab(&mut self, tab_id: u8) {
         if self.tabs.len() <= 1 {
             return;
@@ -88,7 +91,6 @@ impl TabsControl {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn current(&self) -> u8 {
         self.current
     }
