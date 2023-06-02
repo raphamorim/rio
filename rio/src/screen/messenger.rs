@@ -20,7 +20,7 @@ impl Messenger {
         self.modifiers = modifiers;
     }
 
-    pub fn get_modifiers(&mut self) -> ModifiersState {
+    pub fn get_modifiers(&self) -> ModifiersState {
         self.modifiers
     }
 

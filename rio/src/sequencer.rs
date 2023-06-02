@@ -116,7 +116,11 @@ impl Sequencer {
                                     let text = format(
                                         screen.clipboard_get(clipboard_type).as_str(),
                                     );
-                                    screen.messenger.send_bytes(text.into_bytes());
+                                    screen
+                                        .ctx_mut()
+                                        .current_mut()
+                                        .messenger
+                                        .send_bytes(text.into_bytes());
                                 }
                             }
                             RioEvent::ColorRequest(index, format) => {
@@ -129,7 +133,11 @@ impl Sequencer {
                                 // screen.colors()[index] or screen.state.colors[index]
                                 let color = screen.state.colors[index];
                                 let rgb = ColorRgb::from_color_arr(color);
-                                screen.messenger.send_bytes(format(rgb).into_bytes());
+                                screen
+                                    .ctx_mut()
+                                    .current_mut()
+                                    .messenger
+                                    .send_bytes(format(rgb).into_bytes());
                             }
                             _ => {}
                         }
@@ -174,7 +182,12 @@ impl Sequencer {
                     match state {
                         ElementState::Pressed => {
                             // Process mouse press before bindings to update the `click_state`.
-                            if !screen.messenger.get_modifiers().shift()
+                            if !screen
+                                .ctx_mut()
+                                .current()
+                                .messenger
+                                .get_modifiers()
+                                .shift()
                                 && screen.mouse_mode()
                             {
                                 screen.layout_mut().mouse_mut().click_state =
@@ -233,7 +246,12 @@ impl Sequencer {
                             // screen.process_mouse_bindings(button);
                         }
                         ElementState::Released => {
-                            if !screen.messenger.get_modifiers().shift()
+                            if !screen
+                                .ctx_mut()
+                                .current_mut()
+                                .messenger
+                                .get_modifiers()
+                                .shift()
                                 && screen.mouse_mode()
                             {
                                 // let code = match button {
@@ -301,7 +319,12 @@ impl Sequencer {
                     // winit_window.set_mouse_cursor(mouse_state);
 
                     if (lmb_pressed || rmb_pressed)
-                        && (screen.messenger.get_modifiers().shift()
+                        && (screen
+                            .ctx_mut()
+                            .current_mut()
+                            .messenger
+                            .get_modifiers()
+                            .shift()
                             || !screen.mouse_mode())
                     {
                         screen.update_selection(point);

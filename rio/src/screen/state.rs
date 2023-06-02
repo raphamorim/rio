@@ -4,8 +4,8 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
+use crate::screen::context;
 use crate::selection::SelectionRange;
-use crate::tabs::TabsControl;
 use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
@@ -336,7 +336,7 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         styles: &crate::layout::Styles,
-        tabs_control: &TabsControl,
+        context_manager: &context::ContextManager,
     ) {
         self.cursor.state = cursor;
 
@@ -364,14 +364,14 @@ impl State {
             sugarloaf.stack(sugar_stack, term_style);
         }
 
-        if tabs_control.len() > 1 {
+        if context_manager.len() > 1 {
             let mut renderable_tabs = vec![];
             let mut initial_position = styles.tabs_initial_position;
             let position_modifier = 20.;
-            for tab in tabs_control.tabs().iter() {
+            for tab in context_manager.contexts().iter() {
                 let mut color = self.named_colors.tabs;
                 let mut size = 16.0;
-                if tab.id == tabs_control.current() {
+                if tab.id == context_manager.current_id() {
                     color = self.named_colors.tabs_active;
                     size = 26.0;
                 }
