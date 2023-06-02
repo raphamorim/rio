@@ -21,6 +21,10 @@ run:
 dev:
 	cargo run
 
+watch-dev:
+	#cargo install cargo-watch
+	cargo watch -- cargo run
+
 install:
 	cargo fetch
 

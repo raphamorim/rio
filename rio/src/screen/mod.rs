@@ -226,6 +226,12 @@ impl Screen {
                         self.tabs.switch_to_next();
                         self.render();
                     }
+                    Act::TabCloseCurrent => {
+                        let current_tab = self.tabs.current();
+                        self.tabs.switch_to_next();
+                        self.tabs.close_tab(current_tab);
+                        self.render();
+                    }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
                 }
@@ -402,7 +408,6 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             self.layout.styles.term,
-            self.layout.styles.tabs,
             &self.tabs,
         );
 

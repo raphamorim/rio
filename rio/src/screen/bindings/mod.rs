@@ -224,6 +224,10 @@ pub enum Action {
     #[allow(dead_code)]
     TabSwitchNext,
 
+    /// Switch to next tab.
+    #[allow(dead_code)]
+    TabCloseCurrent,
+
     /// Toggle fullscreen.
     #[allow(dead_code)]
     ToggleFullscreen,
@@ -483,6 +487,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         //     ViMotion::Bracket;
         T, ModifiersState::LOGO; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        W, ModifiersState::LOGO; Action::TabCloseCurrent;
     );
 
     //   Code     Modifiers
