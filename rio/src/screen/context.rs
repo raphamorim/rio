@@ -121,13 +121,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.current_index > 1 {
+        let index_to_remove = self.current_index;
+        if index_to_remove > 1 {
             self.set_current(self.current_index - 1);
         } else {
             self.set_current(0);
         }
 
-        self.contexts.remove(self.current_index);
+        self.contexts.remove(index_to_remove);
     }
 
     #[inline]
