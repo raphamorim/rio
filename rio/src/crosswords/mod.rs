@@ -16,6 +16,7 @@ pub mod attr;
 pub mod grid;
 pub mod pos;
 pub mod square;
+pub mod vi_mode;
 
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, LineClearMode, TabulationClearMode,
@@ -33,7 +34,9 @@ use colors::term::TermColors;
 use colors::{AnsiColor, ColorRgb};
 use grid::row::Row;
 use log::{debug, info, warn};
-use pos::{CharsetIndex, Column, Cursor, CursorState, Line, Pos};
+use pos::{
+    Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
+};
 use square::{LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
@@ -41,6 +44,7 @@ use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
+use vi_mode::{ViModeCursor, ViMotion};
 
 pub type NamedColor = colors::NamedColor;
 
@@ -269,7 +273,7 @@ where
 {
     active_charset: CharsetIndex,
     mode: Mode,
-    #[allow(unused)]
+    pub vi_mode_cursor: ViModeCursor,
     semantic_escape_chars: String,
     pub grid: Grid<Square>,
     inactive_grid: Grid<Square>,
@@ -282,7 +286,6 @@ where
     title: Option<String>,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
-    pub vi_mode_cursor: Pos,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -296,7 +299,7 @@ impl<U: EventListener> Crosswords<U> {
         let colors = List::from(&term_colors);
 
         Crosswords {
-            vi_mode_cursor: Pos::default(),
+            vi_mode_cursor: ViModeCursor::new(grid.cursor.pos),
             semantic_escape_chars,
             selection: None,
             grid,
@@ -337,10 +340,10 @@ impl<U: EventListener> Crosswords<U> {
         // Clamp vi mode cursor to the viewport.
         let viewport_start = -(self.grid.display_offset() as i32);
         let viewport_end = viewport_start + self.grid.bottommost_line().0;
-        let vi_cursor_line = &mut self.vi_mode_cursor.row.0;
+        let vi_cursor_line = &mut self.vi_mode_cursor.pos.row.0;
         *vi_cursor_line =
             std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
-        // self.vi_mode_recompute_selection();
+        self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
@@ -372,7 +375,7 @@ impl<U: EventListener> Crosswords<U> {
             std::cmp::min(0, num_lines as i32 - self.grid.cursor.pos.row.0 - 1);
 
         delta = std::cmp::min(std::cmp::max(delta, min_delta), history_size as i32);
-        self.vi_mode_cursor.row += delta;
+        self.vi_mode_cursor.pos.row += delta;
 
         let is_alt = self.mode.contains(Mode::ALT_SCREEN);
         self.grid.resize(!is_alt, num_lines, num_cols);
@@ -384,21 +387,20 @@ impl<U: EventListener> Crosswords<U> {
 
             // Recreate tabs list.
             self.tabs.resize(num_cols);
+        } else if let Some(selection) = self.selection.take() {
+            let max_lines = std::cmp::max(num_lines, old_lines) as i32;
+            let range = Line(0)..Line(max_lines);
+            self.selection = selection.rotate(&self.grid, &range, -delta);
         }
-
-        // else if let Some(selection) = self.selection.take() {
-        //     let max_lines = std::cmp::max(num_lines, old_lines) as i32;
-        //     let range = Line(0)..Line(max_lines);
-        //     self.selection = selection.rotate(self, &range, -delta);
-        // }
 
         // Clamp vi cursor to viewport.
         let vi_pos = self.vi_mode_cursor;
         let viewport_top = Line(-(self.grid.display_offset() as i32));
         let viewport_bottom = viewport_top + self.bottommost_line();
-        self.vi_mode_cursor.row =
-            std::cmp::max(std::cmp::min(vi_pos.row, viewport_bottom), viewport_top);
-        self.vi_mode_cursor.col = std::cmp::min(vi_pos.col, self.grid.last_column());
+        self.vi_mode_cursor.pos.row =
+            std::cmp::max(std::cmp::min(vi_pos.pos.row, viewport_bottom), viewport_top);
+        self.vi_mode_cursor.pos.col =
+            std::cmp::min(vi_pos.pos.col, self.grid.last_column());
 
         // Reset scrolling region.
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -409,7 +411,7 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Toggle the vi mode.
     #[inline]
-    #[allow(dead_code)]
+    #[allow(unused)]
     pub fn toggle_vi_mode(&mut self)
     where
         U: EventListener,
@@ -420,16 +422,105 @@ impl<U: EventListener> Crosswords<U> {
             let display_offset = self.grid.display_offset() as i32;
             if self.grid.cursor.pos.row > self.grid.bottommost_line() - display_offset {
                 // Move cursor to top-left if terminal cursor is not visible.
-                let point = Pos::new(Line(-display_offset), Column(0));
-                self.vi_mode_cursor = point;
+                let pos = Pos::new(Line(-display_offset), Column(0));
+                self.vi_mode_cursor.pos = pos;
             } else {
                 // Reset vi mode cursor position to match primary cursor.
-                self.vi_mode_cursor = self.grid.cursor.pos;
+                self.vi_mode_cursor.pos = self.grid.cursor.pos;
             }
         }
 
         // Update UI about cursor blinking state changes.
         self.event_proxy.send_event(RioEvent::CursorBlinkingChange);
+    }
+
+    /// Update the active selection to match the vi mode cursor position.
+    #[inline]
+    fn vi_mode_recompute_selection(&mut self) {
+        // Require vi mode to be active.
+        if !self.mode.contains(Mode::VI) {
+            return;
+        }
+
+        // Update only if non-empty selection is present.
+        if let Some(selection) = self.selection.as_mut().filter(|s| !s.is_empty()) {
+            selection.update(self.vi_mode_cursor.pos, Side::Left);
+            selection.include_all();
+        }
+    }
+
+    #[inline]
+    pub fn vi_motion(&mut self, motion: ViMotion)
+    where
+        U: EventListener,
+    {
+        // Require vi mode to be active.
+        if !self.mode.contains(Mode::VI) {
+            return;
+        }
+
+        // Move cursor.
+        self.vi_mode_cursor = self.vi_mode_cursor.motion(self, motion);
+        self.vi_mode_recompute_selection();
+    }
+
+    /// Scroll display to point if it is outside of viewport.
+    pub fn scroll_to_pos(&mut self, pos: Pos)
+    where
+        U: EventListener,
+    {
+        let display_offset = self.grid.display_offset() as i32;
+        let screen_lines = self.grid.screen_lines() as i32;
+
+        if pos.row < -display_offset {
+            let lines = pos.row + display_offset;
+            self.scroll_display(Scroll::Delta(-lines.0));
+        } else if pos.row >= (screen_lines - display_offset) {
+            let lines = pos.row + display_offset - screen_lines + 1i32;
+            self.scroll_display(Scroll::Delta(-lines.0));
+        }
+    }
+
+    /// Jump to the end of a wide cell.
+    pub fn expand_wide(&self, mut pos: Pos, direction: Direction) -> Pos {
+        let flags = self.grid[pos.row][pos.col].flags;
+
+        match direction {
+            Direction::Right
+                if flags.contains(square::Flags::LEADING_WIDE_CHAR_SPACER) =>
+            {
+                pos.col = Column(1);
+                pos.row += 1;
+            }
+            Direction::Right if flags.contains(square::Flags::WIDE_CHAR) => {
+                pos.col = std::cmp::min(pos.col + 1, self.grid.last_column());
+            }
+            Direction::Left
+                if flags.intersects(
+                    square::Flags::WIDE_CHAR | square::Flags::WIDE_CHAR_SPACER,
+                ) =>
+            {
+                if flags.contains(square::Flags::WIDE_CHAR_SPACER) {
+                    pos.col -= 1;
+                }
+
+                let prev = pos.sub(&self.grid, Boundary::Grid, 1);
+                if self.grid[prev]
+                    .flags
+                    .contains(square::Flags::LEADING_WIDE_CHAR_SPACER)
+                {
+                    pos = prev;
+                }
+            }
+            _ => (),
+        }
+
+        pos
+    }
+
+    #[inline]
+    pub fn semantic_escape_chars(&self) -> &str {
+        &self.semantic_escape_chars
     }
 
     #[inline]
@@ -490,7 +581,7 @@ impl<U: EventListener> Crosswords<U> {
             .and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
         // Scroll vi mode cursor.
-        let line = &mut self.vi_mode_cursor.row;
+        let line = &mut self.vi_mode_cursor.pos.row;
         if region.start <= *line && region.end > *line {
             *line = std::cmp::min(*line + lines, region.end - 1);
         }
@@ -526,7 +617,7 @@ impl<U: EventListener> Crosswords<U> {
         } else {
             region.start
         };
-        let line = &mut self.vi_mode_cursor.row;
+        let line = &mut self.vi_mode_cursor.pos.row;
         if (top <= *line) && region.end > *line {
             *line = std::cmp::max(*line - lines, top);
         }
@@ -733,7 +824,7 @@ impl<U: EventListener> Crosswords<U> {
         let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
         let mut pos = if vi_mode {
-            self.vi_mode_cursor
+            self.vi_mode_cursor.pos
         } else {
             let scroll = self.display_offset() as i32;
             if scroll != 0 {

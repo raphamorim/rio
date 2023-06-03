@@ -20,9 +20,9 @@
 
 | Platform | Status | Version introduced |
 | --- | :-: | --- |
-| MacOs _as desktop application_ | 🔵 | `0.0.3` (x86 and arm64) |
+| MacOs _as desktop application_ | 🔵 | `0.0.3` [(see more)](https://raphamorim.io/rio/install/#install) |
 | Web Browser _(WebAssembly)_ | 🟡 | |
-| Linux _as desktop application_ | 🟠 | `0.0.5` (ubuntu) |
+| Linux _as desktop application_ | 🔵 | `0.0.5` [(see more)](https://raphamorim.io/rio/install/#build-from-the-source) |
 | Windows _as desktop application_ | 🔴 | |
 | Nintendo Switch * | 🔴 | |
 

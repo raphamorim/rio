@@ -214,6 +214,12 @@ impl Screen {
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
+                    Act::ViMotion(motion) => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.vi_motion(*motion);
+                        drop(terminal);
+                    }
                     Act::TabCreateNew => {
                         let redirect = true;
                         let spawn = true;
@@ -307,7 +313,7 @@ impl Screen {
     }
 
     // pub fn update_selection(&mut self, mut point: Pos, side: Side) {
-    pub fn update_selection(&mut self, mut point: Pos) {
+    pub fn update_selection(&mut self, mut pos: Pos) {
         let mut terminal = self.context_manager.current().terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
@@ -315,15 +321,15 @@ impl Screen {
         };
 
         // Treat motion over message bar like motion over the last line.
-        point.row = std::cmp::min(point.row, terminal.bottommost_line());
+        pos.row = std::cmp::min(pos.row, terminal.bottommost_line());
 
         // Update selection.
-        // selection.update(point, side);
-        selection.update(point, Side::Left);
+        // selection.update(pos, side);
+        selection.update(pos, Side::Left);
 
         // Move vi cursor and expand selection.
         if terminal.mode().contains(Mode::VI) {
-            terminal.vi_mode_cursor = point;
+            terminal.vi_mode_cursor.pos = pos;
             selection.include_all();
         }
 
