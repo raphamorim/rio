@@ -181,6 +181,12 @@ impl State {
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
         };
 
+        let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
+            ' '
+        } else {
+            square.c
+        };
+
         let mut style: Option<SugarStyle> = None;
         let is_italic = flags.contains(Flags::ITALIC);
         let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
@@ -195,7 +201,7 @@ impl State {
         }
 
         Sugar {
-            content: square.c,
+            content,
             foreground_color,
             background_color,
             style,
