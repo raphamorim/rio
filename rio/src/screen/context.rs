@@ -1,8 +1,8 @@
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
-use crate::screen::Crosswords;
 use crate::performer::Machine;
+use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
@@ -150,7 +150,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if self.contexts.len() - 1 == self.current_index {
             self.current_index = 0;
         } else {
-            self.current_index = self.current_index + 1;
+            self.current_index += 1;
         }
     }
 
