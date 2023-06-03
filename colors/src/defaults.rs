@@ -14,13 +14,13 @@ pub fn cursor() -> ColorArray {
 }
 
 pub fn tabs() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F9C5D1"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#12B5E5"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn tabs_active() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#FC7428"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#FCBA28"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
