@@ -1616,15 +1616,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 if self.mode.contains(Mode::ALT_SCREEN) {
                     self.grid.reset_region(..);
                 } else {
-                    // let old_offset = self.grid.display_offset();
+                    let old_offset = self.grid.display_offset();
 
                     self.grid.clear_viewport();
 
                     // Compute number of lines scrolled by clearing the viewport.
-                    // let lines = self.grid.display_offset().saturating_sub(old_offset);
+                    let lines = self.grid.display_offset().saturating_sub(old_offset);
 
-                    // self.vi_mode_cursor.pos.row =
-                    // (self.vi_mode_cursor.pos.row - lines).grid_clamp(self, Boundary::Grid);
+                    self.vi_mode_cursor.pos.row = (self.vi_mode_cursor.pos.row - lines)
+                        .grid_clamp(&self.grid, Boundary::Grid);
                 }
 
                 self.selection = None;
@@ -1632,8 +1632,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
 
-                // self.vi_mode_cursor.pos.row =
-                // self.vi_mode_cursor.pos.row.grid_clamp(self, Boundary::Cursor);
+                self.vi_mode_cursor.pos.row = self
+                    .vi_mode_cursor
+                    .pos
+                    .row
+                    .grid_clamp(&self.grid, Boundary::Cursor);
 
                 self.selection = self
                     .selection
