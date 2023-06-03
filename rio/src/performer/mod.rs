@@ -6,6 +6,7 @@ use crate::event::EventListener;
 use log::error;
 use mio::{self, Events, PollOpt, Ready};
 use mio_extras::channel;
+use mio::unix::UnixReady;
 
 use crate::event::{Msg, RioEvent};
 
@@ -202,11 +203,8 @@ where
     #[inline]
     fn channel_event(&mut self, token: mio::Token, state: &mut State) -> bool {
         if !self.should_keep_alive(state) {
-            // let interesets = Interest::WRITABLE.add(Interest::AIO);
             return false;
         }
-
-        // let interesets = Interest::WRITABLE.add(Interest::AIO);
 
         self.poll
             .reregister(
@@ -321,10 +319,10 @@ where
                                 || token == self.pty.write_token() =>
                         {
                             #[cfg(unix)]
-                            // if UnixReady::from(event.readiness()).is_hup() {
-                            //     // Don't try to do I/O on a dead PTY.
-                            //     continue;
-                            // }
+                            if UnixReady::from(event.readiness()).is_hup() {
+                                // Don't try to do I/O on a dead PTY.
+                                continue;
+                            }
                             if event.readiness().is_readable() {
                                 if let Err(err) = self.pty_read(&mut state, &mut buf) {
                                     // On Linux, a `read` on the master side of a PTY can fail
