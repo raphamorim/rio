@@ -39,8 +39,6 @@ font-size = 16
 theme = "Basic"
 
 [advanced]
-tab-character-active = '●'
-tab-character-inactive = '■'
 disable-renderer-when-unfocused = false
 
 [developer]
@@ -57,8 +55,8 @@ foreground       = '#F9F4DA'
 green            = '#0BA95B'
 magenta          = '#7B5EA7'
 red              = '#ED203D'
-tabs             = '#F9C5D1'
-tabs-active      = '#FC7428'
+tabs             = '#12B5E5'
+tabs-active      = '#FCBA28'
 white            = '#F1F1F1'
 yellow           = '#FCBA28'
 dim-black        = '#1C191A'
@@ -169,30 +167,12 @@ Sets font size.
 font-size = 16.0
 {% endhighlight %}
 
-## tab-character-active
-
-This property sets a character for an active tab.
-
-{% highlight toml %}
-[style]
-tab-character-active = '●'
-{% endhighlight %}
-
-## tab-character-inactive
-
-This property sets a character for an inactive tab.
-
-{% highlight toml %}
-[style]
-tab-character-inactive = '■'
-{% endhighlight %}
-
 ## disable-renderer-when-unfocused
 
 This property disable renderer processes until focus on Rio term again.
 
 {% highlight toml %}
-[style]
+[advanced]
 disable-renderer-when-unfocused = false
 {% endhighlight %}
 
@@ -201,7 +181,7 @@ disable-renderer-when-unfocused = false
 This property enables log level filter. Default is "OFF".
 
 {% highlight toml %}
-[style]
+[developer]
 log-level = 'INFO'
 {% endhighlight %}
 
@@ -210,6 +190,6 @@ log-level = 'INFO'
 This property enables frame per second counter.
 
 {% highlight toml %}
-[style]
+[developer]
 enable-fps-counter = false
 {% endhighlight %}

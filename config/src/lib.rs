@@ -32,30 +32,10 @@ impl Default for Style {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Deserialize)]
 pub struct Advanced {
-    #[serde(
-        default = "default_tab_character_active",
-        rename = "tab-character-active"
-    )]
-    pub tab_character_active: char,
-    #[serde(
-        default = "default_tab_character_inactive",
-        rename = "tab-character-inactive"
-    )]
-    pub tab_character_inactive: char,
     #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
     pub disable_render_when_unfocused: bool,
-}
-
-impl Default for Advanced {
-    fn default() -> Advanced {
-        Advanced {
-            tab_character_active: default_tab_character_active(),
-            tab_character_inactive: default_tab_character_inactive(),
-            disable_render_when_unfocused: false,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -264,23 +244,18 @@ mod tests {
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.width, default_width());
         assert_eq!(result.height, default_height());
+
         // Style
         assert_eq!(result.style.font, default_font());
         assert_eq!(result.style.font_size, default_font_size());
         assert_eq!(result.style.theme, default_theme());
+
         // Colors
         assert_eq!(result.colors, Colors::default());
 
         // Advanced
-        assert_eq!(
-            result.advanced.tab_character_active,
-            default_tab_character_active()
-        );
-        assert_eq!(
-            result.advanced.tab_character_inactive,
-            default_tab_character_inactive()
-        );
         assert!(!result.advanced.disable_render_when_unfocused);
+
         // Developer
         assert_eq!(result.developer.log_level, default_log_level());
         assert!(!result.developer.enable_fps_counter);
@@ -302,7 +277,8 @@ mod tests {
             background = '#0F0D0E'
             foreground = '#F9F4DA'
             cursor = '#F38BA3'
-            tabs-active = '#FC7428'
+            tab = '#12B5E5'
+            tabs-active = '#FCBA28'
             green = '#0BA95B'
             red = '#ED203D'
             blue = '#12B5E5'
@@ -314,8 +290,6 @@ mod tests {
             theme = ""
 
             [advanced]
-            tab-character-active = '●'
-            tab-character-inactive = '■'
             disable-render-when-unfocused = false
 
             [developer]
@@ -673,8 +647,6 @@ mod tests {
 
             [advanced]
             disable-render-when-unfocused = true
-            tab-character-active = '▲'
-            tab-character-inactive = '●'
         "#,
         );
 
@@ -683,8 +655,6 @@ mod tests {
         assert_eq!(result.height, default_height());
         // Advanced
         assert!(result.advanced.disable_render_when_unfocused);
-        assert_eq!(result.advanced.tab_character_active, '▲');
-        assert_eq!(result.advanced.tab_character_inactive, '●');
 
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

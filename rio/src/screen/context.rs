@@ -8,7 +8,8 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use teletypewriter::create_pty;
-const DEFAULT_CONTEXT_CAPACITY: usize = 10;
+
+const DEFAULT_CONTEXT_CAPACITY: usize = 6;
 
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
