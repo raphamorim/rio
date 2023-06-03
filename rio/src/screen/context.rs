@@ -2,7 +2,7 @@ use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
 use crate::screen::Crosswords;
-use crate::screen::Machine;
+use crate::performer::Machine;
 use crate::screen::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
