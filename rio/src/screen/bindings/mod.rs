@@ -1,6 +1,7 @@
 // Cria os bindings e usa struct actions
 // https://github.com/alacritty/alacritty/blob/828fdab7470c8d16d2edbe2cec919169524cb2bb/alacritty/src/config/bindings.rs#L43
 
+use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
 use std::fmt::Debug;
@@ -124,12 +125,11 @@ pub enum Action {
     /// Regex keyboard hints.
     // Hint(Hint),
 
-    /// Move vi mode cursor.
-    // ViMotion(ViMotion),
+    // Move vi mode cursor.
+    ViMotion(ViMotion),
 
-    /// Perform vi mode action.
+    // Perform vi mode action.
     // Vi(ViAction),
-
     /// Perform mouse binding exclusive action.
     // Mouse(MouseAction),
 
@@ -259,6 +259,12 @@ pub enum Action {
 impl From<&'static str> for Action {
     fn from(s: &'static str) -> Action {
         Action::Esc(s.into())
+    }
+}
+
+impl From<ViMotion> for Action {
+    fn from(motion: ViMotion) -> Self {
+        Self::ViMotion(motion)
     }
 }
 
@@ -442,49 +448,49 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         // Return,                        +BindingMode::VI;
         //     ViAction::Open;
         // Z,                             +BindingMode::VI;
-        //     ViAction::CenterAroundViCursor;
-        // K,                             +BindingMode::VI;
-        //     ViMotion::Up;
-        // J,                             +BindingMode::VI;
-        //     ViMotion::Down;
-        // H,                             +BindingMode::VI;
-        //     ViMotion::Left;
-        // L,                             +BindingMode::VI;
-        //     ViMotion::Right;
-        // Up,                            +BindingMode::VI;
-        //     ViMotion::Up;
-        // Down,                          +BindingMode::VI;
-        //     ViMotion::Down;
-        // Left,                          +BindingMode::VI;
-        //     ViMotion::Left;
-        // Right,                         +BindingMode::VI;
-        //     ViMotion::Right;
-        // Key0,                          +BindingMode::VI;
-        //     ViMotion::First;
-        // Key4,   ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::Last;
-        // Key6,   ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::FirstOccupied;
-        // H,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::High;
-        // M,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::Middle;
-        // L,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::Low;
-        // B,                             +BindingMode::VI;
-        //     ViMotion::SemanticLeft;
-        // W,                             +BindingMode::VI;
-        //     ViMotion::SemanticRight;
-        // E,                             +BindingMode::VI;
-        //     ViMotion::SemanticRightEnd;
-        // B,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::WordLeft;
-        // W,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::WordRight;
-        // E,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::WordRightEnd;
-        // Key5,   ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViMotion::Bracket;
+            // ViAction::CenterAroundViCursor;
+        K,                             +BindingMode::VI;
+            ViMotion::Up;
+        J,                             +BindingMode::VI;
+            ViMotion::Down;
+        H,                             +BindingMode::VI;
+            ViMotion::Left;
+        L,                             +BindingMode::VI;
+            ViMotion::Right;
+        Up,                            +BindingMode::VI;
+            ViMotion::Up;
+        Down,                          +BindingMode::VI;
+            ViMotion::Down;
+        Left,                          +BindingMode::VI;
+            ViMotion::Left;
+        Right,                         +BindingMode::VI;
+            ViMotion::Right;
+        Key0,                          +BindingMode::VI;
+            ViMotion::First;
+        Key4,   ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::Last;
+        Key6,   ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::FirstOccupied;
+        H,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::High;
+        M,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::Middle;
+        L,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::Low;
+        B,                             +BindingMode::VI;
+            ViMotion::SemanticLeft;
+        W,                             +BindingMode::VI;
+            ViMotion::SemanticRight;
+        E,                             +BindingMode::VI;
+            ViMotion::SemanticRightEnd;
+        B,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::WordLeft;
+        W,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::WordRight;
+        E,      ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::WordRightEnd;
+        Key5,   ModifiersState::SHIFT, +BindingMode::VI;
+            ViMotion::Bracket;
         T, ModifiersState::LOGO; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         W, ModifiersState::LOGO; Action::TabCloseCurrent;

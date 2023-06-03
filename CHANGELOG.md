@@ -2,10 +2,11 @@
 
 ## 0.0.6 (In progress)
 
+- Update default colors for tabs/tabs-active.
 - Tabs support.
-- Fix rendering tab and hidden chars by replacing to space by @niuez, (closed [#56](https://github.com/raphamorim/rio/issues/56))
+- Fix rendering tab and hidden chars by replacing to space by [@niuez](https://github.com/niuez), (closed [#56](https://github.com/raphamorim/rio/issues/56))
 - Block cursor hover a character and still allow it to be visible.
-- Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by @niuez.
+- Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by [@niuez](https://github.com/niuez).
 - Fix panics if custom font is not found #68
 - MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera)
 
@@ -13,7 +14,7 @@
 
 - Fix ctlseqs modifiers for bindings.
 - Add RioEvent::ColorRequest events to write color updates on pty.
-- Fix to render specific 24bit colors (#66) by @niuez.
+- Fix to render specific 24bit colors (#66) by [@niuez](https://github.com/niuez).
 - Cross build for arm64 and x86
 - Bold and Italic support (https://github.com/raphamorim/rio/issues/33).
 - Theme support (eae39bc81b5b561882b7a37b2c03896633276c27)
