@@ -4,9 +4,9 @@ use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
 use log::error;
+use mio::unix::UnixReady;
 use mio::{self, Events, PollOpt, Ready};
 use mio_extras::channel;
-use mio::unix::UnixReady;
 
 use crate::event::{Msg, RioEvent};
 
