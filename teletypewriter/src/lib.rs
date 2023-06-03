@@ -72,7 +72,7 @@ fn default_shell_command(shell: &str) {
 }
 
 pub struct Pty {
-    child: Child,
+    pub child: Child,
     file: File,
     token: mio::Token,
     signals_token: mio::Token,
@@ -486,6 +486,12 @@ impl Child {
 
         Ok(Some(status))
     }
+
+    pub fn close(&self) {
+        unsafe {
+            libc::close(*self.pid);
+        }
+    }
 }
 
 impl Deref for Child {
@@ -498,8 +504,7 @@ impl Deref for Child {
 impl Drop for Child {
     fn drop(&mut self) {
         unsafe {
-            // libc::close(*self.id);
-            libc::kill(*self.id, libc::SIGHUP);
+            libc::kill(*self.pid, libc::SIGHUP);
         }
     }
 }

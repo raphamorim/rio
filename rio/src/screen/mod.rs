@@ -13,7 +13,6 @@ use crate::crosswords::{
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::layout::Layout;
-use crate::performer::Machine;
 use crate::screen::bindings::{Action as Act, BindingMode, Key};
 use crate::screen::context::ContextManager;
 use crate::selection::{Selection, SelectionType};
