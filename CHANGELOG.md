@@ -2,6 +2,8 @@
 
 ## 0.0.6 (In progress)
 
+- Tabs support.
+- Fix rendering tab and hidden chars by replacing to space by @niuez, (closed [#56](https://github.com/raphamorim/rio/issues/56))
 - Block cursor hover a character and still allow it to be visible.
 - Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by @niuez.
 - Fix panics if custom font is not found #68
