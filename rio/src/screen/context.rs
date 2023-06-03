@@ -8,25 +8,22 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use teletypewriter::create_pty;
-type ContextId = usize;
 const DEFAULT_CONTEXT_CAPACITY: usize = 10;
 
 pub struct Context<T: EventListener> {
-    pub id: ContextId,
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
 }
 
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
-    current: ContextId,
+    current_index: usize,
     capacity: usize,
     event_proxy: T,
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
-        id: usize,
         columns: usize,
         rows: usize,
         cursor_state: CursorState,
@@ -49,7 +46,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let messenger = Messenger::new(channel);
 
         Ok(Context {
-            id,
             messenger,
             terminal,
         })
@@ -62,7 +58,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
-            0,
             columns,
             rows,
             cursor_state,
@@ -70,7 +65,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             true,
         )?;
         Ok(ContextManager {
-            current: initial_context.id,
+            current_index: 0,
             contexts: vec![initial_context],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -83,7 +78,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
-            0,
             1,
             1,
             CursorState::default(),
@@ -91,7 +85,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             false,
         )?;
         Ok(ContextManager {
-            current: initial_context.id,
+            current_index: 0,
             contexts: vec![initial_context],
             capacity,
             event_proxy,
@@ -114,64 +108,49 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn set_current(&mut self, context_id: usize) {
-        if self.contains(context_id) {
-            self.current = context_id;
+        if context_id < self.contexts.len() {
+            self.current_index = context_id;
         }
     }
 
     #[inline]
-    #[allow(unused)]
-    pub fn contains(&self, context_id: usize) -> bool {
-        self.contexts.iter().any(|i| i.id == context_id)
-    }
-
-    #[inline]
-    fn position(&self, context_id: usize) -> Option<usize> {
-        self.contexts.iter().position(|t| t.id == context_id)
-    }
-
-    #[inline]
-    pub fn close_context(&mut self, context_id: usize) {
+    pub fn close_context(&mut self) {
         if self.contexts.len() <= 1 {
-            self.current = 0;
+            self.current_index = 0;
             return;
         }
 
-        if let Some(idx) = self.position(context_id) {
-            self.contexts.remove(idx);
-
-            if let Some(last) = self.contexts.last() {
-                self.current = last.id;
-            }
+        if self.current_index > 1 {
+            self.set_current(self.current_index - 1);
+        } else {
+            self.set_current(0);
         }
+
+        self.contexts.remove(self.current_index);
     }
 
     #[inline]
-    pub fn current_id(&self) -> usize {
-        self.current
+    pub fn current_index(&self) -> usize {
+        self.current_index
     }
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        &self.contexts[self.current]
+        &self.contexts[self.current_index]
     }
 
     #[inline]
     pub fn current_mut(&mut self) -> &mut Context<T> {
-        &mut self.contexts[self.current]
+        &mut self.contexts[self.current_index]
     }
 
     #[inline]
     pub fn switch_to_next(&mut self) {
-        if let Some(current_position) = self.position(self.current) {
-            let (left, right) = self.contexts.split_at(current_position + 1);
-            if !right.is_empty() {
-                self.current = right[0].id;
-            } else {
-                self.current = left[0].id;
-            }
+        if self.contexts.len() - 1 == self.current_index {
+            self.current_index = 0;
+        } else {
+            self.current_index = self.current_index + 1;
         }
     }
 
@@ -186,10 +165,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     ) {
         let size = self.contexts.len();
         if size < self.capacity {
-            let last_context: &Context<T> = &self.contexts[size - 1];
-            let new_context_id = last_context.id + 1;
+            let last_index = self.contexts.len();
             match ContextManager::create_context(
-                new_context_id,
                 columns,
                 rows,
                 cursor_state,
@@ -199,7 +176,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 Ok(new_context) => {
                     self.contexts.push(new_context);
                     if redirect {
-                        self.current = new_context_id;
+                        self.current_index = last_index;
                     }
                 }
                 Err(..) => {
@@ -232,17 +209,17 @@ pub mod test {
         let mut context_manager =
             ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
         assert_eq!(context_manager.capacity, 5);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = false;
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.capacity, 5);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = true;
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.capacity, 5);
-        assert_eq!(context_manager.current, 2);
+        assert_eq!(context_manager.current_index, 2);
     }
 
     #[test]
@@ -250,7 +227,7 @@ pub mod test {
         let mut context_manager =
             ContextManager::start_with_capacity(3, VoidListener {}).unwrap();
         assert_eq!(context_manager.capacity, 3);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.len(), 2);
@@ -278,22 +255,20 @@ pub mod test {
         let should_redirect = true;
 
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        assert_eq!(context_manager.current, 1);
+        assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.capacity, 8);
-
-        context_manager.set_current(8);
-        assert_eq!(context_manager.current, 0);
-        context_manager.set_current(2);
-        assert_eq!(context_manager.current, 0);
 
         let should_redirect = false;
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         context_manager.set_current(3);
-        assert_eq!(context_manager.current, 3);
+        assert_eq!(context_manager.current_index, 3);
+
+        context_manager.set_current(8);
+        assert_eq!(context_manager.current_index, 3);
     }
 
     #[test]
@@ -306,14 +281,14 @@ pub mod test {
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.len(), 3);
 
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
         context_manager.set_current(2);
-        assert_eq!(context_manager.current, 2);
+        assert_eq!(context_manager.current_index, 2);
         context_manager.set_current(0);
 
-        context_manager.close_context(2);
+        context_manager.close_context();
         context_manager.set_current(2);
-        assert_eq!(context_manager.current, 1);
+        assert_eq!(context_manager.current_index, 0);
         assert_eq!(context_manager.len(), 2);
     }
 
@@ -328,22 +303,22 @@ pub mod test {
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
 
-        context_manager.close_context(0);
-        context_manager.close_context(1);
-        context_manager.close_context(2);
-        context_manager.close_context(3);
+        context_manager.close_context();
+        context_manager.close_context();
+        context_manager.close_context();
+        context_manager.close_context();
 
         assert_eq!(context_manager.len(), 1);
-        assert_eq!(context_manager.current, 4);
+        assert_eq!(context_manager.current_index, 0);
 
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
 
         assert_eq!(context_manager.len(), 2);
-        context_manager.set_current(5);
-        assert_eq!(context_manager.current, 5);
-        context_manager.close_context(4);
+        context_manager.set_current(1);
+        assert_eq!(context_manager.current_index, 1);
+        context_manager.close_context();
         assert_eq!(context_manager.len(), 1);
-        assert_eq!(context_manager.current, 5);
+        assert_eq!(context_manager.current_index, 0);
     }
 
     #[test]
@@ -355,13 +330,13 @@ pub mod test {
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.len(), 2);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
 
-        context_manager.close_context(1);
+        context_manager.close_context();
         assert_eq!(context_manager.len(), 1);
 
         // Last context should not be closed
-        context_manager.close_context(0);
+        context_manager.close_context();
         assert_eq!(context_manager.len(), 1);
     }
 
@@ -377,19 +352,19 @@ pub mod test {
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
         assert_eq!(context_manager.len(), 5);
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
 
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 1);
+        assert_eq!(context_manager.current_index, 1);
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 2);
+        assert_eq!(context_manager.current_index, 2);
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 3);
+        assert_eq!(context_manager.current_index, 3);
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 4);
+        assert_eq!(context_manager.current_index, 4);
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 0);
+        assert_eq!(context_manager.current_index, 0);
         context_manager.switch_to_next();
-        assert_eq!(context_manager.current, 1);
+        assert_eq!(context_manager.current_index, 1);
     }
 }

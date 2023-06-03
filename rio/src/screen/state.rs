@@ -369,10 +369,10 @@ impl State {
             let mut renderable_tabs = vec![];
             let mut initial_position = styles.tabs_initial_position;
             let position_modifier = 20.;
-            for tab in context_manager.contexts().iter() {
+            for (i, _) in context_manager.contexts().iter().enumerate() {
                 let mut color = self.named_colors.tabs;
                 let mut size = 16.0;
-                if tab.id == context_manager.current_id() {
+                if i == context_manager.current_index() {
                     color = self.named_colors.tabs_active;
                     size = 26.0;
                 }
