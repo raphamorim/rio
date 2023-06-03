@@ -232,9 +232,8 @@ impl Screen {
                         self.render();
                     }
                     Act::TabCloseCurrent => {
-                        let current_context_id = self.context_manager.current_id();
-                        self.context_manager.close_context(current_context_id);
-                        // self.render();
+                        self.context_manager.close_context();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
