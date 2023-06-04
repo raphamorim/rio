@@ -51,15 +51,6 @@ table {
   border-spacing: 0;
 }
 
-:root {
-  --theme_width: 350px;
-  --row_increment: 10px;
-  --theme_border_radius: 16px;
-  --theme_small: 26;
-  --theme_medium: 33;
-  --theme_large: 45;
-}
-
 /* silkscreen-regular - latin */
 @font-face {
   font-family: 'Silkscreen';
@@ -448,84 +439,6 @@ section.features .container p {
   width: 60px;
 }
 
-.container.themes {
-  margin-top: 30px;
-  text-align: center;
-}
-
-.container.themes h1 {
-  font-size: 50px;
-  text-align: center;
-}
-
-.container.themes .themes-edit {
-  text-decoration: underline;
-  color: #0F0D0E;
-}
-
-.themes-grid {
-  margin: 0;
-  margin-top: 30px;
-  padding: 0;
-  width: 80vw;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-
-  display: grid;
-  grid-template-columns: repeat(auto-fill, var(--theme_width));
-  grid-auto-rows: var(--row_increment);
-  justify-content: center;
-}
-
-.themes h1 {
-  margin: 20px;
-  font-size: 50px;
-}
-
-.theme {
-  padding: 0;
-  margin: 15px 10px;
-  border-radius: var(--theme_border_radius);
-  background-color: #12B5E5;
-  overflow: hidden;
-}
-
-.theme img {
-  width: 200%;
-  margin-top: 20px;
-}
-
-.theme a {
-  text-decoration: none;
-  color: #F9F4DA;
-}
-
-.theme .theme-name {
-  position: absolute;
-  font-family: 'Silkscreen';
-  font-size: 0.8em;
-  margin-left: 0.8em;
-}
-
-.theme_small {
-  grid-row-end: span var(--theme_small);
-}
-
-.theme_medium {
-  grid-row-end: span var(--theme_medium);
-  background-color: #ED203D;
-}
-
-.theme_large {
-  grid-row-end: span var(--theme_large);
-  background-color: #7B5EA7;
-}
-
-.theme_large:nth-child(even) {
-  background-color: #FCBA28;
-}
-
 .container.post {
   padding: 50px;
   background: #F9F4DA;
@@ -636,12 +549,15 @@ section.features .container p {
     margin: 0 30px;
   }
 
-  #nav #links {
-    width: 260px;
+  #nav {
+    display: block;
+    width: 185px;
+    margin-bottom: 110px;
+    text-align: center;
   }
 
-  #nav #links #links-download {
-    display: none;
+  #nav #links {
+    width: 200px;
   }
 
   #nav #nav-logo {
