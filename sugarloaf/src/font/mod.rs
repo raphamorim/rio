@@ -38,9 +38,9 @@ pub struct Font {
 }
 fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
     let copied_font = font.copy_font_data();
-    return Some(FontArc::new(
+    Some(FontArc::new(
         FontVec::try_from_vec_and_index(copied_font?.to_vec(), 0).unwrap(),
-    ));
+    ))
 }
 impl Font {
     // TODO: Refactor multiple unwraps in this code
@@ -112,7 +112,6 @@ impl Font {
                         let font = font.load();
                         if let Ok(font) = font {
                             let meta = font.properties();
-                            dbg!(meta.clone());
                             match meta.style {
                                 Style::Normal => {
                                     //TODO: Find a way to use struct Weight
@@ -167,7 +166,7 @@ impl Font {
                         symbol: font_arc_symbol,
                         emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                         unicode: font_arc_unicode,
-                    }
+                    };
                 }
             }
 
