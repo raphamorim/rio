@@ -202,12 +202,27 @@ impl State {
             });
         }
 
+        let mut decoration = None;
+        if flags.contains(Flags::UNDERLINE) {
+            decoration = Some(SugarDecoration {
+                position: (0.0, 0.95),
+                size: (1.0, 0.05),
+                color: self.named_colors.foreground,
+            });
+        } else if flags.contains(Flags::STRIKEOUT) {
+            decoration = Some(SugarDecoration {
+                position: (0.0, 0.5),
+                size: (1.0, 0.05),
+                color: self.named_colors.foreground,
+            });
+        }
+
         Sugar {
             content,
             foreground_color,
             background_color,
             style,
-            decoration: None,
+            decoration,
         }
     }
 
