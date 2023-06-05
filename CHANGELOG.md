@@ -2,6 +2,7 @@
 
 ## 0.0.6 (In progress)
 
+- Font style for custom fonts by [@OlshaMB](https://github.com/OlshaMB) (closed [#80](https://github.com/raphamorim/rio/issues/80) and [#81](https://github.com/raphamorim/rio/issues/81))
 - Text styles Underline and Strikethrough (closed [#79](https://github.com/raphamorim/rio/issues/79)).
 - Update default colors for tabs/tabs-active.
 - Tabs support.
