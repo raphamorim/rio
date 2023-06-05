@@ -2,12 +2,13 @@
 
 ## 0.0.6 (In progress)
 
+- Text styles Underline and Strikethrough (closed [#79](https://github.com/raphamorim/rio/issues/79)).
 - Update default colors for tabs/tabs-active.
 - Tabs support.
-- Fix rendering tab and hidden chars by replacing to space by [@niuez](https://github.com/niuez), (closed [#56](https://github.com/raphamorim/rio/issues/56))
+- Fix rendering tab and hidden chars by replacing to space by [@niuez](https://github.com/niuez), (closed [#56](https://github.com/raphamorim/rio/issues/56)).
 - Block cursor hover a character and still allow it to be visible.
 - Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by [@niuez](https://github.com/niuez).
-- Fix panics if custom font is not found #68
+- Fix panics if custom font is not found [#68](https://github.com/raphamorim/rio/issues/68).
 - MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera)
 
 ## 0.0.5
