@@ -50,9 +50,12 @@ Rio is a terminal built to run everywhere, as a native desktop applications by R
 """
 
 [features]
+default = ["wayland", "x11"]
 x11 = [
-  "copypasta/x11"
+    "copypasta/x11",
+    "winit/x11"
 ]
 wayland = [
-  "copypasta/wayland"
+    "copypasta/wayland",
+    "winit/wayland",
 ]

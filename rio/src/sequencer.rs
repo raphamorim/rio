@@ -5,6 +5,7 @@ use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
 use colors::ColorRgb;
 use std::error::Error;
+use std::os::raw::c_void;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::event::{
@@ -68,7 +69,13 @@ impl Sequencer {
             }
         }
 
-        let mut screen = Screen::new(&winit_window, &self.config, event_proxy).await?;
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let display: Option<*mut c_void> = event_loop.wayland_display();
+        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
+        let display: Option<*mut c_void> = Option::None;
+
+        let mut screen =
+            Screen::new(&winit_window, &self.config, event_proxy, display).await?;
         let mut is_window_focused = false;
         let mut should_render = false;
         screen.init(self.config.colors.background.1);
