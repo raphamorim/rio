@@ -68,10 +68,16 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 
 ## Building
 
-Linux / BSD:
+Linux with Wayland:
 
 {% highlight bash %}
-cargo build --release
+cargo build --release --features=wayland
+{% endhighlight %}
+
+Linux with X11:
+
+{% highlight bash %}
+cargo build --release --features=x11
 {% endhighlight %}
 
 If all goes well, this should place a binary at <span class="keyword">target/release/rio</span>.
