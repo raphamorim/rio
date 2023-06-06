@@ -11,7 +11,7 @@
 - Block cursor hover a character and still allow it to be visible.
 - Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by [@niuez](https://github.com/niuez).
 - Fix panics if custom font is not found [#68](https://github.com/raphamorim/rio/issues/68).
-- MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera)
+- MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).
 
 ## 0.0.5
 
