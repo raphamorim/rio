@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.6 (In progress)
+## 0.0.6
 
 - Fix: support to clipboard in linux by [@joseemds](https://github.com/joseemds).
 - Font style for custom fonts by [@OlshaMB](https://github.com/OlshaMB) (closed [#80](https://github.com/raphamorim/rio/issues/80) and [#81](https://github.com/raphamorim/rio/issues/81))
