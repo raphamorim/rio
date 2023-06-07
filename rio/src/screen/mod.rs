@@ -20,6 +20,7 @@ use colors::term::List;
 use messenger::Messenger;
 use state::State;
 use std::error::Error;
+use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::Sugarloaf;
 
@@ -39,6 +40,7 @@ impl Screen {
         winit_window: &winit::window::Window,
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
+        _display: Option<*mut c_void>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -64,7 +66,12 @@ impl Screen {
         .await?;
 
         let state = State::new(config);
+
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let clipboard = unsafe { Clipboard::new(_display) };
+        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let clipboard = Clipboard::new();
+
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
         let context_manager = context::ContextManager::start(
