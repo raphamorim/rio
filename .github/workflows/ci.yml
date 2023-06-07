@@ -26,7 +26,7 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
       - run: cargo test
 
   test-macos:
