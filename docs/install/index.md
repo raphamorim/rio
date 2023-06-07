@@ -68,19 +68,32 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 
 ## Building
 
-Linux with Wayland:
+Linux X11 + Wayland:
 
 {% highlight bash %}
-cargo build --release --features=wayland
+# Both X11 + Wayland
+cargo build --release
+
+# Execute
+WINIT_UNIX_BACKEND=wayland target/release/rio
+WINIT_UNIX_BACKEND=x11 target/release/rio
 {% endhighlight %}
 
-Linux with X11:
+Linux only X11:
 
 {% highlight bash %}
-cargo build --release --features=x11
+# Only X11
+cargo build --release --no-default-features --features=x11
+WINIT_UNIX_BACKEND=x11 target/release/rio
 {% endhighlight %}
 
-If all goes well, this should place a binary at <span class="keyword">target/release/rio</span>.
+Linux only Wayland:
+
+{% highlight bash %}
+# Only Wayland
+cargo build --release --no-default-features --features=wayland
+WINIT_UNIX_BACKEND=wayland target/release/rio
+{% endhighlight %}
 
 macOS:
 
