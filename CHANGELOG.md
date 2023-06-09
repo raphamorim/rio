@@ -2,6 +2,7 @@
 
 ## 0.0.7 (in progress)
 
+- Fix Ctrl+D
 - Fix Exit command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
 - Changed default `light-black` color.
 
