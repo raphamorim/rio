@@ -29,15 +29,11 @@ pub fn setup_environment_variables(config: &config::Config) {
     std::env::set_var("TERM", terminfo);
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
-    // Temporary approach for macos
-    // https://pubs.opengroup.org/onlinepubs/7908799/xbd/envvar.html
     #[cfg(target_os = "macos")]
-    platform::macos::set_locale_environment();
-
-    std::env::set_var("LC_CTYPE", "UTF-8");
-
-    #[cfg(target_os = "macos")]
-    std::env::set_current_dir(dirs::home_dir().unwrap()).unwrap();
+    {
+        platform::macos::set_locale_environment();
+        std::env::set_current_dir(dirs::home_dir().unwrap()).unwrap();
+    }
 
     // Set env vars from config.
     for env_config in config.env_vars.iter() {
