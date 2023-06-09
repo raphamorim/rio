@@ -305,13 +305,22 @@ where
                             }
                         }
                         token if token == self.pty.child_event_token() => {
-                            // if let Some(teletypewriter::ChildEvent::Exited) =
-                            //     self.pty.next_child_event()
-                            // {
-                            let _ = self.pty_read(&mut state, &mut buf);
-                            self.event_proxy.send_event(RioEvent::Wakeup);
-                            // break 'event_loop;
-                            // }
+                            if let Some(teletypewriter::ChildEvent::Exited) =
+                                self.pty.next_child_event() {
+
+                                // In the future allow configure exit
+                                // if self.hold {
+                                //     With hold enabled, make sure the PTY is drained.
+                                //     let _ = self.pty_read(&mut state, &mut buf);
+                                // } else {
+                                //     // Without hold, shutdown the terminal.
+                                //     self.terminal.lock().exit();
+                                // }
+
+                                self.terminal.lock().exit();
+                                self.event_proxy.send_event(RioEvent::Wakeup);
+                                break 'event_loop;
+                            }
                         }
 
                         token
@@ -328,8 +337,6 @@ where
                                     // On Linux, a `read` on the master side of a PTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
                                     // just loop back round for the inevitable `Exited` event.
-                                    // This sucks, but checking the process is either racy or
-                                    // blocking.
                                     #[cfg(target_os = "linux")]
                                     if err.raw_os_error() == Some(libc::EIO) {
                                         continue;

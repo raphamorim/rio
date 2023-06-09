@@ -26,59 +26,6 @@ The configuration should be the following paths otherwise Rio will use the defau
 
 In macOS and linux path is in "~/.config/rio/config.toml".
 
-Default configuration of config.toml:
-
-{% highlight toml %}
-performance = "High"
-height = 438
-width = 662
-
-[style]
-font = "CascadiaMono"
-font-size = 16
-theme = "Basic"
-
-[advanced]
-disable-renderer-when-unfocused = false
-
-[developer]
-enable-fps-counter = false
-log-level = 'OFF'
-
-[colors]
-background       = '#0F0D0E'
-black            = '#231F20'
-blue             = '#006EE6'
-cursor           = '#F38BA3'
-cyan             = '#88DAF2'
-foreground       = '#F9F4DA'
-green            = '#0BA95B'
-magenta          = '#7B5EA7'
-red              = '#ED203D'
-tabs             = '#12B5E5'
-tabs-active      = '#FCBA28'
-white            = '#F1F1F1'
-yellow           = '#FCBA28'
-dim-black        = '#1C191A'
-dim-blue         = '#0E91B7'
-dim-cyan         = '#93D4E7'
-dim-foreground   = '#ECDC8A'
-dim-green        = '#098749'
-dim-magenta      = '#624A87'
-dim-red          = '#C7102A'
-dim-white        = '#C1C1C1'
-dim-yellow       = '#E6A003'
-light-black      = '#2C2728'
-light-blue       = '#44C9F0'
-light-cyan       = '#7BE1FF'
-light-foreground = '#F2EFE2'
-light-green      = '#0ED372'
-light-magenta    = '#9E88BE'
-light-red        = '#F25E73'
-light-white      = '#FFFFFF'
-light-yellow     = '#FDF170'
-{% endhighlight %}
-
 ## performance
 
 Set terminal WGPU rendering perfomance.
@@ -167,6 +114,46 @@ Sets font size.
 font-size = 16.0
 {% endhighlight %}
 
+## colors
+
+Default colors.
+
+{% highlight toml %}
+[colors]
+background       = '#0F0D0E'
+black            = '#231F20'
+blue             = '#006EE6'
+cursor           = '#F38BA3'
+cyan             = '#88DAF2'
+foreground       = '#F9F4DA'
+green            = '#0BA95B'
+magenta          = '#7B5EA7'
+red              = '#ED203D'
+tabs             = '#12B5E5'
+tabs-active      = '#FCBA28'
+white            = '#F1F1F1'
+yellow           = '#FCBA28'
+dim-black        = '#1C191A'
+dim-blue         = '#0E91B7'
+dim-cyan         = '#93D4E7'
+dim-foreground   = '#ECDC8A'
+dim-green        = '#098749'
+dim-magenta      = '#624A87'
+dim-red          = '#C7102A'
+dim-white        = '#C1C1C1'
+dim-yellow       = '#E6A003'
+light-black      = '#ADA8A0'
+light-blue       = '#44C9F0'
+light-cyan       = '#7BE1FF'
+light-foreground = '#F2EFE2'
+light-green      = '#0ED372'
+light-magenta    = '#9E88BE'
+light-red        = '#F25E73'
+light-white      = '#FFFFFF'
+light-yellow     = '#FDF170'
+{% endhighlight %}
+
+<!-- 
 ## disable-renderer-when-unfocused
 
 This property disable renderer processes until focus on Rio term again.
@@ -192,4 +179,4 @@ This property enables frame per second counter.
 {% highlight toml %}
 [developer]
 enable-fps-counter = false
-{% endhighlight %}
+{% endhighlight %} -->

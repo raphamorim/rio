@@ -134,7 +134,7 @@ pub fn dim_yellow() -> ColorArray {
 }
 
 pub fn light_black() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#2C2728"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#ADA8A0"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }

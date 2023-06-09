@@ -360,6 +360,14 @@ impl<U: EventListener> Crosswords<U> {
         self.colors
     }
 
+    #[inline]
+    pub fn exit(&mut self)
+    where
+        U: EventListener,
+    {
+        self.event_proxy.send_event(RioEvent::Exit);
+    }
+
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
         let old_cols = self.grid.columns();
         let old_lines = self.grid.screen_lines();

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.7 (in progress)
+
+- Fix Exit command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
+- Changed default `light-black` color.
+
 ## 0.0.6
 
 - Fix: support to clipboard in linux by [@joseemds](https://github.com/joseemds).
