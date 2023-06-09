@@ -384,7 +384,7 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 set_nonblocking(main);
             }
 
-            let signals = Signals::new([sigconsts::SIGWINCH]).unwrap();
+            let signals = Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
             Pty {
                 child,
                 signals,
@@ -520,7 +520,7 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
         .stdout;
 
     std::str::from_utf8(&current_process_name)
-        .unwrap_or("zsh")
+        .unwrap_or("")
         .to_string()
 }
 
@@ -549,7 +549,8 @@ impl EventedPty for Pty {
 
             match self.child.waitpid() {
                 Err(_e) => {
-                    std::process::exit(1);
+                    // std::process::exit(1);
+                    None
                 }
                 Ok(None) => None,
                 Ok(Some(..)) => Some(ChildEvent::Exited),

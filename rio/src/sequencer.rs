@@ -96,6 +96,11 @@ impl Sequencer {
                                 }
                                 screen.render();
                             }
+                            RioEvent::Exit => {
+                                if !screen.try_close_existent_tab() {
+                                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                                }
+                            }
                             RioEvent::PrepareRender(millis) => {
                                 let timer_id = TimerId::new(Topic::Frame, 0);
                                 let event =
@@ -165,7 +170,7 @@ impl Sequencer {
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::ModifiersChanged(modifiers),
                     ..
-                } => screen.propagate_modifiers_state(modifiers),
+                } => screen.set_modifiers(modifiers),
 
                 Event::WindowEvent {
                     event: WindowEvent::MouseInput { state, button, .. },
@@ -190,10 +195,7 @@ impl Sequencer {
                         ElementState::Pressed => {
                             // Process mouse press before bindings to update the `click_state`.
                             if !screen
-                                .ctx_mut()
-                                .current()
-                                .messenger
-                                .get_modifiers()
+                                .modifiers
                                 .shift()
                                 && screen.mouse_mode()
                             {
@@ -254,10 +256,7 @@ impl Sequencer {
                         }
                         ElementState::Released => {
                             if !screen
-                                .ctx_mut()
-                                .current_mut()
-                                .messenger
-                                .get_modifiers()
+                                .modifiers
                                 .shift()
                                 && screen.mouse_mode()
                             {
@@ -327,10 +326,7 @@ impl Sequencer {
 
                     if (lmb_pressed || rmb_pressed)
                         && (screen
-                            .ctx_mut()
-                            .current_mut()
-                            .messenger
-                            .get_modifiers()
+                            .modifiers
                             .shift()
                             || !screen.mouse_mode())
                     {

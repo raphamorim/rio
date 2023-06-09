@@ -23,10 +23,12 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::Sugarloaf;
+use winit::event::ModifiersState;
 
 pub struct Screen {
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
+    pub modifiers: ModifiersState,
     ignore_chars: bool,
     layout: Layout,
     pub ime: Ime,
@@ -82,6 +84,7 @@ impl Screen {
         )?;
 
         Ok(Screen {
+            modifiers: ModifiersState::default(),
             context_manager,
             ime,
             sugarloaf,
@@ -103,9 +106,8 @@ impl Screen {
         &mut self.context_manager
     }
 
-    #[inline]
-    pub fn propagate_modifiers_state(&mut self, state: winit::event::ModifiersState) {
-        self.ctx_mut().current_mut().messenger.set_modifiers(state);
+    pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
+        self.modifiers = modifiers;
     }
 
     #[inline]
@@ -129,7 +131,7 @@ impl Screen {
         let alt_send_esc = self.state.option_as_alt;
 
         if alt_send_esc
-            && self.ctx_mut().current().messenger.get_modifiers().alt()
+            && self.modifiers.alt()
             && utf8_len == 1
         {
             bytes.insert(0, b'\x1b');
@@ -189,7 +191,6 @@ impl Screen {
         }
 
         let mode = BindingMode::new(&self.get_mode());
-        let mods = self.ctx_mut().current().messenger.get_modifiers();
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
@@ -201,7 +202,7 @@ impl Screen {
                 _ => continue,
             };
 
-            if binding.is_triggered_by(mode.clone(), mods, &key) {
+            if binding.is_triggered_by(mode.clone(), self.modifiers, &key) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -254,6 +255,15 @@ impl Screen {
         }
 
         self.ignore_chars = ignore_chars.unwrap_or(false);
+    }
+
+    pub fn try_close_existent_tab(&mut self) -> bool {
+        if self.context_manager.len() > 1 {
+            self.context_manager.close_context();
+            return true;
+        }
+
+        false
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {
@@ -362,7 +372,7 @@ impl Screen {
                 self.clear_selection();
 
                 // Start new empty selection.
-                if self.ctx_mut().current().messenger.get_modifiers().ctrl() {
+                if self.modifiers.ctrl() {
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
                     self.start_selection(SelectionType::Simple, point, side);

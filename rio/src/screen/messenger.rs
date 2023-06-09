@@ -1,27 +1,16 @@
 use crate::event::Msg;
 use std::borrow::Cow;
 use teletypewriter::WinsizeBuilder;
-use winit::event::ModifiersState;
 
 pub struct Messenger {
-    modifiers: ModifiersState,
     channel: mio_extras::channel::Sender<Msg>,
 }
 
 impl Messenger {
     pub fn new(channel: mio_extras::channel::Sender<Msg>) -> Messenger {
         Messenger {
-            modifiers: ModifiersState::default(),
             channel,
         }
-    }
-
-    pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
-        self.modifiers = modifiers;
-    }
-
-    pub fn get_modifiers(&self) -> ModifiersState {
-        self.modifiers
     }
 
     pub fn send_bytes(&mut self, string: Vec<u8>) {

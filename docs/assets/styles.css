@@ -206,55 +206,6 @@ section.features .container p {
   color: #F9F4DA;
 }
 
-.rio {
-  width: 275px;
-  height: 100px;
-  margin: 0 20px;
-  background: #0F0D0E;
-  border-radius: 8px;
-  line-height: 1.5;
-  font-size: 14px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow: hidden;
-  box-shadow: 12px 12px 2px 1px rgba(0, 0, 0, .2);
-}
-
-.terminal-content {
-  text-align: left;
-  display: flex;
-  margin: 10px;
-  margin-top: -32px;
-  overflow: hidden;
-  border-right: 0.7em solid transparent;
-  white-space: nowrap;
-  letter-spacing: .15em;
-  font-family: 'Silkscreen', helvetica;
-  animation:
-  typing 3.2s steps(42, end),
-  blink-caret 3.2s step-end;
-}
-
-/* The typing effect */
-@keyframes typing {
-  from { width: 0 }
-  to { width: 80%; }
-}
-
-/* The typewriter cursor effect */
-@keyframes blink-caret {
-  to { border-color: transparent }
-  from, 50% { border-color: #F38BA3; }
-  100% { border-color: transparent; }
-}
-
-.preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-top: 60px;
-}
-
 .info {
   max-width: 520px;
   text-align: center;
@@ -290,38 +241,6 @@ section.features .container p {
   font-size: 60px;
   color: #F9F4DA;
   font-family: 'Silkscreen', helvetica;
-}
-
-.terminal-header {
-  height: 30px;
-  margin-top: -42px;
-  display: flex;
-  align-items: center;
-  text-align: center;
-}
-
-.terminal-icon:first-of-type {
-  background: #ff5f56;
-  margin-left: 12px;
-}
-
-.terminal-icon {
-  border-radius: 50%;
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-}
-
-.terminal-icon:nth-of-type(2) {
-  background: #ffbd2e;
-}
-
-.terminal-icon:nth-of-type(3) {
-  background: #27c93f;
-}
-
-.terminal-icon + .terminal-icon {
-  margin-left: 8px;
 }
 
 .list {
@@ -369,9 +288,14 @@ section.features .container p {
   color: #F9F4DA;
 }
 
+.community {
+  margin-top: 2em;
+}
+
 .testimonials {
   display: flex;
   padding: 1.2em;
+  margin-top: 2em;
   margin-bottom: 0em;
   justify-content: center;
   flex-wrap: wrap;
@@ -543,16 +467,11 @@ section.features .container p {
   }
 }
 
-@media (max-width: 480px) {
-  .rio {
-    height: 150px;
-    margin: 0 30px;
-  }
-
+@media (max-width: 620px) {
   #nav {
     display: block;
     width: 185px;
-    margin-bottom: 110px;
+    margin-bottom: 120px;
     text-align: center;
   }
 
@@ -566,10 +485,6 @@ section.features .container p {
 
   #nav #external-links {
     display: none;
-  }
-
-  .terminal-content {
-    font-size: 12px;
   }
 
   .container.content::before {

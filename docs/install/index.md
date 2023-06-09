@@ -5,7 +5,7 @@ title: 'Install'
 language: 'en'
 ---
 
-## Install
+## MacOs
 
 You can download Rio terminal application for macOS platform, although is not stable and lacking features since the development of a beta release version is still in process.
 
@@ -15,9 +15,11 @@ New versions are created by weekly and monthly basis, so if you are using an uns
 
 Even before proceed to download please check if the version specified to download is the latest in [https://github.com/raphamorim/rio/releases](https://github.com/raphamorim/rio/releases), because fresh canary versions are often more stable than the previous ones.
 
-For Linux the installation option is build from the source.<br/><br/>
+<br/>
 
-## Build from the source
+## Linux (Build from the source)
+
+For Linux the installation option is build from the source.
 
 Before compiling Rio terminal, you'll have to first clone the source code:
 
