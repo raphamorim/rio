@@ -194,11 +194,7 @@ impl Sequencer {
                     match state {
                         ElementState::Pressed => {
                             // Process mouse press before bindings to update the `click_state`.
-                            if !screen
-                                .modifiers
-                                .shift()
-                                && screen.mouse_mode()
-                            {
+                            if !screen.modifiers.shift() && screen.mouse_mode() {
                                 screen.layout_mut().mouse_mut().click_state =
                                     ClickState::None;
 
@@ -255,11 +251,7 @@ impl Sequencer {
                             // screen.process_mouse_bindings(button);
                         }
                         ElementState::Released => {
-                            if !screen
-                                .modifiers
-                                .shift()
-                                && screen.mouse_mode()
-                            {
+                            if !screen.modifiers.shift() && screen.mouse_mode() {
                                 // let code = match button {
                                 //     MouseButton::Left => 0,
                                 //     MouseButton::Middle => 1,
@@ -325,10 +317,7 @@ impl Sequencer {
                     // winit_window.set_mouse_cursor(mouse_state);
 
                     if (lmb_pressed || rmb_pressed)
-                        && (screen
-                            .modifiers
-                            .shift()
-                            || !screen.mouse_mode())
+                        && (screen.modifiers.shift() || !screen.mouse_mode())
                     {
                         screen.update_selection(point);
                         should_render = true;

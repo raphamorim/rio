@@ -306,8 +306,8 @@ where
                         }
                         token if token == self.pty.child_event_token() => {
                             if let Some(teletypewriter::ChildEvent::Exited) =
-                                self.pty.next_child_event() {
-
+                                self.pty.next_child_event()
+                            {
                                 // In the future allow configure exit
                                 // if self.hold {
                                 //     With hold enabled, make sure the PTY is drained.
