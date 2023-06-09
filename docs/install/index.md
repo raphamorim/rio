@@ -15,6 +15,22 @@ New versions are created by weekly and monthly basis, so if you are using an uns
 
 Even before proceed to download please check if the version specified to download is the latest in [https://github.com/raphamorim/rio/releases](https://github.com/raphamorim/rio/releases), because fresh canary versions are often more stable than the previous ones.
 
+Another option for MacOS is the installation script:
+
+{% highlight shellscript %}
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/raphamorim/rio/main/scripts/install.sh | bash
+{% endhighlight %}
+
+This script will install Rio terminal automatically.
+
+It is also recommend to automate it by adding the install script to  your shell configuration file, like bashrc or zshrc.
+
+In the example below, it will add an alias called "rio-update" that you can run whenever you want to update Rio terminal:
+
+{% highlight bash %}
+echo "alias rio-update=\"curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/raphamorim/rio/main/scripts/install.sh | bash\"" >> ~/.zshrc
+{% endhighlight %}
+
 <br/>
 
 ## Linux (Build from the source)
