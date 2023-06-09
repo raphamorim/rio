@@ -130,10 +130,7 @@ impl Screen {
         #[cfg(target_os = "macos")]
         let alt_send_esc = self.state.option_as_alt;
 
-        if alt_send_esc
-            && self.modifiers.alt()
-            && utf8_len == 1
-        {
+        if alt_send_esc && self.modifiers.alt() && utf8_len == 1 {
             bytes.insert(0, b'\x1b');
         }
 

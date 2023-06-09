@@ -384,7 +384,8 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 set_nonblocking(main);
             }
 
-            let signals = Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+            let signals = Signals::new([sigconsts::SIGCHLD])
+                .expect("error preparing signal handling");
             Pty {
                 child,
                 signals,

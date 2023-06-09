@@ -8,9 +8,7 @@ pub struct Messenger {
 
 impl Messenger {
     pub fn new(channel: mio_extras::channel::Sender<Msg>) -> Messenger {
-        Messenger {
-            channel,
-        }
+        Messenger { channel }
     }
 
     pub fn send_bytes(&mut self, string: Vec<u8>) {
