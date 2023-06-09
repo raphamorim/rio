@@ -14,6 +14,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 	unzip -o ./macos-rio -d /Applications/
 	echo "Cleaning up..."
 	rm ./macos-rio.zip
+	echo "alias rio-update=\"curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/raphamorim/rio/main/scripts/install.sh | bash\"" >> ~/.zshrc
 	echo "Installation done!"
 elif [[ "$OSTYPE" == "cygwin" ]]; then
     # POSIX compatibility layer and Linux environment emulation for Windows
