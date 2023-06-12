@@ -8,8 +8,6 @@
   <string>Rio</string>
   <key>CFBundleExecutable</key>
   <string>rio</string>
-  <key>CFBundleIconFile</key>
-  <string>Rio.icns</string>
   <key>CFBundleIdentifier</key>
   <string>com.raphaelamorim.rio</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -18,8 +16,10 @@
   <string>Rio</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>Rio-canary.icns</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.0.5</string>
+  <string>0.0.7-canary</string>
   <key>CFBundleVersion</key>
   <string>20230528.115631</string>
   <key>CSResourcesFileMapped</key>
