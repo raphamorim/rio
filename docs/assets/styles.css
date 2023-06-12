@@ -254,7 +254,7 @@ section.features .container p {
   background: #F38BA3;
   max-width: 1020px;
   margin: 0 auto;
-  margin-top: 30px;
+  margin-top: 20px;
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -471,7 +471,7 @@ section.features .container p {
   #nav {
     display: block;
     width: 185px;
-    margin-bottom: 120px;
+    margin-bottom: 140px;
     text-align: center;
   }
 
