@@ -76,13 +76,13 @@ impl Sequencer {
         #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let display: Option<*mut c_void> = Option::None;
 
+        let _ = watch(config::config_dir_path(), event_proxy_clone);
         let mut screen =
             Screen::new(&winit_window, &self.config, event_proxy, display).await?;
-        let _ = watch(config::config_dir_path(), event_proxy_clone);
         let mut is_window_focused = false;
         let mut should_render = false;
-        screen.init(self.config.colors.background.1);
 
+        screen.init(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             match event {
