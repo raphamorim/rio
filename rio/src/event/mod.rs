@@ -32,6 +32,7 @@ pub enum ClickState {
 pub enum RioEvent {
     PrepareRender(u64),
     Render,
+    UpdateConfig,
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
@@ -101,6 +102,7 @@ impl Debug for RioEvent {
             RioEvent::Render => write!(f, "Render"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
+            RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
         }
     }
 }
@@ -109,13 +111,13 @@ impl Debug for RioEvent {
 pub enum RioEventType {
     ScaleFactorChanged(f64, (u32, u32)),
     Rio(RioEvent),
-    // ConfigReload(PathBuf),
     // Message(Message),
     // Scroll(Scroll),
     BlinkCursor,
     BlinkCursorTimeout,
     SearchNext,
     Render,
+    // ReloadConfiguration,
 }
 
 impl From<RioEvent> for RioEventType {
