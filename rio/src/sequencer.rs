@@ -3,6 +3,7 @@ use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
+use crate::utils::watch::watch;
 use colors::ColorRgb;
 use std::error::Error;
 use std::os::raw::c_void;
@@ -34,6 +35,7 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
+        let event_proxy_clone = event_proxy.clone();
         let mut scheduler = Scheduler::new(proxy);
         let window_builder =
             create_window_builder("Rio", (self.config.width, self.config.height));
@@ -76,9 +78,11 @@ impl Sequencer {
 
         let mut screen =
             Screen::new(&winit_window, &self.config, event_proxy, display).await?;
+        let _ = watch(config::config_dir_path(), event_proxy_clone);
         let mut is_window_focused = false;
         let mut should_render = false;
         screen.init(self.config.colors.background.1);
+
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, _, control_flow| {
             match event {
@@ -95,6 +99,9 @@ impl Sequencer {
                                     return;
                                 }
                                 screen.render();
+                            }
+                            RioEvent::UpdateConfig => {
+                                // let config = config::Config::load();
                             }
                             RioEvent::Exit => {
                                 if !screen.try_close_existent_tab() {
@@ -156,8 +163,7 @@ impl Sequencer {
                     }
                 }
                 Event::Resumed => {
-                    // Should render once the loop is resumed for first time
-                    // Then wait for instructions or user inputs
+                    // Emitted when the application has been resumed.
                 }
 
                 Event::WindowEvent {

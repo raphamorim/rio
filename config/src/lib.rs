@@ -85,10 +85,15 @@ pub struct Theme {
     pub colors: Colors,
 }
 
-// Home directory
-fn home_dir_path() -> String {
+pub fn config_dir_path() -> String {
     let base_dir_buffer = dirs::home_dir().unwrap();
-    base_dir_buffer.to_str().unwrap_or_default().to_string()
+    let home = base_dir_buffer.to_str().unwrap_or_default();
+    format!("{home}/.config/rio")
+}
+
+pub fn config_file_path() -> String {
+    let config_dir_path_str = config_dir_path();
+    format!("{config_dir_path_str}/config.toml")
 }
 
 impl Config {
@@ -143,8 +148,8 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        let base_dir = home_dir_path();
-        let path = format!("{base_dir}/.config/rio/config.toml");
+        let config_path_str = config_dir_path();
+        let path = format!("{config_path_str}/config.toml");
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
@@ -154,7 +159,7 @@ impl Config {
                         return decoded;
                     }
 
-                    let path = format!("{base_dir}/.config/rio/themes/{theme}.toml");
+                    let path = format!("{config_path_str}/themes/{theme}.toml");
                     if let Ok(loaded_theme) = Config::load_theme(&path) {
                         decoded.colors = loaded_theme.colors;
                     } else {
