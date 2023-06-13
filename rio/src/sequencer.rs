@@ -102,7 +102,8 @@ impl Sequencer {
                             }
                             RioEvent::UpdateConfig => {
                                 let config = config::Config::load();
-                                screen.update_config(config);
+                                self.config = config.into();
+                                screen.update_config(&self.config);
                                 should_render = true;
                             }
                             RioEvent::Exit => {

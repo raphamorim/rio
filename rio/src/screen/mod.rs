@@ -112,9 +112,11 @@ impl Screen {
     }
 
     /// update_config is triggered in any configuration file update
-    pub fn update_config(&mut self, config: config::Config) {
+    #[inline]
+    pub fn update_config(&mut self, config: &Rc<config::Config>) {
         self.layout.recalculate(config.style.font_size);
-        self.sugarloaf.update_font(config.style.font);
+        self.sugarloaf.update_font(config.style.font.to_string());
+        self.state = State::new(config);
         self.init(config.colors.background.1);
     }
 

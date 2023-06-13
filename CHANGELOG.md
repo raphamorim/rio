@@ -2,8 +2,9 @@
 
 ## 0.0.7 (in progress)
 
-- Fix Ctrl+D
-- Fix Exit command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
+- Reload automatically when the configuration file is changed ([#69](https://github.com/raphamorim/rio/issues/69)).
+- Fix `Ctrl+D`.
+- Fix `exit` command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
 - Changed default `light-black` color.
 
 ## 0.0.6
