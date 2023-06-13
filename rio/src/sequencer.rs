@@ -37,8 +37,7 @@ impl Sequencer {
         let event_proxy = EventProxy::new(proxy.clone());
         let event_proxy_clone = event_proxy.clone();
         let mut scheduler = Scheduler::new(proxy);
-        let window_builder =
-            create_window_builder("Rio", (self.config.width, self.config.height));
+        let window_builder = create_window_builder("Rio");
         let winit_window = window_builder.build(&event_loop).unwrap();
 
         let current_mouse_cursor = winit::window::CursorIcon::Text;

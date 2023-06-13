@@ -1,13 +1,3 @@
-/// Default Terminal.App MacOs columns/rows
-
-pub fn default_width() -> u16 {
-    662
-}
-
-pub fn default_height() -> u16 {
-    438
-}
-
 pub fn default_env_vars() -> Vec<String> {
     vec![]
 }

@@ -3,10 +3,10 @@ pub const LOGO_ICON: &[u8; 119202] = include_bytes!("./resources/images/logo-mac
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
 
-pub fn create_window_builder(
-    title: &str,
-    size: (u16, u16),
-) -> winit::window::WindowBuilder {
+pub const DEFAULT_HEIGHT: i32 = 400;
+pub const DEFAULT_WIDTH: i32 = 600;
+
+pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
     use winit::window::Icon;
 
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
@@ -21,8 +21,8 @@ pub fn create_window_builder(
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
-            width: size.0,
-            height: size.1,
+            width: DEFAULT_WIDTH,
+            height: DEFAULT_HEIGHT,
         })
         .with_min_inner_size(winit::dpi::LogicalSize {
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,

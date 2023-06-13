@@ -50,9 +50,9 @@ impl Screen {
         let mut layout = Layout::new(
             size.width as f32,
             size.height as f32,
-            config.style.padding_x,
+            config.padding_x,
             scale as f32,
-            config.style.font_size,
+            config.font_size,
         );
         let (columns, rows) = layout.compute();
 
@@ -61,12 +61,9 @@ impl Screen {
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let sugarloaf = Sugarloaf::new(
-            winit_window,
-            power_preference,
-            config.style.font.to_string(),
-        )
-        .await?;
+        let sugarloaf =
+            Sugarloaf::new(winit_window, power_preference, config.font.to_string())
+                .await?;
 
         let state = State::new(config);
 
@@ -115,13 +112,13 @@ impl Screen {
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
-        self.layout
-            .recalculate(config.style.font_size, config.style.padding_x);
+        self.layout.recalculate(config.font_size, config.padding_x);
         let (c, l) = self.layout.compute();
-        self.sugarloaf.update_font(config.style.font.to_string());
+        self.sugarloaf.update_font(config.font.to_string());
         self.state = State::new(config);
 
         let mut terminal = self.context_manager.current_mut().terminal.lock();
+        terminal.cursor_shape = self.state.get_cursor_state().content;
         terminal.resize::<Layout>(c, l);
         drop(terminal);
 
