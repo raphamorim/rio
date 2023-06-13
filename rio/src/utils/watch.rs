@@ -24,8 +24,10 @@ pub fn watch<
     tokio::spawn(async move {
         // Add a path to be watched. All files and directories at that path and
         // below will be monitored for changes.
-        if let Err(err) = watcher.watch(path.as_ref(), RecursiveMode::NonRecursive) {
-            log::warn!("unable to watch config directory {err}");
+        if let Err(err_message) =
+            watcher.watch(path.as_ref(), RecursiveMode::NonRecursive)
+        {
+            log::warn!("unable to watch config directory {err_message:?}");
         };
 
         for res in rx {
@@ -35,12 +37,14 @@ pub fn watch<
                     | EventKind::Create(_)
                     | EventKind::Modify(_)
                     | EventKind::Other => {
-                        log::info!("watcher event dispatched {event:?}");
+                        log::info!("config directory has dispatched an event {event:?}");
                         event_proxy.send_event(RioEvent::UpdateConfig);
                     }
                     _ => (),
                 },
-                Err(e) => log::error!("watch error: {e:?}"),
+                Err(err_message) => {
+                    log::error!("unable to watch config directory: {err_message:?}")
+                }
             }
         }
     });
