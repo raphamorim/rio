@@ -115,8 +115,23 @@ impl Screen {
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
         self.layout.recalculate(config.style.font_size);
+        let (c, l) = self.layout.compute();
         self.sugarloaf.update_font(config.style.font.to_string());
         self.state = State::new(config);
+
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
+        terminal.resize::<Layout>(c, l);
+        drop(terminal);
+
+        let width = self.layout.width as u16;
+        let height = self.layout.height as u16;
+        let _ = self.ctx_mut().current_mut().messenger.send_resize(
+            width.clone(),
+            height.clone(),
+            c as u16,
+            l as u16,
+        );
+
         self.init(config.colors.background.1);
     }
 
