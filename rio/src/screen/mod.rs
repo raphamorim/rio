@@ -106,8 +106,16 @@ impl Screen {
         &mut self.context_manager
     }
 
+    #[inline]
     pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
         self.modifiers = modifiers;
+    }
+
+    /// update_config is triggered in any configuration file update
+    pub fn update_config(&mut self, config: config::Config) {
+        self.layout.recalculate(config.style.font_size);
+        self.sugarloaf.update_font(config.style.font);
+        self.init(config.colors.background.1);
     }
 
     #[inline]
@@ -424,7 +432,8 @@ impl Screen {
 
     #[inline]
     pub fn init(&mut self, color: colors::ColorWGPU) {
-        self.sugarloaf.init(color, self.layout.styles.term);
+        self.sugarloaf
+            .render_with_style(color, self.layout.styles.term);
     }
 
     #[inline]

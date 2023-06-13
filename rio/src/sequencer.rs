@@ -101,7 +101,9 @@ impl Sequencer {
                                 screen.render();
                             }
                             RioEvent::UpdateConfig => {
-                                // let config = config::Config::load();
+                                let config = config::Config::load();
+                                screen.update_config(config);
+                                should_render = true;
                             }
                             RioEvent::Exit => {
                                 if !screen.try_close_existent_tab() {

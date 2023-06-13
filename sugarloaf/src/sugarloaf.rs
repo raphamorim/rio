@@ -82,6 +82,7 @@ pub struct Sugarloaf {
     initial_scale: f32,
     font_bounds: FontBounds,
     background_color: wgpu::Color,
+    font_name: String,
 }
 
 const FONT_ID_REGULAR: usize = 0;
@@ -100,7 +101,7 @@ impl Sugarloaf {
     ) -> Result<Sugarloaf, String> {
         let ctx = Context::new(winit_window, power_preference).await;
 
-        let font = Font::new(font_name);
+        let font = Font::new(font_name.to_string());
         let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
             font.text.regular,
             font.symbol,
@@ -113,6 +114,7 @@ impl Sugarloaf {
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         Ok(Sugarloaf {
+            font_name,
             initial_scale: ctx.scale,
             ctx,
             rect_brush,
@@ -160,6 +162,26 @@ impl Sugarloaf {
                 }
             }
         }
+    }
+
+    pub fn update_font(&mut self, font_name: String) -> &mut Self {
+        if self.font_name != font_name {
+            log::info!("requested a font change {font_name}");
+            let font = Font::new(font_name.to_string());
+            let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
+                font.text.regular,
+                font.symbol,
+                font.emojis,
+                font.unicode,
+                font.text.bold,
+                font.text.italic,
+                font.text.bold_italic,
+            ])
+            .build(&self.ctx.device, self.ctx.format);
+            self.text_brush = text_brush;
+            self.font_name = font_name;
+        }
+        self
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
@@ -323,8 +345,15 @@ impl Sugarloaf {
         (0., 0.)
     }
 
+    /// render_from_style is an expensive render operation that defines font bounds
+    /// is an important function to figure out the cursor dimensions and background color
+    /// but should be used as minimal as possible.
+    ///
+    /// For example: It is used in Rio terminal only in the initialization and
+    /// configuration updates that leads to layout recalculation.
+    ///
     #[inline]
-    pub fn init(&mut self, color: wgpu::Color, style: SugarloafStyle) {
+    pub fn render_with_style(&mut self, color: wgpu::Color, style: SugarloafStyle) {
         self.reset_state();
         self.rects = vec![];
         self.background_color = color;
@@ -352,20 +381,17 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                if self.font_bounds.default == (0., 0.) {
-                    // Bounds are defined in runtime
-                    self.font_bounds.default =
-                        self.get_font_bounds(' ', FontId(0), style);
-                    self.font_bounds.symbols =
-                        // U+2AF9 => \u{2AF9} => ⫹
-                        self.get_font_bounds('\u{2AF9}', FontId(1), style);
-                    self.font_bounds.emojis =
-                        // U+1F947 => \u{1F947} => 🥇
-                        self.get_font_bounds('\u{1F947}', FontId(2), style);
-                    self.font_bounds.unicode =
-                        // U+33D1 => \u{33D1} => ㏑
-                        self.get_font_bounds('\u{33D1}', FontId(3), style);
-                }
+                // Bounds are defined in runtime
+                self.font_bounds.default = self.get_font_bounds(' ', FontId(0), style);
+                self.font_bounds.symbols =
+                    // U+2AF9 => \u{2AF9} => ⫹
+                    self.get_font_bounds('\u{2AF9}', FontId(1), style);
+                self.font_bounds.emojis =
+                    // U+1F947 => \u{1F947} => 🥇
+                    self.get_font_bounds('\u{1F947}', FontId(2), style);
+                self.font_bounds.unicode =
+                    // U+33D1 => \u{33D1} => ㏑
+                    self.get_font_bounds('\u{33D1}', FontId(3), style);
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

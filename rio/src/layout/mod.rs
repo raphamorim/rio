@@ -121,6 +121,20 @@ impl Layout {
         self
     }
 
+    // This method will run over the new font and font_size
+    pub fn recalculate(&mut self, requested_font_size: f32) -> &mut Self {
+        let mut should_apply_changes = false;
+        if self.font_size != requested_font_size {
+            self.font_size = requested_font_size;
+            should_apply_changes = true;
+        }
+
+        if should_apply_changes {
+            update_styles(self);
+        }
+        self
+    }
+
     pub fn reset_mouse(&mut self) {
         self.mouse.accumulated_scroll = AccumulatedScroll::default();
     }

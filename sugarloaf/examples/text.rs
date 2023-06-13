@@ -246,7 +246,7 @@ async fn main() {
 
         match event {
             Event::Resumed => {
-                sugarloaf.init(wgpu::Color::RED, styles);
+                sugarloaf.render_with_style(wgpu::Color::RED, styles);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
