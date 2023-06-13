@@ -12,29 +12,6 @@ pub enum Performance {
     Low,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
-pub struct Style {
-    #[serde(rename = "font-size", default = "default_font_size")]
-    pub font_size: f32,
-    #[serde(default = "default_theme")]
-    pub theme: String,
-    #[serde(default = "default_font")]
-    pub font: String,
-    #[serde(rename = "padding-x", default = "default_padding_x")]
-    pub padding_x: f32,
-}
-
-impl Default for Style {
-    fn default() -> Style {
-        Style {
-            font_size: default_font_size(),
-            theme: default_theme(),
-            font: default_font(),
-            padding_x: default_padding_x(),
-        }
-    }
-}
-
 #[derive(Debug, Default, PartialEq, Clone, Deserialize)]
 pub struct Advanced {
     #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
@@ -62,18 +39,20 @@ impl Default for Developer {
 pub struct Config {
     #[serde(default = "Performance::default")]
     pub performance: Performance,
-    #[serde(default = "default_width")]
-    pub width: u16,
-    #[serde(default = "default_height")]
-    pub height: u16,
+    #[serde(rename = "font-size", default = "default_font_size")]
+    pub font_size: f32,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_font")]
+    pub font: String,
+    #[serde(rename = "padding-x", default = "default_padding_x")]
+    pub padding_x: f32,
     #[serde(default = "default_cursor")]
     pub cursor: char,
     #[serde(default = "default_env_vars", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
     pub option_as_alt: String,
-    #[serde(default = "Style::default")]
-    pub style: Style,
     #[serde(default = "Colors::default")]
     pub colors: Colors,
     #[serde(default = "Advanced::default")]
@@ -117,7 +96,7 @@ impl Config {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
-                    let theme = &decoded.style.theme;
+                    let theme = &decoded.theme;
                     if theme.is_empty() {
                         return Ok(decoded);
                     }
@@ -157,7 +136,7 @@ impl Config {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
-                    let theme = &decoded.style.theme;
+                    let theme = &decoded.theme;
                     if theme.is_empty() {
                         return decoded;
                     }
@@ -187,17 +166,13 @@ impl Default for Config {
         Config {
             env_vars: default_env_vars(),
             performance: Performance::default(),
-            width: default_width(),
-            height: default_height(),
+            padding_x: default_padding_x(),
+            font_size: default_font_size(),
+            theme: default_theme(),
+            font: default_font(),
             cursor: default_cursor(),
             option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
-            style: Style {
-                padding_x: default_padding_x(),
-                font_size: default_font_size(),
-                theme: default_theme(),
-                font: default_font(),
-            },
             advanced: Advanced::default(),
             developer: Developer::default(),
         }
@@ -237,8 +212,8 @@ mod tests {
     #[test]
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path("/tmp/it-should-never-exist");
-        assert_eq!(config.width, default_width());
-        assert_eq!(config.height, default_height());
+        assert_eq!(config.theme, default_theme());
+        assert_eq!(config.cursor, default_cursor());
     }
 
     #[test]
@@ -251,13 +226,9 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
 
         // Colors
         assert_eq!(result.colors, Colors::default());
@@ -277,8 +248,10 @@ mod tests {
             r#"
             # Rio default configuration file
             performance = "High"
-            height = 438
-            width = 662
+            font = "CascadiaMono"
+            font-size = 16
+            theme = ""
+            padding-x = 10
             cursor = '▇'
             env-vars = []
 
@@ -293,12 +266,6 @@ mod tests {
             blue = '#12B5E5'
             yellow = '#FCBA28'
 
-            [style]
-            font = "CascadiaMono"
-            font-size = 16
-            theme = ""
-            padding-x = 10
-
             [advanced]
             disable-render-when-unfocused = false
 
@@ -310,11 +277,11 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, default_cursor());
-        // Style
-        assert_eq!(result.style, Style::default());
+        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
         // Colors
         assert_eq!(result.colors, Colors::default());
         // Advanced
@@ -338,12 +305,9 @@ mod tests {
         let result = Config::load_from_path(&file_name);
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -361,12 +325,9 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -385,13 +346,10 @@ mod tests {
 
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, default_cursor());
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -409,13 +367,10 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::High);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         assert_eq!(result.cursor, '_');
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -433,13 +388,10 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::High);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         assert_eq!(result.option_as_alt, String::from("Both"));
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -458,12 +410,9 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.width, 400);
-        assert_eq!(result.height, 500);
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, default_theme());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -477,8 +426,6 @@ mod tests {
             "change-style",
             r#"
             performance = "Low"
-
-            [style]
             font = "Novamono"
             font-size = 14.0
             padding-x = 0.0
@@ -486,12 +433,9 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-        // Style
-        assert_eq!(result.style.font, "Novamono");
-        assert_eq!(result.style.font_size, 14.0);
-        assert_eq!(result.style.padding_x, 0.0);
+        assert_eq!(result.font, "Novamono");
+        assert_eq!(result.font_size, 14.0);
+        assert_eq!(result.padding_x, 0.0);
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -504,18 +448,14 @@ mod tests {
         let result = create_temporary_config(
             "change-theme",
             r#"
-            [style]
             theme = "lucario"
         "#,
         );
 
         assert_eq!(result.performance, Performance::High);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
-        // Style
-        assert_eq!(result.style.font, default_font());
-        assert_eq!(result.style.font_size, default_font_size());
-        assert_eq!(result.style.theme, "lucario");
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, "lucario");
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -537,7 +477,6 @@ mod tests {
         let result = create_temporary_config(
             "change-theme-with-colors",
             r#"
-            [style]
             theme = "lucario-with-colors"
 
             [colors]
@@ -663,8 +602,6 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         // Advanced
         assert!(result.advanced.disable_render_when_unfocused);
 
@@ -689,8 +626,6 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.width, default_width());
-        assert_eq!(result.height, default_height());
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);

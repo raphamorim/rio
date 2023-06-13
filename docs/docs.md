@@ -9,6 +9,7 @@ language: 'en'
 
 - [The Rio terminal](#about-rio)
 - [The configuration file](#configuration-file)
+- [The default colors](#default-colors)
 
 ## About Rio
 
@@ -26,106 +27,58 @@ The configuration should be the following paths otherwise Rio will use the defau
 
 In macOS and linux path is in "~/.config/rio/config.toml".
 
-## performance
-
-Set terminal WGPU rendering perfomance.
-
-• **High**: Adapter that has the highest performance. This is often a discrete GPU.
-
-• **Low**: Adapter that uses the least possible power. This is often an integrated GPU.
-
-See more in https://docs.rs/wgpu/latest/wgpu/enum.PowerPreference.html
-
 {% highlight toml %}
-# <performance> Set WGPU rendering perfomance
-# default: High
-# options: High, Low
+font = "CascadiaMono"
+font-size = 16
+
+# Default cursor is Block
+# Other available options are: '_' and '|'
+cursor = '_'
+
+# Set WGPU rendering perfomance
 # High: Adapter that has the highest performance. This is often a discrete GPU.
 # Low: Adapter that uses the least possible power. This is often an integrated GPU.
 performance = "High"
+
+# it will look for dracula.toml in themes folder
+# (macos and linux: ~/.config/rio/themes/dracula.toml)
+# ...
+# dracula theme code is available in:
+# https://github.com/raphamorim/rio-dracula/blob/master/dracula.toml
+theme = "dracula"
+
+# define x axis padding (default is 10)
+padding-x = 0
+
+# environment variables
+# (the example below sets fish as the default SHELL in macos
+# please do not copy this if you do not need)
+env-vars = ['SHELL=/opt/homebrew/bin/fish']
+
+# This config only works on MacOs.
+# Possible choices: 'both', 'left' and 'right'.
+option_as_alt = 'both'
+
+# Colors definition will overwrite any property in theme
+# (considering if theme folder does exists and is being used)
+[colors]
+background = "#BBBD64"
+foreground = "#040400"
+cursor = "#242805"
+tabs-active = "#F8A145"
+blue = "#454A12"
+
+[developer]
+log-level = "INFO"
 {% endhighlight %}
 
-## height
+Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
 
-Set terminal window height.
+If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
 
-{% highlight toml %}
-# <height> Set default height
-# default: 438
-height = 400
-{% endhighlight %}
+## Default colors
 
-## width
-
-Set terminal window width.
-
-{% highlight toml %}
-# <width> Set default width
-# default: 662
-width = 800
-{% endhighlight %}
-
-## cursor
-
-Set cursor character. Default cursor is block ('▇').
-
-{% highlight toml %}
-# (Underline)
-cursor = '_'
-# (Beam)
-cursor = '|'
-{% endhighlight %}
-
-## env-vars
-
-Set environment variables through Rio terminal.
-
-Default is an empty array of strings.
-
-{% highlight toml %}
-env-vars = ['LC_CTYPE=utf-8', 'LOGNAME=raphael']
-{% endhighlight %}
-
-## option_as_alt
-
-This flag is intended to be used on MacOs.
-
-Possible choices: 'both', 'left' and 'right'.
-
-{% highlight toml %}
-option-as-alt = 'both'
-{% endhighlight %}
-
-## font
-
-Default font is CascadiaMono.
-
-{% highlight toml %}
-[style]
-font = "Monaco"
-{% endhighlight %}
-
-## font-size
-
-Sets font size.
-
-{% highlight toml %}
-[style]
-font-size = 16.0
-{% endhighlight %}
-
-## padding-x
-
-Sets terminal padding in x axis.
-
-{% highlight toml %}
-[style]
-padding-x = 10.0
-{% endhighlight %}
-
-## colors
-
-Default colors.
+Default Rio terminal colors.
 
 {% highlight toml %}
 [colors]
