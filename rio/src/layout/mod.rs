@@ -72,7 +72,13 @@ fn update_styles(layout: &mut Layout) {
 }
 
 impl Layout {
-    pub fn new(width: f32, height: f32, scale_factor: f32, font_size: f32) -> Layout {
+    pub fn new(
+        width: f32,
+        height: f32,
+        padding_x: f32,
+        scale_factor: f32,
+        font_size: f32,
+    ) -> Layout {
         let styles = Styles::default();
 
         let mut layout = Layout {
@@ -87,7 +93,7 @@ impl Layout {
             mouse: Mouse::default(),
             styles,
             padding: Delta {
-                x: PADDING_X,
+                x: padding_x,
                 y: PADDING_Y,
             },
         };
@@ -122,10 +128,15 @@ impl Layout {
     }
 
     // This method will run over the new font and font_size
-    pub fn recalculate(&mut self, requested_font_size: f32) -> &mut Self {
+    pub fn recalculate(&mut self, font_size: f32, padding_x: f32) -> &mut Self {
         let mut should_apply_changes = false;
-        if self.font_size != requested_font_size {
-            self.font_size = requested_font_size;
+        if self.font_size != font_size {
+            self.font_size = font_size;
+            should_apply_changes = true;
+        }
+
+        if self.padding.x != padding_x {
+            self.padding.x = padding_x;
             should_apply_changes = true;
         }
 

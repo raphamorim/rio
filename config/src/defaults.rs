@@ -12,6 +12,10 @@ pub fn default_env_vars() -> Vec<String> {
     vec![]
 }
 
+pub fn default_padding_x() -> f32 {
+    10.0
+}
+
 pub fn default_option_as_alt() -> String {
     String::from("None")
 }

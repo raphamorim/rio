@@ -114,6 +114,15 @@ Sets font size.
 font-size = 16.0
 {% endhighlight %}
 
+## padding-x
+
+Sets terminal padding in x axis.
+
+{% highlight toml %}
+[style]
+padding-x = 10.0
+{% endhighlight %}
+
 ## colors
 
 Default colors.

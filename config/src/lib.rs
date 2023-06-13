@@ -20,6 +20,8 @@ pub struct Style {
     pub theme: String,
     #[serde(default = "default_font")]
     pub font: String,
+    #[serde(rename = "padding-x", default = "default_padding_x")]
+    pub padding_x: f32,
 }
 
 impl Default for Style {
@@ -28,6 +30,7 @@ impl Default for Style {
             font_size: default_font_size(),
             theme: default_theme(),
             font: default_font(),
+            padding_x: default_padding_x(),
         }
     }
 }
@@ -190,6 +193,7 @@ impl Default for Config {
             option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
             style: Style {
+                padding_x: default_padding_x(),
                 font_size: default_font_size(),
                 theme: default_theme(),
                 font: default_font(),
@@ -293,6 +297,7 @@ mod tests {
             font = "CascadiaMono"
             font-size = 16
             theme = ""
+            padding-x = 10
 
             [advanced]
             disable-render-when-unfocused = false
@@ -476,6 +481,7 @@ mod tests {
             [style]
             font = "Novamono"
             font-size = 14.0
+            padding-x = 0.0
         "#,
         );
 
@@ -485,6 +491,7 @@ mod tests {
         // Style
         assert_eq!(result.style.font, "Novamono");
         assert_eq!(result.style.font_size, 14.0);
+        assert_eq!(result.style.padding_x, 0.0);
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
