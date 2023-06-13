@@ -50,6 +50,7 @@ impl Screen {
         let mut layout = Layout::new(
             size.width as f32,
             size.height as f32,
+            config.style.padding_x,
             scale as f32,
             config.style.font_size,
         );
@@ -114,7 +115,8 @@ impl Screen {
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
-        self.layout.recalculate(config.style.font_size);
+        self.layout
+            .recalculate(config.style.font_size, config.style.padding_x);
         let (c, l) = self.layout.compute();
         self.sugarloaf.update_font(config.style.font.to_string());
         self.state = State::new(config);
@@ -125,12 +127,11 @@ impl Screen {
 
         let width = self.layout.width as u16;
         let height = self.layout.height as u16;
-        let _ = self.ctx_mut().current_mut().messenger.send_resize(
-            width.clone(),
-            height.clone(),
-            c as u16,
-            l as u16,
-        );
+        let _ = self
+            .ctx_mut()
+            .current_mut()
+            .messenger
+            .send_resize(width, height, c as u16, l as u16);
 
         self.init(config.colors.background.1);
     }

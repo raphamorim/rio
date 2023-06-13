@@ -2,6 +2,7 @@
 
 ## 0.0.7 (in progress)
 
+- Added `padding-x` to configuration.
 - Reload automatically when the configuration file is changed ([#69](https://github.com/raphamorim/rio/issues/69)).
 - Fix `Ctrl+D`.
 - Fix `exit` command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
