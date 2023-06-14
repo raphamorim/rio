@@ -1,4 +1,5 @@
 mod ansi;
+mod cli;
 mod clipboard;
 mod crosswords;
 mod event;
@@ -57,6 +58,10 @@ fn setup_logs_by_filter_level(log_level: LevelFilter) -> Result<(), SetLoggerErr
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load command line options.
+    let options = cli::Options::new();
+    let command = options.window_options.terminal_options.command;
+
     let config = config::Config::load();
     let filter_level =
         LevelFilter::from_str(&config.developer.log_level).unwrap_or(LevelFilter::Off);
@@ -71,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window_event_loop =
         winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();
     let mut sequencer = Sequencer::new(config);
-    let result = sequencer.run(window_event_loop);
+    let result = sequencer.run(window_event_loop, command);
 
     result.await
 }

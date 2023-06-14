@@ -43,6 +43,7 @@ impl Screen {
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
         _display: Option<*mut c_void>,
+        command: Vec<String>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -79,6 +80,7 @@ impl Screen {
             rows,
             state.get_cursor_state(),
             event_proxy,
+            command,
         )?;
 
         Ok(Screen {

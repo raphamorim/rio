@@ -38,6 +38,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
+
         let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
         let channel = machine.channel();
         // The only case we don't spawn is for tests
@@ -57,14 +58,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rows: usize,
         cursor_state: CursorState,
         event_proxy: T,
+        mut command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
-        let initial_context = ContextManager::create_context(
+        let mut initial_context = ContextManager::create_context(
             columns,
             rows,
             cursor_state,
             event_proxy.clone(),
             true,
         )?;
+
+        if !command.is_empty() {
+            command.push(String::from("\n"));
+            let command = command.join(" ");
+            initial_context.messenger.send_bytes(command.into());
+        }
+
         Ok(ContextManager {
             current_index: 0,
             contexts: vec![initial_context],
