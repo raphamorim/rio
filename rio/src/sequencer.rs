@@ -32,6 +32,7 @@ impl Sequencer {
     pub async fn run(
         &mut self,
         mut event_loop: EventLoop<EventP>,
+        command: Vec<String>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -77,7 +78,8 @@ impl Sequencer {
 
         let _ = watch(config::config_dir_path(), event_proxy_clone);
         let mut screen =
-            Screen::new(&winit_window, &self.config, event_proxy, display).await?;
+            Screen::new(&winit_window, &self.config, event_proxy, display, command)
+                .await?;
         let mut is_window_focused = false;
         let mut should_render = false;
 

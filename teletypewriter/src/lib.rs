@@ -434,7 +434,7 @@ impl WinsizeBuilder {
 
 #[derive(Debug, Clone)]
 pub struct Child {
-    id: Arc<libc::c_int>,
+    pub id: Arc<libc::c_int>,
     #[allow(dead_code)]
     ptsname: String,
     pid: Arc<libc::pid_t>,
@@ -498,7 +498,7 @@ impl Child {
 impl Deref for Child {
     type Target = libc::c_int;
     fn deref(&self) -> &libc::c_int {
-        &self.id
+        &self.pid
     }
 }
 
