@@ -108,10 +108,27 @@ impl Context {
         let format = *formats.last().expect("No supported formats for surface");
 
         let (device, queue) = (async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
-                .await
-                .expect("Request device")
+            {
+                if let Ok(result) = adapter
+                    .request_device(&wgpu::DeviceDescriptor::default(), None)
+                    .await
+                {
+                    result
+                } else {
+                    // These downlevel limits will allow the code to run on all possible hardware
+                    adapter
+                        .request_device(
+                            &wgpu::DeviceDescriptor {
+                                label: None,
+                                features: wgpu::Features::default(),
+                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                            },
+                            None,
+                        )
+                        .await
+                        .expect("Request device")
+                }
+            }
         })
         .await;
 
