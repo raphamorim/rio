@@ -2,3 +2,4 @@
 test-colors = "test --release -p colors --"
 test-config = "test --release -p config --"
 test-rio = "test --release -p rio --"
+wasm-sugarloaf = "build -p sugarloaf --target wasm32-unknown-unknown --release"
