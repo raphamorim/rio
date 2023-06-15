@@ -273,7 +273,7 @@ impl Sugarloaf {
                         (style.screen_position.0 / self.ctx.scale)
                             + x
                             + ((dx * decoration.position.0) / self.ctx.scale),
-                        self.acc_line_y + dy * decoration.position.1,
+                        self.acc_line_y + dy * (decoration.position.1 * mod_size),
                     ],
                     color: decoration.color,
                     size: [
