@@ -402,11 +402,4 @@ impl State {
             sugarloaf.pile_rect(renderable_tabs);
         }
     }
-
-    // pub fn topbar(&mut self, command: String) {
-    //     let fps_text = if self.config.developer.enable_fps_counter {
-    //         format!(" fps_{:?}", self.fps.tick())
-    //     } else {
-    //         String::from("")
-    //     };
 }
