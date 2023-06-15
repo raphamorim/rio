@@ -115,24 +115,33 @@ impl Screen {
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
         self.layout.recalculate(config.font_size, config.padding_x);
-        let (c, l) = self.layout.compute();
+        let (columns, lines) = self.layout.compute();
         self.sugarloaf.update_font(config.font.to_string());
         self.state = State::new(config);
 
         let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.cursor_shape = self.state.get_cursor_state().content;
-        terminal.resize::<Layout>(c, l);
+        terminal.resize::<Layout>(columns, lines);
         drop(terminal);
 
         let width = self.layout.width as u16;
         let height = self.layout.height as u16;
-        let _ = self
-            .ctx_mut()
-            .current_mut()
-            .messenger
-            .send_resize(width, height, c as u16, l as u16);
+        self.resize_all_contexts(width, height, columns as u16, lines as u16);
 
         self.init(config.colors.background.1);
+    }
+
+    #[inline]
+    pub fn resize_all_contexts(
+        &mut self,
+        width: u16,
+        height: u16,
+        columns: u16,
+        lines: u16,
+    ) {
+        for context in self.ctx().contexts() {
+            let _ = context.messenger.send_resize(width, height, columns, lines);
+        }
     }
 
     #[inline]
@@ -552,7 +561,7 @@ impl Screen {
         terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
         drop(terminal);
 
-        let _ = self.ctx_mut().current_mut().messenger.send_resize(
+        self.resize_all_contexts(
             new_size.width as u16,
             new_size.height as u16,
             c as u16,

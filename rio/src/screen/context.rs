@@ -69,7 +69,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         )?;
 
         if !command.is_empty() {
-            command.push(String::from("\n"));
+            command.push(String::from("\n;"));
             let command = command.join(" ");
             initial_context.messenger.send_bytes(command.into());
         }
