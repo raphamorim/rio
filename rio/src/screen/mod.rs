@@ -119,14 +119,9 @@ impl Screen {
         self.sugarloaf.update_font(config.font.to_string());
         self.state = State::new(config);
 
-        let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.cursor_shape = self.state.get_cursor_state().content;
-        terminal.resize::<Layout>(columns, lines);
-        drop(terminal);
-
         let width = self.layout.width as u16;
         let height = self.layout.height as u16;
-        self.resize_all_contexts(width, height, columns as u16, lines as u16);
+        self.resize_all_contexts(width, height, columns, lines);
 
         self.init(config.colors.background.1);
     }
@@ -136,11 +131,21 @@ impl Screen {
         &mut self,
         width: u16,
         height: u16,
-        columns: u16,
-        lines: u16,
+        columns: usize,
+        lines: usize,
     ) {
         for context in self.ctx().contexts() {
-            let _ = context.messenger.send_resize(width, height, columns, lines);
+            let mut terminal = context.terminal.lock();
+            terminal.cursor_shape = self.state.get_cursor_state().content;
+
+            terminal.resize::<Layout>(columns, lines);
+            drop(terminal);
+            let _ = context.messenger.send_resize(
+                width,
+                height,
+                columns as u16,
+                lines as u16,
+            );
         }
     }
 
@@ -555,17 +560,13 @@ impl Screen {
         self.layout
             .set_size(new_size.width, new_size.height)
             .update();
-        let (c, l) = self.layout.compute();
-
-        let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.resize::<Layout>(self.layout.columns, self.layout.rows);
-        drop(terminal);
+        let (columns, lines) = self.layout.compute();
 
         self.resize_all_contexts(
             new_size.width as u16,
             new_size.height as u16,
-            c as u16,
-            l as u16,
+            columns,
+            lines,
         );
         self
     }
