@@ -345,6 +345,7 @@ impl Screen {
     //     }
     // }
 
+    #[inline]
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
         let mut terminal = self.ctx().current().terminal.lock();
@@ -424,10 +425,12 @@ impl Screen {
         };
 
         // Move vi mode cursor to mouse click position.
-        // if self.ctx.terminal().mode().contains(TermMode::VI) && !self.ctx.search_active() {
-        //     self.ctx.terminal_mut().vi_mode_cursor.point = point;
-        //     self.ctx.mark_dirty();
-        // }
+        let mut terminal = self.ctx().current().terminal.lock();
+        let mode = terminal.mode();
+        if mode.contains(Mode::VI) {
+            terminal.vi_mode_cursor.pos = point;
+        }
+        drop(terminal);
     }
 
     #[inline]
@@ -576,14 +579,15 @@ impl Screen {
         new_scale: f32,
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
-        self.sugarloaf
-            .resize(new_size.width, new_size.height)
-            .rescale(new_scale);
-
         self.layout
             .set_scale(new_scale)
             .set_size(new_size.width, new_size.height)
             .update();
+
+        self.sugarloaf
+            .resize(new_size.width, new_size.height)
+            .rescale(new_scale);
+
         self
     }
 }
