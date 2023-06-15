@@ -2,6 +2,7 @@
 
 ## 0.0.7 (in progress)
 
+- Added command line interface support (`--help`, `--version`, `-e` and `--command`).
 - Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.
 - Added `padding-x` to configuration.
 - Reload automatically when the configuration file is changed ([#69](https://github.com/raphamorim/rio/issues/69)).
