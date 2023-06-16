@@ -724,23 +724,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "example-sugarloaf-wasm"
-version = "0.0.7"
-dependencies = [
- "console_error_panic_hook",
- "console_log",
- "env_logger",
- "log",
- "sugarloaf",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "exr"
 version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2350,6 +2333,23 @@ dependencies = [
  "log",
  "png",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "sugarloaf-styled-text"
+version = "0.0.7"
+dependencies = [
+ "console_error_panic_hook",
+ "console_log",
+ "env_logger",
+ "log",
+ "sugarloaf",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

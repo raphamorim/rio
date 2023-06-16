@@ -1,5 +1,5 @@
 [package]
-name = "example-sugarloaf-wasm"
+name = "sugarloaf-styled-text"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
