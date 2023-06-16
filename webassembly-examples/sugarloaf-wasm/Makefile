@@ -1,7 +1,6 @@
 install:
 	cargo install cargo-server
 	cargo install wasm-bindgen-cli
-	npm install
 
 run: build
 	cargo server --open

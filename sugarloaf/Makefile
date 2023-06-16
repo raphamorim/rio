@@ -1,13 +1,12 @@
 install:
 	cargo install cargo-server
 	cargo install wasm-bindgen-cli
-	cargo install geckodriver
-	npm install
 
 run: build
 	cargo server
 
 ## Firefox's geckodriver
+## cargo install geckodriver
 test-firefox:
 	GECKODRIVER=geckodriver cargo test -p sugarloaf --tests --target wasm32-unknown-unknown
 
