@@ -2,14 +2,24 @@
 <html lang="en-US">
   <head>
     <meta charset="utf-8" />
-    <title>hello-wasm example</title>
+    <title>Sugarloaf WASM</title>
   </head>
+  <style>
+    canvas {
+      background-color: black;
+    }
+  </style>
   <body>
+    <canvas id="sugarloaf_canvas"></canvas>
     <script type="module">
-      import init, { greet } from "./pkg/sugarloaf_wasm.js";
-      init().then(() => {
-        greet("WebAssembly");
-      });
+      import init from "./wasm/sugarloaf_wasm.js";
+      init()
+        .then(() => {
+          console.log("sugarloaf_wasm Loaded");
+        })
+        .catch(err => {
+          console.log(err);
+        });
     </script>
   </body>
 </html>
