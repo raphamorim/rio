@@ -1,4 +1,4 @@
-use sugarloaf::core::{Sugar, SugarStyle, SugarDecoration, SugarloafStyle};
+use sugarloaf::core::{Sugar, SugarDecoration, SugarStyle, SugarloafStyle};
 use sugarloaf::Sugarloaf;
 use wasm_bindgen::prelude::*;
 
@@ -66,6 +66,8 @@ async fn run() {
     let scale_factor = sugarloaf.get_scale();
     let font_size = 60.;
     let mut styles = compute_styles(scale_factor, font_size, width, height);
+
+    log::info!("started scale_factor: {scale_factor:?}");
 
     event_loop.run(move |event, _, control_flow| {
         control_flow.set_wait();
@@ -501,6 +503,8 @@ async fn run() {
                     scale_factor,
                     ..
                 } => {
+                    log::info!("changed scale_factor: {scale_factor:?}");
+
                     let scale_factor_f32 = scale_factor as f32;
                     styles = compute_styles(
                         scale_factor_f32,
