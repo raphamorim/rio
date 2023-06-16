@@ -3,7 +3,7 @@
 extern crate wasm_bindgen_test;
 use sugarloaf::core::Sugar;
 use sugarloaf::core::SugarloafStyle;
-use sugarloaf::tools::create_html_canvas;
+use sugarloaf::tools::{create_html_canvas, get_html_canvas};
 use sugarloaf::Sugarloaf;
 use wasm_bindgen_test::*;
 
@@ -14,10 +14,6 @@ use winit::{
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
-use web_sys::HtmlCanvasElement;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::WindowBuilderExtWebSys;
 
@@ -39,16 +35,7 @@ async fn run() {
     let width = 1000.0;
     let height = 800.0;
 
-    #[cfg(target_arch = "wasm32")]
-    let canvas_element = {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| doc.get_element_by_id("sugarloaf-canvas"))
-            .and_then(|element| element.dyn_into::<HtmlCanvasElement>().ok())
-            .expect("Get canvas element")
-    };
+    let canvas_element = get_html_canvas();
 
     #[cfg(target_arch = "wasm32")]
     let window = winit::window::WindowBuilder::new()
