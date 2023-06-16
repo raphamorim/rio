@@ -2,4 +2,9 @@
 test-colors = "test --release -p colors --"
 test-config = "test --release -p config --"
 test-rio = "test --release -p rio --"
-wasm-sugarloaf = "build -p sugarloaf --target wasm32-unknown-unknown --release"
+wasm-build = "build -p sugarloaf --target wasm32-unknown-unknown --release"
+
+[build]
+rustflags = [
+"--cfg=web_sys_unstable_apis"
+]

@@ -2,6 +2,7 @@
 members = [
   "teletypewriter",
   "sugarloaf",
+  "sugarloaf-wasm",
   "colors",
   "config",
   "rio"
@@ -12,7 +13,11 @@ resolver = "2"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
+keywords = ["graphics", "terminal"]
+rust-version = "1.70"
+version = "0.0.7"
 repository = "https://github.com/raphamorim/rio"
+homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 
 [workspace.dependencies]

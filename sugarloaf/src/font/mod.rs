@@ -1,27 +1,11 @@
+pub mod constants;
+
+use crate::font::constants::*;
+#[cfg(not(target_arch = "wasm32"))]
 use font_kit::{properties::Style, source::SystemSource};
 use glyph_brush::ab_glyph::{FontArc, FontVec};
 use log::warn;
 
-pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
-
-pub const FONT_CASCADIAMONO_REGULAR: &[u8; 308212] =
-    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Regular.otf");
-
-pub const FONT_CASCADIAMONO_BOLD: &[u8; 312976] =
-    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Bold.otf");
-
-pub const FONT_CASCADIAMONO_ITALIC: &[u8; 191296] =
-    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-Italic.otf");
-
-pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8; 193360] =
-    include_bytes!("./resources/CascadiaMono/CascadiaMonoPL-BoldItalic.otf");
-
-pub const FONT_EMOJI: &[u8; 877988] =
-    include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
-
-#[cfg(not(target_os = "macos"))]
-pub const FONT_DEJAVU_MONO: &[u8; 340712] =
-    include_bytes!("./resources/DejaVuSansMono.ttf");
 #[derive(Debug, Clone)]
 pub struct ComposedFontArc {
     pub regular: FontArc,
@@ -36,15 +20,19 @@ pub struct Font {
     pub emojis: FontArc,
     pub unicode: FontArc,
 }
+
+#[cfg(not(target_arch = "wasm32"))]
 fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
     let copied_font = font.copy_font_data();
     Some(FontArc::new(
         FontVec::try_from_vec_and_index(copied_font?.to_vec(), 0).unwrap(),
     ))
 }
+
 impl Font {
     // TODO: Refactor multiple unwraps in this code
     // TODO: Use FontAttributes bold and italic
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(font_name: String) -> Font {
         let font_arc_unicode;
         let font_arc_symbol;
@@ -61,16 +49,6 @@ impl Font {
             let font_vec_symbol =
                 FontVec::try_from_vec_and_index(copied_font_symbol.to_vec(), 1).unwrap();
             font_arc_symbol = FontArc::new(font_vec_symbol);
-
-            // TODO: Load native emojis
-            // let font_emojis = SystemSource::new()
-            //     .select_by_postscript_name("Apple Color Emoji")
-            //     .unwrap()
-            //     .load()
-            //     .unwrap();
-            // let copied_font_emojis = font_emojis.copy_font_data();
-            // let Some(copied_font_emojis) = copied_font_emojis else { todo!() };
-            // let font_vec_emojis = FontVec::try_from_vec_and_index(copied_font_emojis.to_vec(), 2).unwrap();
 
             let font_unicode = SystemSource::new()
                 .select_by_postscript_name("Arial Unicode MS")
@@ -172,6 +150,25 @@ impl Font {
 
             warn!("failed to load font {font_name}");
         }
+
+        Font {
+            text: ComposedFontArc {
+                regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+                bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
+                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+                bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
+                    .unwrap(),
+            },
+            symbol: font_arc_symbol,
+            emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
+            unicode: font_arc_unicode,
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn new(font_name: String) -> Font {
+        let font_arc_unicode = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
+        let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
 
         Font {
             text: ComposedFontArc {
