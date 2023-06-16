@@ -1,14 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
 extern crate wasm_bindgen_test;
-use sugarloaf::tools::create_html_canvas;
-use wasm_bindgen_test::*;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
 use sugarloaf::core::Sugar;
 use sugarloaf::core::SugarloafStyle;
+use sugarloaf::tools::create_html_canvas;
 use sugarloaf::Sugarloaf;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen_test::*;
 
 use winit::{
     event::*,

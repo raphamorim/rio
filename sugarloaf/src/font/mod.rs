@@ -3,7 +3,10 @@ pub mod constants;
 use crate::font::constants::*;
 #[cfg(not(target_arch = "wasm32"))]
 use font_kit::{properties::Style, source::SystemSource};
-use glyph_brush::ab_glyph::{FontArc, FontVec};
+use glyph_brush::ab_glyph::FontArc;
+#[cfg(not(target_arch = "wasm32"))]
+use glyph_brush::ab_glyph::FontVec;
+#[cfg(not(target_arch = "wasm32"))]
 use log::warn;
 
 #[derive(Debug, Clone)]
@@ -166,7 +169,7 @@ impl Font {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new(font_name: String) -> Font {
+    pub fn new(_font_name: String) -> Font {
         let font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
         let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
 
