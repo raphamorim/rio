@@ -2,7 +2,7 @@
 members = [
   "teletypewriter",
   "sugarloaf",
-  "sugarloaf-wasm",
+  "webassembly-examples/*",
   "colors",
   "config",
   "rio"
@@ -28,6 +28,16 @@ teletypewriter = { path = "teletypewriter" }
 tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.16.1"
 winit = { version = "0.28.6", default-features = false, features = ["serde"] }
+wasm-bindgen = "0.2.84"
+wasm-bindgen-futures = "0.4.34"
+wasm-bindgen-test = "0.3"
+env_logger = "0.10"
+web-sys = "0.3.61"
+console_log = "0.2"
+console_error_panic_hook = "0.1.7"
+
+[workspace.dev-dependencies]
+wasm-bindgen-test = "0.3.13"
 
 [profile.release]
 opt-level = "s"

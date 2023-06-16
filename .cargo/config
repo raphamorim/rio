@@ -2,9 +2,10 @@
 test-colors = "test --release -p colors --"
 test-config = "test --release -p config --"
 test-rio = "test --release -p rio --"
-wasm-build = "build -p sugarloaf --target wasm32-unknown-unknown --release"
 
-[build]
+[target.wasm32-unknown-unknown]
 rustflags = [
-"--cfg=web_sys_unstable_apis"
+    # Enabled unstable APIs from web_sys
+    "--cfg=web_sys_unstable_apis"
 ]
+runner = 'wasm-bindgen-test-runner'
