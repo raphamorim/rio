@@ -1,3 +1,33 @@
+#[cfg(target_arch = "wasm32")]
+use std::str::FromStr;
+#[cfg(target_arch = "wasm32")]
+use web_sys::{ImageBitmapRenderingContext, OffscreenCanvas};
+
+#[cfg(target_arch = "wasm32")]
+struct OffscreenCanvasSetup {
+    offscreen_canvas: OffscreenCanvas,
+    bitmap_renderer: ImageBitmapRenderingContext,
+}
+
+#[cfg(target_arch = "wasm32")]
+/// Parse the query string as returned by `web_sys::window()?.location().search()?` and get a
+/// specific key out of it.
+pub fn parse_url_query_string<'a>(query: &'a str, search_key: &str) -> Option<&'a str> {
+    let query_string = query.strip_prefix('?')?;
+
+    for pair in query_string.split('&') {
+        let mut pair = pair.split('=');
+        let key = pair.next()?;
+        let value = pair.next()?;
+
+        if key == search_key {
+            return Some(value);
+        }
+    }
+
+    None
+}
+
 #[derive(Debug)]
 pub struct Context {
     pub device: wgpu::Device,
@@ -34,7 +64,7 @@ impl Context {
                 .and_then(|win| win.document())
                 .and_then(|doc| doc.body())
                 .and_then(|body| {
-                    body.append_child(&web_sys::Element::from(window.canvas()))
+                    body.append_child(&web_sys::Element::from(winit_window.canvas()))
                         .ok()
                 })
                 .expect("couldn't append canvas to document body");
@@ -57,7 +87,7 @@ impl Context {
                     let offscreen_canvas = OffscreenCanvas::new(1024, 768)
                         .expect("couldn't create OffscreenCanvas");
 
-                    let bitmap_renderer = window
+                    let bitmap_renderer = winit_window
                         .canvas()
                         .get_context("bitmaprenderer")
                         .expect("couldn't create ImageBitmapRenderingContext (Result)")
@@ -81,15 +111,16 @@ impl Context {
         #[cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))]
         let surface: wgpu::Surface =
             unsafe { instance.create_surface(&winit_window).unwrap() };
+
         #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
-        let surface = {
+        let surface = unsafe {
             if let Some(offscreen_canvas_setup) = &offscreen_canvas_setup {
                 log::info!("creating surface from OffscreenCanvas");
                 instance.create_surface_from_offscreen_canvas(
                     offscreen_canvas_setup.offscreen_canvas.clone(),
                 )
             } else {
-                instance.create_surface(&window)
+                instance.create_surface(&winit_window)
             }
         }
         .unwrap();
