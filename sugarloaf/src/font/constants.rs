@@ -16,5 +16,10 @@ pub const FONT_EMOJI: &[u8; 877988] =
     include_bytes!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
 
 #[cfg(not(target_os = "macos"))]
-pub const FONT_DEJAVU_MONO: &[u8; 340712] =
-    include_bytes!("./resources/DejaVuSansMono.ttf");
+pub const FONT_DEJAVU_SANS: &[u8; 757076] =
+    include_bytes!("./resources/DejaVuSans/DejaVuSans.ttf");
+
+#[cfg(not(target_os = "macos"))]
+pub const FONT_UNICODE_FALLBACK: &[u8; 754920] = include_bytes!(
+    "./resources/chrysanthi-unicode-font/ChrysanthiUnicodeRegular-KEzo.ttf"
+);

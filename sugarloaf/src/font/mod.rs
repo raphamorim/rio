@@ -64,8 +64,8 @@ impl Font {
 
         #[cfg(not(target_os = "macos"))]
         {
-            font_arc_unicode = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
-            font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
+            font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
+            font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
         }
 
         let is_default_font = font_name.to_lowercase() == DEFAULT_FONT_NAME;
@@ -167,8 +167,8 @@ impl Font {
 
     #[cfg(target_arch = "wasm32")]
     pub fn new(font_name: String) -> Font {
-        let font_arc_unicode = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
-        let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_MONO).unwrap();
+        let font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
+        let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
 
         Font {
             text: ComposedFontArc {
