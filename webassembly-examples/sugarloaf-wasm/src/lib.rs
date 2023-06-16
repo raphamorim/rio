@@ -15,11 +15,6 @@ use web_sys::HtmlCanvasElement;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::WindowBuilderExtWebSys;
 
-#[wasm_bindgen]
-extern "C" {
-    fn alert(s: &str);
-}
-
 fn compute_styles(
     scale_factor: f32,
     font_size: f32,
@@ -38,12 +33,8 @@ async fn run() {
     let width = 1000.0;
     let height = 800.0;
 
-    // alert("Hello, sugarloaf-wasm!");
-
     #[cfg(target_arch = "wasm32")]
     let canvas_element = {
-        // console_log::init_with_level(log::Level::Debug).unwrap();
-
         std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
         web_sys::window()
@@ -323,7 +314,7 @@ async fn run() {
 }
 
 #[wasm_bindgen(start)]
-pub fn start() {
+pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init().expect("could not initialize logger");
     wasm_bindgen_futures::spawn_local(run());

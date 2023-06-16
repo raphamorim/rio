@@ -3,15 +3,15 @@ name = "sugarloaf"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
-homepage.workspace = true
-repository.workspace = true
 keywords.workspace = true
-license.workspace = true
 exclude = [
     "Cargo.lock",
 ]
 description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
 documentation = "https://docs.rs/crate/sugarloaf/latest"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -37,17 +37,19 @@ js-sys = "0.3.61"
 wasm-bindgen = "0.2.84"
 wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3"
-web-sys = "0.3.61"
+web-sys.workspaces = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 font-kit = "0.11.0"
 
-[dev-dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
+
+[dev-dependencies]
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"
-wasm-bindgen-test = "0.3.13"
+web-sys.workspaces = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3.61", features = [
@@ -181,6 +183,9 @@ web-sys = { version = "0.3.61", features = [
     "WorkerGlobalScope",
     "WorkerNavigator"
 ] }
+
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 web-sys = { version = "0.3.61", features = [

@@ -29,6 +29,32 @@ jobs:
       - run: cargo clippy --all-features --all-targets -- -D warnings
       - run: cargo test
 
+  test-wasm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+    env:
+      RUST_BACKTRACE: full
+      GECKODRIVER: chromedriver
+    name: Test Ubuntu
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: nanasess/setup-chromedriver@v2
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: rustup component add rustfmt clippy
+      - run: cargo fetch
+      - run: cargo fmt -- --check --color always
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: |
+          export DISPLAY=:99
+          chromedriver --url-base=/wd/hub &
+          sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 & # optional
+      - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
+      - run: make renderer-tests
+
   test-macos:
     runs-on: macOS-latest
     strategy:
