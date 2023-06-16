@@ -5,8 +5,6 @@ use crate::core::{SugarStack, SugarloafStyle};
 use crate::font::Font;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
-#[cfg(target_arch = "wasm32")]
-use web_sys::{ImageBitmapRenderingContext, OffscreenCanvas};
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [

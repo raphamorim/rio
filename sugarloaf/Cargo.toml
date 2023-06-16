@@ -31,13 +31,13 @@ glyph_brush = "0.7.7"
 log = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
-console_error_panic_hook = "0.1.7"
-console_log = "0.2"
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
 js-sys = "0.3.61"
-wasm-bindgen = "0.2.84"
-wasm-bindgen-futures = "0.4.34"
-wasm-bindgen-test = "0.3"
-web-sys.workspaces = true
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+wasm-bindgen-test = { workspace = true }
+web-sys = "0.3.61"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 font-kit = "0.11.0"
@@ -49,7 +49,6 @@ tokio = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"
-web-sys.workspaces = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3.61", features = [
@@ -183,9 +182,6 @@ web-sys = { version = "0.3.61", features = [
     "WorkerGlobalScope",
     "WorkerNavigator"
 ] }
-
-[target.wasm32-unknown-unknown]
-runner = "wasm-bindgen-test-runner"
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 web-sys = { version = "0.3.61", features = [

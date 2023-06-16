@@ -61,7 +61,7 @@ test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
 
-renderer-tests:
+test-renderer:
 	cd ./sugarloaf && make test
 
 # Legacy multi build for macOs

@@ -38,22 +38,25 @@ jobs:
     env:
       RUST_BACKTRACE: full
       GECKODRIVER: chromedriver
-    name: Test Ubuntu
+    name: Test WebAssembly
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
       - uses: nanasess/setup-chromedriver@v2
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+      - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
-      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
       - run: |
           export DISPLAY=:99
           chromedriver --url-base=/wd/hub &
           sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 & # optional
       - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
-      - run: make renderer-tests
+      - run: cd ./sugarloaf && make install
+      - run: make test-renderer
 
   test-macos:
     runs-on: macOS-latest
