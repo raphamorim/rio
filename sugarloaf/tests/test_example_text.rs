@@ -1,6 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
+// To track:
+// https://github.com/gfx-rs/wgpu/issues/3430
+
 extern crate wasm_bindgen_test;
+mod util;
+
 use sugarloaf::core::Sugar;
 use sugarloaf::core::SugarloafStyle;
 use sugarloaf::tools::{create_html_canvas, get_html_canvas};
@@ -300,7 +305,20 @@ async fn run() {
                 sugarloaf.render();
             }
             _ => {
-                *control_flow = ControlFlow::Exit;
+                // To use later https://crates.io/crates/deno_webgpu
+                // util::image::compare_image_output(
+                //     env!("CARGO_MANIFEST_DIR").to_string() + "/../../example-text.png",
+                //     sugarloaf.get_context().adapter_info.backend,
+                //     width as u32,
+                //     height as u32,
+                //     &sugarloaf.bytes(width as u32, height as u32),
+                //     &[image::ComparisonType::Percentile {
+                //         percentile: 0.5,
+                //         threshold: 0.29,
+                //     }],
+                // );
+
+                *control_flow = ControlFlow::Wait;
             }
         }
     });
@@ -314,5 +332,5 @@ async fn pass() {
     console_log::init().expect("could not initialize logger");
     wasm_bindgen_futures::spawn_local(run());
 
-    assert_eq!(1 + 1, 2);
+    // assert_eq!(1 + 1, 2);
 }
