@@ -7,6 +7,7 @@ pub struct Context {
     pub format: wgpu::TextureFormat,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub scale: f32,
+    pub adapter_info: wgpu::AdapterInfo,
 }
 
 impl Context {
@@ -106,6 +107,7 @@ impl Context {
             format,
             size,
             scale: scale as f32,
+            adapter_info: adapter.get_info(),
         }
     }
 
