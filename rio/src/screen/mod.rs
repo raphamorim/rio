@@ -199,8 +199,8 @@ impl Screen {
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
         self.sugarloaf
-            .resize(new_size.width, new_size.height)
-            .rescale(new_scale);
+            .rescale(new_scale)
+            .resize(new_size.width, new_size.height);
 
         self
     }

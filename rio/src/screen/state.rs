@@ -380,7 +380,8 @@ impl State {
 
         if context_manager.len() > 1 {
             let mut renderable_tabs = vec![];
-            let mut initial_position = PADDING_X_TABS;
+            let mut initial_position =
+                (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - PADDING_X_TABS;
             let position_modifier = 20.;
             for (i, _) in context_manager.contexts().iter().enumerate() {
                 let mut color = self.named_colors.tabs;
