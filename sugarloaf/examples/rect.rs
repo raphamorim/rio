@@ -1,7 +1,6 @@
 extern crate png;
 extern crate tokio;
 
-use std::{io, path::Path};
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::{
     dpi::LogicalSize,
@@ -11,29 +10,8 @@ use winit::{
 };
 
 use sugarloaf::components::rect::Rect;
+use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::Sugarloaf;
-
-#[allow(unused)]
-fn write_png(
-    path: impl AsRef<Path>,
-    width: u32,
-    height: u32,
-    data: &[u8],
-    compression: png::Compression,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let file = io::BufWriter::new(std::fs::File::create(path).unwrap());
-
-        let mut encoder = png::Encoder::new(file, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        encoder.set_compression(compression);
-        let mut writer = encoder.write_header().unwrap();
-
-        writer.write_image_data(data).unwrap();
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -48,10 +26,23 @@ async fn main() {
         .build(&event_loop)
         .unwrap();
 
+    let scale_factor = window.scale_factor();
+    let font_size = 60.;
+
+    let sugarloaf_layout = SugarloafLayout::new(
+        width as f32,
+        height as f32,
+        (0.0, 0.0),
+        scale_factor as f32,
+        font_size,
+        (2, 1),
+    );
+
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        sugarloaf_layout,
     )
     .await
     .expect("Sugarloaf instance should be created");
@@ -145,14 +136,6 @@ async fn main() {
                         },
                     ])
                     .render();
-
-                // write_png(
-                //     "/tmp/rio-rect.png",
-                //     width as u32,
-                //     height as u32,
-                //     &[1],
-                //     png::Compression::Best,
-                // );
             }
             _ => {
                 *control_flow = winit::event_loop::ControlFlow::Wait;

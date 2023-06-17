@@ -1,8 +1,9 @@
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{SugarStack, SugarloafStyle};
+use crate::core::SugarStack;
 use crate::font::Font;
+use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
 
@@ -72,6 +73,7 @@ struct FontBounds {
 
 pub struct Sugarloaf {
     pub ctx: Context,
+    pub layout: SugarloafLayout,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     rects: Vec<Rect>,
@@ -79,7 +81,6 @@ pub struct Sugarloaf {
     acc_line_y: f32,
     initial_scale: f32,
     font_bounds: FontBounds,
-    background_color: wgpu::Color,
     font_name: String,
 }
 
@@ -96,6 +97,7 @@ impl Sugarloaf {
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
         font_name: String,
+        layout: SugarloafLayout,
     ) -> Result<Sugarloaf, String> {
         let ctx = Context::new(winit_window, power_preference).await;
 
@@ -121,7 +123,7 @@ impl Sugarloaf {
             acc_line: 0.0,
             acc_line_y: 0.0,
             font_bounds: FontBounds::default(),
-            background_color: wgpu::Color::BLACK,
+            layout,
         })
     }
 
@@ -143,7 +145,7 @@ impl Sugarloaf {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.background_color),
+                            load: wgpu::LoadOp::Clear(self.layout.background_color),
                             store: true,
                         },
                     })],
@@ -184,23 +186,28 @@ impl Sugarloaf {
 
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
         self.ctx.resize(width, height);
+        self.layout.resize(width, height);
+        self.layout.update();
         self
     }
 
     pub fn rescale(&mut self, scale: f32) -> &mut Self {
         self.ctx.scale = scale;
+        self.layout.scale_factor = scale;
+        self.layout.update();
         self
     }
 
     #[inline]
-    pub fn stack(&mut self, stack: SugarStack, style: SugarloafStyle) {
+    pub fn stack(&mut self, stack: SugarStack) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.;
         let mut mod_size = 1.0;
 
         if self.acc_line_y == 0.0 {
-            self.acc_line_y =
-                (style.screen_position.1 - style.text_scale) / self.ctx.scale;
+            self.acc_line_y = (self.layout.style.screen_position.1
+                - self.layout.style.text_scale)
+                / self.ctx.scale;
         }
 
         // TODO: Rewrite this method to proper use scale and get rid of initial_scale
@@ -251,12 +258,12 @@ impl Sugarloaf {
                 OwnedText::new(sugar.content.to_owned())
                     .with_font_id(font_id)
                     .with_color(sugar.foreground_color)
-                    .with_scale(style.text_scale),
+                    .with_scale(self.layout.style.text_scale),
             );
 
             self.rects.push(Rect {
                 position: [
-                    (style.screen_position.0 / self.ctx.scale) + x,
+                    (self.layout.style.screen_position.0 / self.ctx.scale) + x,
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
@@ -268,7 +275,7 @@ impl Sugarloaf {
                 let dy = self.font_bounds.default.0;
                 self.rects.push(Rect {
                     position: [
-                        (style.screen_position.0 / self.ctx.scale)
+                        (self.layout.style.screen_position.0 / self.ctx.scale)
                             + x
                             + ((dx * decoration.position.0) / self.ctx.scale),
                         self.acc_line_y + dy * (decoration.position.1 * mod_size),
@@ -286,10 +293,10 @@ impl Sugarloaf {
 
         let section = &OwnedSection {
             screen_position: (
-                style.screen_position.0,
-                style.screen_position.1 + self.acc_line,
+                self.layout.style.screen_position.0,
+                self.layout.style.screen_position.1 + self.acc_line,
             ),
-            bounds: style.bounds,
+            bounds: self.layout.style.bounds,
             text,
             layout: glyph_brush::Layout::default_single_line()
                 .v_align(glyph_brush::VerticalAlign::Bottom),
@@ -297,8 +304,9 @@ impl Sugarloaf {
 
         self.text_brush.queue(section);
 
-        self.acc_line_y = (style.screen_position.1 + self.acc_line) / self.ctx.scale;
-        self.acc_line += style.text_scale;
+        self.acc_line_y =
+            (self.layout.style.screen_position.1 + self.acc_line) / self.ctx.scale;
+        self.acc_line += self.layout.style.text_scale;
     }
 
     pub fn get_context(&self) -> &Context {
@@ -310,23 +318,18 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn get_font_bounds(
-        &mut self,
-        content: char,
-        font_id: FontId,
-        style: SugarloafStyle,
-    ) -> FontBound {
+    pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> FontBound {
         let text = vec![OwnedText::new(content)
             .with_font_id(font_id)
             .with_color([0., 0., 0., 0.])
-            .with_scale(style.text_scale)];
+            .with_scale(self.layout.style.text_scale)];
 
         let section = &OwnedSection {
             screen_position: (
-                style.screen_position.0,
-                style.screen_position.1 + self.acc_line,
+                self.layout.style.screen_position.0,
+                self.layout.style.screen_position.1 + self.acc_line,
             ),
-            bounds: style.bounds,
+            bounds: self.layout.style.bounds,
             text,
             layout: glyph_brush::Layout::default_single_line()
                 .v_align(glyph_brush::VerticalAlign::Bottom),
@@ -343,7 +346,7 @@ impl Sugarloaf {
         (0., 0.)
     }
 
-    /// render_from_style is an expensive render operation that defines font bounds
+    /// config is a fake render operation that defines font bounds
     /// is an important function to figure out the cursor dimensions and background color
     /// but should be used as minimal as possible.
     ///
@@ -351,10 +354,10 @@ impl Sugarloaf {
     /// configuration updates that leads to layout recalculation.
     ///
     #[inline]
-    pub fn render_with_style(&mut self, color: wgpu::Color, style: SugarloafStyle) {
+    pub fn config(&mut self, color: wgpu::Color) {
         self.reset_state();
         self.rects = vec![];
-        self.background_color = color;
+        self.layout.background_color = color;
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -380,16 +383,16 @@ impl Sugarloaf {
                 });
 
                 // Bounds are defined in runtime
-                self.font_bounds.default = self.get_font_bounds(' ', FontId(0), style);
+                self.font_bounds.default = self.get_font_bounds(' ', FontId(0));
                 self.font_bounds.symbols =
                     // U+2AF9 => \u{2AF9} => ⫹
-                    self.get_font_bounds('\u{2AF9}', FontId(1), style);
+                    self.get_font_bounds('\u{2AF9}', FontId(1));
                 self.font_bounds.emojis =
                     // U+1F947 => \u{1F947} => 🥇
-                    self.get_font_bounds('\u{1F947}', FontId(2), style);
+                    self.get_font_bounds('\u{1F947}', FontId(2));
                 self.font_bounds.unicode =
                     // U+33D1 => \u{33D1} => ㏑
-                    self.get_font_bounds('\u{33D1}', FontId(3), style);
+                    self.get_font_bounds('\u{33D1}', FontId(3));
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
@@ -491,7 +494,7 @@ impl Sugarloaf {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.background_color),
+                            load: wgpu::LoadOp::Clear(self.layout.background_color),
                             store: true,
                         },
                     })],

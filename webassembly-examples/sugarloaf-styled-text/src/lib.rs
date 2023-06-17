@@ -1,5 +1,8 @@
-use sugarloaf::core::{Sugar, SugarDecoration, SugarStyle, SugarloafStyle};
 use sugarloaf::Sugarloaf;
+use sugarloaf::{
+    core::{Sugar, SugarDecoration, SugarStyle},
+    layout::SugarloafLayout,
+};
 use wasm_bindgen::prelude::*;
 
 use winit::{
@@ -13,19 +16,6 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::WindowBuilderExtWebSys;
-
-fn compute_styles(
-    scale_factor: f32,
-    font_size: f32,
-    width: f32,
-    height: f32,
-) -> SugarloafStyle {
-    SugarloafStyle {
-        screen_position: ((20. + 10.) * scale_factor, (20. + font_size) * scale_factor),
-        text_scale: font_size * scale_factor,
-        bounds: (width * scale_factor, height * scale_factor),
-    }
-}
 
 async fn run() {
     let event_loop = EventLoop::new();
@@ -55,17 +45,26 @@ async fn run() {
     #[cfg(not(target_arch = "wasm32"))]
     let window = winit::window::Window::new(&event_loop).unwrap();
 
+    let scale_factor = window.scale_factor();
+    let font_size = 60.;
+
+    let sugarloaf_layout = SugarloafLayout::new(
+        width as f32,
+        height as f32,
+        (10.0, 10.0),
+        scale_factor as f32,
+        font_size,
+        (2, 1),
+    );
+
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        sugarloaf_layout,
     )
     .await
     .expect("Sugarloaf instance should be created");
-
-    let scale_factor = sugarloaf.get_scale();
-    let font_size = 60.;
-    let mut styles = compute_styles(scale_factor, font_size, width, height);
 
     log::info!("started scale_factor: {scale_factor:?}");
 
@@ -482,7 +481,7 @@ async fn run() {
 
         match event {
             Event::Resumed => {
-                sugarloaf.render_with_style(wgpu::Color::RED, styles);
+                sugarloaf.config(wgpu::Color::RED);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -506,12 +505,6 @@ async fn run() {
                     log::info!("changed scale_factor: {scale_factor:?}");
 
                     let scale_factor_f32 = scale_factor as f32;
-                    styles = compute_styles(
-                        scale_factor_f32,
-                        font_size,
-                        new_inner_size.width as f32,
-                        new_inner_size.height as f32,
-                    );
                     sugarloaf
                         .rescale(scale_factor_f32)
                         .resize(new_inner_size.width, new_inner_size.height);
@@ -520,11 +513,11 @@ async fn run() {
                 _ => (),
             },
             Event::RedrawRequested { .. } => {
-                sugarloaf.stack(sugar, styles);
-                sugarloaf.stack(italic_and_bold, styles);
-                sugarloaf.stack(rio, styles);
-                sugarloaf.stack(strike, styles);
-                sugarloaf.stack(cursors, styles);
+                sugarloaf.stack(sugar);
+                sugarloaf.stack(italic_and_bold);
+                sugarloaf.stack(rio);
+                sugarloaf.stack(strike);
+                sugarloaf.stack(cursors);
                 sugarloaf.render();
             }
             _ => {

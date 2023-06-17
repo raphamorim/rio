@@ -1,0 +1,144 @@
+use crate::core::SugarloafStyle;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Delta<T: Default> {
+    pub x: T,
+    pub y: T,
+}
+
+pub struct SugarloafLayout {
+    pub scale_factor: f32,
+    pub width: f32,
+    pub height: f32,
+    pub width_u32: u32,
+    pub height_u32: u32,
+    pub font_size: f32,
+    pub columns: usize,
+    pub lines: usize,
+    pub padding: Delta<f32>,
+    pub style: SugarloafStyle,
+    pub background_color: wgpu::Color,
+    pub min_cols_lines: (usize, usize),
+}
+
+#[inline]
+fn update_styles(layout: &mut SugarloafLayout) {
+    let new_styles = SugarloafStyle {
+        screen_position: (
+            layout.padding.x * layout.scale_factor,
+            ((layout.padding.y + layout.font_size) * layout.scale_factor),
+        ),
+        bounds: (
+            layout.width * layout.scale_factor,
+            layout.height * layout.scale_factor,
+        ),
+        text_scale: layout.font_size * layout.scale_factor,
+    };
+    layout.style = new_styles;
+}
+
+// $ tput columns
+// $ tput lines
+#[inline]
+fn compute(
+    width: f32,
+    height: f32,
+    scale_factor: f32,
+    font_size: f32,
+    padding: Delta<f32>,
+    min_cols_lines: (usize, usize),
+) -> (usize, usize) {
+    let padding_x = ((padding.x) * scale_factor).floor();
+    let padding_y = ((padding.y) * scale_factor).floor();
+
+    let mut lines = (height - padding_y) / scale_factor;
+    lines /= font_size;
+    let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
+
+    let mut visible_columns = (width - 2. * padding_x) / scale_factor;
+    visible_columns /= font_size / 2.;
+    let visible_columns = std::cmp::max(visible_columns as usize, min_cols_lines.0);
+
+    (visible_columns, visible_lines)
+}
+
+impl SugarloafLayout {
+    pub fn new(
+        width: f32,
+        height: f32,
+        padding: (f32, f32),
+        scale_factor: f32,
+        font_size: f32,
+        min_cols_lines: (usize, usize),
+    ) -> SugarloafLayout {
+        let style = SugarloafStyle::default();
+
+        let mut layout = SugarloafLayout {
+            width,
+            width_u32: width as u32,
+            height,
+            height_u32: height as u32,
+            columns: 80,
+            lines: 25,
+            scale_factor,
+            font_size,
+            style,
+            padding: Delta {
+                x: padding.0,
+                y: padding.1,
+            },
+            background_color: wgpu::Color::BLACK,
+            min_cols_lines,
+        };
+
+        update_styles(&mut layout);
+        layout
+    }
+
+    pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
+        self.scale_factor = scale_factor;
+        self
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
+        self.width_u32 = width;
+        self.height_u32 = height;
+        self.width = width as f32;
+        self.height = height as f32;
+        self
+    }
+
+    pub fn update(&mut self) -> &mut Self {
+        update_styles(self);
+        let (columns, lines) = compute(
+            self.width,
+            self.height,
+            self.scale_factor,
+            self.font_size,
+            self.padding,
+            self.min_cols_lines,
+        );
+        self.columns = columns;
+        self.lines = lines;
+        self
+    }
+
+    // This method will run over the new font and font_size
+    pub fn recalculate(&mut self, font_size: f32, padding_x: f32) -> &mut Self {
+        let mut should_apply_changes = false;
+        if self.font_size != font_size {
+            self.font_size = font_size;
+            should_apply_changes = true;
+        }
+
+        if self.padding.x != padding_x {
+            self.padding.x = padding_x;
+            should_apply_changes = true;
+        }
+
+        if should_apply_changes {
+            update_styles(self);
+        }
+        self
+    }
+}
