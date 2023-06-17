@@ -29,21 +29,21 @@ jobs:
       - run: cargo clippy --all-features --all-targets -- -D warnings
       - run: cargo test
 
-  # test-wasm:
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     RUST_BACKTRACE: full
-  #     GECKODRIVER: chromedriver
-  #   name: Test WebAssembly
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-all-crates: "true"
-  #     - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
-  #     - run: cargo fetch
-  #     - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
-  #     - run: cd ./sugarloaf && make install
+  test-wasm:
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: full
+      GECKODRIVER: chromedriver
+    name: Test WebAssembly
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+      - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+      - run: cargo fetch
+      - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
+      - run: cd ./sugarloaf && make install
   #     - uses: nanasess/setup-chromedriver@v2
   #     - run: |
   #         export DISPLAY=:99
