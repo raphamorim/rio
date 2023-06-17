@@ -1,20 +1,25 @@
 mod bindings;
 mod context;
 mod messenger;
+mod mouse;
 mod state;
 pub mod window;
 
 use crate::clipboard::{Clipboard, ClipboardType};
+use crate::crosswords::grid::Dimensions;
+use crate::crosswords::pos::{Column, Line};
 use crate::crosswords::{
     grid::Scroll,
     pos::{Pos, Side},
-    Crosswords, Mode,
+    Crosswords, Mode, MIN_COLUMNS, MIN_LINES,
 };
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
-use crate::layout::Layout;
-use crate::screen::bindings::{Action as Act, BindingMode, Key};
-use crate::screen::context::ContextManager;
+use crate::screen::{
+    bindings::{Action as Act, BindingMode, Key},
+    context::ContextManager,
+    mouse::Mouse,
+};
 use crate::selection::{Selection, SelectionType};
 use colors::term::List;
 use messenger::Messenger;
@@ -22,18 +27,37 @@ use state::State;
 use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
-use sugarloaf::Sugarloaf;
+use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ModifiersState;
+
+const PADDING_Y: f32 = 30.0;
+
+impl Dimensions for SugarloafLayout {
+    #[inline]
+    fn columns(&self) -> usize {
+        self.columns
+    }
+
+    #[inline]
+    fn screen_lines(&self) -> usize {
+        self.lines
+    }
+
+    #[inline]
+    fn total_lines(&self) -> usize {
+        self.screen_lines()
+    }
+}
 
 pub struct Screen {
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
     pub modifiers: ModifiersState,
     ignore_chars: bool,
-    layout: Layout,
+    pub mouse: Mouse,
     pub ime: Ime,
     pub state: State,
-    sugarloaf: Sugarloaf,
+    pub sugarloaf: Sugarloaf,
     context_manager: context::ContextManager<EventProxy>,
 }
 
@@ -48,23 +72,27 @@ impl Screen {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
 
-        let mut layout = Layout::new(
-            size.width as f32,
-            size.height as f32,
-            config.padding_x,
-            scale as f32,
-            config.font_size,
-        );
-        let (columns, rows) = layout.compute();
-
         let power_preference: wgpu::PowerPreference = match config.performance {
             config::Performance::High => wgpu::PowerPreference::HighPerformance,
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let sugarloaf =
-            Sugarloaf::new(winit_window, power_preference, config.font.to_string())
-                .await?;
+        let sugarloaf_layout = SugarloafLayout::new(
+            size.width as f32,
+            size.height as f32,
+            (config.padding_x, PADDING_Y),
+            scale as f32,
+            config.font_size,
+            (MIN_COLUMNS, MIN_LINES),
+        );
+
+        let sugarloaf = Sugarloaf::new(
+            winit_window,
+            power_preference,
+            config.font.to_string(),
+            sugarloaf_layout,
+        )
+        .await?;
 
         let state = State::new(config);
 
@@ -76,8 +104,8 @@ impl Screen {
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
         let context_manager = context::ContextManager::start(
-            columns,
-            rows,
+            sugarloaf.layout.columns,
+            sugarloaf.layout.lines,
             state.get_cursor_state(),
             event_proxy,
             command,
@@ -88,7 +116,7 @@ impl Screen {
             context_manager,
             ime,
             sugarloaf,
-            layout,
+            mouse: Mouse::default(),
             state,
             bindings,
             clipboard,
@@ -111,16 +139,40 @@ impl Screen {
         self.modifiers = modifiers;
     }
 
+    #[inline]
+    pub fn reset_mouse(&mut self) {
+        self.mouse.accumulated_scroll = mouse::AccumulatedScroll::default();
+    }
+
+    #[inline]
+    pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let layout = &self.sugarloaf.layout;
+        let text_scale = layout.style.text_scale as usize;
+        let col = self.mouse.x.saturating_sub(layout.padding.x as usize)
+            / layout.font_size as usize;
+        let col = std::cmp::min(Column(col), Column(layout.columns));
+
+        let line = self.mouse.y.saturating_sub(layout.padding.y as usize) / text_scale;
+        let line = std::cmp::min(line, layout.lines - 1);
+
+        let point = Pos::new(line, col);
+        let row = Line(point.row as i32) - (display_offset);
+        Pos::new(row, point.col)
+    }
+
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
-        self.layout.recalculate(config.font_size, config.padding_x);
-        let (columns, lines) = self.layout.compute();
+        self.sugarloaf
+            .layout
+            .recalculate(config.font_size, config.padding_x);
         self.sugarloaf.update_font(config.font.to_string());
         self.state = State::new(config);
 
-        let width = self.layout.width as u16;
-        let height = self.layout.height as u16;
+        let width = self.sugarloaf.layout.width as u16;
+        let height = self.sugarloaf.layout.height as u16;
+        let columns = self.sugarloaf.layout.columns;
+        let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
         self.init(config.colors.background.1);
@@ -138,7 +190,7 @@ impl Screen {
             let mut terminal = context.terminal.lock();
             terminal.cursor_shape = self.state.get_cursor_state().content;
 
-            terminal.resize::<Layout>(columns, lines);
+            terminal.resize::<SugarloafLayout>(columns, lines);
             drop(terminal);
             let _ = context.messenger.send_resize(
                 width,
@@ -270,8 +322,8 @@ impl Screen {
                         self.context_manager.add_context(
                             redirect,
                             spawn,
-                            self.layout.columns,
-                            self.layout.rows,
+                            self.sugarloaf.layout.columns,
+                            self.sugarloaf.layout.lines,
                             self.state.get_cursor_state(),
                         );
                         self.render();
@@ -402,9 +454,9 @@ impl Screen {
     }
 
     pub fn on_left_click(&mut self, point: Pos) {
-        let side = self.layout.mouse.square_side;
+        let side = self.mouse.square_side;
 
-        match self.layout.mouse.click_state {
+        match self.mouse.click_state {
             ClickState::Click => {
                 self.clear_selection();
 
@@ -466,8 +518,7 @@ impl Screen {
 
     #[inline]
     pub fn init(&mut self, color: colors::ColorWGPU) {
-        self.sugarloaf
-            .render_with_style(color, self.layout.styles.term);
+        self.sugarloaf.config(color);
     }
 
     #[inline]
@@ -483,7 +534,6 @@ impl Screen {
             visible_rows,
             cursor,
             &mut self.sugarloaf,
-            &self.layout.styles,
             &self.context_manager,
         );
 
@@ -504,8 +554,8 @@ impl Screen {
         // {
         // // let multiplier = f64::from(self.ctx.config().terminal_config.scrolling.multiplier);
 
-        // // self.layout.mouse_mut().accumulated_scroll.x += new_scroll_x_px;//* multiplier;
-        // // self.layout.mouse_mut().accumulated_scroll.y += new_scroll_y_px;// * multiplier;
+        // // self.mouse_mut().accumulated_scroll.x += new_scroll_x_px;//* multiplier;
+        // // self.mouse_mut().accumulated_scroll.y += new_scroll_y_px;// * multiplier;
 
         // // // The chars here are the same as for the respective arrow keys.
         // let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
@@ -535,10 +585,9 @@ impl Screen {
         // }
         // }
 
-        self.layout.mouse_mut().accumulated_scroll.y +=
-            new_scroll_y_px * self.layout.mouse.multiplier;
-        let lines = (self.layout.mouse.accumulated_scroll.y
-            / self.layout.font_size as f64) as i32;
+        self.mouse.accumulated_scroll.y += new_scroll_y_px * self.mouse.multiplier;
+        let lines = (self.mouse.accumulated_scroll.y
+            / self.sugarloaf.layout.font_size as f64) as i32;
 
         if lines != 0 {
             let mut terminal = self.ctx().current().terminal.lock();
@@ -548,28 +597,14 @@ impl Screen {
     }
 
     #[inline]
-    pub fn layout(&mut self) -> &Layout {
-        &self.layout
-    }
-
-    #[inline]
-    pub fn layout_mut(&mut self) -> &mut Layout {
-        &mut self.layout
-    }
-
-    #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.layout
-            .set_size(new_size.width, new_size.height)
-            .update();
-        let (columns, lines) = self.layout.compute();
 
         self.resize_all_contexts(
             new_size.width as u16,
             new_size.height as u16,
-            columns,
-            lines,
+            self.sugarloaf.layout.columns,
+            self.sugarloaf.layout.lines,
         );
         self
     }
@@ -579,11 +614,6 @@ impl Screen {
         new_scale: f32,
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
-        self.layout
-            .set_scale(new_scale)
-            .set_size(new_size.width, new_size.height)
-            .update();
-
         self.sugarloaf
             .resize(new_size.width, new_size.height)
             .rescale(new_scale);

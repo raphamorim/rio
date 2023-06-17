@@ -17,6 +17,8 @@ use sugarloaf::components::rect::Rect;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
+const PADDING_X_TABS: f32 = 30.;
+
 #[derive(Default)]
 struct Cursor {
     state: CursorState,
@@ -351,14 +353,10 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        styles: &crate::layout::Styles,
         context_manager: &context::ContextManager<EventProxy>,
     ) {
         self.cursor.state = cursor;
-
-        let term_style = styles.term;
         let is_cursor_visible = self.cursor.state.is_visible();
-
         if let Some(sel) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
@@ -368,7 +366,7 @@ impl State {
                     &sel,
                     pos::Line(i as i32),
                 );
-                sugarloaf.stack(sugar_stack, term_style);
+                sugarloaf.stack(sugar_stack);
             }
 
             return;
@@ -377,12 +375,12 @@ impl State {
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             let sugar_stack = self.create_sugar_stack(row, has_cursor);
-            sugarloaf.stack(sugar_stack, term_style);
+            sugarloaf.stack(sugar_stack);
         }
 
         if context_manager.len() > 1 {
             let mut renderable_tabs = vec![];
-            let mut initial_position = styles.tabs_initial_position;
+            let mut initial_position = PADDING_X_TABS;
             let position_modifier = 20.;
             for (i, _) in context_manager.contexts().iter().enumerate() {
                 let mut color = self.named_colors.tabs;

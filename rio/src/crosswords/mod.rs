@@ -49,7 +49,7 @@ use vi_mode::{ViModeCursor, ViMotion};
 pub type NamedColor = colors::NamedColor;
 
 pub const MIN_COLUMNS: usize = 2;
-pub const MIN_VISIBLE_ROWS: usize = 1;
+pub const MIN_LINES: usize = 1;
 const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
 
 bitflags! {

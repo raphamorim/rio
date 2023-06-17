@@ -13,7 +13,7 @@ opt:
 
 build:
 	cargo build -p sugarloaf-styled-text --target wasm32-unknown-unknown
-	wasm-bindgen ../../target/wasm32-unknown-unknown/debug/sugarloaf_styled_text.wasm --out-dir wasm --target web --no-typescript --release
+	wasm-bindgen ../../target/wasm32-unknown-unknown/debug/sugarloaf_styled_text.wasm --out-dir wasm --target web --no-typescript
 
 build-release:
 	cargo build -p sugarloaf-styled-text --target wasm32-unknown-unknown --release

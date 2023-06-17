@@ -132,7 +132,7 @@ impl Sequencer {
                                 // }
                             }
                             RioEvent::MouseCursorDirty => {
-                                screen.layout_mut().reset_mouse();
+                                screen.reset_mouse();
                             }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
                                 if is_window_focused {
@@ -189,15 +189,9 @@ impl Sequencer {
                     winit_window.set_cursor_visible(true);
 
                     match button {
-                        MouseButton::Left => {
-                            screen.layout_mut().mouse_mut().left_button_state = state
-                        }
-                        MouseButton::Middle => {
-                            screen.layout_mut().mouse_mut().middle_button_state = state
-                        }
-                        MouseButton::Right => {
-                            screen.layout_mut().mouse_mut().right_button_state = state
-                        }
+                        MouseButton::Left => screen.mouse.left_button_state = state,
+                        MouseButton::Middle => screen.mouse.middle_button_state = state,
+                        MouseButton::Right => screen.mouse.right_button_state = state,
                         _ => (),
                     }
 
@@ -205,8 +199,7 @@ impl Sequencer {
                         ElementState::Pressed => {
                             // Process mouse press before bindings to update the `click_state`.
                             if !screen.modifiers.shift() && screen.mouse_mode() {
-                                screen.layout_mut().mouse_mut().click_state =
-                                    ClickState::None;
+                                screen.mouse.click_state = ClickState::None;
 
                                 // let code = match button {
                                 //     MouseButton::Left => 0,
@@ -220,22 +213,15 @@ impl Sequencer {
                             } else {
                                 // Calculate time since the last click to handle double/triple clicks.
                                 let now = Instant::now();
-                                let elapsed =
-                                    now - screen.layout().mouse.last_click_timestamp;
-                                screen.layout_mut().mouse_mut().last_click_timestamp =
-                                    now;
+                                let elapsed = now - screen.mouse.last_click_timestamp;
+                                screen.mouse.last_click_timestamp = now;
 
                                 let threshold = Duration::from_millis(300);
-                                let mouse = &screen.layout().mouse;
-                                screen.layout_mut().mouse_mut().click_state = match mouse
-                                    .click_state
-                                {
+                                let mouse = &screen.mouse;
+                                screen.mouse.click_state = match mouse.click_state {
                                     // Reset click state if button has changed.
                                     _ if button != mouse.last_click_button => {
-                                        screen
-                                            .layout_mut()
-                                            .mouse_mut()
-                                            .last_click_button = button;
+                                        screen.mouse.last_click_button = button;
                                         ClickState::Click
                                     }
                                     ClickState::Click if elapsed < threshold => {
@@ -251,8 +237,7 @@ impl Sequencer {
                                 let display_offset = screen.display_offset();
 
                                 if let MouseButton::Left = button {
-                                    let point =
-                                        screen.layout().mouse_position(display_offset);
+                                    let point = screen.mouse_position(display_offset);
                                     screen.on_left_click(point);
                                 }
 
@@ -290,23 +275,23 @@ impl Sequencer {
                     let y = position.y;
 
                     let lmb_pressed =
-                        screen.layout().mouse.left_button_state == ElementState::Pressed;
+                        screen.mouse.left_button_state == ElementState::Pressed;
                     let rmb_pressed =
-                        screen.layout().mouse.right_button_state == ElementState::Pressed;
+                        screen.mouse.right_button_state == ElementState::Pressed;
 
                     // if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
                     // screen.update_selection_scrolling(y);
                     // }
 
                     let display_offset = screen.display_offset();
-                    let old_point = screen.layout().mouse_position(display_offset);
+                    let old_point = screen.mouse_position(display_offset);
 
-                    let x = x.clamp(0.0, screen.layout().width.into()) as usize;
-                    let y = y.clamp(0.0, screen.layout().height.into()) as usize;
-                    screen.layout_mut().mouse_mut().x = x;
-                    screen.layout_mut().mouse_mut().y = y;
+                    let x = x.clamp(0.0, screen.sugarloaf.layout.width.into()) as usize;
+                    let y = y.clamp(0.0, screen.sugarloaf.layout.height.into()) as usize;
+                    screen.mouse.x = x;
+                    screen.mouse.y = y;
 
-                    let point = screen.layout().mouse_position(display_offset);
+                    let point = screen.mouse_position(display_offset);
                     let square_changed = old_point != point;
 
                     // If the mouse hasn't changed cells, do nothing.
@@ -361,8 +346,7 @@ impl Sequencer {
                             match phase {
                                 TouchPhase::Started => {
                                     // Reset offset to zero.
-                                    screen.layout_mut().mouse_mut().accumulated_scroll =
-                                        Default::default();
+                                    screen.mouse.accumulated_scroll = Default::default();
                                 }
                                 TouchPhase::Moved => {
                                     // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
