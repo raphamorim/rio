@@ -167,15 +167,42 @@ impl Screen {
             .layout
             .recalculate(config.font_size, config.padding_x);
         self.sugarloaf.update_font(config.font.to_string());
+        self.sugarloaf.layout.update();
         self.state = State::new(config);
 
-        let width = self.sugarloaf.layout.width as u16;
-        let height = self.sugarloaf.layout.height as u16;
+        let width = self.sugarloaf.layout.width_u32 as u16;
+        let height = self.sugarloaf.layout.height_u32 as u16;
         let columns = self.sugarloaf.layout.columns;
         let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
         self.init(config.colors.background.1);
+    }
+
+    #[inline]
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
+        self.sugarloaf.resize(new_size.width, new_size.height);
+
+        self.resize_all_contexts(
+            new_size.width as u16,
+            new_size.height as u16,
+            self.sugarloaf.layout.columns,
+            self.sugarloaf.layout.lines,
+        );
+        self
+    }
+
+    #[inline]
+    pub fn set_scale(
+        &mut self,
+        new_scale: f32,
+        new_size: winit::dpi::PhysicalSize<u32>,
+    ) -> &mut Self {
+        self.sugarloaf
+            .resize(new_size.width, new_size.height)
+            .rescale(new_scale);
+
+        self
     }
 
     #[inline]
@@ -594,30 +621,5 @@ impl Screen {
             terminal.scroll_display(Scroll::Delta(lines));
             drop(terminal);
         }
-    }
-
-    #[inline]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
-        self.sugarloaf.resize(new_size.width, new_size.height);
-
-        self.resize_all_contexts(
-            new_size.width as u16,
-            new_size.height as u16,
-            self.sugarloaf.layout.columns,
-            self.sugarloaf.layout.lines,
-        );
-        self
-    }
-
-    pub fn set_scale(
-        &mut self,
-        new_scale: f32,
-        new_size: winit::dpi::PhysicalSize<u32>,
-    ) -> &mut Self {
-        self.sugarloaf
-            .resize(new_size.width, new_size.height)
-            .rescale(new_scale);
-
-        self
     }
 }

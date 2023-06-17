@@ -186,15 +186,13 @@ impl Sugarloaf {
 
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
         self.ctx.resize(width, height);
-        self.layout.resize(width, height);
-        self.layout.update();
+        self.layout.resize(width, height).update();
         self
     }
 
     pub fn rescale(&mut self, scale: f32) -> &mut Self {
         self.ctx.scale = scale;
-        self.layout.scale_factor = scale;
-        self.layout.update();
+        self.layout.rescale(scale).update();
         self
     }
 
