@@ -32,6 +32,28 @@
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>An application in Rio would like to access AppleScript.</string>
+  <key>NSSystemAdministrationUsageDescription</key>
+  <string>An application in Rio requires elevated permissions.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>An application in Rio would like to access calendar data.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>An application in Rio would like to access the camera.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>An application in Rio wants to access your contacts.</string>
+  <key>NSLocationAlwaysUsageDescription</key>
+  <string>An application in Rio would like to access your location information, even in the background.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>An application in Rio would like to access your location information.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>An application in Rio would like to access your location information while active.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>An application in Rio would like to access your microphone.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>An application in Rio would like to access your reminders.</string>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright (c) Raphael Amorim 2023. All rights reserved.</string>
 </dict>
