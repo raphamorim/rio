@@ -48,6 +48,8 @@ impl Sequencer {
         winit_window.set_ime_purpose(ImePurpose::Terminal);
         winit_window.set_ime_allowed(true);
 
+        winit_window.set_transparent(self.config.window_opacity < 1.);
+
         // TODO: Update ime position based on cursor
         // winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
 

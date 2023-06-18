@@ -53,6 +53,14 @@ release-macos: app-universal
 	cp -rf ./target/release/osx/* ./release/
 	cd ./release && zip -r ./macos-rio.zip ./*
 
+# TODO: Move to bin path
+release-x11:
+	cargo build --release --no-default-features --features=x11
+	WINIT_UNIX_BACKEND=x11 target/release/rio
+release-wayland:
+	cargo build --release --no-default-features --features=wayland
+	WINIT_UNIX_BACKEND=wayland target/release/rio
+
 lint:
 	cargo fmt -- --check --color always
 	cargo clippy --all-targets --all-features -- -D warnings
