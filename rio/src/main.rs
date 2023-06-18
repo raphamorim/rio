@@ -74,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let window_event_loop =
         winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();
+
     let mut sequencer = Sequencer::new(config);
     let result = sequencer.run(window_event_loop, command);
 

@@ -4,8 +4,7 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
-use crate::screen::context;
-use crate::screen::EventProxy;
+use crate::screen::{constants, context, EventProxy};
 use crate::selection::SelectionRange;
 use colors::{
     term::{List, TermColors},
@@ -385,10 +384,10 @@ impl State {
             let position_modifier = 20.;
             for (i, _) in context_manager.contexts().iter().enumerate() {
                 let mut color = self.named_colors.tabs;
-                let mut size = 16.0;
+                let mut size = constants::INACTIVE_TAB_WIDTH_SIZE;
                 if i == context_manager.current_index() {
                     color = self.named_colors.tabs_active;
-                    size = 26.0;
+                    size = constants::ACTIVE_TAB_WIDTH_SIZE;
                 }
                 let renderable = Rect {
                     position: [initial_position, 0.0],

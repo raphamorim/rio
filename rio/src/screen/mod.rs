@@ -1,4 +1,5 @@
 mod bindings;
+mod constants;
 mod context;
 mod messenger;
 mod mouse;
@@ -29,8 +30,6 @@ use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ModifiersState;
-
-const PADDING_Y: f32 = 30.0;
 
 impl Dimensions for SugarloafLayout {
     #[inline]
@@ -80,7 +79,7 @@ impl Screen {
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
-            (config.padding_x, PADDING_Y),
+            (config.padding_x, constants::PADDING_Y),
             scale as f32,
             config.font_size,
             (MIN_COLUMNS, MIN_LINES),

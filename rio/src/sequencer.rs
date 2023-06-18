@@ -1,3 +1,10 @@
+#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+use {
+    wayland_client::protocol::wl_surface::WlSurface,
+    wayland_client::{Display as WaylandDisplay, Proxy},
+    winit::platform::wayland::{EventLoopWindowTargetExtWayland, WindowExtWayland},
+};
+
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -12,12 +19,8 @@ use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
-#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-use wayland_client::{Display as WaylandDisplay, EventQueue};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
-#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-use winit::platform::wayland::EventLoopWindowTargetExtWayland;
 use winit::window::ImePurpose;
 
 pub struct Sequencer {
@@ -37,7 +40,7 @@ impl Sequencer {
         command: Vec<String>,
     ) -> Result<(), Box<dyn Error>> {
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let wayland_event_queue = event_loop.wayland_display().map(|display| {
+        let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
             let display = unsafe { WaylandDisplay::from_external_display(display as _) };
             display.create_event_queue()
         });
@@ -80,6 +83,16 @@ impl Sequencer {
                 _ => {}
             }
         }
+
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let _wayland_surface = if event_loop.is_wayland() {
+            // Attach surface to Rio internal wayland queue to handle frame callbacks.
+            let surface = winit_window.wayland_surface().unwrap();
+            let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
+            Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
+        } else {
+            None
+        };
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
         let display: Option<*mut c_void> = event_loop.wayland_display();

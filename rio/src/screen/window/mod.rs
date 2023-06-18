@@ -32,17 +32,12 @@ pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
         .with_decorations(true)
         .with_window_icon(Some(icon));
 
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
-    {
-        // use winit::platform::unix::WindowBuilderExtUnix;
-        // window_builder = window_builder.with_name(title);
-    }
+    // #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+    // {
+    //     use {
+    //         winit::platform::x11::{WindowExtX11, WindowBuilderExtX11},
+    //     };
+    // }
 
     #[cfg(target_os = "macos")]
     {
