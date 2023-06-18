@@ -38,6 +38,10 @@ winit = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.2"
 
+[target.'cfg(not(any(target_os="windows", target_os="macos")))'.dependencies]
+x11-dl = { version = "2", optional = true }
+wayland-client = { version = "0.29.0", features = ["dlopen"], optional = true }
+
 [package.metadata.bundle]
 name = "Rio"
 identifier = "com.raphaelamorim.rio"
@@ -60,4 +64,6 @@ x11 = [
 wayland = [
     "copypasta/wayland",
     "winit/wayland",
+    "winit/wayland-dlopen",
+    "wayland-client"
 ]
