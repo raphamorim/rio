@@ -255,7 +255,7 @@ mod tests {
             font-size = 16
             theme = ""
             padding-x = 10
-            window-opacity = "1.0"
+            window-opacity = 1.0
             cursor = '▇'
             env-vars = []
 
