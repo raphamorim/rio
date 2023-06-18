@@ -1,6 +1,6 @@
 [package]
 name = "rio"
-version = "0.0.61"
+version = "0.0.7-canary"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"

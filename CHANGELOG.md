@@ -2,6 +2,13 @@
 
 ## 0.0.7 (in progress)
 
+- Introduced `window-opacity` config property for WebAssembly and Wayland builds.
+- Add permissions instructions to Rio macos builds (Fix [#99](https://github.com/raphamorim/rio/issues/99)).
+- Fixes for x11 and wayland rendering (Related: [#98](https://github.com/raphamorim/rio/issues/98) and [#100](https://github.com/raphamorim/rio/issues/100)).
+- Perfomance fixes (Related: [#101](https://github.com/raphamorim/rio/issues/101)).
+- Sugarloaf WebAssembly support.
+- Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.
+- Fixed cursor incosistencies [#95](https://github.com/raphamorim/rio/issues/95).
 - Added command line interface support (`--help`, `--version`, `-e` and `--command`).
 - Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.
 - Added `padding-x` to configuration.
