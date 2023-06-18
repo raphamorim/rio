@@ -2,6 +2,23 @@
 
 ## 0.0.7 (in progress)
 
+- Breaking changes for configuration file regarding `Style` property.
+
+before:
+```toml
+perfomance = "High"
+[style]
+font-size = 18
+theme = "lucario"
+```
+
+now:
+```toml
+perfomance = "High"
+theme = "lucario"
+font-size = 18
+```
+
 - Introduced `window-opacity` config property for WebAssembly and Wayland builds.
 - Add permissions instructions to Rio macos builds (Fix [#99](https://github.com/raphamorim/rio/issues/99)).
 - Fixes for x11 and wayland rendering (Related: [#98](https://github.com/raphamorim/rio/issues/98) and [#100](https://github.com/raphamorim/rio/issues/100)).
