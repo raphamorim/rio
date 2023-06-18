@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
+#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+use wayland_client::{Display as WaylandDisplay, EventQueue};
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -34,6 +36,12 @@ impl Sequencer {
         mut event_loop: EventLoop<EventP>,
         command: Vec<String>,
     ) -> Result<(), Box<dyn Error>> {
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let wayland_event_queue = event_loop.wayland_display().map(|display| {
+            let display = unsafe { WaylandDisplay::from_external_display(display as _) };
+            display.create_event_queue()
+        });
+
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
         let event_proxy_clone = event_proxy.clone();
@@ -479,7 +487,14 @@ impl Sequencer {
                     // not necessarily exit the process
                     std::process::exit(0);
                 }
-                Event::MainEventsCleared { .. } => {
+                Event::RedrawEventsCleared { .. } => {
+                    #[cfg(all(feature = "wayland", not(any(target_os = "macos"))))]
+                    if let Some(w_event_queue) = wayland_event_queue.as_mut() {
+                        w_event_queue
+                            .dispatch_pending(&mut (), |_, _, _| {})
+                            .expect("failed to dispatch wayland event queue");
+                    }
+
                     if should_render {
                         screen.render();
                         should_render = false;
@@ -488,6 +503,7 @@ impl Sequencer {
 
                     scheduler.update();
                 }
+                Event::MainEventsCleared { .. } => {}
                 Event::RedrawRequested { .. } => {}
                 _ => {
                     *control_flow = winit::event_loop::ControlFlow::Wait;

@@ -2078,8 +2078,10 @@ dependencies = [
  "tokio",
  "unicode-width",
  "vte",
+ "wayland-client",
  "wgpu",
  "winit",
+ "x11-dl",
 ]
 
 [[package]]
