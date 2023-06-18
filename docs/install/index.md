@@ -86,18 +86,7 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 
 ## Building
 
-Linux X11 + Wayland:
-
-{% highlight bash %}
-# Both X11 + Wayland
-cargo build --release
-
-# Execute
-WINIT_UNIX_BACKEND=wayland target/release/rio
-WINIT_UNIX_BACKEND=x11 target/release/rio
-{% endhighlight %}
-
-Linux only X11:
+Linux with X11:
 
 {% highlight bash %}
 # Only X11
@@ -105,7 +94,7 @@ cargo build --release --no-default-features --features=x11
 WINIT_UNIX_BACKEND=x11 target/release/rio
 {% endhighlight %}
 
-Linux only Wayland:
+Linux with Wayland:
 
 {% highlight bash %}
 # Only Wayland

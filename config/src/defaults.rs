@@ -3,7 +3,11 @@ pub fn default_env_vars() -> Vec<String> {
 }
 
 pub fn default_padding_x() -> f32 {
-    10.0
+    10.
+}
+
+pub fn default_window_opacity() -> f32 {
+    1.
 }
 
 pub fn default_option_as_alt() -> String {
@@ -27,5 +31,5 @@ pub fn default_theme() -> String {
 }
 
 pub fn default_font_size() -> f32 {
-    16.0
+    16.
 }

@@ -37,6 +37,8 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(rename = "window-opacity", default = "default_window_opacity")]
+    pub window_opacity: f32,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(rename = "font-size", default = "default_font_size")]
@@ -165,6 +167,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             env_vars: default_env_vars(),
+            window_opacity: default_window_opacity(),
             performance: Performance::default(),
             padding_x: default_padding_x(),
             font_size: default_font_size(),
@@ -252,6 +255,7 @@ mod tests {
             font-size = 16
             theme = ""
             padding-x = 10
+            window-opacity = "1.0"
             cursor = '▇'
             env-vars = []
 
@@ -277,6 +281,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
+        assert_eq!(result.window_opacity, default_window_opacity());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
@@ -429,6 +434,7 @@ mod tests {
             font = "Novamono"
             font-size = 14.0
             padding-x = 0.0
+            window-opacity = 0.5
         "#,
         );
 
@@ -436,6 +442,7 @@ mod tests {
         assert_eq!(result.font, "Novamono");
         assert_eq!(result.font_size, 14.0);
         assert_eq!(result.padding_x, 0.0);
+        assert_eq!(result.window_opacity, 0.5);
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());

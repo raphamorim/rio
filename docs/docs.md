@@ -59,6 +59,10 @@ env-vars = ['SHELL=/opt/homebrew/bin/fish']
 # Possible choices: 'both', 'left' and 'right'.
 option_as_alt = 'both'
 
+# window-opacity changes the window transparency state.
+# Only works for Windows / X11 / WebAssembly
+window-opacity = 0.5
+
 # Colors definition will overwrite any property in theme
 # (considering if theme folder does exists and is being used)
 [colors]
