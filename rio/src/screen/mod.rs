@@ -103,6 +103,8 @@ impl Screen {
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
         let context_manager = context::ContextManager::start(
+            sugarloaf.layout.width_u32,
+            sugarloaf.layout.height_u32,
             sugarloaf.layout.columns,
             sugarloaf.layout.lines,
             state.get_cursor_state(),
@@ -348,6 +350,10 @@ impl Screen {
                         self.context_manager.add_context(
                             redirect,
                             spawn,
+                            (
+                                self.sugarloaf.layout.width_u32,
+                                self.sugarloaf.layout.height_u32,
+                            ),
                             self.sugarloaf.layout.columns,
                             self.sugarloaf.layout.lines,
                             self.state.get_cursor_state(),

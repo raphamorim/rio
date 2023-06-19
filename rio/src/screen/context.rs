@@ -25,6 +25,7 @@ pub struct ContextManager<T: EventListener> {
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
+        dimensions: (u32, u32),
         columns: usize,
         rows: usize,
         cursor_state: CursorState,
@@ -47,6 +48,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
         let messenger = Messenger::new(channel);
 
+        let width = dimensions.0 as u16;
+        let height = dimensions.1 as u16;
+        let _ = messenger.send_resize(width, height, columns as u16, rows as u16);
+
         Ok(Context {
             messenger,
             terminal,
@@ -54,6 +59,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn start(
+        width: u32,
+        height: u32,
         columns: usize,
         rows: usize,
         cursor_state: CursorState,
@@ -61,6 +68,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         mut command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let mut initial_context = ContextManager::create_context(
+            (width, height),
             columns,
             rows,
             cursor_state,
@@ -88,6 +96,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
+            (100, 100),
             1,
             1,
             CursorState::default(),
@@ -170,6 +179,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         redirect: bool,
         spawn: bool,
+        dimensions: (u32, u32),
         columns: usize,
         rows: usize,
         cursor_state: CursorState,
@@ -178,6 +188,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if size < self.capacity {
             let last_index = self.contexts.len();
             match ContextManager::create_context(
+                dimensions,
                 columns,
                 rows,
                 cursor_state,
@@ -223,12 +234,26 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = false;
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = true;
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
     }
@@ -240,15 +265,30 @@ pub mod test {
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.len(), 2);
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.len(), 3);
 
         for _ in 0..20 {
             context_manager.add_context(
                 should_redirect,
                 false,
+                (100, 100),
                 1,
                 1,
                 CursorState::default(),
@@ -265,7 +305,14 @@ pub mod test {
             ContextManager::start_with_capacity(8, VoidListener {}).unwrap();
         let should_redirect = true;
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
         assert_eq!(context_manager.current_index, 0);
@@ -273,8 +320,22 @@ pub mod test {
         assert_eq!(context_manager.capacity, 8);
 
         let should_redirect = false;
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         context_manager.set_current(3);
         assert_eq!(context_manager.current_index, 3);
 
@@ -288,8 +349,22 @@ pub mod test {
             ContextManager::start_with_capacity(3, VoidListener {}).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.len(), 3);
 
         assert_eq!(context_manager.current_index, 0);
@@ -309,10 +384,38 @@ pub mod test {
             ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
 
         context_manager.close_context();
         context_manager.close_context();
@@ -322,7 +425,14 @@ pub mod test {
         assert_eq!(context_manager.len(), 1);
         assert_eq!(context_manager.current_index, 0);
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
 
         assert_eq!(context_manager.len(), 2);
         context_manager.set_current(1);
@@ -338,8 +448,22 @@ pub mod test {
             ContextManager::start_with_capacity(2, VoidListener {}).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
 
@@ -357,11 +481,46 @@ pub mod test {
             ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
-        context_manager.add_context(should_redirect, false, 1, 1, CursorState::default());
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
+        context_manager.add_context(
+            should_redirect,
+            false,
+            (100, 100),
+            1,
+            1,
+            CursorState::default(),
+        );
         assert_eq!(context_manager.len(), 5);
         assert_eq!(context_manager.current_index, 0);
 
