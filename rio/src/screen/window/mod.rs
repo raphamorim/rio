@@ -29,15 +29,9 @@ pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
             height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
         })
         .with_resizable(true)
+        .with_transparent(true)
         .with_decorations(true)
         .with_window_icon(Some(icon));
-
-    // #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-    // {
-    //     use {
-    //         winit::platform::x11::{WindowExtX11, WindowBuilderExtX11},
-    //     };
-    // }
 
     #[cfg(target_os = "macos")]
     {
