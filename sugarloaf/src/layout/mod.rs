@@ -13,6 +13,7 @@ pub struct SugarloafLayout {
     pub width_u32: u32,
     pub height_u32: u32,
     pub font_size: f32,
+    pub font_bound: f32,
     pub columns: usize,
     pub lines: usize,
     pub padding: Delta<f32>,
@@ -45,6 +46,7 @@ fn compute(
     height: f32,
     scale_factor: f32,
     font_size: f32,
+    font_bound: f32,
     padding: Delta<f32>,
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
@@ -55,8 +57,8 @@ fn compute(
     lines /= font_size;
     let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
 
-    let mut visible_columns = (width - 2. * padding_x) / scale_factor;
-    visible_columns /= font_size / 2.;
+    let mut visible_columns = ((width) / scale_factor) - padding_x;
+    visible_columns /= font_bound;
     let visible_columns = std::cmp::max(visible_columns as usize, min_cols_lines.0);
 
     (visible_columns, visible_lines)
@@ -73,6 +75,10 @@ impl SugarloafLayout {
     ) -> SugarloafLayout {
         let style = SugarloafStyle::default();
 
+        // This is an estimation of the font_size however cannot be
+        // relied entirely. We this value it until sugarloaf process the font bounds.
+        let font_bound = font_size / 2.0;
+
         let mut layout = SugarloafLayout {
             width,
             width_u32: width as u32,
@@ -82,6 +88,7 @@ impl SugarloafLayout {
             lines: 25,
             scale_factor,
             font_size,
+            font_bound,
             style,
             padding: Delta {
                 x: padding.0,
@@ -115,12 +122,34 @@ impl SugarloafLayout {
             self.height,
             self.scale_factor,
             self.font_size,
+            self.font_bound,
             self.padding,
             self.min_cols_lines,
         );
         self.columns = columns;
         self.lines = lines;
         self
+    }
+
+    pub fn update_columns_lines_per_font_bound(&mut self, font_bound: f32) {
+        self.font_bound = font_bound / self.scale_factor;
+
+        // SugarStack is a primitive representation of columns data
+        let current_stack_bound = self.font_bound * self.columns as f32;
+        let expected_stack_bound = self.width - self.font_bound;
+
+        log::info!("expected {}", self.columns);
+        if current_stack_bound < expected_stack_bound {
+            let stack_difference = ((expected_stack_bound - current_stack_bound) / self.font_bound) as usize;
+            log::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
+            self.columns += stack_difference;
+        }
+
+        if current_stack_bound > expected_stack_bound {
+            let stack_difference = ((current_stack_bound - expected_stack_bound) / self.font_bound) as usize;
+            log::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
+            self.columns -= stack_difference;
+        }
     }
 
     // This method will run over the new font and font_size

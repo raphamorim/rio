@@ -102,6 +102,7 @@ impl Sugarloaf {
         let ctx = Context::new(winit_window, power_preference).await;
 
         let font = Font::new(font_name.to_string());
+
         let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
             font.text.regular,
             font.symbol,
@@ -168,6 +169,7 @@ impl Sugarloaf {
         if self.font_name != font_name {
             log::info!("requested a font change {font_name}");
             let font = Font::new(font_name.to_string());
+
             let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
                 font.text.regular,
                 font.symbol,
@@ -202,12 +204,6 @@ impl Sugarloaf {
         let mut x = 0.;
         let mut mod_size = 1.0;
 
-        if self.acc_line_y == 0.0 {
-            self.acc_line_y = (self.layout.style.screen_position.1
-                - self.layout.style.text_scale)
-                / self.ctx.scale;
-        }
-
         // TODO: Rewrite this method to proper use scale and get rid of initial_scale
         // Is not the most optimal way record original scale and this has been happening due
         // to not updating correctly scale values
@@ -216,7 +212,7 @@ impl Sugarloaf {
         }
 
         let fonts = self.text_brush.fonts();
-        let system: &FontArc = &fonts[0];
+        let regular: &FontArc = &fonts[0];
         let symbols: &FontArc = &fonts[1];
         let emojis: &FontArc = &fonts[2];
         let unicode: &FontArc = &fonts[3];
@@ -225,7 +221,7 @@ impl Sugarloaf {
         for sugar in stack.iter() {
             let mut add_pos_x = self.font_bounds.default.0;
 
-            let mut font_id: FontId = if system.glyph_id(sugar.content) != glyph_zero {
+            let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
                 FontId(FONT_ID_REGULAR)
             } else if symbols.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.symbols.0;
@@ -252,6 +248,12 @@ impl Sugarloaf {
                 }
             }
 
+            if self.acc_line_y == 0.0 {
+                self.acc_line_y = (self.layout.style.screen_position.1
+                    - self.font_bounds.default.1)
+                    / self.ctx.scale;
+            }
+
             text.push(
                 OwnedText::new(sugar.content.to_owned())
                     .with_font_id(font_id)
@@ -265,7 +267,7 @@ impl Sugarloaf {
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
-                size: [add_pos_x * mod_size, self.font_bounds.default.0 * mod_size],
+                size: [add_pos_x * mod_size, self.font_bounds.default.1 * mod_size],
             });
 
             if let Some(decoration) = &sugar.decoration {
@@ -297,7 +299,8 @@ impl Sugarloaf {
             bounds: self.layout.style.bounds,
             text,
             layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Bottom),
+                .v_align(glyph_brush::VerticalAlign::Bottom)
+                .h_align(glyph_brush::HorizontalAlign::Left),
         };
 
         self.text_brush.queue(section);
@@ -330,7 +333,8 @@ impl Sugarloaf {
             bounds: self.layout.style.bounds,
             text,
             layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Bottom),
+                .v_align(glyph_brush::VerticalAlign::Bottom)
+                .h_align(glyph_brush::HorizontalAlign::Left),
         };
 
         self.text_brush.queue(section);
@@ -382,6 +386,9 @@ impl Sugarloaf {
 
                 // Bounds are defined in runtime
                 self.font_bounds.default = self.get_font_bounds(' ', FontId(0));
+
+                self.layout.update_columns_lines_per_font_bound(self.font_bounds.default.0);
+
                 self.font_bounds.symbols =
                     // U+2AF9 => \u{2AF9} => ⫹
                     self.get_font_bounds('\u{2AF9}', FontId(1));

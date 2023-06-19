@@ -550,7 +550,15 @@ impl Screen {
 
     #[inline]
     pub fn init(&mut self, color: colors::ColorWGPU) {
+        let initial_columns = self.sugarloaf.layout.columns;
         self.sugarloaf.config(color);
+        if self.sugarloaf.layout.columns != initial_columns {
+            let width = self.sugarloaf.layout.width_u32 as u16;
+            let height = self.sugarloaf.layout.height_u32 as u16;
+            let columns = self.sugarloaf.layout.columns;
+            let lines = self.sugarloaf.layout.lines;
+            self.resize_all_contexts(width, height, columns, lines);
+        }
     }
 
     #[inline]
