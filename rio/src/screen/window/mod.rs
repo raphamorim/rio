@@ -29,7 +29,6 @@ pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
             height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
         })
         .with_resizable(true)
-        .with_transparent(true)
         .with_decorations(true)
         .with_window_icon(Some(icon));
 
@@ -39,6 +38,7 @@ pub fn create_window_builder(title: &str) -> winit::window::WindowBuilder {
         window_builder = window_builder
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
+            .with_transparent(true)
             .with_fullsize_content_view(true);
     }
 
