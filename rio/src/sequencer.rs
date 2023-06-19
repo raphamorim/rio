@@ -25,12 +25,22 @@ use winit::window::ImePurpose;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
+    is_window_focused: bool,
+    has_render_updates: bool,
+    is_occluded: bool,
+    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+    has_wayland_forcefully_reloaded: bool,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         Sequencer {
             config: Rc::new(config),
+            is_window_focused: false,
+            has_render_updates: false,
+            is_occluded: false,
+            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+            has_wayland_forcefully_reloaded: false,
         }
     }
 
@@ -103,8 +113,6 @@ impl Sequencer {
         let mut screen =
             Screen::new(&winit_window, &self.config, event_proxy, display, command)
                 .await?;
-        let mut is_window_focused = false;
-        let mut should_render = false;
 
         screen.init(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
@@ -114,11 +122,11 @@ impl Sequencer {
                     if let RioEventType::Rio(event) = payload {
                         match event {
                             RioEvent::Wakeup => {
-                                should_render = true;
+                                self.has_render_updates = true;
                             }
                             RioEvent::Render => {
                                 if self.config.advanced.disable_render_when_unfocused
-                                    && is_window_focused
+                                    && self.is_window_focused
                                 {
                                     return;
                                 }
@@ -128,7 +136,7 @@ impl Sequencer {
                                 let config = config::Config::load();
                                 self.config = config.into();
                                 screen.update_config(&self.config);
-                                should_render = true;
+                                self.has_render_updates = true;
                             }
                             RioEvent::Exit => {
                                 if !screen.try_close_existent_tab() {
@@ -158,7 +166,7 @@ impl Sequencer {
                                 screen.reset_mouse();
                             }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
-                                if is_window_focused {
+                                if self.is_window_focused {
                                     let text = format(
                                         screen.clipboard_get(clipboard_type).as_str(),
                                     );
@@ -191,6 +199,25 @@ impl Sequencer {
                 }
                 Event::Resumed => {
                     // Emitted when the application has been resumed.
+
+                    // This is a hack to avoid an odd scenario in wayland window initialization
+                    // wayland windows starts with the wrong width/height.
+                    // Rio is ignoring wayland new dimension events, so the terminal
+                    // start with the wrong width/height (fix the ignore would be the best fix though)
+                    //
+                    // The code below forcefully reload dimensions in the terminal initialization
+                    // to load current width/height.
+                    #[cfg(all(
+                        feature = "wayland",
+                        not(any(target_os = "macos", windows))
+                    ))]
+                    {
+                        if !self.has_wayland_forcefully_reloaded {
+                            screen.update_config(&self.config);
+                            self.has_render_updates = true;
+                            self.has_wayland_forcefully_reloaded = true;
+                        }
+                    }
                 }
 
                 Event::WindowEvent {
@@ -264,7 +291,7 @@ impl Sequencer {
                                     screen.on_left_click(point);
                                 }
 
-                                should_render = true;
+                                self.has_render_updates = true;
                             }
                             // screen.process_mouse_bindings(button);
                         }
@@ -338,7 +365,7 @@ impl Sequencer {
                         && (screen.modifiers.shift() || !screen.mouse_mode())
                     {
                         screen.update_selection(point);
-                        should_render = true;
+                        self.has_render_updates = true;
                     }
                     // else if square_changed
                     //     && screen.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
@@ -361,10 +388,13 @@ impl Sequencer {
                 } => {
                     winit_window.set_cursor_visible(true);
                     match delta {
-                        MouseScrollDelta::LineDelta(_x, _y) => {
-                            // scroll_y = y;
+                        MouseScrollDelta::LineDelta(columns, lines) => {
+                            let new_scroll_px_x =
+                                columns * screen.sugarloaf.layout.font_size;
+                            let new_scroll_px_y =
+                                lines * screen.sugarloaf.layout.font_size;
+                            screen.scroll(new_scroll_px_x as f64, new_scroll_px_y as f64);
                         }
-
                         MouseScrollDelta::PixelDelta(mut lpos) => {
                             match phase {
                                 TouchPhase::Started => {
@@ -420,7 +450,7 @@ impl Sequencer {
                     }
 
                     ElementState::Released => {
-                        should_render = true;
+                        self.has_render_updates = true;
                         // winit_window.request_redraw();
                     }
                 },
@@ -456,7 +486,14 @@ impl Sequencer {
                     event: winit::event::WindowEvent::Focused(focused),
                     ..
                 } => {
-                    is_window_focused = focused;
+                    self.is_window_focused = focused;
+                }
+
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::Occluded(occluded),
+                    ..
+                } => {
+                    self.is_occluded = occluded;
                 }
 
                 Event::WindowEvent {
@@ -476,7 +513,7 @@ impl Sequencer {
                     }
 
                     screen.resize(new_size);
-                    should_render = true;
+                    self.has_render_updates = true;
                 }
 
                 Event::WindowEvent {
@@ -488,7 +525,7 @@ impl Sequencer {
                     ..
                 } => {
                     screen.set_scale(scale_factor as f32, *new_inner_size);
-                    should_render = true;
+                    self.has_render_updates = true;
                 }
 
                 // Emitted when the event loop is being shut down.
@@ -501,6 +538,11 @@ impl Sequencer {
                     std::process::exit(0);
                 }
                 Event::RedrawEventsCleared { .. } => {
+                    // Skip render for macos and x11 windows that are fully occluded
+                    if self.is_occluded {
+                        return;
+                    }
+
                     #[cfg(all(feature = "wayland", not(any(target_os = "macos"))))]
                     if let Some(w_event_queue) = wayland_event_queue.as_mut() {
                         w_event_queue
@@ -508,9 +550,9 @@ impl Sequencer {
                             .expect("failed to dispatch wayland event queue");
                     }
 
-                    if should_render {
+                    if self.has_render_updates {
                         screen.render();
-                        should_render = false;
+                        self.has_render_updates = false;
                         return;
                     }
 
