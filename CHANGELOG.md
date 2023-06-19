@@ -19,6 +19,8 @@ theme = "lucario"
 font-size = 18
 ```
 
+- Scroll now works for x11 and wayland.
+- No longer renders to macos and x11 windows that are fully occluded / not directly visible.
 - Introduced `window-opacity` config property for WebAssembly and Wayland builds.
 - Add permissions instructions to Rio macos builds (Fix [#99](https://github.com/raphamorim/rio/issues/99)).
 - Fixes for x11 and wayland rendering (Related: [#98](https://github.com/raphamorim/rio/issues/98) and [#100](https://github.com/raphamorim/rio/issues/100)).
