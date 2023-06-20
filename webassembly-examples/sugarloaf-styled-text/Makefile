@@ -1,6 +1,7 @@
 install:
 	cargo install cargo-server
 	cargo install wasm-bindgen-cli
+	cargo install cargo-watch
 
 run: build
 	cargo server --open
@@ -10,6 +11,9 @@ opt:
 	du -h ./wasm/sugarloaf_styled_text_bg.wasm
 	wasm-opt -O ./wasm/sugarloaf_styled_text_bg.wasm -o ./wasm/sugarloaf_styled_text_bg.wasm
 	du -h ./wasm/sugarloaf_styled_text_bg.wasm
+
+watch:
+	cargo watch -- make build
 
 build:
 	cargo build -p sugarloaf-styled-text --target wasm32-unknown-unknown
