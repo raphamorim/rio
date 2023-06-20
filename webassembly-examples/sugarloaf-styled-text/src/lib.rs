@@ -71,20 +71,6 @@ async fn run() {
     event_loop.run(move |event, _, control_flow| {
         control_flow.set_wait();
 
-        // if flags.contains(Flags::UNDERLINE) {
-        //     decoration = Some(SugarDecoration {
-        //         position: (0.0, 0.95),
-        //         size: (1.0, 0.05),
-        //         color: [0.0, 0.0, 0.0, 1.0],
-        //     });
-        // } else if flags.contains(Flags::STRIKEOUT) {
-        //     decoration = Some(SugarDecoration {
-        //         position: (0.0, 0.5),
-        //         size: (1.0, 0.05),
-        //         color: self.named_colors.foreground,
-        //     });
-        // }
-
         let sugar = vec![
             Sugar {
                 content: 'u',
@@ -93,7 +79,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -104,7 +90,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -115,7 +101,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -126,7 +112,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -137,7 +123,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -148,7 +134,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -166,7 +152,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -177,7 +163,7 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -188,9 +174,38 @@ async fn run() {
                 style: None,
                 decoration: Some(SugarDecoration {
                     position: (0.0, 0.95),
-                    size: (1.0, 0.05),
+                    size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+            },
+            Sugar {
+                content: ' ',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: Some(SugarDecoration {
+                    position: (0.0, 0.95),
+                    size: (1.0, 0.025),
+                    color: [0.0, 0.0, 0.0, 1.0],
+                }),
+            },
+            Sugar {
+                content: ' ',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: Some(SugarDecoration {
+                    position: (0.0, 0.95),
+                    size: (1.0, 0.025),
+                    color: [0.0, 0.0, 0.0, 1.0],
+                }),
+            },
+            Sugar {
+                content: ' ',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
             },
         ];
 
@@ -381,45 +396,65 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
-                    size: (1.0, 0.05),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
             Sugar {
                 content: 't',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(SugarDecoration {
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(SugarDecoration {
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(SugarDecoration {
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
             Sugar {
                 content: 'k',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(SugarDecoration {
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
             Sugar {
                 content: 'e',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(SugarDecoration {
+            position: (0.0, 0.5),
+            size: (1.0, 0.025),
+            color: [0.5, 0.5, 0.0, 1.0],
+        }),
             },
         ];
 
@@ -508,6 +543,7 @@ async fn run() {
                     sugarloaf
                         .rescale(scale_factor_f32)
                         .resize(new_inner_size.width, new_inner_size.height);
+                    sugarloaf.config(wgpu::Color::RED);
                     window.request_redraw();
                 }
                 _ => (),

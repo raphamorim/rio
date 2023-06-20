@@ -136,7 +136,7 @@ impl SugarloafLayout {
 
         // SugarStack is a primitive representation of columns data
         let current_stack_bound = self.font_bound * self.columns as f32;
-        let expected_stack_bound = self.width - self.font_bound;
+        let expected_stack_bound = self.width / self.scale_factor  - self.font_bound;
 
         log::info!("expected {}", self.columns);
         if current_stack_bound < expected_stack_bound {

@@ -79,7 +79,6 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     acc_line: f32,
     acc_line_y: f32,
-    initial_scale: f32,
     font_bounds: FontBounds,
     font_name: String,
 }
@@ -116,7 +115,6 @@ impl Sugarloaf {
         let rect_brush = RectBrush::init(&ctx);
         Ok(Sugarloaf {
             font_name,
-            initial_scale: ctx.scale,
             ctx,
             rect_brush,
             rects: vec![],
@@ -202,14 +200,8 @@ impl Sugarloaf {
     pub fn stack(&mut self, stack: SugarStack) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.;
-        let mut mod_size = 1.0;
-
-        // TODO: Rewrite this method to proper use scale and get rid of initial_scale
-        // Is not the most optimal way record original scale and this has been happening due
-        // to not updating correctly scale values
-        if self.initial_scale < 2.0 {
-            mod_size += self.initial_scale;
-        }
+        let mut mod_size = 2.0;
+        mod_size /= self.ctx.scale;
 
         let fonts = self.text_brush.fonts();
         let regular: &FontArc = &fonts[0];
@@ -267,7 +259,7 @@ impl Sugarloaf {
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
-                size: [add_pos_x * mod_size, self.font_bounds.default.1 * mod_size],
+                size: [add_pos_x * mod_size, ((self.font_bounds.default.0 * mod_size).ceil() + mod_size)],
             });
 
             if let Some(decoration) = &sugar.decoration {
@@ -283,12 +275,12 @@ impl Sugarloaf {
                     color: decoration.color,
                     size: [
                         (dx * decoration.size.0) * mod_size,
-                        (dy * decoration.size.1) * mod_size,
+                        ((dy * decoration.size.1) * mod_size).ceil() + mod_size,
                     ],
                 });
             }
 
-            x += add_pos_x / self.initial_scale;
+            x += add_pos_x / self.ctx.scale;
         }
 
         let section = &OwnedSection {
@@ -307,7 +299,7 @@ impl Sugarloaf {
 
         self.acc_line_y =
             (self.layout.style.screen_position.1 + self.acc_line) / self.ctx.scale;
-        self.acc_line += self.layout.style.text_scale;
+        self.acc_line += self.font_bounds.default.1;
     }
 
     pub fn get_context(&self) -> &Context {
