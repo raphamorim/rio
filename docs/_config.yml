@@ -1,4 +1,5 @@
-url: https://raphamorim.io/rio
+url: https://raphamorim.io
+baseurl: /rio
 
 name: Rio Terminal
 description: A modern terminal for the 21th century. Rio is built over WebGPU, WebAssembly and Rust. The WebGPU API makes it suitable for general purpose graphics and compute on the GPU.
@@ -24,7 +25,6 @@ paginate: 5
 detach:  false
 port:    4000
 host:    127.0.0.1
-baseurl: "" # does not include hostname
 show_dir_listing: false
 
 maruku:
@@ -33,6 +33,11 @@ maruku:
   png_engine: blahtex
   png_dir:    images/latex
   png_url:    /images/latex
+
+collections:
+  my_collection:
+    output: true
+    permalink: /:collection/:name/
 
 rdiscount:
   extensions: []
