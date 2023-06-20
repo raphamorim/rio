@@ -516,7 +516,9 @@ async fn run() {
 
         match event {
             Event::Resumed => {
-                sugarloaf.config(wgpu::Color::RED);
+                sugarloaf
+                    .set_background_color(wgpu::Color::RED)
+                    .calculate_bounds();
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -542,8 +544,8 @@ async fn run() {
                     let scale_factor_f32 = scale_factor as f32;
                     sugarloaf
                         .rescale(scale_factor_f32)
-                        .resize(new_inner_size.width, new_inner_size.height);
-                    sugarloaf.config(wgpu::Color::RED);
+                        .resize(new_inner_size.width, new_inner_size.height)
+                        .calculate_bounds();
                     window.request_redraw();
                 }
                 _ => (),

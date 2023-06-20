@@ -340,7 +340,13 @@ impl Sugarloaf {
         (0., 0.)
     }
 
-    /// config is a fake render operation that defines font bounds
+
+    pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
+        self.layout.background_color = color;
+        self
+    }
+
+    /// calculate_bounds is a fake render operation that defines font bounds
     /// is an important function to figure out the cursor dimensions and background color
     /// but should be used as minimal as possible.
     ///
@@ -348,10 +354,9 @@ impl Sugarloaf {
     /// configuration updates that leads to layout recalculation.
     ///
     #[inline]
-    pub fn config(&mut self, color: wgpu::Color) {
+    pub fn calculate_bounds(&mut self) {
         self.reset_state();
         self.rects = vec![];
-        self.layout.background_color = color;
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -369,7 +374,7 @@ impl Sugarloaf {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(color),
+                            load: wgpu::LoadOp::Clear(self.layout.background_color),
                             store: true,
                         },
                     })],

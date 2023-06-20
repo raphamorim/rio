@@ -239,7 +239,8 @@ async fn main() {
 
         match event {
             Event::Resumed => {
-                sugarloaf.config(wgpu::Color::RED);
+                sugarloaf.set_background_color(wgpu::Color::RED);
+                sugarloaf.calculate_bounds();
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {

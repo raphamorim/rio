@@ -201,7 +201,8 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf
             .rescale(new_scale)
-            .resize(new_size.width, new_size.height);
+            .resize(new_size.width, new_size.height)
+            .calculate_bounds();
 
         self
     }
@@ -551,7 +552,10 @@ impl Screen {
     #[inline]
     pub fn init(&mut self, color: colors::ColorWGPU) {
         let initial_columns = self.sugarloaf.layout.columns;
-        self.sugarloaf.config(color);
+        self.sugarloaf
+            .set_background_color(color)
+            .calculate_bounds();
+
         if self.sugarloaf.layout.columns != initial_columns {
             let width = self.sugarloaf.layout.width_u32 as u16;
             let height = self.sugarloaf.layout.height_u32 as u16;
