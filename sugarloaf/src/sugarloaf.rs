@@ -259,7 +259,10 @@ impl Sugarloaf {
                     self.acc_line_y,
                 ],
                 color: sugar.background_color,
-                size: [add_pos_x * mod_size, ((self.font_bounds.default.0 * mod_size).ceil() + mod_size)],
+                size: [
+                    add_pos_x * mod_size,
+                    ((self.font_bounds.default.0 * mod_size).ceil() + mod_size),
+                ],
             });
 
             if let Some(decoration) = &sugar.decoration {
@@ -275,7 +278,7 @@ impl Sugarloaf {
                     color: decoration.color,
                     size: [
                         (dx * decoration.size.0) * mod_size,
-                        ((dy * decoration.size.1) * mod_size).ceil() + mod_size,
+                        ((dy * decoration.size.1) * mod_size).ceil(),
                     ],
                 });
             }
@@ -340,7 +343,6 @@ impl Sugarloaf {
         (0., 0.)
     }
 
-
     pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
         self.layout.background_color = color;
         self
@@ -355,6 +357,7 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
+        // TODO: Write tests for calculate_bounds
         self.reset_state();
         self.rects = vec![];
 
@@ -384,7 +387,8 @@ impl Sugarloaf {
                 // Bounds are defined in runtime
                 self.font_bounds.default = self.get_font_bounds(' ', FontId(0));
 
-                self.layout.update_columns_lines_per_font_bound(self.font_bounds.default.0);
+                self.layout
+                    .update_columns_lines_per_font_bound(self.font_bounds.default.0);
 
                 self.font_bounds.symbols =
                     // U+2AF9 => \u{2AF9} => ⫹

@@ -2052,7 +2052,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
 name = "rio"
-version = "0.0.7-canary"
+version = "0.0.7"
 dependencies = [
  "base64",
  "bitflags 2.0.2",

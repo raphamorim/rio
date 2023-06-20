@@ -206,7 +206,7 @@ impl State {
         let mut decoration = None;
         if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
-                position: (0.0, 0.95),
+                position: (0.0, 0.92),
                 size: (1.0, 0.025),
                 color: self.named_colors.foreground,
             });
@@ -236,7 +236,7 @@ impl State {
                 color: self.named_colors.cursor,
             }),
             CursorShape::Underline => Some(SugarDecoration {
-                position: (0.0, 0.95),
+                position: (0.0, 0.92),
                 size: (1.0, 0.05),
                 color: self.named_colors.cursor,
             }),
@@ -247,6 +247,21 @@ impl State {
             }),
             CursorShape::Hidden => None,
         }
+    }
+
+    #[inline]
+    fn create_empty_sugar_stack_from_columns(&self, columns: usize) -> SugarStack {
+        let mut stack: Vec<Sugar> = vec![];
+        for _ in 0..columns {
+            stack.push(Sugar {
+                content: ' ',
+                foreground_color: self.named_colors.background.0,
+                background_color: self.named_colors.background.0,
+                style: None,
+                decoration: None,
+            })
+        }
+        stack
     }
 
     #[inline]
@@ -356,6 +371,7 @@ impl State {
     ) {
         self.cursor.state = cursor;
         let is_cursor_visible = self.cursor.state.is_visible();
+
         if let Some(sel) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
@@ -367,15 +383,18 @@ impl State {
                 );
                 sugarloaf.stack(sugar_stack);
             }
-
-            return;
+        } else {
+            for (i, row) in rows.iter().enumerate() {
+                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+                let sugar_stack = self.create_sugar_stack(row, has_cursor);
+                sugarloaf.stack(sugar_stack);
+            }
         }
 
-        for (i, row) in rows.iter().enumerate() {
-            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-            let sugar_stack = self.create_sugar_stack(row, has_cursor);
-            sugarloaf.stack(sugar_stack);
-        }
+        // This is a fake row created only for visual purposes
+        let empty_last_line =
+            self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
+        sugarloaf.stack(empty_last_line);
 
         if context_manager.len() > 1 {
             let mut renderable_tabs = vec![];

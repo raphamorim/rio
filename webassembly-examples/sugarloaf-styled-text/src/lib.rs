@@ -78,8 +78,8 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
-                    size: (1.0, 0.025),
+                    position: (0.0, 0.90),
+                    size: (1.0, 0.050),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
             },
@@ -89,7 +89,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.90),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -100,7 +100,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -111,7 +111,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -122,7 +122,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -133,7 +133,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -151,7 +151,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -162,7 +162,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -173,7 +173,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -184,7 +184,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -195,7 +195,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -340,7 +340,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    position: (0.0, 0.95),
+                    position: (0.0, 0.92),
                     size: (1.0, 0.05),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -396,10 +396,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
             Sugar {
                 content: 't',
@@ -407,10 +407,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
             Sugar {
                 content: 'r',
@@ -418,10 +418,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
             Sugar {
                 content: 'i',
@@ -429,10 +429,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
             Sugar {
                 content: 'k',
@@ -440,10 +440,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
             Sugar {
                 content: 'e',
@@ -451,10 +451,10 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-            position: (0.0, 0.5),
-            size: (1.0, 0.025),
-            color: [0.5, 0.5, 0.0, 1.0],
-        }),
+                    position: (0.0, 0.5),
+                    size: (1.0, 0.025),
+                    color: [0.5, 0.5, 0.0, 1.0],
+                }),
             },
         ];
 
@@ -465,7 +465,7 @@ async fn run() {
         });
 
         let underline = Some(SugarDecoration {
-            position: (0.0, 0.95),
+            position: (0.0, 0.92),
             size: (1.0, 0.05),
             color: [1.0, 0.4, 1.0, 1.0],
         });
