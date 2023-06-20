@@ -19,6 +19,7 @@ theme = "lucario"
 font-size = 18
 ```
 
+- Fix Background color not entirely set on vim [#88](https://github.com/raphamorim/rio/issues/88)
 - Scroll now works for x11 and wayland.
 - No longer renders to macos and x11 windows that are fully occluded / not directly visible.
 - Introduced `window-opacity` config property for WebAssembly and Wayland builds.
