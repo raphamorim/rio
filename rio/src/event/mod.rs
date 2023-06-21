@@ -1,5 +1,6 @@
 pub mod sync;
 
+use crate::crosswords::grid::Scroll;
 use crate::clipboard::ClipboardType;
 use colors::ColorRgb;
 use std::borrow::Cow;
@@ -32,6 +33,7 @@ pub enum ClickState {
 pub enum RioEvent {
     PrepareRender(u64),
     Render,
+    Scroll(Scroll),
     UpdateConfig,
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
@@ -100,6 +102,7 @@ impl Debug for RioEvent {
             RioEvent::Wakeup => write!(f, "Wakeup"),
             RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
             RioEvent::Render => write!(f, "Render"),
+            RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
@@ -109,15 +112,10 @@ impl Debug for RioEvent {
 
 #[derive(Debug, Clone)]
 pub enum RioEventType {
-    ScaleFactorChanged(f64, (u32, u32)),
     Rio(RioEvent),
     // Message(Message),
-    // Scroll(Scroll),
     BlinkCursor,
     BlinkCursorTimeout,
-    SearchNext,
-    Render,
-    // ReloadConfiguration,
 }
 
 impl From<RioEvent> for RioEventType {
@@ -130,12 +128,12 @@ impl From<RioEvent> for RioEventType {
 pub struct EventP {
     /// Event payload.
     pub payload: RioEventType,
-    pub tab_id: u8,
+    pub id: u8,
 }
 
 impl EventP {
     pub fn new(payload: RioEventType) -> Self {
-        Self { payload, tab_id: 0 }
+        Self { payload, id: 0 }
     }
 }
 

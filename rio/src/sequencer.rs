@@ -165,6 +165,11 @@ impl Sequencer {
                             RioEvent::MouseCursorDirty => {
                                 screen.reset_mouse();
                             }
+                            RioEvent::Scroll(scroll) => {
+                                let mut terminal = screen.ctx().current().terminal.lock();
+                                terminal.scroll_display(scroll);
+                                drop(terminal);
+                            }
                             RioEvent::ClipboardLoad(clipboard_type, format) => {
                                 if self.is_window_focused {
                                     let text = format(
@@ -329,9 +334,9 @@ impl Sequencer {
                     let rmb_pressed =
                         screen.mouse.right_button_state == ElementState::Pressed;
 
-                    // if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                    // screen.update_selection_scrolling(y);
-                    // }
+                    if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
+                        screen.update_selection_scrolling(y, &mut scheduler);
+                    }
 
                     let display_offset = screen.display_offset();
                     let old_point = screen.mouse_position(display_offset);
@@ -410,9 +415,6 @@ impl Sequencer {
                                         lpos.x = 0.;
                                     }
 
-                                    // TODO: Scroll shouldn't clear selection
-                                    // Should implement update_selection_scrolling later
-                                    screen.clear_selection();
                                     screen.scroll(lpos.x, lpos.y);
                                 }
                                 _ => (),
@@ -555,10 +557,10 @@ impl Sequencer {
                         self.has_render_updates = false;
                         return;
                     }
-
+                }
+                Event::MainEventsCleared { .. } => {
                     scheduler.update();
                 }
-                Event::MainEventsCleared { .. } => {}
                 Event::RedrawRequested { .. } => {}
                 _ => {
                     *control_flow = winit::event_loop::ControlFlow::Wait;

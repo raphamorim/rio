@@ -280,8 +280,14 @@ impl State {
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else if is_selected {
+                let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN) {
+                    ' '
+                } else {
+                    square.c
+                };
+
                 let selected_sugar = Sugar {
-                    content: square.c,
+                    content,
                     foreground_color: self.named_colors.background.0,
                     background_color: self.named_colors.light_blue,
                     style: None,

@@ -8,17 +8,15 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
 
 jobs:
-  test-ubuntu:
-    runs-on: ubuntu-latest
+  test-native:
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-    env:
-      RUST_BACKTRACE: full
-    name: Test Ubuntu
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -29,10 +27,9 @@ jobs:
       - run: cargo clippy --all-features --all-targets -- -D warnings
       - run: cargo test
 
-  test-wasm:
+  test-web:
     runs-on: ubuntu-latest
     env:
-      RUST_BACKTRACE: full
       GECKODRIVER: chromedriver
     name: Test WebAssembly
     steps:
@@ -49,27 +46,3 @@ jobs:
   #         export DISPLAY=:99
   #         chromedriver --url-base=/wd/hub &
   #     - run: make test-renderer
-
-  test-macos:
-    runs-on: macOS-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-apple-darwin
-    env:
-      RUSTUP_UNPACK_RAM: "26214400"
-      RUSTUP_IO_THREADS: "1"
-      RUSTFLAGS: "-C target-cpu=native"
-      RUST_BACKTRACE: full
-
-    name: Test OSX
-    steps:
-      - name: Checkout source Git repo
-        uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-      - run: rustup component add rustfmt clippy
-      - run: cargo fetch
-      - run: cargo fmt -- --check --color always
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test
