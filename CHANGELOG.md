@@ -2,6 +2,7 @@
 
 ## 0.0.8 (in progress)
 
+- Changed default black color to `#4c4345`.
 - Fix mouse position for when selecting text.
 
 ## 0.0.7
