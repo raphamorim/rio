@@ -56,7 +56,7 @@ pub fn yellow() -> ColorArray {
 }
 
 pub fn black() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#231F20"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#4C4345"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
