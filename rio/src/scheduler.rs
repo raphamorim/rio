@@ -8,19 +8,18 @@ use crate::event::EventP;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TimerId {
     topic: Topic,
-    tab_id: u8,
+    id: u8,
 }
 
 impl TimerId {
-    pub fn new(topic: Topic, tab_id: u8) -> Self {
-        Self { topic, tab_id }
+    pub fn new(topic: Topic, id: u8) -> Self {
+        Self { topic, id }
     }
 }
 
 /// Available timer topics.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Topic {
-    #[allow(dead_code)]
     SelectionScrolling,
     Frame,
 }
@@ -117,7 +116,7 @@ impl Scheduler {
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
     #[allow(dead_code)]
-    pub fn unschedule_tab(&mut self, tab_id: u8) {
-        self.timers.retain(|timer| timer.id.tab_id != tab_id);
+    pub fn unschedule_tab(&mut self, id: u8) {
+        self.timers.retain(|timer| timer.id.id != id);
     }
 }

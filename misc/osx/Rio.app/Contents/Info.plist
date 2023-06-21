@@ -17,10 +17,10 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <!-- <string>Rio-canary.icns</string> -->
-  <string>Rio-stable.icns</string>
+  <string>Rio-canary.icns</string>
+  <!-- <string>Rio-stable.icns</string> -->
   <key>CFBundleShortVersionString</key>
-  <string>0.0.7</string>
+  <string>0.0.8-canary</string>
   <key>CFBundleVersion</key>
   <string>20230528.115631</string>
   <key>CSResourcesFileMapped</key>
