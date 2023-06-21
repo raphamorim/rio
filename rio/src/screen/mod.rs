@@ -153,7 +153,7 @@ impl Screen {
             / layout.font_size as usize;
         let col = std::cmp::min(Column(col), Column(layout.columns));
 
-        let line = self.mouse.y.saturating_sub(layout.padding.y as usize) / text_scale;
+        let line = self.mouse.y.saturating_sub(layout.padding.y as usize * (self.sugarloaf.layout.scale_factor as usize)) / text_scale;
         let line = std::cmp::min(line, layout.lines - 1);
 
         let point = Pos::new(line, col);

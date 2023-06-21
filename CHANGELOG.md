@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.0.7 (in progress)
+## 0.0.8 (in progress)
+
+- Fix mouse position for when selecting text.
+
+## 0.0.7
 
 - Breaking changes for configuration file regarding `Style` property.
 
