@@ -2115,9 +2115,7 @@ dependencies = [
  "libc",
  "log",
  "mio 0.6.23",
- "mio-anonymous-pipes",
  "mio-extras",
- "miow 0.3.7",
  "notify",
  "objc",
  "parking_lot 0.12.1",
@@ -2129,7 +2127,6 @@ dependencies = [
  "vte",
  "wayland-client",
  "wgpu",
- "windows-sys 0.48.0",
  "winit",
  "x11-dl",
 ]
@@ -2445,9 +2442,12 @@ dependencies = [
  "dirs",
  "libc",
  "mio 0.6.23",
+ "mio-anonymous-pipes",
  "mio-extras",
+ "miow 0.3.7",
  "signal-hook",
  "signal-hook-mio",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
