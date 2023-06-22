@@ -1,6 +1,6 @@
-use {io, poll, Evented, Ready, Poll, PollOpt, Token};
-use zircon_sys::zx_handle_t;
 use std::sync::Mutex;
+use zircon_sys::zx_handle_t;
+use {io, poll, Evented, Poll, PollOpt, Ready, Token};
 
 /// Wrapper for registering a `HandleBase` type with mio.
 #[derive(Debug)]
@@ -32,12 +32,13 @@ impl EventedHandle {
 }
 
 impl Evented for EventedHandle {
-    fn register(&self,
-                poll: &Poll,
-                token: Token,
-                interest: Ready,
-                opts: PollOpt) -> io::Result<()>
-    {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         let mut this_token = self.token.lock().unwrap();
         {
             poll::selector(poll).register_handle(self.handle, token, interest, opts)?;
@@ -46,12 +47,13 @@ impl Evented for EventedHandle {
         Ok(())
     }
 
-    fn reregister(&self,
+    fn reregister(
+        &self,
         poll: &Poll,
         token: Token,
         interest: Ready,
-        opts: PollOpt) -> io::Result<()>
-    {
+        opts: PollOpt,
+    ) -> io::Result<()> {
         let mut this_token = self.token.lock().unwrap();
         {
             poll::selector(poll).deregister_handle(self.handle, token)?;
@@ -64,10 +66,13 @@ impl Evented for EventedHandle {
 
     fn deregister(&self, poll: &Poll) -> io::Result<()> {
         let mut this_token = self.token.lock().unwrap();
-        let token = if let Some(token) = *this_token { token } else {
+        let token = if let Some(token) = *this_token {
+            token
+        } else {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                "Attempted to deregister an unregistered handle."))
+                "Attempted to deregister an unregistered handle.",
+            ));
         };
         {
             poll::selector(poll).deregister_handle(self.handle, token)?;

@@ -2,14 +2,14 @@
 
 #![allow(deprecated, missing_debug_implementations)]
 
-use {convert, io, Ready, Poll, PollOpt, Registration, SetReadiness, Token};
 use event::Evented;
 use lazycell::LazyCell;
 use slab::Slab;
-use std::{cmp, error, fmt, u64, usize, iter, thread};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{cmp, error, fmt, iter, thread, u64, usize};
+use {convert, io, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 
 use self::TimerErrorKind::TimerOverflow;
 
@@ -83,7 +83,7 @@ struct Entry<T> {
 struct EntryLinks {
     tick: Tick,
     prev: Token,
-    next: Token
+    next: Token,
 }
 
 type Tick = u64;
@@ -96,7 +96,6 @@ type WakeupState = Arc<AtomicUsize>;
 pub type Result<T> = ::std::result::Result<T, TimerError>;
 // TODO: remove
 pub type TimerResult<T> = Result<T>;
-
 
 /// Deprecated and unused.
 #[derive(Debug)]
@@ -131,7 +130,12 @@ impl Builder {
     }
 
     pub fn build<T>(self) -> Timer<T> {
-        Timer::new(convert::millis(self.tick), self.num_slots, self.capacity, Instant::now())
+        Timer::new(
+            convert::millis(self.tick),
+            self.num_slots,
+            self.capacity,
+            Instant::now(),
+        )
     }
 }
 
@@ -150,8 +154,12 @@ impl<T> Timer<T> {
         let num_slots = num_slots.next_power_of_two();
         let capacity = capacity.next_power_of_two();
         let mask = (num_slots as u64) - 1;
-        let wheel = iter::repeat(WheelEntry { next_tick: TICK_MAX, head: EMPTY })
-            .take(num_slots).collect();
+        let wheel = iter::repeat(WheelEntry {
+            next_tick: TICK_MAX,
+            head: EMPTY,
+        })
+        .take(num_slots)
+        .collect();
 
         Timer {
             tick_ms,
@@ -170,9 +178,18 @@ impl<T> Timer<T> {
         self.set_timeout_at(delay_from_start, state)
     }
 
-    fn set_timeout_at(&mut self, delay_from_start: Duration, state: T) -> Result<Timeout> {
+    fn set_timeout_at(
+        &mut self,
+        delay_from_start: Duration,
+        state: T,
+    ) -> Result<Timeout> {
         let mut tick = duration_to_tick(delay_from_start, self.tick_ms);
-        trace!("setting timeout; delay={:?}; tick={:?}; current-tick={:?}", delay_from_start, tick, self.tick);
+        trace!(
+            "setting timeout; delay={:?}; tick={:?}; current-tick={:?}",
+            delay_from_start,
+            tick,
+            self.tick
+        );
 
         // Always target at least 1 tick in the future
         if tick <= self.tick {
@@ -208,16 +225,13 @@ impl<T> Timer<T> {
         trace!("inserted timeout; slot={}; token={:?}", slot, token);
 
         // Return the new timeout
-        Ok(Timeout {
-            token,
-            tick
-        })
+        Ok(Timeout { token, tick })
     }
 
     pub fn cancel_timeout(&mut self, timeout: &Timeout) -> Option<T> {
         let links = match self.entries.get(timeout.token.into()) {
             Some(e) => e.links,
-            None => return None
+            None => return None,
         };
 
         // Sanity check
@@ -235,7 +249,11 @@ impl<T> Timer<T> {
     }
 
     fn poll_to(&mut self, mut target_tick: Tick) -> Option<T> {
-        trace!("tick_to; target_tick={}; current_tick={}", target_tick, self.tick);
+        trace!(
+            "tick_to; target_tick={}; current_tick={}",
+            target_tick,
+            self.tick
+        );
 
         if target_tick < self.tick {
             target_tick = self.tick;
@@ -299,8 +317,11 @@ impl<T> Timer<T> {
     }
 
     fn unlink(&mut self, links: &EntryLinks, token: Token) {
-       trace!("unlinking timeout; slot={}; token={:?}",
-               self.slot_for(links.tick), token);
+        trace!(
+            "unlinking timeout; slot={}; token={:?}",
+            self.slot_for(links.tick),
+            token
+        );
 
         if links.prev == EMPTY {
             let slot = self.slot_for(links.tick);
@@ -333,7 +354,11 @@ impl<T> Timer<T> {
 
                 // Attempt to move the wakeup time forward
                 trace!("advancing the wakeup time; target={}; curr={}", tick, curr);
-                let actual = inner.wakeup_state.compare_and_swap(curr, tick as usize, Ordering::Release);
+                let actual = inner.wakeup_state.compare_and_swap(
+                    curr,
+                    tick as usize,
+                    Ordering::Release,
+                );
 
                 if actual == curr {
                     // Signal to the wakeup thread that the wakeup time has
@@ -374,24 +399,38 @@ impl<T> Default for Timer<T> {
 }
 
 impl<T> Evented for Timer<T> {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         if self.inner.borrow().is_some() {
-            return Err(io::Error::new(io::ErrorKind::Other, "timer already registered"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "timer already registered",
+            ));
         }
 
-        let (registration, set_readiness) = Registration::new(poll, token, interest, opts);
+        let (registration, set_readiness) =
+            Registration::new(poll, token, interest, opts);
         let wakeup_state = Arc::new(AtomicUsize::new(usize::MAX));
         let thread_handle = spawn_wakeup_thread(
             wakeup_state.clone(),
             set_readiness.clone(),
-            self.start, self.tick_ms);
+            self.start,
+            self.tick_ms,
+        );
 
-        self.inner.fill(Inner {
-            registration,
-            set_readiness,
-            wakeup_state,
-            wakeup_thread: thread_handle,
-        }).expect("timer already registered");
+        self.inner
+            .fill(Inner {
+                registration,
+                set_readiness,
+                wakeup_state,
+                wakeup_thread: thread_handle,
+            })
+            .expect("timer already registered");
 
         if let Some(next_tick) = self.next_tick() {
             self.schedule_readiness(next_tick);
@@ -400,17 +439,29 @@ impl<T> Evented for Timer<T> {
         Ok(())
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         match self.inner.borrow() {
             Some(inner) => inner.registration.update(poll, token, interest, opts),
-            None => Err(io::Error::new(io::ErrorKind::Other, "receiver not registered")),
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "receiver not registered",
+            )),
         }
     }
 
     fn deregister(&self, poll: &Poll) -> io::Result<()> {
         match self.inner.borrow() {
             Some(inner) => inner.registration.deregister(poll),
-            None => Err(io::Error::new(io::ErrorKind::Other, "receiver not registered")),
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "receiver not registered",
+            )),
         }
     }
 }
@@ -424,7 +475,12 @@ impl fmt::Debug for Inner {
     }
 }
 
-fn spawn_wakeup_thread(state: WakeupState, set_readiness: SetReadiness, start: Instant, tick_ms: u64) -> thread::JoinHandle<()> {
+fn spawn_wakeup_thread(
+    state: WakeupState,
+    set_readiness: SetReadiness,
+    start: Instant,
+    tick_ms: u64,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut sleep_until_tick = state.load(Ordering::Acquire) as Tick;
 
@@ -435,7 +491,11 @@ fn spawn_wakeup_thread(state: WakeupState, set_readiness: SetReadiness, start: I
 
             let now_tick = current_tick(start, tick_ms);
 
-            trace!("wakeup thread: sleep_until_tick={:?}; now_tick={:?}", sleep_until_tick, now_tick);
+            trace!(
+                "wakeup thread: sleep_until_tick={:?}; now_tick={:?}",
+                sleep_until_tick,
+                now_tick
+            );
 
             if now_tick < sleep_until_tick {
                 // Calling park_timeout with u64::MAX leads to undefined
@@ -449,14 +509,21 @@ fn spawn_wakeup_thread(state: WakeupState, set_readiness: SetReadiness, start: I
                         thread::park_timeout(Duration::from_millis(sleep_duration));
                     }
                     None => {
-                        trace!("sleeping; tick_ms={}; now_tick={}; blocking sleep",
-                               tick_ms, now_tick);
+                        trace!(
+                            "sleeping; tick_ms={}; now_tick={}; blocking sleep",
+                            tick_ms,
+                            now_tick
+                        );
                         thread::park();
                     }
                 }
                 sleep_until_tick = state.load(Ordering::Acquire) as Tick;
             } else {
-                let actual = state.compare_and_swap(sleep_until_tick as usize, usize::MAX, Ordering::AcqRel) as Tick;
+                let actual = state.compare_and_swap(
+                    sleep_until_tick as usize,
+                    usize::MAX,
+                    Ordering::AcqRel,
+                ) as Tick;
 
                 if actual == sleep_until_tick {
                     trace!("setting readiness from wakeup thread");

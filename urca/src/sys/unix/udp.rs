@@ -1,14 +1,14 @@
-use {io, Ready, Poll, PollOpt, Token};
 use event::Evented;
-use unix::EventedFd;
-use sys::unix::uio::VecIo;
 use std::fmt;
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::os::unix::io::{RawFd, IntoRawFd, AsRawFd, FromRawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
+use sys::unix::uio::VecIo;
+use unix::EventedFd;
+use {io, Poll, PollOpt, Ready, Token};
 
+use iovec::IoVec;
 #[allow(unused_imports)] // only here for Rust 1.8
 use net2::UdpSocketExt;
-use iovec::IoVec;
 
 pub struct UdpSocket {
     io: net::UdpSocket,
@@ -17,9 +17,7 @@ pub struct UdpSocket {
 impl UdpSocket {
     pub fn new(socket: net::UdpSocket) -> io::Result<UdpSocket> {
         socket.set_nonblocking(true)?;
-        Ok(UdpSocket {
-            io: socket,
-        })
+        Ok(UdpSocket { io: socket })
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -27,11 +25,7 @@ impl UdpSocket {
     }
 
     pub fn try_clone(&self) -> io::Result<UdpSocket> {
-        self.io.try_clone().map(|io| {
-            UdpSocket {
-                io,
-            }
-        })
+        self.io.try_clone().map(|io| UdpSocket { io })
     }
 
     pub fn send_to(&self, buf: &[u8], target: &SocketAddr) -> io::Result<usize> {
@@ -50,8 +44,7 @@ impl UdpSocket {
         self.io.recv(buf)
     }
 
-    pub fn connect(&self, addr: SocketAddr)
-                     -> io::Result<()> {
+    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
         self.io.connect(addr)
     }
 
@@ -95,27 +88,35 @@ impl UdpSocket {
         self.io.set_ttl(ttl)
     }
 
-    pub fn join_multicast_v4(&self,
-                             multiaddr: &Ipv4Addr,
-                             interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn join_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.io.join_multicast_v4(multiaddr, interface)
     }
 
-    pub fn join_multicast_v6(&self,
-                             multiaddr: &Ipv6Addr,
-                             interface: u32) -> io::Result<()> {
+    pub fn join_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.io.join_multicast_v6(multiaddr, interface)
     }
 
-    pub fn leave_multicast_v4(&self,
-                              multiaddr: &Ipv4Addr,
-                              interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn leave_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.io.leave_multicast_v4(multiaddr, interface)
     }
 
-    pub fn leave_multicast_v6(&self,
-                              multiaddr: &Ipv6Addr,
-                              interface: u32) -> io::Result<()> {
+    pub fn leave_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.io.leave_multicast_v6(multiaddr, interface)
     }
 
@@ -141,11 +142,23 @@ impl UdpSocket {
 }
 
 impl Evented for UdpSocket {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 

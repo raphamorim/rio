@@ -1,6 +1,6 @@
 use std::cmp;
-use std::io::prelude::*;
 use std::io;
+use std::io::prelude::*;
 use std::net;
 use std::sync::mpsc::channel;
 use std::thread;
@@ -8,14 +8,18 @@ use std::time::Duration;
 
 use net2::{self, TcpStreamExt};
 
-use {TryRead, TryWrite};
-use mio::{Token, Ready, PollOpt, Poll, Events};
 use iovec::IoVec;
 use mio::net::{TcpListener, TcpStream};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use {TryRead, TryWrite};
 
 #[test]
 fn accept() {
-    struct H { hit: bool, listener: TcpListener, shutdown: bool }
+    struct H {
+        hit: bool,
+        listener: TcpListener,
+        shutdown: bool,
+    }
 
     let l = TcpListener::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
     let addr = l.local_addr().unwrap();
@@ -26,11 +30,16 @@ fn accept() {
 
     let poll = Poll::new().unwrap();
 
-    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { hit: false, listener: l, shutdown: false };
+    let mut h = H {
+        hit: false,
+        listener: l,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
@@ -49,7 +58,10 @@ fn accept() {
 
 #[test]
 fn connect() {
-    struct H { hit: u32, shutdown: bool }
+    struct H {
+        hit: u32,
+        shutdown: bool,
+    }
 
     let l = net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
@@ -66,11 +78,20 @@ fn connect() {
     let poll = Poll::new().unwrap();
     let s = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&s, Token(1), Ready::readable() | Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(
+        &s,
+        Token(1),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    )
+    .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { hit: 0, shutdown: false };
+    let mut h = H {
+        hit: 0,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
@@ -110,7 +131,11 @@ fn connect() {
 #[test]
 fn read() {
     const N: usize = 16 * 1024 * 1024;
-    struct H { amt: usize, socket: TcpStream, shutdown: bool }
+    struct H {
+        amt: usize,
+        socket: TcpStream,
+        shutdown: bool,
+    }
 
     let l = net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
@@ -127,11 +152,16 @@ fn read() {
     let poll = Poll::new().unwrap();
     let s = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&s, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&s, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { amt: 0, socket: s, shutdown: false };
+    let mut h = H {
+        amt: 0,
+        socket: s,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
@@ -142,11 +172,11 @@ fn read() {
                 if let Some(amt) = h.socket.try_read(&mut b).unwrap() {
                     h.amt += amt;
                 } else {
-                    break
+                    break;
                 }
                 if h.amt >= N {
                     h.shutdown = true;
-                    break
+                    break;
                 }
             }
         }
@@ -157,7 +187,11 @@ fn read() {
 #[test]
 fn peek() {
     const N: usize = 16 * 1024 * 1024;
-    struct H { amt: usize, socket: TcpStream, shutdown: bool }
+    struct H {
+        amt: usize,
+        socket: TcpStream,
+        shutdown: bool,
+    }
 
     let l = net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
@@ -174,11 +208,16 @@ fn peek() {
     let poll = Poll::new().unwrap();
     let s = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&s, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&s, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { amt: 0, socket: s, shutdown: false };
+    let mut h = H {
+        amt: 0,
+        socket: s,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
@@ -187,9 +226,7 @@ fn peek() {
             let mut b = [0; 1024];
             match h.socket.peek(&mut b) {
                 Ok(_) => (),
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    continue
-                },
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                 Err(e) => panic!("unexpected error: {:?}", e),
             }
 
@@ -197,11 +234,11 @@ fn peek() {
                 if let Some(amt) = h.socket.try_read(&mut b).unwrap() {
                     h.amt += amt;
                 } else {
-                    break
+                    break;
                 }
                 if h.amt >= N {
                     h.shutdown = true;
-                    break
+                    break;
                 }
             }
         }
@@ -230,20 +267,15 @@ fn read_bufs() {
 
     let s = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&s, Token(1), Ready::readable(), PollOpt::level()).unwrap();
+    poll.register(&s, Token(1), Ready::readable(), PollOpt::level())
+        .unwrap();
 
     let b1 = &mut [0; 10][..];
     let b2 = &mut [0; 383][..];
     let b3 = &mut [0; 28][..];
     let b4 = &mut [0; 8][..];
     let b5 = &mut [0; 128][..];
-    let mut b: [&mut IoVec; 5] = [
-        b1.into(),
-        b2.into(),
-        b3.into(),
-        b4.into(),
-        b5.into(),
-    ];
+    let mut b: [&mut IoVec; 5] = [b1.into(), b2.into(), b3.into(), b4.into(), b5.into()];
 
     let mut so_far = 0;
     loop {
@@ -258,7 +290,7 @@ fn read_bufs() {
         match s.read_bufs(&mut b) {
             Ok(0) => {
                 assert_eq!(so_far, N);
-                break
+                break;
             }
             Ok(mut n) => {
                 so_far += n;
@@ -269,7 +301,7 @@ fn read_bufs() {
                     }
                     n = n.saturating_sub(buf.len());
                     if n == 0 {
-                        break
+                        break;
                     }
                 }
                 assert_eq!(n, 0);
@@ -284,7 +316,11 @@ fn read_bufs() {
 #[test]
 fn write() {
     const N: usize = 16 * 1024 * 1024;
-    struct H { amt: usize, socket: TcpStream, shutdown: bool }
+    struct H {
+        amt: usize,
+        socket: TcpStream,
+        shutdown: bool,
+    }
 
     let l = net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = l.local_addr().unwrap();
@@ -301,11 +337,16 @@ fn write() {
     let poll = Poll::new().unwrap();
     let s = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&s, Token(1), Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(&s, Token(1), Ready::writable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { amt: 0, socket: s, shutdown: false };
+    let mut h = H {
+        amt: 0,
+        socket: s,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
@@ -316,11 +357,11 @@ fn write() {
                 if let Some(amt) = h.socket.try_write(&b).unwrap() {
                     h.amt += amt;
                 } else {
-                    break
+                    break;
                 }
                 if h.amt >= N {
                     h.shutdown = true;
-                    break
+                    break;
                 }
             }
         }
@@ -354,20 +395,15 @@ fn write_bufs() {
     let poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(128);
     let s = TcpStream::connect(&addr).unwrap();
-    poll.register(&s, Token(1), Ready::writable(), PollOpt::level()).unwrap();
+    poll.register(&s, Token(1), Ready::writable(), PollOpt::level())
+        .unwrap();
 
     let b1 = &[1; 10][..];
     let b2 = &[1; 383][..];
     let b3 = &[1; 28][..];
     let b4 = &[1; 8][..];
     let b5 = &[1; 128][..];
-    let b: [&IoVec; 5] = [
-        b1.into(),
-        b2.into(),
-        b3.into(),
-        b4.into(),
-        b5.into(),
-    ];
+    let b: [&IoVec; 5] = [b1.into(), b2.into(), b3.into(), b4.into(), b5.into()];
 
     let mut so_far = 0;
     while so_far < N {
@@ -384,26 +420,39 @@ fn write_bufs() {
 
 #[test]
 fn connect_then_close() {
-    struct H { listener: TcpListener, shutdown: bool }
+    struct H {
+        listener: TcpListener,
+        shutdown: bool,
+    }
 
     let poll = Poll::new().unwrap();
     let l = TcpListener::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
     let s = TcpStream::connect(&l.local_addr().unwrap()).unwrap();
 
-    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
-    poll.register(&s, Token(2), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
+    poll.register(&s, Token(2), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(128);
 
-    let mut h = H { listener: l, shutdown: false };
+    let mut h = H {
+        listener: l,
+        shutdown: false,
+    };
     while !h.shutdown {
         poll.poll(&mut events, None).unwrap();
 
         for event in &events {
             if event.token() == Token(1) {
                 let s = h.listener.accept().unwrap().0;
-                poll.register(&s, Token(3), Ready::readable() | Ready::writable(),
-                                        PollOpt::edge()).unwrap();
+                poll.register(
+                    &s,
+                    Token(3),
+                    Ready::readable() | Ready::writable(),
+                    PollOpt::edge(),
+                )
+                .unwrap();
                 drop(s);
             } else if event.token() == Token(2) {
                 h.shutdown = true;
@@ -417,12 +466,14 @@ fn listen_then_close() {
     let poll = Poll::new().unwrap();
     let l = TcpListener::bind(&"127.0.0.1:0".parse().unwrap()).unwrap();
 
-    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&l, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
     drop(l);
 
     let mut events = Events::with_capacity(128);
 
-    poll.poll(&mut events, Some(Duration::from_millis(100))).unwrap();
+    poll.poll(&mut events, Some(Duration::from_millis(100)))
+        .unwrap();
 
     for event in &events {
         if event.token() == Token(1) {
@@ -431,11 +482,9 @@ fn listen_then_close() {
     }
 }
 
-fn assert_send<T: Send>() {
-}
+fn assert_send<T: Send>() {}
 
-fn assert_sync<T: Sync>() {
-}
+fn assert_sync<T: Sync>() {}
 
 #[test]
 fn test_tcp_sockets_are_send() {
@@ -462,7 +511,7 @@ fn multiple_writes_immediate_success() {
         let mut s = l.accept().unwrap().0;
         let mut b = [0; 1024];
         let mut amt = 0;
-        while amt < 1024*N {
+        while amt < 1024 * N {
             for byte in b.iter_mut() {
                 *byte = 0;
             }
@@ -476,7 +525,8 @@ fn multiple_writes_immediate_success() {
 
     let poll = Poll::new().unwrap();
     let mut s = TcpStream::connect(&addr).unwrap();
-    poll.register(&s, Token(1), Ready::writable(), PollOpt::level()).unwrap();
+    poll.register(&s, Token(1), Ready::writable(), PollOpt::level())
+        .unwrap();
     let mut events = Events::with_capacity(16);
 
     // Wait for our TCP stream to connect
@@ -484,7 +534,7 @@ fn multiple_writes_immediate_success() {
         poll.poll(&mut events, None).unwrap();
         for event in events.iter() {
             if event.token() == Token(1) && event.readiness().is_writable() {
-                break 'outer
+                break 'outer;
             }
         }
     }
@@ -507,8 +557,7 @@ fn connection_reset_by_peer() {
     let addr = l.local_addr().unwrap();
 
     // Connect client
-    let client = net2::TcpBuilder::new_v4().unwrap()
-        .to_tcp_stream().unwrap();
+    let client = net2::TcpBuilder::new_v4().unwrap().to_tcp_stream().unwrap();
 
     client.set_linger(Some(Duration::from_millis(0))).unwrap();
     client.connect(&addr).unwrap();
@@ -517,15 +566,21 @@ fn connection_reset_by_peer() {
     let client = TcpStream::from_stream(client).unwrap();
 
     // Register server
-    poll.register(&l, Token(0), Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&l, Token(0), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     // Register interest in the client
-    poll.register(&client, Token(1), Ready::readable() | Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(
+        &client,
+        Token(1),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    )
+    .unwrap();
 
     // Wait for listener to be ready
     let mut server;
-    'outer:
-    loop {
+    'outer: loop {
         poll.poll(&mut events, None).unwrap();
 
         for event in &events {
@@ -549,8 +604,8 @@ fn connection_reset_by_peer() {
     thread::sleep(Duration::from_millis(100));
 
     // Register interest in the server socket
-    poll.register(&server, Token(3), Ready::readable(), PollOpt::edge()).unwrap();
-
+    poll.register(&server, Token(3), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     loop {
         poll.poll(&mut events, None).unwrap();
@@ -560,8 +615,7 @@ fn connection_reset_by_peer() {
                 assert!(event.readiness().is_readable());
 
                 match server.read(&mut buf) {
-                    Ok(0) |
-                    Err(_) => {},
+                    Ok(0) | Err(_) => {}
 
                     Ok(x) => panic!("expected empty buffer but read {} bytes", x),
                 }
@@ -569,7 +623,6 @@ fn connection_reset_by_peer() {
             }
         }
     }
-
 }
 
 #[test]
@@ -585,20 +638,20 @@ fn connect_error() {
             // Connection failed synchronously.  This is not a bug, but it
             // unfortunately doesn't get us the code coverage we want.
             return;
-        },
-        Err(e) => panic!("TcpStream::connect unexpected error {:?}", e)
+        }
+        Err(e) => panic!("TcpStream::connect unexpected error {:?}", e),
     };
 
-    poll.register(&l, Token(0), Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(&l, Token(0), Ready::writable(), PollOpt::edge())
+        .unwrap();
 
-    'outer:
-    loop {
+    'outer: loop {
         poll.poll(&mut events, None).unwrap();
 
         for event in &events {
             if event.token() == Token(0) {
                 assert!(event.readiness().is_writable());
-                break 'outer
+                break 'outer;
             }
         }
     }
@@ -621,20 +674,20 @@ fn write_error() {
     });
 
     let mut s = TcpStream::connect(&addr).unwrap();
-    poll.register(&s,
-                  Token(0),
-                  Ready::readable() | Ready::writable(),
-                  PollOpt::edge()).unwrap();
+    poll.register(
+        &s,
+        Token(0),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    )
+    .unwrap();
 
-    let mut wait_writable = || {
-        'outer:
-        loop {
-            poll.poll(&mut events, None).unwrap();
+    let mut wait_writable = || 'outer: loop {
+        poll.poll(&mut events, None).unwrap();
 
-            for event in &events {
-                if event.token() == Token(0) && event.readiness().is_writable() {
-                    break 'outer
-                }
+        for event in &events {
+            if event.token() == Token(0) && event.readiness().is_writable() {
+                break 'outer;
             }
         }
     };
@@ -648,12 +701,10 @@ fn write_error() {
     loop {
         match s.write(&buf) {
             Ok(_) => {}
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                wait_writable()
-            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => wait_writable(),
             Err(e) => {
                 println!("good error: {}", e);
-                break
+                break;
             }
         }
     }

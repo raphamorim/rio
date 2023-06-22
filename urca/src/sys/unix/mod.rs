@@ -19,14 +19,26 @@ mod epoll;
 ))]
 pub use self::epoll::{Events, Selector};
 
-#[cfg(any(target_os = "bitrig", target_os = "dragonfly",
-          target_os = "freebsd", target_os = "ios", target_os = "macos",
-          target_os = "netbsd", target_os = "openbsd"))]
+#[cfg(any(
+    target_os = "bitrig",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
 mod kqueue;
 
-#[cfg(any(target_os = "bitrig", target_os = "dragonfly",
-          target_os = "freebsd", target_os = "ios", target_os = "macos",
-          target_os = "netbsd", target_os = "openbsd"))]
+#[cfg(any(
+    target_os = "bitrig",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "ios",
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
 pub use self::kqueue::{Events, Selector};
 
 mod awakener;
@@ -42,9 +54,9 @@ mod uds;
 
 pub use self::awakener::Awakener;
 pub use self::eventedfd::EventedFd;
-pub use self::io::{Io, set_nonblock};
+pub use self::io::{set_nonblock, Io};
 pub use self::ready::{UnixReady, READY_ALL};
-pub use self::tcp::{TcpStream, TcpListener};
+pub use self::tcp::{TcpListener, TcpStream};
 pub use self::udp::UdpSocket;
 
 #[cfg(feature = "with-deprecated")]
@@ -88,10 +100,14 @@ trait IsMinusOne {
 }
 
 impl IsMinusOne for i32 {
-    fn is_minus_one(&self) -> bool { *self == -1 }
+    fn is_minus_one(&self) -> bool {
+        *self == -1
+    }
 }
 impl IsMinusOne for isize {
-    fn is_minus_one(&self) -> bool { *self == -1 }
+    fn is_minus_one(&self) -> bool {
+        *self == -1
+    }
 }
 
 fn cvt<T: IsMinusOne>(t: T) -> ::io::Result<T> {

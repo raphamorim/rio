@@ -40,7 +40,9 @@ pub struct LazyCell<T> {
 impl<T> LazyCell<T> {
     /// Creates a new, empty, `LazyCell`.
     pub fn new() -> LazyCell<T> {
-        LazyCell { inner: UnsafeCell::new(None) }
+        LazyCell {
+            inner: UnsafeCell::new(None),
+        }
     }
 
     /// Put a value into this cell.
@@ -139,7 +141,8 @@ impl<T> LazyCell<T> {
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
     pub fn try_borrow_with<E, F>(&self, f: F) -> Result<&T, E>
-        where F: FnOnce() -> Result<T, E>
+    where
+        F: FnOnce() -> Result<T, E>,
     {
         if let Some(value) = self.borrow() {
             return Ok(value);
@@ -157,7 +160,8 @@ impl<T> LazyCell<T> {
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
     pub fn try_borrow_mut_with<E, F>(&mut self, f: F) -> Result<&mut T, E>
-        where F: FnOnce() -> Result<T, E>
+    where
+        F: FnOnce() -> Result<T, E>,
     {
         if self.filled() {
             return Ok(self.borrow_mut().unwrap());
@@ -175,7 +179,9 @@ impl<T> LazyCell<T> {
         // function. This unsafe can be removed when supporting Rust older than
         // 1.25 is not needed.
         #[allow(unused_unsafe)]
-        unsafe { self.inner.into_inner() }
+        unsafe {
+            self.inner.into_inner()
+        }
     }
 }
 
@@ -268,7 +274,9 @@ impl<T> AtomicLazyCell<T> {
         // function. This unsafe can be removed when supporting Rust older than
         // 1.25 is not needed.
         #[allow(unused_unsafe)]
-        unsafe { self.inner.into_inner() }
+        unsafe {
+            self.inner.into_inner()
+        }
     }
 }
 

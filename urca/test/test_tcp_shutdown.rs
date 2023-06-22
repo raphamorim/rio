@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::net::{self, Shutdown};
 use std::time::{Duration, Instant};
 
-use mio::{Token, Ready, PollOpt, Poll, Events};
-use mio::event::{Evented, Event};
+use mio::event::{Event, Evented};
 use mio::net::TcpStream;
+use mio::{Events, Poll, PollOpt, Ready, Token};
 
 struct TestPoll {
     poll: Poll,
@@ -21,8 +21,14 @@ impl TestPoll {
         }
     }
 
-    fn register<E: ?Sized>(&self, handle: &E, token: Token, interest: Ready, opts: PollOpt)
-        where E: Evented
+    fn register<E: ?Sized>(
+        &self,
+        handle: &E,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) where
+        E: Evented,
     {
         self.poll.register(handle, token, interest, opts).unwrap();
     }
@@ -41,11 +47,12 @@ impl TestPoll {
                 }
             }
 
-            self.poll.poll(&mut self.events, Some(Duration::from_millis(250))).unwrap();
+            self.poll
+                .poll(&mut self.events, Some(Duration::from_millis(250)))
+                .unwrap();
 
             for event in &self.events {
-                let curr = self.buf.entry(event.token())
-                    .or_insert(Ready::empty());
+                let curr = self.buf.entry(event.token()).or_insert(Ready::empty());
 
                 *curr |= event.readiness();
             }
@@ -56,7 +63,9 @@ impl TestPoll {
     }
 
     fn check_idle(&mut self) -> Result<(), Event> {
-        self.poll.poll(&mut self.events, Some(Duration::from_millis(100))).unwrap();
+        self.poll
+            .poll(&mut self.events, Some(Duration::from_millis(100)))
+            .unwrap();
 
         if let Some(e) = self.events.iter().next() {
             Err(e)
@@ -72,7 +81,7 @@ macro_rules! assert_ready {
             Ok(_) => {}
             Err(_) => panic!("not ready; token = {:?}; interest = {:?}", $token, $ready),
         }
-    }}
+    }};
 }
 
 macro_rules! assert_not_ready {
@@ -81,7 +90,7 @@ macro_rules! assert_not_ready {
             Ok(_) => panic!("is ready; token = {:?}; interest = {:?}", $token, $ready),
             Err(_) => {}
         }
-    }}
+    }};
 }
 
 macro_rules! assert_hup_ready {
@@ -91,7 +100,7 @@ macro_rules! assert_hup_ready {
             use mio::unix::UnixReady;
             assert_ready!($poll, Token(0), Ready::from(UnixReady::hup()))
         }
-    }
+    };
 }
 
 macro_rules! assert_not_hup_ready {
@@ -101,7 +110,7 @@ macro_rules! assert_not_hup_ready {
             use mio::unix::UnixReady;
             assert_not_ready!($poll, Token(0), Ready::from(UnixReady::hup()))
         }
-    }
+    };
 }
 
 macro_rules! assert_idle {
@@ -110,7 +119,7 @@ macro_rules! assert_idle {
             Ok(()) => {}
             Err(e) => panic!("not idle; event = {:?}", e),
         }
-    }
+    };
 }
 
 // TODO: replace w/ assertive
@@ -146,10 +155,12 @@ fn test_write_shutdown() {
     let addr = assert_ok!(listener.local_addr());
 
     let mut client = assert_ok!(TcpStream::connect(&addr));
-    poll.register(&client,
-                  Token(0),
-                  Ready::readable() | Ready::writable(),
-                  PollOpt::edge());
+    poll.register(
+        &client,
+        Token(0),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    );
 
     let (socket, _) = assert_ok!(listener.accept());
 
@@ -180,10 +191,12 @@ fn test_graceful_shutdown() {
     let addr = assert_ok!(listener.local_addr());
 
     let mut client = assert_ok!(TcpStream::connect(&addr));
-    poll.register(&client,
-                  Token(0),
-                  Ready::readable() | Ready::writable(),
-                  PollOpt::edge());
+    poll.register(
+        &client,
+        Token(0),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    );
 
     let (mut socket, _) = assert_ok!(listener.accept());
 
@@ -229,10 +242,12 @@ fn test_abrupt_shutdown() {
     let addr = assert_ok!(listener.local_addr());
 
     let mut client = assert_ok!(TcpStream::connect(&addr));
-    poll.register(&client,
-                  Token(0),
-                  Ready::readable() | Ready::writable(),
-                  PollOpt::edge());
+    poll.register(
+        &client,
+        Token(0),
+        Ready::readable() | Ready::writable(),
+        PollOpt::edge(),
+    );
 
     let (socket, _) = assert_ok!(listener.accept());
     assert_ok!(socket.set_linger(Some(Duration::from_millis(0))));

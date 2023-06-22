@@ -5,9 +5,9 @@ extern crate mio;
 extern crate test;
 
 use mio::*;
-use test::Bencher;
 use std::sync::Arc;
 use std::thread;
+use test::Bencher;
 
 #[bench]
 fn bench_poll(bench: &mut Bencher) {
@@ -21,11 +21,8 @@ fn bench_poll(bench: &mut Bencher) {
     let mut set_readiness = vec![];
 
     for i in 0..NUM {
-        let (r, s) = Registration::new(
-            &poll,
-            Token(i),
-            Ready::readable(),
-            PollOpt::edge());
+        let (r, s) =
+            Registration::new(&poll, Token(i), Ready::readable(), PollOpt::edge());
 
         registrations.push(r);
         set_readiness.push(s);

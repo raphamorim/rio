@@ -4,10 +4,10 @@ use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
 use log::error;
+use urca::uchannel as channel;
 #[cfg(unix)]
 use urca::unix::UnixReady;
 use urca::{self, Events, PollOpt, Ready};
-use urca::uchannel as channel;
 
 use crate::event::{Msg, RioEvent};
 

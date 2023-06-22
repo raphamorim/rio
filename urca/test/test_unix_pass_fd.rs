@@ -1,13 +1,13 @@
-use {TryRead, TryWrite};
-use mio::*;
-use mio::deprecated::{EventLoop, Handler};
-use mio::deprecated::unix::*;
 use bytes::{Buf, ByteBuf, SliceBuf};
+use mio::deprecated::unix::*;
+use mio::deprecated::{EventLoop, Handler};
+use mio::*;
 use slab::Slab;
-use std::path::PathBuf;
 use std::io::{self, Read};
 use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::path::PathBuf;
 use tempdir::TempDir;
+use {TryRead, TryWrite};
 
 const SERVER: Token = Token(10_000_000);
 const CLIENT: Token = Token(10_000_001);
@@ -48,8 +48,17 @@ impl EchoConn {
             Err(e) => debug!("not implemented; client err={:?}", e),
         }
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(), "actual={:?}", self.interest);
-        event_loop.reregister(&self.sock, self.token.unwrap(), self.interest, PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        event_loop.reregister(
+            &self.sock,
+            self.token.unwrap(),
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 
     fn readable(&mut self, event_loop: &mut EventLoop<Echo>) -> io::Result<()> {
@@ -68,7 +77,6 @@ impl EchoConn {
                 debug!("not implemented; client err={:?}", e);
                 self.interest.remove(Ready::readable());
             }
-
         };
 
         // create fd to pass back. Assume that the write will work
@@ -89,14 +97,23 @@ impl EchoConn {
         }
         self.pipe_fd = Some(rd);
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(), "actual={:?}", self.interest);
-        event_loop.reregister(&self.sock, self.token.unwrap(), self.interest, PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        event_loop.reregister(
+            &self.sock,
+            self.token.unwrap(),
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 }
 
 struct EchoServer {
     sock: UnixListener,
-    conns: Slab<EchoConn>
+    conns: Slab<EchoConn>,
 }
 
 impl EchoServer {
@@ -109,18 +126,32 @@ impl EchoServer {
 
         // Register the connection
         self.conns[tok].token = Some(Token(tok));
-        event_loop.register(&self.conns[tok].sock, Token(tok), Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
+        event_loop
+            .register(
+                &self.conns[tok].sock,
+                Token(tok),
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::oneshot(),
+            )
             .expect("could not register socket with event loop");
 
         Ok(())
     }
 
-    fn conn_readable(&mut self, event_loop: &mut EventLoop<Echo>, tok: Token) -> io::Result<()> {
+    fn conn_readable(
+        &mut self,
+        event_loop: &mut EventLoop<Echo>,
+        tok: Token,
+    ) -> io::Result<()> {
         debug!("server conn readable; tok={:?}", tok);
         self.conn(tok).readable(event_loop)
     }
 
-    fn conn_writable(&mut self, event_loop: &mut EventLoop<Echo>, tok: Token) -> io::Result<()> {
+    fn conn_writable(
+        &mut self,
+        event_loop: &mut EventLoop<Echo>,
+        tok: Token,
+    ) -> io::Result<()> {
         debug!("server conn writable; tok={:?}", tok);
         self.conn(tok).writable(event_loop)
     }
@@ -139,10 +170,9 @@ struct EchoClient {
     interest: Ready,
 }
 
-
 // Sends a message and expects to receive the same exact message, one at a time
 impl EchoClient {
-    fn new(sock: UnixStream, tok: Token,  mut msgs: Vec<&'static str>) -> EchoClient {
+    fn new(sock: UnixStream, tok: Token, mut msgs: Vec<&'static str>) -> EchoClient {
         let curr = msgs.remove(0);
 
         EchoClient {
@@ -199,8 +229,17 @@ impl EchoClient {
         }
 
         if !self.interest.is_none() {
-            assert!(self.interest.is_readable() || self.interest.is_writable(), "actual={:?}", self.interest);
-            event_loop.reregister(&self.sock, self.token, self.interest, PollOpt::edge() | PollOpt::oneshot())?;
+            assert!(
+                self.interest.is_readable() || self.interest.is_writable(),
+                "actual={:?}",
+                self.interest
+            );
+            event_loop.reregister(
+                &self.sock,
+                self.token,
+                self.interest,
+                PollOpt::edge() | PollOpt::oneshot(),
+            )?;
         }
 
         Ok(())
@@ -219,11 +258,20 @@ impl EchoClient {
                 self.interest.insert(Ready::readable());
                 self.interest.remove(Ready::writable());
             }
-            Err(e) => debug!("not implemented; client err={:?}", e)
+            Err(e) => debug!("not implemented; client err={:?}", e),
         }
 
-        assert!(self.interest.is_readable() || self.interest.is_writable(), "actual={:?}", self.interest);
-        event_loop.reregister(&self.sock, self.token, self.interest, PollOpt::edge() | PollOpt::oneshot())
+        assert!(
+            self.interest.is_readable() || self.interest.is_writable(),
+            "actual={:?}",
+            self.interest
+        );
+        event_loop.reregister(
+            &self.sock,
+            self.token,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 
     fn next_msg(&mut self, event_loop: &mut EventLoop<Echo>) -> io::Result<()> {
@@ -239,7 +287,12 @@ impl EchoClient {
         self.rx = SliceBuf::wrap(curr.as_bytes());
 
         self.interest.insert(Ready::writable());
-        event_loop.reregister(&self.sock, self.token, self.interest, PollOpt::edge() | PollOpt::oneshot())
+        event_loop.reregister(
+            &self.sock,
+            self.token,
+            self.interest,
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
     }
 }
 
@@ -253,9 +306,9 @@ impl Echo {
         Echo {
             server: EchoServer {
                 sock: srv,
-                conns: Slab::with_capacity(128)
+                conns: Slab::with_capacity(128),
             },
-            client: EchoClient::new(client, CLIENT, msgs)
+            client: EchoClient::new(client, CLIENT, msgs),
         }
     }
 }
@@ -269,7 +322,7 @@ impl Handler for Echo {
             match token {
                 SERVER => self.server.accept(event_loop).unwrap(),
                 CLIENT => self.client.readable(event_loop).unwrap(),
-                i => self.server.conn_readable(event_loop, i).unwrap()
+                i => self.server.conn_readable(event_loop, i).unwrap(),
             };
         }
 
@@ -277,7 +330,7 @@ impl Handler for Echo {
             match token {
                 SERVER => panic!("received writable for token 0"),
                 CLIENT => self.client.writable(event_loop).unwrap(),
-                _ => self.server.conn_writable(event_loop, token).unwrap()
+                _ => self.server.conn_writable(event_loop, token).unwrap(),
             };
         }
     }
@@ -294,13 +347,29 @@ pub fn test_unix_pass_fd() {
     let srv = UnixListener::bind(&addr).unwrap();
 
     info!("listen for connections");
-    event_loop.register(&srv, SERVER, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+    event_loop
+        .register(
+            &srv,
+            SERVER,
+            Ready::readable(),
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
+        .unwrap();
 
     let sock = UnixStream::connect(&addr).unwrap();
 
     // Connect to the server
-    event_loop.register(&sock, CLIENT, Ready::writable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+    event_loop
+        .register(
+            &sock,
+            CLIENT,
+            Ready::writable(),
+            PollOpt::edge() | PollOpt::oneshot(),
+        )
+        .unwrap();
 
     // Start the event loop
-    event_loop.run(&mut Echo::new(srv, sock, vec!["foo", "bar"])).unwrap();
+    event_loop
+        .run(&mut Echo::new(srv, sock, vec!["foo", "bar"]))
+        .unwrap();
 }

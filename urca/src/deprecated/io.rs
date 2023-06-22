@@ -1,4 +1,4 @@
-use ::io::MapNonBlock;
+use io::MapNonBlock;
 use std::io::{self, Read, Write};
 
 pub trait TryRead {

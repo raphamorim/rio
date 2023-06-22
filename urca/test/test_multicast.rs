@@ -2,12 +2,12 @@
 // Figure out why!
 #![cfg(not(target_os = "android"))]
 
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use mio::net::UdpSocket;
 use bytes::{Buf, MutBuf, RingBuf, SliceBuf};
-use std::str;
-use std::net::IpAddr;
 use localhost;
+use mio::net::UdpSocket;
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use std::net::IpAddr;
+use std::str;
 
 const LISTENER: Token = Token(0);
 const SENDER: Token = Token(1);
@@ -41,7 +41,9 @@ impl UdpHandler {
             debug!("We are receiving a datagram now...");
             match unsafe { self.rx.recv_from(self.rx_buf.mut_bytes()) } {
                 Ok((cnt, addr)) => {
-                    unsafe { MutBuf::advance(&mut self.rx_buf, cnt); }
+                    unsafe {
+                        MutBuf::advance(&mut self.rx_buf, cnt);
+                    }
                     assert_eq!(addr.ip(), self.localhost);
                 }
                 res => panic!("unexpected result: {:?}", res),
@@ -74,16 +76,20 @@ pub fn test_multicast() {
 
     info!("Joining group 227.1.1.100");
     let any = "0.0.0.0".parse().unwrap();
-    rx.join_multicast_v4(&"227.1.1.100".parse().unwrap(), &any).unwrap();
+    rx.join_multicast_v4(&"227.1.1.100".parse().unwrap(), &any)
+        .unwrap();
 
     info!("Joining group 227.1.1.101");
-    rx.join_multicast_v4(&"227.1.1.101".parse().unwrap(), &any).unwrap();
+    rx.join_multicast_v4(&"227.1.1.101".parse().unwrap(), &any)
+        .unwrap();
 
     info!("Registering SENDER");
-    poll.register(&tx, SENDER, Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(&tx, SENDER, Ready::writable(), PollOpt::edge())
+        .unwrap();
 
     info!("Registering LISTENER");
-    poll.register(&rx, LISTENER, Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&rx, LISTENER, Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
 

@@ -7,33 +7,38 @@ use std::ptr;
 
 use libc;
 
-use {io, Ready, Poll, PollOpt, Token};
 use event::Evented;
+use sys::unix::io::{set_cloexec, set_nonblock};
 use sys::unix::{cvt, Io};
-use sys::unix::io::{set_nonblock, set_cloexec};
+use {io, Poll, PollOpt, Ready, Token};
 
 trait MyInto<T> {
     fn my_into(self) -> T;
 }
 
 impl MyInto<u32> for usize {
-    fn my_into(self) -> u32 { self as u32 }
+    fn my_into(self) -> u32 {
+        self as u32
+    }
 }
 
 impl MyInto<usize> for usize {
-    fn my_into(self) -> usize { self }
+    fn my_into(self) -> usize {
+        self
+    }
 }
 
-unsafe fn sockaddr_un(path: &Path)
-                      -> io::Result<(libc::sockaddr_un, libc::socklen_t)> {
+unsafe fn sockaddr_un(path: &Path) -> io::Result<(libc::sockaddr_un, libc::socklen_t)> {
     let mut addr: libc::sockaddr_un = mem::zeroed();
     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
 
     let bytes = path.as_os_str().as_bytes();
 
     if bytes.len() >= addr.sun_path.len() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                                  "path must be shorter than SUN_LEN"))
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path must be shorter than SUN_LEN",
+        ));
     }
     for (dst, src) in addr.sun_path.iter_mut().zip(bytes.iter()) {
         *dst = *src as libc::c_char;
@@ -96,9 +101,11 @@ impl UnixSocket {
     pub fn connect<P: AsRef<Path> + ?Sized>(&self, addr: &P) -> io::Result<()> {
         unsafe {
             let (addr, len) = sockaddr_un(addr.as_ref())?;
-            cvt(libc::connect(self.as_raw_fd(),
-                                   &addr as *const _ as *const _,
-                                   len))?;
+            cvt(libc::connect(
+                self.as_raw_fd(),
+                &addr as *const _ as *const _,
+                len,
+            ))?;
             Ok(())
         }
     }
@@ -113,9 +120,11 @@ impl UnixSocket {
 
     pub fn accept(&self) -> io::Result<UnixSocket> {
         unsafe {
-            let fd = cvt(libc::accept(self.as_raw_fd(),
-                                           ptr::null_mut(),
-                                           ptr::null_mut()))?;
+            let fd = cvt(libc::accept(
+                self.as_raw_fd(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ))?;
             let fd = Io::from_raw_fd(fd);
             set_cloexec(fd.as_raw_fd())?;
             set_nonblock(fd.as_raw_fd())?;
@@ -127,15 +136,19 @@ impl UnixSocket {
     pub fn bind<P: AsRef<Path> + ?Sized>(&self, addr: &P) -> io::Result<()> {
         unsafe {
             let (addr, len) = sockaddr_un(addr.as_ref())?;
-            cvt(libc::bind(self.as_raw_fd(),
-                                &addr as *const _ as *const _,
-                                len))?;
+            cvt(libc::bind(
+                self.as_raw_fd(),
+                &addr as *const _ as *const _,
+                len,
+            ))?;
             Ok(())
         }
     }
 
     pub fn try_clone(&self) -> io::Result<UnixSocket> {
-        Ok(UnixSocket { io: self.io.try_clone()? })
+        Ok(UnixSocket {
+            io: self.io.try_clone()?,
+        })
     }
 
     pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
@@ -170,8 +183,9 @@ impl UnixSocket {
 
             const SCM_RIGHTS: libc::c_int = 1;
 
-            let fd = if cmsg.hdr.cmsg_level == libc::SOL_SOCKET &&
-                        cmsg.hdr.cmsg_type == SCM_RIGHTS {
+            let fd = if cmsg.hdr.cmsg_level == libc::SOL_SOCKET
+                && cmsg.hdr.cmsg_type == SCM_RIGHTS
+            {
                 Some(cmsg.data[0])
             } else {
                 None
@@ -223,11 +237,23 @@ impl Write for UnixSocket {
 }
 
 impl Evented for UnixSocket {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.io.register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.io.reregister(poll, token, interest, opts)
     }
 
@@ -235,7 +261,6 @@ impl Evented for UnixSocket {
         self.io.deregister(poll)
     }
 }
-
 
 impl From<Io> for UnixSocket {
     fn from(io: Io) -> UnixSocket {
@@ -245,7 +270,9 @@ impl From<Io> for UnixSocket {
 
 impl FromRawFd for UnixSocket {
     unsafe fn from_raw_fd(fd: RawFd) -> UnixSocket {
-        UnixSocket { io: Io::from_raw_fd(fd) }
+        UnixSocket {
+            io: Io::from_raw_fd(fd),
+        }
     }
 }
 

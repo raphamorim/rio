@@ -1,22 +1,18 @@
-use {io, Event, PollOpt, Ready, Token};
+use std::collections::hash_map;
+use std::fmt;
+use std::mem;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
+use sys;
 use sys::fuchsia::{
-    assert_fuchsia_ready_repr,
-    epoll_event_to_ready,
-    poll_opts_to_wait_async,
-    EventedFd,
-    EventedFdInner,
-    FuchsiaReady,
+    assert_fuchsia_ready_repr, epoll_event_to_ready, poll_opts_to_wait_async, EventedFd,
+    EventedFdInner, FuchsiaReady,
 };
 use zircon;
 use zircon::AsHandleRef;
 use zircon_sys::zx_handle_t;
-use std::collections::hash_map;
-use std::fmt;
-use std::mem;
-use std::sync::atomic::{AtomicBool, AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
-use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
-use sys;
+use {io, Event, PollOpt, Ready, Token};
 
 /// The kind of registration-- file descriptor or handle.
 ///
@@ -33,7 +29,8 @@ fn key_from_token_and_type(token: Token, reg_type: RegType) -> io::Result<u64> {
     if (key & msb) != 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Most-significant bit of token must remain unset."));
+            "Most-significant bit of token must remain unset.",
+        ));
     }
 
     Ok(match reg_type {
@@ -50,7 +47,7 @@ fn token_and_type_from_key(key: u64) -> (Token, RegType) {
             RegType::Fd
         } else {
             RegType::Handle
-        }
+        },
     )
 }
 
@@ -94,9 +91,7 @@ impl Selector {
         // compatible with Ready.
         assert_fuchsia_ready_repr();
 
-        let port = Arc::new(
-            zircon::Port::create(zircon::PortOpts::Default)?
-        );
+        let port = Arc::new(zircon::Port::create(zircon::PortOpts::Default)?);
 
         // offset by 1 to avoid choosing 0 as the id of a selector
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed) + 1;
@@ -119,7 +114,9 @@ impl Selector {
     }
 
     /// Returns a reference to the underlying port `Arc`.
-    pub fn port(&self) -> &Arc<zircon::Port> { &self.port }
+    pub fn port(&self) -> &Arc<zircon::Port> {
+        &self.port
+    }
 
     /// Reregisters all registrations pointed to by the `tokens_to_rereg` list
     /// if `has_tokens_to_rereg`.
@@ -130,8 +127,8 @@ impl Selector {
             let mut tokens = self.tokens_to_rereg.lock().unwrap();
             let token_to_fd = self.token_to_fd.lock().unwrap();
             for token in tokens.drain(0..) {
-                if let Some(eventedfd) = token_to_fd.get(&token)
-                    .and_then(|h| h.upgrade()) {
+                if let Some(eventedfd) = token_to_fd.get(&token).and_then(|h| h.upgrade())
+                {
                     eventedfd.rereg_for_level(&self.port);
                 }
             }
@@ -140,19 +137,22 @@ impl Selector {
         Ok(())
     }
 
-    pub fn select(&self,
-                  evts: &mut Events,
-                  _awakener: Token,
-                  timeout: Option<Duration>) -> io::Result<bool>
-    {
+    pub fn select(
+        &self,
+        evts: &mut Events,
+        _awakener: Token,
+        timeout: Option<Duration>,
+    ) -> io::Result<bool> {
         evts.clear();
 
         self.reregister_handles()?;
 
         let deadline = match timeout {
             Some(duration) => {
-                let nanos = duration.as_secs().saturating_mul(1_000_000_000)
-                                .saturating_add(duration.subsec_nanos() as u64);
+                let nanos = duration
+                    .as_secs()
+                    .saturating_mul(1_000_000_000)
+                    .saturating_add(duration.subsec_nanos() as u64);
 
                 zircon::deadline_after(nanos)
             }
@@ -166,12 +166,8 @@ impl Selector {
         };
 
         let observed_signals = match packet.contents() {
-            zircon::PacketContents::SignalOne(signal_packet) => {
-                signal_packet.observed()
-            }
-            zircon::PacketContents::SignalRep(signal_packet) => {
-                signal_packet.observed()
-            }
+            zircon::PacketContents::SignalOne(signal_packet) => signal_packet.observed(),
+            zircon::PacketContents::SignalRep(signal_packet) => signal_packet.observed(),
             zircon::PacketContents::User(_user_packet) => {
                 // User packets are only ever sent by an Awakener
                 return Ok(true);
@@ -184,18 +180,22 @@ impl Selector {
         match reg_type {
             RegType::Handle => {
                 // We can return immediately-- no lookup or registration necessary.
-                evts.events.push(Event::new(Ready::from(observed_signals), token));
+                evts.events
+                    .push(Event::new(Ready::from(observed_signals), token));
                 Ok(false)
-            },
+            }
             RegType::Fd => {
                 // Convert the signals to epoll events using __fdio_wait_end,
                 // and add to reregistration list if necessary.
                 let events: u32;
                 {
-                    let handle = if let Some(handle) =
-                    self.token_to_fd.lock().unwrap()
+                    let handle = if let Some(handle) = self
+                        .token_to_fd
+                        .lock()
+                        .unwrap()
                         .get(&token)
-                        .and_then(|h| h.upgrade()) {
+                        .and_then(|h| h.upgrade())
+                    {
                         handle
                     } else {
                         // This handle is apparently in the process of removal.
@@ -205,7 +205,11 @@ impl Selector {
 
                     events = unsafe {
                         let mut events: u32 = mem::uninitialized();
-                        sys::fuchsia::sys::__fdio_wait_end(handle.fdio(), observed_signals, &mut events);
+                        sys::fuchsia::sys::__fdio_wait_end(
+                            handle.fdio(),
+                            observed_signals,
+                            &mut events,
+                        );
                         events
                     };
 
@@ -220,7 +224,8 @@ impl Selector {
                     };
 
                     if needs_to_rereg {
-                        let mut tokens_to_rereg_lock = self.tokens_to_rereg.lock().unwrap();
+                        let mut tokens_to_rereg_lock =
+                            self.tokens_to_rereg.lock().unwrap();
                         tokens_to_rereg_lock.push(token);
                         // We use `Ordering::Release` to make sure that we see all `tokens_to_rereg`
                         // written before the store.
@@ -228,33 +233,43 @@ impl Selector {
                     }
                 }
 
-                evts.events.push(Event::new(epoll_event_to_ready(events), token));
+                evts.events
+                    .push(Event::new(epoll_event_to_ready(events), token));
                 Ok(false)
-            },
+            }
         }
     }
 
     /// Register event interests for the given IO handle with the OS
-    pub fn register_fd(&self,
-                       handle: &zircon::Handle,
-                       fd: &EventedFd,
-                       token: Token,
-                       signals: zircon::Signals,
-                       poll_opts: PollOpt) -> io::Result<()>
-    {
+    pub fn register_fd(
+        &self,
+        handle: &zircon::Handle,
+        fd: &EventedFd,
+        token: Token,
+        signals: zircon::Signals,
+        poll_opts: PollOpt,
+    ) -> io::Result<()> {
         {
             let mut token_to_fd = self.token_to_fd.lock().unwrap();
             match token_to_fd.entry(token) {
-                hash_map::Entry::Occupied(_) =>
-                    return Err(io::Error::new(io::ErrorKind::AlreadyExists,
-                               "Attempted to register a filedescriptor on an existing token.")),
+                hash_map::Entry::Occupied(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "Attempted to register a filedescriptor on an existing token.",
+                    ))
+                }
                 hash_map::Entry::Vacant(slot) => slot.insert(Arc::downgrade(&fd.inner)),
             };
         }
 
         let wait_async_opts = poll_opts_to_wait_async(poll_opts);
 
-        let wait_res = handle.wait_async_handle(&self.port, token.0 as u64, signals, wait_async_opts);
+        let wait_res = handle.wait_async_handle(
+            &self.port,
+            token.0 as u64,
+            signals,
+            wait_async_opts,
+        );
 
         if wait_res.is_err() {
             self.token_to_fd.lock().unwrap().remove(&token);
@@ -269,44 +284,52 @@ impl Selector {
 
         // We ignore NotFound errors since oneshots are automatically deregistered,
         // but mio will attempt to deregister them manually.
-        self.port.cancel(&*handle, token.0 as u64)
+        self.port
+            .cancel(&*handle, token.0 as u64)
             .map_err(io::Error::from)
-            .or_else(|e| if e.kind() == io::ErrorKind::NotFound {
-                Ok(())
-            } else {
-                Err(e)
+            .or_else(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
             })
     }
 
-    pub fn register_handle(&self,
-                           handle: zx_handle_t,
-                           token: Token,
-                           interests: Ready,
-                           poll_opts: PollOpt) -> io::Result<()>
-    {
+    pub fn register_handle(
+        &self,
+        handle: zx_handle_t,
+        token: Token,
+        interests: Ready,
+        poll_opts: PollOpt,
+    ) -> io::Result<()> {
         if poll_opts.is_level() && !poll_opts.is_oneshot() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                      "Repeated level-triggered events are not supported on Fuchsia handles."));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Repeated level-triggered events are not supported on Fuchsia handles.",
+            ));
         }
 
         let temp_handle = unsafe { zircon::Handle::from_raw(handle) };
 
         let res = temp_handle.wait_async_handle(
-                    &self.port,
-                    key_from_token_and_type(token, RegType::Handle)?,
-                    FuchsiaReady::from(interests).into_zx_signals(),
-                    poll_opts_to_wait_async(poll_opts));
+            &self.port,
+            key_from_token_and_type(token, RegType::Handle)?,
+            FuchsiaReady::from(interests).into_zx_signals(),
+            poll_opts_to_wait_async(poll_opts),
+        );
 
         mem::forget(temp_handle);
 
         Ok(res?)
     }
 
-
-    pub fn deregister_handle(&self, handle: zx_handle_t, token: Token) -> io::Result<()>
-    {
+    pub fn deregister_handle(&self, handle: zx_handle_t, token: Token) -> io::Result<()> {
         let temp_handle = unsafe { zircon::Handle::from_raw(handle) };
-        let res = self.port.cancel(&temp_handle, key_from_token_and_type(token, RegType::Handle)?);
+        let res = self.port.cancel(
+            &temp_handle,
+            key_from_token_and_type(token, RegType::Handle)?,
+        );
 
         mem::forget(temp_handle);
 
@@ -315,14 +338,16 @@ impl Selector {
 }
 
 pub struct Events {
-    events: Vec<Event>
+    events: Vec<Event>,
 }
 
 impl Events {
     pub fn with_capacity(_u: usize) -> Events {
         // The Fuchsia selector only handles one event at a time,
         // so we ignore the default capacity and set it to one.
-        Events { events: Vec::with_capacity(1) }
+        Events {
+            events: Vec::with_capacity(1),
+        }
     }
     pub fn len(&self) -> usize {
         self.events.len()

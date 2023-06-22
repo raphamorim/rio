@@ -2,10 +2,10 @@ pub use self::pipe::Awakener;
 
 /// Default awakener backed by a pipe
 mod pipe {
-    use sys::unix;
-    use {io, Ready, Poll, PollOpt, Token};
     use event::Evented;
     use std::io::{Read, Write};
+    use sys::unix;
+    use {io, Poll, PollOpt, Ready, Token};
 
     /*
      *
@@ -47,7 +47,7 @@ mod pipe {
             loop {
                 // Consume data until all bytes are purged
                 match (&self.reader).read(&mut buf) {
-                    Ok(i) if i > 0 => {},
+                    Ok(i) if i > 0 => {}
                     _ => return,
                 }
             }
@@ -59,11 +59,23 @@ mod pipe {
     }
 
     impl Evented for Awakener {
-        fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+        fn register(
+            &self,
+            poll: &Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt,
+        ) -> io::Result<()> {
             self.reader().register(poll, token, interest, opts)
         }
 
-        fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+        fn reregister(
+            &self,
+            poll: &Poll,
+            token: Token,
+            interest: Ready,
+            opts: PollOpt,
+        ) -> io::Result<()> {
             self.reader().reregister(poll, token, interest, opts)
         }
 
