@@ -17,7 +17,7 @@ mio-extras = "2"
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.10"
 mio-uds = { version = "~0.6" }
-iovec = "0.1"
+iovec = "0.1.1"
 
 [target.'cfg(windows)'.dependencies]
 mio-anonymous-pipes = "0.2"
