@@ -3,7 +3,7 @@
 name          = "urca"
 version       = "0.0.1"
 license       = "MIT"
-authors       = ["Raphael Amorim <rapha850@gmail.com"]
+authors       = ["Carl Lerche <me@carllerche.com>", "Raphael Amorim <rapha850@gmail.com"]
 description   = "Non-blocking IO library for Rio terminal"
 documentation = "https://raphamorim.io/rio/docs"
 homepage      = "https://github.com/raphamorim/rio"
@@ -22,18 +22,18 @@ with-deprecated = []
 default = ["with-deprecated"]
 
 [dependencies]
-log      = "0.4"
-slab     = "0.4.0"
-net2     = "0.2.36"
-iovec    = "0.1.1"
-cfg-if   = "0.1.9"
+log = { workspace = true }
+iovec = "0.1.1"
+slab = "0.4.0"
+net2 = "0.2.36"
+cfg-if = "0.1.9"
 
 [target.'cfg(target_os = "fuchsia")'.dependencies]
 fuchsia-zircon = "0.3.2"
 fuchsia-zircon-sys = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
-libc   = "0.2.54"
+libc = "0.2.140"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.2.6"
