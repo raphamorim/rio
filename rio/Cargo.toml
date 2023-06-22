@@ -14,6 +14,7 @@ bitflags = "2.0.2"
 bytemuck = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
+urca = { path = "../urca" }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }
 dirs = "5.0"
@@ -23,8 +24,6 @@ image = { version = "0.24.5", default-features = false, features = ["ico"] }
 lazycell = "1"
 libc = "0.2.141"
 log = { workspace = true }
-mio = "0.6.20"
-mio-extras = "2"
 parking_lot = "0.12"
 serde = { workspace = true }
 sugarloaf = { path = "../sugarloaf" }

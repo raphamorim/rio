@@ -1,9 +1,15 @@
+#![cfg(unix)]
+
+mod signals;
+mod stream;
+mod socket;
+
 extern crate libc;
 
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
-use metal::unix::EventedFd;
+use urca::unix::EventedFd;
 use signal_hook::consts as sigconsts;
-use signal_hook_mio::v0_6::Signals;
+use signals::Signals;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
@@ -67,8 +73,8 @@ fn default_shell_command(shell: &str) {
 pub struct Pty {
     pub child: Child,
     file: File,
-    token: metal::Token,
-    signals_token: metal::Token,
+    token: urca::Token,
+    signals_token: urca::Token,
     signals: Signals,
 }
 
@@ -122,7 +128,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn read_token(&self) -> metal::Token {
+    fn read_token(&self) -> urca::Token {
         self.token
     }
 
@@ -132,7 +138,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn write_token(&self) -> metal::Token {
+    fn write_token(&self) -> urca::Token {
         self.token
     }
 
@@ -144,10 +150,10 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &metal::Poll,
-        token: &mut dyn Iterator<Item = metal::Token>,
-        interest: metal::Ready,
-        poll_opts: metal::PollOpt,
+        poll: &urca::Poll,
+        token: &mut dyn Iterator<Item = urca::Token>,
+        interest: urca::Ready,
+        poll_opts: urca::PollOpt,
     ) -> io::Result<()> {
         self.token = token.next().unwrap();
         poll.register(
@@ -161,16 +167,16 @@ impl ProcessReadWrite for Pty {
         poll.register(
             &self.signals,
             self.signals_token,
-            metal::Ready::readable(),
-            metal::PollOpt::level(),
+            urca::Ready::readable(),
+            urca::PollOpt::level(),
         )
     }
 
     fn reregister(
         &mut self,
-        poll: &metal::Poll,
-        interest: metal::Ready,
-        poll_opts: metal::PollOpt,
+        poll: &urca::Poll,
+        interest: urca::Ready,
+        poll_opts: urca::PollOpt,
     ) -> io::Result<()> {
         poll.reregister(
             &EventedFd(&self.file.as_raw_fd()),
@@ -182,12 +188,12 @@ impl ProcessReadWrite for Pty {
         poll.reregister(
             &self.signals,
             self.signals_token,
-            metal::Ready::readable(),
-            metal::PollOpt::level(),
+            urca::Ready::readable(),
+            urca::PollOpt::level(),
         )
     }
 
-    fn deregister(&mut self, poll: &metal::Poll) -> io::Result<()> {
+    fn deregister(&mut self, poll: &urca::Poll) -> io::Result<()> {
         poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
         poll.deregister(&self.signals)
     }
@@ -358,8 +364,8 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 child,
                 signals,
                 file: unsafe { File::from_raw_fd(main) },
-                token: metal::Token(0),
-                signals_token: metal::Token(0),
+                token: urca::Token(0),
+                signals_token: urca::Token(0),
             }
         }
         _ => panic!("Fork failed."),
@@ -487,7 +493,7 @@ impl EventedPty for Pty {
     }
 
     #[inline]
-    fn child_event_token(&self) -> metal::Token {
+    fn child_event_token(&self) -> urca::Token {
         self.signals_token
     }
 }

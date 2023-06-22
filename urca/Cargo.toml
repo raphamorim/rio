@@ -1,25 +1,18 @@
 [package]
 
-name          = "metal"
-# When releasing to crates.io:
-# - Update html_root_url.
-# - Update CHANGELOG.md.
-# - Update doc URL.
-# - Create git tag
-version       = "0.6.23"
+name          = "urca"
+version       = "0.0.1"
 license       = "MIT"
-authors       = ["Carl Lerche <me@carllerche.com>", "Raphael Amorim <rapha850@gmail.com"]
-description   = "Lightweight non-blocking IO"
-documentation = "https://docs.rs/mio/0.6.23/mio/"
-homepage      = "https://github.com/tokio-rs/mio"
-repository    = "https://github.com/tokio-rs/mio"
+authors       = ["Raphael Amorim <rapha850@gmail.com"]
+description   = "Non-blocking IO library for Rio terminal"
+documentation = "https://raphamorim.io/rio/docs"
+homepage      = "https://github.com/raphamorim/rio"
+repository    = "https://github.com/raphamorim/rio"
 readme        = "README.md"
 keywords      = ["io", "async", "non-blocking"]
 categories    = ["asynchronous"]
 include       = [
   "Cargo.toml",
-  "LICENSE",
-  "README.md",
   "CHANGELOG.md",
   "src/**/*.rs"
 ]

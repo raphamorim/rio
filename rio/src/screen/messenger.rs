@@ -3,11 +3,11 @@ use std::borrow::Cow;
 use teletypewriter::WinsizeBuilder;
 
 pub struct Messenger {
-    channel: mio_extras::channel::Sender<Msg>,
+    channel: urca::uchannel::Sender<Msg>,
 }
 
 impl Messenger {
-    pub fn new(channel: mio_extras::channel::Sender<Msg>) -> Messenger {
+    pub fn new(channel: urca::uchannel::Sender<Msg>) -> Messenger {
         Messenger { channel }
     }
 
