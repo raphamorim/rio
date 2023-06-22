@@ -13,5 +13,19 @@ libc = "0.2.140"
 dirs = "5.0"
 mio = "0.6.20"
 mio-extras = "2"
+
+[target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.10"
 signal-hook-mio = { version = "0.2.1", features = ["support-v0_6"] }
+
+[target.'cfg(windows)'.dependencies]
+mio-anonymous-pipes = "0.2"
+miow = "0.3"
+windows-sys = { version = "0.48", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+]}
