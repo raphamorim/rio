@@ -149,8 +149,9 @@ impl Screen {
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
         let text_scale = layout.style.text_scale as usize;
-        let col = self.mouse.x.saturating_sub(layout.padding.x as usize)
-            / layout.font_size as usize;
+
+        let col_fac = text_scale / 2;
+        let col = self.mouse.x.saturating_sub(layout.padding.x as usize) / col_fac;
         let col = std::cmp::min(Column(col), Column(layout.columns));
 
         let line = self.mouse.y.saturating_sub(
