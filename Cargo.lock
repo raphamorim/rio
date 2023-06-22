@@ -1404,26 +1404,6 @@ dependencies = [
 
 [[package]]
 name = "metal"
-version = "0.6.23"
-dependencies = [
- "bytes 0.3.0",
- "cfg-if 0.1.10",
- "env_logger 0.4.3",
- "fuchsia-zircon",
- "fuchsia-zircon-sys",
- "iovec",
- "kernel32-sys",
- "libc",
- "log 0.4.18",
- "miow 0.2.2",
- "net2",
- "slab",
- "tempdir",
- "winapi 0.2.8",
-]
-
-[[package]]
-name = "metal"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de11355d1f6781482d027a3b4d4de7825dcedb197bf573e0596d00008402d060"
@@ -2210,8 +2190,6 @@ dependencies = [
  "lazycell",
  "libc",
  "log 0.4.18",
- "mio 0.6.23",
- "mio-extras",
  "notify",
  "objc",
  "parking_lot 0.12.1",
@@ -2220,6 +2198,7 @@ dependencies = [
  "teletypewriter",
  "tokio",
  "unicode-width",
+ "urca",
  "vte",
  "wayland-client",
  "wgpu",
@@ -2338,18 +2317,6 @@ checksum = "732768f1176d21d09e076c23a93123d40bba92d50c4058da34d45c8de8e682b9"
 dependencies = [
  "libc",
  "signal-hook-registry",
-]
-
-[[package]]
-name = "signal-hook-mio"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29ad2e15f37ec9a6cc544097b78a1ec90001e9f71b81338ca39f430adaca99af"
-dependencies = [
- "libc",
- "mio 0.6.23",
- "mio-uds",
- "signal-hook",
 ]
 
 [[package]]
@@ -2536,13 +2503,14 @@ name = "teletypewriter"
 version = "2.0.0"
 dependencies = [
  "dirs",
+ "iovec",
  "libc",
- "metal 0.6.23",
  "mio-anonymous-pipes",
  "mio-extras",
+ "mio-uds",
  "miow 0.3.7",
  "signal-hook",
- "signal-hook-mio",
+ "urca",
  "windows-sys 0.48.0",
 ]
 
@@ -2710,6 +2678,26 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
+
+[[package]]
+name = "urca"
+version = "0.0.1"
+dependencies = [
+ "bytes 0.3.0",
+ "cfg-if 0.1.10",
+ "env_logger 0.4.3",
+ "fuchsia-zircon",
+ "fuchsia-zircon-sys",
+ "iovec",
+ "kernel32-sys",
+ "libc",
+ "log 0.4.18",
+ "miow 0.2.2",
+ "net2",
+ "slab",
+ "tempdir",
+ "winapi 0.2.8",
+]
 
 [[package]]
 name = "utf8parse"
@@ -3016,7 +3004,7 @@ dependencies = [
  "libc",
  "libloading 0.8.0",
  "log 0.4.18",
- "metal 0.24.0",
+ "metal",
  "naga",
  "objc",
  "parking_lot 0.12.1",
