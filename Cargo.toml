@@ -5,6 +5,7 @@ members = [
   "webassembly-examples/*",
   "colors",
   "config",
+  "metal",
   "rio"
 ]
 resolver = "2"

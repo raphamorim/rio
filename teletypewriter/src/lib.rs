@@ -24,25 +24,25 @@ pub trait ProcessReadWrite {
     type Reader: io::Read;
     type Writer: io::Write;
     fn reader(&mut self) -> &mut Self::Reader;
-    fn read_token(&self) -> mio::Token;
+    fn read_token(&self) -> metal::Token;
     fn writer(&mut self) -> &mut Self::Writer;
-    fn write_token(&self) -> mio::Token;
+    fn write_token(&self) -> metal::Token;
     fn set_winsize(&mut self, _: WinsizeBuilder) -> Result<(), io::Error>;
 
     fn register(
         &mut self,
-        _: &mio::Poll,
-        _: &mut dyn Iterator<Item = mio::Token>,
-        _: mio::Ready,
-        _: mio::PollOpt,
+        _: &metal::Poll,
+        _: &mut dyn Iterator<Item = metal::Token>,
+        _: metal::Ready,
+        _: metal::PollOpt,
     ) -> io::Result<()>;
     fn reregister(
         &mut self,
-        _: &mio::Poll,
-        _: mio::Ready,
-        _: mio::PollOpt,
+        _: &metal::Poll,
+        _: metal::Ready,
+        _: metal::PollOpt,
     ) -> io::Result<()>;
-    fn deregister(&mut self, _: &mio::Poll) -> io::Result<()>;
+    fn deregister(&mut self, _: &metal::Poll) -> io::Result<()>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub enum ChildEvent {
 }
 
 pub trait EventedPty: ProcessReadWrite {
-    fn child_event_token(&self) -> mio::Token;
+    fn child_event_token(&self) -> metal::Token;
 
     /// Tries to retrieve an event.
     ///
