@@ -83,7 +83,8 @@ mod tests {
         const WAIT_TIMEOUT: Duration = Duration::from_millis(200);
 
         let mut child = Command::new("cmd.exe").spawn().unwrap();
-        let child_exit_watcher = ChildExitWatcher::new(child.as_raw_handle() as HANDLE).unwrap();
+        let child_exit_watcher =
+            ChildExitWatcher::new(child.as_raw_handle() as HANDLE).unwrap();
 
         let mut events = Events::with_capacity(1);
         let poll = Poll::new().unwrap();
@@ -103,6 +104,9 @@ mod tests {
         poll.poll(&mut events, Some(WAIT_TIMEOUT)).unwrap();
         assert_eq!(events.iter().next().unwrap().token(), child_events_token);
         // Verify that at least one `ChildEvent::Exited` was received.
-        assert_eq!(child_exit_watcher.event_rx().try_recv(), Ok(ChildEvent::Exited));
+        assert_eq!(
+            child_exit_watcher.event_rx().try_recv(),
+            Ok(ChildEvent::Exited)
+        );
     }
 }

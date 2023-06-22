@@ -1,6 +1,6 @@
 extern crate libc;
 
-use crate::{ChildEvent, EventedPty, WinsizeBuilder, ProcessReadWrite, Winsize};
+use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use mio::unix::EventedFd;
 use signal_hook::consts as sigconsts;
 use signal_hook_mio::v0_6::Signals;

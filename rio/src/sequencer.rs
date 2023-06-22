@@ -21,7 +21,7 @@ use winit::event::{
 };
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
-use winit::window::ImePurpose;
+use winit::window::{CursorIcon, ImePurpose};
 
 pub struct Sequencer {
     config: Rc<config::Config>,
@@ -62,10 +62,10 @@ impl Sequencer {
         let window_builder = create_window_builder("Rio");
         let winit_window = window_builder.build(&event_loop).unwrap();
 
-        let current_mouse_cursor = winit::window::CursorIcon::Text;
+        let current_mouse_cursor = CursorIcon::Text;
         winit_window.set_cursor_icon(current_mouse_cursor);
 
-        // https://docs.rs/winit/latest/winit/window/enum.ImePurpose.html#variant.Terminal
+        // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
         winit_window.set_ime_purpose(ImePurpose::Terminal);
         winit_window.set_ime_allowed(true);
 
@@ -335,7 +335,8 @@ impl Sequencer {
                         screen.mouse.right_button_state == ElementState::Pressed;
 
                     if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                        screen.update_selection_scrolling(y, &mut scheduler);
+                        // screen.update_selection_scrolling(y);
+                        // self.has_render_updates = true;
                     }
 
                     let display_offset = screen.display_offset();
@@ -349,27 +350,32 @@ impl Sequencer {
                     let point = screen.mouse_position(display_offset);
                     let square_changed = old_point != point;
 
+                    let inside_text_area = screen.contains_point(x, y);
+                    let square_side = screen.side_by_pos(x);
+
                     // If the mouse hasn't changed cells, do nothing.
                     if !square_changed
-                    // && screen.layout().mouse.square_side == square_side
-                    // && screen.layout().mouse.inside_text_area == inside_text_area
+                        && screen.mouse.square_side == square_side
+                        && screen.mouse.inside_text_area == inside_text_area
                     {
                         return;
                     }
 
-                    // screen.layout().mouse_mut().inside_text_area = inside_text_area;
-                    // let square_side = self.square_side(x);
-                    // let square_side = Side::Left;
-                    // screen.layout().mouse_mut().square_side = square_side;
+                    screen.mouse.inside_text_area = inside_text_area;
+                    screen.mouse.square_side = square_side;
 
-                    // Update mouse state and check for URL change.
-                    // let mouse_state = self.cursor_state();
-                    // winit_window.set_mouse_cursor(mouse_state);
+                    let cursor_icon = if !screen.modifiers.shift() && screen.mouse_mode()
+                    {
+                        CursorIcon::Default
+                    } else {
+                        CursorIcon::Text
+                    };
+                    winit_window.set_cursor_icon(cursor_icon);
 
                     if (lmb_pressed || rmb_pressed)
                         && (screen.modifiers.shift() || !screen.mouse_mode())
                     {
-                        screen.update_selection(point);
+                        screen.update_selection(point, square_side);
                         self.has_render_updates = true;
                     }
                     // else if square_changed
@@ -558,10 +564,10 @@ impl Sequencer {
                         self.has_render_updates = false;
                         return;
                     }
-                }
-                Event::MainEventsCleared { .. } => {
+
                     scheduler.update();
                 }
+                Event::MainEventsCleared { .. } => {}
                 Event::RedrawRequested { .. } => {}
                 _ => {
                     *control_flow = winit::event_loop::ControlFlow::Wait;

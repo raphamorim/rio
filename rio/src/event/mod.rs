@@ -1,7 +1,7 @@
 pub mod sync;
 
-use crate::crosswords::grid::Scroll;
 use crate::clipboard::ClipboardType;
+use crate::crosswords::grid::Scroll;
 use colors::ColorRgb;
 use std::borrow::Cow;
 use std::fmt::Debug;

@@ -15,8 +15,9 @@ use windows_sys::{s, w};
 
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
-    EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-    STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
+    EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
+    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    STARTUPINFOW,
 };
 
 use crate::config::PtyConfig;
@@ -50,7 +51,7 @@ impl ConptyApi {
             Some(conpty) => {
                 info!("Using conpty.dll for pseudoconsole");
                 conpty
-            },
+            }
             None => {
                 // Cannot load conpty.dll - use the standard Windows API.
                 info!("Using Windows API for pseudoconsole");
@@ -59,7 +60,7 @@ impl ConptyApi {
                     resize: ResizePseudoConsole,
                     close: ClosePseudoConsole,
                 }
-            },
+            }
         }
     }
 
@@ -145,8 +146,12 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
 
     // Create the appropriately sized thread attribute list.
     unsafe {
-        let failure =
-            InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut size as *mut usize) > 0;
+        let failure = InitializeProcThreadAttributeList(
+            ptr::null_mut(),
+            1,
+            0,
+            &mut size as *mut usize,
+        ) > 0;
 
         // This call was expected to return false.
         if failure {
@@ -224,7 +229,10 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
     let conout = EventedAnonRead::new(conout);
 
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess).unwrap();
-    let conpty = Conpty { handle: pty_handle as HPCON, api };
+    let conpty = Conpty {
+        handle: pty_handle as HPCON,
+        api,
+    };
 
     Some(Pty::new(conpty, conout, conin, child_watcher))
 }
@@ -245,6 +253,9 @@ impl From<WindowSize> for COORD {
     fn from(window_size: WindowSize) -> Self {
         let lines = window_size.num_lines;
         let columns = window_size.num_cols;
-        COORD { X: columns as i16, Y: lines as i16 }
+        COORD {
+            X: columns as i16,
+            Y: lines as i16,
+        }
     }
 }

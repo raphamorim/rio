@@ -1,6 +1,6 @@
 [package]
 name = "rio"
-version = "0.0.8-canary"
+version.workspace = true
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
