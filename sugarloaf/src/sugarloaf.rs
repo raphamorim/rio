@@ -266,19 +266,20 @@ impl Sugarloaf {
             });
 
             if let Some(decoration) = &sugar.decoration {
-                let dx = add_pos_x;
-                let dy = self.font_bounds.default.0;
                 self.rects.push(Rect {
                     position: [
                         (self.layout.style.screen_position.0 / self.ctx.scale)
                             + x
-                            + ((dx * decoration.position.0) / self.ctx.scale),
-                        self.acc_line_y + dy * (decoration.position.1 * mod_size),
+                            + ((add_pos_x * decoration.position.0) / self.ctx.scale),
+                        self.acc_line_y
+                            + self.font_bounds.default.0
+                                * (decoration.position.1 * mod_size),
                     ],
                     color: decoration.color,
                     size: [
-                        (dx * decoration.size.0) * mod_size,
-                        ((dy * decoration.size.1) * mod_size).ceil(),
+                        (add_pos_x * decoration.size.0) * mod_size,
+                        ((self.font_bounds.default.0 * decoration.size.1) * mod_size)
+                            .ceil(),
                     ],
                 });
             }
