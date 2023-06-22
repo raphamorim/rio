@@ -3,8 +3,8 @@
 #[test]
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub fn test_double_register() {
-    use mio::net::TcpListener;
-    use mio::*;
+    use urca::net::TcpListener;
+    use urca::*;
 
     let poll = Poll::new().unwrap();
 

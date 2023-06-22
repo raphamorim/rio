@@ -1,4 +1,4 @@
-use mio::*;
+use urca::*;
 use std::time::Duration;
 
 #[test]
