@@ -1,5 +1,5 @@
-use mio::fuchsia::EventedHandle;
-use mio::*;
+use urca::fuchsia::EventedHandle;
+use urca::*;
 use std::time::Duration;
 use zircon::{self, AsHandleRef};
 

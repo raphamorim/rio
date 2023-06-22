@@ -1,5 +1,5 @@
-use mio::event::Evented;
-use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+use urca::event::Evented;
+use urca::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use std::time::Duration;
 
 #[test]
@@ -73,8 +73,8 @@ fn set_readiness_before_register() {
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod stress {
-    use mio::event::Evented;
-    use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+    use urca::event::Evented;
+    use urca::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
     use std::time::Duration;
 
     #[test]

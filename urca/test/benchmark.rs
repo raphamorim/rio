@@ -1,9 +1,9 @@
 use std::mem;
-use mio::net::{AddressFamily, Inet, Inet6, SockAddr, InetAddr, IPv4Addr, SocketType, Dgram, Stream};
+use urca::net::{AddressFamily, Inet, Inet6, SockAddr, InetAddr, IPv4Addr, SocketType, Dgram, Stream};
 use std::io::net::ip::IpAddr;
 use native::NativeTaskBuilder;
 use std::task::TaskBuilder;
-use mio::os::{from_sockaddr};
+use urca::os::{from_sockaddr};
 use time::Instant;
 use std::vec::*;
 use std::io::timer;
