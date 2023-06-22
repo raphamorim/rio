@@ -9,11 +9,11 @@
 
 #![allow(deprecated)]
 
-use {sys, Ready, Poll, PollOpt, Token};
-use io::{self, MapNonBlock};
 use event::Evented;
+use io::{self, MapNonBlock};
 use poll::SelectorId;
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
+use {sys, Poll, PollOpt, Ready, Token};
 
 /// A User Datagram Protocol socket.
 ///
@@ -61,13 +61,10 @@ impl UdpSocket {
     /// object references. Both handles will read and write the same port, and
     /// options set on one socket will be propagated to the other.
     pub fn try_clone(&self) -> io::Result<UdpSocket> {
-        self.sys.try_clone()
-            .map(|s| {
-                UdpSocket {
-                    sys: s,
-                    selector_id: self.selector_id.clone(),
-                }
-            })
+        self.sys.try_clone().map(|s| UdpSocket {
+            sys: s,
+            selector_id: self.selector_id.clone(),
+        })
     }
 
     /// Sends data on the socket to the given address. On success, returns the
@@ -75,8 +72,7 @@ impl UdpSocket {
     ///
     /// Address type can be any implementor of `ToSocketAddrs` trait. See its
     /// documentation for concrete examples.
-    pub fn send_to(&self, buf: &[u8], target: &SocketAddr)
-                   -> io::Result<Option<usize>> {
+    pub fn send_to(&self, buf: &[u8], target: &SocketAddr) -> io::Result<Option<usize>> {
         self.sys.send_to(buf, target).map_non_block()
     }
 
@@ -91,15 +87,13 @@ impl UdpSocket {
     ///
     /// Assuming the function has read `n` bytes, slicing `&buf[..n]` provides
     /// efficient access with iterators and boundary checks.
-    pub fn recv_from(&self, buf: &mut [u8])
-                     -> io::Result<Option<(usize, SocketAddr)>> {
+    pub fn recv_from(&self, buf: &mut [u8]) -> io::Result<Option<(usize, SocketAddr)>> {
         self.sys.recv_from(buf).map_non_block()
     }
 
     /// Sends data on the socket to the address previously bound via connect(). On success,
     /// returns the number of bytes written.
-    pub fn send(&self, buf: &[u8])
-                   -> io::Result<Option<usize>> {
+    pub fn send(&self, buf: &[u8]) -> io::Result<Option<usize>> {
         self.sys.send(buf).map_non_block()
     }
 
@@ -114,16 +108,14 @@ impl UdpSocket {
     ///
     /// Assuming the function has read `n` bytes, slicing `&buf[..n]` provides
     /// efficient access with iterators and boundary checks.
-    pub fn recv(&self, buf: &mut [u8])
-                     -> io::Result<Option<usize>> {
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<Option<usize>> {
         self.sys.recv(buf).map_non_block()
     }
 
-    /// Connects the UDP socket setting the default destination for `send()` 
+    /// Connects the UDP socket setting the default destination for `send()`
     /// and limiting packets that are read via `recv` from the address specified
     /// in `addr`.
-    pub fn connect(&self, addr: SocketAddr)
-                 -> io::Result<()> {
+    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
         self.sys.connect(addr)
     }
 
@@ -226,9 +218,11 @@ impl UdpSocket {
     /// address of the local interface with which the system should join the
     /// multicast group. If it's equal to `INADDR_ANY` then an appropriate
     /// interface is chosen by the system.
-    pub fn join_multicast_v4(&self,
-                             multiaddr: &Ipv4Addr,
-                             interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn join_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.sys.join_multicast_v4(multiaddr, interface)
     }
 
@@ -237,9 +231,11 @@ impl UdpSocket {
     /// This function specifies a new multicast group for this socket to join.
     /// The address must be a valid multicast address, and `interface` is the
     /// index of the interface to join/leave (or 0 to indicate any interface).
-    pub fn join_multicast_v6(&self,
-                             multiaddr: &Ipv6Addr,
-                             interface: u32) -> io::Result<()> {
+    pub fn join_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.sys.join_multicast_v6(multiaddr, interface)
     }
 
@@ -249,9 +245,11 @@ impl UdpSocket {
     /// [`join_multicast_v4`][link].
     ///
     /// [link]: #method.join_multicast_v4
-    pub fn leave_multicast_v4(&self,
-                              multiaddr: &Ipv4Addr,
-                              interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn leave_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.sys.leave_multicast_v4(multiaddr, interface)
     }
 
@@ -261,9 +259,11 @@ impl UdpSocket {
     /// [`join_multicast_v6`][link].
     ///
     /// [link]: #method.join_multicast_v6
-    pub fn leave_multicast_v6(&self,
-                              multiaddr: &Ipv6Addr,
-                              interface: u32) -> io::Result<()> {
+    pub fn leave_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.sys.leave_multicast_v6(multiaddr, interface)
     }
 
@@ -278,12 +278,24 @@ impl UdpSocket {
 }
 
 impl Evented for UdpSocket {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.selector_id.associate_selector(poll)?;
         self.sys.register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.sys.reregister(poll, token, interest, opts)
     }
 
@@ -299,7 +311,7 @@ impl Evented for UdpSocket {
  */
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
-use std::os::unix::io::{IntoRawFd, AsRawFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 impl IntoRawFd for UdpSocket {

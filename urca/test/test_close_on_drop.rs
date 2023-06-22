@@ -1,9 +1,9 @@
-use {localhost, TryRead};
-use mio::{Events, Poll, PollOpt, Ready, Token};
 use bytes::ByteBuf;
 use mio::net::{TcpListener, TcpStream};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use {localhost, TryRead};
 
-use self::TestState::{Initial, AfterRead};
+use self::TestState::{AfterRead, Initial};
 
 const SERVER: Token = Token(0);
 const CLIENT: Token = Token(1);
@@ -47,7 +47,7 @@ impl TestHandler {
                         let mut buf = [0; 4096];
                         debug!("GOT={:?}", self.cli.try_read(&mut buf[..]));
                         self.state = AfterRead;
-                    },
+                    }
                     AfterRead => {}
                 }
 
@@ -56,12 +56,13 @@ impl TestHandler {
                 match self.cli.try_read_buf(&mut buf) {
                     Ok(Some(0)) => self.shutdown = true,
                     Ok(_) => panic!("the client socket should not be readable"),
-                    Err(e) => panic!("Unexpected error {:?}", e)
+                    Err(e) => panic!("Unexpected error {:?}", e),
                 }
             }
-            _ => panic!("received unknown token {:?}", tok)
+            _ => panic!("received unknown token {:?}", tok),
         }
-        poll.reregister(&self.cli, CLIENT, Ready::readable(), PollOpt::edge()).unwrap();
+        poll.reregister(&self.cli, CLIENT, Ready::readable(), PollOpt::edge())
+            .unwrap();
     }
 
     fn handle_write(&mut self, poll: &mut Poll, tok: Token, _: Ready) {
@@ -69,9 +70,10 @@ impl TestHandler {
             SERVER => panic!("received writable for token 0"),
             CLIENT => {
                 debug!("client connected");
-                poll.reregister(&self.cli, CLIENT, Ready::readable(), PollOpt::edge()).unwrap();
+                poll.reregister(&self.cli, CLIENT, Ready::readable(), PollOpt::edge())
+                    .unwrap();
             }
-            _ => panic!("received unknown token {:?}", tok)
+            _ => panic!("received unknown token {:?}", tok),
         }
     }
 }
@@ -88,12 +90,14 @@ pub fn test_close_on_drop() {
     // == Create & setup server socket
     let srv = TcpListener::bind(&addr).unwrap();
 
-    poll.register(&srv, SERVER, Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&srv, SERVER, Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     // == Create & setup client socket
     let sock = TcpStream::connect(&addr).unwrap();
 
-    poll.register(&sock, CLIENT, Ready::writable(), PollOpt::edge()).unwrap();
+    poll.register(&sock, CLIENT, Ready::writable(), PollOpt::edge())
+        .unwrap();
 
     // == Create storage for events
     let mut events = Events::with_capacity(1024);

@@ -145,23 +145,23 @@ use winapi;
 mod awakener;
 #[macro_use]
 mod selector;
+mod buffer_pool;
+mod from_raw_arc;
 mod tcp;
 mod udp;
-mod from_raw_arc;
-mod buffer_pool;
 
 pub use self::awakener::Awakener;
-pub use self::selector::{Events, Selector, Overlapped, Binding};
-pub use self::tcp::{TcpStream, TcpListener};
+pub use self::selector::{Binding, Events, Overlapped, Selector};
+pub use self::tcp::{TcpListener, TcpStream};
 pub use self::udp::UdpSocket;
 
 #[derive(Copy, Clone)]
 enum Family {
-    V4, V6,
+    V4,
+    V6,
 }
 
-unsafe fn cancel(socket: &AsRawSocket,
-                 overlapped: &Overlapped) -> io::Result<()> {
+unsafe fn cancel(socket: &AsRawSocket, overlapped: &Overlapped) -> io::Result<()> {
     let handle = socket.as_raw_socket() as winapi::HANDLE;
     let ret = kernel32::CancelIoEx(handle, overlapped.as_mut_ptr());
     if ret == 0 {

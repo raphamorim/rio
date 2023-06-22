@@ -1,5 +1,5 @@
-use {channel};
-use std::{fmt, io, error, any};
+use channel;
+use std::{any, error, fmt, io};
 
 pub enum NotifyError<T> {
     Io(io::Error),
@@ -30,7 +30,7 @@ impl<M> fmt::Display for NotifyError<M> {
                 write!(fmt, "IO error: {}", e)
             }
             NotifyError::Full(..) => write!(fmt, "Full"),
-            NotifyError::Closed(..) => write!(fmt, "Closed")
+            NotifyError::Closed(..) => write!(fmt, "Closed"),
         }
     }
 }
@@ -40,14 +40,14 @@ impl<M: any::Any> error::Error for NotifyError<M> {
         match *self {
             NotifyError::Io(ref err) => err.description(),
             NotifyError::Closed(..) => "The receiving end has hung up",
-            NotifyError::Full(..) => "Queue is full"
+            NotifyError::Full(..) => "Queue is full",
         }
     }
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             NotifyError::Io(ref err) => Some(err),
-            _ => None
+            _ => None,
         }
     }
 }

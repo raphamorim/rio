@@ -1,5 +1,5 @@
-use {Poll, Token};
 use std::{fmt, io, ops};
+use {Poll, Token};
 
 /// A value that may be registered with `Poll`
 ///
@@ -129,7 +129,13 @@ pub trait Evented {
     ///
     /// [`Poll::register`]: ../struct.Poll.html#method.register
     /// [`Registration`]: ../struct.Registration.html
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()>;
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()>;
 
     /// Re-register `self` with the given `Poll` instance.
     ///
@@ -140,7 +146,13 @@ pub trait Evented {
     ///
     /// [`Poll::reregister`]: ../struct.Poll.html#method.reregister
     /// [`SetReadiness::set_readiness`]: ../struct.SetReadiness.html#method.set_readiness
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()>;
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()>;
 
     /// Deregister `self` from the given `Poll` instance
     ///
@@ -155,11 +167,23 @@ pub trait Evented {
 }
 
 impl Evented for Box<Evented> {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().reregister(poll, token, interest, opts)
     }
 
@@ -169,11 +193,23 @@ impl Evented for Box<Evented> {
 }
 
 impl<T: Evented> Evented for Box<T> {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().reregister(poll, token, interest, opts)
     }
 
@@ -183,11 +219,23 @@ impl<T: Evented> Evented for Box<T> {
 }
 
 impl<T: Evented> Evented for ::std::sync::Arc<T> {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.as_ref().reregister(poll, token, interest, opts)
     }
 
@@ -529,11 +577,14 @@ impl fmt::Debug for PollOpt {
         let flags = [
             (PollOpt::edge(), "Edge-Triggered"),
             (PollOpt::level(), "Level-Triggered"),
-            (PollOpt::oneshot(), "OneShot")];
+            (PollOpt::oneshot(), "OneShot"),
+        ];
 
         for &(flag, msg) in &flags {
             if self.contains(flag) {
-                if one { write!(fmt, " | ")? }
+                if one {
+                    write!(fmt, " | ")?
+                }
                 write!(fmt, "{}", msg)?;
 
                 one = true
@@ -1016,11 +1067,14 @@ impl fmt::Debug for Ready {
             (Ready::readable(), "Readable"),
             (Ready::writable(), "Writable"),
             (Ready(ERROR), "Error"),
-            (Ready(HUP), "Hup")];
+            (Ready(HUP), "Hup"),
+        ];
 
         for &(flag, msg) in &flags {
             if self.contains(flag) {
-                if one { write!(fmt, " | ")? }
+                if one {
+                    write!(fmt, " | ")?
+                }
                 write!(fmt, "{}", msg)?;
 
                 one = true
@@ -1068,7 +1122,7 @@ fn test_debug_ready() {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Event {
     kind: Ready,
-    token: Token
+    token: Token,
 }
 
 impl Event {

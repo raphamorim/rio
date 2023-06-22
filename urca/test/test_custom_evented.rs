@@ -1,5 +1,5 @@
-use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use mio::event::Evented;
+use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use std::time::Duration;
 
 #[test]
@@ -8,14 +8,19 @@ fn smoke() {
     let mut events = Events::with_capacity(128);
 
     let (r, set) = Registration::new2();
-    r.register(&poll, Token(0), Ready::readable(), PollOpt::edge()).unwrap();
+    r.register(&poll, Token(0), Ready::readable(), PollOpt::edge())
+        .unwrap();
 
-    let n = poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
+    let n = poll
+        .poll(&mut events, Some(Duration::from_millis(0)))
+        .unwrap();
     assert_eq!(n, 0);
 
     set.set_readiness(Ready::readable()).unwrap();
 
-    let n = poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
+    let n = poll
+        .poll(&mut events, Some(Duration::from_millis(0)))
+        .unwrap();
     assert_eq!(n, 1);
 
     assert_eq!(events.get(0).unwrap().token(), Token(0));
@@ -47,7 +52,8 @@ fn set_readiness_before_register() {
         b1.wait();
 
         // now register
-        poll.register(&r, Token(123), Ready::readable(), PollOpt::edge()).unwrap();
+        poll.register(&r, Token(123), Ready::readable(), PollOpt::edge())
+            .unwrap();
 
         loop {
             let n = poll.poll(&mut events, None).unwrap();
@@ -67,15 +73,15 @@ fn set_readiness_before_register() {
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod stress {
-    use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
     use mio::event::Evented;
+    use mio::{Events, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
     use std::time::Duration;
 
     #[test]
     fn single_threaded_poll() {
-        use std::sync::Arc;
         use std::sync::atomic::AtomicUsize;
         use std::sync::atomic::Ordering::{Acquire, Release};
+        use std::sync::Arc;
         use std::thread;
 
         const NUM_ATTEMPTS: usize = 30;
@@ -87,13 +93,17 @@ mod stress {
             let poll = Poll::new().unwrap();
             let mut events = Events::with_capacity(NUM_REGISTRATIONS);
 
-            let registrations: Vec<_> = (0..NUM_REGISTRATIONS).map(|i| {
-                let (r, s) = Registration::new2();
-                r.register(&poll, Token(i), Ready::readable(), PollOpt::edge()).unwrap();
-                (r, s)
-            }).collect();
+            let registrations: Vec<_> = (0..NUM_REGISTRATIONS)
+                .map(|i| {
+                    let (r, s) = Registration::new2();
+                    r.register(&poll, Token(i), Ready::readable(), PollOpt::edge())
+                        .unwrap();
+                    (r, s)
+                })
+                .collect();
 
-            let mut ready: Vec<_> = (0..NUM_REGISTRATIONS).map(|_| Ready::empty()).collect();
+            let mut ready: Vec<_> =
+                (0..NUM_REGISTRATIONS).map(|_| Ready::empty()).collect();
 
             let remaining = Arc::new(AtomicUsize::new(NUM_THREADS));
 
@@ -109,7 +119,9 @@ mod stress {
                             set_readiness[i].set_readiness(Ready::readable()).unwrap();
                             set_readiness[i].set_readiness(Ready::empty()).unwrap();
                             set_readiness[i].set_readiness(Ready::writable()).unwrap();
-                            set_readiness[i].set_readiness(Ready::readable() | Ready::writable()).unwrap();
+                            set_readiness[i]
+                                .set_readiness(Ready::readable() | Ready::writable())
+                                .unwrap();
                             set_readiness[i].set_readiness(Ready::empty()).unwrap();
                         }
                     }
@@ -125,10 +137,12 @@ mod stress {
             while remaining.load(Acquire) > 0 {
                 // Set interest
                 for (i, &(ref r, _)) in registrations.iter().enumerate() {
-                    r.reregister(&poll, Token(i), Ready::writable(), PollOpt::edge()).unwrap();
+                    r.reregister(&poll, Token(i), Ready::writable(), PollOpt::edge())
+                        .unwrap();
                 }
 
-                poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
+                poll.poll(&mut events, Some(Duration::from_millis(0)))
+                    .unwrap();
 
                 for event in &events {
                     ready[event.token().0] = event.readiness();
@@ -137,14 +151,16 @@ mod stress {
                 // Update registration
                 // Set interest
                 for (i, &(ref r, _)) in registrations.iter().enumerate() {
-                    r.reregister(&poll, Token(i), Ready::readable(), PollOpt::edge()).unwrap();
+                    r.reregister(&poll, Token(i), Ready::readable(), PollOpt::edge())
+                        .unwrap();
                 }
             }
 
             // Finall polls, repeat until readiness-queue empty
             loop {
                 // Might not read all events from custom-event-queue at once, implementation dependend
-                poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
+                poll.poll(&mut events, Some(Duration::from_millis(0)))
+                    .unwrap();
                 if events.is_empty() {
                     // no more events in readiness queue pending
                     break;
@@ -163,9 +179,9 @@ mod stress {
 
     #[test]
     fn multi_threaded_poll() {
-        use std::sync::{Arc, Barrier};
-        use std::sync::atomic::{AtomicUsize};
+        use std::sync::atomic::AtomicUsize;
         use std::sync::atomic::Ordering::{Relaxed, SeqCst};
+        use std::sync::{Arc, Barrier};
         use std::thread;
 
         const ENTRIES: usize = 10_000;
@@ -192,7 +208,9 @@ mod stress {
         // Create entries
         for i in 0..ENTRIES {
             let (registration, set_readiness) = Registration::new2();
-            registration.register(&poll, Token(i), Ready::readable(), PollOpt::edge()).unwrap();
+            registration
+                .register(&poll, Token(i), Ready::readable(), PollOpt::edge())
+                .unwrap();
 
             entries.push(Entry {
                 registration,
@@ -227,12 +245,13 @@ mod stress {
 
                 let mut n = 0;
 
-
                 while total.load(SeqCst) < NUM {
                     // A poll timeout is necessary here because there may be more
                     // than one threads blocked in `poll` when the final wakeup
                     // notification arrives (and only notifies one thread).
-                    n += poll.poll(&mut events, Some(Duration::from_millis(100))).unwrap();
+                    n += poll
+                        .poll(&mut events, Some(Duration::from_millis(100)))
+                        .unwrap();
 
                     let mut num_this_tick = 0;
 
@@ -243,7 +262,8 @@ mod stress {
 
                         loop {
                             if num < PER_ENTRY {
-                                let actual = e.num.compare_and_swap(num, num + 1, Relaxed);
+                                let actual =
+                                    e.num.compare_and_swap(num, num + 1, Relaxed);
 
                                 if actual == num {
                                     num_this_tick += 1;
@@ -265,9 +285,7 @@ mod stress {
             }));
         }
 
-        let _: Vec<_> = threads.into_iter()
-            .map(|th| th.join().unwrap())
-            .collect();
+        let _: Vec<_> = threads.into_iter().map(|th| th.join().unwrap()).collect();
 
         for entry in entries.iter() {
             assert_eq!(PER_ENTRY, entry.num.load(Relaxed));
@@ -279,9 +297,9 @@ mod stress {
         const N: usize = 8;
         const ITER: usize = 1_000;
 
-        use std::sync::{Arc, Barrier};
         use std::sync::atomic::AtomicBool;
         use std::sync::atomic::Ordering::{Acquire, Release};
+        use std::sync::{Arc, Barrier};
         use std::thread;
 
         let poll = Poll::new().unwrap();
@@ -292,7 +310,8 @@ mod stress {
 
         for i in 0..N {
             let (registration, set_readiness) = Registration::new2();
-            poll.register(&registration, Token(i), Ready::readable(), PollOpt::edge()).unwrap();
+            poll.register(&registration, Token(i), Ready::readable(), PollOpt::edge())
+                .unwrap();
 
             registrations.push(registration);
 
@@ -323,7 +342,6 @@ mod stress {
 
         let mut final_ready = vec![false; N];
 
-
         for _ in 0..5 {
             poll.poll(&mut events, None).unwrap();
 
@@ -344,8 +362,8 @@ mod stress {
 
 #[test]
 fn drop_registration_from_non_main_thread() {
-    use std::thread;
     use std::sync::mpsc::channel;
+    use std::thread;
 
     const THREADS: usize = 8;
     const ITERS: usize = 50_000;
@@ -372,7 +390,14 @@ fn drop_registration_from_non_main_thread() {
     let mut index: usize = 0;
     for _ in 0..ITERS {
         let (registration, set_readiness) = Registration::new2();
-        registration.register(&poll, Token(token_index), Ready::readable(), PollOpt::edge()).unwrap();
+        registration
+            .register(
+                &poll,
+                Token(token_index),
+                Ready::readable(),
+                PollOpt::edge(),
+            )
+            .unwrap();
         let _ = senders[index].send((registration, set_readiness));
 
         token_index += 1;
@@ -381,7 +406,14 @@ fn drop_registration_from_non_main_thread() {
             index = 0;
 
             let (registration, set_readiness) = Registration::new2();
-            registration.register(&poll, Token(token_index), Ready::readable(), PollOpt::edge()).unwrap();
+            registration
+                .register(
+                    &poll,
+                    Token(token_index),
+                    Ready::readable(),
+                    PollOpt::edge(),
+                )
+                .unwrap();
             let _ = set_readiness.set_readiness(Ready::readable());
             drop(registration);
             drop(set_readiness);

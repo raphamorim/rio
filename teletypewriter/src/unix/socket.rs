@@ -67,7 +67,9 @@ impl Socket {
                 }
             }
 
-            let fd = Socket { fd: cvt(libc::socket(libc::AF_UNIX, ty, 0))? };
+            let fd = Socket {
+                fd: cvt(libc::socket(libc::AF_UNIX, ty, 0))?,
+            };
             cvt(libc::ioctl(fd.fd, libc::FIOCLEX))?;
             let mut nonblocking = 1 as c_ulong;
             cvt(libc::ioctl(fd.fd, libc::FIONBIO, &mut nonblocking))?;
@@ -88,10 +90,8 @@ impl Socket {
             )) {
                 let flags = ty | SOCK_CLOEXEC | SOCK_NONBLOCK;
                 match cvt(libc::socketpair(libc::AF_UNIX, flags, 0, fds.as_mut_ptr())) {
-                    Ok(_) => {
-                        return Ok((Socket { fd: fds[0] }, Socket { fd: fds[1] }))
-                    }
-                    Err(ref e) if e.raw_os_error() == Some(libc::EINVAL) => {},
+                    Ok(_) => return Ok((Socket { fd: fds[0] }, Socket { fd: fds[1] })),
+                    Err(ref e) if e.raw_os_error() == Some(libc::EINVAL) => {}
                     Err(e) => return Err(e),
                 }
             }
@@ -127,8 +127,9 @@ impl Drop for Socket {
     }
 }
 
-pub unsafe fn sockaddr_un(path: &Path)
-                          -> io::Result<(libc::sockaddr_un, libc::socklen_t)> {
+pub unsafe fn sockaddr_un(
+    path: &Path,
+) -> io::Result<(libc::sockaddr_un, libc::socklen_t)> {
     let mut addr: libc::sockaddr_un = mem::zeroed();
     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
 
@@ -137,12 +138,16 @@ pub unsafe fn sockaddr_un(path: &Path)
     match (bytes.get(0), bytes.len().cmp(&addr.sun_path.len())) {
         // Abstract paths don't need a null terminator
         (Some(&0), Ordering::Greater) => {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                                      "path must be no longer than SUN_LEN"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path must be no longer than SUN_LEN",
+            ));
         }
         (_, Ordering::Greater) | (_, Ordering::Equal) => {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput,
-                                      "path must be shorter than SUN_LEN"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path must be shorter than SUN_LEN",
+            ));
         }
         _ => {}
     }

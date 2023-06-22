@@ -1,18 +1,18 @@
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::unix::io::{IntoRawFd, AsRawFd, FromRawFd, RawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 
 use libc;
 
-use {io, Ready, Poll, PollOpt, Token};
 use event::Evented;
-use unix::EventedFd;
 use sys::unix::cvt;
+use unix::EventedFd;
+use {io, Poll, PollOpt, Ready, Token};
 
 pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);
-        cvt(libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK)).map(|_|())
+        cvt(libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK)).map(|_| ())
     }
 }
 
@@ -38,13 +38,17 @@ pub struct Io {
 impl Io {
     /// Try to clone the FD
     pub fn try_clone(&self) -> io::Result<Io> {
-        Ok(Io { fd: self.fd.try_clone()? })
+        Ok(Io {
+            fd: self.fd.try_clone()?,
+        })
     }
 }
 
 impl FromRawFd for Io {
     unsafe fn from_raw_fd(fd: RawFd) -> Io {
-        Io { fd: File::from_raw_fd(fd) }
+        Io {
+            fd: File::from_raw_fd(fd),
+        }
     }
 }
 
@@ -61,11 +65,23 @@ impl AsRawFd for Io {
 }
 
 impl Evented for Io {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 

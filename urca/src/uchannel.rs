@@ -1,6 +1,6 @@
 //! Thread safe communication channel implementing `Evented`
-use lazycell::{AtomicLazyCell, LazyCell};
 use crate::{Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+use lazycell::{AtomicLazyCell, LazyCell};
 use std::any::Any;
 use std::error;
 use std::sync::atomic::{AtomicUsize, Ordering};

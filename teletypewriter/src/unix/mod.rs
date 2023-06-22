@@ -1,13 +1,12 @@
 #![cfg(unix)]
 
 mod signals;
-mod stream;
 mod socket;
+mod stream;
 
 extern crate libc;
 
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
-use urca::unix::EventedFd;
 use signal_hook::consts as sigconsts;
 use signals::Signals;
 use std::ffi::{CStr, CString};
@@ -20,6 +19,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
+use urca::unix::EventedFd;
 
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;

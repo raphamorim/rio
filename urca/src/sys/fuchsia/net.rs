@@ -1,16 +1,16 @@
-use {io, Evented, Ready, Poll, PollOpt, Token};
-use iovec::IoVec;
 use iovec::unix as iovec;
+use iovec::IoVec;
 use libc;
 use net2::TcpStreamExt;
 #[allow(unused_imports)] // only here for Rust 1.8
 use net2::UdpSocketExt;
-use sys::fuchsia::{recv_from, set_nonblock, EventedFd, DontDrop};
 use std::cmp;
 use std::io::{Read, Write};
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::unix::io::AsRawFd;
 use std::time::Duration;
+use sys::fuchsia::{recv_from, set_nonblock, DontDrop, EventedFd};
+use {io, Evented, Poll, PollOpt, Ready, Token};
 
 #[derive(Debug)]
 pub struct TcpStream {
@@ -34,7 +34,7 @@ impl TcpStream {
         return Ok(TcpStream {
             io: DontDrop::new(stream),
             evented_fd: evented_fd,
-        })
+        });
     }
 
     pub fn from_stream(stream: net::TcpStream) -> TcpStream {
@@ -136,9 +136,7 @@ impl TcpStream {
         unsafe {
             let slice = iovec::as_os_slice_mut(bufs);
             let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
-            let rc = libc::readv(self.io.as_raw_fd(),
-                                 slice.as_ptr(),
-                                 len as libc::c_int);
+            let rc = libc::readv(self.io.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {
                 Err(io::Error::last_os_error())
             } else {
@@ -151,9 +149,8 @@ impl TcpStream {
         unsafe {
             let slice = iovec::as_os_slice(bufs);
             let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
-            let rc = libc::writev(self.io.as_raw_fd(),
-                                  slice.as_ptr(),
-                                  len as libc::c_int);
+            let rc =
+                libc::writev(self.io.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {
                 Err(io::Error::last_os_error())
             } else {
@@ -179,21 +176,23 @@ impl<'a> Write for &'a TcpStream {
 }
 
 impl Evented for TcpStream {
-    fn register(&self,
-                poll: &Poll,
-                token: Token,
-                interest: Ready,
-                opts: PollOpt) -> io::Result<()>
-    {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.register(poll, token, interest, opts)
     }
 
-    fn reregister(&self,
-                  poll: &Poll,
-                  token: Token,
-                  interest: Ready,
-                  opts: PollOpt) -> io::Result<()>
-    {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.reregister(poll, token, interest, opts)
     }
 
@@ -238,10 +237,13 @@ impl TcpListener {
         self.io.accept().and_then(|(s, a)| {
             set_nonblock(s.as_raw_fd())?;
             let evented_fd = unsafe { EventedFd::new(s.as_raw_fd()) };
-            return Ok((TcpStream {
-                io: DontDrop::new(s),
-                evented_fd: evented_fd,
-            }, a))
+            return Ok((
+                TcpStream {
+                    io: DontDrop::new(s),
+                    evented_fd: evented_fd,
+                },
+                a,
+            ));
         })
     }
 
@@ -269,21 +271,23 @@ impl TcpListener {
 }
 
 impl Evented for TcpListener {
-    fn register(&self,
-                poll: &Poll,
-                token: Token,
-                interest: Ready,
-                opts: PollOpt) -> io::Result<()>
-    {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.register(poll, token, interest, opts)
     }
 
-    fn reregister(&self,
-                  poll: &Poll,
-                  token: Token,
-                  interest: Ready,
-                  opts: PollOpt) -> io::Result<()>
-    {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.reregister(poll, token, interest, opts)
     }
 
@@ -315,9 +319,7 @@ impl UdpSocket {
     }
 
     pub fn try_clone(&self) -> io::Result<UdpSocket> {
-        self.io.try_clone().and_then(|io| {
-            UdpSocket::new(io)
-        })
+        self.io.try_clone().and_then(|io| UdpSocket::new(io))
     }
 
     pub fn send_to(&self, buf: &[u8], target: &SocketAddr) -> io::Result<usize> {
@@ -336,8 +338,7 @@ impl UdpSocket {
         self.io.recv(buf)
     }
 
-    pub fn connect(&self, addr: SocketAddr)
-                   -> io::Result<()> {
+    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
         self.io.connect(addr)
     }
 
@@ -381,27 +382,35 @@ impl UdpSocket {
         self.io.set_ttl(ttl)
     }
 
-    pub fn join_multicast_v4(&self,
-                             multiaddr: &Ipv4Addr,
-                             interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn join_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.io.join_multicast_v4(multiaddr, interface)
     }
 
-    pub fn join_multicast_v6(&self,
-                             multiaddr: &Ipv6Addr,
-                             interface: u32) -> io::Result<()> {
+    pub fn join_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.io.join_multicast_v6(multiaddr, interface)
     }
 
-    pub fn leave_multicast_v4(&self,
-                              multiaddr: &Ipv4Addr,
-                              interface: &Ipv4Addr) -> io::Result<()> {
+    pub fn leave_multicast_v4(
+        &self,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()> {
         self.io.leave_multicast_v4(multiaddr, interface)
     }
 
-    pub fn leave_multicast_v6(&self,
-                              multiaddr: &Ipv6Addr,
-                              interface: u32) -> io::Result<()> {
+    pub fn leave_multicast_v6(
+        &self,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()> {
         self.io.leave_multicast_v6(multiaddr, interface)
     }
 
@@ -413,28 +422,29 @@ impl UdpSocket {
         self.io.only_v6()
     }
 
-
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {
         self.io.take_error()
     }
 }
 
 impl Evented for UdpSocket {
-    fn register(&self,
-                poll: &Poll,
-                token: Token,
-                interest: Ready,
-                opts: PollOpt) -> io::Result<()>
-    {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.register(poll, token, interest, opts)
     }
 
-    fn reregister(&self,
-                  poll: &Poll,
-                  token: Token,
-                  interest: Ready,
-                  opts: PollOpt) -> io::Result<()>
-    {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         self.evented_fd.reregister(poll, token, interest, opts)
     }
 

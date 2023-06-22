@@ -1,8 +1,8 @@
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 
 use mio::event::Evented;
 use mio::net::{TcpListener, TcpStream};
-use mio::{Poll, Events, Ready, PollOpt, Token};
+use mio::{Events, Poll, PollOpt, Ready, Token};
 
 #[test]
 fn write_then_drop() {
@@ -14,14 +14,10 @@ fn write_then_drop() {
 
     let poll = Poll::new().unwrap();
 
-    a.register(&poll,
-               Token(1),
-               Ready::readable(),
-               PollOpt::edge()).unwrap();
-    s.register(&poll,
-               Token(3),
-               Ready::empty(),
-               PollOpt::edge()).unwrap();
+    a.register(&poll, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
+    s.register(&poll, Token(3), Ready::empty(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
@@ -32,10 +28,8 @@ fn write_then_drop() {
 
     let mut s2 = a.accept().unwrap().0;
 
-    s2.register(&poll,
-                Token(2),
-                Ready::writable(),
-                PollOpt::edge()).unwrap();
+    s2.register(&poll, Token(2), Ready::writable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
@@ -47,10 +41,8 @@ fn write_then_drop() {
     s2.write_all(&[1, 2, 3, 4]).unwrap();
     drop(s2);
 
-    s.reregister(&poll,
-                 Token(3),
-                 Ready::readable(),
-                 PollOpt::edge()).unwrap();
+    s.reregister(&poll, Token(3), Ready::readable(), PollOpt::edge())
+        .unwrap();
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
         poll.poll(&mut events, None).unwrap();
@@ -73,14 +65,10 @@ fn write_then_deregister() {
 
     let poll = Poll::new().unwrap();
 
-    a.register(&poll,
-               Token(1),
-               Ready::readable(),
-               PollOpt::edge()).unwrap();
-    s.register(&poll,
-               Token(3),
-               Ready::empty(),
-               PollOpt::edge()).unwrap();
+    a.register(&poll, Token(1), Ready::readable(), PollOpt::edge())
+        .unwrap();
+    s.register(&poll, Token(3), Ready::empty(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
@@ -91,10 +79,8 @@ fn write_then_deregister() {
 
     let mut s2 = a.accept().unwrap().0;
 
-    s2.register(&poll,
-                Token(2),
-                Ready::writable(),
-                PollOpt::edge()).unwrap();
+    s2.register(&poll, Token(2), Ready::writable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
@@ -106,10 +92,8 @@ fn write_then_deregister() {
     s2.write_all(&[1, 2, 3, 4]).unwrap();
     s2.deregister(&poll).unwrap();
 
-    s.reregister(&poll,
-                 Token(3),
-                 Ready::readable(),
-                 PollOpt::edge()).unwrap();
+    s.reregister(&poll, Token(3), Ready::readable(), PollOpt::edge())
+        .unwrap();
     let mut events = Events::with_capacity(1024);
     while events.is_empty() {
         poll.poll(&mut events, None).unwrap();

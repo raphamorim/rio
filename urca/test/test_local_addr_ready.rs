@@ -1,6 +1,6 @@
-use {TryWrite};
-use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::{TcpListener, TcpStream};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use TryWrite;
 
 const LISTEN: Token = Token(0);
 const CLIENT: Token = Token(1);
@@ -20,12 +20,12 @@ fn local_addr_ready() {
     let addr = server.local_addr().unwrap();
 
     let poll = Poll::new().unwrap();
-    poll.register(&server, LISTEN, Ready::readable(),
-                        PollOpt::edge()).unwrap();
+    poll.register(&server, LISTEN, Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let sock = TcpStream::connect(&addr).unwrap();
-    poll.register(&sock, CLIENT, Ready::readable(),
-                        PollOpt::edge()).unwrap();
+    poll.register(&sock, CLIENT, Ready::readable(), PollOpt::edge())
+        .unwrap();
 
     let mut events = Events::with_capacity(1024);
 
@@ -43,16 +43,19 @@ fn local_addr_ready() {
             match event.token() {
                 LISTEN => {
                     let sock = handler.listener.accept().unwrap().0;
-                    poll.register(&sock,
-                                  SERVER,
-                                  Ready::writable(),
-                                  PollOpt::edge()).unwrap();
+                    poll.register(&sock, SERVER, Ready::writable(), PollOpt::edge())
+                        .unwrap();
                     handler.accepted = Some(sock);
                 }
                 SERVER => {
                     handler.accepted.as_ref().unwrap().peer_addr().unwrap();
                     handler.accepted.as_ref().unwrap().local_addr().unwrap();
-                    handler.accepted.as_mut().unwrap().try_write(&[1, 2, 3]).unwrap();
+                    handler
+                        .accepted
+                        .as_mut()
+                        .unwrap()
+                        .try_write(&[1, 2, 3])
+                        .unwrap();
                     handler.accepted = None;
                 }
                 CLIENT => {

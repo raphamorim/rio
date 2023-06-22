@@ -1,22 +1,22 @@
 #![allow(deprecated)]
 
-use std::{fmt, io};
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{fmt, io};
 
 use lazycell::AtomicLazyCell;
 
-use winapi::*;
 use miow;
 use miow::iocp::{CompletionPort, CompletionStatus};
+use winapi::*;
 
 use event_imp::{Event, Evented, Ready};
 use poll::{self, Poll};
 use sys::windows::buffer_pool::BufferPool;
-use {Token, PollOpt};
+use {PollOpt, Token};
 
 /// Each Selector has a globally unique(ish) ID associated with it. This ID
 /// gets tracked by `TcpStream`, `TcpListener`, etc... when they are first
@@ -55,21 +55,21 @@ impl Selector {
         // offset by 1 to avoid choosing 0 as the id of a selector
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed) + 1;
 
-        CompletionPort::new(0).map(|cp| {
-            Selector {
-                inner: Arc::new(SelectorInner {
-                    id: id,
-                    port: cp,
-                    buffers: Mutex::new(BufferPool::new(256)),
-                }),
-            }
+        CompletionPort::new(0).map(|cp| Selector {
+            inner: Arc::new(SelectorInner {
+                id: id,
+                port: cp,
+                buffers: Mutex::new(BufferPool::new(256)),
+            }),
         })
     }
 
-    pub fn select(&self,
-                  events: &mut Events,
-                  awakener: Token,
-                  timeout: Option<Duration>) -> io::Result<bool> {
+    pub fn select(
+        &self,
+        events: &mut Events,
+        awakener: Token,
+        timeout: Option<Duration>,
+    ) -> io::Result<bool> {
         trace!("select; timeout={:?}", timeout);
 
         // Clear out the previous list of I/O events and get some more!
@@ -92,9 +92,8 @@ impl Selector {
                 continue;
             }
 
-            let callback = unsafe {
-                (*(status.overlapped() as *mut Overlapped)).callback
-            };
+            let callback =
+                unsafe { (*(status.overlapped() as *mut Overlapped)).callback };
 
             trace!("select; -> got overlapped");
             callback(status.entry());
@@ -112,7 +111,9 @@ impl Selector {
     /// Gets a new reference to this selector, although all underlying data
     /// structures will refer to the same completion port.
     pub fn clone_ref(&self) -> Selector {
-        Selector { inner: self.inner.clone() }
+        Selector {
+            inner: self.inner.clone(),
+        }
     }
 
     /// Return the `Selector`'s identifier
@@ -157,7 +158,9 @@ impl Binding {
     ///
     /// Won't actually do anything until associated with a `Poll` loop.
     pub fn new() -> Binding {
-        Binding { selector: AtomicLazyCell::new() }
+        Binding {
+            selector: AtomicLazyCell::new(),
+        }
     }
 
     /// Registers a new handle with the `Poll` specified, also assigning the
@@ -176,10 +179,12 @@ impl Binding {
     /// Specifically they must all be instances of the `Overlapped` type in
     /// this crate. More information about this can be found on the
     /// `windows` module in this crate.
-    pub unsafe fn register_handle(&self,
-                                  handle: &AsRawHandle,
-                                  token: Token,
-                                  poll: &Poll) -> io::Result<()> {
+    pub unsafe fn register_handle(
+        &self,
+        handle: &AsRawHandle,
+        token: Token,
+        poll: &Poll,
+    ) -> io::Result<()> {
         let selector = poll::selector(poll);
 
         // Ignore errors, we'll see them on the next line.
@@ -190,10 +195,12 @@ impl Binding {
     }
 
     /// Same as `register_handle` but for sockets.
-    pub unsafe fn register_socket(&self,
-                                  handle: &AsRawSocket,
-                                  token: Token,
-                                  poll: &Poll) -> io::Result<()> {
+    pub unsafe fn register_socket(
+        &self,
+        handle: &AsRawSocket,
+        token: Token,
+        poll: &Poll,
+    ) -> io::Result<()> {
         let selector = poll::selector(poll);
         drop(self.selector.fill(selector.inner.clone()));
         self.check_same_selector(poll)?;
@@ -217,18 +224,22 @@ impl Binding {
     ///
     /// This function is unsafe for similar reasons to `register`. That is,
     /// there may be pending I/O events and such which aren't handled correctly.
-    pub unsafe fn reregister_handle(&self,
-                                    _handle: &AsRawHandle,
-                                    _token: Token,
-                                    poll: &Poll) -> io::Result<()> {
+    pub unsafe fn reregister_handle(
+        &self,
+        _handle: &AsRawHandle,
+        _token: Token,
+        poll: &Poll,
+    ) -> io::Result<()> {
         self.check_same_selector(poll)
     }
 
     /// Same as `reregister_handle`, but for sockets.
-    pub unsafe fn reregister_socket(&self,
-                                    _socket: &AsRawSocket,
-                                    _token: Token,
-                                    poll: &Poll) -> io::Result<()> {
+    pub unsafe fn reregister_socket(
+        &self,
+        _socket: &AsRawSocket,
+        _token: Token,
+        poll: &Poll,
+    ) -> io::Result<()> {
         self.check_same_selector(poll)
     }
 
@@ -245,16 +256,20 @@ impl Binding {
     ///
     /// This function is unsafe for similar reasons to `register`. That is,
     /// there may be pending I/O events and such which aren't handled correctly.
-    pub unsafe fn deregister_handle(&self,
-                                    _handle: &AsRawHandle,
-                                    poll: &Poll) -> io::Result<()> {
+    pub unsafe fn deregister_handle(
+        &self,
+        _handle: &AsRawHandle,
+        poll: &Poll,
+    ) -> io::Result<()> {
         self.check_same_selector(poll)
     }
 
     /// Same as `deregister_handle`, but for sockets.
-    pub unsafe fn deregister_socket(&self,
-                                    _socket: &AsRawSocket,
-                                    poll: &Poll) -> io::Result<()> {
+    pub unsafe fn deregister_socket(
+        &self,
+        _socket: &AsRawSocket,
+        poll: &Poll,
+    ) -> io::Result<()> {
         self.check_same_selector(poll)
     }
 
@@ -262,16 +277,14 @@ impl Binding {
         let selector = poll::selector(poll);
         match self.selector.borrow() {
             Some(prev) if prev.identical(&selector.inner) => Ok(()),
-            Some(_) |
-            None => Err(other("socket already registered")),
+            Some(_) | None => Err(other("socket already registered")),
         }
     }
 }
 
 impl fmt::Debug for Binding {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Binding")
-            .finish()
+        f.debug_struct("Binding").finish()
     }
 }
 
@@ -348,14 +361,15 @@ impl ReadyBinding {
     /// Returns an error if we're already registered with another event loop,
     /// and otherwise just reassociates ourselves with the event loop to
     /// possible change tokens.
-    pub fn register_socket(&mut self,
-                           socket: &AsRawSocket,
-                           poll: &Poll,
-                           token: Token,
-                           events: Ready,
-                           opts: PollOpt,
-                           registration: &Mutex<Option<poll::Registration>>)
-                           -> io::Result<()> {
+    pub fn register_socket(
+        &mut self,
+        socket: &AsRawSocket,
+        poll: &Poll,
+        token: Token,
+        events: Ready,
+        opts: PollOpt,
+        registration: &Mutex<Option<poll::Registration>>,
+    ) -> io::Result<()> {
         trace!("register {:?} {:?}", token, events);
         unsafe {
             self.binding.register_socket(socket, token, poll)?;
@@ -368,41 +382,49 @@ impl ReadyBinding {
     }
 
     /// Implementation of `Evented::reregister` function.
-    pub fn reregister_socket(&mut self,
-                             socket: &AsRawSocket,
-                             poll: &Poll,
-                             token: Token,
-                             events: Ready,
-                             opts: PollOpt,
-                             registration: &Mutex<Option<poll::Registration>>)
-                             -> io::Result<()> {
+    pub fn reregister_socket(
+        &mut self,
+        socket: &AsRawSocket,
+        poll: &Poll,
+        token: Token,
+        events: Ready,
+        opts: PollOpt,
+        registration: &Mutex<Option<poll::Registration>>,
+    ) -> io::Result<()> {
         trace!("reregister {:?} {:?}", token, events);
         unsafe {
             self.binding.reregister_socket(socket, token, poll)?;
         }
 
-        registration.lock().unwrap()
-                    .as_mut().unwrap()
-                    .reregister(poll, token, events, opts)
+        registration
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .reregister(poll, token, events, opts)
     }
 
     /// Implementation of the `Evented::deregister` function.
     ///
     /// Doesn't allow registration with another event loop, just shuts down
     /// readiness notifications and such.
-    pub fn deregister(&mut self,
-                      socket: &AsRawSocket,
-                      poll: &Poll,
-                      registration: &Mutex<Option<poll::Registration>>)
-                      -> io::Result<()> {
+    pub fn deregister(
+        &mut self,
+        socket: &AsRawSocket,
+        poll: &Poll,
+        registration: &Mutex<Option<poll::Registration>>,
+    ) -> io::Result<()> {
         trace!("deregistering");
         unsafe {
             self.binding.deregister_socket(socket, poll)?;
         }
 
-        registration.lock().unwrap()
-                    .as_ref().unwrap()
-                    .deregister(poll)
+        registration
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .deregister(poll)
     }
 }
 
@@ -514,16 +536,13 @@ impl Overlapped {
     /// This can be useful when only a shared borrow is held and the overlapped
     /// pointer needs to be passed down to winapi.
     pub fn as_mut_ptr(&self) -> *mut OVERLAPPED {
-        unsafe {
-            (*self.inner.get()).raw()
-        }
+        unsafe { (*self.inner.get()).raw() }
     }
 }
 
 impl fmt::Debug for Overlapped {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Overlapped")
-            .finish()
+        f.debug_struct("Overlapped").finish()
     }
 }
 

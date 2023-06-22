@@ -36,13 +36,17 @@ macro_rules! implement_signals_with_pipe {
 
             /// A constructor with specifying an exfiltrator to pass information out of the signal
             /// handlers.
-            pub fn with_exfiltrator<I, S>(signals: I, exfiltrator: E) -> Result<Self, Error>
+            pub fn with_exfiltrator<I, S>(
+                signals: I,
+                exfiltrator: E,
+            ) -> Result<Self, Error>
             where
                 I: IntoIterator<Item = S>,
                 S: Borrow<c_int>,
             {
                 let (read, write) = Pipe::pair()?;
-                let delivery = SignalDelivery::with_pipe(read, write, exfiltrator, signals)?;
+                let delivery =
+                    SignalDelivery::with_pipe(read, write, exfiltrator, signals)?;
                 Ok(Self(delivery))
             }
 

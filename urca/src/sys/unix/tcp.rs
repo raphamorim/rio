@@ -1,15 +1,15 @@
 use std::fmt;
 use std::io::{Read, Write};
 use std::net::{self, SocketAddr};
-use std::os::unix::io::{RawFd, FromRawFd, IntoRawFd, AsRawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::time::Duration;
 
+use iovec::IoVec;
 use libc;
 use net2::TcpStreamExt;
-use iovec::IoVec;
 
-use {io, Ready, Poll, PollOpt, Token};
 use event::Evented;
+use {io, Poll, PollOpt, Ready, Token};
 
 use sys::unix::eventedfd::EventedFd;
 use sys::unix::io::set_nonblock;
@@ -33,15 +33,11 @@ impl TcpStream {
             Err(e) => return Err(e),
         }
 
-        Ok(TcpStream {
-            inner: stream,
-        })
+        Ok(TcpStream { inner: stream })
     }
 
     pub fn from_stream(stream: net::TcpStream) -> TcpStream {
-        TcpStream {
-            inner: stream,
-        }
+        TcpStream { inner: stream }
     }
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
@@ -53,11 +49,7 @@ impl TcpStream {
     }
 
     pub fn try_clone(&self) -> io::Result<TcpStream> {
-        self.inner.try_clone().map(|s| {
-            TcpStream {
-                inner: s,
-            }
-        })
+        self.inner.try_clone().map(|s| TcpStream { inner: s })
     }
 
     pub fn shutdown(&self, how: net::Shutdown) -> io::Result<()> {
@@ -154,13 +146,23 @@ impl<'a> Write for &'a TcpStream {
 }
 
 impl Evented for TcpStream {
-    fn register(&self, poll: &Poll, token: Token,
-                interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token,
-                  interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 
@@ -198,9 +200,7 @@ impl AsRawFd for TcpStream {
 impl TcpListener {
     pub fn new(inner: net::TcpListener) -> io::Result<TcpListener> {
         set_nonblock(inner.as_raw_fd())?;
-        Ok(TcpListener {
-            inner,
-        })
+        Ok(TcpListener { inner })
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -208,11 +208,7 @@ impl TcpListener {
     }
 
     pub fn try_clone(&self) -> io::Result<TcpListener> {
-        self.inner.try_clone().map(|s| {
-            TcpListener {
-                inner: s,
-            }
-        })
+        self.inner.try_clone().map(|s| TcpListener { inner: s })
     }
 
     pub fn accept(&self) -> io::Result<(net::TcpStream, SocketAddr)> {
@@ -243,13 +239,23 @@ impl TcpListener {
 }
 
 impl Evented for TcpListener {
-    fn register(&self, poll: &Poll, token: Token,
-                interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token,
-                  interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 
@@ -283,4 +289,3 @@ impl AsRawFd for TcpListener {
         self.inner.as_raw_fd()
     }
 }
-
