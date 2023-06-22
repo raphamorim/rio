@@ -10,7 +10,7 @@ macro_rules! dlsym {
         static $name: ::sys::unix::dlsym::DlSym<unsafe extern fn($($t),*) -> $ret> =
             ::sys::unix::dlsym::DlSym {
                 name: concat!(stringify!($name), "\0"),
-                addr: ::std::sync::atomic::ATOMIC_USIZE_INIT,
+                addr: ::std::sync::atomic::AtomicUsize::new(0),
                 _marker: ::std::marker::PhantomData,
             };
     )
