@@ -30,9 +30,9 @@ use {Poll, Token};
 /// Implementing `Evented` on a struct containing a socket:
 ///
 /// ```
-/// use mio::{Ready, Poll, PollOpt, Token};
-/// use mio::event::Evented;
-/// use mio::net::TcpStream;
+/// use urca::{Ready, Poll, PollOpt, Token};
+/// use urca::event::Evented;
+/// use urca::net::TcpStream;
 ///
 /// use std::io;
 ///
@@ -65,8 +65,8 @@ use {Poll, Token};
 /// Implement `Evented` using [`Registration`] and [`SetReadiness`].
 ///
 /// ```
-/// use mio::{Ready, Registration, Poll, PollOpt, Token};
-/// use mio::event::Evented;
+/// use urca::{Ready, Registration, Poll, PollOpt, Token};
+/// use urca::event::Evented;
 ///
 /// use std::io;
 /// use std::time::Instant;
@@ -254,7 +254,7 @@ impl<T: Evented> Evented for ::std::sync::Arc<T> {
 /// # Examples
 ///
 /// ```
-/// use mio::PollOpt;
+/// use urca::PollOpt;
 ///
 /// let opts = PollOpt::edge() | PollOpt::oneshot();
 ///
@@ -275,7 +275,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::empty();
     ///
@@ -295,7 +295,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::edge();
     ///
@@ -315,7 +315,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::level();
     ///
@@ -335,7 +335,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::oneshot();
     ///
@@ -371,7 +371,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::edge();
     ///
@@ -391,7 +391,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::level();
     ///
@@ -411,7 +411,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::oneshot();
     ///
@@ -452,7 +452,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::oneshot();
     ///
@@ -461,7 +461,7 @@ impl PollOpt {
     /// ```
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::oneshot() | PollOpt::edge();
     ///
@@ -470,7 +470,7 @@ impl PollOpt {
     /// ```
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let opt = PollOpt::oneshot() | PollOpt::edge();
     ///
@@ -492,7 +492,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let mut opt = PollOpt::empty();
     /// opt.insert(PollOpt::oneshot());
@@ -511,7 +511,7 @@ impl PollOpt {
     /// # Examples
     ///
     /// ```
-    /// use mio::PollOpt;
+    /// use urca::PollOpt;
     ///
     /// let mut opt = PollOpt::oneshot();
     /// opt.remove(PollOpt::oneshot());
@@ -627,7 +627,7 @@ fn test_debug_pollopt() {
 /// # Examples
 ///
 /// ```
-/// use mio::Ready;
+/// use urca::Ready;
 ///
 /// let ready = Ready::readable() | Ready::writable();
 ///
@@ -657,7 +657,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::empty();
     ///
@@ -683,7 +683,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::readable();
     ///
@@ -703,7 +703,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::writable();
     ///
@@ -742,7 +742,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::all();
     ///
@@ -763,7 +763,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::empty();
     /// assert!(ready.is_empty());
@@ -790,7 +790,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::readable();
     ///
@@ -810,7 +810,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::writable();
     ///
@@ -846,7 +846,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let mut readiness = Ready::empty();
     /// readiness.insert(Ready::readable());
@@ -866,7 +866,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let mut readiness = Ready::readable();
     /// readiness.remove(Ready::readable());
@@ -898,7 +898,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let readiness = Ready::readable();
     ///
@@ -907,7 +907,7 @@ impl Ready {
     /// ```
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let readiness = Ready::readable() | Ready::writable();
     ///
@@ -916,7 +916,7 @@ impl Ready {
     /// ```
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let readiness = Ready::readable() | Ready::writable();
     ///
@@ -947,7 +947,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::readable();
     /// let ready_usize = ready.as_usize();
@@ -972,7 +972,7 @@ impl Ready {
     /// # Examples
     ///
     /// ```
-    /// use mio::Ready;
+    /// use urca::Ready;
     ///
     /// let ready = Ready::readable();
     /// let ready_usize = ready.as_usize();
@@ -1106,8 +1106,8 @@ fn test_debug_ready() {
 /// # Examples
 ///
 /// ```
-/// use mio::{Ready, Token};
-/// use mio::event::Event;
+/// use urca::{Ready, Token};
+/// use urca::event::Event;
 ///
 /// let event = Event::new(Ready::readable() | Ready::writable(), Token(0));
 ///
@@ -1131,8 +1131,8 @@ impl Event {
     /// # Examples
     ///
     /// ```
-    /// use mio::{Ready, Token};
-    /// use mio::event::Event;
+    /// use urca::{Ready, Token};
+    /// use urca::event::Event;
     ///
     /// let event = Event::new(Ready::readable() | Ready::writable(), Token(0));
     ///
@@ -1151,8 +1151,8 @@ impl Event {
     /// # Examples
     ///
     /// ```
-    /// use mio::{Ready, Token};
-    /// use mio::event::Event;
+    /// use urca::{Ready, Token};
+    /// use urca::event::Event;
     ///
     /// let event = Event::new(Ready::readable() | Ready::writable(), Token(0));
     ///
@@ -1174,8 +1174,8 @@ impl Event {
     /// # Examples
     ///
     /// ```
-    /// use mio::{Ready, Token};
-    /// use mio::event::Event;
+    /// use urca::{Ready, Token};
+    /// use urca::event::Event;
     ///
     /// let event = Event::new(Ready::readable() | Ready::writable(), Token(0));
     ///

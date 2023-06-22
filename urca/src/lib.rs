@@ -45,8 +45,8 @@
 //! # Example
 //!
 //! ```
-//! use mio::*;
-//! use mio::net::{TcpListener, TcpStream};
+//! use urca::*;
+//! use urca::net::{TcpListener, TcpStream};
 //!
 //! // Setup some tokens to allow us to identify which event is
 //! // for which socket.

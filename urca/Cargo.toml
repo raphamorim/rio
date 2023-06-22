@@ -17,10 +17,6 @@ include       = [
   "src/**/*.rs"
 ]
 
-[features]
-with-deprecated = []
-default = ["with-deprecated"]
-
 [dependencies]
 log = { workspace = true }
 iovec = "0.1.1"
@@ -37,7 +33,7 @@ libc = "0.2.140"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.2.6"
-miow   = "0.2.2"
+miow   = "0.5.0"
 kernel32-sys = "0.2"
 
 [dev-dependencies]

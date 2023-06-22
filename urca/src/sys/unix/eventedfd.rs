@@ -30,9 +30,9 @@ use {io, poll, Poll, PollOpt, Ready, Token};
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Ready, Poll, PollOpt, Token};
-/// use mio::unix::EventedFd;
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Ready, Poll, PollOpt, Token};
+/// use urca::unix::EventedFd;
 ///
 /// use std::os::unix::io::AsRawFd;
 /// use std::net::TcpListener;
@@ -56,9 +56,9 @@ use {io, poll, Poll, PollOpt, Ready, Token};
 /// Implementing [`Evented`] for a custom type backed by a [`RawFd`].
 ///
 /// ```
-/// use mio::{Ready, Poll, PollOpt, Token};
-/// use mio::event::Evented;
-/// use mio::unix::EventedFd;
+/// use urca::{Ready, Poll, PollOpt, Token};
+/// use urca::event::Evented;
+/// use urca::unix::EventedFd;
 ///
 /// use std::os::unix::io::RawFd;
 /// use std::io;

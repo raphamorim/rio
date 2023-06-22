@@ -9,6 +9,7 @@ use crate::event::{OnResize, WindowSize};
 use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
 
+mod pipes;
 mod child;
 mod conpty;
 

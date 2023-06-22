@@ -3,7 +3,7 @@ use std::io::Error;
 use std::os::windows::io::IntoRawHandle;
 use std::{mem, ptr};
 
-use mio_anonymous_pipes::{EventedAnonRead, EventedAnonWrite};
+use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 
 use windows_sys::core::{HRESULT, PWSTR};
 use windows_sys::Win32::Foundation::{HANDLE, S_OK};
