@@ -1,7 +1,7 @@
 extern crate libc;
 
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
-use mio::unix::EventedFd;
+use metal::unix::EventedFd;
 use signal_hook::consts as sigconsts;
 use signal_hook_mio::v0_6::Signals;
 use std::ffi::{CStr, CString};
@@ -67,8 +67,8 @@ fn default_shell_command(shell: &str) {
 pub struct Pty {
     pub child: Child,
     file: File,
-    token: mio::Token,
-    signals_token: mio::Token,
+    token: metal::Token,
+    signals_token: metal::Token,
     signals: Signals,
 }
 
@@ -122,7 +122,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn read_token(&self) -> mio::Token {
+    fn read_token(&self) -> metal::Token {
         self.token
     }
 
@@ -132,7 +132,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn write_token(&self) -> mio::Token {
+    fn write_token(&self) -> metal::Token {
         self.token
     }
 
@@ -144,10 +144,10 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &mio::Poll,
-        token: &mut dyn Iterator<Item = mio::Token>,
-        interest: mio::Ready,
-        poll_opts: mio::PollOpt,
+        poll: &metal::Poll,
+        token: &mut dyn Iterator<Item = metal::Token>,
+        interest: metal::Ready,
+        poll_opts: metal::PollOpt,
     ) -> io::Result<()> {
         self.token = token.next().unwrap();
         poll.register(
@@ -161,16 +161,16 @@ impl ProcessReadWrite for Pty {
         poll.register(
             &self.signals,
             self.signals_token,
-            mio::Ready::readable(),
-            mio::PollOpt::level(),
+            metal::Ready::readable(),
+            metal::PollOpt::level(),
         )
     }
 
     fn reregister(
         &mut self,
-        poll: &mio::Poll,
-        interest: mio::Ready,
-        poll_opts: mio::PollOpt,
+        poll: &metal::Poll,
+        interest: metal::Ready,
+        poll_opts: metal::PollOpt,
     ) -> io::Result<()> {
         poll.reregister(
             &EventedFd(&self.file.as_raw_fd()),
@@ -182,12 +182,12 @@ impl ProcessReadWrite for Pty {
         poll.reregister(
             &self.signals,
             self.signals_token,
-            mio::Ready::readable(),
-            mio::PollOpt::level(),
+            metal::Ready::readable(),
+            metal::PollOpt::level(),
         )
     }
 
-    fn deregister(&mut self, poll: &mio::Poll) -> io::Result<()> {
+    fn deregister(&mut self, poll: &metal::Poll) -> io::Result<()> {
         poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
         poll.deregister(&self.signals)
     }
@@ -358,8 +358,8 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 child,
                 signals,
                 file: unsafe { File::from_raw_fd(main) },
-                token: mio::Token(0),
-                signals_token: mio::Token(0),
+                token: metal::Token(0),
+                signals_token: metal::Token(0),
             }
         }
         _ => panic!("Fork failed."),
@@ -487,7 +487,7 @@ impl EventedPty for Pty {
     }
 
     #[inline]
-    fn child_event_token(&self) -> mio::Token {
+    fn child_event_token(&self) -> metal::Token {
         self.signals_token
     }
 }

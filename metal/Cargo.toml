@@ -1,0 +1,57 @@
+[package]
+
+name          = "metal"
+# When releasing to crates.io:
+# - Update html_root_url.
+# - Update CHANGELOG.md.
+# - Update doc URL.
+# - Create git tag
+version       = "0.6.23"
+license       = "MIT"
+authors       = ["Carl Lerche <me@carllerche.com>", "Raphael Amorim <rapha850@gmail.com"]
+description   = "Lightweight non-blocking IO"
+documentation = "https://docs.rs/mio/0.6.23/mio/"
+homepage      = "https://github.com/tokio-rs/mio"
+repository    = "https://github.com/tokio-rs/mio"
+readme        = "README.md"
+keywords      = ["io", "async", "non-blocking"]
+categories    = ["asynchronous"]
+include       = [
+  "Cargo.toml",
+  "LICENSE",
+  "README.md",
+  "CHANGELOG.md",
+  "src/**/*.rs"
+]
+
+[features]
+with-deprecated = []
+default = ["with-deprecated"]
+
+[dependencies]
+log      = "0.4"
+slab     = "0.4.0"
+net2     = "0.2.36"
+iovec    = "0.1.1"
+cfg-if   = "0.1.9"
+
+[target.'cfg(target_os = "fuchsia")'.dependencies]
+fuchsia-zircon = "0.3.2"
+fuchsia-zircon-sys = "0.3.2"
+
+[target.'cfg(unix)'.dependencies]
+libc   = "0.2.54"
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.2.6"
+miow   = "0.2.2"
+kernel32-sys = "0.2"
+
+[dev-dependencies]
+env_logger = { version = "0.4.0", default-features = false }
+tempdir    = "0.3.4"
+bytes      = "0.3.0"
+
+[[test]]
+name = "test"
+path = "test/mod.rs"
