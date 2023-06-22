@@ -280,7 +280,8 @@ impl State {
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else if is_selected {
-                let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN) {
+                let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN)
+                {
                     ' '
                 } else {
                     square.c

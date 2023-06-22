@@ -30,8 +30,7 @@ pub struct Pty {
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
 pub fn create_pty(config: &PtyConfig, window_size: WindowSize, _window_id: u64) -> Pty {
-    conpty::new(config, window_size)
-        .ok_or_else(|| panic!("failed to spawn conpty"))
+    conpty::new(config, window_size).ok_or_else(|| panic!("failed to spawn conpty"))
 }
 
 impl Pty {
@@ -69,14 +68,34 @@ impl EventedReadWrite for Pty {
         self.write_token = token.next().unwrap();
 
         if interest.is_readable() {
-            poll.register(&self.conout, self.read_token, mio::Ready::readable(), poll_opts)?
+            poll.register(
+                &self.conout,
+                self.read_token,
+                mio::Ready::readable(),
+                poll_opts,
+            )?
         } else {
-            poll.register(&self.conout, self.read_token, mio::Ready::empty(), poll_opts)?
+            poll.register(
+                &self.conout,
+                self.read_token,
+                mio::Ready::empty(),
+                poll_opts,
+            )?
         }
         if interest.is_writable() {
-            poll.register(&self.conin, self.write_token, mio::Ready::writable(), poll_opts)?
+            poll.register(
+                &self.conin,
+                self.write_token,
+                mio::Ready::writable(),
+                poll_opts,
+            )?
         } else {
-            poll.register(&self.conin, self.write_token, mio::Ready::empty(), poll_opts)?
+            poll.register(
+                &self.conin,
+                self.write_token,
+                mio::Ready::empty(),
+                poll_opts,
+            )?
         }
 
         self.child_event_token = token.next().unwrap();
@@ -98,14 +117,34 @@ impl EventedReadWrite for Pty {
         poll_opts: mio::PollOpt,
     ) -> io::Result<()> {
         if interest.is_readable() {
-            poll.reregister(&self.conout, self.read_token, mio::Ready::readable(), poll_opts)?;
+            poll.reregister(
+                &self.conout,
+                self.read_token,
+                mio::Ready::readable(),
+                poll_opts,
+            )?;
         } else {
-            poll.reregister(&self.conout, self.read_token, mio::Ready::empty(), poll_opts)?;
+            poll.reregister(
+                &self.conout,
+                self.read_token,
+                mio::Ready::empty(),
+                poll_opts,
+            )?;
         }
         if interest.is_writable() {
-            poll.reregister(&self.conin, self.write_token, mio::Ready::writable(), poll_opts)?;
+            poll.reregister(
+                &self.conin,
+                self.write_token,
+                mio::Ready::writable(),
+                poll_opts,
+            )?;
         } else {
-            poll.reregister(&self.conin, self.write_token, mio::Ready::empty(), poll_opts)?;
+            poll.reregister(
+                &self.conin,
+                self.write_token,
+                mio::Ready::empty(),
+                poll_opts,
+            )?;
         }
 
         poll.reregister(

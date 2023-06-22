@@ -6,10 +6,6 @@ mod mouse;
 mod state;
 pub mod window;
 
-use crate::event::{EventP, RioEvent, RioEventType};
-use crate::scheduler::{Scheduler, Topic, TimerId};
-use std::cmp::min;
-use std::cmp::max;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Column, Line};
@@ -29,14 +25,13 @@ use crate::selection::{Selection, SelectionType};
 use colors::term::List;
 use messenger::Messenger;
 use state::State;
+use std::cmp::max;
+use std::cmp::min;
 use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ModifiersState;
-
-/// Interval for mouse scrolling during selection outside of the boundaries.
-const SELECTION_SCROLLING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(15);
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -457,45 +452,14 @@ impl Screen {
 
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         self.copy_selection(ClipboardType::Selection);
-        let mut terminal = self.ctx().current().terminal.lock();
-        terminal.selection = Some(Selection::new(ty, point, side));
+        let mut terminal = self.context_manager.current().terminal.lock();
+        let selection = Selection::new(ty, point, side);
+        self.state.set_selection(selection.to_range(&terminal));
+        terminal.selection = Some(selection);
         drop(terminal);
     }
 
-    pub fn update_selection_scrolling(&self, mouse_y: f64, scheduler: &mut Scheduler) {
-        let scale_factor = self.sugarloaf.layout.scale_factor;
-        // let window_id = self.ctx.window().id();
-
-        // Scale constants by DPI.
-        let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
-        let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
-
-        // Compute the height of the scrolling areas.
-        let end_top = max(min_height, constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = constants::PADDING_Y + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_bound;
-        let start_bottom = min(self.sugarloaf.layout.height_u32 as i32 - min_height, text_area_bottom as i32) as f64;
-
-        // Get distance from closest window boundary.
-        let delta = if mouse_y < end_top {
-            end_top - mouse_y + step
-        } else if mouse_y >= start_bottom.into() {
-            start_bottom - mouse_y - step
-        } else {
-            scheduler.unschedule(TimerId::new(Topic::SelectionScrolling, 0));
-            return;
-        };
-
-        // Scale number of lines scrolled based on distance to boundary.
-        let event = EventP::new(RioEventType::Rio(RioEvent::Scroll(Scroll::Delta((delta / step) as i32))));
-
-        // Schedule event.
-        let timer_id = TimerId::new(Topic::SelectionScrolling, 0);
-        scheduler.unschedule(timer_id);
-        scheduler.schedule(event, SELECTION_SCROLLING_INTERVAL, true, timer_id);
-    }
-
-    // pub fn update_selection(&mut self, mut point: Pos, side: Side) {
-    pub fn update_selection(&mut self, mut pos: Pos) {
+    pub fn update_selection(&mut self, mut pos: Pos, side: Side) {
         let mut terminal = self.context_manager.current().terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
@@ -506,8 +470,7 @@ impl Screen {
         pos.row = std::cmp::min(pos.row, terminal.bottommost_line());
 
         // Update selection.
-        // selection.update(pos, side);
-        selection.update(pos, Side::Left);
+        selection.update(pos, side);
 
         // Move vi cursor and expand selection.
         if terminal.mode().contains(Mode::VI) {
@@ -520,8 +483,81 @@ impl Screen {
         drop(terminal);
     }
 
-    #[inline]
     #[allow(unused)]
+    pub fn update_selection_scrolling(&self, mouse_y: f64) {
+        let scale_factor = self.sugarloaf.layout.scale_factor;
+        let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
+        let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
+
+        // Compute the height of the scrolling areas.
+        let end_top = max(min_height, constants::PADDING_Y as i32) as f64;
+        let text_area_bottom = constants::PADDING_Y
+            + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_bound;
+        let start_bottom = min(
+            self.sugarloaf.layout.height_u32 as i32 - min_height,
+            text_area_bottom as i32,
+        ) as f64;
+
+        // Get distance from closest window boundary.
+        let delta = if mouse_y < end_top {
+            end_top - mouse_y + step
+        } else if mouse_y >= start_bottom {
+            start_bottom - mouse_y - step
+        } else {
+            // scheduler.unschedule(TimerId::new(Topic::SelectionScrolling, 0));
+            return;
+        };
+
+        // Scale number of lines scrolled based on distance to boundary.
+        // let event = EventP::new(RioEventType::Rio(RioEvent::Scroll(Scroll::Delta((delta / step) as i32))));
+
+        let mut terminal = self.ctx().current().terminal.lock();
+        terminal.scroll_display(Scroll::Delta((delta / step) as i32));
+        drop(terminal);
+
+        // Schedule event.
+        // let timer_id = TimerId::new(Topic::SelectionScrolling, 0);
+        // scheduler.unschedule(timer_id);
+        // scheduler.schedule(event, SELECTION_SCROLLING_INTERVAL, true, timer_id);
+    }
+
+    #[inline]
+    pub fn contains_point(&self, x: usize, y: usize) -> bool {
+        let width = self.sugarloaf.layout.style.text_scale / 2.0;
+        x <= (self.sugarloaf.layout.padding.x
+            + self.sugarloaf.layout.columns as f32 * width) as usize
+            && x > self.sugarloaf.layout.padding.x as usize
+            && y <= (self.sugarloaf.layout.padding.y
+                + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_size)
+                as usize
+            && y > self.sugarloaf.layout.padding.y as usize
+    }
+
+    #[inline]
+    pub fn side_by_pos(&self, x: usize) -> Side {
+        let width = (self.sugarloaf.layout.style.text_scale / 2.0) as usize;
+
+        let cell_x = x.saturating_sub(self.sugarloaf.layout.padding.x as usize) % width;
+        let half_cell_width = width / 2;
+
+        let additional_padding = (self.sugarloaf.layout.width
+            - self.sugarloaf.layout.padding.x * 2.)
+            % width as f32;
+        let end_of_grid = self.sugarloaf.layout.width
+            - self.sugarloaf.layout.padding.x
+            - additional_padding;
+
+        if cell_x > half_cell_width
+            // Edge case when mouse leaves the window.
+            || x as f32 >= end_of_grid
+        {
+            Side::Right
+        } else {
+            Side::Left
+        }
+    }
+
+    #[inline]
     pub fn selection_is_empty(&self) -> bool {
         let terminal = self.context_manager.current().terminal.lock();
         let is_empty = terminal.selection.is_none();
