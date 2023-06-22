@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GECKODRIVER: chromedriver
-    name: Test WebAssembly
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
