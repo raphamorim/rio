@@ -488,6 +488,7 @@ impl Sequencer {
                     event: winit::event::WindowEvent::Focused(focused),
                     ..
                 } => {
+                    winit_window.set_cursor_visible(true);
                     self.is_window_focused = focused;
                 }
 
