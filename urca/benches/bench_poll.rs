@@ -1,10 +1,10 @@
 #![feature(test)]
 #![allow(deprecated)]
 
-extern crate mio;
+extern crate urca;
 extern crate test;
 
-use mio::*;
+use urca::*;
 use std::sync::Arc;
 use std::thread;
 use test::Bencher;

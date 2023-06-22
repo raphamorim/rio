@@ -26,8 +26,8 @@ use std::ops;
 /// Most of the time, all that is needed is using bit operations
 ///
 /// ```
-/// use mio::Ready;
-/// use mio::unix::UnixReady;
+/// use urca::Ready;
+/// use urca::unix::UnixReady;
 ///
 /// let ready = Ready::readable() | UnixReady::hup();
 ///
@@ -38,8 +38,8 @@ use std::ops;
 /// Basic conversion between ready types.
 ///
 /// ```
-/// use mio::Ready;
-/// use mio::unix::UnixReady;
+/// use urca::Ready;
+/// use urca::unix::UnixReady;
 ///
 /// // Start with a portable ready
 /// let ready = Ready::readable();
@@ -65,10 +65,10 @@ use std::ops;
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Ready, Poll, PollOpt, Token};
-/// use mio::net::TcpStream;
-/// use mio::unix::UnixReady;
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Ready, Poll, PollOpt, Token};
+/// use urca::net::TcpStream;
+/// use urca::unix::UnixReady;
 ///
 /// let addr = "216.58.193.68:80".parse()?;
 /// let socket = TcpStream::connect(&addr)?;
@@ -164,7 +164,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::aio();
     ///
@@ -207,7 +207,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::error();
     ///
@@ -237,7 +237,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::hup();
     ///
@@ -259,7 +259,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::lio();
     ///
@@ -280,7 +280,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::priority();
     ///
@@ -306,7 +306,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::aio();
     ///
@@ -350,7 +350,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::error();
     ///
@@ -379,7 +379,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::hup();
     ///
@@ -400,7 +400,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::lio();
     ///
@@ -419,7 +419,7 @@ impl UnixReady {
     /// # Examples
     ///
     /// ```
-    /// use mio::unix::UnixReady;
+    /// use urca::unix::UnixReady;
     ///
     /// let ready = UnixReady::priority();
     ///

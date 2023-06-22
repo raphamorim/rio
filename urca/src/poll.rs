@@ -88,9 +88,9 @@ use {sys, Token};
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Events, Poll, Ready, PollOpt, Token};
-/// use mio::net::TcpStream;
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Events, Poll, Ready, PollOpt, Token};
+/// use urca::net::TcpStream;
 ///
 /// use std::net::{TcpListener, SocketAddr};
 ///
@@ -265,9 +265,9 @@ use {sys, Token};
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Poll, Ready, PollOpt, Token};
-/// use mio::net::TcpStream;
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Poll, Ready, PollOpt, Token};
+/// use urca::net::TcpStream;
 /// use std::time::Duration;
 /// use std::thread;
 ///
@@ -372,8 +372,8 @@ pub struct Poll {
 /// # Examples
 ///
 /// ```
-/// use mio::{Ready, Registration, Poll, PollOpt, Token};
-/// use mio::event::Evented;
+/// use urca::{Ready, Registration, Poll, PollOpt, Token};
+/// use urca::event::Evented;
 ///
 /// use std::io;
 /// use std::time::Instant;
@@ -625,8 +625,8 @@ impl Poll {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Poll, Events};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Poll, Events};
     /// use std::time::Duration;
     ///
     /// let poll = match Poll::new() {
@@ -738,9 +738,9 @@ impl Poll {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Poll, Ready, PollOpt, Token};
-    /// use mio::net::TcpStream;
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Poll, Ready, PollOpt, Token};
+    /// use urca::net::TcpStream;
     /// use std::time::{Duration, Instant};
     ///
     /// let poll = Poll::new()?;
@@ -830,9 +830,9 @@ impl Poll {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Poll, Ready, PollOpt, Token};
-    /// use mio::net::TcpStream;
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Poll, Ready, PollOpt, Token};
+    /// use urca::net::TcpStream;
     ///
     /// let poll = Poll::new()?;
     /// let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
@@ -894,9 +894,9 @@ impl Poll {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Poll, Ready, PollOpt, Token};
-    /// use mio::net::TcpStream;
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Poll, Ready, PollOpt, Token};
+    /// use urca::net::TcpStream;
     /// use std::time::Duration;
     ///
     /// let poll = Poll::new()?;
@@ -976,9 +976,9 @@ impl Poll {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Poll, Ready, PollOpt, Token};
-    /// use mio::net::TcpStream;
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Poll, Ready, PollOpt, Token};
+    /// use urca::net::TcpStream;
     ///
     /// use std::net::{TcpListener, SocketAddr};
     /// use std::thread;
@@ -1277,8 +1277,8 @@ impl AsRawFd for Poll {
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Events, Poll};
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Events, Poll};
 /// use std::time::Duration;
 ///
 /// let mut events = Events::with_capacity(1024);
@@ -1315,8 +1315,8 @@ pub struct Events {
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Events, Poll};
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Events, Poll};
 /// use std::time::Duration;
 ///
 /// let mut events = Events::with_capacity(1024);
@@ -1353,8 +1353,8 @@ pub struct Iter<'a> {
 ///
 /// ```
 /// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<Error>> {
-/// use mio::{Events, Poll};
+/// # fn try_main() -> Result<(), Box<dyn Error>> {
+/// use urca::{Events, Poll};
 /// use std::time::Duration;
 ///
 /// let mut events = Events::with_capacity(1024);
@@ -1387,7 +1387,7 @@ impl Events {
     /// # Examples
     ///
     /// ```
-    /// use mio::Events;
+    /// use urca::Events;
     ///
     /// let events = Events::with_capacity(1024);
     ///
@@ -1420,7 +1420,7 @@ impl Events {
     /// Returns the number of `Event` values that `self` can hold.
     ///
     /// ```
-    /// use mio::Events;
+    /// use urca::Events;
     ///
     /// let events = Events::with_capacity(1024);
     ///
@@ -1435,7 +1435,7 @@ impl Events {
     /// # Examples
     ///
     /// ```
-    /// use mio::Events;
+    /// use urca::Events;
     ///
     /// let events = Events::with_capacity(1024);
     ///
@@ -1451,8 +1451,8 @@ impl Events {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Poll};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Poll};
     /// use std::time::Duration;
     ///
     /// let mut events = Events::with_capacity(1024);
@@ -1485,8 +1485,8 @@ impl Events {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Poll};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Poll};
     /// use std::time::Duration;
     ///
     /// let mut events = Events::with_capacity(1024);
@@ -1596,8 +1596,8 @@ impl Registration {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Ready, Registration, Poll, PollOpt, Token};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Ready, Registration, Poll, PollOpt, Token};
     /// use std::thread;
     ///
     /// let (registration, set_readiness) = Registration::new2();
@@ -1780,8 +1780,8 @@ impl SetReadiness {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Registration, Ready};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Registration, Ready};
     ///
     /// let (registration, set_readiness) = Registration::new2();
     ///
@@ -1820,8 +1820,8 @@ impl SetReadiness {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Events, Registration, Ready, Poll, PollOpt, Token};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Events, Registration, Ready, Poll, PollOpt, Token};
     ///
     /// let poll = Poll::new()?;
     /// let (registration, set_readiness) = Registration::new2();
@@ -1858,8 +1858,8 @@ impl SetReadiness {
     ///
     /// ```
     /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<Error>> {
-    /// use mio::{Registration, Ready};
+    /// # fn try_main() -> Result<(), Box<dyn Error>> {
+    /// use urca::{Registration, Ready};
     ///
     /// let (registration, set_readiness) = Registration::new2();
     ///
