@@ -25,11 +25,3 @@ impl<T> MapNonBlock<T> for Result<T> {
         }
     }
 }
-
-#[cfg(feature = "with-deprecated")]
-pub mod deprecated {
-    /// Returns a std `WouldBlock` error without allocating
-    pub fn would_block() -> ::std::io::Error {
-        ::std::io::ErrorKind::WouldBlock.into()
-    }
-}
