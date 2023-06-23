@@ -69,10 +69,18 @@ pub struct Theme {
     pub colors: Colors,
 }
 
+#[cfg(not(target_os = "windows"))]
 pub fn config_dir_path() -> String {
     let base_dir_buffer = dirs::home_dir().unwrap();
     let home = base_dir_buffer.to_str().unwrap_or_default();
     format!("{home}/.config/rio")
+}
+
+#[cfg(target_os = "windows")]
+pub fn config_dir_path() -> String {
+    let base_dir_buffer = dirs::home_dir().unwrap();
+    let home = base_dir_buffer.to_str().unwrap_or_default();
+    format!("{home}/AppData/Local/rio")
 }
 
 pub fn config_file_path() -> String {
