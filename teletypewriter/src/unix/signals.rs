@@ -1,7 +1,7 @@
 use crate::unix::stream;
 use std::io::Error;
-use urca::event::Evented;
-use urca::{Poll, PollOpt, Ready, Token};
+use corcovado::event::Evented;
+use corcovado::{Poll, PollOpt, Ready, Token};
 
 macro_rules! implement_signals_with_pipe {
     ($pipe:path) => {
@@ -67,7 +67,7 @@ macro_rules! implement_signals_with_pipe {
             ///
             /// This method returns immediately (does not block) and may produce an empty iterator if there
             /// are no signals ready. So you should register an instance of this struct at an instance of
-            /// [`urca::Poll`] to query for readability of the underlying self pipe.
+            /// [`corcovado::Poll`] to query for readability of the underlying self pipe.
             pub fn pending(&mut self) -> Pending<E> {
                 self.0.pending()
             }

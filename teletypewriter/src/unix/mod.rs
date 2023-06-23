@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
-use urca::unix::EventedFd;
+use corcovado::unix::EventedFd;
 
 #[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -73,8 +73,8 @@ fn default_shell_command(shell: &str) {
 pub struct Pty {
     pub child: Child,
     file: File,
-    token: urca::Token,
-    signals_token: urca::Token,
+    token: corcovado::Token,
+    signals_token: corcovado::Token,
     signals: Signals,
 }
 
@@ -128,7 +128,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn read_token(&self) -> urca::Token {
+    fn read_token(&self) -> corcovado::Token {
         self.token
     }
 
@@ -138,7 +138,7 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn write_token(&self) -> urca::Token {
+    fn write_token(&self) -> corcovado::Token {
         self.token
     }
 
@@ -150,10 +150,10 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &urca::Poll,
-        token: &mut dyn Iterator<Item = urca::Token>,
-        interest: urca::Ready,
-        poll_opts: urca::PollOpt,
+        poll: &corcovado::Poll,
+        token: &mut dyn Iterator<Item = corcovado::Token>,
+        interest: corcovado::Ready,
+        poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
         self.token = token.next().unwrap();
         poll.register(
@@ -167,16 +167,16 @@ impl ProcessReadWrite for Pty {
         poll.register(
             &self.signals,
             self.signals_token,
-            urca::Ready::readable(),
-            urca::PollOpt::level(),
+            corcovado::Ready::readable(),
+            corcovado::PollOpt::level(),
         )
     }
 
     fn reregister(
         &mut self,
-        poll: &urca::Poll,
-        interest: urca::Ready,
-        poll_opts: urca::PollOpt,
+        poll: &corcovado::Poll,
+        interest: corcovado::Ready,
+        poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
         poll.reregister(
             &EventedFd(&self.file.as_raw_fd()),
@@ -188,12 +188,12 @@ impl ProcessReadWrite for Pty {
         poll.reregister(
             &self.signals,
             self.signals_token,
-            urca::Ready::readable(),
-            urca::PollOpt::level(),
+            corcovado::Ready::readable(),
+            corcovado::PollOpt::level(),
         )
     }
 
-    fn deregister(&mut self, poll: &urca::Poll) -> io::Result<()> {
+    fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
         poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
         poll.deregister(&self.signals)
     }
@@ -364,8 +364,8 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 child,
                 signals,
                 file: unsafe { File::from_raw_fd(main) },
-                token: urca::Token(0),
-                signals_token: urca::Token(0),
+                token: corcovado::Token(0),
+                signals_token: corcovado::Token(0),
             }
         }
         _ => panic!("Fork failed."),
@@ -493,7 +493,7 @@ impl EventedPty for Pty {
     }
 
     #[inline]
-    fn child_event_token(&self) -> urca::Token {
+    fn child_event_token(&self) -> corcovado::Token {
         self.signals_token
     }
 }

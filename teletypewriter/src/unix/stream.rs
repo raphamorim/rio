@@ -11,9 +11,9 @@ use iovec::{
     IoVec,
 };
 use libc;
-use urca::event::Evented;
-use urca::unix::EventedFd;
-use urca::{Poll, PollOpt, Ready, Token};
+use corcovado::event::Evented;
+use corcovado::unix::EventedFd;
+use corcovado::{Poll, PollOpt, Ready, Token};
 
 use crate::unix::socket::{sockaddr_un, Socket};
 
