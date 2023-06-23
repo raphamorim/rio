@@ -1,9 +1,6 @@
 #[cfg(unix)]
 fn main() {
-    use std::io;
-    use std::sync::mpsc::Receiver;
     use std::sync::mpsc::TryRecvError;
-
     let stdin_channel = spawn_stdin_channel();
     loop {
         match stdin_channel.try_recv() {
@@ -19,8 +16,10 @@ fn main() {
 fn main() {}
 
 #[cfg(unix)]
-fn spawn_stdin_channel() -> Receiver<String> {
-    let (tx, rx) = std::mpsc::channel::<String>();
+fn spawn_stdin_channel() -> std::sync::mpsc::Receiver<String> {
+    use std::io;
+    use std::thread;
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
     thread::spawn(move || loop {
         let mut buffer = String::new();
         io::stdin().read_line(&mut buffer).unwrap();
