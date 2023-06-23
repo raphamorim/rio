@@ -1,3 +1,8 @@
+mod child;
+mod spsc;
+mod conpty;
+mod pipes;
+
 use std::ffi::OsStr;
 use std::io::{self, Error, ErrorKind, Result};
 use std::iter::once;
@@ -8,10 +13,6 @@ use crate::config::{Program, PtyConfig};
 use crate::event::{OnResize, WindowSize};
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite};
-
-mod child;
-mod conpty;
-mod pipes;
 
 use conpty::Conpty as Backend;
 use mio_anonymous_pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
