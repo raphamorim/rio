@@ -25,7 +25,9 @@ It also relies on Rust memory behavior, since Rust is a memory-safe language tha
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-In macOS and linux path is in "~/.config/rio/config.toml".
+MacOS and Linux configuration file path is "~/.config/rio/config.toml".
+
+Windows	configuration file path is "~/AppData/Local/rio/config.toml"
 
 {% highlight toml %}
 font = "CascadiaMono"
