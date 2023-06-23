@@ -1402,20 +1402,10 @@ impl Events {
         }
     }
 
-    #[deprecated(
-        since = "0.6.10",
-        note = "Index access removed in favor of iterator only API."
-    )]
-    #[doc(hidden)]
     pub fn get(&self, idx: usize) -> Option<Event> {
         self.inner.get(idx)
     }
 
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.6.10",
-        note = "Index access removed in favor of iterator only API."
-    )]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
@@ -1657,9 +1647,6 @@ impl Registration {
         (registration, set_readiness)
     }
 
-    #[deprecated(since = "0.6.5", note = "use `new2` instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     pub fn new(
         poll: &Poll,
         token: Token,
@@ -1703,9 +1690,6 @@ impl Registration {
         (registration, set_readiness)
     }
 
-    #[deprecated(since = "0.6.5", note = "use `Evented` impl")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     pub fn update(
         &self,
         poll: &Poll,
@@ -1716,9 +1700,6 @@ impl Registration {
         self.inner.update(poll, token, interest, opts)
     }
 
-    #[deprecated(since = "0.6.5", note = "use `Poll::deregister` instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     pub fn deregister(&self, poll: &Poll) -> io::Result<()> {
         self.inner
             .update(poll, Token(0), Ready::empty(), PollOpt::empty())

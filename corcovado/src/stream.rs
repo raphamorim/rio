@@ -6,15 +6,15 @@ use std::os::unix::net;
 use std::os::unix::prelude::*;
 use std::path::Path;
 
-use corcovado::event::Evented;
-use corcovado::unix::EventedFd;
-use corcovado::{Poll, PollOpt, Ready, Token};
+use crate::event::Evented;
+use crate::unix::EventedFd;
+use crate::{Poll, PollOpt, Ready, Token};
 use iovec::{
     unix::{as_os_slice, as_os_slice_mut},
     IoVec,
 };
 
-use crate::unix::socket::{sockaddr_un, Socket};
+use crate::socket::{sockaddr_un, Socket};
 
 fn cvt(i: libc::c_int) -> io::Result<libc::c_int> {
     if i == -1 {

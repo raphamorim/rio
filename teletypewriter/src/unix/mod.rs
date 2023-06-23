@@ -1,8 +1,6 @@
 #![cfg(unix)]
 
 mod signals;
-mod socket;
-mod stream;
 
 extern crate libc;
 
