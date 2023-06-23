@@ -636,24 +636,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
     )
 }
 
-#[cfg(not(any(target_os = "macos", test)))]
-fn common_keybindings() -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-        V,        ModifiersState::CTRL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT; Action::Copy;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT,
-            +BindingMode::VI; Action::ClearSelection;
-        Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        // Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
-        // Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
-        // NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
-    )
-}
-
 #[cfg(not(any(target_os = "macos", target_os = "windows", test)))]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
@@ -674,12 +656,22 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
 
 #[cfg(all(target_os = "windows", not(test)))]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
-    let mut bindings = bindings!(
+    bindings!(
         KeyBinding;
+        KeyBinding;
+        V,        ModifiersState::CTRL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        C,        ModifiersState::CTRL | ModifiersState::SHIFT; Action::Copy;
+        C,        ModifiersState::CTRL | ModifiersState::SHIFT,
+            +BindingMode::VI; Action::ClearSelection;
+        Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
+        // Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
+        // Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
+        // Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
+        // NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
+        // Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
+        // NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
         Return, ModifiersState::ALT; Action::ToggleFullscreen;
-    );
-    bindings.extend(common_keybindings());
-    bindings
+    )
 }
 
 #[cfg(test)]
