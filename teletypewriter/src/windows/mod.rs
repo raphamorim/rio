@@ -9,9 +9,9 @@ use crate::event::{OnResize, WindowSize};
 use crate::tty::windows::child::ChildExitWatcher;
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
 
-mod pipes;
 mod child;
 mod conpty;
+mod pipes;
 
 use conpty::Conpty as Backend;
 use mio_anonymous_pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};

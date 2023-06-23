@@ -1,7 +1,7 @@
-use urca::{events::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use miow::pipe::{AnonRead, AnonWrite};
 use parking_lot::{Condvar, Mutex};
 use spsc_buffer::*;
+use urca::{events::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use winapi::um::ioapiset::CancelSynchronousIo;
 
 use std::io;
@@ -295,8 +295,10 @@ impl EventedAnonWrite {
 
                     let mut written = 0usize;
                     while written < nbytes {
-                        written +=
-                            try_or_send!(pipe.write(&tmp_buf[written..nbytes]), error_sender);
+                        written += try_or_send!(
+                            pipe.write(&tmp_buf[written..nbytes]),
+                            error_sender
+                        );
                     }
                 }
             })

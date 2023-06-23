@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::os::raw::{c_int, c_short};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{cmp, fmt, ptr};
 
@@ -63,6 +63,7 @@ impl Selector {
         Ok(Selector { id, kq })
     }
 
+    #[allow(unused)]
     pub fn id(&self) -> usize {
         self.id
     }

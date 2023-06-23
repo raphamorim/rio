@@ -3,11 +3,11 @@ pub mod handler;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
-use log::error;
 use corcovado::channel;
 #[cfg(unix)]
 use corcovado::unix::UnixReady;
 use corcovado::{self, Events, PollOpt, Ready};
+use log::error;
 
 use crate::event::{Msg, RioEvent};
 

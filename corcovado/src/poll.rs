@@ -1081,6 +1081,7 @@ impl Poll {
         // If there are any waiters, which is atomically determined while
         // unsetting the locked flag, then the condvar is notified.
 
+        #[allow(deprecated)]
         let mut curr = self.lock_state.compare_and_swap(0, 1, SeqCst);
 
         if 0 != curr {
@@ -1099,6 +1100,7 @@ impl Poll {
                         next -= 2;
                     }
 
+                    #[allow(deprecated)]
                     let actual = self.lock_state.compare_and_swap(curr, next, SeqCst);
 
                     if actual != curr {
@@ -1123,6 +1125,7 @@ impl Poll {
                 // so now
                 if !inc {
                     let next = curr.checked_add(2).expect("overflow");
+                    #[allow(deprecated)]
                     let actual = self.lock_state.compare_and_swap(curr, next, SeqCst);
 
                     if actual != curr {
@@ -1965,6 +1968,7 @@ impl RegistrationInner {
         if queue.is_null() {
             // Attempt to set the queue pointer. `Release` ordering synchronizes
             // with `Acquire` in `ensure_with_wakeup`.
+            #[allow(deprecated)]
             let actual = self.readiness_queue.compare_and_swap(queue, other, Release);
 
             if actual.is_null() {
@@ -2019,6 +2023,7 @@ impl RegistrationInner {
         // section.
 
         // Acquire the update lock.
+        #[allow(deprecated)]
         if self.update_lock.compare_and_swap(false, true, Acquire) {
             // The lock is already held. Discard the update
             return Ok(());
@@ -2333,6 +2338,7 @@ impl ReadinessQueue {
             .next_readiness
             .store(ptr::null_mut(), Relaxed);
 
+        #[allow(deprecated)]
         let actual =
             self.inner
                 .head_readiness
@@ -2361,7 +2367,7 @@ impl ReadinessQueue {
 impl Drop for ReadinessQueue {
     fn drop(&mut self) {
         // Close the queue by enqueuing the closed node
-        self.inner.enqueue_node(&*self.inner.closed_marker);
+        self.inner.enqueue_node(&self.inner.closed_marker);
 
         loop {
             // Free any nodes that happen to be left in the readiness queue
@@ -2431,6 +2437,7 @@ impl ReadinessQueueInner {
                     return false;
                 }
 
+                #[allow(deprecated)]
                 let act = self.head_readiness.compare_and_swap(prev, node_ptr, AcqRel);
 
                 if prev == act {
@@ -2465,6 +2472,7 @@ impl ReadinessQueueInner {
                 .next_readiness
                 .store(ptr::null_mut(), Relaxed);
 
+            #[allow(deprecated)]
             let actual =
                 self.head_readiness
                     .compare_and_swap(sleep_marker, end_marker, AcqRel);
@@ -2527,7 +2535,7 @@ impl ReadinessQueueInner {
         }
 
         // Push the stub node
-        self.enqueue_node(&*self.end_marker);
+        self.enqueue_node(&self.end_marker);
 
         next = (*tail).next_readiness.load(Acquire);
 
@@ -2658,6 +2666,7 @@ impl AtomicState {
         new: ReadinessState,
         order: Ordering,
     ) -> ReadinessState {
+        #[allow(deprecated)]
         self.inner
             .compare_and_swap(current.into(), new.into(), order)
             .into()
@@ -2841,12 +2850,14 @@ fn is_send<T: Send>() {}
 fn is_sync<T: Sync>() {}
 
 impl SelectorId {
+    #[allow(unused)]
     pub fn new() -> SelectorId {
         SelectorId {
             id: AtomicUsize::new(0),
         }
     }
 
+    #[allow(unused)]
     pub fn associate_selector(&self, poll: &Poll) -> io::Result<()> {
         let selector_id = self.id.load(Ordering::SeqCst);
 

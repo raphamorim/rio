@@ -6,14 +6,13 @@ use std::os::unix::net;
 use std::os::unix::prelude::*;
 use std::path::Path;
 
+use corcovado::event::Evented;
+use corcovado::unix::EventedFd;
+use corcovado::{Poll, PollOpt, Ready, Token};
 use iovec::{
     unix::{as_os_slice, as_os_slice_mut},
     IoVec,
 };
-use libc;
-use corcovado::event::Evented;
-use corcovado::unix::EventedFd;
-use corcovado::{Poll, PollOpt, Ready, Token};
 
 use crate::unix::socket::{sockaddr_un, Socket};
 

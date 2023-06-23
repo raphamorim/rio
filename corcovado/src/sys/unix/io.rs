@@ -9,6 +9,7 @@ use sys::unix::cvt;
 use unix::EventedFd;
 use {io, Poll, PollOpt, Ready, Token};
 
+#[allow(unused)]
 pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFL);

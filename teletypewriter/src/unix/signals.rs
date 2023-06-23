@@ -1,7 +1,7 @@
 use crate::unix::stream;
-use std::io::Error;
 use corcovado::event::Evented;
 use corcovado::{Poll, PollOpt, Ready, Token};
+use std::io::Error;
 
 macro_rules! implement_signals_with_pipe {
     ($pipe:path) => {

@@ -45,8 +45,6 @@ mod awakener;
 mod eventedfd;
 mod io;
 mod ready;
-mod tcp;
-mod udp;
 mod uio;
 
 #[cfg(feature = "with-deprecated")]
@@ -56,8 +54,6 @@ pub use self::awakener::Awakener;
 pub use self::eventedfd::EventedFd;
 pub use self::io::{set_nonblock, Io};
 pub use self::ready::{UnixReady, READY_ALL};
-pub use self::tcp::{TcpListener, TcpStream};
-pub use self::udp::UdpSocket;
 
 #[cfg(feature = "with-deprecated")]
 pub use self::uds::UnixSocket;

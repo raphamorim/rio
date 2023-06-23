@@ -61,7 +61,7 @@ impl Socket {
             )) {
                 let flags = ty | SOCK_CLOEXEC | SOCK_NONBLOCK;
                 match cvt(libc::socket(libc::AF_UNIX, flags, 0)) {
-                    Ok(fd) => return Ok(Socket { fd: fd }),
+                    Ok(fd) => return Ok(Socket { fd }),
                     Err(ref e) if e.raw_os_error() == Some(libc::EINVAL) => {}
                     Err(e) => return Err(e),
                 }
