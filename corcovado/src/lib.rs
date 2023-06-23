@@ -125,10 +125,12 @@ mod event_imp;
 mod io;
 mod lazycell;
 mod poll;
+mod socket;
 mod sys;
 mod token;
 
 pub mod channel;
+pub mod stream;
 pub mod timer;
 
 pub use event_imp::{PollOpt, Ready};

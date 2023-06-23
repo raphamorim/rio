@@ -135,7 +135,7 @@ pub unsafe fn sockaddr_un(
 
     let bytes = path.as_os_str().as_bytes();
 
-    match (bytes.get(0), bytes.len().cmp(&addr.sun_path.len())) {
+    match (bytes.first(), bytes.len().cmp(&addr.sun_path.len())) {
         // Abstract paths don't need a null terminator
         (Some(&0), Ordering::Greater) => {
             return Err(io::Error::new(
@@ -158,7 +158,7 @@ pub unsafe fn sockaddr_un(
     // struct
 
     let mut len = sun_path_offset() + bytes.len();
-    match bytes.get(0) {
+    match bytes.first() {
         Some(&0) | None => {}
         Some(_) => len += 1,
     }
@@ -168,6 +168,8 @@ pub unsafe fn sockaddr_un(
 fn sun_path_offset() -> usize {
     unsafe {
         // Work with an actual instance of the type since using a null pointer is UB
+        #[allow(invalid_value)]
+        #[allow(deprecated)]
         let addr: libc::sockaddr_un = mem::uninitialized();
         let base = &addr as *const _ as usize;
         let path = &addr.sun_path as *const _ as usize;

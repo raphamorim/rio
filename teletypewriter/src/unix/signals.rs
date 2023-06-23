@@ -1,5 +1,5 @@
-use crate::unix::stream;
 use corcovado::event::Evented;
+use corcovado::stream;
 use corcovado::{Poll, PollOpt, Ready, Token};
 use std::io::Error;
 
@@ -54,6 +54,7 @@ macro_rules! implement_signals_with_pipe {
             ///
             /// The same restrictions (panics, errors) apply as with
             /// [`Handle::add_signal`][backend::Handle::add_signal].
+            #[allow(unused)]
             pub fn add_signal(&self, signal: c_int) -> Result<(), Error> {
                 self.0.handle().add_signal(signal)
             }

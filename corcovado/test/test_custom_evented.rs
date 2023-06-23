@@ -115,19 +115,18 @@ mod stress {
 
                 thread::spawn(move || {
                     for _ in 0..NUM_ITERS {
-                        for i in 0..NUM_REGISTRATIONS {
-                            set_readiness[i].set_readiness(Ready::readable()).unwrap();
-                            set_readiness[i].set_readiness(Ready::empty()).unwrap();
-                            set_readiness[i].set_readiness(Ready::writable()).unwrap();
-                            set_readiness[i]
-                                .set_readiness(Ready::readable() | Ready::writable())
+                        for i in set_readiness.iter().take(NUM_REGISTRATIONS) {
+                            i.set_readiness(Ready::readable()).unwrap();
+                            i.set_readiness(Ready::empty()).unwrap();
+                            i.set_readiness(Ready::writable()).unwrap();
+                            i.set_readiness(Ready::readable() | Ready::writable())
                                 .unwrap();
-                            set_readiness[i].set_readiness(Ready::empty()).unwrap();
+                            i.set_readiness(Ready::empty()).unwrap();
                         }
                     }
 
-                    for i in 0..NUM_REGISTRATIONS {
-                        set_readiness[i].set_readiness(Ready::readable()).unwrap();
+                    for i in set_readiness.iter().take(NUM_REGISTRATIONS) {
+                        i.set_readiness(Ready::readable()).unwrap();
                     }
 
                     remaining.fetch_sub(1, Release);
@@ -136,7 +135,7 @@ mod stress {
 
             while remaining.load(Acquire) > 0 {
                 // Set interest
-                for (i, &(ref r, _)) in registrations.iter().enumerate() {
+                for (i, (r, _)) in registrations.iter().enumerate() {
                     r.reregister(&poll, Token(i), Ready::writable(), PollOpt::edge())
                         .unwrap();
                 }
@@ -150,7 +149,7 @@ mod stress {
 
                 // Update registration
                 // Set interest
-                for (i, &(ref r, _)) in registrations.iter().enumerate() {
+                for (i, (r, _)) in registrations.iter().enumerate() {
                     r.reregister(&poll, Token(i), Ready::readable(), PollOpt::edge())
                         .unwrap();
                 }
@@ -262,6 +261,7 @@ mod stress {
 
                         loop {
                             if num < PER_ENTRY {
+                                #[allow(deprecated)]
                                 let actual =
                                     e.num.compare_and_swap(num, num + 1, Relaxed);
 

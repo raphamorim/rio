@@ -1,17 +1,16 @@
 [package]
-
-name          = "corcovado"
-version       = "0.0.1"
-license       = "MIT"
-authors       = ["Carl Lerche <me@carllerche.com>", "Raphael Amorim <rapha850@gmail.com"]
-description   = "Non-blocking IO library for Rio terminal"
+name = "corcovado"
+version = "0.0.1"
+license = "MIT"
+authors = ["Carl Lerche <me@carllerche.com>", "Raphael Amorim <rapha850@gmail.com"]
+description = "Non-blocking IO library for Rio terminal"
 documentation = "https://raphamorim.io/rio/docs"
-homepage      = "https://github.com/raphamorim/rio"
-repository    = "https://github.com/raphamorim/rio"
-readme        = "README.md"
-keywords      = ["io", "async", "non-blocking"]
-categories    = ["asynchronous"]
-include       = [
+homepage = "https://github.com/raphamorim/rio"
+repository = "https://github.com/raphamorim/rio"
+readme = "README.md"
+keywords = ["io", "async", "non-blocking"]
+categories = ["asynchronous"]
+include = [
   "Cargo.toml",
   "CHANGELOG.md",
   "src/**/*.rs"
@@ -33,14 +32,19 @@ libc = "0.2.140"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.2.6"
-miow   = "0.5.0"
+miow = "0.5.0"
 kernel32-sys = "0.2"
 
 [dev-dependencies]
 env_logger = { version = "0.4.0", default-features = false }
-tempdir    = "0.3.4"
-bytes      = "0.3.0"
+tempdir = "0.3.4"
+bytes = "0.3.0"
+criterion = "0.5.1"
 
 [[test]]
 name = "test"
 path = "test/mod.rs"
+
+[[bench]]
+name = "bench_poll"
+harness = false

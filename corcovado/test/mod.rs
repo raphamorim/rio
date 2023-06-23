@@ -168,13 +168,10 @@ pub fn expect_events(
         poll.poll(event_buffer, Some(Duration::from_millis(MS)))
             .unwrap();
         for event in event_buffer.iter() {
-            let pos_opt = match expected.iter().position(|exp_event| {
+            let pos_opt = expected.iter().position(|exp_event| {
                 (event.token() == exp_event.token())
                     && event.readiness().contains(exp_event.readiness())
-            }) {
-                Some(x) => Some(x),
-                None => None,
-            };
+            });
             if let Some(pos) = pos_opt {
                 expected.remove(pos);
             }
