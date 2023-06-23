@@ -103,7 +103,7 @@ impl TcpStream {
                     socket: socket,
                     inner: Mutex::new(StreamInner {
                         iocp: ReadyBinding::new(),
-                        deferred_connect: deferred_connect,
+                        deferred_connect,
                         read: State::Empty,
                         write: State::Empty,
                         instant_notify: false,
@@ -695,8 +695,8 @@ impl TcpListener {
             imp: ListenerImp {
                 inner: FromRawArc::new(ListenerIo {
                     accept: Overlapped::new(accept_done),
-                    family: family,
-                    socket: socket,
+                    family,
+                    socket,
                     inner: Mutex::new(ListenerInner {
                         iocp: ReadyBinding::new(),
                         accept: State::Empty,

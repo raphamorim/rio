@@ -39,7 +39,7 @@ struct Inner<T> {
 impl<T> FromRawArc<T> {
     pub fn new(data: T) -> FromRawArc<T> {
         let x = Box::new(Inner {
-            data: data,
+            data,
             cnt: AtomicUsize::new(1),
         });
         FromRawArc {
