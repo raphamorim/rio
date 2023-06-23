@@ -22,9 +22,9 @@ pub struct Pty {
     backend: Backend,
     conout: ReadPipe,
     conin: WritePipe,
-    read_token: mio::Token,
-    write_token: mio::Token,
-    child_event_token: mio::Token,
+    read_token: corcovado::Token,
+    write_token: corcovado::Token,
+    child_event_token: corcovado::Token,
     child_watcher: ChildExitWatcher,
 }
 
@@ -60,10 +60,10 @@ impl EventedReadWrite for Pty {
     #[inline]
     fn register(
         &mut self,
-        poll: &mio::Poll,
-        token: &mut dyn Iterator<Item = mio::Token>,
-        interest: mio::Ready,
-        poll_opts: mio::PollOpt,
+        poll: &corcovado::Poll,
+        token: &mut dyn Iterator<Item = corcovado::Token>,
+        interest: corcovado::Ready,
+        poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
         self.read_token = token.next().unwrap();
         self.write_token = token.next().unwrap();
@@ -72,14 +72,14 @@ impl EventedReadWrite for Pty {
             poll.register(
                 &self.conout,
                 self.read_token,
-                mio::Ready::readable(),
+                corcovado::Ready::readable(),
                 poll_opts,
             )?
         } else {
             poll.register(
                 &self.conout,
                 self.read_token,
-                mio::Ready::empty(),
+                corcovado::Ready::empty(),
                 poll_opts,
             )?
         }
@@ -87,14 +87,14 @@ impl EventedReadWrite for Pty {
             poll.register(
                 &self.conin,
                 self.write_token,
-                mio::Ready::writable(),
+                corcovado::Ready::writable(),
                 poll_opts,
             )?
         } else {
             poll.register(
                 &self.conin,
                 self.write_token,
-                mio::Ready::empty(),
+                corcovado::Ready::empty(),
                 poll_opts,
             )?
         }
@@ -103,7 +103,7 @@ impl EventedReadWrite for Pty {
         poll.register(
             self.child_watcher.event_rx(),
             self.child_event_token,
-            mio::Ready::readable(),
+            corcovado::Ready::readable(),
             poll_opts,
         )?;
 
@@ -113,22 +113,22 @@ impl EventedReadWrite for Pty {
     #[inline]
     fn reregister(
         &mut self,
-        poll: &mio::Poll,
-        interest: mio::Ready,
-        poll_opts: mio::PollOpt,
+        poll: &corcovado::Poll,
+        interest: corcovado::Ready,
+        poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
         if interest.is_readable() {
             poll.reregister(
                 &self.conout,
                 self.read_token,
-                mio::Ready::readable(),
+                corcovado::Ready::readable(),
                 poll_opts,
             )?;
         } else {
             poll.reregister(
                 &self.conout,
                 self.read_token,
-                mio::Ready::empty(),
+                corcovado::Ready::empty(),
                 poll_opts,
             )?;
         }
@@ -136,14 +136,14 @@ impl EventedReadWrite for Pty {
             poll.reregister(
                 &self.conin,
                 self.write_token,
-                mio::Ready::writable(),
+                corcovado::Ready::writable(),
                 poll_opts,
             )?;
         } else {
             poll.reregister(
                 &self.conin,
                 self.write_token,
-                mio::Ready::empty(),
+                corcovado::Ready::empty(),
                 poll_opts,
             )?;
         }
@@ -151,7 +151,7 @@ impl EventedReadWrite for Pty {
         poll.reregister(
             self.child_watcher.event_rx(),
             self.child_event_token,
-            mio::Ready::readable(),
+            corcovado::Ready::readable(),
             poll_opts,
         )?;
 
@@ -159,7 +159,7 @@ impl EventedReadWrite for Pty {
     }
 
     #[inline]
-    fn deregister(&mut self, poll: &mio::Poll) -> io::Result<()> {
+    fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
         poll.deregister(&self.conout)?;
         poll.deregister(&self.conin)?;
         poll.deregister(self.child_watcher.event_rx())?;
@@ -172,7 +172,7 @@ impl EventedReadWrite for Pty {
     }
 
     #[inline]
-    fn read_token(&self) -> mio::Token {
+    fn read_token(&self) -> corcovado::Token {
         self.read_token
     }
 
@@ -182,13 +182,13 @@ impl EventedReadWrite for Pty {
     }
 
     #[inline]
-    fn write_token(&self) -> mio::Token {
+    fn write_token(&self) -> corcovado::Token {
         self.write_token
     }
 }
 
 impl EventedPty for Pty {
-    fn child_event_token(&self) -> mio::Token {
+    fn child_event_token(&self) -> corcovado::Token {
         self.child_event_token
     }
 
