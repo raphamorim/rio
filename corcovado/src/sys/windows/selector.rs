@@ -1,5 +1,8 @@
 #![allow(deprecated)]
 
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
+use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+use windows_sys::Win32::System::IO::OVERLAPPED;
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
@@ -11,7 +14,6 @@ use lazycell::AtomicLazyCell;
 
 use miow;
 use miow::iocp::{CompletionPort, CompletionStatus};
-use winapi::*;
 
 use event_imp::{Event, Evented, Ready};
 use poll::{self, Poll};
@@ -181,7 +183,7 @@ impl Binding {
     /// `windows` module in this crate.
     pub unsafe fn register_handle(
         &self,
-        handle: &AsRawHandle,
+        handle: &dyn AsRawHandle,
         token: Token,
         poll: &Poll,
     ) -> io::Result<()> {
@@ -197,7 +199,7 @@ impl Binding {
     /// Same as `register_handle` but for sockets.
     pub unsafe fn register_socket(
         &self,
-        handle: &AsRawSocket,
+        handle: &dyn AsRawSocket,
         token: Token,
         poll: &Poll,
     ) -> io::Result<()> {
@@ -226,7 +228,7 @@ impl Binding {
     /// there may be pending I/O events and such which aren't handled correctly.
     pub unsafe fn reregister_handle(
         &self,
-        _handle: &AsRawHandle,
+        _handle: &dyn AsRawHandle,
         _token: Token,
         poll: &Poll,
     ) -> io::Result<()> {
@@ -236,7 +238,7 @@ impl Binding {
     /// Same as `reregister_handle`, but for sockets.
     pub unsafe fn reregister_socket(
         &self,
-        _socket: &AsRawSocket,
+        _socket: &dyn AsRawSocket,
         _token: Token,
         poll: &Poll,
     ) -> io::Result<()> {
@@ -258,7 +260,7 @@ impl Binding {
     /// there may be pending I/O events and such which aren't handled correctly.
     pub unsafe fn deregister_handle(
         &self,
-        _handle: &AsRawHandle,
+        _handle: &dyn AsRawHandle,
         poll: &Poll,
     ) -> io::Result<()> {
         self.check_same_selector(poll)
@@ -267,7 +269,7 @@ impl Binding {
     /// Same as `deregister_handle`, but for sockets.
     pub unsafe fn deregister_socket(
         &self,
-        _socket: &AsRawSocket,
+        _socket: &dyn AsRawSocket,
         poll: &Poll,
     ) -> io::Result<()> {
         self.check_same_selector(poll)
@@ -363,7 +365,7 @@ impl ReadyBinding {
     /// possible change tokens.
     pub fn register_socket(
         &mut self,
-        socket: &AsRawSocket,
+        socket: &dyn AsRawSocket,
         poll: &Poll,
         token: Token,
         events: Ready,
@@ -384,7 +386,7 @@ impl ReadyBinding {
     /// Implementation of `Evented::reregister` function.
     pub fn reregister_socket(
         &mut self,
-        socket: &AsRawSocket,
+        socket: &dyn AsRawSocket,
         poll: &Poll,
         token: Token,
         events: Ready,
@@ -410,7 +412,7 @@ impl ReadyBinding {
     /// readiness notifications and such.
     pub fn deregister(
         &mut self,
-        socket: &AsRawSocket,
+        socket: &dyn AsRawSocket,
         poll: &Poll,
         registration: &Mutex<Option<poll::Registration>>,
     ) -> io::Result<()> {
