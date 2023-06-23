@@ -21,6 +21,7 @@ iovec = "0.1.1"
 [target.'cfg(windows)'.dependencies]
 windows-sys = "0.42.0"
 miow = "0.5.0"
+parking_lot = "0.12"
 
 [dependencies.windows]
 version = "0.42.0"
