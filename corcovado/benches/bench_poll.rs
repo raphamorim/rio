@@ -1,7 +1,6 @@
 #![feature(test)]
-#![allow(deprecated)]
 
-extern crate corcovado
+extern crate corcovado;
 extern crate test;
 
 use corcovado::*;

@@ -348,17 +348,11 @@ impl PollOpt {
         PollOpt(0b0100)
     }
 
-    #[deprecated(since = "0.6.5", note = "removed")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn urgent() -> PollOpt {
         PollOpt(0b1000)
     }
 
-    #[deprecated(since = "0.6.5", note = "removed")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn all() -> PollOpt {
         PollOpt::edge() | PollOpt::level() | PollOpt::oneshot()
@@ -424,18 +418,11 @@ impl PollOpt {
         self.contains(PollOpt::oneshot())
     }
 
-    #[deprecated(since = "0.6.5", note = "removed")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
-    #[allow(deprecated)]
     #[inline]
     pub fn is_urgent(&self) -> bool {
         self.contains(PollOpt::urgent())
     }
 
-    #[deprecated(since = "0.6.5", note = "removed")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn bits(&self) -> usize {
         self.0
@@ -560,8 +547,6 @@ impl ops::Sub for PollOpt {
     }
 }
 
-#[cfg(feature = "with-deprecated")]
-#[doc(hidden)]
 impl ops::Not for PollOpt {
     type Output = PollOpt;
 
@@ -669,9 +654,6 @@ impl Ready {
         Ready(0)
     }
 
-    #[deprecated(since = "0.6.5", note = "use Ready::empty instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     pub fn none() -> Ready {
         Ready::empty()
     }
@@ -716,17 +698,11 @@ impl Ready {
         Ready(WRITABLE)
     }
 
-    #[deprecated(since = "0.6.5", note = "use UnixReady instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn error() -> Ready {
         Ready(ERROR)
     }
 
-    #[deprecated(since = "0.6.5", note = "use UnixReady instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn hup() -> Ready {
         Ready(HUP)
@@ -775,9 +751,6 @@ impl Ready {
         *self == Ready::empty()
     }
 
-    #[deprecated(since = "0.6.5", note = "use Ready::is_empty instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn is_none(&self) -> bool {
         self.is_empty()
@@ -823,17 +796,11 @@ impl Ready {
         self.contains(Ready::writable())
     }
 
-    #[deprecated(since = "0.6.5", note = "use UnixReady instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn is_error(&self) -> bool {
         self.contains(Ready(ERROR))
     }
 
-    #[deprecated(since = "0.6.5", note = "use UnixReady instead")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn is_hup(&self) -> bool {
         self.contains(Ready(HUP))
@@ -879,9 +846,6 @@ impl Ready {
         self.0 &= !other.0;
     }
 
-    #[deprecated(since = "0.6.5", note = "removed")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     #[inline]
     pub fn bits(&self) -> usize {
         self.0
@@ -1049,8 +1013,6 @@ impl<T: Into<Ready>> ops::SubAssign<T> for Ready {
     }
 }
 
-#[cfg(feature = "with-deprecated")]
-#[doc(hidden)]
 impl ops::Not for Ready {
     type Output = Ready;
 
@@ -1162,9 +1124,6 @@ impl Event {
         self.kind
     }
 
-    #[deprecated(since = "0.6.5", note = "use Event::readiness()")]
-    #[cfg(feature = "with-deprecated")]
-    #[doc(hidden)]
     pub fn kind(&self) -> Ready {
         self.kind
     }

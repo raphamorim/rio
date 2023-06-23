@@ -1,5 +1,6 @@
 // Original work Copyright (c) 2014 The Rust Project Developers
 // Modified work Copyright (c) 2016-2018 Nikita Pekin and the lazycell contributors
+// Modified work Copyright (c) 2022 Raphael Amorim and the rio contributors
 // See the README.md file at the top-level directory of this distribution.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -7,9 +8,6 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-
-#![deny(missing_docs)]
-#![allow(unused)]
 
 //! This crate provides a `LazyCell` struct which acts as a lazily filled
 //! `Cell`.
@@ -68,11 +66,13 @@ impl<T> LazyCell<T> {
     /// # Return value
     ///
     /// This function returns the previous value, if any.
+    #[allow(unused)]
     pub fn replace(&mut self, value: T) -> Option<T> {
         mem::replace(unsafe { &mut *self.inner.get() }, Some(value))
     }
 
     /// Test whether this cell has been previously filled.
+    #[allow(unused)]
     pub fn filled(&self) -> bool {
         self.borrow().is_some()
     }
@@ -82,6 +82,7 @@ impl<T> LazyCell<T> {
     ///
     /// This function will return `Some` if the cell has been previously
     /// initialized, and `None` if it has not yet been initialized.
+    #[allow(unused)]
     pub fn borrow(&self) -> Option<&T> {
         unsafe { &*self.inner.get() }.as_ref()
     }
@@ -91,6 +92,7 @@ impl<T> LazyCell<T> {
     ///
     /// This function will return `Some` if the cell has been previously
     /// initialized, and `None` if it has not yet been initialized.
+    #[allow(unused)]
     pub fn borrow_mut(&mut self) -> Option<&mut T> {
         unsafe { &mut *self.inner.get() }.as_mut()
     }
@@ -104,6 +106,7 @@ impl<T> LazyCell<T> {
     /// # Panics
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
+    #[allow(unused)]
     pub fn borrow_with<F: FnOnce() -> T>(&self, f: F) -> &T {
         if let Some(value) = self.borrow() {
             return value;
@@ -124,6 +127,7 @@ impl<T> LazyCell<T> {
     /// # Panics
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
+    #[allow(unused)]
     pub fn borrow_mut_with<F: FnOnce() -> T>(&mut self, f: F) -> &mut T {
         if !self.filled() {
             let value = f();
@@ -140,6 +144,7 @@ impl<T> LazyCell<T> {
     /// # Panics
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
+    #[allow(unused)]
     pub fn try_borrow_with<E, F>(&self, f: F) -> Result<&T, E>
     where
         F: FnOnce() -> Result<T, E>,
@@ -159,6 +164,7 @@ impl<T> LazyCell<T> {
     /// # Panics
     ///
     /// Panics if the cell becomes filled as a side effect of `f`.
+    #[allow(unused)]
     pub fn try_borrow_mut_with<E, F>(&mut self, f: F) -> Result<&mut T, E>
     where
         F: FnOnce() -> Result<T, E>,
@@ -174,6 +180,7 @@ impl<T> LazyCell<T> {
     }
 
     /// Consumes this `LazyCell`, returning the underlying value.
+    #[allow(unused)]
     pub fn into_inner(self) -> Option<T> {
         // Rust 1.25 changed UnsafeCell::into_inner() from unsafe to safe
         // function. This unsafe can be removed when supporting Rust older than
@@ -190,6 +197,7 @@ impl<T: Copy> LazyCell<T> {
     ///
     /// This function will return `Some` if the cell has been previously initialized,
     /// and `None` if it has not yet been initialized.
+    #[allow(unused)]
     pub fn get(&self) -> Option<T> {
         unsafe { *self.inner.get() }
     }
@@ -220,12 +228,14 @@ impl<T> AtomicLazyCell<T> {
     ///
     /// This function will return `Err(value)` is the cell is already full.
     pub fn fill(&self, t: T) -> Result<(), T> {
+        #[allow(deprecated)]
         if NONE != self.state.compare_and_swap(NONE, LOCK, Ordering::Acquire) {
             return Err(t);
         }
 
         unsafe { *self.inner.get() = Some(t) };
 
+        #[allow(deprecated)]
         if LOCK != self.state.compare_and_swap(LOCK, SOME, Ordering::Release) {
             panic!("unable to release lock");
         }
@@ -243,6 +253,7 @@ impl<T> AtomicLazyCell<T> {
     /// # Return value
     ///
     /// This function returns the previous value, if any.
+    #[allow(unused)]
     pub fn replace(&mut self, value: T) -> Option<T> {
         match mem::replace(self.state.get_mut(), SOME) {
             NONE | SOME => {}
@@ -252,6 +263,7 @@ impl<T> AtomicLazyCell<T> {
     }
 
     /// Test whether this cell has been previously filled.
+    #[allow(unused)]
     pub fn filled(&self) -> bool {
         self.state.load(Ordering::Acquire) == SOME
     }
@@ -269,6 +281,7 @@ impl<T> AtomicLazyCell<T> {
     }
 
     /// Consumes this `LazyCell`, returning the underlying value.
+    #[allow(unused)]
     pub fn into_inner(self) -> Option<T> {
         // Rust 1.25 changed UnsafeCell::into_inner() from unsafe to safe
         // function. This unsafe can be removed when supporting Rust older than
@@ -285,6 +298,7 @@ impl<T: Copy> AtomicLazyCell<T> {
     ///
     /// This function will return `Some` if the cell has been previously initialized,
     /// and `None` if it has not yet been initialized.
+    #[allow(unused)]
     pub fn get(&self) -> Option<T> {
         match self.state.load(Ordering::Acquire) {
             SOME => unsafe { *self.inner.get() },

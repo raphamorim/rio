@@ -1,15 +1,8 @@
 #[cfg(all(unix, not(target_os = "fuchsia")))]
-pub use self::unix::{
-    pipe, set_nonblock, Awakener, EventedFd, Events, Io, Selector, TcpListener,
-    TcpStream, UdpSocket,
-};
+pub use self::unix::{pipe, set_nonblock, Awakener, EventedFd, Events, Io, Selector};
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 pub use self::unix::READY_ALL;
-
-#[cfg(all(unix, not(target_os = "fuchsia")))]
-#[cfg(feature = "with-deprecated")]
-pub use self::unix::UnixSocket;
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 pub mod unix;

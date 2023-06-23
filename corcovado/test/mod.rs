@@ -1,13 +1,9 @@
-#![allow(deprecated)]
-
 extern crate bytes;
-extern crate corcovado
-extern crate net2;
-
-#[macro_use]
-extern crate log;
+extern crate corcovado;
 extern crate env_logger;
 extern crate iovec;
+extern crate log;
+extern crate net2;
 extern crate slab;
 extern crate tempdir;
 
@@ -130,17 +126,18 @@ impl<T> MapNonBlock<T> for io::Result<T> {
 mod ports {
     use std::net::SocketAddr;
     use std::str::FromStr;
+    use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::SeqCst;
-    use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
 
     // Helper for getting a unique port for the task run
     // TODO: Reuse ports to not spam the system
-    static mut NEXT_PORT: AtomicUsize = ATOMIC_USIZE_INIT;
+    static mut NEXT_PORT: AtomicUsize = AtomicUsize::new(0);
     const FIRST_PORT: usize = 18080;
 
     fn next_port() -> usize {
         unsafe {
             // If the atomic was never used, set it to the initial port
+            #[allow(deprecated)]
             NEXT_PORT.compare_and_swap(0, FIRST_PORT, SeqCst);
 
             // Get and increment the port list

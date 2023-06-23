@@ -1,6 +1,6 @@
 //! Timer optimized for I/O related operations
-use lazycell::LazyCell;
 use crate::{event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+use lazycell::LazyCell;
 use slab::Slab;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
