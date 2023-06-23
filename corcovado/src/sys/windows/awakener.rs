@@ -52,7 +52,7 @@ impl Evented for Awakener {
         assert_eq!(events, Ready::readable());
         *self.inner.lock().unwrap() = Some(AwakenerInner {
             selector: poll::selector(poll).clone_ref(),
-            token: token,
+            token,
         });
         Ok(())
     }
