@@ -25,101 +25,101 @@ use {Poll, Token};
 /// [`Registration`]: ../struct.Registration.html
 /// [`SetReadiness`]: ../struct.SetReadiness.html
 ///
-/// # Examples
-///
-/// Implementing `Evented` on a struct containing a socket:
-///
-/// ```
-/// use corcovado::{Ready, Poll, PollOpt, Token};
-/// use corcovado::event::Evented;
-/// use corcovado::net::TcpStream;
-///
-/// use std::io;
-///
-/// pub struct MyEvented {
-///     socket: TcpStream,
-/// }
-///
-/// impl Evented for MyEvented {
-///     fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-///         -> io::Result<()>
-///     {
-///         // Delegate the `register` call to `socket`
-///         self.socket.register(poll, token, interest, opts)
-///     }
-///
-///     fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-///         -> io::Result<()>
-///     {
-///         // Delegate the `reregister` call to `socket`
-///         self.socket.reregister(poll, token, interest, opts)
-///     }
-///
-///     fn deregister(&self, poll: &Poll) -> io::Result<()> {
-///         // Delegate the `deregister` call to `socket`
-///         self.socket.deregister(poll)
-///     }
-/// }
-/// ```
-///
-/// Implement `Evented` using [`Registration`] and [`SetReadiness`].
-///
-/// ```
-/// use corcovado::{Ready, Registration, Poll, PollOpt, Token};
-/// use corcovado::event::Evented;
-///
-/// use std::io;
-/// use std::time::Instant;
-/// use std::thread;
-///
-/// pub struct Deadline {
-///     when: Instant,
-///     registration: Registration,
-/// }
-///
-/// impl Deadline {
-///     pub fn new(when: Instant) -> Deadline {
-///         let (registration, set_readiness) = Registration::new2();
-///
-///         thread::spawn(move || {
-///             let now = Instant::now();
-///
-///             if now < when {
-///                 thread::sleep(when - now);
-///             }
-///
-///             set_readiness.set_readiness(Ready::readable());
-///         });
-///
-///         Deadline {
-///             when: when,
-///             registration: registration,
-///         }
-///     }
-///
-///     pub fn is_elapsed(&self) -> bool {
-///         Instant::now() >= self.when
-///     }
-/// }
-///
-/// impl Evented for Deadline {
-///     fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-///         -> io::Result<()>
-///     {
-///         self.registration.register(poll, token, interest, opts)
-///     }
-///
-///     fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-///         -> io::Result<()>
-///     {
-///         self.registration.reregister(poll, token, interest, opts)
-///     }
-///
-///     fn deregister(&self, poll: &Poll) -> io::Result<()> {
-///         self.registration.deregister(poll)
-///     }
-/// }
-/// ```
+// # Examples
+//
+// Implementing `Evented` on a struct containing a socket:
+//
+// ```
+// use corcovado::{Ready, Poll, PollOpt, Token};
+// use corcovado::event::Evented;
+// use std::net::TcpStream;
+//
+// use std::io;
+//
+// pub struct MyEvented {
+//     socket: TcpStream,
+// }
+//
+// impl Evented for MyEvented {
+//     fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
+//         -> io::Result<()>
+//     {
+//         // Delegate the `register` call to `socket`
+//         self.socket.register(poll, token, interest, opts)
+//     }
+//
+//     fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
+//         -> io::Result<()>
+//     {
+//         // Delegate the `reregister` call to `socket`
+//         self.socket.reregister(poll, token, interest, opts)
+//     }
+//
+//     fn deregister(&self, poll: &Poll) -> io::Result<()> {
+//         // Delegate the `deregister` call to `socket`
+//         self.socket.deregister(poll)
+//     }
+// }
+// ```
+//
+// Implement `Evented` using [`Registration`] and [`SetReadiness`].
+//
+// ```
+// use corcovado::{Ready, Registration, Poll, PollOpt, Token};
+// use corcovado::event::Evented;
+//
+// use std::io;
+// use std::time::Instant;
+// use std::thread;
+//
+// pub struct Deadline {
+//     when: Instant,
+//     registration: Registration,
+// }
+//
+// impl Deadline {
+//     pub fn new(when: Instant) -> Deadline {
+//         let (registration, set_readiness) = Registration::new2();
+//
+//         thread::spawn(move || {
+//             let now = Instant::now();
+//
+//             if now < when {
+//                 thread::sleep(when - now);
+//             }
+//
+//             set_readiness.set_readiness(Ready::readable());
+//         });
+//
+//         Deadline {
+//             when: when,
+//             registration: registration,
+//         }
+//     }
+//
+//     pub fn is_elapsed(&self) -> bool {
+//         Instant::now() >= self.when
+//     }
+// }
+//
+// impl Evented for Deadline {
+//     fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
+//         -> io::Result<()>
+//     {
+//         self.registration.register(poll, token, interest, opts)
+//     }
+//
+//     fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
+//         -> io::Result<()>
+//     {
+//         self.registration.reregister(poll, token, interest, opts)
+//     }
+//
+//     fn deregister(&self, poll: &Poll) -> io::Result<()> {
+//         self.registration.deregister(poll)
+//     }
+// }
+// ```
 pub trait Evented {
     /// Register `self` with the given `Poll` instance.
     ///
