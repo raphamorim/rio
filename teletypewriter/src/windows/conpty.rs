@@ -1,3 +1,4 @@
+use crate::Winsize;
 use log::*;
 use std::io::Error;
 use std::os::windows::io::IntoRawHandle;
@@ -20,8 +21,6 @@ use windows_sys::Win32::System::Threading::{
     STARTUPINFOW,
 };
 
-use crate::config::PtyConfig;
-use crate::event::{OnResize, WindowSize};
 use crate::windows::child::ChildExitWatcher;
 use crate::windows::{cmdline, win32_string, Pty};
 
@@ -104,7 +103,7 @@ impl Drop for Conpty {
 // The ConPTY handle can be sent between threads.
 unsafe impl Send for Conpty {}
 
-pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
+pub fn new(shell: &str, columns: u16, rows: u16) -> Option<Pty> {
     let api = ConptyApi::new();
     let mut pty_handle: HPCON = 0;
 
@@ -115,10 +114,17 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
     let (conout, conout_pty_handle) = miow::pipe::anonymous(0).unwrap();
     let (conin_pty_handle, conin) = miow::pipe::anonymous(0).unwrap();
 
+    let winsize = Winsize {
+        ws_row: rows as libc::c_ushort,
+        ws_col: columns as libc::c_ushort,
+        ws_width: 0 as libc::c_ushort,
+        ws_height: 0 as libc::c_ushort,
+    };
+
     // Create the Pseudo Console, using the pipes.
     let result = unsafe {
         (api.create)(
-            window_size.into(),
+            winsize.into(),
             conin_pty_handle.into_raw_handle() as HANDLE,
             conout_pty_handle.into_raw_handle() as HANDLE,
             0,
@@ -202,8 +208,9 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
         }
     }
 
-    let cmdline = win32_string(&cmdline(config));
-    let cwd = config.working_directory.as_ref().map(win32_string);
+    let cmdline = win32_string(&cmdline(shell));
+    // let cwd = win32_string;
+    // let cwd = config.working_directory.as_ref().map(win32_string);
 
     let mut proc_info: PROCESS_INFORMATION = unsafe { mem::zeroed() };
     unsafe {
@@ -215,7 +222,8 @@ pub fn new(config: &PtyConfig, window_size: WindowSize) -> Option<Pty> {
             false as i32,
             EXTENDED_STARTUPINFO_PRESENT,
             ptr::null_mut(),
-            cwd.as_ref().map_or_else(ptr::null, |s| s.as_ptr()),
+            ptr::null(),
+            // cwd.as_ref().map_or_else(ptr::null, |s| s.as_ptr()),
             &mut startup_info_ex.StartupInfo as *mut STARTUPINFOW,
             &mut proc_info as *mut PROCESS_INFORMATION,
         ) > 0;
@@ -242,17 +250,17 @@ fn panic_shell_spawn() {
     panic!("Unable to spawn shell: {}", Error::last_os_error());
 }
 
-impl OnResize for Conpty {
-    fn on_resize(&mut self, window_size: WindowSize) {
+impl Conpty {
+    pub fn on_resize(&mut self, window_size: Winsize) {
         let result = unsafe { (self.api.resize)(self.handle, window_size.into()) };
         assert_eq!(result, S_OK);
     }
 }
 
-impl From<WindowSize> for COORD {
-    fn from(window_size: WindowSize) -> Self {
-        let lines = window_size.num_lines;
-        let columns = window_size.num_cols;
+impl From<Winsize> for COORD {
+    fn from(window_size: Winsize) -> Self {
+        let lines = window_size.ws_row;
+        let columns = window_size.ws_col;
         COORD {
             X: columns as i16,
             Y: lines as i16,

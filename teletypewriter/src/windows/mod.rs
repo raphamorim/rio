@@ -4,15 +4,13 @@ mod conpty;
 mod pipes;
 
 use std::ffi::OsStr;
-use std::io::{self, Error, ErrorKind, Result};
+use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 use std::sync::mpsc::TryRecvError;
 
-use crate::config::{Program, PtyConfig};
-use crate::event::{OnResize, WindowSize};
 use crate::windows::child::ChildExitWatcher;
-use crate::{ChildEvent, EventedPty, ProcessReadWrite};
+use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 
 use conpty::Conpty as Backend;
 use mio_anonymous_pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
@@ -31,8 +29,8 @@ pub struct Pty {
 
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
-pub fn create_pty(config: &PtyConfig, window_size: WindowSize, _window_id: u64) -> Pty {
-    conpty::new(config, window_size).ok_or_else(|| panic!("failed to spawn conpty"))
+pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
+    conpty::new(shell, columns, rows).ok_or_else(|| panic!("failed to spawn conpty")).unwrap()
 }
 
 impl Pty {
@@ -186,6 +184,13 @@ impl ProcessReadWrite for Pty {
     fn write_token(&self) -> corcovado::Token {
         self.write_token
     }
+
+    #[inline]
+    fn set_winsize(&mut self, winsize_builder: WinsizeBuilder) -> Result<(), std::io::Error> {
+        let winsize: Winsize = winsize_builder.build();
+        self.backend.on_resize(winsize);
+        Ok(())
+    }
 }
 
 impl EventedPty for Pty {
@@ -202,18 +207,15 @@ impl EventedPty for Pty {
     }
 }
 
-impl OnResize for Pty {
-    fn on_resize(&mut self, window_size: WindowSize) {
-        self.backend.on_resize(window_size)
+fn cmdline(shell: &str) -> String {
+    let default_shell = "powershell".to_owned();
+    if shell.is_empty() {
+        shell = &default_shell;
     }
-}
+    // let shell = config.shell.as_ref().unwrap_or(&default_shell);
 
-fn cmdline(config: &PtyConfig) -> String {
-    let default_shell = Program::Just("powershell".to_owned());
-    let shell = config.shell.as_ref().unwrap_or(&default_shell);
-
-    once(shell.program())
-        .chain(shell.args().iter().map(|a| a.as_ref()))
+    once(shell)
+        // .chain(shell.args().iter().map(|a| a.as_ref()))
         .collect::<Vec<_>>()
         .join(" ")
 }

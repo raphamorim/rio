@@ -9,7 +9,7 @@ use windows_sys::Win32::System::Threading::{
     WT_EXECUTEONLYONCE,
 };
 
-use crate::tty::ChildEvent;
+use crate::ChildEvent;
 
 /// WinAPI callback to run when child process exits.
 extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
