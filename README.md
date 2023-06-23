@@ -23,7 +23,7 @@
 | MacOs _as desktop application_ | 🔵 | `0.0.3` [(see more)](https://raphamorim.io/rio/install/#install) |
 | Web Browser _(WebAssembly)_ | 🟡 | (Sugarloaf is ready but Rio still need to be ported) |
 | Linux _as desktop application_ | 🔵 | `0.0.7` [(see more)](https://raphamorim.io/rio/install/#build-from-the-source) |
-| Windows _as desktop application_ | 🔴 | |
+| Windows _as desktop application_ | 🔴 | `0.0.8` (next version) |
 | Nintendo Switch * | 🔴 | |
 
 _* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._

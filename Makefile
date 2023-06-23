@@ -61,6 +61,11 @@ release-wayland:
 	cargo build --release --no-default-features --features=wayland
 	WINIT_UNIX_BACKEND=wayland target/release/rio
 
+# cargo install cargo-wix
+# https://github.com/volks73/cargo-wix
+release-windows:
+	cargo wix -p rio
+
 lint:
 	cargo fmt -- --check --color always
 	cargo clippy --all-targets --all-features -- -D warnings
