@@ -1,8 +1,7 @@
+use corcovado::channel::{Receiver, Sender, channel};
 use std::ffi::c_void;
 use std::io::Error;
 use std::sync::atomic::{AtomicPtr, Ordering};
-
-use corcovado::{channel, Receiver, Sender};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
@@ -74,7 +73,7 @@ mod tests {
     use std::process::Command;
     use std::time::Duration;
 
-    use mio::{Events, Poll, PollOpt, Ready, Token};
+    use corcovado::{event::Events, Poll, PollOpt, Ready, Token};
 
     use super::*;
 

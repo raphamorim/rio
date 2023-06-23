@@ -1,4 +1,4 @@
-use log::info;
+use log::*;
 use std::io::Error;
 use std::os::windows::io::IntoRawHandle;
 use std::{mem, ptr};
@@ -22,8 +22,8 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::config::PtyConfig;
 use crate::event::{OnResize, WindowSize};
-use crate::tty::windows::child::ChildExitWatcher;
-use crate::tty::windows::{cmdline, win32_string, Pty};
+use crate::windows::child::ChildExitWatcher;
+use crate::windows::{cmdline, win32_string, Pty};
 
 /// Load the pseudoconsole API from conpty.dll if possible, otherwise use the
 /// standard Windows API.

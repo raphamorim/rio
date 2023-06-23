@@ -2566,9 +2566,11 @@ dependencies = [
  "dirs",
  "iovec",
  "libc",
+ "log 0.3.9",
  "miow",
  "signal-hook",
- "windows-sys 0.48.0",
+ "windows 0.42.0",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]

@@ -12,18 +12,25 @@ authors = { workspace = true }
 libc = "0.2.140"
 dirs = "5.0"
 corcovado = { path = "../corcovado" }
+log = { workspaces = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.10"
 iovec = "0.1.1"
 
 [target.'cfg(windows)'.dependencies]
-miow = "0.5"
-windows-sys = { version = "0.48", features = [
-    "Win32_System_Console",
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Threading",
-    "Win32_System_WindowsProgramming",
-]}
+windows-sys = "0.42.0"
+miow = "0.5.0"
+
+[dependencies.windows]
+version = "0.42.0"
+features = [
+  "Win32_Foundation",
+  "Win32_Networking_WinSock",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+  "Win32_System_WindowsProgramming",
+]
