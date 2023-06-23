@@ -4,10 +4,10 @@ use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
 use log::error;
-use urca::channel;
+use corcovado::channel;
 #[cfg(unix)]
-use urca::unix::UnixReady;
-use urca::{self, Events, PollOpt, Ready};
+use corcovado::unix::UnixReady;
+use corcovado::{self, Events, PollOpt, Ready};
 
 use crate::event::{Msg, RioEvent};
 
@@ -28,7 +28,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     sender: channel::Sender<Msg>,
     receiver: channel::Receiver<Msg>,
     pty: T,
-    poll: urca::Poll,
+    poll: corcovado::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
 }
@@ -111,7 +111,7 @@ where
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         // let (mut sender, mut receiver) = unbounded::<Msg>();
         let (sender, receiver) = channel::channel();
-        let poll = urca::Poll::new()?;
+        let poll = corcovado::Poll::new()?;
 
         Ok(Machine {
             sender,
@@ -202,7 +202,7 @@ where
 
     /// Returns a `bool` indicating whether or not the event loop should continue running.
     #[inline]
-    fn channel_event(&mut self, token: urca::Token, state: &mut State) -> bool {
+    fn channel_event(&mut self, token: corcovado::Token, state: &mut State) -> bool {
         if !self.should_keep_alive(state) {
             return false;
         }

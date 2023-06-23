@@ -14,7 +14,7 @@ bitflags = "2.0.2"
 bytemuck = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
-urca = { path = "../urca" }
+corcovado = { path = "../corcovado" }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }
 dirs = "5.0"

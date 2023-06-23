@@ -11,7 +11,7 @@ authors = { workspace = true }
 [dependencies]
 libc = "0.2.140"
 dirs = "5.0"
-urca = { path = "../urca" }
+corcovado = { path = "../corcovado" }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.10"

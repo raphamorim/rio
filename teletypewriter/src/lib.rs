@@ -24,25 +24,25 @@ pub trait ProcessReadWrite {
     type Reader: io::Read;
     type Writer: io::Write;
     fn reader(&mut self) -> &mut Self::Reader;
-    fn read_token(&self) -> urca::Token;
+    fn read_token(&self) -> corcovado::Token;
     fn writer(&mut self) -> &mut Self::Writer;
-    fn write_token(&self) -> urca::Token;
+    fn write_token(&self) -> corcovado::Token;
     fn set_winsize(&mut self, _: WinsizeBuilder) -> Result<(), io::Error>;
 
     fn register(
         &mut self,
-        _: &urca::Poll,
-        _: &mut dyn Iterator<Item = urca::Token>,
-        _: urca::Ready,
-        _: urca::PollOpt,
+        _: &corcovado::Poll,
+        _: &mut dyn Iterator<Item = corcovado::Token>,
+        _: corcovado::Ready,
+        _: corcovado::PollOpt,
     ) -> io::Result<()>;
     fn reregister(
         &mut self,
-        _: &urca::Poll,
-        _: urca::Ready,
-        _: urca::PollOpt,
+        _: &corcovado::Poll,
+        _: corcovado::Ready,
+        _: corcovado::PollOpt,
     ) -> io::Result<()>;
-    fn deregister(&mut self, _: &urca::Poll) -> io::Result<()>;
+    fn deregister(&mut self, _: &corcovado::Poll) -> io::Result<()>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub enum ChildEvent {
 }
 
 pub trait EventedPty: ProcessReadWrite {
-    fn child_event_token(&self) -> urca::Token;
+    fn child_event_token(&self) -> corcovado::Token;
 
     /// Tries to retrieve an event.
     ///

@@ -485,6 +485,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "corcovado"
+version = "0.0.1"
+dependencies = [
+ "bytes 0.3.0",
+ "cfg-if 0.1.10",
+ "env_logger 0.4.3",
+ "fuchsia-zircon",
+ "fuchsia-zircon-sys",
+ "iovec",
+ "kernel32-sys",
+ "libc",
+ "log 0.4.18",
+ "miow",
+ "net2",
+ "slab",
+ "tempdir",
+ "winapi 0.2.8",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2092,6 +2112,7 @@ dependencies = [
  "colors",
  "config",
  "copypasta",
+ "corcovado",
  "dirs",
  "glyph_brush",
  "image",
@@ -2106,7 +2127,6 @@ dependencies = [
  "teletypewriter",
  "tokio",
  "unicode-width",
- "urca",
  "vte",
  "wayland-client",
  "wgpu",
@@ -2404,12 +2424,12 @@ dependencies = [
 name = "teletypewriter"
 version = "2.0.0"
 dependencies = [
+ "corcovado",
  "dirs",
  "iovec",
  "libc",
  "miow",
  "signal-hook",
- "urca",
  "windows-sys 0.48.0",
 ]
 
@@ -2577,26 +2597,6 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
-
-[[package]]
-name = "urca"
-version = "0.0.1"
-dependencies = [
- "bytes 0.3.0",
- "cfg-if 0.1.10",
- "env_logger 0.4.3",
- "fuchsia-zircon",
- "fuchsia-zircon-sys",
- "iovec",
- "kernel32-sys",
- "libc",
- "log 0.4.18",
- "miow",
- "net2",
- "slab",
- "tempdir",
- "winapi 0.2.8",
-]
 
 [[package]]
 name = "utf8parse"
