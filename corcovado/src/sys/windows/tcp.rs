@@ -1,3 +1,5 @@
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
+use windows_sys::Win32::Foundation::HANDLE;
 use std::fmt;
 use std::io::{self, ErrorKind, Read};
 use std::mem;
@@ -10,7 +12,6 @@ use iovec::IoVec;
 use miow::iocp::CompletionStatus;
 use miow::net::*;
 use net2::{TcpBuilder, TcpStreamExt as Net2TcpExt};
-use winapi::*;
 
 use event::Evented;
 use sys::windows::from_raw_arc::FromRawArc;
@@ -783,17 +784,22 @@ impl ListenerImp {
             Family::V6 => TcpBuilder::new_v6(),
         }
         .and_then(|builder| unsafe {
+
+            let s: net::TcpStream = builder.to_tcp_stream().unwrap();
+            // let _ts = TcpStream::from_stream(s); 
+
             trace!("scheduling an accept");
             self.inner.socket.accept_overlapped(
-                &builder,
+                &s,
                 &mut me.accept_buf,
                 self.inner.accept.as_mut_ptr(),
             )
         });
         match res {
-            Ok((socket, _)) => {
+            // Ok((socket, _)) => {
+            Ok(_tcp) => {
                 // see docs above on StreamImp.inner for rationale on forget
-                me.accept = State::Pending(socket);
+                // me.accept = State::Pending(tcp);
                 mem::forget(self.clone());
             }
             Err(e) => {

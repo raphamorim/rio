@@ -113,10 +113,7 @@ extern crate libc;
 extern crate miow;
 
 #[cfg(windows)]
-extern crate winapi;
-
-#[cfg(windows)]
-extern crate kernel32;
+extern crate windows_sys;
 
 #[macro_use]
 extern crate log;
@@ -125,11 +122,13 @@ mod event_imp;
 mod io;
 mod lazycell;
 mod poll;
+#[cfg(unix)]
 mod socket;
 mod sys;
 mod token;
 
 pub mod channel;
+#[cfg(unix)]
 pub mod stream;
 pub mod timer;
 

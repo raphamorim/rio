@@ -3,6 +3,8 @@
 //! Note that most of this module is quite similar to the TCP module, so if
 //! something seems odd you may also want to try the docs over there.
 
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
+use windows_sys::Win32::Networking::WinSock::WSAEMSGSIZE;
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
@@ -15,7 +17,6 @@ use miow::net::SocketAddrBuf;
 use miow::net::UdpSocketExt as MiowUdpSocketExt;
 #[allow(unused_imports)]
 use net2::{UdpBuilder, UdpSocketExt};
-use winapi::*;
 
 use event::Evented;
 use sys::windows::from_raw_arc::FromRawArc;
