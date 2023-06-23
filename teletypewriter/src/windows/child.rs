@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::io::Error;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use mio_extras::channel::{channel, Receiver, Sender};
+use corcovado::{channel, Receiver, Sender};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
