@@ -111,7 +111,11 @@ impl Config {
                         return Ok(decoded);
                     }
 
-                    let path = format!("/tmp/{theme}.toml");
+                    let tmp = std::env::temp_dir()
+                        .to_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let path = format!("{tmp}/{theme}.toml");
                     if let Ok(loaded_theme) = Config::load_theme(&path) {
                         decoded.colors = loaded_theme.colors;
                     } else {
@@ -196,8 +200,16 @@ mod tests {
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
+    fn tmp_dir() -> String {
+        std::env::temp_dir()
+            .to_str()
+            .unwrap_or_default()
+            .to_string()
+    }
+
     fn create_temporary_config(prefix: &str, toml_str: &str) -> Config {
-        let file_name = format!("/tmp/test-rio-{prefix}-config.toml");
+        let tmp = tmp_dir();
+        let file_name = format!("{tmp}/test-rio-{prefix}-config.toml");
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 
@@ -208,21 +220,26 @@ mod tests {
     }
 
     fn create_temporary_theme(theme: &str, toml_str: &str) {
-        let file_name = format!("/tmp/{theme}.toml");
+        let tmp = tmp_dir();
+        let file_name = format!("{tmp}/{theme}.toml");
         let mut file = std::fs::File::create(file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
     }
 
     #[test]
     fn test_filepath_does_not_exist_without_fallback() {
-        let should_fail =
-            Config::load_from_path_without_fallback("/tmp/it-should-never-exist");
+        let tmp = tmp_dir();
+        let should_fail = Config::load_from_path_without_fallback(
+            format!("{tmp}/it-should-never-exist").as_str(),
+        );
         assert!(should_fail.is_err(), "{}", true);
     }
 
     #[test]
     fn test_filepath_does_not_exist_with_fallback() {
-        let config = Config::load_from_path("/tmp/it-should-never-exist");
+        let tmp = tmp_dir();
+        let config =
+            Config::load_from_path(format!("{tmp}/it-should-never-exist").as_str());
         assert_eq!(config.theme, default_theme());
         assert_eq!(config.cursor, default_cursor());
     }
@@ -311,7 +328,9 @@ mod tests {
             height = "small"
         "#;
 
-        let file_name = String::from("/tmp/test-rio-invalid-config.toml");
+        let tmp = tmp_dir();
+        let file_name =
+            String::from(format!("{tmp}/test-rio-invalid-config.toml").as_str());
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 

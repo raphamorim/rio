@@ -2,6 +2,8 @@
 
 ## 0.0.8 (in progress)
 
+- Support to Microsoft Windows 11.
+- Migration of mio, mio-extras, mio-signal-hook to Corcovado.
 - Changed default black color to `#4c4345`.
 - Fix mouse position for when selecting text.
 
