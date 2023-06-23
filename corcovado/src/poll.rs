@@ -82,52 +82,51 @@ use {sys, Token};
 /// [`write`]: tcp/struct.TcpStream.html#method.write
 /// [`register`]: #method.register
 ///
-/// # Examples
-///
-/// A basic example -- establishing a `TcpStream` connection.
-///
-/// ```
-/// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<dyn Error>> {
-/// use corcovado::{Events, Poll, Ready, PollOpt, Token};
-/// use corcovado::net::TcpStream;
-///
-/// use std::net::{TcpListener, SocketAddr};
-///
-/// // Bind a server socket to connect to.
-/// let addr: SocketAddr = "127.0.0.1:0".parse()?;
-/// let server = TcpListener::bind(&addr)?;
-///
-/// // Construct a new `Poll` handle as well as the `Events` we'll store into
-/// let poll = Poll::new()?;
-/// let mut events = Events::with_capacity(1024);
-///
-/// // Connect the stream
-/// let stream = TcpStream::connect(&server.local_addr()?)?;
-///
-/// // Register the stream with `Poll`
-/// poll.register(&stream, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
-///
-/// // Wait for the socket to become ready. This has to happens in a loop to
-/// // handle spurious wakeups.
-/// loop {
-///     poll.poll(&mut events, None)?;
-///
-///     for event in &events {
-///         if event.token() == Token(0) && event.readiness().is_writable() {
-///             // The socket connected (probably, it could still be a spurious
-///             // wakeup)
-///             return Ok(());
-///         }
-///     }
-/// }
-/// #     Ok(())
-/// # }
-/// #
-/// # fn main() {
-/// #     try_main().unwrap();
-/// # }
-/// ```
+// # Examples
+//
+// A basic example -- establishing a `TcpStream` connection.
+//
+// ```
+// # use std::error::Error;
+// # fn try_main() -> Result<(), Box<dyn Error>> {
+// use corcovado::{Events, Poll, Ready, PollOpt, Token};
+//
+// use std::net::{TcpStream, TcpListener, SocketAddr};
+//
+// // Bind a server socket to connect to.
+// let addr: SocketAddr = "127.0.0.1:0".parse()?;
+// let server = TcpListener::bind(&addr)?;
+//
+// // Construct a new `Poll` handle as well as the `Events` we'll store into
+// let poll = Poll::new()?;
+// let mut events = Events::with_capacity(1024);
+//
+// // Connect the stream
+// let stream = TcpStream::connect(&server.local_addr()?)?;
+//
+// // Register the stream with `Poll`
+// poll.register(&stream, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
+//
+// // Wait for the socket to become ready. This has to happens in a loop to
+// // handle spurious wakeups.
+// loop {
+//     poll.poll(&mut events, None)?;
+//
+//     for event in &events {
+//         if event.token() == Token(0) && event.readiness().is_writable() {
+//             // The socket connected (probably, it could still be a spurious
+//             // wakeup)
+//             return Ok(());
+//         }
+//     }
+// }
+// #     Ok(())
+// # }
+// #
+// # fn main() {
+// #     try_main().unwrap();
+// # }
+// ```
 ///
 /// # Edge-triggered and level-triggered
 ///
@@ -263,30 +262,30 @@ use {sys, Token};
 ///
 /// For example:
 ///
-/// ```
-/// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<dyn Error>> {
-/// use corcovado::{Poll, Ready, PollOpt, Token};
-/// use corcovado::net::TcpStream;
-/// use std::time::Duration;
-/// use std::thread;
-///
-/// let sock = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
-///
-/// thread::sleep(Duration::from_secs(1));
-///
-/// let poll = Poll::new()?;
-///
-/// // The connect is not guaranteed to have started until it is registered at
-/// // this point
-/// poll.register(&sock, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
-/// #     Ok(())
-/// # }
-/// #
-/// # fn main() {
-/// #     try_main().unwrap();
-/// # }
-/// ```
+// ```
+// # use std::error::Error;
+// # fn try_main() -> Result<(), Box<dyn Error>> {
+// use corcovado::{Poll, Ready, PollOpt, Token};
+// use std::net::TcpStream;
+// use std::time::Duration;
+// use std::thread;
+//
+// let sock = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
+//
+// thread::sleep(Duration::from_secs(1));
+//
+// let poll = Poll::new()?;
+//
+// // The connect is not guaranteed to have started until it is registered at
+// // this point
+// poll.register(&sock, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
+// #     Ok(())
+// # }
+// #
+// # fn main() {
+// #     try_main().unwrap();
+// # }
+// ```
 ///
 /// # Implementation notes
 ///
@@ -734,50 +733,50 @@ impl Poll {
     /// [`oneshot`]: struct.PollOpt.html#method.oneshot
     /// [`Token`]: struct.Token.html
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<dyn Error>> {
-    /// use corcovado::{Events, Poll, Ready, PollOpt, Token};
-    /// use corcovado::net::TcpStream;
-    /// use std::time::{Duration, Instant};
-    ///
-    /// let poll = Poll::new()?;
-    /// let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
-    ///
-    /// // Register the socket with `poll`
-    /// poll.register(&socket, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
-    ///
-    /// let mut events = Events::with_capacity(1024);
-    /// let start = Instant::now();
-    /// let timeout = Duration::from_millis(500);
-    ///
-    /// loop {
-    ///     let elapsed = start.elapsed();
-    ///
-    ///     if elapsed >= timeout {
-    ///         // Connection timed out
-    ///         return Ok(());
-    ///     }
-    ///
-    ///     let remaining = timeout - elapsed;
-    ///     poll.poll(&mut events, Some(remaining))?;
-    ///
-    ///     for event in &events {
-    ///         if event.token() == Token(0) {
-    ///             // Something (probably) happened on the socket.
-    ///             return Ok(());
-    ///         }
-    ///     }
-    /// }
-    /// #     Ok(())
-    /// # }
-    /// #
-    /// # fn main() {
-    /// #     try_main().unwrap();
-    /// # }
-    /// ```
+    // # Examples
+    //
+    // ```
+    // # use std::error::Error;
+    // # fn try_main() -> Result<(), Box<dyn Error>> {
+    // use corcovado::{Events, Poll, Ready, PollOpt, Token};
+    // use std::net::TcpStream;
+    // use std::time::{Duration, Instant};
+    //
+    // let poll = Poll::new()?;
+    // let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
+    //
+    // // Register the socket with `poll`
+    // poll.register(&socket, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
+    //
+    // let mut events = Events::with_capacity(1024);
+    // let start = Instant::now();
+    // let timeout = Duration::from_millis(500);
+    //
+    // loop {
+    //     let elapsed = start.elapsed();
+    //
+    //     if elapsed >= timeout {
+    //         // Connection timed out
+    //         return Ok(());
+    //     }
+    //
+    //     let remaining = timeout - elapsed;
+    //     poll.poll(&mut events, Some(remaining))?;
+    //
+    //     for event in &events {
+    //         if event.token() == Token(0) {
+    //             // Something (probably) happened on the socket.
+    //             return Ok(());
+    //         }
+    //     }
+    // }
+    // #     Ok(())
+    // # }
+    // #
+    // # fn main() {
+    // #     try_main().unwrap();
+    // # }
+    // ```
     pub fn register<E: ?Sized>(
         &self,
         handle: &E,
@@ -826,36 +825,36 @@ impl Poll {
     /// arguments and see the [`struct`] docs for a high level overview of
     /// polling.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<dyn Error>> {
-    /// use corcovado::{Poll, Ready, PollOpt, Token};
-    /// use corcovado::net::TcpStream;
-    ///
-    /// let poll = Poll::new()?;
-    /// let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
-    ///
-    /// // Register the socket with `poll`, requesting readable
-    /// poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
-    ///
-    /// // Reregister the socket specifying a different token and write interest
-    /// // instead. `PollOpt::edge()` must be specified even though that value
-    /// // is not being changed.
-    /// poll.reregister(&socket, Token(2), Ready::writable(), PollOpt::edge())?;
-    /// #     Ok(())
-    /// # }
-    /// #
-    /// # fn main() {
-    /// #     try_main().unwrap();
-    /// # }
-    /// ```
-    ///
-    /// [`struct`]: #
-    /// [`register`]: #method.register
-    /// [`readable`]: struct.Ready.html#method.readable
-    /// [`writable`]: struct.Ready.html#method.writable
+    // # Examples
+    //
+    // ```
+    // # use std::error::Error;
+    // # fn try_main() -> Result<(), Box<dyn Error>> {
+    // use corcovado::{Poll, Ready, PollOpt, Token};
+    // use std::net::TcpStream;
+    //
+    // let poll = Poll::new()?;
+    // let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
+    //
+    // // Register the socket with `poll`, requesting readable
+    // poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
+    //
+    // // Reregister the socket specifying a different token and write interest
+    // // instead. `PollOpt::edge()` must be specified even though that value
+    // // is not being changed.
+    // poll.reregister(&socket, Token(2), Ready::writable(), PollOpt::edge())?;
+    // #     Ok(())
+    // # }
+    // #
+    // # fn main() {
+    // #     try_main().unwrap();
+    // # }
+    // ```
+    //
+    // [`struct`]: #
+    // [`register`]: #method.register
+    // [`readable`]: struct.Ready.html#method.readable
+    // [`writable`]: struct.Ready.html#method.writable
     pub fn reregister<E: ?Sized>(
         &self,
         handle: &E,
@@ -890,35 +889,35 @@ impl Poll {
     /// `Evented` handles are automatically deregistered when they are dropped.
     /// It is common to never need to explicitly call `deregister`.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<dyn Error>> {
-    /// use corcovado::{Events, Poll, Ready, PollOpt, Token};
-    /// use corcovado::net::TcpStream;
-    /// use std::time::Duration;
-    ///
-    /// let poll = Poll::new()?;
-    /// let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
-    ///
-    /// // Register the socket with `poll`
-    /// poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
-    ///
-    /// poll.deregister(&socket)?;
-    ///
-    /// let mut events = Events::with_capacity(1024);
-    ///
-    /// // Set a timeout because this poll should never receive any events.
-    /// let n = poll.poll(&mut events, Some(Duration::from_secs(1)))?;
-    /// assert_eq!(0, n);
-    /// #     Ok(())
-    /// # }
-    /// #
-    /// # fn main() {
-    /// #     try_main().unwrap();
-    /// # }
-    /// ```
+    // # Examples
+    //
+    // ```
+    // # use std::error::Error;
+    // # fn try_main() -> Result<(), Box<dyn Error>> {
+    // use corcovado::{Events, Poll, Ready, PollOpt, Token};
+    // use std::net::TcpStream;
+    // use std::time::Duration;
+    //
+    // let poll = Poll::new()?;
+    // let socket = TcpStream::connect(&"216.58.193.100:80".parse()?)?;
+    //
+    // // Register the socket with `poll`
+    // poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
+    //
+    // poll.deregister(&socket)?;
+    //
+    // let mut events = Events::with_capacity(1024);
+    //
+    // // Set a timeout because this poll should never receive any events.
+    // let n = poll.poll(&mut events, Some(Duration::from_secs(1)))?;
+    // assert_eq!(0, n);
+    // #     Ok(())
+    // # }
+    // #
+    // # fn main() {
+    // #     try_main().unwrap();
+    // # }
+    // ```
     pub fn deregister<E: ?Sized>(&self, handle: &E) -> io::Result<()>
     where
         E: Evented,
@@ -970,59 +969,58 @@ impl Poll {
     /// [struct]: #
     /// [`iter`]: struct.Events.html#method.iter
     ///
-    /// # Examples
-    ///
-    /// A basic example -- establishing a `TcpStream` connection.
-    ///
-    /// ```
-    /// # use std::error::Error;
-    /// # fn try_main() -> Result<(), Box<dyn Error>> {
-    /// use corcovado::{Events, Poll, Ready, PollOpt, Token};
-    /// use corcovado::net::TcpStream;
-    ///
-    /// use std::net::{TcpListener, SocketAddr};
-    /// use std::thread;
-    ///
-    /// // Bind a server socket to connect to.
-    /// let addr: SocketAddr = "127.0.0.1:0".parse()?;
-    /// let server = TcpListener::bind(&addr)?;
-    /// let addr = server.local_addr()?.clone();
-    ///
-    /// // Spawn a thread to accept the socket
-    /// thread::spawn(move || {
-    ///     let _ = server.accept();
-    /// });
-    ///
-    /// // Construct a new `Poll` handle as well as the `Events` we'll store into
-    /// let poll = Poll::new()?;
-    /// let mut events = Events::with_capacity(1024);
-    ///
-    /// // Connect the stream
-    /// let stream = TcpStream::connect(&addr)?;
-    ///
-    /// // Register the stream with `Poll`
-    /// poll.register(&stream, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
-    ///
-    /// // Wait for the socket to become ready. This has to happens in a loop to
-    /// // handle spurious wakeups.
-    /// loop {
-    ///     poll.poll(&mut events, None)?;
-    ///
-    ///     for event in &events {
-    ///         if event.token() == Token(0) && event.readiness().is_writable() {
-    ///             // The socket connected (probably, it could still be a spurious
-    ///             // wakeup)
-    ///             return Ok(());
-    ///         }
-    ///     }
-    /// }
-    /// #     Ok(())
-    /// # }
-    /// #
-    /// # fn main() {
-    /// #     try_main().unwrap();
-    /// # }
-    /// ```
+    // # Examples
+    //
+    // A basic example -- establishing a `TcpStream` connection.
+    //
+    // ```
+    // # use std::error::Error;
+    // # fn try_main() -> Result<(), Box<dyn Error>> {
+    // use corcovado::{Events, Poll, Ready, PollOpt, Token};
+    //
+    // use std::net::{TcpStream, TcpListener, SocketAddr};
+    // use std::thread;
+    //
+    // // Bind a server socket to connect to.
+    // let addr: SocketAddr = "127.0.0.1:0".parse()?;
+    // let server = TcpListener::bind(&addr)?;
+    // let addr = server.local_addr()?.clone();
+    //
+    // // Spawn a thread to accept the socket
+    // thread::spawn(move || {
+    //     let _ = server.accept();
+    // });
+    //
+    // // Construct a new `Poll` handle as well as the `Events` we'll store into
+    // let poll = Poll::new()?;
+    // let mut events = Events::with_capacity(1024);
+    //
+    // // Connect the stream
+    // let stream = TcpStream::connect(&addr)?;
+    //
+    // // Register the stream with `Poll`
+    // poll.register(&stream, Token(0), Ready::readable() | Ready::writable(), PollOpt::edge())?;
+    //
+    // // Wait for the socket to become ready. This has to happens in a loop to
+    // // handle spurious wakeups.
+    // loop {
+    //     poll.poll(&mut events, None)?;
+    //
+    //     for event in &events {
+    //         if event.token() == Token(0) && event.readiness().is_writable() {
+    //             // The socket connected (probably, it could still be a spurious
+    //             // wakeup)
+    //             return Ok(());
+    //         }
+    //     }
+    // }
+    // #     Ok(())
+    // # }
+    // #
+    // # fn main() {
+    // #     try_main().unwrap();
+    // # }
+    // ```
     ///
     /// [struct]: #
     pub fn poll(

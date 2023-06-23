@@ -61,32 +61,32 @@ use std::ops;
 /// assert!(ready.is_readable());
 /// ```
 ///
-/// Registering readable and error interest on a socket
-///
-/// ```
-/// # use std::error::Error;
-/// # fn try_main() -> Result<(), Box<dyn Error>> {
-/// use corcovado::{Ready, Poll, PollOpt, Token};
-/// use corcovado::net::TcpStream;
-/// use corcovado::unix::UnixReady;
-///
-/// let addr = "216.58.193.68:80".parse()?;
-/// let socket = TcpStream::connect(&addr)?;
-///
-/// let poll = Poll::new()?;
-///
-/// poll.register(&socket,
-///               Token(0),
-///               Ready::readable() | UnixReady::error(),
-///               PollOpt::edge())?;
-/// #     Ok(())
-/// # }
-/// #
-/// # fn main() {
-/// #     try_main().unwrap();
-/// # }
-/// ```
-///
+// Registering readable and error interest on a socket
+//
+// ```
+// # use std::error::Error;
+// # fn try_main() -> Result<(), Box<dyn Error>> {
+// use corcovado::{Ready, Poll, PollOpt, Token};
+// use std::net::TcpStream;
+// use corcovado::unix::UnixReady;
+//
+// let addr = "216.58.193.68:80".parse()?;
+// let socket = TcpStream::connect(&addr)?;
+//
+// let poll = Poll::new()?;
+//
+// poll.register(&socket,
+//               Token(0),
+//               Ready::readable() | UnixReady::error(),
+//               PollOpt::edge())?;
+// #     Ok(())
+// # }
+// #
+// # fn main() {
+// #     try_main().unwrap();
+// # }
+// ```
+//
 /// [`Poll`]: ../struct.Poll.html
 /// [readiness]: struct.Poll.html#readiness-operations
 #[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord)]
