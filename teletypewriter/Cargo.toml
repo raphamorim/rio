@@ -19,19 +19,13 @@ signal-hook = "0.3.10"
 iovec = "0.1.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = "0.42.0"
+windows-sys = { version = "0.48", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+]}
 miow = "0.5.0"
 parking_lot = "0.12"
-
-[dependencies.windows]
-version = "0.42.0"
-features = [
-  "Win32_Foundation",
-  "Win32_Networking_WinSock",
-  "Win32_Security",
-  "Win32_Storage_FileSystem",
-  "Win32_System_IO",
-  "Win32_System_Pipes",
-  "Win32_System_Threading",
-  "Win32_System_WindowsProgramming",
-]
