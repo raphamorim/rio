@@ -6,8 +6,8 @@ use std::sync::mpsc::TryRecvError;
 
 use crate::config::{Program, PtyConfig};
 use crate::event::{OnResize, WindowSize};
-use crate::tty::windows::child::ChildExitWatcher;
-use crate::tty::{ChildEvent, EventedPty, EventedReadWrite};
+use crate::windows::child::ChildExitWatcher;
+use crate::{ChildEvent, EventedPty, ProcessReadWrite};
 
 mod child;
 mod conpty;
@@ -53,7 +53,7 @@ impl Pty {
     }
 }
 
-impl EventedReadWrite for Pty {
+impl ProcessReadWrite for Pty {
     type Reader = ReadPipe;
     type Writer = WritePipe;
 
