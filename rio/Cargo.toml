@@ -41,6 +41,18 @@ objc = "0.2.2"
 x11-dl = { version = "2", optional = true }
 wayland-client = { version = "0.29.0", features = ["dlopen"], optional = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.48", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_IO",
+    "Win32_UI_WindowsAndMessaging",
+]}
+
 [package.metadata.bundle]
 name = "Rio"
 identifier = "com.raphaelamorim.rio"

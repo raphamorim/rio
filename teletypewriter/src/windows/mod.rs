@@ -13,7 +13,7 @@ use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 
 use conpty::Conpty as Backend;
-use mio_anonymous_pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
+use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
 
 pub struct Pty {
     // XXX: Backend is required to be the first field, to ensure correct drop order. Dropping
@@ -207,14 +207,14 @@ impl EventedPty for Pty {
     }
 }
 
-fn cmdline(shell: &str) -> String {
+fn cmdline(_shell: &str) -> String {
     let default_shell = "powershell".to_owned();
-    if shell.is_empty() {
-        shell = &default_shell;
-    }
+    // if shell.is_empty() {
+    //     shell = &default_shell;
+    // }
     // let shell = config.shell.as_ref().unwrap_or(&default_shell);
 
-    once(shell)
+    once(default_shell)
         // .chain(shell.args().iter().map(|a| a.as_ref()))
         .collect::<Vec<_>>()
         .join(" ")

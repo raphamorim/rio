@@ -2251,6 +2251,7 @@ dependencies = [
  "vte",
  "wayland-client",
  "wgpu",
+ "windows-sys 0.48.0",
  "winit",
  "x11-dl",
 ]
