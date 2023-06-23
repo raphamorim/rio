@@ -1,7 +1,7 @@
 use miow::pipe::{AnonRead, AnonWrite};
 use parking_lot::{Condvar, Mutex};
 use spsc_buffer::*;
-use urca::{events::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+use corcovado::{events::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
 use winapi::um::ioapiset::CancelSynchronousIo;
 
 use std::io;
