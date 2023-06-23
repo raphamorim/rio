@@ -48,7 +48,7 @@ impl Selector {
         // offset by 1 to avoid choosing 0 as the id of a selector
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed) + 1;
 
-        Ok(Selector { id: id, epfd: epfd })
+        Ok(Selector { id, epfd })
     }
 
     pub fn id(&self) -> usize {
@@ -241,7 +241,7 @@ impl Events {
             let mut kind = Ready::empty();
 
             if (epoll & EPOLLIN) != 0 {
-                kind = kind | Ready::readable();
+                kind |= Ready::readable();
             }
 
             if (epoll & EPOLLPRI) != 0 {
@@ -249,16 +249,16 @@ impl Events {
             }
 
             if (epoll & EPOLLOUT) != 0 {
-                kind = kind | Ready::writable();
+                kind |= Ready::writable();
             }
 
             // EPOLLHUP - Usually means a socket error happened
             if (epoll & EPOLLERR) != 0 {
-                kind = kind | UnixReady::error();
+                kind |= UnixReady::error();
             }
 
             if (epoll & EPOLLHUP) != 0 {
-                kind = kind | UnixReady::hup();
+                kind |= UnixReady::hup();
             }
 
             let token = self.events[idx].u64;
