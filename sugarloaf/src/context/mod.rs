@@ -16,7 +16,7 @@ impl Context {
         power_preference: wgpu::PowerPreference,
     ) -> Context {
         #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::GL;
+        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
         #[cfg(not(target_arch = "wasm32"))]
         let default_backend = wgpu::Backends::all();
 
@@ -72,7 +72,7 @@ impl Context {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
-                                features: wgpu::Features::default(),
+                                features: wgpu::Features::empty(),
                                 limits: wgpu::Limits::downlevel_webgl2_defaults(),
                             },
                             None,
