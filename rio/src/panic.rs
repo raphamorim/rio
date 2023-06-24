@@ -1,7 +1,7 @@
-use std::os::windows::ffi::OsStrExt;
-use std::iter::once;
 use std::ffi::OsStr;
 use std::io::Write;
+use std::iter::once;
+use std::os::windows::ffi::OsStrExt;
 use std::{io, panic};
 
 use windows_sys::Win32::UI::WindowsAndMessaging::{

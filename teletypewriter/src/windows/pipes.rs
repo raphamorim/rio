@@ -1,8 +1,10 @@
-use windows_sys::Win32::System::IO::CancelSynchronousIo;
+use crate::windows::spsc::*;
+use corcovado::{
+    event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token,
+};
 use miow::pipe::{AnonRead, AnonWrite};
 use parking_lot::{Condvar, Mutex};
-use crate::windows::spsc::*;
-use corcovado::{event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token};
+use windows_sys::Win32::System::IO::CancelSynchronousIo;
 
 use std::io;
 use std::os::windows::io::AsRawHandle;

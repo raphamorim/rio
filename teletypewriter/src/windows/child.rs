@@ -1,4 +1,4 @@
-use corcovado::channel::{Receiver, Sender, channel};
+use corcovado::channel::{channel, Receiver, Sender};
 use std::ffi::c_void;
 use std::io::Error;
 use std::sync::atomic::{AtomicPtr, Ordering};

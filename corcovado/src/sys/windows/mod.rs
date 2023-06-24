@@ -137,13 +137,12 @@
 //!   be some level of buffering of writes probably.
 
 use std::convert::TryInto;
-use windows_sys::Win32::System::WindowsProgramming::FILE_SKIP_SET_EVENT_ON_HANDLE;
-use windows_sys::Win32::System::IO::CancelIoEx;
-use windows_sys::Win32::Storage::FileSystem::SetFileCompletionNotificationModes;
-use windows_sys::Win32::Foundation::HANDLE;
 use std::io;
 use std::os::windows::prelude::*;
-
+use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Storage::FileSystem::SetFileCompletionNotificationModes;
+use windows_sys::Win32::System::WindowsProgramming::FILE_SKIP_SET_EVENT_ON_HANDLE;
+use windows_sys::Win32::System::IO::CancelIoEx;
 
 mod awakener;
 #[macro_use]

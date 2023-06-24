@@ -12,7 +12,7 @@ authors = { workspace = true }
 libc = "0.2.140"
 dirs = "5.0"
 corcovado = { path = "../corcovado" }
-log = { workspaces = true }
+log = "0.4.18"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.10"

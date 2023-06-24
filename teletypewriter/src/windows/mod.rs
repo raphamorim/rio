@@ -1,7 +1,7 @@
 mod child;
-mod spsc;
 mod conpty;
 mod pipes;
+mod spsc;
 
 use std::ffi::OsStr;
 use std::io::{self};
@@ -30,7 +30,9 @@ pub struct Pty {
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
 pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
-    conpty::new(shell, columns, rows).ok_or_else(|| panic!("failed to spawn conpty")).unwrap()
+    conpty::new(shell, columns, rows)
+        .ok_or_else(|| panic!("failed to spawn conpty"))
+        .unwrap()
 }
 
 impl Pty {
@@ -186,7 +188,10 @@ impl ProcessReadWrite for Pty {
     }
 
     #[inline]
-    fn set_winsize(&mut self, winsize_builder: WinsizeBuilder) -> Result<(), std::io::Error> {
+    fn set_winsize(
+        &mut self,
+        winsize_builder: WinsizeBuilder,
+    ) -> Result<(), std::io::Error> {
         let winsize: Winsize = winsize_builder.build();
         self.backend.on_resize(winsize);
         Ok(())

@@ -552,7 +552,10 @@ impl Sequencer {
                         return;
                     }
 
-                    #[cfg(all(feature = "wayland", not(any(target_os = "macos", target_os = "windows"))))]
+                    #[cfg(all(
+                        feature = "wayland",
+                        not(any(target_os = "macos", target_os = "windows"))
+                    ))]
                     if let Some(w_event_queue) = wayland_event_queue.as_mut() {
                         w_event_queue
                             .dispatch_pending(&mut (), |_, _, _| {})
