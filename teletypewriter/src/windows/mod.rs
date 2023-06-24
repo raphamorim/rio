@@ -212,14 +212,12 @@ impl EventedPty for Pty {
     }
 }
 
-fn cmdline(_shell: &str) -> String {
-    let default_shell = "powershell".to_owned();
-    // if shell.is_empty() {
-    //     shell = &default_shell;
-    // }
-    // let shell = config.shell.as_ref().unwrap_or(&default_shell);
+fn cmdline(shell: &str) -> String {
+    if !shell.is_empty() {
+        return shell.to_string();
+    }
 
-    once(default_shell)
+    once("powershell")
         // .chain(shell.args().iter().map(|a| a.as_ref()))
         .collect::<Vec<_>>()
         .join(" ")
