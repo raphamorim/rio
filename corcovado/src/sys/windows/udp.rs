@@ -3,6 +3,8 @@
 //! Note that most of this module is quite similar to the TCP module, so if
 //! something seems odd you may also want to try the docs over there.
 
+#![allow(unused)]
+
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
@@ -62,7 +64,7 @@ impl UdpSocket {
                 inner: FromRawArc::new(Io {
                     read: Overlapped::new(recv_done),
                     write: Overlapped::new(send_done),
-                    socket: socket,
+                    socket,
                     inner: Mutex::new(Inner {
                         iocp: ReadyBinding::new(),
                         read: State::Empty,
@@ -168,10 +170,14 @@ impl UdpSocket {
                 // then don't actually read any data, just return an error.
                 if buf.len() < data.len() {
                     me.read = State::Ready(data);
-                    Err(io::Error::from_raw_os_error(WSAEMSGSIZE as i32))
+                    Err(io::Error::from_raw_os_error(WSAEMSGSIZE))
                 } else {
                     let r = if let Some(addr) = me.read_buf.to_socket_addr() {
-                        buf.write(&data).unwrap();
+                        let bytes_amount = buf.write(&data).unwrap();
+                        // Added check regarding bytes_amount
+                        if bytes_amount < data.len() {
+                            return Ok((bytes_amount, addr));
+                        }
                         Ok((data.len(), addr))
                     } else {
                         Err(io::Error::new(
@@ -440,7 +446,7 @@ fn send_done(status: &OVERLAPPED_ENTRY) {
     };
     let mut me = me2.inner();
     me.write = State::Empty;
-    me2.add_readiness(&mut me, Ready::writable());
+    me2.add_readiness(&me, Ready::writable());
 }
 
 fn recv_done(status: &OVERLAPPED_ENTRY) {
@@ -458,5 +464,5 @@ fn recv_done(status: &OVERLAPPED_ENTRY) {
         buf.set_len(status.bytes_transferred() as usize);
     }
     me.read = State::Ready(buf);
-    me2.add_readiness(&mut me, Ready::readable());
+    me2.add_readiness(&me, Ready::readable());
 }

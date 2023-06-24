@@ -70,6 +70,12 @@ lint:
 	cargo fmt -- --check --color always
 	cargo clippy --all-targets --all-features -- -D warnings
 
+# There is errors regarding null pointers in corcovado that needs to be fixed for Windows
+test-win:
+	cargo fmt -- --check --color always
+	cargo clippy --all-targets --all-features
+	RUST_BACKTRACE=full cargo test --release
+
 test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release

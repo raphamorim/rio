@@ -93,6 +93,7 @@ enum State<T, U> {
 }
 
 impl TcpStream {
+    #[allow(unused)]
     fn new(socket: net::TcpStream, deferred_connect: Option<SocketAddr>) -> TcpStream {
         TcpStream {
             registration: Mutex::new(None),
@@ -100,7 +101,7 @@ impl TcpStream {
                 inner: FromRawArc::new(StreamIo {
                     read: Overlapped::new(read_done),
                     write: Overlapped::new(write_done),
-                    socket: socket,
+                    socket,
                     inner: Mutex::new(StreamInner {
                         iocp: ReadyBinding::new(),
                         deferred_connect,
@@ -113,23 +114,28 @@ impl TcpStream {
         }
     }
 
+    #[allow(unused)]
     pub fn connect(socket: net::TcpStream, addr: &SocketAddr) -> io::Result<TcpStream> {
         socket.set_nonblocking(true)?;
         Ok(TcpStream::new(socket, Some(*addr)))
     }
 
+    #[allow(unused)]
     pub fn from_stream(stream: net::TcpStream) -> TcpStream {
         TcpStream::new(stream, None)
     }
 
+    #[allow(unused)]
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.imp.inner.socket.peer_addr()
     }
 
+    #[allow(unused)]
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.imp.inner.socket.local_addr()
     }
 
+    #[allow(unused)]
     pub fn try_clone(&self) -> io::Result<TcpStream> {
         self.imp
             .inner
@@ -138,66 +144,84 @@ impl TcpStream {
             .map(|s| TcpStream::new(s, None))
     }
 
+    #[allow(unused)]
     pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
         self.imp.inner.socket.shutdown(how)
     }
 
+    #[allow(unused)]
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
         self.imp.inner.socket.set_nodelay(nodelay)
     }
 
+    #[allow(unused)]
     pub fn nodelay(&self) -> io::Result<bool> {
         self.imp.inner.socket.nodelay()
     }
 
+    #[allow(unused)]
     pub fn set_recv_buffer_size(&self, size: usize) -> io::Result<()> {
         self.imp.inner.socket.set_recv_buffer_size(size)
     }
 
+    #[allow(unused)]
     pub fn recv_buffer_size(&self) -> io::Result<usize> {
         self.imp.inner.socket.recv_buffer_size()
     }
 
+    #[allow(unused)]
     pub fn set_send_buffer_size(&self, size: usize) -> io::Result<()> {
         self.imp.inner.socket.set_send_buffer_size(size)
     }
 
+    #[allow(unused)]
     pub fn send_buffer_size(&self) -> io::Result<usize> {
         self.imp.inner.socket.send_buffer_size()
     }
 
+    #[allow(unused)]
     pub fn set_keepalive(&self, keepalive: Option<Duration>) -> io::Result<()> {
         self.imp.inner.socket.set_keepalive(keepalive)
     }
 
+    #[allow(unused)]
     pub fn keepalive(&self) -> io::Result<Option<Duration>> {
         self.imp.inner.socket.keepalive()
     }
 
+    #[allow(unused)]
     pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
         self.imp.inner.socket.set_ttl(ttl)
     }
 
+    #[allow(unused)]
     pub fn ttl(&self) -> io::Result<u32> {
         self.imp.inner.socket.ttl()
     }
 
+    #[allow(unused)]
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
         self.imp.inner.socket.set_only_v6(only_v6)
     }
 
+    #[allow(unused)]
     pub fn only_v6(&self) -> io::Result<bool> {
         self.imp.inner.socket.only_v6()
     }
 
+    #[allow(unused)]
     pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
+        #[allow(unstable_name_collisions)]
         self.imp.inner.socket.set_linger(dur)
     }
 
+    #[allow(unused)]
     pub fn linger(&self) -> io::Result<Option<Duration>> {
+        #[allow(unstable_name_collisions)]
         self.imp.inner.socket.linger()
     }
 
+    #[allow(unused)]
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {
         if let Some(e) = self.imp.inner.socket.take_error()? {
             return Ok(Some(e));
@@ -233,6 +257,7 @@ impl TcpStream {
         self.imp.inner()
     }
 
+    #[allow(unused)]
     fn before_read(&self) -> io::Result<MutexGuard<StreamInner>> {
         let mut me = self.inner();
 
@@ -280,6 +305,7 @@ impl TcpStream {
         }
     }
 
+    #[allow(unused)]
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
         match IoVec::from_bytes_mut(buf) {
             Some(vec) => self.readv(&mut [vec]),
@@ -287,10 +313,11 @@ impl TcpStream {
         }
     }
 
+    #[allow(unused)]
     pub fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
         let mut me = self.before_read()?;
 
-        match (&self.imp.inner.socket).peek(buf) {
+        match (self.imp.inner.socket).peek(buf) {
             Ok(n) => Ok(n),
             Err(e) => {
                 me.read = State::Empty;
@@ -351,6 +378,7 @@ impl TcpStream {
         Ok(amt)
     }
 
+    #[allow(unused)]
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
         match IoVec::from_bytes(buf) {
             Some(vec) => self.writev(&[vec]),
@@ -358,6 +386,7 @@ impl TcpStream {
         }
     }
 
+    #[allow(unused)]
     pub fn writev(&self, bufs: &[&IoVec]) -> io::Result<usize> {
         let mut me = self.inner();
         let me = &mut *me;
@@ -379,7 +408,7 @@ impl TcpStream {
             return Ok(0);
         }
 
-        let len = bufs.iter().map(|b| b.len()).fold(0, |a, b| a + b);
+        let len = bufs.iter().map(|b| b.len()).sum();
         let mut intermediate = me.iocp.get_buffer(len);
         for buf in bufs {
             intermediate.extend_from_slice(buf);
@@ -388,6 +417,7 @@ impl TcpStream {
         Ok(len)
     }
 
+    #[allow(unused)]
     pub fn flush(&self) -> io::Result<()> {
         Ok(())
     }
@@ -569,6 +599,7 @@ fn read_done(status: &OVERLAPPED_ENTRY) {
     }
 }
 
+#[allow(unused)]
 fn write_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     trace!("finished a write {}", status.bytes_transferred());
@@ -678,6 +709,7 @@ impl Drop for TcpStream {
 }
 
 impl TcpListener {
+    #[allow(unused)]
     pub fn new(socket: net::TcpListener) -> io::Result<TcpListener> {
         let addr = socket.local_addr()?;
         Ok(TcpListener::new_family(
@@ -708,6 +740,7 @@ impl TcpListener {
         }
     }
 
+    #[allow(unused)]
     pub fn accept(&self) -> io::Result<(net::TcpStream, SocketAddr)> {
         let mut me = self.inner();
 
@@ -723,13 +756,15 @@ impl TcpListener {
 
         self.imp.schedule_accept(&mut me);
 
-        return ret;
+        ret
     }
 
+    #[allow(unused)]
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.imp.inner.socket.local_addr()
     }
 
+    #[allow(unused)]
     pub fn try_clone(&self) -> io::Result<TcpListener> {
         self.imp
             .inner
@@ -739,23 +774,28 @@ impl TcpListener {
     }
 
     #[allow(deprecated)]
+    #[allow(unused)]
     pub fn set_only_v6(&self, only_v6: bool) -> io::Result<()> {
         self.imp.inner.socket.set_only_v6(only_v6)
     }
 
     #[allow(deprecated)]
+    #[allow(unused)]
     pub fn only_v6(&self) -> io::Result<bool> {
         self.imp.inner.socket.only_v6()
     }
 
+    #[allow(unused)]
     pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
         self.imp.inner.socket.set_ttl(ttl)
     }
 
+    #[allow(unused)]
     pub fn ttl(&self) -> io::Result<u32> {
         self.imp.inner.socket.ttl()
     }
 
+    #[allow(unused)]
     pub fn take_error(&self) -> io::Result<Option<io::Error>> {
         self.imp.inner.socket.take_error()
     }

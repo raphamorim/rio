@@ -29,7 +29,8 @@ impl Awakener {
         // If we haven't been registered with an event loop yet just silently
         // succeed.
         if let Some(inner) = self.inner.lock().unwrap().as_ref() {
-            let status = CompletionStatus::new(0, usize::from(inner.token), 0 as *mut _);
+            let status =
+                CompletionStatus::new(0, usize::from(inner.token), std::ptr::null_mut());
             inner.selector.port().post(status)?;
         }
         Ok(())

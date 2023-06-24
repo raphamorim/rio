@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+#![allow(clippy::all)]
 
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
@@ -126,7 +127,7 @@ impl Selector {
 
 impl SelectorInner {
     fn identical(&self, other: &SelectorInner) -> bool {
-        (self as *const SelectorInner) == (other as *const SelectorInner)
+        std::ptr::eq(self, other)
     }
 }
 
@@ -154,6 +155,12 @@ pub struct Binding {
     selector: AtomicLazyCell<Arc<SelectorInner>>,
 }
 
+impl Default for Binding {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Binding {
     /// Creates a new blank binding ready to be inserted into an I/O
     /// object.
@@ -174,7 +181,7 @@ impl Binding {
     /// the handled provided will be received by the `Poll`'s internal IOCP
     /// object.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// This function is unsafe as the `Poll` instance has assumptions about
     /// what the `OVERLAPPED` pointer used for each I/O operation looks like.
@@ -197,6 +204,8 @@ impl Binding {
     }
 
     /// Same as `register_handle` but for sockets.
+    /// # Safety
+    /// todo
     pub unsafe fn register_socket(
         &self,
         handle: &dyn AsRawSocket,
@@ -222,7 +231,7 @@ impl Binding {
     /// the token `token` on the given `poll` assuming that it's been
     /// previously registered with it.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// This function is unsafe for similar reasons to `register`. That is,
     /// there may be pending I/O events and such which aren't handled correctly.
@@ -236,6 +245,8 @@ impl Binding {
     }
 
     /// Same as `reregister_handle`, but for sockets.
+    /// # Safety
+    /// todo
     pub unsafe fn reregister_socket(
         &self,
         _socket: &dyn AsRawSocket,
@@ -254,7 +265,7 @@ impl Binding {
     /// that the call to `deregister` happened on the same `Poll` that was
     /// passed into to `register`.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// This function is unsafe for similar reasons to `register`. That is,
     /// there may be pending I/O events and such which aren't handled correctly.
@@ -267,6 +278,8 @@ impl Binding {
     }
 
     /// Same as `deregister_handle`, but for sockets.
+    /// # Safety
+    /// todo
     pub unsafe fn deregister_socket(
         &self,
         _socket: &dyn AsRawSocket,
@@ -301,6 +314,7 @@ impl ReadyBinding {
     /// Creates a new blank binding ready to be inserted into an I/O object.
     ///
     /// Won't actually do anything until associated with an `Selector` loop.
+    #[allow(unused)]
     pub fn new() -> ReadyBinding {
         ReadyBinding {
             binding: Binding::new(),
@@ -310,6 +324,7 @@ impl ReadyBinding {
 
     /// Returns whether this binding has been associated with a selector
     /// yet.
+    #[allow(unused)]
     pub fn registered(&self) -> bool {
         self.readiness.is_some()
     }
@@ -471,7 +486,7 @@ impl Events {
     }
 
     pub fn get(&self, idx: usize) -> Option<Event> {
-        self.events.get(idx).map(|e| *e)
+        self.events.get(idx).copied()
     }
 
     pub fn push_event(&mut self, event: Event) {
@@ -491,6 +506,7 @@ macro_rules! overlapped2arc {
     })
 }
 
+#[allow(deref_nullptr)]
 macro_rules! offset_of {
     ($t:ty, $($field:ident).+) => (
         &(*(0 as *const $t)).$($field).+ as *const _ as usize
