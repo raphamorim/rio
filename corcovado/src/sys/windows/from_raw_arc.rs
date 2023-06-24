@@ -100,7 +100,7 @@ mod tests {
     fn smoke() {
         let a = FromRawArc::new(1);
         assert_eq!(*a, 1);
-        assert_eq!(*a.clone(), 1);
+        assert_eq!(*a, 1);
     }
 
     #[test]

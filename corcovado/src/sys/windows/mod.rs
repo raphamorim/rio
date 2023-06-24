@@ -158,6 +158,7 @@ pub use self::tcp::{TcpListener, TcpStream};
 pub use self::udp::UdpSocket;
 
 #[derive(Copy, Clone)]
+#[allow(dead_code)]
 enum Family {
     V4,
     V6,
