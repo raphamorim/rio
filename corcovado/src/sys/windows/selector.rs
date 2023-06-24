@@ -1,14 +1,14 @@
 #![allow(deprecated)]
 
-use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
-use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
-use windows_sys::Win32::System::IO::OVERLAPPED;
 use std::cell::UnsafeCell;
 use std::os::windows::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fmt, io};
+use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+use windows_sys::Win32::System::IO::OVERLAPPED;
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
 use lazycell::AtomicLazyCell;
 

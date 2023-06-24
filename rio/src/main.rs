@@ -1,4 +1,3 @@
-
 // With the default subsystem, 'console', windows creates an additional console
 // window for the program.
 // This is silently ignored on non-windows systems.
@@ -12,6 +11,8 @@ mod crosswords;
 mod event;
 mod ime;
 mod logger;
+#[cfg(windows)]
+mod panic;
 mod performer;
 mod platform;
 mod scheduler;
@@ -19,8 +20,6 @@ mod screen;
 mod selection;
 mod sequencer;
 mod utils;
-#[cfg(windows)]
-mod panic;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
 use log::{info, LevelFilter, SetLoggerError};
@@ -28,7 +27,9 @@ use logger::Logger;
 use std::str::FromStr;
 
 #[cfg(windows)]
-use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
+use windows_sys::Win32::System::Console::{
+    AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS,
+};
 
 pub fn setup_environment_variables(config: &config::Config) {
     #[cfg(unix)]
@@ -43,10 +44,6 @@ pub fn setup_environment_variables(config: &config::Config) {
 
     #[cfg(unix)]
     std::env::set_var("TERM", terminfo);
-    
-    #[cfg(target_os = "windows")] {
-        std::env::set_var("TERM", "xterm-256color");
-    }
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
     #[cfg(target_os = "macos")]
@@ -71,6 +68,7 @@ pub fn setup_environment_variables(config: &config::Config) {
 static LOGGER: Logger = Logger;
 
 fn setup_logs_by_filter_level(log_level: LevelFilter) -> Result<(), SetLoggerError> {
+    info!("[setup_logs_by_filter_level] log_level: {log_level}");
     log::set_logger(&LOGGER).map(|()| log::set_max_level(log_level))
 }
 
@@ -106,7 +104,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();
 
     let mut sequencer = Sequencer::new(config);
-    let result = sequencer.run(window_event_loop, command);
+    let _ = sequencer.run(window_event_loop, command).await;
 
-    result.await
+    #[cfg(windows)]
+    unsafe {
+        FreeConsole();
+    }
+
+    Ok(())
 }

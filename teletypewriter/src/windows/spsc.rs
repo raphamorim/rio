@@ -1,4 +1,4 @@
-// Single-producer single-consumer buffer for Rust 
+// Single-producer single-consumer buffer for Rust
 
 use std::cell::UnsafeCell;
 use std::io::{self, Read, Write};
@@ -217,7 +217,5 @@ mod test {
         assert_eq!(consumer.len(), 0);
 
         assert_eq!(&buf[..], &out_buf[..]);
-
-
     }
 }

@@ -3,14 +3,14 @@
 //! Note that most of this module is quite similar to the TCP module, so if
 //! something seems odd you may also want to try the docs over there.
 
-use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
-use windows_sys::Win32::Networking::WinSock::WSAEMSGSIZE;
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
 use std::mem;
 use std::net::{self, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Mutex, MutexGuard};
+use windows_sys::Win32::Networking::WinSock::WSAEMSGSIZE;
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
 use miow::iocp::CompletionStatus;
 use miow::net::SocketAddrBuf;

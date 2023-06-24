@@ -1,5 +1,3 @@
-use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
-use windows_sys::Win32::Foundation::HANDLE;
 use std::fmt;
 use std::io::{self, ErrorKind, Read};
 use std::mem;
@@ -7,6 +5,8 @@ use std::net::{self, Shutdown, SocketAddr};
 use std::os::windows::prelude::*;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::System::IO::OVERLAPPED_ENTRY;
 
 use iovec::IoVec;
 use miow::iocp::CompletionStatus;
@@ -784,9 +784,8 @@ impl ListenerImp {
             Family::V6 => TcpBuilder::new_v6(),
         }
         .and_then(|builder| unsafe {
-
             let s: net::TcpStream = builder.to_tcp_stream().unwrap();
-            // let _ts = TcpStream::from_stream(s); 
+            // let _ts = TcpStream::from_stream(s);
 
             trace!("scheduling an accept");
             self.inner.socket.accept_overlapped(
