@@ -23,6 +23,15 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
 }
 
+fn default_shell() -> String {
+    #[cfg(not(target_os = "windows"))]
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("bash"));
+    #[cfg(target_os = "windows")]
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("powershell"));
+
+    shell
+}
+
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
         dimensions: (u32, u32),
@@ -32,7 +41,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         spawn: bool,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("bash"));
+        let shell = default_shell();
+
         let event_proxy_clone = event_proxy.clone();
         let mut terminal = Crosswords::new(columns, rows, event_proxy);
         terminal.cursor_shape = cursor_state.content;
