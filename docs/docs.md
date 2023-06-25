@@ -7,9 +7,9 @@ language: 'en'
 
 ## Summary
 
-- [The Rio terminal](#about-rio)
-- [The configuration file](#configuration-file)
-- [The default colors](#default-colors)
+- [1. About Rio](#about-rio)
+- [2. Configuration file](#configuration-file)
+- [3. Default colors](#default-colors)
 
 ## About Rio
 
@@ -89,7 +89,7 @@ Default Rio terminal colors.
 {% highlight toml %}
 [colors]
 background       = '#0F0D0E'
-black            = '#231F20'
+black            = '#4C4345'
 blue             = '#006EE6'
 cursor           = '#F38BA3'
 cyan             = '#88DAF2'
