@@ -185,9 +185,20 @@ section h2 {
 section h3 {
   font-family: helvetica;
   font-size: 20px;
-  padding-left: 15px;
+  padding-left: 12px;
+  color: #0F0D0E;
+  font-weight: bold;
+  background-color: #12B5E5;
+  margin: 60px 0 10px 0;
+}
+
+section h4 {
+  font-family: helvetica;
+  font-size: 18px;
+  padding-left: 12px;
   color: #12B5E5;
-  margin: 25px 0 10px 0;
+  font-weight: bold;
+  margin: 25px 0 0 0;
 }
 
 .container span.keyword {
