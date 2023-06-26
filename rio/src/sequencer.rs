@@ -12,6 +12,7 @@ use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{window::create_window_builder, Screen};
 use crate::utils::watch::watch;
 use colors::ColorRgb;
+use std::collections::HashMap;
 use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
@@ -21,10 +22,11 @@ use winit::event::{
 };
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
-use winit::window::{CursorIcon, ImePurpose};
+use winit::window::{CursorIcon, ImePurpose, Window, WindowId};
 
 pub struct Sequencer {
     config: Rc<config::Config>,
+    windows: HashMap<WindowId, Window>,
     is_window_focused: bool,
     has_render_updates: bool,
     is_occluded: bool,
@@ -39,6 +41,7 @@ impl Sequencer {
             is_window_focused: false,
             has_render_updates: false,
             is_occluded: false,
+            windows: HashMap::new(),
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             has_wayland_forcefully_reloaded: false,
         }
@@ -116,6 +119,14 @@ impl Sequencer {
 
         screen.init(self.config.colors.background.1);
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
+
+        // let mut windows = HashMap::new();
+        // let mut create_window = || {
+        //     let window_builder = create_window_builder("Rio");
+        //     let winit_window = window_builder.build(&event_loop).unwrap();
+        //     windows.insert(winit_window.id(), winit_window);
+        // };
+
         event_loop.run_return(move |event, _, control_flow| {
             match event {
                 Event::UserEvent(EventP { payload, .. }) => {
@@ -203,8 +214,9 @@ impl Sequencer {
                     }
                 }
                 Event::Resumed => {
-                    // Emitted when the application has been resumed.
+                    // self.windows.insert(winit_window.id(), winit_window);
 
+                    // Emitted when the application has been resumed.
                     // This is a hack to avoid an odd scenario in wayland window initialization
                     // wayland windows starts with the wrong width/height.
                     // Rio is ignoring wayland new dimension events, so the terminal
@@ -227,9 +239,14 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
+                    window_id,
                     ..
                 } => {
-                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                    self.windows.remove(&window_id);
+
+                    if self.windows.is_empty() {
+                        *control_flow = winit::event_loop::ControlFlow::Exit;
+                    }
                 }
 
                 Event::WindowEvent {
@@ -256,15 +273,15 @@ impl Sequencer {
                             if !screen.modifiers.shift() && screen.mouse_mode() {
                                 screen.mouse.click_state = ClickState::None;
 
-                                // let code = match button {
-                                //     MouseButton::Left => 0,
-                                //     MouseButton::Middle => 1,
-                                //     MouseButton::Right => 2,
-                                //     // Can't properly report more than three buttons..
-                                //     MouseButton::Other(_) => return,
-                                // };
+                                let code = match button {
+                                    MouseButton::Left => 0,
+                                    MouseButton::Middle => 1,
+                                    MouseButton::Right => 2,
+                                    // Can't properly report more than three buttons..
+                                    MouseButton::Other(_) => return,
+                                };
 
-                                // self.mouse_report(code, ElementState::Pressed);
+                                screen.mouse_report(code, ElementState::Pressed);
                             } else {
                                 // Calculate time since the last click to handle double/triple clicks.
                                 let now = Instant::now();
@@ -302,14 +319,14 @@ impl Sequencer {
                         }
                         ElementState::Released => {
                             if !screen.modifiers.shift() && screen.mouse_mode() {
-                                // let code = match button {
-                                //     MouseButton::Left => 0,
-                                //     MouseButton::Middle => 1,
-                                //     MouseButton::Right => 2,
-                                //     // Can't properly report more than three buttons.
-                                //     MouseButton::Other(_) => return,
-                                // };
-                                // self.mouse_report(code, ElementState::Released);
+                                let code = match button {
+                                    MouseButton::Left => 0,
+                                    MouseButton::Middle => 1,
+                                    MouseButton::Right => 2,
+                                    // Can't properly report more than three buttons.
+                                    MouseButton::Other(_) => return,
+                                };
+                                screen.mouse_report(code, ElementState::Released);
                                 return;
                             }
 
@@ -335,7 +352,7 @@ impl Sequencer {
                         screen.mouse.right_button_state == ElementState::Pressed;
 
                     if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                        // screen.update_selection_scrolling(y);
+                        screen.update_selection_scrolling(y);
                         // self.has_render_updates = true;
                     }
 
@@ -376,21 +393,22 @@ impl Sequencer {
                         && (screen.modifiers.shift() || !screen.mouse_mode())
                     {
                         screen.update_selection(point, square_side);
-                        self.has_render_updates = true;
+                    } else if square_changed && screen.has_mouse_motion_and_drag() {
+                        if lmb_pressed {
+                            screen.mouse_report(32, ElementState::Pressed);
+                        } else if screen.mouse.middle_button_state
+                            == ElementState::Pressed
+                        {
+                            screen.mouse_report(33, ElementState::Pressed);
+                        } else if screen.mouse.right_button_state == ElementState::Pressed
+                        {
+                            screen.mouse_report(34, ElementState::Pressed);
+                        } else if screen.has_mouse_motion() {
+                            screen.mouse_report(35, ElementState::Pressed);
+                        }
                     }
-                    // else if square_changed
-                    //     && screen.terminal().mode().intersects(TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
-                    // {
-                    //     // if lmb_pressed {
-                    //         // self.mouse_report(32, ElementState::Pressed);
-                    //     // } else if self.ctx.mouse().middle_button_state == ElementState::Pressed {
-                    //         // self.mouse_report(33, ElementState::Pressed);
-                    //     // } else if self.ctx.mouse().right_button_state == ElementState::Pressed {
-                    //         // self.mouse_report(34, ElementState::Pressed);
-                    //     // } else if self.ctx.terminal().mode().contains(TermMode::MOUSE_MOTION) {
-                    //         // self.mouse_report(35, ElementState::Pressed);
-                    //     // }
-                    // }
+
+                    self.has_render_updates = true;
                 }
 
                 Event::WindowEvent {
@@ -455,6 +473,16 @@ impl Sequencer {
                     ElementState::Pressed => {
                         winit_window.set_cursor_visible(false);
                         screen.input_keycode(virtual_keycode, scancode);
+
+                        // create_window();
+                        // for _ in 0..3 {
+                        // let window = Window::new(&event_loop).unwrap();
+                        // println!("Opened a new window: {:?}", winit_window.id());
+                        // let new_window_builder = winit::window::WindowBuilder::new()
+                        // .with_title("");
+                        // let new_window = new_window_builder.build(&event_loop).unwrap();
+                        // self.windows.insert(new_window.id(), new_window);
+                        // }
                     }
 
                     ElementState::Released => {
