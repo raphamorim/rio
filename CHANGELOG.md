@@ -16,7 +16,7 @@
 
 before:
 ```toml
-perfomance = "High"
+performance = "High"
 [style]
 font-size = 18
 theme = "lucario"
@@ -24,7 +24,7 @@ theme = "lucario"
 
 now:
 ```toml
-perfomance = "High"
+performance = "High"
 theme = "lucario"
 font-size = 18
 ```
@@ -35,7 +35,7 @@ font-size = 18
 - Introduced `window-opacity` config property for WebAssembly and Wayland builds.
 - Add permissions instructions to Rio macos builds (Fix [#99](https://github.com/raphamorim/rio/issues/99)).
 - Fixes for x11 and wayland rendering (Related: [#98](https://github.com/raphamorim/rio/issues/98) and [#100](https://github.com/raphamorim/rio/issues/100)).
-- Perfomance fixes (Related: [#101](https://github.com/raphamorim/rio/issues/101)).
+- Performance fixes (Related: [#101](https://github.com/raphamorim/rio/issues/101)).
 - Sugarloaf WebAssembly support.
 - Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.
 - Fixed cursor incosistencies [#95](https://github.com/raphamorim/rio/issues/95).
@@ -70,7 +70,7 @@ font-size = 18
 - Theme support (eae39bc81b5b561882b7a37b2c03896633276c27)
 - Fix font-size dependency for serialization (f278102)
 - Fix cursor visibility on VI mode and scroll (https://github.com/raphamorim/rio/issues/51)
-- Perfomance fixes for rendering from teletypewriter updates.
+- Performance fixes for rendering from teletypewriter updates.
 - Fix scale issues for 1.0 scale factor or using monitor with different scale factor. (https://github.com/raphamorim/rio/issues/50)
 - Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file. (https://github.com/raphamorim/rio/issues/54)
 

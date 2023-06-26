@@ -348,9 +348,9 @@ mod tests {
     }
 
     #[test]
-    fn test_change_config_perfomance() {
+    fn test_change_config_performance() {
         let result = create_temporary_config(
-            "change-perfomance",
+            "change-performance",
             r#"
             performance = "Low"
         "#,

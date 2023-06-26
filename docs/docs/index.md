@@ -37,7 +37,7 @@ font-size = 16
 # Other available options are: '_' and '|'
 cursor = '_'
 
-# Set WGPU rendering perfomance
+# Set WGPU rendering performance
 # High: Adapter that has the highest performance. This is often a discrete GPU.
 # Low: Adapter that uses the least possible power. This is often an integrated GPU.
 performance = "High"
