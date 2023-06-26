@@ -2,6 +2,8 @@
 
 ## 0.0.8 (in progress)
 
+- Inverted Canary and Stable icons.
+- ANSI mouse reports (e.g: scroll and click working on VIM).
 - Semantic and line selection.
 - Rio is available in Homebrew casks (ref [github.com/Homebrew/homebrew-cask/pull/149824](https://github.com/Homebrew/homebrew-cask/pull/149824)).
 - Rio stable versions are notarized now.
