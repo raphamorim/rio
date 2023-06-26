@@ -58,4 +58,5 @@ path = "test/mod.rs"
 
 [[bench]]
 name = "bench_poll"
+path = "benches/bench_poll.rs"
 harness = false

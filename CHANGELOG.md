@@ -2,6 +2,9 @@
 
 ## 0.0.8 (in progress)
 
+- Semantic and line selection.
+- Rio is available in Homebrew casks (ref [github.com/Homebrew/homebrew-cask/pull/149824](https://github.com/Homebrew/homebrew-cask/pull/149824)).
+- Rio stable versions are notarized now.
 - Support to Microsoft Windows 11.
 - Migration of mio, mio-extras, mio-signal-hook to Corcovado.
 - Changed default black color to `#4c4345`.
