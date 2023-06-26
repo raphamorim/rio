@@ -1,2 +1,2 @@
 run:
-	jekyll serve --watch
+	jekyll serve --watch --incremental

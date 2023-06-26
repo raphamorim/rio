@@ -27,7 +27,7 @@ The configuration should be the following paths otherwise Rio will use the defau
 
 MacOS and Linux configuration file path is "~/.config/rio/config.toml".
 
-Windows	configuration file path is "~/AppData/Local/rio/config.toml"
+Windows	configuration file path is "C:\Users\USER\AppData\Local\rio\config.toml" (replace "USER" with your user name).
 
 {% highlight toml %}
 font = "CascadiaMono"
