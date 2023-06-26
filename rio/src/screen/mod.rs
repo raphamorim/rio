@@ -752,7 +752,7 @@ impl Screen {
                 content.push(column_cmd);
             }
 
-            if content.len() > 0 {
+            if !content.is_empty() {
                 self.ctx_mut().current_mut().messenger.send_bytes(content);
             }
         } else {
