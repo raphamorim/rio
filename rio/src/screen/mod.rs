@@ -31,7 +31,7 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
-use winit::event::ModifiersState;
+use winit::event::{ElementState, ModifiersState};
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -412,35 +412,6 @@ impl Screen {
         self.clipboard.set(ty, text);
     }
 
-    // fn on_mouse_release(&mut self, button: MouseButton) {
-    //     if !self.ctx.modifiers().shift() && self.ctx.mouse_mode() {
-    //         let code = match button {
-    //             MouseButton::Left => 0,
-    //             MouseButton::Middle => 1,
-    //             MouseButton::Right => 2,
-    //             // Can't properly report more than three buttons.
-    //             MouseButton::Other(_) => return,
-    //         };
-    //         self.mouse_report(code, ElementState::Released);
-    //         return;
-    //     }
-
-    //     // Trigger hints highlighted by the mouse.
-    //     let hint = self.ctx.display().highlighted_hint.take();
-    //     if let Some(hint) = hint.as_ref().filter(|_| button == MouseButton::Left) {
-    //         self.ctx.trigger_hint(hint);
-    //     }
-    //     self.ctx.display().highlighted_hint = hint;
-
-    //     let timer_id = TimerId::new(Topic::SelectionScrolling, self.ctx.window().id());
-    //     self.ctx.scheduler_mut().unschedule(timer_id);
-
-    //     if let MouseButton::Left | MouseButton::Right = button {
-    //         // Copy selection on release, to prevent flooding the display server.
-    //         self.ctx.copy_selection(ClipboardType::Selection);
-    //     }
-    // }
-
     #[inline]
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
@@ -483,7 +454,6 @@ impl Screen {
         drop(terminal);
     }
 
-    #[allow(unused)]
     pub fn update_selection_scrolling(&self, mouse_y: f64) {
         let scale_factor = self.sugarloaf.layout.scale_factor;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
@@ -504,21 +474,12 @@ impl Screen {
         } else if mouse_y >= start_bottom {
             start_bottom - mouse_y - step
         } else {
-            // scheduler.unschedule(TimerId::new(Topic::SelectionScrolling, 0));
             return;
         };
-
-        // Scale number of lines scrolled based on distance to boundary.
-        // let event = EventP::new(RioEventType::Rio(RioEvent::Scroll(Scroll::Delta((delta / step) as i32))));
 
         let mut terminal = self.ctx().current().terminal.lock();
         terminal.scroll_display(Scroll::Delta((delta / step) as i32));
         drop(terminal);
-
-        // Schedule event.
-        // let timer_id = TimerId::new(Topic::SelectionScrolling, 0);
-        // scheduler.unschedule(timer_id);
-        // scheduler.schedule(event, SELECTION_SCROLLING_INTERVAL, true, timer_id);
     }
 
     #[inline]
@@ -663,59 +624,150 @@ impl Screen {
         self.sugarloaf.render();
     }
 
+    fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
+        let c = match state {
+            ElementState::Pressed => 'M',
+            ElementState::Released => 'm',
+        };
+
+        let msg = format!("\x1b[<{};{};{}{}", button, pos.col + 1, pos.row + 1, c);
+        self.ctx_mut()
+            .current_mut()
+            .messenger
+            .send_bytes(msg.into_bytes());
+    }
+
     #[inline]
-    pub fn scroll(&mut self, _new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        // let width = self.layout.width as f64;
-        // let height = self.layout.height as f64;
+    pub fn has_mouse_motion_and_drag(&mut self) -> bool {
+        self.get_mode()
+            .intersects(Mode::MOUSE_MOTION | Mode::MOUSE_DRAG)
+    }
 
-        // if self
-        //     .ctx
-        //     .terminal()
-        //     .mode()
-        //     .contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
-        //     && !self.ctx.modifiers().shift()
-        // {
-        // // let multiplier = f64::from(self.ctx.config().terminal_config.scrolling.multiplier);
+    #[inline]
+    pub fn has_mouse_motion(&mut self) -> bool {
+        self.get_mode().intersects(Mode::MOUSE_MOTION)
+    }
 
-        // // self.mouse_mut().accumulated_scroll.x += new_scroll_x_px;//* multiplier;
-        // // self.mouse_mut().accumulated_scroll.y += new_scroll_y_px;// * multiplier;
+    pub fn mouse_report(&mut self, button: u8, state: ElementState) {
+        let mut terminal = self.ctx().current().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let mode = terminal.mode();
+        drop(terminal);
 
-        // // // The chars here are the same as for the respective arrow keys.
-        // let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
-        // let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
+        let pos = self.mouse_position(display_offset);
 
-        // // let lines = (self.layout.cursor.accumulated_scroll.y / self.layout.font_size as f64).abs() as usize;
-        // let lines = 1;
-        // let columns = (self.layout.cursor.accumulated_scroll.x / width).abs() as usize;
-
-        // let mut content = Vec::with_capacity(3 * (lines + columns));
-
-        // for _ in 0..lines {
-        //     content.push(0x1b);
-        //     content.push(b'O');
-        //     content.push(line_cmd);
-        // }
-
-        // for _ in 0..columns {
-        //     content.push(0x1b);
-        //     content.push(b'O');
-        //     content.push(column_cmd);
-        // }
-
-        // println!("{:?} {:?} {:?} {:?}", content, lines, columns, self.layout.cursor);
-        // if content.len() > 0 {
-        //     self.ctx().messenger.write_to_pty(content);
-        // }
-        // }
-
-        self.mouse.accumulated_scroll.y += new_scroll_y_px * self.mouse.multiplier;
-        let lines = (self.mouse.accumulated_scroll.y
-            / self.sugarloaf.layout.font_size as f64) as i32;
-
-        if lines != 0 {
-            let mut terminal = self.ctx().current().terminal.lock();
-            terminal.scroll_display(Scroll::Delta(lines));
-            drop(terminal);
+        // Assure the mouse pos is not in the scrollback.
+        if pos.row < 0 {
+            return;
         }
+
+        // Calculate modifiers value.
+        let mut mods = 0;
+        if self.modifiers.shift() {
+            mods += 4;
+        }
+        if self.modifiers.alt() {
+            mods += 8;
+        }
+        if self.modifiers.ctrl() {
+            mods += 16;
+        }
+
+        // Report mouse events.
+        if mode.contains(Mode::SGR_MOUSE) {
+            self.sgr_mouse_report(pos, button + mods, state);
+        } else if let ElementState::Released = state {
+            self.normal_mouse_report(pos, 3 + mods);
+        } else {
+            self.normal_mouse_report(pos, button + mods);
+        }
+    }
+
+    fn normal_mouse_report(&mut self, position: Pos, button: u8) {
+        let Pos { row, col } = position;
+        let utf8 = self.get_mode().contains(Mode::UTF8_MOUSE);
+
+        let max_point = if utf8 { 2015 } else { 223 };
+
+        if row >= max_point || col >= max_point {
+            return;
+        }
+
+        let mut msg = vec![b'\x1b', b'[', b'M', 32 + button];
+
+        let mouse_pos_encode = |pos: usize| -> Vec<u8> {
+            let pos = 32 + 1 + pos;
+            let first = 0xC0 + pos / 64;
+            let second = 0x80 + (pos & 63);
+            vec![first as u8, second as u8]
+        };
+
+        if utf8 && col >= Column(95) {
+            msg.append(&mut mouse_pos_encode(col.0));
+        } else {
+            msg.push(32 + 1 + col.0 as u8);
+        }
+
+        if utf8 && row >= 95 {
+            msg.append(&mut mouse_pos_encode(row.0 as usize));
+        } else {
+            msg.push(32 + 1 + row.0 as u8);
+        }
+
+        self.ctx_mut().current_mut().messenger.send_bytes(msg);
+    }
+
+    #[inline]
+    pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
+        let width = self.sugarloaf.layout.width as f64;
+        let height = self.sugarloaf.layout.height as f64;
+        let mode = self.get_mode();
+
+        if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
+            && !self.modifiers.shift()
+        {
+            self.mouse.accumulated_scroll.x += new_scroll_x_px;
+            self.mouse.accumulated_scroll.y += new_scroll_y_px;
+
+            // // The chars here are the same as for the respective arrow keys.
+            let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
+            let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
+
+            let lines = (self.mouse.accumulated_scroll.y
+                / self.sugarloaf.layout.font_size as f64)
+                .abs() as usize;
+            let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
+
+            let mut content = Vec::with_capacity(3 * (lines + columns));
+
+            for _ in 0..lines {
+                content.push(0x1b);
+                content.push(b'O');
+                content.push(line_cmd);
+            }
+
+            for _ in 0..columns {
+                content.push(0x1b);
+                content.push(b'O');
+                content.push(column_cmd);
+            }
+
+            if content.len() > 0 {
+                self.ctx_mut().current_mut().messenger.send_bytes(content);
+            }
+        } else {
+            self.mouse.accumulated_scroll.y += new_scroll_y_px * self.mouse.multiplier;
+            let lines = (self.mouse.accumulated_scroll.y
+                / self.sugarloaf.layout.font_size as f64) as i32;
+
+            if lines != 0 {
+                let mut terminal = self.ctx().current().terminal.lock();
+                terminal.scroll_display(Scroll::Delta(lines));
+                drop(terminal);
+            }
+        }
+
+        self.mouse.accumulated_scroll.x %= width;
+        self.mouse.accumulated_scroll.y %= height;
     }
 }
