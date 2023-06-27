@@ -13,6 +13,7 @@ pub struct SugarloafLayout {
     pub width_u32: u32,
     pub height_u32: u32,
     pub font_size: f32,
+    pub original_font_size: f32,
     pub font_bound: f32,
     pub columns: usize,
     pub lines: usize,
@@ -87,6 +88,7 @@ impl SugarloafLayout {
             columns: 80,
             lines: 25,
             scale_factor,
+            original_font_size: font_size,
             font_size,
             font_bound,
             style,
@@ -113,6 +115,30 @@ impl SugarloafLayout {
         self.width = width as f32;
         self.height = height as f32;
         self
+    }
+
+    pub fn increase_font_size(&mut self) -> bool {
+        if self.font_size < 80.0 {
+            self.font_size += 2.0;
+            return true;
+        }
+        false
+    }
+
+    pub fn decrease_font_size(&mut self) -> bool {
+        if self.font_size > 2.0 {
+            self.font_size -= 2.0;
+            return true;
+        }
+        false
+    }
+
+    pub fn reset_font_size(&mut self) -> bool {
+        if self.font_size != self.original_font_size {
+            self.font_size = self.original_font_size;
+            return true;
+        }
+        false
     }
 
     pub fn update(&mut self) -> &mut Self {
@@ -159,6 +185,7 @@ impl SugarloafLayout {
         let mut should_apply_changes = false;
         if self.font_size != font_size {
             self.font_size = font_size;
+            self.original_font_size = font_size;
             should_apply_changes = true;
         }
 
