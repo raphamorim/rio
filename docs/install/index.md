@@ -80,6 +80,12 @@ In case your distro doesn't have the package manager option listed above, procee
 ### Windows
 
 TBD in the version v0.0.8.
+- • Rust installation: [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
+
+{% highlight bash %}
+cargo build
+cargo run
+{% endhighlight %}
 
 ### WebAssembly
 
