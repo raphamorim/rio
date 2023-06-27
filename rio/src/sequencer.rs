@@ -352,7 +352,8 @@ impl Sequencer {
                         screen.mouse.right_button_state == ElementState::Pressed;
 
                     if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                        screen.update_selection_scrolling(y);
+                        // screen.update_selection_scrolling(y);
+                        self.has_render_updates = true;
                     }
 
                     let display_offset = screen.display_offset();
@@ -447,8 +448,6 @@ impl Sequencer {
                     event: winit::event::WindowEvent::ReceivedCharacter(character),
                     ..
                 } => {
-                    screen.scroll_bottom_when_cursor_not_visible();
-                    screen.clear_selection();
                     screen.input_character(character);
                 }
 
