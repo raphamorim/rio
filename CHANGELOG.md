@@ -2,6 +2,7 @@
 
 ## 0.0.8 (in progress)
 
+- Ability to in|decrease font size using keyboard shortcut during session (ref: [#109](https://github.com/raphamorim/rio/issues/109))
 - Inverted Canary and Stable icons.
 - ANSI mouse reports (e.g: scroll and click working on VIM).
 - Semantic and line selection.
