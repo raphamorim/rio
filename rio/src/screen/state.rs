@@ -271,7 +271,7 @@ impl State {
         has_cursor: bool,
         range: &SelectionRange,
         line: pos::Line,
-        display_offset: i32
+        display_offset: i32,
     ) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
@@ -377,7 +377,7 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         context_manager: &context::ContextManager<EventProxy>,
-        display_offset: i32
+        display_offset: i32,
     ) {
         self.cursor.state = cursor;
         let is_cursor_visible = self.cursor.state.is_visible();
@@ -390,7 +390,7 @@ impl State {
                     has_cursor,
                     &active_selection,
                     pos::Line(i as i32),
-                    display_offset
+                    display_offset,
                 );
                 sugarloaf.stack(sugar_stack);
             }

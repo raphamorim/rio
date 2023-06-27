@@ -17,7 +17,7 @@ use crate::crosswords::{
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::screen::{
-    bindings::{Action as Act, BindingMode, Key},
+    bindings::{Action as Act, BindingMode, FontSizeAction, Key},
     context::ContextManager,
     mouse::Mouse,
 };
@@ -37,7 +37,7 @@ use winit::event::{ElementState, ModifiersState};
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 
 /// Number of pixels for increasing the selection scrolling speed factor by one.
-const SELECTION_SCROLLING_STEP: f32 = 20.;
+const SELECTION_SCROLLING_STEP: f32 = 30.;
 
 impl Dimensions for SugarloafLayout {
     #[inline]
@@ -189,6 +189,33 @@ impl Screen {
         self.resize_all_contexts(width, height, columns, lines);
 
         self.init(config.colors.background.1);
+    }
+
+    #[inline]
+    pub fn change_font_size(&mut self, action: FontSizeAction) {
+        let should_update = match action {
+            FontSizeAction::Increase => self.sugarloaf.layout.increase_font_size(),
+            FontSizeAction::Decrease => self.sugarloaf.layout.decrease_font_size(),
+            FontSizeAction::Reset => self.sugarloaf.layout.reset_font_size(),
+        };
+
+        if !should_update {
+            return;
+        }
+        // self.sugarloaf
+        //     .layout
+        //     .recalculate(config.font_size, config.padding_x);
+        // self.sugarloaf.update_font(config.font.to_string());
+        self.sugarloaf.layout.update();
+        // self.state = State::new(config);
+
+        self.sugarloaf.calculate_bounds();
+
+        let width = self.sugarloaf.layout.width_u32 as u16;
+        let height = self.sugarloaf.layout.height_u32 as u16;
+        let columns = self.sugarloaf.layout.columns;
+        let lines = self.sugarloaf.layout.lines;
+        self.resize_all_contexts(width, height, columns, lines);
     }
 
     #[inline]
@@ -383,6 +410,15 @@ impl Screen {
                         self.context_manager.close_context();
                         self.render();
                     }
+                    Act::IncreaseFontSize => {
+                        self.change_font_size(FontSizeAction::Increase);
+                    }
+                    Act::DecreaseFontSize => {
+                        self.change_font_size(FontSizeAction::Decrease);
+                    }
+                    Act::ResetFontSize => {
+                        self.change_font_size(FontSizeAction::Reset);
+                    }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
                 }
@@ -457,7 +493,7 @@ impl Screen {
         drop(terminal);
     }
 
-    pub fn update_selection_scrolling(&self, mouse_y: f64) {
+    pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
         let scale_factor = self.sugarloaf.layout.scale_factor;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
@@ -526,8 +562,7 @@ impl Screen {
         // let terminal = self.context_manager.current().terminal.lock();
         // let is_empty = terminal.selection.is_none();
         // drop(terminal);
-        let is_empty = self.state.selection_range.is_none();
-        is_empty
+        self.state.selection_range.is_none()
     }
 
     #[inline]
@@ -625,7 +660,7 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
-            display_offset as i32
+            display_offset as i32,
         );
 
         self.sugarloaf.render();
@@ -741,7 +776,8 @@ impl Screen {
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor) as f64)
+                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor)
+                    as f64)
                 .abs() as usize;
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 

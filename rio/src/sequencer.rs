@@ -352,7 +352,7 @@ impl Sequencer {
                         screen.mouse.right_button_state == ElementState::Pressed;
 
                     if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
-                        // screen.update_selection_scrolling(y);
+                        screen.update_selection_scrolling(y);
                         self.has_render_updates = true;
                     }
 
@@ -407,6 +407,8 @@ impl Sequencer {
                             screen.mouse_report(35, ElementState::Pressed);
                         }
                     }
+
+                    self.has_render_updates = true;
                 }
 
                 Event::WindowEvent {

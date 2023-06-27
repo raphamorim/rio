@@ -10,6 +10,13 @@ use winit::event::VirtualKeyCode;
 use winit::event::VirtualKeyCode::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FontSizeAction {
+    Increase,
+    Decrease,
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding<T> {
     /// Modifier keys required to activate binding.
     pub mods: ModifiersState,
@@ -663,12 +670,12 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         C,        ModifiersState::CTRL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        // Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
-        // Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
-        // Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
-        // NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
+        Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
+        Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
+        Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
+        NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
+        Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
+        NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
         Return, ModifiersState::ALT; Action::ToggleFullscreen;
     )
 }
