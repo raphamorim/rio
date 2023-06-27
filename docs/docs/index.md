@@ -46,7 +46,7 @@ performance = "High"
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # ...
 # dracula theme code is available in:
-# https://github.com/raphamorim/rio-dracula/blob/master/dracula.toml
+# https://github.com/dracula/rio-terminal
 theme = "dracula"
 
 # define x axis padding (default is 10)
