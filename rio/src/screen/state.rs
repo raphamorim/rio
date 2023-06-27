@@ -31,7 +31,7 @@ pub struct State {
     named_colors: Colors,
     pub colors: List,
     cursor: Cursor,
-    selection_range: Option<SelectionRange>,
+    pub selection_range: Option<SelectionRange>,
 }
 
 // TODO: Finish from
@@ -271,10 +271,12 @@ impl State {
         has_cursor: bool,
         range: &SelectionRange,
         line: pos::Line,
+        display_offset: i32
     ) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
+            let line = line - display_offset;
             let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
             let square = &row.inner[column];
             if has_cursor && column == self.cursor.state.pos.col {
@@ -375,18 +377,20 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         context_manager: &context::ContextManager<EventProxy>,
+        display_offset: i32
     ) {
         self.cursor.state = cursor;
         let is_cursor_visible = self.cursor.state.is_visible();
 
-        if let Some(sel) = self.selection_range {
+        if let Some(active_selection) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack_with_selection(
                     row,
                     has_cursor,
-                    &sel,
+                    &active_selection,
                     pos::Line(i as i32),
+                    display_offset
                 );
                 sugarloaf.stack(sugar_stack);
             }

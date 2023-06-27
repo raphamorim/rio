@@ -251,6 +251,9 @@ impl Screen {
             return;
         }
 
+        self.clear_selection();
+        self.scroll_bottom_when_cursor_not_visible();
+
         let utf8_len = character.len_utf8();
         let mut bytes = vec![0; utf8_len];
         character.encode_utf8(&mut bytes[..]);
@@ -520,12 +523,14 @@ impl Screen {
 
     #[inline]
     pub fn selection_is_empty(&self) -> bool {
-        let terminal = self.context_manager.current().terminal.lock();
-        let is_empty = terminal.selection.is_none();
-        drop(terminal);
+        // let terminal = self.context_manager.current().terminal.lock();
+        // let is_empty = terminal.selection.is_none();
+        // drop(terminal);
+        let is_empty = self.state.selection_range.is_none();
         is_empty
     }
 
+    #[inline]
     pub fn on_left_click(&mut self, point: Pos) {
         let side = self.mouse.square_side;
 
@@ -610,6 +615,7 @@ impl Screen {
         let mut terminal = self.ctx().current().terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
+        let display_offset = terminal.display_offset();
         drop(terminal);
 
         self.state.set_ime(self.ime.preedit());
@@ -619,6 +625,7 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
+            display_offset as i32
         );
 
         self.sugarloaf.render();
@@ -734,7 +741,7 @@ impl Screen {
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / self.sugarloaf.layout.font_size as f64)
+                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor) as f64)
                 .abs() as usize;
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 
