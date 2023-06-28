@@ -9,6 +9,7 @@ include = [
   "Cargo.toml",
   "src/**/*.ttf",
   "src/**/*.otf",
+  "src/**/*.wgsl",
   "src/**/*.rs"
 ]
 description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
