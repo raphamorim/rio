@@ -2,13 +2,14 @@
 
 ## 0.0.8 (in progress)
 
+- Support to Microsoft Windows 11.
 - Ability to in|decrease font size using keyboard shortcut during session (ref: [#109](https://github.com/raphamorim/rio/issues/109))
 - Inverted Canary and Stable icons.
 - ANSI mouse reports (e.g: scroll and click working on VIM).
+- Scroll and apply selection.
 - Semantic and line selection.
 - Rio is available in Homebrew casks (ref [github.com/Homebrew/homebrew-cask/pull/149824](https://github.com/Homebrew/homebrew-cask/pull/149824)).
 - Rio stable versions are notarized now.
-- Support to Microsoft Windows 11.
 - Migration of mio, mio-extras, mio-signal-hook to Corcovado.
 - Changed default black color to `#4c4345`.
 - Fix mouse position for when selecting text.
