@@ -545,6 +545,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "corcovado"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16efa621c381020d5280c4d72efbc0bda0f3dc180e56e89a083de792ecd37fe8"
+dependencies = [
+ "cfg-if 0.1.10",
+ "fuchsia-zircon",
+ "fuchsia-zircon-sys",
+ "iovec",
+ "libc",
+ "log 0.4.18",
+ "miow",
+ "net2",
+ "slab",
+ "windows 0.42.0",
+ "windows-sys 0.42.0",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2233,7 +2252,7 @@ dependencies = [
  "colors",
  "config",
  "copypasta",
- "corcovado",
+ "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs",
  "glyph_brush",
  "image",
@@ -2244,8 +2263,8 @@ dependencies = [
  "objc",
  "parking_lot",
  "serde",
- "sugarloaf",
- "teletypewriter",
+ "sugarloaf 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "teletypewriter 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "unicode-width",
  "vte",
@@ -2500,8 +2519,6 @@ name = "sugarloaf"
 version = "0.0.7"
 dependencies = [
  "bytemuck",
- "colors",
- "config",
  "console_error_panic_hook",
  "console_log",
  "deflate",
@@ -2521,6 +2538,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sugarloaf"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd59dd02531ccab767643907a0f9727c0984a2384e1a4f16025b6aef591b8d9f"
+dependencies = [
+ "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "font-kit",
+ "glyph_brush",
+ "js-sys",
+ "log 0.4.18",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "sugarloaf-styled-text"
 version = "0.0.7"
 dependencies = [
@@ -2528,7 +2566,7 @@ dependencies = [
  "console_log",
  "env_logger 0.10.0",
  "log 0.4.18",
- "sugarloaf",
+ "sugarloaf 0.0.7",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -2561,9 +2599,26 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
- "corcovado",
+ "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dirs",
+ "iovec",
+ "libc",
+ "log 0.4.18",
+ "miow",
+ "parking_lot",
+ "signal-hook",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "teletypewriter"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "692d1b1df448da67fa8811c9bc0da4f83a1fd0947fbfcde633c97c38dda441f5"
+dependencies = [
+ "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs",
  "iovec",
  "libc",
