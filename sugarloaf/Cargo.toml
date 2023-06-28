@@ -29,8 +29,6 @@ bytemuck = { workspace = true }
 winit = { workspace = true }
 glyph_brush = "0.7.7"
 log = { workspace = true }
-colors = { path = "../colors" }
-config = { path = "../config" }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
 js-sys = "0.3.61"
