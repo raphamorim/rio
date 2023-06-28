@@ -11,7 +11,7 @@ authors = { workspace = true }
 [dependencies]
 libc = "0.2.140"
 dirs = "5.0"
-corcovado = { path = "../corcovado" }
+corcovado = "0.0.1"
 log = "0.4.18"
 
 [target.'cfg(unix)'.dependencies]
