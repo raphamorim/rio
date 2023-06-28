@@ -79,13 +79,8 @@ In case your distro doesn't have the package manager option listed above, procee
 
 ### Windows
 
-TBD in the version v0.0.8.
-- • Rust installation: [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
+TBD in the version v0.0.8. 
 
-{% highlight bash %}
-cargo build
-cargo run
-{% endhighlight %}
 
 ### WebAssembly
 
@@ -162,6 +157,13 @@ macOS:
 
 {% highlight bash %}
 make release-macos
+{% endhighlight %}
+
+Windows:
+
+{% highlight bash %}
+cargo build
+cargo run
 {% endhighlight %}
 
 If all goes well, this should place a zip file with Rio application inside at <span class="keyword">release</span> (folder created in rio root path after the command execution).
