@@ -79,7 +79,8 @@ In case your distro doesn't have the package manager option listed above, procee
 
 ### Windows
 
-TBD in the version v0.0.8.
+TBD in the version v0.0.8. 
+
 
 ### WebAssembly
 
@@ -157,5 +158,16 @@ macOS:
 {% highlight bash %}
 make release-macos
 {% endhighlight %}
+
+Windows:
+
+{% highlight bash %}
+cargo build --release
+{% endhighlight %}
+
+After the command execution an executable will be created called Rio.exe inside of “target/release”
+
+Optionally you can also build and run the terminal with “cargo run”.
+
 
 If all goes well, this should place a zip file with Rio application inside at <span class="keyword">release</span> (folder created in rio root path after the command execution).
