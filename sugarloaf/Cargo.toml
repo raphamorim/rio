@@ -3,9 +3,14 @@ name = "sugarloaf"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 keywords.workspace = true
-exclude = [
-    "Cargo.lock",
+include = [
+  "Cargo.toml",
+  "src/**/*.ttf",
+  "src/**/*.otf",
+  "src/**/*.wgsl",
+  "src/**/*.rs"
 ]
 description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
 documentation = "https://docs.rs/crate/sugarloaf/latest"
@@ -29,8 +34,6 @@ bytemuck = { workspace = true }
 winit = { workspace = true }
 glyph_brush = "0.7.7"
 log = { workspace = true }
-colors = { path = "../colors" }
-config = { path = "../config" }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
 js-sys = "0.3.61"

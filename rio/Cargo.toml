@@ -14,7 +14,7 @@ bitflags = "2.0.2"
 bytemuck = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
-corcovado = { path = "../corcovado" }
+corcovado = "0.0.1"
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }
 dirs = "5.0"
@@ -26,8 +26,8 @@ libc = "0.2.141"
 log = { workspace = true }
 parking_lot = "0.12"
 serde = { workspace = true }
-sugarloaf = { path = "../sugarloaf" }
-teletypewriter = { workspace = true }
+sugarloaf = "0.0.7"
+teletypewriter = "2.0.1"
 tokio = { version = "1.26.0", features = ["full"] }
 unicode-width = "0.1.5"
 vte = { version = "0.11.1", default-features = false }
