@@ -162,8 +162,12 @@ make release-macos
 Windows:
 
 {% highlight bash %}
-cargo build
-cargo run
+cargo build --release
 {% endhighlight %}
+
+After the command execution an executable will be created called Rio.exe inside of “target/release”
+
+Optionally you can also build and run the terminal with “cargo run”.
+
 
 If all goes well, this should place a zip file with Rio application inside at <span class="keyword">release</span> (folder created in rio root path after the command execution).
