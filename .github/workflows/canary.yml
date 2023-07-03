@@ -110,8 +110,7 @@ jobs:
       - name: rustup toolchain install stable --profile minimal
         run: rustup toolchain install stable --profile minimal
 
-      - name: cargo build --release
-        run: cargo build --release
+      - run: cargo build --release
 
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.1
