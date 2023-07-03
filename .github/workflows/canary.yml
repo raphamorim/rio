@@ -101,7 +101,6 @@ jobs:
           files_ignore: docs
 
       - name: Run step if any *.rs file(s) or any file in the misc folder change
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: |
           echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
           echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
@@ -110,18 +109,14 @@ jobs:
 
       - name: rust cache
         uses: Swatinem/rust-cache@v2
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
 
       - name: rustup toolchain install stable --profile minimal
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: rustup toolchain install stable --profile minimal
 
       - name: Install WiX
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: dotnet tool install --global wix --version 4.0.1
 
       - name: cargo build --release
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: cargo build --release
 
       - name: Crate msi installer
@@ -131,7 +126,6 @@ jobs:
           -out "./Rio-installer.msi" "rio/windows/rio.wxs"
 
       - name: Bump version and push tag
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
         with:
@@ -140,7 +134,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release canary
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         uses: softprops/action-gh-release@v1
         with:
           name: canary
