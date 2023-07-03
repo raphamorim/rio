@@ -19,7 +19,7 @@ use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "macos"))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
 #[cfg(target_os = "macos")]
 const TIOCSWINSZ: libc::c_ulong = 2148037735;
@@ -244,7 +244,7 @@ pub fn terminfo_exists(terminfo: &str) -> bool {
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
