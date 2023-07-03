@@ -13,9 +13,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  create:
-    outputs:
-      status: ${{ steps.tag_version }}
+  create_tag:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,7 +35,8 @@ jobs:
 
       - name: Abort if does not contain any change on *.rs file(s) or the misc folder
         if: steps.changed-files-excluded.outputs.any_changed != 'true'
-        run: exit 0;
+        run: |
+          exit 0
 
       - name: Run step if any *.rs file(s) or any file in the misc folder change
         if: steps.changed-files-excluded.outputs.any_changed == 'true'
@@ -55,8 +54,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   canary-release-macos:
-    needs: create
-    if: needs.create.outputs.status == 'success' && needs.create.outputs.new_tag == env.CANARY_TAG
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.new_tag == env.CANARY_TAG }}
     runs-on: macos-11.0
     permissions:
       contents: write
@@ -92,8 +91,8 @@ jobs:
             LICENSE
 
   canary-release-windows:
-    needs: create
-    if: needs.create.outputs.status == 'success' && needs.create.outputs.new_tag == env.CANARY_TAG
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.new_tag == env.CANARY_TAG }}
     runs-on: windows-latest
     defaults:
       run:
