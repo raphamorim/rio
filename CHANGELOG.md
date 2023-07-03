@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.8 (in progress)
+## 0.0.8
 
 - Added generation of `.msi` and `.exe` files to the release pipeline (stable and canary).
 - Support to Microsoft Windows.
