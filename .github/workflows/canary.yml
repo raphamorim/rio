@@ -15,7 +15,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  release-macos:
+  canary-release-macos:
     runs-on: macos-11.0
     permissions:
       contents: write
@@ -80,8 +80,13 @@ jobs:
             release/macos-rio.zip
             LICENSE
 
-  release-windows:
+  canary-release-windows:
     runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: bash
+
     permissions:
       contents: write
       discussions: write
@@ -109,15 +114,18 @@ jobs:
 
       - name: rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+          cache-all-crates: "true"
 
       - name: rustup toolchain install stable --profile minimal
         run: rustup toolchain install stable --profile minimal
 
-      - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.1
-
       - name: cargo build --release
         run: cargo build --release
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.0.1
 
       - name: Crate msi installer
         run: |
