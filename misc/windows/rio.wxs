@@ -1,17 +1,17 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
    <Package
       Name="Rio"
-      UpgradeCode="$(var.NewUpgradeCode)"
+      UpgradeCode="87c21c74-dbd5-4584-89d5-46d9cd0c40a8"
       Language="1033"
       Codepage="1252"
       Version="0.0.8"
-      Manufacturer="Rio"
+      Manufacturer="Raphael Amorim"
       InstallerVersion="200">
 
       <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-      <Icon Id="RioIco" SourceFile=".\rio\src\screen\window\resources\images\embedded-logo.ico" />
       <WixVariable Id="WixUILicenseRtf" Value=".\misc\windows\License.rtf" />
-      <Property Id="ARPPRODUCTICON" Value="RioIco" />
+      <Icon Id="RioIco.exe" SourceFile=".\rio\src\screen\window\resources\images\embedded-logo.ico" />
+      <Property Id="ARPPRODUCTICON" Value="RioIco.exe" />
       <MediaTemplate EmbedCab="yes" />
       <ui:WixUI Id="WixUI_Minimal" />
       <Feature Id="ProductFeature" Title="ConsoleApp" Level="1">
