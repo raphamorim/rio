@@ -2243,7 +2243,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
 name = "rio"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "base64",
  "bitflags 2.0.2",
@@ -2263,7 +2263,7 @@ dependencies = [
  "objc",
  "parking_lot",
  "serde",
- "sugarloaf 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sugarloaf 0.0.7",
  "teletypewriter 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "unicode-width",
@@ -2517,6 +2517,27 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 [[package]]
 name = "sugarloaf"
 version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd59dd02531ccab767643907a0f9727c0984a2384e1a4f16025b6aef591b8d9f"
+dependencies = [
+ "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "font-kit",
+ "glyph_brush",
+ "js-sys",
+ "log 0.4.18",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "sugarloaf"
+version = "0.0.8"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -2538,35 +2559,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "sugarloaf"
-version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd59dd02531ccab767643907a0f9727c0984a2384e1a4f16025b6aef591b8d9f"
-dependencies = [
- "bytemuck",
- "console_error_panic_hook",
- "console_log",
- "font-kit",
- "glyph_brush",
- "js-sys",
- "log 0.4.18",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "sugarloaf-styled-text"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
  "env_logger 0.10.0",
  "log 0.4.18",
- "sugarloaf 0.0.7",
+ "sugarloaf 0.0.8",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
