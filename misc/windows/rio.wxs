@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
    <Package
       Name="Rio"
-      UpgradeCode="87c21c74-dbd5-4584-89d5-46d9cd0c40a7"
+      UpgradeCode="$(var.NewUpgradeCode)"
       Language="1033"
       Codepage="1252"
       Version="0.0.8"
