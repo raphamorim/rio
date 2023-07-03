@@ -49,7 +49,7 @@ Note: Rio consider Ventura (Rome) as minimal requirement of macOS version.
 
 You can download Rio terminal application for macOS platform:
 
-- [Download macOS - v0.0.7](https://github.com/raphamorim/rio/releases/download/v0.0.7/Rio-v0.0.7.dmg)
+- [Download macOS - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-v0.0.8.dmg)
 
 Alternatively you can install Rio through [Homebrew](https://brew.sh/)
 
