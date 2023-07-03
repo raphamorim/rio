@@ -1,26 +1,20 @@
 name: Release Canary
-
-# on:
-#   push:
-#     branches:
-#       - 'main'
-
-on: [push, pull_request]
-
+on:
+  - push
+  - pull_request
 env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
-  TAG: canary
+  CANARY_TAG: canary-${{ github.sha }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   canary-tag:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-
-    - name: Get all changed *.rs file(s) or any file in the misc folder excluding the docs folder
+    - name: Get all changed *.rs file(s) or any file in the misc folder excluding the
+        docs folder
       id: changed-files-excluded
       uses: tj-actions/changed-files@v36
       with:
@@ -28,20 +22,20 @@ jobs:
           **/*.rs
           misc
         files_ignore: docs
-
     - name: Run step if any *.rs file(s) or any file in the misc folder change
       if: steps.changed-files-excluded.outputs.any_changed == 'true'
-      run: |
-        echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
-        echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
+      run: >
+        echo "One or more *.rs file(s) or any file in the static folder but not in
+        the docs folder has changed."
 
+        echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
     - name: Bump version and push tag
       id: tag_version
       if: steps.changed-files-excluded.outputs.any_changed == 'true'
       uses: mathieudutour/github-tag-action@v6.1
       with:
-        custom_tag: 'canary-${{ github.sha }}'
-        tag_prefix: ''
+        custom_tag: canary-${{ github.sha }}
+        tag_prefix: ""
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
   canary-release-macos:
@@ -50,31 +44,23 @@ jobs:
     permissions:
       contents: write
       discussions: write
-
     steps:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
-      # TODO: refactor to remove many redudant ifs
-
       - name: rust cache
         uses: Swatinem/rust-cache@v2
-
       - name: rustup toolchain install stable --profile minimal
         run: rustup toolchain install stable --profile minimal
-
       - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
         run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-
       - name: make release-macos
         run: make release-macos
-
       - name: Release canary
         uses: softprops/action-gh-release@v1
         with:
           name: canary
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -85,48 +71,40 @@ jobs:
   canary-release-windows:
     needs: canary-tag
     runs-on: windows-latest
-
     defaults:
       run:
         shell: bash
-
     permissions:
       contents: write
       discussions: write
-
     steps:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
           cache-all-crates: "true"
-
       - name: rustup toolchain install stable --profile minimal
         run: rustup toolchain install stable --profile minimal
-
       - name: cargo build --release
         run: cargo build --release
-
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.1
-
       - name: Crate msi installer
-        run: |
+        run: >
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
+
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
+
           -out "./Rio-installer.msi" "misc/windows/rio.wxs"
-
       - run: cp ./target/release/rio.exe ./Rio-portable.exe
-
       - name: Release canary
         uses: softprops/action-gh-release@v1
         with:
           name: canary
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
