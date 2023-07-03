@@ -87,7 +87,6 @@ jobs:
   canary-release-windows:
     needs: canary-tag
     runs-on: windows-latest
-
     defaults:
       run:
         shell: bash
