@@ -79,8 +79,12 @@ In case your distro doesn't have the package manager option listed above, procee
 
 ### Windows
 
-TBD in the version v0.0.8. 
+Note: Rio is only available for Windows 10 or later.
 
+Prebuilt binaries for Windows:
+
+- • [Download Microsoft Windows Installer - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-installer.msi)
+- • [Download Rio Portable - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-portable.exe)
 
 ### WebAssembly
 
@@ -140,24 +144,30 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 Linux with X11:
 
 {% highlight bash %}
-# Only X11
+# Build for X11
 cargo build --release --no-default-features --features=x11
-WINIT_UNIX_BACKEND=x11 target/release/rio
+
+# Running it
+target/release/rio
 {% endhighlight %}
 
 Linux with Wayland:
 
 {% highlight bash %}
-# Only Wayland
+# Build for Wayland
 cargo build --release --no-default-features --features=wayland
-WINIT_UNIX_BACKEND=wayland target/release/rio
+
+# Running it
+target/release/rio
 {% endhighlight %}
 
-macOS:
+MacOS:
 
 {% highlight bash %}
 make release-macos
 {% endhighlight %}
+
+After the command execution an application called "Rio.app" will be created inside of a folder "release" (this folder is generated only after the command execution).
 
 Windows:
 
@@ -165,9 +175,8 @@ Windows:
 cargo build --release
 {% endhighlight %}
 
-After the command execution an executable will be created called Rio.exe inside of “target/release”
+After the command execution an executable will be created called Rio.exe inside of "target/release"
 
-Optionally you can also build and run the terminal with “cargo run”.
-
+Optionally you can also build and run the terminal with "cargo run".
 
 If all goes well, this should place a zip file with Rio application inside at <span class="keyword">release</span> (folder created in rio root path after the command execution).
