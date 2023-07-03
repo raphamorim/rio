@@ -19,8 +19,10 @@ use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
+#[cfg(target_os = "freebsd")]
+const TIOCSWINSZ: libc::c_ulong = 0x80087467;
 #[cfg(target_os = "macos")]
 const TIOCSWINSZ: libc::c_ulong = 2148037735;
 
