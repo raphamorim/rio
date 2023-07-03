@@ -246,7 +246,7 @@ pub fn terminfo_exists(terminfo: &str) -> bool {
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
@@ -265,7 +265,7 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_line: 0,
     };
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
         c_oflag: libc::OPOST | libc::ONLCR,
@@ -283,9 +283,12 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         c_ospeed: Default::default(),
     };
 
-    // Enable utf8 support if requested
-    if utf8 {
-        term.c_iflag |= libc::IUTF8;
+    #[cfg(not(target_os = "freebsd"))]
+    {
+        // Enable utf8 support if requested
+        if utf8 {
+            term.c_iflag |= libc::IUTF8;
+        }
     }
 
     // Set supported terminal characters
