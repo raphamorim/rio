@@ -15,7 +15,7 @@ env:
 jobs:
   create_tag:
     outputs:
-      new_tag: ${{ steps.tag_version.outputs.new_tag }}
+      created: ${{ steps.created.outputs.status }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -55,9 +55,12 @@ jobs:
           tag_prefix: ''
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - id: status
+        run: echo "created=true" >> "$GITHUB_OUTPUT"
+
   canary-release-macos:
     needs: create_tag
-    if: ${{ needs.create_tag.outputs.new_tag == env.CANARY_TAG }}
+    if: ${{ needs.create_tag.outputs.created == "true" }}
     runs-on: macos-11.0
     permissions:
       contents: write
@@ -94,7 +97,7 @@ jobs:
 
   canary-release-windows:
     needs: create_tag
-    if: ${{ needs.create_tag.outputs.new_tag == env.CANARY_TAG }}
+    if: ${{ needs.create_tag.outputs.created == "true" }}
     runs-on: windows-latest
     defaults:
       run:
