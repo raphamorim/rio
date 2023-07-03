@@ -60,7 +60,7 @@ jobs:
 
   canary-release-macos:
     needs: create_tag
-    if: ${{ needs.create_tag.outputs.created == "true" }}
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: macos-11.0
     permissions:
       contents: write
@@ -97,7 +97,7 @@ jobs:
 
   canary-release-windows:
     needs: create_tag
-    if: ${{ needs.create_tag.outputs.created == "true" }}
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: windows-latest
     defaults:
       run:
