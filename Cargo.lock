@@ -2264,7 +2264,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "sugarloaf 0.0.7",
- "teletypewriter 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "teletypewriter",
  "tokio",
  "unicode-width",
  "vte",
@@ -2600,23 +2600,6 @@ dependencies = [
 [[package]]
 name = "teletypewriter"
 version = "2.0.1"
-dependencies = [
- "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "dirs",
- "iovec",
- "libc",
- "log 0.4.18",
- "miow",
- "parking_lot",
- "signal-hook",
- "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "teletypewriter"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "692d1b1df448da67fa8811c9bc0da4f83a1fd0947fbfcde633c97c38dda441f5"
 dependencies = [
  "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs",
