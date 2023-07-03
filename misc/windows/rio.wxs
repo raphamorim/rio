@@ -11,10 +11,6 @@
       InstallerVersion="200"
       IconSourceFile=".\misc\windows\rio.ico">
 
-      <bal:Condition Message="Rio requires Windows 7 or later.">
-         <![CDATA[VersionNT >= v6.1]]>
-      </bal:Condition>
-
       <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
       <Icon Id="RioIco" SourceFile=".\misc\windows\rio.ico" />
       <WixVariable Id="WixUILicenseRtf" Value=".\misc\windows\License.rtf" />
