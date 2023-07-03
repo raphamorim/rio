@@ -55,7 +55,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   canary-release-macos:
-    needs: canary-tag
+    needs: create
     if: needs.create.outputs.status == 'success' && needs.create.outputs.new_tag == env.CANARY_TAG
     runs-on: macos-11.0
     permissions:
@@ -92,7 +92,7 @@ jobs:
             LICENSE
 
   canary-release-windows:
-    needs: canary-tag
+    needs: create
     if: needs.create.outputs.status == 'success' && needs.create.outputs.new_tag == env.CANARY_TAG
     runs-on: windows-latest
     defaults:
