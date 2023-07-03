@@ -148,6 +148,34 @@ section.features {
   padding: 40px 0;
 }
 
+section.gallery {
+/*  border-top: 20px solid #12B5E5;*/
+}
+
+section.gallery-background {
+  background: #F9F4DA;
+  padding: 40px 0;
+}
+
+.gallery {
+  display: flex;
+  align-items: center;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.gallery .demo {
+  background: #F38BA3;
+  height: 200px;
+  width: 200px;
+  overflow: hidden;
+}
+
+.gallery img {
+/*  border-top: 20px solid #12B5E5;*/
+  width: 340px;
+}
+
 section.usage {
   border-top: 20px solid #ED203D;
   background: #12B5E5;
@@ -217,6 +245,10 @@ section.features .container p {
   color: #F9F4DA;
 }
 
+section.features .container.footer p {
+  padding: 0 20px;
+}
+
 .info {
   max-width: 520px;
   text-align: center;
@@ -241,8 +273,8 @@ section.features .container p {
   background: black;
 }
 
-.info .block:nth-of-type(3) a {
-  font-size: 14px;
+.info .block a {
+  font-size: 18px;
   color: #FCBA28;
   text-decoration: none;
   box-shadow: 1px 1px 15px 1px rgba(0, 0, 0, .9);
@@ -479,6 +511,10 @@ section.features .container p {
 }
 
 @media (max-width: 620px) {
+  .gallery-background {
+    display: none;
+  }
+
   #nav {
     display: block;
     width: 185px;
@@ -506,4 +542,14 @@ section.features .container p {
   .container.content {
     border-radius: 0px;
   }
+}
+
+::-moz-selection { /* Code for Firefox */
+  background: #F38BA3;
+  color: #F9F4DA;
+}
+
+::selection {
+  background: #F38BA3;
+  color: #F9F4DA;
 }

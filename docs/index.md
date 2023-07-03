@@ -11,10 +11,6 @@ Rio is built over WebGPU, WebAssembly and Rust. The WebGPU API makes it suitable
 
 Applications using WPGU run natively on Vulkan, Metal, DirectX 11/12, and OpenGL ES; and browsers via WebAssembly on WebGPU and WebGL2.
 
-## Is it ready?
-
-Not yet, but you can install an unstable version for [MacOS](/rio/install#macos) (x86 and arm64) or [Linux](https://github.com/raphamorim/rio/blob/main/INSTALL.md).
-
 ## Development status?
 
-You can follow [@raphamorims](https://twitter.com/raphamorims) on Twitter to track Rio development updates.
+You can follow me on Twitter ([@raphamorims](https://twitter.com/raphamorims)) or Bluesky ([@mustache.bsky.social](https://bsky.app/profile/mustache.bsky.social)) to follow any update regarding Rio terminal development.

@@ -2,7 +2,8 @@
 
 ## 0.0.8 (in progress)
 
-- Support to Microsoft Windows 11.
+- Added generation of `.msi` and `.exe` files to the release pipeline (stable and canary).
+- Support to Microsoft Windows.
 - Ability to in|decrease font size using keyboard shortcut during session (ref: [#109](https://github.com/raphamorim/rio/issues/109))
 - Inverted Canary and Stable icons.
 - ANSI mouse reports (e.g: scroll and click working on VIM).
