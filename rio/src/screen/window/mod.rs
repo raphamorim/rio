@@ -1,4 +1,4 @@
-pub const LOGO_ICON: &[u8; 119202] = include_bytes!("./resources/images/logo-macos.ico");
+pub const LOGO_ICON: &[u8; 119202] = include_bytes!("./resources/images/embedded-logo.ico");
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;

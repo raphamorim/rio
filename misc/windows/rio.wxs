@@ -2,17 +2,14 @@
    <Package
       Name="Rio"
       UpgradeCode="87c21c74-dbd5-4584-89d5-46d9cd0c40a7"
-      HelpUrl="https://github.com/raphamorim/rio"
-      UpdateUrl="https://github.com/raphamorim/rio/releases"
       Language="1033"
       Codepage="1252"
       Version="0.0.8"
       Manufacturer="Rio"
-      InstallerVersion="200"
-      IconSourceFile=".\misc\windows\rio.ico">
+      InstallerVersion="200">
 
       <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-      <Icon Id="RioIco" SourceFile=".\misc\windows\rio.ico" />
+      <Icon Id="RioIco" SourceFile=".\rio\src\screen\window\resources\images\embedded-logo.ico" />
       <WixVariable Id="WixUILicenseRtf" Value=".\misc\windows\License.rtf" />
       <Property Id="ARPPRODUCTICON" Value="RioIco" />
       <MediaTemplate EmbedCab="yes" />
