@@ -11,12 +11,12 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
-  TAG: canary
+  CANARY_TAG: canary-${{ github.sha }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  canary-release-macos:
-    runs-on: macos-11.0
+  canary-tag:
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       discussions: write
@@ -41,46 +41,53 @@ jobs:
           echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
           echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
 
-      # TODO: refactor to remove many redudant ifs
-
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
-
-      - name: rustup toolchain install stable --profile minimal
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
-        run: rustup toolchain install stable --profile minimal
-
-      - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-
-      - name: make release-macos
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
-        run: make release-macos
-
       - name: Bump version and push tag
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         id: tag_version
+        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         uses: mathieudutour/github-tag-action@v6.1
         with:
           custom_tag: 'canary-${{ github.sha }}'
           tag_prefix: ''
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+  canary-release-macos:
+    needs: canary-tag
+    runs-on: macos-11.0
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal
+
+      - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      - name: make release-macos
+        run: make release-macos
+
       - name: Release canary
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         uses: softprops/action-gh-release@v1
         with:
           name: canary
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
+          append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             release/macos-rio.zip
             LICENSE
 
   canary-release-windows:
+    needs: canary-tag
     runs-on: windows-latest
 
     defaults:
@@ -95,22 +102,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
-      - name: Get all changed *.rs file(s) or any file in the misc folder excluding the docs folder
-        id: changed-files-excluded
-        uses: tj-actions/changed-files@v36
-        with:
-          files: |
-            **/*.rs
-            misc
-          files_ignore: docs
-
-      - name: Run step if any *.rs file(s) or any file in the misc folder change
-        run: |
-          echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
-          echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
-
-      # TODO: refactor to remove many redudant ifs
 
       - name: rust cache
         uses: Swatinem/rust-cache@v2
@@ -135,20 +126,13 @@ jobs:
 
       - run: cp ./target/release/rio.exe ./Rio-portable.exe
 
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.1
-        with:
-          custom_tag: 'canary-${{ github.sha }}'
-          tag_prefix: ''
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Release canary
         uses: softprops/action-gh-release@v1
         with:
           name: canary
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
+          append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             ./Rio-portable.exe
