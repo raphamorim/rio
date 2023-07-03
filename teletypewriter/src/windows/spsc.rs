@@ -44,16 +44,19 @@ pub struct SpscBufferReader {
 
 impl SpscBufferReader {
     /// Get length of contents currently in the buffer
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Get total capacity of the buffer
+    #[allow(unused)]
     pub fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
 
     /// Check whether the buffer is currently empty
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -102,16 +105,19 @@ pub struct SpscBufferWriter {
 
 impl SpscBufferWriter {
     /// Get length of contents currently in the buffer
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 
     /// Get total capacity of the buffer
+    #[allow(unused)]
     pub fn capacity(&self) -> usize {
         self.buffer.capacity()
     }
 
     /// Check whether the buffer is currently empty
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }

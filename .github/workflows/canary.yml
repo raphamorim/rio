@@ -77,7 +77,7 @@ jobs:
       - name: Release canary
         uses: softprops/action-gh-release@v1
         with:
-          name: canary
+          name: Canary - ${{ github.sha }}
           tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
           append_body: true
@@ -129,7 +129,7 @@ jobs:
       - name: Release canary
         uses: softprops/action-gh-release@v1
         with:
-          name: canary
+          name: Canary - ${{ github.sha }}
           tag_name: ${{ env.CANARY_TAG }}
           prerelease: true
           append_body: true
