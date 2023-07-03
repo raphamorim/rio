@@ -119,7 +119,7 @@ jobs:
         run: dotnet tool install --global wix --version 4.0.1
 
       - name: Crate msi installer
-        run: >
+        run: |
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
           -out "./Rio-installer.msi" "misc/windows/rio.wxs"

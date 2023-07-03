@@ -13,7 +13,7 @@ pub use self::windows::*;
 use std::io;
 
 #[repr(C)]
-struct Winsize {
+pub struct Winsize {
     ws_row: libc::c_ushort,
     ws_col: libc::c_ushort,
     ws_width: libc::c_ushort,
