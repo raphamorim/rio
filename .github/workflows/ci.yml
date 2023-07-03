@@ -1,10 +1,6 @@
 name: CI
 
-# on: [push, pull_request]
-on:
-  push:
-    branches:
-      - 'main'
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
