@@ -133,6 +133,8 @@ jobs:
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
           -out "./Rio-installer.msi" "misc/windows/rio.wxs"
 
+      - run: cp ./target/release/rio.exe ./Rio-portable.exe
+
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
@@ -149,4 +151,5 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
+            ./Rio-portable.exe
             ./Rio-installer.msi
