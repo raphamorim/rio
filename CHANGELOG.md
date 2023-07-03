@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.9 (in progress)
+
+- FreeBSD support.
+
 ## 0.0.8
 
 - Added generation of `.msi` and `.exe` files to the release pipeline (stable and canary).
