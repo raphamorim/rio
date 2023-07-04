@@ -19,8 +19,10 @@ use std::process::Command;
 use std::ptr;
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
+#[cfg(all(target_os = "linux", target_env = "musl"))]
+const TIOCSWINSZ: libc::c_int = 0x80087467;
 #[cfg(target_os = "freebsd")]
 const TIOCSWINSZ: libc::c_ulong = 0x80087467;
 #[cfg(target_os = "macos")]
@@ -246,6 +248,7 @@ pub fn terminfo_exists(terminfo: &str) -> bool {
 }
 
 pub fn create_termp(utf8: bool) -> libc::termios {
+    // musl libc does not provide c_ispeed and c_ospeed fields in struct termios.
     #[cfg(target_os = "linux")]
     let mut term = libc::termios {
         c_iflag: libc::ICRNL | libc::IXON | libc::IXANY | libc::IMAXBEL | libc::BRKINT,
@@ -260,8 +263,14 @@ pub fn create_termp(utf8: bool) -> libc::termios {
             | libc::ECHOKE
             | libc::ECHOCTL,
         c_cc: Default::default(),
+        #[cfg(not(target_env = "musl"))]
         c_ispeed: Default::default(),
+        #[cfg(not(target_env = "musl"))]
         c_ospeed: Default::default(),
+        #[cfg(target_env = "musl")]
+        __c_ispeed: Default::default(),
+        #[cfg(target_env = "musl")]
+        __c_ospeed: Default::default(),
         c_line: 0,
     };
 
