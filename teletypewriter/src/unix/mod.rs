@@ -22,7 +22,7 @@ use std::sync::Arc;
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
 #[cfg(all(target_os = "linux", target_env = "musl"))]
-const TIOCSWINSZ: libc::c_int = 0x80087467;
+const TIOCSWINSZ: libc::c_int = 0x5414;
 #[cfg(target_os = "freebsd")]
 const TIOCSWINSZ: libc::c_ulong = 0x80087467;
 #[cfg(target_os = "macos")]
