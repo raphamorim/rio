@@ -545,25 +545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corcovado"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16efa621c381020d5280c4d72efbc0bda0f3dc180e56e89a083de792ecd37fe8"
-dependencies = [
- "cfg-if 0.1.10",
- "fuchsia-zircon",
- "fuchsia-zircon-sys",
- "iovec",
- "libc",
- "log 0.4.18",
- "miow",
- "net2",
- "slab",
- "windows 0.42.0",
- "windows-sys 0.42.0",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2252,7 +2233,7 @@ dependencies = [
  "colors",
  "config",
  "copypasta",
- "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "corcovado",
  "dirs",
  "glyph_brush",
  "image",
@@ -2601,7 +2582,7 @@ dependencies = [
 name = "teletypewriter"
 version = "2.0.1"
 dependencies = [
- "corcovado 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "corcovado",
  "dirs",
  "iovec",
  "libc",

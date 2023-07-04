@@ -26,6 +26,7 @@ bytemuck = { version = "1.13.1", features = [ "derive" ] }
 log = "0.4.18"
 serde = { version = "1.0.163", features = ["derive"] }
 teletypewriter = { path = "teletypewriter" }
+corcovado = { path = "corcovado" }
 tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.16.1"
 winit = { version = "0.28.6", default-features = false, features = ["serde"] }
