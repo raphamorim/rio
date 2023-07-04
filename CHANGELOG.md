@@ -2,7 +2,7 @@
 
 ## 0.0.9 (in progress)
 
-- FreeBSD support.
+- FreeBSD support, implementation by [yurivict](https://github.com/yurivict) ([Commit](https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e), Ref: [#115](https://github.com/raphamorim/rio/issues/115))
 
 ## 0.0.8
 
