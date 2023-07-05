@@ -94,7 +94,7 @@ impl State {
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
-        let foreground_color = match square.fg {
+        let mut foreground_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
             AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
@@ -146,7 +146,7 @@ impl State {
             }
         };
 
-        let background_color = match square.bg {
+        let mut background_color = match square.bg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
             AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
@@ -201,6 +201,13 @@ impl State {
                 is_bold_italic,
                 is_bold,
             });
+        }
+
+        if flags.contains(Flags::INVERSE) {
+            let ref_background_color = background_color;
+            let ref_foreground_color = foreground_color;
+            foreground_color = ref_background_color;
+            background_color = ref_foreground_color;
         }
 
         let mut decoration = None;

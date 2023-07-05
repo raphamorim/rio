@@ -1,6 +1,7 @@
 use crate::ansi::mode::Mode;
 use crate::ansi::CursorShape;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
+use crate::crosswords::square::Hyperlink;
 use colors::ColorRgb;
 use log::{info, warn};
 use std::time::{Duration, Instant};
@@ -314,6 +315,9 @@ pub trait Handler {
 
     /// Report text area size in characters.
     fn text_area_size_chars(&mut self) {}
+
+    /// Set hyperlink.
+    fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 }
 
 #[derive(Debug, Default)]
@@ -490,7 +494,6 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
 
 impl<U: Handler> vte::Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
-        // println!("[print] {c:?}");
         self.handler.input(c);
         self.state.preceding_char = Some(c);
     }
@@ -622,6 +625,27 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                 }
             }
 
+            // Hyperlink.
+            b"8" if params.len() > 2 => {
+                let link_params = params[1];
+                let uri = std::str::from_utf8(params[2]).unwrap_or_default();
+
+                // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
+                if uri.is_empty() {
+                    self.handler.set_hyperlink(None);
+                    return;
+                }
+
+                // Link parameters are in format of `key1=value1:key2=value2`. Currently only key
+                // `id` is defined.
+                let id = link_params
+                    .split(|&b| b == b':')
+                    .find_map(|kv| kv.strip_prefix(b"id="))
+                    .and_then(|kv| std::str::from_utf8(kv).ok());
+
+                self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
+            }
+
             b"10" | b"11" | b"12" => {
                 if params.len() >= 2 {
                     if let Some(mut dynamic_code) = parse_number(params[0]) {
@@ -651,6 +675,24 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                         }
                         return;
                     }
+                }
+                unhandled(params);
+            }
+
+            // Set cursor style.
+            b"50" => {
+                if params.len() >= 2
+                    && params[1].len() >= 13
+                    && params[1][0..12] == *b"CursorShape="
+                {
+                    let shape = match params[1][12] as char {
+                        '0' => CursorShape::Block,
+                        '1' => CursorShape::Beam,
+                        '2' => CursorShape::Underline,
+                        _ => return unhandled(params),
+                    };
+                    self.handler.set_cursor_shape(shape);
+                    return;
                 }
                 unhandled(params);
             }

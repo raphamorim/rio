@@ -42,18 +42,15 @@ pub struct Hyperlink {
 }
 
 impl Hyperlink {
-    #[allow(dead_code)]
-    pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
+    pub fn new<T: ToString>(id: Option<T>, uri: T) -> Self {
         let inner = Arc::new(HyperlinkInner::new(id, uri));
         Self { inner }
     }
 
-    #[allow(dead_code)]
     pub fn id(&self) -> &str {
         &self.inner.id
     }
 
-    #[allow(dead_code)]
     pub fn uri(&self) -> &str {
         &self.inner.uri
     }
@@ -69,7 +66,7 @@ struct HyperlinkInner {
 }
 
 impl HyperlinkInner {
-    pub fn new<T: ToString>(id: Option<T>, uri: String) -> Self {
+    pub fn new<T: ToString>(id: Option<T>, uri: T) -> Self {
         let id = match id {
             Some(id) => id.to_string(),
             None => {
@@ -81,7 +78,10 @@ impl HyperlinkInner {
             }
         };
 
-        Self { id, uri }
+        Self {
+            id,
+            uri: uri.to_string(),
+        }
     }
 }
 
