@@ -204,10 +204,7 @@ impl State {
         }
 
         if flags.contains(Flags::INVERSE) {
-            let ref_background_color = background_color;
-            let ref_foreground_color = foreground_color;
-            foreground_color = ref_background_color;
-            background_color = ref_foreground_color;
+            std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
         let mut decoration = None;
