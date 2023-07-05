@@ -18,7 +18,7 @@ impl Context {
         #[cfg(target_arch = "wasm32")]
         let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
         #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
+        let default_backend = wgpu::Backends::PRIMARY;
 
         let backend = wgpu::util::backend_bits_from_env().unwrap_or(default_backend);
         // let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
@@ -56,8 +56,13 @@ impl Context {
         log::info!("Selected adapter: {:?}", adapter.get_info());
 
         let caps = surface.get_capabilities(&adapter);
-        let formats = caps.formats;
-        let format = *formats.last().expect("No supported formats for surface");
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(wgpu::TextureFormat::is_srgb)
+            .or_else(|| caps.formats.first().copied())
+            .expect("Get preferred format");
 
         let (device, queue) = (async {
             {
