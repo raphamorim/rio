@@ -15,7 +15,7 @@ env:
 jobs:
   create_tag:
     outputs:
-      created: ${{ steps.created.outputs.status }}
+      created: ${{ steps.status.outputs.created }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
