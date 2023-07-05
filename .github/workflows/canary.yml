@@ -35,11 +35,6 @@ jobs:
             misc
           files_ignore: docs
 
-      - name: Abort if does not contain any change on *.rs file(s) or the misc folder
-        if: steps.changed-files-excluded.outputs.any_changed != 'true'
-        run: |
-          exit 0
-
       - name: Run step if any *.rs file(s) or any file in the misc folder change
         if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: |
@@ -56,6 +51,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - id: status
+        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: echo "created=true" >> "$GITHUB_OUTPUT"
 
   canary-release-macos:
