@@ -20,8 +20,17 @@ impl Context {
         #[cfg(not(target_arch = "wasm32"))]
         let default_backend = wgpu::Backends::all();
 
+        // The backend can be configured using the `WGPU_BACKEND`
+        // environment variable. If the variable is not set, the primary backend
+        // will be used. The following values are allowed:
+        // - `vulkan`
+        // - `metal`
+        // - `dx12`
+        // - `dx11`
+        // - `gl`
+        // - `webgpu`
+        // - `primary`
         let backend = wgpu::util::backend_bits_from_env().unwrap_or(default_backend);
-        // let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
