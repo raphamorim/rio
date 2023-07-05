@@ -18,7 +18,7 @@ impl Context {
         #[cfg(target_arch = "wasm32")]
         let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
         #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::PRIMARY;
+        let default_backend = wgpu::Backends::all();
 
         let backend = wgpu::util::backend_bits_from_env().unwrap_or(default_backend);
         // let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
