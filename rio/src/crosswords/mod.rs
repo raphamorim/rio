@@ -37,7 +37,7 @@ use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
-use square::{LineLength, Hyperlink, Square};
+use square::{Hyperlink, LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
