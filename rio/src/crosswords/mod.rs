@@ -37,7 +37,7 @@ use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
-use square::{LineLength, Square};
+use square::{Hyperlink, LineLength, Square};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -1679,6 +1679,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.cursor.pos.row += 1;
             self.damage_cursor();
         }
+    }
+
+    #[inline]
+    fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+        self.grid.cursor.template.set_hyperlink(hyperlink);
     }
 
     /// Set the indexed color value.
