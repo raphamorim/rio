@@ -33,7 +33,6 @@ bitflags! {
 }
 
 /// Counter for hyperlinks without explicit ID.
-#[allow(dead_code)]
 static HYPERLINK_ID_SUFFIX: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
