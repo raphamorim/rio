@@ -86,6 +86,11 @@ Prebuilt binaries for Windows:
 - • [Download Microsoft Windows Installer - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-installer.msi)
 - • [Download Rio Portable - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-portable.exe)
 
+There's a few things to note about the installer and the portable version:
+
+- • The browser will ask if you want to keep the file, click "Keep" to save the installer/executable on your computer.
+- • When openinig the file, Windows will give you a warning, click "More info" and then "Run anyway" to run the installer/executable.
+
 ### WebAssembly
 
 TBD in the version v0.0.9.
