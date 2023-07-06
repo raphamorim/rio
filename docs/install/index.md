@@ -97,6 +97,18 @@ If you want to change the default shell to the new PowerShell plataform, change 
 env-vars = ['SHELL=/pwsh']
 {% endhighlight %}
 
+You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware accelaration and improve performance of the application.
+To make Windows utilize a GPU for a specific application through Windows display settings, adhere to the following instructions:
+
+1. Simultaneously press the Windows key and the letter "i" on your keyboard to open Windows Settings.
+2. Select System.
+3. Choose the Display option.
+4. Click on the Graphics setting link located at the bottom of the page.
+5. Select the application from the list or press the Browse button, then select the executable file for the application.
+6. Click on the Options button to display the GPU selection window.
+7. Choose the GPU you want to prioritize for the selected application.
+8. Finally, click on the Save button.
+
 ### WebAssembly
 
 TBD in the version v0.0.9.
