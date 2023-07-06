@@ -107,7 +107,7 @@ To make Windows utilize a GPU for a specific application through Windows display
 - • 5. Select the application from the list or press the Browse button, then select the executable file for the application.
 - • 6. Click on the Options button to display the GPU selection window.
 - • 7. Choose the GPU you want to prioritize for the selected application.
-- • 8. Finally, click on the Save button.
+- • 8. Click on the Save button.
 
 ### WebAssembly
 
