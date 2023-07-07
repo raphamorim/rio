@@ -539,8 +539,9 @@ section.features .container.footer p {
     left: 0;
   }
 
-  .container.content {
+  .container.content, .container.post {
     border-radius: 0px;
+    padding: 20px;
   }
 }
 
