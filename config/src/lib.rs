@@ -386,6 +386,14 @@ mod tests {
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(
+            result.colors.selection_background,
+            colors::defaults::selection_background()
+        );
+        assert_eq!(
+            result.colors.selection_foreground,
+            colors::defaults::selection_foreground()
+        );
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -550,6 +558,8 @@ mod tests {
             [colors]
             background       = '#2B3E50'
             tabs-active      = '#E6DB74'
+            selection-background = '#111111'
+            selection-foreground = '#222222'
             foreground       = '#F8F8F2'
             cursor           = '#E6DB74'
             black            = '#FFFFFF'
@@ -621,6 +631,14 @@ mod tests {
         assert_eq!(result.colors.light_red, hex_to_color_arr("#030303"));
         assert_eq!(result.colors.light_white, hex_to_color_arr("#030303"));
         assert_eq!(result.colors.light_yellow, hex_to_color_arr("#030303"));
+        assert_eq!(
+            result.colors.selection_background,
+            hex_to_color_arr("#111111")
+        );
+        assert_eq!(
+            result.colors.selection_foreground,
+            hex_to_color_arr("#222222")
+        );
     }
 
     #[test]

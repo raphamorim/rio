@@ -2,6 +2,7 @@
 
 ## 0.0.9 (in progress)
 
+- Add selection color to the theme config (closed [#125](https://github.com/raphamorim/rio/issues/125)).
 - Implemented Inverse (fix [#92](https://github.com/raphamorim/rio/issues/92)).
 - Proper choose formats that matches with `TextureFormat::is_srgb` (it fixed the Vulkan driver, related [#122](https://github.com/raphamorim/rio/issues/122)).
 - Corcovado: Filter windows crate dependency to only Windows targets (related: [#119](https://github.com/raphamorim/rio/issues/119)).

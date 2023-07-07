@@ -202,6 +202,18 @@ pub struct Colors {
         rename = "light-yellow"
     )]
     pub light_yellow: ColorArray,
+    #[serde(
+        default = "defaults::selection_background",
+        deserialize_with = "deserialize_to_arr",
+        rename = "selection-background"
+    )]
+    pub selection_background: ColorArray,
+    #[serde(
+        default = "defaults::selection_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "selection-foreground"
+    )]
+    pub selection_foreground: ColorArray,
 }
 
 impl Default for Colors {
@@ -238,6 +250,8 @@ impl Default for Colors {
             light_red: defaults::light_red(),
             light_white: defaults::light_white(),
             light_yellow: defaults::light_yellow(),
+            selection_background: defaults::selection_background(),
+            selection_foreground: defaults::selection_foreground(),
         }
     }
 }

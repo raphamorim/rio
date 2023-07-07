@@ -8,9 +8,9 @@
 
 | Platform | Version introduced |
 | --- | --- |
-| MacOs _as desktop application_ | `0.0.3` [(see more)](https://raphamorim.io/rio/install/#macos) |
-| Linux _as desktop application_ | `0.0.7` [(see more)](https://raphamorim.io/rio/install/#linux) |
-| Windows _as desktop application_ | `0.0.8` [(see more)](https://raphamorim.io/rio/install/#windows) |
+| MacOs _as desktop application_ | [(Installation)](https://raphamorim.io/rio/install/#macos) |
+| Linux _as desktop application_ | [(Installation)](https://raphamorim.io/rio/install/#linux) |
+| Windows _as desktop application_ | [(Installation)](https://raphamorim.io/rio/install/#windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 | Nintendo Switch * | (development hasn't started) |
 
