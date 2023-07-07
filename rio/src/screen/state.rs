@@ -295,8 +295,8 @@ impl State {
 
                 let selected_sugar = Sugar {
                     content,
-                    foreground_color: self.named_colors.background.0,
-                    background_color: self.named_colors.light_blue,
+                    foreground_color: self.named_colors.selection_foreground,
+                    background_color: self.named_colors.selection_background,
                     style: None,
                     decoration: None,
                 };

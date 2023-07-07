@@ -186,3 +186,15 @@ pub fn light_yellow() -> ColorArray {
         .unwrap()
         .to_arr()
 }
+
+pub fn selection_foreground() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#0F0D0E"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+pub fn selection_background() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
