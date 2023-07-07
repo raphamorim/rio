@@ -4,27 +4,15 @@
 
 ![Rio banner](docs/assets/banner.png)
 
-## Development Status
+## Platforms
 
-#### Status
-
-| Status | Meaning |
-| :-: | --- |
-| 🟢 | Stable and usable. |
-| 🔵 | Unstable and usable (minor bugs and incomplete features). |
-| 🟠 | Unstable and usable (major bugs and incomplete features). |
-| 🟡 | It does builds but provides a very limited usage or is not able to use at all. |
-| 🔴 | Development has not started. |
-
-#### Platform
-
-| Platform | Status | Version introduced |
-| --- | :-: | --- |
-| MacOs _as desktop application_ | 🔵 | `0.0.3` [(see more)](https://raphamorim.io/rio/install/#macos) |
-| Web Browser _(WebAssembly)_ | 🟡 | (Sugarloaf is ready but Rio still need to be ported) |
-| Linux _as desktop application_ | 🔵 | `0.0.7` [(see more)](https://raphamorim.io/rio/install/#linux) |
-| Windows _as desktop application_ | 🔵 | `0.0.8` [(see more)](https://raphamorim.io/rio/install/#windows) |
-| Nintendo Switch * | 🔴 | |
+| Platform | Version introduced |
+| --- | --- |
+| MacOs _as desktop application_ | `0.0.3` [(see more)](https://raphamorim.io/rio/install/#macos) |
+| Linux _as desktop application_ | `0.0.7` [(see more)](https://raphamorim.io/rio/install/#linux) |
+| Windows _as desktop application_ | `0.0.8` [(see more)](https://raphamorim.io/rio/install/#windows) |
+| Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
+| Nintendo Switch * | (development hasn't started) |
 
 _* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._
 
@@ -46,29 +34,15 @@ Rio is built over a custom renderer called [Sugarloaf](https://crates.io/crates/
 | ----------- | ----------- |
 | ![Demo Sugarloaf native](sugarloaf/resources/demo-text-big.png) | ![Demo Sugarloaf wasm](sugarloaf/resources/demo-wasm.png) |
 
-## Summary
+## About
 
-- [About Rio](#about-rio)
-- [Status](#development-status)
-- [Configuration file](#configuration-file)
-- [Acknowledgments](#acknowledgments)
+Documentation: https://raphamorim.io/rio
 
-## About Rio
+If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 
-Website: https://raphamorim.io/rio
+Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
 
-> If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
-> 
-> Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
->
-
-Read about Rio in the official website: https://raphamorim.io/rio/docs.
-
-## Configuration File
-
-Configuration file is documented in Rio official website: https://raphamorim.io/rio/docs#configuration-file.
-
-## Acknowledgments
+### Acknowledgments
 
 - Alacritty 🥇
 - Rio logo was made using _Adobe Sketchbook_ on iPad.
