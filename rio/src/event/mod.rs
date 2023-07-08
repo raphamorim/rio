@@ -9,6 +9,7 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 use winit::event_loop::EventLoopProxy;
+use winit::window::WindowId;
 
 #[derive(Debug)]
 pub enum Msg {
@@ -128,12 +129,12 @@ impl From<RioEvent> for RioEventType {
 pub struct EventP {
     /// Event payload.
     pub payload: RioEventType,
-    pub id: u8,
+    pub window_id: WindowId,
 }
 
 impl EventP {
-    pub fn new(payload: RioEventType) -> Self {
-        Self { payload, id: 0 }
+    pub fn new(payload: RioEventType, window_id: WindowId) -> Self {
+        Self { payload, window_id }
     }
 }
 
@@ -149,7 +150,9 @@ pub trait OnResize {
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
-    fn send_event(&self, _event: RioEvent) {}
+    fn send_event(&self, _event: RioEvent, _id: WindowId) {}
+
+    fn send_global_event(&self, _event: RioEvent) {}
 }
 
 #[derive(Clone)]
@@ -167,14 +170,21 @@ impl EventProxy {
         Self { proxy }
     }
 
-    #[allow(dead_code)]
-    pub fn send_event(&self, event: RioEventType) {
-        let _ = self.proxy.send_event(EventP::new(event));
+    pub fn send_event(&self, event: RioEventType, id: WindowId) {
+        let _ = self.proxy.send_event(EventP::new(event, id));
+    }
+
+    pub fn send_global_event(&self, event: RioEventType) {
+        // let _ = self.proxy.send_event(EventP::new(event));
     }
 }
 
 impl EventListener for EventProxy {
-    fn send_event(&self, event: RioEvent) {
-        let _ = self.proxy.send_event(EventP::new(event.into()));
+    fn send_event(&self, event: RioEvent, id: WindowId) {
+        let _ = self.proxy.send_event(EventP::new(event.into(), id));
+    }
+
+    fn send_global_event(&self, event: RioEvent) {
+        // let _ = self.proxy.send_event(EventP::new(event.into(), id));
     }
 }

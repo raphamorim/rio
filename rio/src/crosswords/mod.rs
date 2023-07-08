@@ -45,6 +45,7 @@ use std::ptr;
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
+use winit::window::WindowId;
 
 pub type NamedColor = colors::NamedColor;
 
@@ -286,10 +287,16 @@ where
     title: Option<String>,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
+    window_id: WindowId,
 }
 
 impl<U: EventListener> Crosswords<U> {
-    pub fn new(cols: usize, rows: usize, event_proxy: U) -> Crosswords<U> {
+    pub fn new(
+        cols: usize,
+        rows: usize,
+        event_proxy: U,
+        window_id: WindowId,
+    ) -> Crosswords<U> {
         let grid = Grid::new(rows, cols, 10_000);
         let alt = Grid::new(rows, cols, 0);
 
@@ -316,6 +323,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
+            window_id,
         }
     }
 
@@ -334,7 +342,8 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
-        self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+        self.event_proxy
+            .send_event(RioEvent::MouseCursorDirty, self.window_id);
         self.grid.scroll_display(scroll);
 
         // Clamp vi mode cursor to the viewport.
@@ -348,7 +357,8 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
-            self.event_proxy.send_event(RioEvent::Render);
+            self.event_proxy
+                .send_event(RioEvent::Render, self.window_id);
         }
     }
 
@@ -365,7 +375,7 @@ impl<U: EventListener> Crosswords<U> {
     where
         U: EventListener,
     {
-        self.event_proxy.send_event(RioEvent::Exit);
+        self.event_proxy.send_event(RioEvent::Exit, self.window_id);
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
@@ -439,7 +449,8 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Update UI about cursor blinking state changes.
-        self.event_proxy.send_event(RioEvent::CursorBlinkingChange);
+        self.event_proxy
+            .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
 
     /// Update the active selection to match the vi mode cursor position.
@@ -1049,17 +1060,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_DRAG);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportAllMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MODE);
                 self.mode.insert(Mode::MOUSE_MOTION);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
             AnsiMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
@@ -1081,7 +1095,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::BlinkingCursor => {
                 // let style = self.grid.cursor_style.get_or_insert(self.default_cursor_style);
                 // style.blinking = true;
-                // self.event_proxy.send_event(Event::CursorBlinkingChange);
+                // self.event_proxy.send_event(Event::CursorBlinkingChange, self.window_id);
             }
         }
     }
@@ -1094,15 +1108,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
 
         let terminator = terminator.to_owned();
-        self.event_proxy.send_event(RioEvent::ColorRequest(
-            index,
-            Arc::new(move |color| {
-                format!(
-                    "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                    prefix, color.r, color.g, color.b, terminator
-                )
-            }),
-        ));
+        self.event_proxy.send_event(
+            RioEvent::ColorRequest(
+                index,
+                Arc::new(move |color| {
+                    format!(
+                        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+                        prefix, color.r, color.g, color.b, terminator
+                    )
+                }),
+            ),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -1118,15 +1135,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
             AnsiMode::ReportMouseClicks => {
                 self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportSquareMouseMotion => {
                 self.mode.remove(Mode::MOUSE_DRAG);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportAllMouseMotion => {
                 self.mode.remove(Mode::MOUSE_MOTION);
-                self.event_proxy.send_event(RioEvent::MouseCursorDirty);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             AnsiMode::ReportFocusInOut => self.mode.remove(Mode::FOCUS_IN_OUT),
             AnsiMode::BracketedPaste => self.mode.remove(Mode::BRACKETED_PASTE),
@@ -1727,13 +1747,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let terminator = terminator.to_owned();
 
-        self.event_proxy.send_event(RioEvent::ClipboardLoad(
-            clipboard_type,
-            Arc::new(move |text| {
-                let base64 = general_purpose::STANDARD.encode(text);
-                format!("\x1b]52;{};{}{}", clipboard as char, base64, terminator)
-            }),
-        ));
+        self.event_proxy.send_event(
+            RioEvent::ClipboardLoad(
+                clipboard_type,
+                Arc::new(move |text| {
+                    let base64 = general_purpose::STANDARD.encode(text);
+                    format!("\x1b]52;{};{}{}", clipboard as char, base64, terminator)
+                }),
+            ),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -1844,7 +1867,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.columns()
         );
         info!("text_area_size_chars {:?}", text);
-        self.event_proxy.send_event(RioEvent::PtyWrite(text));
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
     }
 }
 
@@ -1888,10 +1912,11 @@ mod tests {
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::test::CrosswordsSize;
     use crate::event::VoidListener;
+    use winit::window::WindowId;
 
     #[test]
     fn scroll_up() {
-        let mut cw = Crosswords::new(1, 10, VoidListener {});
+        let mut cw = Crosswords::new(1, 10, VoidListener {}, WindowId::dummy());
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -1922,7 +1947,8 @@ mod tests {
 
     #[test]
     fn test_linefeed() {
-        let mut cw: Crosswords<VoidListener> = Crosswords::new(1, 1, VoidListener {});
+        let mut cw: Crosswords<VoidListener> =
+            Crosswords::new(1, 1, VoidListener {}, WindowId::dummy());
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -1931,7 +1957,8 @@ mod tests {
 
     #[test]
     fn test_linefeed_moving_cursor() {
-        let mut cw: Crosswords<VoidListener> = Crosswords::new(1, 3, VoidListener {});
+        let mut cw: Crosswords<VoidListener> =
+            Crosswords::new(1, 3, VoidListener {}, WindowId::dummy());
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -1956,7 +1983,7 @@ mod tests {
         let columns: usize = 5;
         let rows: usize = 10;
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(columns, rows, VoidListener {});
+            Crosswords::new(columns, rows, VoidListener {}, WindowId::dummy());
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -1975,7 +2002,12 @@ mod tests {
     #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            VoidListener {},
+            WindowId::dummy(),
+        );
         let grid = &mut term.grid;
         for i in 0..4 {
             if i == 1 {
@@ -2047,7 +2079,12 @@ mod tests {
     #[test]
     fn line_selection_works() {
         let size = CrosswordsSize::new(5, 1);
-        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            VoidListener {},
+            WindowId::dummy(),
+        );
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].c = 'a';
@@ -2071,7 +2108,12 @@ mod tests {
     #[test]
     fn block_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let mut term = Crosswords::new(size.columns, size.screen_lines, VoidListener {});
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            VoidListener {},
+            WindowId::dummy(),
+        );
         let grid = &mut term.grid;
         for i in 1..4 {
             grid[Line(i)][Column(0)].c = '"';

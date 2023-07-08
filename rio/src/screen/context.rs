@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
 use teletypewriter::create_pty;
+use winit::window::WindowId;
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 6;
 
@@ -21,6 +22,7 @@ pub struct ContextManager<T: EventListener> {
     current_index: usize,
     capacity: usize,
     event_proxy: T,
+    window_id: WindowId,
 }
 
 fn default_shell() -> String {
@@ -40,17 +42,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         cursor_state: CursorState,
         event_proxy: T,
         spawn: bool,
+        window_id: WindowId,
     ) -> Result<Context<T>, Box<dyn Error>> {
         let shell = default_shell();
 
         let event_proxy_clone = event_proxy.clone();
-        let mut terminal = Crosswords::new(columns, rows, event_proxy);
+        let mut terminal = Crosswords::new(columns, rows, event_proxy, window_id);
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
 
-        let machine = Machine::new(Arc::clone(&terminal), pty, event_proxy_clone)?;
+        let machine =
+            Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
         let channel = machine.channel();
         // The only case we don't spawn is for tests
         if spawn {
@@ -75,6 +79,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rows: usize,
         cursor_state: CursorState,
         event_proxy: T,
+        window_id: WindowId,
         mut command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let mut initial_context = ContextManager::create_context(
@@ -84,6 +89,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cursor_state,
             event_proxy.clone(),
             true,
+            window_id,
         )?;
 
         if !command.is_empty() {
@@ -97,6 +103,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             contexts: vec![initial_context],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
+            window_id,
         })
     }
 
@@ -104,6 +111,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn start_with_capacity(
         capacity: usize,
         event_proxy: T,
+        window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
             (100, 100),
@@ -112,12 +120,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             CursorState::default(),
             event_proxy.clone(),
             false,
+            window_id,
         )?;
         Ok(ContextManager {
             current_index: 0,
             contexts: vec![initial_context],
             capacity,
             event_proxy,
+            window_id,
         })
     }
 
@@ -204,6 +214,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cursor_state,
                 self.event_proxy.clone(),
                 spawn,
+                self.window_id,
             ) {
                 Ok(new_context) => {
                     self.contexts.push(new_context);
@@ -227,11 +238,13 @@ pub mod test {
     #[test]
     fn test_capacity() {
         let context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+                .unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+                .unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
@@ -239,7 +252,8 @@ pub mod test {
     #[test]
     fn test_add_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+                .unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -271,7 +285,8 @@ pub mod test {
     #[test]
     fn test_add_context_start_with_capacity_limit() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::dummy())
+                .unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -312,7 +327,8 @@ pub mod test {
     #[test]
     fn test_set_current() {
         let mut context_manager =
-            ContextManager::start_with_capacity(8, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(8, VoidListener {}, WindowId::dummy())
+                .unwrap();
         let should_redirect = true;
 
         context_manager.add_context(
@@ -356,7 +372,8 @@ pub mod test {
     #[test]
     fn test_close_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::dummy())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -391,7 +408,8 @@ pub mod test {
     #[test]
     fn test_close_context_upcoming_ids() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -455,7 +473,8 @@ pub mod test {
     #[test]
     fn test_close_last_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(2, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(2, VoidListener {}, WindowId::dummy())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -488,7 +507,8 @@ pub mod test {
     #[test]
     fn test_switch_to_next() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(

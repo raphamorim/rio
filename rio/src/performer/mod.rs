@@ -13,12 +13,10 @@ use crate::event::{Msg, RioEvent};
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
-
-use std::io::{self, Read};
+use std::io::{self, ErrorKind, Read, Write};
 use std::sync::Arc;
 use std::time::Instant;
-
-use std::io::{ErrorKind, Write};
+use winit::window::WindowId;
 
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
@@ -31,6 +29,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     poll: corcovado::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
+    window_id: WindowId,
 }
 
 #[derive(Default)]
@@ -108,6 +107,7 @@ where
         terminal: Arc<FairMutex<Crosswords<U>>>,
         pty: T,
         event_proxy: U,
+        window_id: WindowId,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         // let (mut sender, mut receiver) = unbounded::<Msg>();
         let (sender, receiver) = channel::channel();
@@ -120,6 +120,7 @@ where
             pty,
             terminal,
             event_proxy,
+            window_id,
         })
     }
 
@@ -178,7 +179,8 @@ where
 
         // Queue terminal redraw unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            self.event_proxy.send_event(RioEvent::Wakeup);
+            self.event_proxy
+                .send_event(RioEvent::Wakeup, self.window_id);
         }
 
         Ok(())
@@ -293,7 +295,8 @@ where
                 // Handle synchronized update timeout.
                 if events.is_empty() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
-                    self.event_proxy.send_event(RioEvent::Wakeup);
+                    self.event_proxy
+                        .send_event(RioEvent::Wakeup, self.window_id);
                     continue;
                 }
 
@@ -319,7 +322,8 @@ where
                                 // }
 
                                 self.terminal.lock().exit();
-                                self.event_proxy.send_event(RioEvent::Wakeup);
+                                self.event_proxy
+                                    .send_event(RioEvent::Wakeup, self.window_id);
                                 break 'event_loop;
                             }
                         }

@@ -411,9 +411,10 @@ mod tests {
     use crate::crosswords::Crosswords;
     use crate::event::VoidListener;
     use crate::performer::handler::Handler;
+    use winit::window::WindowId;
 
     fn term() -> Crosswords<VoidListener> {
-        Crosswords::new(20, 20, VoidListener)
+        Crosswords::new(20, 20, VoidListener, WindowId::dummy())
     }
 
     #[test]

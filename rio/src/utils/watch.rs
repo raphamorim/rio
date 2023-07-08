@@ -38,7 +38,7 @@ pub fn watch<
                     | EventKind::Modify(_)
                     | EventKind::Other => {
                         log::info!("config directory has dispatched an event {event:?}");
-                        event_proxy.send_event(RioEvent::UpdateConfig);
+                        // event_proxy.send_event(RioEvent::UpdateConfig, id);
                     }
                     _ => (),
                 },
