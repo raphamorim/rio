@@ -382,6 +382,9 @@ impl Screen {
                         terminal.vi_motion(*motion);
                         drop(terminal);
                     }
+                    Act::WindowCreateNew => {
+                        self.context_manager.create_new_window();
+                    }
                     Act::TabCreateNew => {
                         let redirect = true;
                         let spawn = true;

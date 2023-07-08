@@ -498,9 +498,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
             ViMotion::WordRightEnd;
         Key5,   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Bracket;
-        T, ModifiersState::LOGO; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
-        W, ModifiersState::LOGO; Action::TabCloseCurrent;
     );
 
     //   Code     Modifiers
@@ -631,7 +628,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
             Action::Esc("\x0c".into());
         K, ModifiersState::LOGO, ~BindingMode::VI;  Action::ClearHistory;
         V, ModifiersState::LOGO, ~BindingMode::VI; Action::Paste;
-        N, ModifiersState::LOGO; Action::WindowCreateNew;
         F, ModifiersState::CTRL | ModifiersState::LOGO; Action::ToggleFullscreen;
         C, ModifiersState::LOGO; Action::Copy;
         C, ModifiersState::LOGO, +BindingMode::VI; Action::ClearSelection;
@@ -640,6 +636,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         M, ModifiersState::LOGO; Action::Minimize;
         Q, ModifiersState::LOGO; Action::Quit;
         W, ModifiersState::LOGO; Action::Quit;
+        N, ModifiersState::LOGO; Action::WindowCreateNew;
+        T, ModifiersState::LOGO; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        W, ModifiersState::LOGO; Action::TabCloseCurrent;
     )
 }
 
@@ -658,6 +658,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
         Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
         NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
+        N, ModifiersState::LOGO; Action::WindowCreateNew;
+        T, ModifiersState::LOGO; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        W, ModifiersState::LOGO; Action::TabCloseCurrent;
     )
 }
 
@@ -677,6 +681,9 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
         NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
         Return, ModifiersState::ALT; Action::ToggleFullscreen;
+        T, ModifiersState::CTRL; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        W, ModifiersState::CTRL; Action::TabCloseCurrent;
     )
 }
 

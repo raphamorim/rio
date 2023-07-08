@@ -1,6 +1,6 @@
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
-use crate::event::EventListener;
+use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
@@ -129,6 +129,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
         })
+    }
+
+    #[inline]
+    pub fn create_new_window(&self) {
+        self.event_proxy
+            .send_event(RioEvent::WindowCreateNew, self.window_id);
     }
 
     #[inline]
