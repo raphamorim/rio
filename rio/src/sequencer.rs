@@ -37,12 +37,6 @@ impl SequencerWindow {
         config: &Rc<config::Config>,
         command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
-            let display = unsafe { WaylandDisplay::from_external_display(display as _) };
-            display.create_event_queue()
-        });
-
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
         let event_proxy_clone = event_proxy.clone();
@@ -82,16 +76,6 @@ impl SequencerWindow {
         }
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let _wayland_surface = if event_loop.is_wayland() {
-            // Attach surface to Rio internal wayland queue to handle frame callbacks.
-            let surface = winit_window.wayland_surface().unwrap();
-            let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
-            Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
-        } else {
-            None
-        };
-
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
         let display: Option<*mut c_void> = event_loop.wayland_display();
         #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let display: Option<*mut c_void> = Option::None;
@@ -107,6 +91,10 @@ impl SequencerWindow {
             window: winit_window,
             screen,
         })
+    }
+
+    fn new_sync(event_loop: &EventLoop<EventP>, config: &Rc<config::Config>) -> () {
+        SequencerWindow::new(event_loop, config, vec![]);
     }
 
     fn set_focus(&mut self, is_focused: bool) {
@@ -141,11 +129,27 @@ impl Sequencer {
         let _ = watch(config::config_dir_path(), event_proxy);
         let mut scheduler = Scheduler::new(proxy);
 
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
+            let display = unsafe { WaylandDisplay::from_external_display(display as _) };
+            display.create_event_queue()
+        });
+
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let _wayland_surface = if event_loop.is_wayland() {
+            // Attach surface to Rio internal wayland queue to handle frame callbacks.
+            let surface = winit_window.wayland_surface().unwrap();
+            let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
+            Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
+        } else {
+            None
+        };
+
         let seq_win = SequencerWindow::new(&event_loop, &self.config, command).await?;
         self.windows.insert(seq_win.window.id(), seq_win);
 
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
-        event_loop.run_return(move |event, event_loop, control_flow| {
+        event_loop.run_return(move |event, _, control_flow| {
             match event {
                 Event::UserEvent(EventP {
                     payload, window_id, ..
@@ -153,7 +157,11 @@ impl Sequencer {
                     if let RioEventType::Rio(event) = payload {
                         match event {
                             RioEvent::Wakeup => {
-                                // self.has_render_updates = true;
+                                if let Some(sequencer_window) =
+                                    self.windows.get_mut(&window_id)
+                                {
+                                    sequencer_window.window.request_redraw();
+                                }
                             }
                             RioEvent::Render => {
                                 // if self.config.advanced.disable_render_when_unfocused
@@ -162,7 +170,11 @@ impl Sequencer {
                                 //     return;
                                 // }
                                 // screen.render();
-                                // winit_window.request_redraw();
+                                if let Some(sequencer_window) =
+                                    self.windows.get_mut(&window_id)
+                                {
+                                    sequencer_window.window.request_redraw();
+                                }
                             }
                             RioEvent::UpdateConfig => {
                                 if let Some(sequencer_window) =
@@ -171,6 +183,7 @@ impl Sequencer {
                                     let config = config::Config::load();
                                     self.config = config.into();
                                     sequencer_window.screen.update_config(&self.config);
+                                    sequencer_window.window.request_redraw();
                                 }
                                 // self.has_render_updates = true;
                             }
@@ -267,6 +280,9 @@ impl Sequencer {
                                         .messenger
                                         .send_bytes(format(rgb).into_bytes());
                                 }
+                            }
+                            RioEvent::WindowCreateNew => {
+                                // SequencerWindow::new_sync(&event_loop, &self.config);
                             }
                             _ => {}
                         }
@@ -591,18 +607,12 @@ impl Sequencer {
                             sw.window.set_cursor_visible(false);
                             sw.screen.input_keycode(virtual_keycode, scancode);
                         }
-
-                        // let window_builder = create_window_builder("Rio");
-                        // let new_window = window_builder.build(&event_loop).unwrap();
-                        // self.windows.insert(new_window.id(), SequencerWindow::new(new_window));
                     }
 
                     ElementState::Released => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             sw.window.request_redraw();
-                            // sequencer_window.has_render_updates = true;
                         }
-                        // winit_window.request_redraw();
                     }
                 },
 
@@ -646,9 +656,9 @@ impl Sequencer {
                     window_id,
                     ..
                 } => {
-                    if let Some(sequencer_window) = self.windows.get(&window_id) {
+                    if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
                         sequencer_window.window.set_cursor_visible(true);
-                        // sequencer_window.is_focused = focused;
+                        sequencer_window.is_focused = focused;
                     }
                 }
 
@@ -657,8 +667,8 @@ impl Sequencer {
                     window_id,
                     ..
                 } => {
-                    if let Some(sequencer_window) = self.windows.get(&window_id) {
-                        // sequencer_window.is_occluded = occluded;
+                    if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
+                        sequencer_window.is_occluded = occluded;
                     }
                 }
 
@@ -731,9 +741,9 @@ impl Sequencer {
                 Event::RedrawRequested(window_id) => {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         // *control_flow = winit::event_loop::ControlFlow::Wait;
-                        // if sw.is_occluded {
-                        //     return;
-                        // }
+                        if sw.is_occluded {
+                            return;
+                        }
 
                         sw.screen.render();
                     }

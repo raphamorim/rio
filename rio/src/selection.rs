@@ -449,7 +449,12 @@ mod tests {
 
     fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);
-        Crosswords::new(size.columns, size.screen_lines, VoidListener {}, WindowId::dummy())
+        Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            VoidListener {},
+            WindowId::dummy(),
+        )
     }
 
     /// Test case of single cell selection.
