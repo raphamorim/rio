@@ -78,6 +78,7 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
+        let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
             config::Performance::High => wgpu::PowerPreference::HighPerformance,
@@ -117,6 +118,7 @@ impl Screen {
             sugarloaf.layout.lines,
             state.get_cursor_state(),
             event_proxy,
+            window_id,
             command,
         )?;
 
