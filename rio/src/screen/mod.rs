@@ -37,7 +37,7 @@ use winit::event::{ElementState, ModifiersState};
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 
 /// Number of pixels for increasing the selection scrolling speed factor by one.
-const SELECTION_SCROLLING_STEP: f32 = 30.;
+const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 impl Dimensions for SugarloafLayout {
     #[inline]
@@ -202,13 +202,7 @@ impl Screen {
         if !should_update {
             return;
         }
-        // self.sugarloaf
-        //     .layout
-        //     .recalculate(config.font_size, config.padding_x);
-        // self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
-        // self.state = State::new(config);
-
         self.sugarloaf.calculate_bounds();
 
         let width = self.sugarloaf.layout.width_u32 as u16;
@@ -469,6 +463,7 @@ impl Screen {
         drop(terminal);
     }
 
+    #[inline]
     pub fn update_selection(&mut self, mut pos: Pos, side: Side) {
         let mut terminal = self.context_manager.current().terminal.lock();
         let mut selection = match terminal.selection.take() {
@@ -493,6 +488,7 @@ impl Screen {
         drop(terminal);
     }
 
+    #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
         let scale_factor = self.sugarloaf.layout.scale_factor;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
@@ -500,10 +496,11 @@ impl Screen {
 
         // Compute the height of the scrolling areas.
         let end_top = max(min_height, constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = constants::PADDING_Y
-            + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_bound;
+        let text_area_bottom = (constants::PADDING_Y
+            + self.sugarloaf.layout.lines as f32)
+            * self.sugarloaf.layout.font_size;
         let start_bottom = min(
-            self.sugarloaf.layout.height_u32 as i32 - min_height,
+            self.sugarloaf.layout.height as i32 - min_height,
             text_area_bottom as i32,
         ) as f64;
 
