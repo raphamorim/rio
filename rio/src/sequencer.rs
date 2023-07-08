@@ -353,7 +353,6 @@ impl Sequencer {
 
                     if !screen.selection_is_empty() && (lmb_pressed || rmb_pressed) {
                         screen.update_selection_scrolling(y);
-                        self.has_render_updates = true;
                     }
 
                     let display_offset = screen.display_offset();

@@ -2224,7 +2224,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
 name = "rio"
-version = "0.0.8"
+version = "0.0.9-canary"
 dependencies = [
  "base64",
  "bitflags 2.0.2",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.0.8"
+version = "0.0.9-canary"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -2541,13 +2541,13 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf-styled-text"
-version = "0.0.8"
+version = "0.0.9-canary"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
  "env_logger 0.10.0",
  "log 0.4.18",
- "sugarloaf 0.0.8",
+ "sugarloaf 0.0.9-canary",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

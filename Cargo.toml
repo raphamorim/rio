@@ -11,12 +11,12 @@ members = [
 resolver = "2"
 
 [workspace.package]
+version = "0.0.9-canary"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal"]
 rust-version = "1.70"
-version = "0.0.8"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
