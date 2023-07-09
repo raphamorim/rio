@@ -660,10 +660,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
         Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
         NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
-        N, ModifiersState::CTRL, ModifiersState::SHIFT; Action::WindowCreateNew;
-        T, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabSwitchNext;
-        W, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabCloseCurrent;
+        N, ModifiersState::CTRL; Action::WindowCreateNew;
+        T, ModifiersState::CTRL; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        W, ModifiersState::CTRL; Action::TabCloseCurrent;
     )
 }
 
