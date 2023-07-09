@@ -11,6 +11,7 @@ description = "Rio terminal app"
 [dependencies]
 base64 = "0.21.0"
 bitflags = "2.0.2"
+futures = "0.3"
 bytemuck = { workspace = true }
 colors = { path = "../colors" }
 config = { path = "../config" }
