@@ -156,6 +156,27 @@ impl Sequencer {
                 }) => {
                     match payload {
                         RioEventType::Rio(RioEvent::Wakeup) => {
+                            // Emitted when the application has been resumed.
+                            // This is a hack to avoid an odd scenario in wayland window initialization
+                            // wayland windows starts with the wrong width/height.
+                            // Rio is ignoring wayland new dimension events, so the terminal
+                            // start with the wrong width/height (fix the ignore would be the best fix though)
+                            //
+                            // The code below forcefully reload dimensions in the terminal initialization
+                            // to load current width/height.
+                            #[cfg(all(
+                                feature = "wayland",
+                                not(any(target_os = "macos", windows))
+                            ))]
+                            {
+                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                    if !sw.has_wayland_forcefully_reloaded {
+                                        sw.screen.update_config(&self.config);
+                                        sw.has_wayland_forcefully_reloaded = true;
+                                    }
+                                }
+                            }
+
                             if let Some(sequencer_window) =
                                 self.windows.get_mut(&window_id)
                             {
@@ -292,28 +313,7 @@ impl Sequencer {
                         _ => {}
                     }
                 }
-                Event::Resumed => {
-                    // Emitted when the application has been resumed.
-                    // This is a hack to avoid an odd scenario in wayland window initialization
-                    // wayland windows starts with the wrong width/height.
-                    // Rio is ignoring wayland new dimension events, so the terminal
-                    // start with the wrong width/height (fix the ignore would be the best fix though)
-                    //
-                    // The code below forcefully reload dimensions in the terminal initialization
-                    // to load current width/height.
-                    #[cfg(all(
-                        feature = "wayland",
-                        not(any(target_os = "macos", windows))
-                    ))]
-                    {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if !sw.has_wayland_forcefully_reloaded {
-                                sw.screen.update_config(&self.config);
-                                sw.has_wayland_forcefully_reloaded = true;
-                            }
-                        }
-                    }
-                }
+                Event::Resumed => {}
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
