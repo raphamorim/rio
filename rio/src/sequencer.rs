@@ -9,7 +9,10 @@ use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::screen::{window::create_window_builder, Screen};
+use crate::screen::{
+    window::{configure_window, create_window_builder},
+    Screen,
+};
 use crate::utils::watch::watch;
 use colors::ColorRgb;
 use std::collections::HashMap;
@@ -20,6 +23,7 @@ use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
+use winit::event_loop::EventLoopWindowTarget;
 use winit::event_loop::{DeviceEventFilter, EventLoop};
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::window::{CursorIcon, ImePurpose, Window, WindowId};
@@ -39,41 +43,9 @@ impl SequencerWindow {
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let event_proxy_clone = event_proxy.clone();
         let window_builder = create_window_builder("Rio");
         let winit_window = window_builder.build(&event_loop).unwrap();
-
-        let current_mouse_cursor = CursorIcon::Text;
-        winit_window.set_cursor_icon(current_mouse_cursor);
-
-        // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
-        winit_window.set_ime_purpose(ImePurpose::Terminal);
-        winit_window.set_ime_allowed(true);
-
-        winit_window.set_transparent(config.window_opacity < 1.);
-
-        // TODO: Update ime position based on cursor
-        // winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
-
-        // This will ignore diacritical marks and accent characters from
-        // being processed as received characters. Instead, the input
-        // device's raw character will be placed in event queues with the
-        // Alt modifier set.
-        #[cfg(target_os = "macos")]
-        {
-            // OnlyLeft - The left `Option` key is treated as `Alt`.
-            // OnlyRight - The right `Option` key is treated as `Alt`.
-            // Both - Both `Option` keys are treated as `Alt`.
-            // None - No special handling is applied for `Option` key.
-            use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
-
-            match config.option_as_alt.to_lowercase().as_str() {
-                "both" => winit_window.set_option_as_alt(OptionAsAlt::Both),
-                "left" => winit_window.set_option_as_alt(OptionAsAlt::OnlyLeft),
-                "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
-                _ => {}
-            }
-        }
+        let winit_window = configure_window(winit_window, config);
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
         let display: Option<*mut c_void> = event_loop.wayland_display();
@@ -93,18 +65,44 @@ impl SequencerWindow {
         })
     }
 
-    fn new_sync(event_loop: &EventLoop<EventP>, config: &Rc<config::Config>) -> () {
-        SequencerWindow::new(event_loop, config, vec![]);
-    }
+    fn from_window_target(
+        event_loop: &EventLoopWindowTarget<EventP>,
+        event_proxy: EventProxy,
+        config: &Rc<config::Config>,
+    ) -> Self {
+        let window_builder = create_window_builder("Rio");
+        let winit_window = window_builder.build(&event_loop).unwrap();
+        let winit_window = configure_window(winit_window, config);
 
-    fn set_focus(&mut self, is_focused: bool) {
-        self.is_focused = is_focused;
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let display: Option<*mut c_void> = event_loop.wayland_display();
+        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
+        let display: Option<*mut c_void> = Option::None;
+
+        let mut screen = futures::executor::block_on(Screen::new(
+            &winit_window,
+            &config,
+            event_proxy,
+            display,
+            vec![],
+        ))
+        .expect("Screen not created");
+
+        screen.init(config.colors.background.1);
+
+        Self {
+            is_focused: false,
+            is_occluded: false,
+            window: winit_window,
+            screen,
+        }
     }
 }
 
 pub struct Sequencer {
     config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
+    event_proxy: Option<EventProxy>,
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     has_wayland_forcefully_reloaded: bool,
 }
@@ -114,6 +112,7 @@ impl Sequencer {
         Sequencer {
             config: Rc::new(config),
             windows: HashMap::new(),
+            event_proxy: None,
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             has_wayland_forcefully_reloaded: false,
         }
@@ -125,8 +124,8 @@ impl Sequencer {
         command: Vec<String>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
-        let event_proxy = EventProxy::new(proxy.clone());
-        let _ = watch(config::config_dir_path(), event_proxy);
+        self.event_proxy = Some(EventProxy::new(proxy.clone()));
+        let _ = watch(config::config_dir_path(), self.event_proxy.clone().unwrap());
         let mut scheduler = Scheduler::new(proxy);
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -149,7 +148,7 @@ impl Sequencer {
         self.windows.insert(seq_win.window.id(), seq_win);
 
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
-        event_loop.run_return(move |event, _, control_flow| {
+        event_loop.run_return(move |event, event_loop_window_target, control_flow| {
             match event {
                 Event::UserEvent(EventP {
                     payload, window_id, ..
@@ -282,7 +281,12 @@ impl Sequencer {
                                 }
                             }
                             RioEvent::WindowCreateNew => {
-                                // SequencerWindow::new_sync(&event_loop, &self.config);
+                                let sw = SequencerWindow::from_window_target(
+                                    event_loop_window_target,
+                                    self.event_proxy.clone().unwrap(),
+                                    &self.config,
+                                );
+                                self.windows.insert(sw.window.id(), sw);
                             }
                             _ => {}
                         }
