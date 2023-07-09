@@ -8,7 +8,7 @@ keywords: "Rio, WebGPU, Rust, Terminal, GPU"
 domain: raphamorim.io
 commentlinks: true
 twitter-username: raphamorims
-plugins: [jekyll-paginate, jekyll-gist]
+plugins: [jekyll-paginate, jekyll-gist, jekyll-feed]
 
 source:      .
 destination: ./_site
