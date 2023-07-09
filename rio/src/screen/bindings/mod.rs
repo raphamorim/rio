@@ -608,6 +608,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
     bindings
 }
 
+// Macos
 #[cfg(all(target_os = "macos", not(test)))]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
@@ -643,6 +644,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
     )
 }
 
+// Not Windows, Macos
 #[cfg(not(any(target_os = "macos", target_os = "windows", test)))]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
@@ -658,13 +660,14 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
         Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
         NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
-        N, ModifiersState::LOGO; Action::WindowCreateNew;
-        T, ModifiersState::LOGO; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
-        W, ModifiersState::LOGO; Action::TabCloseCurrent;
+        N, ModifiersState::CTRL, ModifiersState::SHIFT; Action::WindowCreateNew;
+        T, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabCreateNew;
+        Tab, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabSwitchNext;
+        W, ModifiersState::CTRL, ModifiersState::SHIFT; Action::TabCloseCurrent;
     )
 }
 
+// Windows
 #[cfg(all(target_os = "windows", not(test)))]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
@@ -684,6 +687,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         T, ModifiersState::CTRL; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         W, ModifiersState::CTRL; Action::TabCloseCurrent;
+        N, ModifiersState::CTRL; Action::WindowCreateNew;
     )
 }
 
