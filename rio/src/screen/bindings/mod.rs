@@ -602,7 +602,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         }
     }
 
-    #[cfg(unix)]
     bindings.extend(platform_key_bindings());
 
     bindings
