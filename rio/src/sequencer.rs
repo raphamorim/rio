@@ -1,8 +1,7 @@
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use {
-    wayland_client::protocol::wl_surface::WlSurface,
-    wayland_client::{Display as WaylandDisplay, Proxy},
-    winit::platform::wayland::{EventLoopWindowTargetExtWayland, WindowExtWayland},
+    wayland_client::{Display as WaylandDisplay},
+    winit::platform::wayland::{EventLoopWindowTargetExtWayland},
 };
 
 use crate::clipboard::ClipboardType;
