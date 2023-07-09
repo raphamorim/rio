@@ -9,7 +9,7 @@ Docs use [Jekyll](http://jekyllrb.com/), a static generator in Ruby, to create t
 2. Once installed these dependencies, open up the terminal and install [Jekyll](http://jekyllrb.com/) with the following command:
 
 ```sh
-$ gem install jekyll jekyll-paginate jekyll-gist --user-install
+$ gem install jekyll jekyll-paginate jekyll-gist jekyll-feed --user-install
 ```
 
 3. Now clone the project:
