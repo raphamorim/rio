@@ -32,6 +32,8 @@ pub struct SequencerWindow {
     is_occluded: bool,
     window: Window,
     screen: Screen,
+    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+    has_wayland_forcefully_reloaded: bool,
 }
 
 impl SequencerWindow {
@@ -61,6 +63,8 @@ impl SequencerWindow {
             is_occluded: false,
             window: winit_window,
             screen,
+            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+            has_wayland_forcefully_reloaded: false,
         })
     }
 
@@ -94,6 +98,8 @@ impl SequencerWindow {
             is_occluded: false,
             window: winit_window,
             screen,
+            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+            has_wayland_forcefully_reloaded: false,
         }
     }
 }
@@ -102,8 +108,6 @@ pub struct Sequencer {
     config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
     event_proxy: Option<EventProxy>,
-    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-    has_wayland_forcefully_reloaded: bool,
 }
 
 impl Sequencer {
@@ -112,8 +116,6 @@ impl Sequencer {
             config: Rc::new(config),
             windows: HashMap::new(),
             event_proxy: None,
-            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-            has_wayland_forcefully_reloaded: false,
         }
     }
 
@@ -133,15 +135,15 @@ impl Sequencer {
             display.create_event_queue()
         });
 
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let _wayland_surface = if event_loop.is_wayland() {
-            // Attach surface to Rio internal wayland queue to handle frame callbacks.
-            let surface = winit_window.wayland_surface().unwrap();
-            let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
-            Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
-        } else {
-            None
-        };
+        // #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        // let _wayland_surface = if event_loop.is_wayland() {
+        //     // Attach surface to Rio internal wayland queue to handle frame callbacks.
+        //     let surface = winit_window.wayland_surface().unwrap();
+        //     let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
+        //     Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
+        // } else {
+        //     None
+        // };
 
         let seq_win = SequencerWindow::new(&event_loop, &self.config, command).await?;
         self.windows.insert(seq_win.window.id(), seq_win);
@@ -304,9 +306,11 @@ impl Sequencer {
                         not(any(target_os = "macos", windows))
                     ))]
                     {
-                        if !self.has_wayland_forcefully_reloaded {
-                            screen.update_config(&self.config);
-                            self.has_wayland_forcefully_reloaded = true;
+                        if let Some(sw) = self.windows.get_mut(&window_id) {
+                            if !sw.has_wayland_forcefully_reloaded {
+                                sw.screen.update_config(&self.config);
+                                sw.has_wayland_forcefully_reloaded = true;
+                            }
                         }
                     }
                 }
