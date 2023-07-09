@@ -37,8 +37,7 @@ fn default_shell() -> String {
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
         dimensions: (u32, u32),
-        columns: usize,
-        rows: usize,
+        cols_rows: (usize, usize),
         cursor_state: CursorState,
         event_proxy: T,
         spawn: bool,
@@ -47,11 +46,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let shell = default_shell();
 
         let event_proxy_clone = event_proxy.clone();
-        let mut terminal = Crosswords::new(columns, rows, event_proxy, window_id);
+        let mut terminal =
+            Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let pty = create_pty(&Cow::Borrowed(&shell), columns as u16, rows as u16);
+        let pty = create_pty(
+            &Cow::Borrowed(&shell),
+            cols_rows.0 as u16,
+            cols_rows.1 as u16,
+        );
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
@@ -64,7 +68,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let width = dimensions.0 as u16;
         let height = dimensions.1 as u16;
-        let _ = messenger.send_resize(width, height, columns as u16, rows as u16);
+        let _ =
+            messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
             messenger,
@@ -73,19 +78,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn start(
-        width: u32,
-        height: u32,
-        columns: usize,
-        rows: usize,
+        dimensions: (u32, u32),
+        col_rows: (usize, usize),
         cursor_state: CursorState,
         event_proxy: T,
         window_id: WindowId,
         mut command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let mut initial_context = ContextManager::create_context(
-            (width, height),
-            columns,
-            rows,
+            (dimensions.0, dimensions.1),
+            (col_rows.0, col_rows.1),
             cursor_state,
             event_proxy.clone(),
             true,
@@ -115,8 +117,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
             event_proxy.clone(),
             false,
@@ -206,8 +207,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         redirect: bool,
         spawn: bool,
         dimensions: (u32, u32),
-        columns: usize,
-        rows: usize,
+        col_rows: (usize, usize),
         cursor_state: CursorState,
     ) {
         let size = self.contexts.len();
@@ -215,8 +215,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             let last_index = self.contexts.len();
             match ContextManager::create_context(
                 dimensions,
-                columns,
-                rows,
+                col_rows,
                 cursor_state,
                 self.event_proxy.clone(),
                 spawn,
@@ -244,12 +243,12 @@ pub mod test {
     #[test]
     fn test_capacity() {
         let context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
@@ -258,7 +257,7 @@ pub mod test {
     #[test]
     fn test_add_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
@@ -268,8 +267,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.capacity, 5);
@@ -280,8 +278,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.capacity, 5);
@@ -291,7 +288,7 @@ pub mod test {
     #[test]
     fn test_add_context_start_with_capacity_limit() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::from(0))
                 .unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
@@ -300,8 +297,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.len(), 2);
@@ -309,8 +305,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.len(), 3);
@@ -320,8 +315,7 @@ pub mod test {
                 should_redirect,
                 false,
                 (100, 100),
-                1,
-                1,
+                (1, 1),
                 CursorState::default(),
             );
         }
@@ -333,7 +327,7 @@ pub mod test {
     #[test]
     fn test_set_current() {
         let mut context_manager =
-            ContextManager::start_with_capacity(8, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(8, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let should_redirect = true;
 
@@ -341,8 +335,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.current_index, 1);
@@ -356,16 +349,14 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.set_current(3);
@@ -378,7 +369,7 @@ pub mod test {
     #[test]
     fn test_close_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let should_redirect = false;
 
@@ -386,16 +377,14 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.len(), 3);
@@ -414,7 +403,7 @@ pub mod test {
     #[test]
     fn test_close_context_upcoming_ids() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let should_redirect = false;
 
@@ -422,32 +411,28 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
 
@@ -463,8 +448,7 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
 
@@ -479,7 +463,7 @@ pub mod test {
     #[test]
     fn test_close_last_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(2, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(2, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let should_redirect = false;
 
@@ -487,16 +471,14 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.len(), 2);
@@ -513,7 +495,7 @@ pub mod test {
     #[test]
     fn test_switch_to_next() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::dummy())
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let should_redirect = false;
 
@@ -521,40 +503,35 @@ pub mod test {
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
             false,
             (100, 100),
-            1,
-            1,
+            (1, 1),
             CursorState::default(),
         );
         assert_eq!(context_manager.len(), 5);

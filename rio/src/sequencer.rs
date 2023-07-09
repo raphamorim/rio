@@ -23,10 +23,9 @@ use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
-use winit::event_loop::EventLoopWindowTarget;
-use winit::event_loop::{DeviceEventFilter, EventLoop};
+use winit::event_loop::{DeviceEventFilter, EventLoop, EventLoopWindowTarget};
 use winit::platform::run_return::EventLoopExtRunReturn;
-use winit::window::{CursorIcon, ImePurpose, Window, WindowId};
+use winit::window::{CursorIcon, Window, WindowId};
 
 pub struct SequencerWindow {
     is_focused: bool,
@@ -44,7 +43,7 @@ impl SequencerWindow {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
         let window_builder = create_window_builder("Rio");
-        let winit_window = window_builder.build(&event_loop).unwrap();
+        let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -53,7 +52,7 @@ impl SequencerWindow {
         let display: Option<*mut c_void> = Option::None;
 
         let mut screen =
-            Screen::new(&winit_window, &config, event_proxy, display, command).await?;
+            Screen::new(&winit_window, config, event_proxy, display, command).await?;
 
         screen.init(config.colors.background.1);
 
@@ -71,7 +70,7 @@ impl SequencerWindow {
         config: &Rc<config::Config>,
     ) -> Self {
         let window_builder = create_window_builder("Rio");
-        let winit_window = window_builder.build(&event_loop).unwrap();
+        let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
         #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -81,7 +80,7 @@ impl SequencerWindow {
 
         let mut screen = futures::executor::block_on(Screen::new(
             &winit_window,
-            &config,
+            config,
             event_proxy,
             display,
             vec![],
@@ -153,148 +152,145 @@ impl Sequencer {
                 Event::UserEvent(EventP {
                     payload, window_id, ..
                 }) => {
-                    if let RioEventType::Rio(event) = payload {
-                        match event {
-                            RioEvent::Wakeup => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    sequencer_window.window.request_redraw();
-                                }
+                    match payload {
+                        RioEventType::Rio(RioEvent::Wakeup) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                sequencer_window.window.request_redraw();
                             }
-                            RioEvent::Render => {
-                                // if self.config.advanced.disable_render_when_unfocused
-                                //     && self.is_window_focused
-                                // {
-                                //     return;
-                                // }
-                                // screen.render();
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                        }
+                        RioEventType::Rio(RioEvent::Render) => {
+                            if let Some(sw) = self.windows.get_mut(&window_id) {
+                                if self.config.advanced.disable_render_when_unfocused
+                                    && sw.is_focused
                                 {
-                                    sequencer_window.window.request_redraw();
+                                    return;
                                 }
+                                sw.window.request_redraw();
                             }
-                            RioEvent::UpdateConfig => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    let config = config::Config::load();
-                                    self.config = config.into();
-                                    sequencer_window.screen.update_config(&self.config);
-                                    sequencer_window.window.request_redraw();
-                                }
-                                // self.has_render_updates = true;
+                        }
+                        RioEventType::Rio(RioEvent::UpdateConfig) => {
+                            for (_id, sw) in self.windows.iter_mut() {
+                                let config = config::Config::load();
+                                self.config = config.into();
+                                sw.screen.update_config(&self.config);
+                                sw.window.request_redraw();
                             }
-                            RioEvent::Exit => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    if !sequencer_window.screen.try_close_existent_tab() {
+                        }
+                        RioEventType::Rio(RioEvent::Exit) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                if !sequencer_window.screen.try_close_existent_tab() {
+                                    self.windows.remove(&window_id);
+
+                                    if self.windows.is_empty() {
                                         *control_flow =
                                             winit::event_loop::ControlFlow::Exit;
                                     }
                                 }
                             }
-                            RioEvent::PrepareRender(millis) => {
-                                let timer_id = TimerId::new(Topic::Frame, 0);
-                                let event = EventP::new(
-                                    RioEventType::Rio(RioEvent::Render),
-                                    window_id,
-                                );
+                        }
+                        RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
+                            let timer_id = TimerId::new(Topic::Frame, 0);
+                            let event = EventP::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
 
-                                if !scheduler.scheduled(timer_id) {
-                                    scheduler.schedule(
-                                        event,
-                                        Duration::from_millis(millis),
-                                        false,
-                                        timer_id,
-                                    );
-                                }
+                            if !scheduler.scheduled(timer_id) {
+                                scheduler.schedule(
+                                    event,
+                                    Duration::from_millis(millis),
+                                    false,
+                                    timer_id,
+                                );
                             }
-                            RioEvent::Title(_title) => {
-                                // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
-                                // self.ctx.window().set_title(title);
-                                // }
+                        }
+                        RioEventType::Rio(RioEvent::Title(_title)) => {
+                            // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
+                            // self.ctx.window().set_title(title);
+                            // }
+                        }
+                        RioEventType::BlinkCursor | RioEventType::BlinkCursorTimeout => {}
+                        RioEventType::Rio(RioEvent::MouseCursorDirty) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                sequencer_window.screen.reset_mouse();
                             }
-                            RioEvent::MouseCursorDirty => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    sequencer_window.screen.reset_mouse();
-                                }
+                        }
+                        RioEventType::Rio(RioEvent::Scroll(scroll)) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                let mut terminal = sequencer_window
+                                    .screen
+                                    .ctx()
+                                    .current()
+                                    .terminal
+                                    .lock();
+                                terminal.scroll_display(scroll);
+                                drop(terminal);
                             }
-                            RioEvent::Scroll(scroll) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    let mut terminal = sequencer_window
-                                        .screen
-                                        .ctx()
-                                        .current()
-                                        .terminal
-                                        .lock();
-                                    terminal.scroll_display(scroll);
-                                    drop(terminal);
-                                }
-                            }
-                            RioEvent::ClipboardLoad(clipboard_type, format) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    if sequencer_window.is_focused {
-                                        let text = format(
-                                            sequencer_window
-                                                .screen
-                                                .clipboard_get(clipboard_type)
-                                                .as_str(),
-                                        );
+                        }
+                        RioEventType::Rio(RioEvent::ClipboardLoad(
+                            clipboard_type,
+                            format,
+                        )) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                if sequencer_window.is_focused {
+                                    let text = format(
                                         sequencer_window
                                             .screen
-                                            .ctx_mut()
-                                            .current_mut()
-                                            .messenger
-                                            .send_bytes(text.into_bytes());
-                                    }
-                                }
-                            }
-                            RioEvent::ColorRequest(index, format) => {
-                                // TODO: colors could be coming terminal as well
-                                // if colors has been declaratively changed
-                                // Rio doesn't cover this case yet.
-                                //
-                                // In the future should try first get
-                                // from Crosswords then state colors
-                                // screen.colors()[index] or screen.state.colors[index]
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
-                                {
-                                    let color =
-                                        sequencer_window.screen.state.colors[index];
-                                    let rgb = ColorRgb::from_color_arr(color);
+                                            .clipboard_get(clipboard_type)
+                                            .as_str(),
+                                    );
                                     sequencer_window
                                         .screen
                                         .ctx_mut()
                                         .current_mut()
                                         .messenger
-                                        .send_bytes(format(rgb).into_bytes());
+                                        .send_bytes(text.into_bytes());
                                 }
                             }
-                            RioEvent::WindowCreateNew => {
-                                let sw = SequencerWindow::from_window_target(
-                                    event_loop_window_target,
-                                    self.event_proxy.clone().unwrap(),
-                                    &self.config,
-                                );
-                                self.windows.insert(sw.window.id(), sw);
-                            }
-                            _ => {}
                         }
+                        RioEventType::Rio(RioEvent::ColorRequest(index, format)) => {
+                            // TODO: colors could be coming terminal as well
+                            // if colors has been declaratively changed
+                            // Rio doesn't cover this case yet.
+                            //
+                            // In the future should try first get
+                            // from Crosswords then state colors
+                            // screen.colors()[index] or screen.state.colors[index]
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                let color = sequencer_window.screen.state.colors[index];
+                                let rgb = ColorRgb::from_color_arr(color);
+                                sequencer_window
+                                    .screen
+                                    .ctx_mut()
+                                    .current_mut()
+                                    .messenger
+                                    .send_bytes(format(rgb).into_bytes());
+                            }
+                        }
+                        RioEventType::Rio(RioEvent::WindowCreateNew) => {
+                            let sw = SequencerWindow::from_window_target(
+                                event_loop_window_target,
+                                self.event_proxy.clone().unwrap(),
+                                &self.config,
+                            );
+                            self.windows.insert(sw.window.id(), sw);
+                        }
+                        _ => {}
                     }
                 }
                 Event::Resumed => {
-                    // self.windows.insert(winit_window.id(), winit_window);
-
                     // Emitted when the application has been resumed.
                     // This is a hack to avoid an odd scenario in wayland window initialization
                     // wayland windows starts with the wrong width/height.
@@ -310,7 +306,6 @@ impl Sequencer {
                     {
                         if !self.has_wayland_forcefully_reloaded {
                             screen.update_config(&self.config);
-                            self.has_render_updates = true;
                             self.has_wayland_forcefully_reloaded = true;
                         }
                     }
@@ -424,7 +419,7 @@ impl Sequencer {
                                         sequencer_window.screen.on_left_click(point);
                                     }
 
-                                    // sequencer_window.has_render_updates = true;
+                                    sequencer_window.window.request_redraw();
                                 }
                                 // sequencer_window.screen.process_mouse_bindings(button);
                             }
@@ -534,7 +529,6 @@ impl Sequencer {
                         }
 
                         sw.window.request_redraw();
-                        // sequencer_window.has_render_updates = true;
                     }
                 }
 
@@ -698,7 +692,6 @@ impl Sequencer {
 
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         sw.screen.resize(new_size);
-                        // sw.has_render_updates = true;
                     }
                 }
 
@@ -714,7 +707,6 @@ impl Sequencer {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         sw.screen.set_scale(scale_factor as f32, *new_inner_size);
                         sw.window.request_redraw();
-                        // sequencer_window.has_render_updates = true;
                     }
                 }
 

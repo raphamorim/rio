@@ -112,10 +112,8 @@ impl Screen {
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
         let context_manager = context::ContextManager::start(
-            sugarloaf.layout.width_u32,
-            sugarloaf.layout.height_u32,
-            sugarloaf.layout.columns,
-            sugarloaf.layout.lines,
+            (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
+            (sugarloaf.layout.columns, sugarloaf.layout.lines),
             state.get_cursor_state(),
             event_proxy,
             window_id,
@@ -395,8 +393,7 @@ impl Screen {
                                 self.sugarloaf.layout.width_u32,
                                 self.sugarloaf.layout.height_u32,
                             ),
-                            self.sugarloaf.layout.columns,
-                            self.sugarloaf.layout.lines,
+                            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
                             self.state.get_cursor_state(),
                         );
                         self.render();

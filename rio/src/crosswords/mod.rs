@@ -1916,7 +1916,7 @@ mod tests {
 
     #[test]
     fn scroll_up() {
-        let mut cw = Crosswords::new(1, 10, VoidListener {}, WindowId::dummy());
+        let mut cw = Crosswords::new(1, 10, VoidListener {}, WindowId::from(0));
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -1948,7 +1948,7 @@ mod tests {
     #[test]
     fn test_linefeed() {
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 1, VoidListener {}, WindowId::dummy());
+            Crosswords::new(1, 1, VoidListener {}, WindowId::from(0));
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -1958,7 +1958,7 @@ mod tests {
     #[test]
     fn test_linefeed_moving_cursor() {
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 3, VoidListener {}, WindowId::dummy());
+            Crosswords::new(1, 3, VoidListener {}, WindowId::from(0));
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -1983,7 +1983,7 @@ mod tests {
         let columns: usize = 5;
         let rows: usize = 10;
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(columns, rows, VoidListener {}, WindowId::dummy());
+            Crosswords::new(columns, rows, VoidListener {}, WindowId::from(0));
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -2006,7 +2006,7 @@ mod tests {
             size.columns,
             size.screen_lines,
             VoidListener {},
-            WindowId::dummy(),
+            WindowId::from(0),
         );
         let grid = &mut term.grid;
         for i in 0..4 {
@@ -2083,7 +2083,7 @@ mod tests {
             size.columns,
             size.screen_lines,
             VoidListener {},
-            WindowId::dummy(),
+            WindowId::from(0),
         );
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
@@ -2112,7 +2112,7 @@ mod tests {
             size.columns,
             size.screen_lines,
             VoidListener {},
-            WindowId::dummy(),
+            WindowId::from(0),
         );
         let grid = &mut term.grid;
         for i in 1..4 {

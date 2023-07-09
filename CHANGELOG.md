@@ -2,6 +2,7 @@
 
 ## 0.0.9 (in progress)
 
+- Multi window support [#97](https://github.com/raphamorim/rio/issues/97).
 - Corrections on select and scroll experience (it was using wrongly font-bound for line calculation).
 - Add selection color to the theme config (closed [#125](https://github.com/raphamorim/rio/issues/125)).
 - Implemented Inverse (fix [#92](https://github.com/raphamorim/rio/issues/92)).
