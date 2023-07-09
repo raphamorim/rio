@@ -453,7 +453,7 @@ mod tests {
             size.columns,
             size.screen_lines,
             VoidListener {},
-            WindowId::dummy(),
+            WindowId::from(0),
         )
     }
 

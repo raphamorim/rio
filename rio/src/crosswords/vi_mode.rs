@@ -414,7 +414,7 @@ mod tests {
     use winit::window::WindowId;
 
     fn term() -> Crosswords<VoidListener> {
-        Crosswords::new(20, 20, VoidListener, WindowId::dummy())
+        Crosswords::new(20, 20, VoidListener, WindowId::from(0))
     }
 
     #[test]

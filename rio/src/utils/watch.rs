@@ -2,6 +2,7 @@ use crate::event::{EventListener, RioEvent};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
+use winit::window::WindowId;
 
 const POLLING_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -38,7 +39,8 @@ pub fn watch<
                     | EventKind::Modify(_)
                     | EventKind::Other => {
                         log::info!("config directory has dispatched an event {event:?}");
-                        // event_proxy.send_event(RioEvent::UpdateConfig, id);
+                        // TODO: Refactor to send_global_event
+                        event_proxy.send_event(RioEvent::UpdateConfig, WindowId::from(0));
                     }
                     _ => (),
                 },

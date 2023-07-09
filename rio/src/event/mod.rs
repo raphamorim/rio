@@ -172,13 +172,14 @@ impl EventProxy {
         Self { proxy }
     }
 
+    #[allow(dead_code)]
     pub fn send_event(&self, event: RioEventType, id: WindowId) {
         let _ = self.proxy.send_event(EventP::new(event, id));
     }
 
-    pub fn send_global_event(&self, event: RioEventType) {
-        // let _ = self.proxy.send_event(EventP::new(event));
-    }
+    // pub fn send_global_event(&self, event: RioEventType) {
+    //     let _ = self.proxy.send_event(EventP::new(event));
+    // }
 }
 
 impl EventListener for EventProxy {
@@ -186,7 +187,7 @@ impl EventListener for EventProxy {
         let _ = self.proxy.send_event(EventP::new(event.into(), id));
     }
 
-    fn send_global_event(&self, event: RioEvent) {
-        // let _ = self.proxy.send_event(EventP::new(event.into(), id));
-    }
+    // fn send_global_event(&self, event: RioEvent) {
+    // let _ = self.proxy.send_event(EventP::new(event.into(), id));
+    // }
 }
