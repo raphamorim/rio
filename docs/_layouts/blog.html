@@ -3,6 +3,7 @@
 
 <div class="container post">
   <div class="post-title"><h1 class="post-title">Posts</h1></div>
+  <br/>Feed: <a href="https://raphamorim.io/rio/feed.xml">raphamorim.io/rio/feed.xml</a>
   <br/>
   {% for post in paginator.posts %}
     {% unless post.draft %}
@@ -10,7 +11,6 @@
         <h2>{{ post.title }}</h2>
         <p>{{ post.description }}</p>
         <p><a href="{{ post.url | relative_url }}">Read post</a></p>
-        <br/>
       </div>
     {% endunless %}
   {% endfor %}
