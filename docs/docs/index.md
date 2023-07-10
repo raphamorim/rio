@@ -69,6 +69,11 @@ log-level = "INFO"
 [advanced]
 # This property disable renderer processes while Rio is unfocused.
 disable-renderer-when-unfocused = false
+
+# In POSIX-based systems, Rio spawn processes instead of fork processes.
+# due to compability issues between platforms.
+# Forking a process is faster than spawning a process.
+use-fork = false
 {% endhighlight %}
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).

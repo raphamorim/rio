@@ -4,6 +4,10 @@ mod signals;
 
 extern crate libc;
 
+use std::mem::MaybeUninit;
+use std::io::{Error, ErrorKind};
+use std::os::unix::process::CommandExt;
+use std::process::Stdio;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
 use signal_hook::consts as sigconsts;
@@ -32,6 +36,14 @@ const TIOCSWINSZ: libc::c_ulong = 2148037735;
 extern "C" {
     fn forkpty(
         main: *mut libc::c_int,
+        name: *mut libc::c_char,
+        termp: *const libc::termios,
+        winsize: *const Winsize,
+    ) -> libc::pid_t;
+
+    fn openpty(
+        main: *mut libc::c_int,
+        child: *mut libc::c_int,
         name: *mut libc::c_char,
         termp: *const libc::termios,
         winsize: *const Winsize,
@@ -327,8 +339,50 @@ pub fn create_termp(utf8: bool) -> libc::termios {
     term
 }
 
+#[derive(Default)]
+struct ShellUser {
+    user: String,
+    home: String,
+    shell: String,
+}
+
+impl ShellUser {
+    /// look for shell, username, longname, and home dir in the respective environment variables
+    /// before falling back on looking in to `passwd`.
+    fn from_env() -> Result<Self, Error> {
+        let mut buf = [0; 1024];
+        let pw = get_pw_entry(&mut buf);
+
+        let user = match std::env::var("USER") {
+            Ok(user) => user,
+            Err(_) => match pw {
+                Ok(ref pw) => pw.name.to_owned(),
+                Err(err) => return Err(err),
+            },
+        };
+
+        let home = match std::env::var("HOME") {
+            Ok(home) => home,
+            Err(_) => match pw {
+                Ok(ref pw) => pw.dir.to_owned(),
+                Err(err) => return Err(err),
+            },
+        };
+
+        let shell = match std::env::var("SHELL") {
+            Ok(shell) => shell,
+            Err(_) => match pw {
+                Ok(ref pw) => pw.shell.to_owned(),
+                Err(err) => return Err(err),
+            },
+        };
+
+        Ok(Self { user, home, shell })
+    }
+}
+
 ///
-/// Creates a pseudoterminal.
+/// Creates a pseudoterminal using spawn.
 ///
 /// The [`create_pty`] creates a pseudoterminal with similar behavior as tty,
 /// which is a command in Unix and Unix-like operating systems to print the file name of the
@@ -336,7 +390,142 @@ pub fn create_termp(utf8: bool) -> libc::termios {
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
+pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
+    let mut main: libc::c_int = 0;
+    let mut child: libc::c_int = 0;
+    let winsize = Winsize {
+        ws_row: rows as libc::c_ushort,
+        ws_col: columns as libc::c_ushort,
+        ws_width: 0 as libc::c_ushort,
+        ws_height: 0 as libc::c_ushort,
+    };
+    let term = create_termp(true);
+
+    let res = unsafe {
+        openpty(
+            &mut main as *mut _,
+            &mut child as *mut _,
+            ptr::null_mut(),
+            &term as *const libc::termios,
+            &winsize as *const _,
+        )
+    };
+
+    if res < 0 {
+        panic!("openpty failed");
+    }
+
+    let user = match ShellUser::from_env() {
+        Ok(data) => {
+            data
+        },
+        Err(..) => {
+            ShellUser {
+                shell: shell.to_string(),
+                ..Default::default()
+            }
+        }
+    };
+
+    let mut builder = {
+        let mut cmd = Command::new(shell);
+        // cmd.args([]);
+        cmd
+    };
+    // else {
+        // default_shell_command(&user.shell, &user.user)
+    // };
+
+    // Setup child stdin/stdout/stderr as slave fd of PTY.
+    // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
+    // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
+    // error on libc::close.).
+    builder.stdin(unsafe { Stdio::from_raw_fd(child) });
+    builder.stderr(unsafe { Stdio::from_raw_fd(child) });
+    builder.stdout(unsafe { Stdio::from_raw_fd(child) });
+
+    builder.env("USER", user.user);
+    builder.env("HOME", user.home);
+
+    unsafe {
+        builder.pre_exec(move || {
+            // Create a new process group.
+            let err = libc::setsid();
+            if err == -1 {
+                return Err(Error::new(ErrorKind::Other, "Failed to set session id"));
+            }
+
+            set_controlling_terminal(child);
+
+            // No longer need slave/master fds.
+            libc::close(child);
+            libc::close(main);
+
+            libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+            libc::signal(libc::SIGHUP, libc::SIG_DFL);
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            libc::signal(libc::SIGALRM, libc::SIG_DFL);
+
+            Ok(())
+        });
+    }
+
+    // Handle set working directory option.
+    // if let Some(dir) = &config.working_directory {
+        // builder.current_dir(dir);
+    // }
+
+    // Prepare signal handling before spawning child.
+    let signals = Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+
+    if let Ok(child_process) = builder.spawn() {
+        unsafe {
+            // Maybe this should be done outside of this function so nonblocking
+            // isn't forced upon consumers. Although maybe it should be?
+            set_nonblocking(main);
+        }
+
+        let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
+        let child_unix = Child {
+            id: Arc::new(main),
+            ptsname,
+            pid: Arc::new(child),
+        };
+
+        let mut pty = Pty {
+            child: child_unix,
+            file: unsafe { File::from_raw_fd(main) },
+            token: corcovado::Token::from(0),
+            signals,
+            signals_token: corcovado::Token::from(0),
+        };
+        pty
+    } else {
+        panic!("failed to spawn")
+    }
+        // Err(err) => Err(Error::new(
+        //     err.kind(),
+        //     format!(
+        //         "Failed to spawn command '{}': {}",
+        //         builder.get_program().to_string_lossy(),
+        //         err
+        //     ),
+        // )),
+    // }
+}
+
+///
+/// Creates a pseudoterminal using fork.
+///
+/// The [`create_pty`] creates a pseudoterminal with similar behavior as tty,
+/// which is a command in Unix and Unix-like operating systems to print the file name of the
+/// terminal connected to standard input. tty stands for TeleTYpewriter.
+///
+/// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
+///
+pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -380,7 +569,23 @@ pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
                 signals_token: corcovado::Token(0),
             }
         }
-        _ => panic!("Fork failed."),
+        _ => panic!("forkpty failed."),
+    }
+}
+
+/// Really only needed on BSD, but should be fine elsewhere.
+fn set_controlling_terminal(fd: libc::c_int) {
+    let res = unsafe {
+        // TIOSCTTY changes based on platform and the `ioctl` call is different
+        // based on architecture (32/64). So a generic cast is used to make sure
+        // there are no issues. To allow such a generic cast the clippy warning
+        // is disabled.
+        #[allow(clippy::cast_lossless)]
+        libc::ioctl(fd, libc::TIOCSCTTY as _, 0)
+    };
+
+    if res < 0 {
+        panic!("ioctl TIOCSCTTY failed: {}", Error::last_os_error());
     }
 }
 
@@ -508,6 +713,50 @@ impl EventedPty for Pty {
     fn child_event_token(&self) -> corcovado::Token {
         self.signals_token
     }
+}
+
+#[derive(Debug)]
+struct Passwd<'a> {
+    name: &'a str,
+    dir: &'a str,
+    shell: &'a str,
+}
+
+/// Return a Passwd struct with pointers into the provided buf.
+///
+/// # Unsafety
+///
+/// If `buf` is changed while `Passwd` is alive, bad thing will almost certainly happen.
+fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
+    // Create zeroed passwd struct.
+    let mut entry: MaybeUninit<libc::passwd> = MaybeUninit::uninit();
+
+    let mut res: *mut libc::passwd = ptr::null_mut();
+
+    // Try and read the pw file.
+    let uid = unsafe { libc::getuid() };
+    let status = unsafe {
+        libc::getpwuid_r(uid, entry.as_mut_ptr(), buf.as_mut_ptr() as *mut _, buf.len(), &mut res)
+    };
+    let entry = unsafe { entry.assume_init() };
+
+    if status < 0 {
+        return Err(Error::new(ErrorKind::Other, "getpwuid_r failed"));
+    }
+
+    if res.is_null() {
+        return Err(Error::new(ErrorKind::Other, "pw not found"));
+    }
+
+    // Sanity check.
+    assert_eq!(entry.pw_uid, uid);
+
+    // Build a borrowed Passwd struct.
+    Ok(Passwd {
+        name: unsafe { CStr::from_ptr(entry.pw_name).to_str().unwrap() },
+        dir: unsafe { CStr::from_ptr(entry.pw_dir).to_str().unwrap() },
+        shell: unsafe { CStr::from_ptr(entry.pw_shell).to_str().unwrap() },
+    })
 }
 
 /// Unsafe
