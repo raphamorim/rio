@@ -16,6 +16,8 @@ pub enum Performance {
 pub struct Advanced {
     #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
     pub disable_render_when_unfocused: bool,
+    #[serde(default = "bool::default", rename = "use-fork")]
+    pub use_fork: bool,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
@@ -650,12 +652,14 @@ mod tests {
 
             [advanced]
             disable-render-when-unfocused = true
+            use-fork = true
         "#,
         );
 
         assert_eq!(result.performance, Performance::Low);
         // Advanced
         assert!(result.advanced.disable_render_when_unfocused);
+        assert!(result.advanced.use_fork);
 
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

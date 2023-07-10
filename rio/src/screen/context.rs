@@ -7,7 +7,7 @@ use crate::screen::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
-use teletypewriter::create_pty;
+use teletypewriter::create_pty_with_spawn;
 use winit::window::WindowId;
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 6;
@@ -51,7 +51,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let pty = create_pty(
+        let pty = create_pty_with_spawn(
             &Cow::Borrowed(&shell),
             cols_rows.0 as u16,
             cols_rows.1 as u16,
