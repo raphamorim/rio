@@ -27,7 +27,7 @@ fuchsia-zircon = "0.3.2"
 fuchsia-zircon-sys = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.140"
+libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = "0.42.0"

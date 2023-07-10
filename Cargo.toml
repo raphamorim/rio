@@ -30,6 +30,7 @@ corcovado = { path = "corcovado" }
 tokio = { version = "1.26.0", features = ["full"] }
 wgpu = "0.16.2"
 winit = { version = "0.28.6", default-features = false, features = ["serde"] }
+libc = "0.2.147"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3"

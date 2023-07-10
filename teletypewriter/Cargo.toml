@@ -9,7 +9,7 @@ documentation = "https://docs.rs/crate/teletypewriter/latest"
 authors = { workspace = true }
 
 [dependencies]
-libc = "0.2.140"
+libc = { workspace = true }
 dirs = "5.0"
 corcovado = { workspace = true }
 log = "0.4.18"
