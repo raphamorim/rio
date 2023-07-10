@@ -10,7 +10,7 @@ use std::sync::Arc;
 use teletypewriter::create_pty_with_spawn;
 use winit::window::WindowId;
 
-const DEFAULT_CONTEXT_CAPACITY: usize = 6;
+const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
