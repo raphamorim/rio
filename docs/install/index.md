@@ -12,12 +12,16 @@ language: 'en'
 	- [2.1 MacOS](#macos)
 	- [2.2 Linux](#linux)
 	- [2.3 Windows](#windows)
-	- [2.4 WebAssembly](#webassembly)
+	- [2.4 FreeBSD](#freebsd)
+	- [2.5 WebAssembly](#webassembly)
 - [3. Build from the source](#build-from-the-source)
 	- [3.1 Dependencies](#dependencies)
 	- [3.2 Debian/Ubuntu](#debianubuntu)
 	- [3.3 Arch Linux](#arch-linux)
-	- [3.4 Fedora](#fedora)
+	- [3.4 Void Linux](#void-linux)
+	- [3.5 FreeBSD](#freebsd-1)
+	- [3.6 Fedora](#fedora)
+	- [3.7 Building](#building)
 
 ## Stable and Canary
 
@@ -76,6 +80,12 @@ Installation options:
 - • Nix package: [NixOS/nixpkgs/rio](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/applications/terminal-emulators/rio/default.nix)
 
 In case your distro doesn't have the package manager option listed above, proceed to [build from the source](#build-from-the-source).
+
+### FreeBSD
+
+Installation options:
+
+- • [FreeBSD Ports](https://ports.freebsd.org/cgi/ports.cgi?query=rio-terminal&stype=all&sektion=all)
 
 ### Windows
 
@@ -160,6 +170,22 @@ On Fedora, you need a few extra libraries to build Rio. Here's a <span class="ke
 
 {% highlight bash %}
 dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-devel g++
+{% endhighlight %}
+
+#### Void Linux
+
+On Void Linux, install following packages before compiling Rio:
+
+{% highlight bash %}
+xbps-install cmake freetype-devel expat-devel fontconfig-devel libxcb-devel pkg-config python3
+{% endhighlight %}
+
+#### FreeBSD
+
+On FreeBSD, you need a few extra libraries to build Rio. Here's a <span class="keyword">pkg</span> command that should install all of them. If something is still found to be missing, please open an issue.
+
+{% highlight bash %}
+pkg install cmake freetype2 fontconfig pkgconf python3
 {% endhighlight %}
 
 ### Building
