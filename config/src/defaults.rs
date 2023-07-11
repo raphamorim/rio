@@ -26,8 +26,8 @@ pub fn default_shell() -> crate::Shell {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         crate::Shell {
-            program: String::from("user"),
-            args: vec![String::from("login"), String::from("shell")],
+            program: String::from(""),
+            args: vec![],
         }
     }
 }
