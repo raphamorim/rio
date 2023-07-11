@@ -23,6 +23,7 @@ pub struct ContextManagerConfig {
     pub exec: Vec<String>,
     pub use_fork: bool,
     pub working_directory: Option<String>,
+    pub spawn_performer: bool,
 }
 
 pub struct ContextManager<T: EventListener> {
@@ -50,31 +51,28 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let pty;
-        if config.use_fork {
+        let pty = if config.use_fork {
             log::info!("rio -> teletypewriter: create_pty_with_fork");
-            pty = create_pty_with_fork(
+            create_pty_with_fork(
                 &Cow::Borrowed(&config.shell.program),
                 cols_rows.0 as u16,
                 cols_rows.1 as u16,
-            );
+            )
         } else {
             log::info!("rio -> teletypewriter: create_pty_with_spawn");
-            pty = create_pty_with_spawn(
+            create_pty_with_spawn(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_directory,
                 cols_rows.0 as u16,
                 cols_rows.1 as u16,
-            );
-        }
+            )
+        };
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
         let channel = machine.channel();
-        // The only case we don't spawn is for tests
-        #[cfg(not(test))]
-        {
+        if config.spawn_performer {
             machine.spawn();
         }
         let messenger = Messenger::new(channel);

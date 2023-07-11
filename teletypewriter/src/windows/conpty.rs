@@ -103,7 +103,12 @@ impl Drop for Conpty {
 // The ConPTY handle can be sent between threads.
 unsafe impl Send for Conpty {}
 
-pub fn new(shell: &str, columns: u16, rows: u16) -> Option<Pty> {
+pub fn new(
+    shell: &str,
+    working_directory: &Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Option<Pty> {
     let api = ConptyApi::new();
     let mut pty_handle: HPCON = 0;
 
@@ -209,8 +214,7 @@ pub fn new(shell: &str, columns: u16, rows: u16) -> Option<Pty> {
     }
 
     let cmdline = win32_string(&cmdline(shell));
-    // let cwd = win32_string;
-    // let cwd = config.working_directory.as_ref().map(win32_string);
+    let cwd = working_directory.as_ref().map(win32_string);
 
     let mut proc_info: PROCESS_INFORMATION = unsafe { mem::zeroed() };
     unsafe {
@@ -222,8 +226,7 @@ pub fn new(shell: &str, columns: u16, rows: u16) -> Option<Pty> {
             false as i32,
             EXTENDED_STARTUPINFO_PRESENT,
             ptr::null_mut(),
-            ptr::null(),
-            // cwd.as_ref().map_or_else(ptr::null, |s| s.as_ptr()),
+            cwd.as_ref().map_or_else(ptr::null, |s| s.as_ptr()),
             &mut startup_info_ex.StartupInfo as *mut STARTUPINFOW,
             &mut proc_info as *mut PROCESS_INFORMATION,
         ) > 0;

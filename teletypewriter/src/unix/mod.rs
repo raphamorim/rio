@@ -513,14 +513,13 @@ pub fn create_pty_with_spawn(
             process: Some(child_process),
         };
 
-        let pty = Pty {
+        Pty {
             child: child_unix,
             file: unsafe { File::from_raw_fd(main) },
             token: corcovado::Token::from(0),
             signals,
             signals_token: corcovado::Token::from(0),
-        };
-        pty
+        }
     } else {
         panic!("failed to spawn")
     }

@@ -29,8 +29,14 @@ pub struct Pty {
 
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
-pub fn create_pty(shell: &str, columns: u16, rows: u16) -> Pty {
-    conpty::new(shell, columns, rows)
+pub fn create_pty(
+    shell: &str,
+    _args: Vec<String>,
+    working_directory: &Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Pty {
+    conpty::new(shell, working_directory, columns, rows)
         .ok_or_else(|| panic!("failed to spawn conpty"))
         .unwrap()
 }
