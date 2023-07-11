@@ -51,8 +51,8 @@ pub struct Config {
     pub performance: Performance,
     #[serde(default = "default_shell")]
     pub shell: Shell,
-    #[serde(default = "default_working_directory")]
-    pub working_directory: Option<String>,
+    #[serde(default = "default_working_dir", rename = "working-dir")]
+    pub working_dir: Option<String>,
     #[serde(rename = "font-size", default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_theme")]
@@ -191,7 +191,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             shell: default_shell(),
-            working_directory: default_working_directory(),
+            working_dir: default_working_dir(),
             env_vars: default_env_vars(),
             window_opacity: default_window_opacity(),
             performance: Performance::default(),

@@ -72,16 +72,13 @@ window-opacity = 0.5
 #   - (Windows) powershell
 # 
 # Shell configuration will only have effect if the flag advanced.use-fork is disabled
-shell:
-  program: /bin/bash
-  args:
-    - --login
+shell = { program = "/bin/zsh", args = ["--login"] }
 
 # Startup directory
 #
-# Directory the shell is started in. If this is unset, or `None`, the working
+# Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
-working_directory: None
+working_dir = "/Users/raphael/Documents/"
 
 # Environment variables
 #

@@ -32,7 +32,7 @@ pub fn default_shell() -> crate::Shell {
     }
 }
 
-pub fn default_working_directory() -> Option<String> {
+pub fn default_working_dir() -> Option<String> {
     None
 }
 
