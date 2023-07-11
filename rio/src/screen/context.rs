@@ -7,8 +7,12 @@ use crate::screen::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
-use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 use winit::window::WindowId;
+
+#[cfg(target_os = "windows")]
+use teletypewriter::create_pty;
+#[cfg(not(target_os = "windows"))]
+use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 
@@ -51,23 +55,38 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let pty = if config.use_fork {
-            log::info!("rio -> teletypewriter: create_pty_with_fork");
-            create_pty_with_fork(
-                &Cow::Borrowed(&config.shell.program),
-                cols_rows.0 as u16,
-                cols_rows.1 as u16,
-            )
-        } else {
-            log::info!("rio -> teletypewriter: create_pty_with_spawn");
-            create_pty_with_spawn(
+        let pty;
+        #[cfg(not(target_os = "windows"))]
+        {
+            pty = if config.use_fork {
+                log::info!("rio -> teletypewriter: create_pty_with_fork");
+                create_pty_with_fork(
+                    &Cow::Borrowed(&config.shell.program),
+                    cols_rows.0 as u16,
+                    cols_rows.1 as u16,
+                )
+            } else {
+                log::info!("rio -> teletypewriter: create_pty_with_spawn");
+                create_pty_with_spawn(
+                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.args.clone(),
+                    &config.working_directory,
+                    cols_rows.0 as u16,
+                    cols_rows.1 as u16,
+                )
+            };
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            pty = create_pty_with_spawn(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_directory,
                 cols_rows.0 as u16,
                 cols_rows.1 as u16,
-            )
-        };
+            );
+        }
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
