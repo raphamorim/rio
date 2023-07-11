@@ -26,7 +26,7 @@ pub struct ContextManagerConfig {
     pub shell: config::Shell,
     pub exec: Vec<String>,
     pub use_fork: bool,
-    pub working_directory: Option<String>,
+    pub working_dir: Option<String>,
     pub spawn_performer: bool,
 }
 
@@ -70,7 +70,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 create_pty_with_spawn(
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
-                    &config.working_directory,
+                    &config.working_dir,
                     cols_rows.0 as u16,
                     cols_rows.1 as u16,
                 )
@@ -82,7 +82,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             pty = create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
-                &config.working_directory,
+                &config.working_dir,
                 cols_rows.0 as u16,
                 cols_rows.1 as u16,
             );

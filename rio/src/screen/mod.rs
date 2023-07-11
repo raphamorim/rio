@@ -117,7 +117,7 @@ impl Screen {
             spawn_performer: true,
             exec: command,
             use_fork: config.advanced.use_fork,
-            working_directory: config.working_directory.clone(),
+            working_dir: config.working_dir.clone(),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),

@@ -2,6 +2,15 @@
 
 ## 0.0.9 (in progress)
 
+- Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compability in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal by forking processes instead of spawning processes then set in the configuration file:
+
+```toml
+[advanced]
+use-fork = true
+```
+
+- Fix bug ["black screen with nearly zero interactivity"](https://github.com/raphamorim/rio/issues/112) and new tab hanging.
+- Introduction of `shell` and `working_dir` in configuration file.
 - Multi window support [#97](https://github.com/raphamorim/rio/issues/97).
 - Corrections on select and scroll experience (it was using wrongly font-bound for line calculation).
 - Add selection color to the theme config (closed [#125](https://github.com/raphamorim/rio/issues/125)).
