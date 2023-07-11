@@ -2,7 +2,7 @@
 
 ## 0.0.9 (in progress)
 
-- Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compability in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal by forking processes instead of spawning processes then set in the configuration file:
+- Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compability in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable `use-forky` in the configuration file:
 
 ```toml
 [advanced]
