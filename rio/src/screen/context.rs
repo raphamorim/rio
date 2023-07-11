@@ -7,7 +7,7 @@ use crate::screen::Messenger;
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
-use teletypewriter::create_pty_with_spawn;
+use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 use winit::window::WindowId;
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 9;
@@ -17,51 +17,64 @@ pub struct Context<T: EventListener> {
     pub messenger: Messenger,
 }
 
+#[derive(Clone, Default)]
+pub struct ContextManagerConfig {
+    pub shell: config::Shell,
+    pub exec: Vec<String>,
+    pub use_fork: bool,
+    pub working_directory: Option<String>,
+}
+
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
     current_index: usize,
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,
-}
-
-fn default_shell() -> String {
-    #[cfg(not(target_os = "windows"))]
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("bash"));
-    #[cfg(target_os = "windows")]
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("powershell"));
-
-    shell
+    config: ContextManagerConfig,
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
+    #[inline]
     pub fn create_context(
         dimensions: (u32, u32),
         cols_rows: (usize, usize),
         cursor_state: CursorState,
         event_proxy: T,
-        spawn: bool,
         window_id: WindowId,
+        config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        let shell = default_shell();
-
         let event_proxy_clone = event_proxy.clone();
         let mut terminal =
             Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
         terminal.cursor_shape = cursor_state.content;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let pty = create_pty_with_spawn(
-            &Cow::Borrowed(&shell),
-            cols_rows.0 as u16,
-            cols_rows.1 as u16,
-        );
+        let pty;
+        if config.use_fork {
+            log::info!("rio -> teletypewriter: create_pty_with_fork");
+            pty = create_pty_with_fork(
+                &Cow::Borrowed(&config.shell.program),
+                cols_rows.0 as u16,
+                cols_rows.1 as u16,
+            );
+        } else {
+            log::info!("rio -> teletypewriter: create_pty_with_spawn");
+            pty = create_pty_with_spawn(
+                &Cow::Borrowed(&config.shell.program),
+                config.shell.args.clone(),
+                &config.working_directory,
+                cols_rows.0 as u16,
+                cols_rows.1 as u16,
+            );
+        }
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
         let channel = machine.channel();
         // The only case we don't spawn is for tests
-        if spawn {
+        #[cfg(not(test))]
+        {
             machine.spawn();
         }
         let messenger = Messenger::new(channel);
@@ -77,28 +90,29 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         })
     }
 
+    #[inline]
     pub fn start(
         dimensions: (u32, u32),
         col_rows: (usize, usize),
         cursor_state: CursorState,
         event_proxy: T,
         window_id: WindowId,
-        mut command: Vec<String>,
+        ctx_config: ContextManagerConfig,
     ) -> Result<Self, Box<dyn Error>> {
-        let mut initial_context = ContextManager::create_context(
+        let initial_context = ContextManager::create_context(
             (dimensions.0, dimensions.1),
             (col_rows.0, col_rows.1),
             cursor_state,
             event_proxy.clone(),
-            true,
             window_id,
+            &ctx_config,
         )?;
 
-        if !command.is_empty() {
-            command.push(String::from("\n;"));
-            let command = command.join(" ");
-            initial_context.messenger.send_bytes(command.into());
-        }
+        // if !command.is_empty() {
+        //     command.push(String::from("\n;"));
+        //     let command = command.join(" ");
+        //     initial_context.messenger.send_bytes(command.into());
+        // }
 
         Ok(ContextManager {
             current_index: 0,
@@ -106,6 +120,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
             window_id,
+            config: ctx_config,
         })
     }
 
@@ -115,13 +130,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
+        let config = ContextManagerConfig::default();
         let initial_context = ContextManager::create_context(
             (100, 100),
             (1, 1),
             CursorState::default(),
             event_proxy.clone(),
-            false,
             window_id,
+            &config,
         )?;
         Ok(ContextManager {
             current_index: 0,
@@ -129,6 +145,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity,
             event_proxy,
             window_id,
+            config,
         })
     }
 
@@ -205,7 +222,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn add_context(
         &mut self,
         redirect: bool,
-        spawn: bool,
         dimensions: (u32, u32),
         col_rows: (usize, usize),
         cursor_state: CursorState,
@@ -218,8 +234,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 col_rows,
                 cursor_state,
                 self.event_proxy.clone(),
-                spawn,
                 self.window_id,
+                &self.config,
             ) {
                 Ok(new_context) => {
                     self.contexts.push(new_context);
@@ -265,7 +281,6 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -276,7 +291,6 @@ pub mod test {
         let should_redirect = true;
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -295,7 +309,6 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -303,7 +316,6 @@ pub mod test {
         assert_eq!(context_manager.len(), 2);
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -313,7 +325,6 @@ pub mod test {
         for _ in 0..20 {
             context_manager.add_context(
                 should_redirect,
-                false,
                 (100, 100),
                 (1, 1),
                 CursorState::default(),
@@ -333,7 +344,6 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -347,14 +357,12 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -375,14 +383,12 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -409,28 +415,24 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -446,7 +448,6 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -469,14 +470,12 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
@@ -501,35 +500,30 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),
         );
         context_manager.add_context(
             should_redirect,
-            false,
             (100, 100),
             (1, 1),
             CursorState::default(),

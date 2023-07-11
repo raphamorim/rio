@@ -4,10 +4,6 @@ mod signals;
 
 extern crate libc;
 
-use std::mem::MaybeUninit;
-use std::io::{Error, ErrorKind};
-use std::os::unix::process::CommandExt;
-use std::process::Stdio;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
 use signal_hook::consts as sigconsts;
@@ -15,11 +11,15 @@ use signals::Signals;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
+use std::io::{Error, ErrorKind};
+use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::os::fd::AsRawFd;
 use std::os::fd::FromRawFd;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Stdio;
 use std::ptr;
 use std::sync::Arc;
 
@@ -390,7 +390,13 @@ impl ShellUser {
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
+pub fn create_pty_with_spawn(
+    shell: &str,
+    args: Vec<String>,
+    working_directory: &Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Pty {
     let mut main: libc::c_int = 0;
     let mut child: libc::c_int = 0;
     let winsize = Winsize {
@@ -415,28 +421,41 @@ pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
         panic!("openpty failed");
     }
 
+    let mut shell_program = shell;
+
     let user = match ShellUser::from_env() {
-        Ok(data) => {
-            data
+        Ok(data) => data,
+        Err(..) => ShellUser {
+            shell: shell.to_string(),
+            ..Default::default()
         },
-        Err(..) => {
-            ShellUser {
-                shell: shell.to_string(),
-                ..Default::default()
+    };
+
+    let mut buf = [0; 1024];
+    let default_shell: &str = match get_pw_entry(&mut buf) {
+        Ok(pw) => {
+            if pw.shell.is_empty() {
+                user.shell.as_ref()
+            } else {
+                pw.shell
             }
         }
+        Err(..) => user.shell.as_ref(),
     };
+
+    if shell.is_empty() {
+        shell_program = default_shell;
+    }
+
+    log::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
-        let mut cmd = Command::new(shell);
-        // cmd.args([]);
+        let mut cmd = Command::new(shell_program);
+        cmd.args(args);
         cmd
     };
-    // else {
-        // default_shell_command(&user.shell, &user.user)
-    // };
 
-    // Setup child stdin/stdout/stderr as slave fd of PTY.
+    // Setup child stdin/stdout/stderr as child fd of PTY.
     // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
     // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
     // error on libc::close.).
@@ -457,7 +476,7 @@ pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
 
             set_controlling_terminal(child);
 
-            // No longer need slave/master fds.
+            // No longer need child/main fds.
             libc::close(child);
             libc::close(main);
 
@@ -473,17 +492,16 @@ pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
     }
 
     // Handle set working directory option.
-    // if let Some(dir) = &config.working_directory {
-        // builder.current_dir(dir);
-    // }
+    if let Some(dir) = &working_directory {
+        builder.current_dir(dir);
+    }
 
     // Prepare signal handling before spawning child.
-    let signals = Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+    let signals =
+        Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
 
     if let Ok(child_process) = builder.spawn() {
         unsafe {
-            // Maybe this should be done outside of this function so nonblocking
-            // isn't forced upon consumers. Although maybe it should be?
             set_nonblocking(main);
         }
 
@@ -492,9 +510,10 @@ pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
             id: Arc::new(main),
             ptsname,
             pid: Arc::new(child),
+            process: Some(child_process),
         };
 
-        let mut pty = Pty {
+        let pty = Pty {
             child: child_unix,
             file: unsafe { File::from_raw_fd(main) },
             token: corcovado::Token::from(0),
@@ -505,15 +524,6 @@ pub fn create_pty_with_spawn(shell: &str, columns: u16, rows: u16) -> Pty {
     } else {
         panic!("failed to spawn")
     }
-        // Err(err) => Err(Error::new(
-        //     err.kind(),
-        //     format!(
-        //         "Failed to spawn command '{}': {}",
-        //         builder.get_program().to_string_lossy(),
-        //         err
-        //     ),
-        // )),
-    // }
 }
 
 ///
@@ -553,6 +563,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
                 id: Arc::new(main),
                 ptsname,
                 pid: Arc::new(id),
+                process: None,
             };
 
             unsafe {
@@ -597,12 +608,14 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
     assert_eq!(res, 0);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Child {
     id: Arc<libc::c_int>,
+    pid: Arc<libc::pid_t>,
     #[allow(dead_code)]
     ptsname: String,
-    pid: Arc<libc::pid_t>,
+    #[allow(dead_code)]
+    process: Option<std::process::Child>,
 }
 
 impl Child {
@@ -736,7 +749,13 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     // Try and read the pw file.
     let uid = unsafe { libc::getuid() };
     let status = unsafe {
-        libc::getpwuid_r(uid, entry.as_mut_ptr(), buf.as_mut_ptr() as *mut _, buf.len(), &mut res)
+        libc::getpwuid_r(
+            uid,
+            entry.as_mut_ptr(),
+            buf.as_mut_ptr() as *mut _,
+            buf.len(),
+            &mut res,
+        )
     };
     let entry = unsafe { entry.assume_init() };
 

@@ -2,21 +2,32 @@ pub mod handler;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-use crate::event::EventListener;
+use crate::event::{EventListener, Msg, RioEvent};
 use corcovado::channel;
 #[cfg(unix)]
 use corcovado::unix::UnixReady;
 use corcovado::{self, Events, PollOpt, Ready};
 use log::error;
-
-use crate::event::{Msg, RioEvent};
-
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::{self, ErrorKind, Read, Write};
 use std::sync::Arc;
+use std::thread::{Builder, JoinHandle};
 use std::time::Instant;
 use winit::window::WindowId;
+
+/// Like `thread::spawn`, but with a `name` argument.
+pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+    S: Into<String>,
+{
+    Builder::new()
+        .name(name.into())
+        .spawn(f)
+        .expect("thread spawn works")
+}
 
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
@@ -259,7 +270,7 @@ where
     }
 
     pub fn spawn(mut self) {
-        tokio::spawn(async move {
+        spawn_named("PTY reader", move || {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
