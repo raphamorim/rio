@@ -681,6 +681,10 @@ impl Deref for Child {
 
 impl Drop for Child {
     fn drop(&mut self) {
+        if let Some(ref mut cprocess) = self.process {
+            let _ = cprocess.kill();
+        }
+
         unsafe {
             libc::kill(*self.pid, libc::SIGHUP);
         }
