@@ -12,6 +12,12 @@ pub enum Performance {
     Low,
 }
 
+#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+pub struct Shell {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
 #[derive(Debug, Default, PartialEq, Clone, Deserialize)]
 pub struct Advanced {
     #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
@@ -43,6 +49,10 @@ pub struct Config {
     pub window_opacity: f32,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
+    #[serde(default = "default_shell")]
+    pub shell: Shell,
+    #[serde(default = "default_working_directory")]
+    pub working_directory: Option<String>,
     #[serde(rename = "font-size", default = "default_font_size")]
     pub font_size: f32,
     #[serde(default = "default_theme")]
@@ -180,6 +190,8 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            shell: default_shell(),
+            working_directory: default_working_directory(),
             env_vars: default_env_vars(),
             window_opacity: default_window_opacity(),
             performance: Performance::default(),

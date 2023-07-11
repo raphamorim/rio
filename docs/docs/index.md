@@ -21,38 +21,76 @@ Any file update in the configuration file will trigger a render operation in Rio
 font = "CascadiaMono"
 font-size = 16
 
+# Cursor
+#
 # Default cursor is Block
 # Other available options are: '_' and '|'
 cursor = '_'
 
+# Perfomance
+#
 # Set WGPU rendering performance
 # High: Adapter that has the highest performance. This is often a discrete GPU.
 # Low: Adapter that uses the least possible power. This is often an integrated GPU.
 performance = "High"
 
-# it will look for dracula.toml in themes folder
+# Theme
+#
+# It makes Rio look for the specified theme in the themes folder
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
-# ...
-# dracula theme code is available in:
+# (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
+# 
+# Dracula theme code is available in:
 # https://github.com/dracula/rio-terminal
 theme = "dracula"
 
+# Padding-x
+#
 # define x axis padding (default is 10)
 padding-x = 0
 
-# environment variables
-# (the example below sets fish as the default SHELL in macos
-# please do not copy this if you do not need)
-env-vars = ['SHELL=/opt/homebrew/bin/fish']
-
+# Option as Alt
+#
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
 option_as_alt = 'both'
 
+# Window Opacity
+#
 # window-opacity changes the window transparency state.
 # Only works for Windows / X11 / WebAssembly
 window-opacity = 0.5
 
+# Shell
+#
+# You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
+# Entries in `shell.args` are passed unmodified as arguments to the shell.
+#
+# Default:
+#   - (macOS) /bin/zsh --login
+#   - (Linux/BSD) user login shell
+#   - (Windows) powershell
+# 
+# Shell configuration will only have effect if the flag advanced.use-fork is disabled
+shell:
+  program: /bin/bash
+  args:
+    - --login
+
+# Startup directory
+#
+# Directory the shell is started in. If this is unset, or `None`, the working
+# directory of the parent process will be used.
+working_directory: None
+
+# Environment variables
+#
+# The example below sets fish as the default SHELL using env vars
+# please do not copy this if you do not need
+env-vars = ['SHELL=/opt/homebrew/bin/fish']
+
+# Colors
+#
 # Colors definition will overwrite any property in theme
 # (considering if theme folder does exists and is being used)
 [colors]
@@ -63,16 +101,22 @@ tabs-active = "#F8A145"
 blue = "#454A12"
 
 [developer]
+# Log level
+#
 # This property enables log level filter. Default is "OFF".
 log-level = "INFO"
 
 [advanced]
+# Disable render when unfocused
+#
 # This property disable renderer processes while Rio is unfocused.
 disable-renderer-when-unfocused = false
 
-# In POSIX-based systems, Rio spawn processes instead of fork processes.
-# due to compability issues between platforms.
-# Forking a process is faster than spawning a process.
+# Use fork
+#
+# In POSIX-based systems, Rio spawn processes instead of fork processes due to some compability issues between platforms.
+#
+# However you can also switch from spawn to fork, forking a process is faster than spawning a process.
 use-fork = false
 {% endhighlight %}
 

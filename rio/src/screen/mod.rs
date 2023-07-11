@@ -111,13 +111,20 @@ impl Screen {
 
         let bindings = bindings::default_key_bindings();
         let ime = Ime::new();
+
+        let context_manager_config = context::ContextManagerConfig {
+            shell: config.shell.clone(),
+            exec: command,
+            use_fork: config.advanced.use_fork,
+            working_directory: config.working_directory.clone(),
+        };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
             (sugarloaf.layout.columns, sugarloaf.layout.lines),
             state.get_cursor_state(),
             event_proxy,
             window_id,
-            command,
+            context_manager_config,
         )?;
 
         Ok(Screen {
@@ -385,10 +392,8 @@ impl Screen {
                     }
                     Act::TabCreateNew => {
                         let redirect = true;
-                        let spawn = true;
                         self.context_manager.add_context(
                             redirect,
-                            spawn,
                             (
                                 self.sugarloaf.layout.width_u32,
                                 self.sugarloaf.layout.height_u32,

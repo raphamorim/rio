@@ -6,6 +6,36 @@ pub fn default_padding_x() -> f32 {
     10.
 }
 
+pub fn default_shell() -> crate::Shell {
+    #[cfg(target_os = "macos")]
+    {
+        crate::Shell {
+            program: String::from("/bin/zsh"),
+            args: vec![String::from("--login")],
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        crate::Shell {
+            program: String::from("powershell"),
+            args: vec![],
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        crate::Shell {
+            program: String::from("user"),
+            args: vec![String::from("login"), String::from("shell")],
+        }
+    }
+}
+
+pub fn default_working_directory() -> Option<String> {
+    None
+}
+
 pub fn default_window_opacity() -> f32 {
     1.
 }
