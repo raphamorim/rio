@@ -79,7 +79,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            pty = create_pty_with_spawn(
+            pty = create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_directory,
