@@ -13,6 +13,7 @@ Short introduction of Rio terminal features. Many other features are in developm
 - [• Fast](#Fast)
 - [• Minimal tabs](#minimal-tabs)
 - [• Multi windows architecture](#multi-windows)
+- [• Spawn or Fork processes](#spawn-or-fork)
 
 ### Cross-platform
 
@@ -40,3 +41,10 @@ The terminal supports multi window features in the following platforms: Windows,
 
 <img src="https://miro.medium.com/v2/resize:fit:2914/format:webp/1*KyVD4EJ-wQU8pTmOFTwaQg.png" width="100%" />
 
+### Spawn or Fork
+
+In POSIX-based systems, Rio spawn processes instead of fork processes due to some compability issues between platforms.
+
+However you can also switch from spawn to fork, forking a process is faster than spawning a process.
+
+See how in the advanced section [here](/rio/docs).
