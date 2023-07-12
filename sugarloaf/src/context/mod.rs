@@ -68,12 +68,12 @@ impl Context {
 
         // TODO: Fix formats with signs
         let unsupported_formats = wgpu::TextureFormat::Rgb10a2Unorm;
-        let filtered_formats: Vec<wgpu::TextureFormat> = caps.formats
+        let filtered_formats: Vec<wgpu::TextureFormat> = caps
+            .formats
             .iter()
             .copied()
             .filter(|&x| {
-                x != unsupported_formats &&
-                wgpu::TextureFormat::has_color_aspect(&x)
+                x != unsupported_formats && wgpu::TextureFormat::has_color_aspect(&x)
             })
             .collect();
 
@@ -82,7 +82,10 @@ impl Context {
             format = filtered_formats.last().unwrap().to_owned();
         }
 
-        log::info!("Sugarloaf selected format: {format:?} from {:?}", caps.formats);
+        log::info!(
+            "Sugarloaf selected format: {format:?} from {:?}",
+            caps.formats
+        );
         let (device, queue) = (async {
             {
                 if let Ok(result) = adapter
