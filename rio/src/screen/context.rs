@@ -24,7 +24,6 @@ pub struct Context<T: EventListener> {
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: config::Shell,
-    pub exec: Vec<String>,
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
@@ -124,12 +123,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             &ctx_config,
         )?;
-
-        // if !command.is_empty() {
-        //     command.push(String::from("\n;"));
-        //     let command = command.join(" ");
-        //     initial_context.messenger.send_bytes(command.into());
-        // }
 
         Ok(ContextManager {
             current_index: 0,

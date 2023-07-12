@@ -509,7 +509,7 @@ pub fn create_pty_with_spawn(
         let child_unix = Child {
             id: Arc::new(main),
             ptsname,
-            pid: Arc::new(child),
+            pid: Arc::new(child_process.id().try_into().unwrap()),
             process: Some(child_process),
         };
 
@@ -681,10 +681,6 @@ impl Deref for Child {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        if let Some(ref mut cprocess) = self.process {
-            let _ = cprocess.kill();
-        }
-
         unsafe {
             libc::kill(*self.pid, libc::SIGHUP);
         }

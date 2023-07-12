@@ -9,6 +9,7 @@
 use-fork = true
 ```
 
+- Increased max tabs from 6 to 9.
 - Fix Incorrect cursor position when using multi-byte characters (Ref: [#127](https://github.com/raphamorim/rio/issues/127))
 - Fix bug ["black screen with nearly zero interactivity"](https://github.com/raphamorim/rio/issues/112) and new tab hanging.
 - Introduction of `shell` and `working_dir` in configuration file.

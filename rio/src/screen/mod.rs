@@ -74,7 +74,6 @@ impl Screen {
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
         _display: Option<*mut c_void>,
-        command: Vec<String>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -115,7 +114,6 @@ impl Screen {
         let context_manager_config = context::ContextManagerConfig {
             shell: config.shell.clone(),
             spawn_performer: true,
-            exec: command,
             use_fork: config.advanced.use_fork,
             working_dir: config.working_dir.clone(),
         };

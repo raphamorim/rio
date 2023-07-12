@@ -11,10 +11,17 @@ impl Messenger {
         Messenger { channel }
     }
 
+    #[inline]
+    pub fn send_bytes_and_close(&mut self, string: Vec<u8>) {
+        self.send_write(string);
+    }
+
+    #[inline]
     pub fn send_bytes(&mut self, string: Vec<u8>) {
         self.send_write(string);
     }
 
+    #[inline]
     fn send_write<B: Into<Cow<'static, [u8]>>>(&self, data: B) {
         let bytes = data.into();
         // terminal hangs if we send 0 bytes through.
