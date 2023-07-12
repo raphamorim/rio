@@ -39,7 +39,6 @@ impl SequencerWindow {
     async fn new(
         event_loop: &EventLoop<EventP>,
         config: &Rc<config::Config>,
-        command: Vec<String>,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -52,8 +51,7 @@ impl SequencerWindow {
         #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let display: Option<*mut c_void> = Option::None;
 
-        let mut screen =
-            Screen::new(&winit_window, config, event_proxy, display, command).await?;
+        let mut screen = Screen::new(&winit_window, config, event_proxy, display).await?;
 
         screen.init(config.colors.background.1);
 
@@ -86,7 +84,6 @@ impl SequencerWindow {
             config,
             event_proxy,
             display,
-            vec![],
         ))
         .expect("Screen not created");
 
@@ -146,8 +143,9 @@ impl Sequencer {
         //     None
         // };
 
-        let seq_win = SequencerWindow::new(&event_loop, &self.config, command).await?;
-        self.windows.insert(seq_win.window.id(), seq_win);
+        let seq_win = SequencerWindow::new(&event_loop, &self.config).await?;
+        let first_window = seq_win.window.id();
+        self.windows.insert(first_window, seq_win);
 
         event_loop.set_device_event_filter(DeviceEventFilter::Always);
         event_loop.run_return(move |event, event_loop_window_target, control_flow| {
@@ -322,7 +320,26 @@ impl Sequencer {
                         _ => {}
                     }
                 }
-                Event::Resumed => {}
+                Event::Resumed => {
+                    if !command.is_empty() {
+                        if let Some(sw) = self.windows.get_mut(&first_window) {
+                            let exec = command.clone();
+                            let mut exec = exec.join(" ");
+                            exec += &String::from("\n");
+                            sw.screen
+                                .ctx_mut()
+                                .current_mut()
+                                .messenger
+                                .send_bytes_and_close(exec.into());
+
+                            sw.screen
+                                .ctx_mut()
+                                .current_mut()
+                                .messenger
+                                .send_bytes(vec![0x04]);
+                        }
+                    }
+                }
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
