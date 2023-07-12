@@ -106,6 +106,7 @@ impl SequencerWindow {
 pub struct Sequencer {
     config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
+    has_updates: Vec<WindowId>,
     event_proxy: Option<EventProxy>,
 }
 
@@ -114,6 +115,7 @@ impl Sequencer {
         Sequencer {
             config: Rc::new(config),
             windows: HashMap::new(),
+            has_updates: vec![],
             event_proxy: None,
         }
     }
@@ -176,10 +178,14 @@ impl Sequencer {
                                 }
                             }
 
-                            if let Some(sequencer_window) =
-                                self.windows.get_mut(&window_id)
-                            {
-                                sequencer_window.window.request_redraw();
+                            // if let Some(sequencer_window) =
+                            //     self.windows.get_mut(&window_id)
+                            // {
+                            //     sequencer_window.window.request_redraw();
+                            // }
+
+                            if !self.has_updates.contains(&window_id) {
+                                self.has_updates.push(window_id);
                             }
                         }
                         RioEventType::Rio(RioEvent::Render) => {
@@ -189,7 +195,9 @@ impl Sequencer {
                                 {
                                     return;
                                 }
-                                sw.window.request_redraw();
+                                if !self.has_updates.contains(&window_id) {
+                                    self.has_updates.push(window_id);
+                                }
                             }
                         }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
@@ -197,7 +205,9 @@ impl Sequencer {
                                 let config = config::Config::load();
                                 self.config = config.into();
                                 sw.screen.update_config(&self.config);
-                                sw.window.request_redraw();
+                                if !self.has_updates.contains(&window_id) {
+                                    self.has_updates.push(window_id);
+                                }
                             }
                         }
                         RioEventType::Rio(RioEvent::Exit) => {
@@ -422,7 +432,9 @@ impl Sequencer {
                                         sequencer_window.screen.on_left_click(point);
                                     }
 
-                                    sequencer_window.window.request_redraw();
+                                    if !self.has_updates.contains(&window_id) {
+                                        self.has_updates.push(window_id);
+                                    }
                                 }
                                 // sequencer_window.screen.process_mouse_bindings(button);
                             }
@@ -531,7 +543,9 @@ impl Sequencer {
                             }
                         }
 
-                        sw.window.request_redraw();
+                        if !self.has_updates.contains(&window_id) {
+                            self.has_updates.push(window_id);
+                        }
                     }
                 }
 
@@ -611,8 +625,8 @@ impl Sequencer {
                     }
 
                     ElementState::Released => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.window.request_redraw();
+                        if !self.has_updates.contains(&window_id) {
+                            self.has_updates.push(window_id);
                         }
                     }
                 },
@@ -709,7 +723,9 @@ impl Sequencer {
                 } => {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         sw.screen.set_scale(scale_factor as f32, *new_inner_size);
-                        sw.window.request_redraw();
+                        if !self.has_updates.contains(&window_id) {
+                            self.has_updates.push(window_id);
+                        }
                     }
                 }
 
@@ -734,18 +750,21 @@ impl Sequencer {
                             .expect("failed to dispatch wayland event queue");
                     }
 
+                    if !self.has_updates.is_empty() {
+                        for window_id in self.has_updates.iter() {
+                            if let Some(sw) = self.windows.get_mut(window_id) {
+                                sw.screen.render();
+                            }
+                        }
+
+                        self.has_updates = vec![];
+                    }
+
                     scheduler.update();
                 }
                 Event::MainEventsCleared { .. } => {}
-                Event::RedrawRequested(window_id) => {
-                    if let Some(sw) = self.windows.get_mut(&window_id) {
-                        // *control_flow = winit::event_loop::ControlFlow::Wait;
-                        if sw.is_occluded {
-                            return;
-                        }
-
-                        sw.screen.render();
-                    }
+                Event::RedrawRequested(_window_id) => {
+                    *control_flow = winit::event_loop::ControlFlow::Wait;
                 }
                 _ => {}
             }
