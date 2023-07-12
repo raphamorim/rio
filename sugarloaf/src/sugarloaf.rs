@@ -1,4 +1,3 @@
-use unicode_width::UnicodeWidthChar;
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
@@ -7,6 +6,7 @@ use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
+use unicode_width::UnicodeWidthChar;
 
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
     [
@@ -398,7 +398,8 @@ impl Sugarloaf {
                 });
 
                 // Bounds are defined in runtime
-                self.font_bounds.default = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
+                self.font_bounds.default =
+                    self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
 
                 self.layout
                     .update_columns_lines_per_font_bound(self.font_bounds.default.0);
