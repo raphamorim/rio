@@ -67,7 +67,7 @@ impl Context {
         let caps = surface.get_capabilities(&adapter);
 
         // TODO: Fix formats with signs
-        let unsupported_formats = wgpu::TextureFormat::Rgb10a2Unorm;
+        let unsupported_formats = wgpu::TextureFormat::Rgba8Snorm;
         let filtered_formats: Vec<wgpu::TextureFormat> = caps
             .formats
             .iter()
