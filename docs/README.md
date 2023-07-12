@@ -30,4 +30,4 @@ $ cd docs
 $ jekyll serve
 ```
 
-You'll have access to the website at `http://0.0.0.0:4000/kyoto` :D
+You'll have access to the website at `http://0.0.0.0:4000/rio` :D
