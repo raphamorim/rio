@@ -27,7 +27,7 @@ libc = { workspace = true }
 log = { workspace = true }
 parking_lot = "0.12"
 serde = { workspace = true }
-sugarloaf = "0.0.7"
+sugarloaf = { workspace = true }
 teletypewriter = { workspace = true }
 tokio = { version = "1.26.0", features = ["full"] }
 unicode-width = "0.1.5"
