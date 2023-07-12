@@ -1,3 +1,4 @@
+use unicode_width::UnicodeWidthChar;
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
@@ -217,12 +218,23 @@ impl Sugarloaf {
                 FontId(FONT_ID_REGULAR)
             } else if symbols.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.symbols.0;
+
+                let cwidth = sugar.content.width().unwrap_or(1) as f32;
+                if cwidth > 1. {
+                    add_pos_x += self.font_bounds.default.0 * (cwidth - 1.);
+                }
+
                 FontId(FONT_ID_SYMBOL)
             } else if emojis.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.emojis.0;
                 FontId(FONT_ID_EMOJIS)
             } else if unicode.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.unicode.0;
+
+                let cwidth = sugar.content.width().unwrap_or(1) as f32;
+                if cwidth > 1. {
+                    add_pos_x += self.font_bounds.default.0 * (cwidth - 1.);
+                }
                 FontId(FONT_ID_UNICODE)
             } else {
                 FontId(FONT_ID_REGULAR)
@@ -386,20 +398,20 @@ impl Sugarloaf {
                 });
 
                 // Bounds are defined in runtime
-                self.font_bounds.default = self.get_font_bounds(' ', FontId(0));
+                self.font_bounds.default = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
 
                 self.layout
                     .update_columns_lines_per_font_bound(self.font_bounds.default.0);
 
                 self.font_bounds.symbols =
                     // U+2AF9 => \u{2AF9} => ⫹
-                    self.get_font_bounds('\u{2AF9}', FontId(1));
+                    self.get_font_bounds('\u{2AF9}', FontId(FONT_ID_SYMBOL));
                 self.font_bounds.emojis =
                     // U+1F947 => \u{1F947} => 🥇
-                    self.get_font_bounds('\u{1F947}', FontId(2));
+                    self.get_font_bounds('\u{1F947}', FontId(FONT_ID_EMOJIS));
                 self.font_bounds.unicode =
                     // U+33D1 => \u{33D1} => ㏑
-                    self.get_font_bounds('\u{33D1}', FontId(3));
+                    self.get_font_bounds('\u{33D1}', FontId(FONT_ID_UNICODE));
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

@@ -2594,6 +2594,7 @@ dependencies = [
  "log 0.4.18",
  "png",
  "tokio",
+ "unicode-width",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
