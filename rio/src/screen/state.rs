@@ -283,6 +283,11 @@ impl State {
             let line = line - display_offset;
             let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
             let square = &row.inner[column];
+
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else if is_selected {
@@ -320,6 +325,10 @@ impl State {
         let columns: usize = row.len();
         for column in 0..columns {
             let square = &row.inner[column];
+
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
 
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
