@@ -65,14 +65,24 @@ impl Context {
         log::info!("Selected adapter: {:?}", adapter.get_info());
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
+
+        // TODO: Fix formats with signs
+        let unsupported_formats = wgpu::TextureFormat::Rgb10a2Unorm;
+        let filtered_formats: Vec<wgpu::TextureFormat> = caps.formats
             .iter()
             .copied()
-            .find(wgpu::TextureFormat::is_srgb)
-            .or_else(|| caps.formats.first().copied())
-            .expect("Get preferred format");
+            .filter(|&x| {
+                x != unsupported_formats &&
+                wgpu::TextureFormat::has_color_aspect(&x)
+            })
+            .collect();
 
+        let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
+        if !filtered_formats.is_empty() {
+            format = filtered_formats.last().unwrap().to_owned();
+        }
+
+        log::info!("Sugarloaf selected format: {format:?} from {:?}", caps.formats);
         let (device, queue) = (async {
             {
                 if let Ok(result) = adapter
