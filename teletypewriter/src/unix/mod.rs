@@ -9,6 +9,7 @@ extern crate libc;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
 use libc::pid_t;
+#[cfg(target_os = "macos")]
 use macos::*;
 use signal_hook::consts as sigconsts;
 use signals::Signals;
