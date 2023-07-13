@@ -554,6 +554,34 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
     };
     let term = create_termp(true);
 
+    let mut shell_program = shell;
+
+    let user = match ShellUser::from_env() {
+        Ok(data) => data,
+        Err(..) => ShellUser {
+            shell: shell.to_string(),
+            ..Default::default()
+        },
+    };
+
+    let mut buf = [0; 1024];
+    let default_shell: &str = match get_pw_entry(&mut buf) {
+        Ok(pw) => {
+            if pw.shell.is_empty() {
+                user.shell.as_ref()
+            } else {
+                pw.shell
+            }
+        }
+        Err(..) => user.shell.as_ref(),
+    };
+
+    if shell.is_empty() {
+        shell_program = default_shell;
+    }
+
+    log::info!("fork {:?}", shell_program);
+
     match unsafe {
         forkpty(
             &mut main as *mut _,
