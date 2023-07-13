@@ -176,20 +176,13 @@ impl Sequencer {
                                 }
                             }
 
-                            // if let Some(sequencer_window) =
-                            //     self.windows.get_mut(&window_id)
-                            // {
-                            //     sequencer_window.window.request_redraw();
-                            // }
-
                             if !self.has_updates.contains(&window_id) {
                                 self.has_updates.push(window_id);
                             }
                         }
                         RioEventType::Rio(RioEvent::Render) => {
                             if let Some(sw) = self.windows.get_mut(&window_id) {
-                                if self.config.advanced.disable_render_when_unfocused
-                                    && sw.is_focused
+                                if self.config.disable_unfocused_render && !sw.is_focused
                                 {
                                     return;
                                 }

@@ -32,6 +32,18 @@ pub fn default_shell() -> crate::Shell {
     }
 }
 
+pub fn default_use_fork() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 pub fn default_working_dir() -> Option<String> {
     None
 }

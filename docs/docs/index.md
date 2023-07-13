@@ -71,13 +71,14 @@ window-opacity = 0.5
 #   - (Linux/BSD) user login shell
 #   - (Windows) powershell
 # 
-# Shell configuration will only have effect if the flag advanced.use-fork is disabled
 shell = { program = "/bin/zsh", args = ["--login"] }
 
 # Startup directory
 #
 # Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
+#
+# This configuration only has effect if use-fork is disabled
 working_dir = "/Users/raphael/Documents/"
 
 # Environment variables
@@ -85,6 +86,19 @@ working_dir = "/Users/raphael/Documents/"
 # The example below sets fish as the default SHELL using env vars
 # please do not copy this if you do not need
 env-vars = ['SHELL=/opt/homebrew/bin/fish']
+
+# Disable render when unfocused
+#
+# This property disable renderer processes while Rio is unfocused.
+disable-renderer-when-unfocused = false
+
+# Use fork
+#
+# Defaults for POSIX-based systems (Windows is not configurable):
+# MacOS: spawn processes
+# Linux/BSD: fork processes
+#
+use-fork = false
 
 # Colors
 #
@@ -102,19 +116,6 @@ blue = "#454A12"
 #
 # This property enables log level filter. Default is "OFF".
 log-level = "INFO"
-
-[advanced]
-# Disable render when unfocused
-#
-# This property disable renderer processes while Rio is unfocused.
-disable-renderer-when-unfocused = false
-
-# Use fork
-#
-# In POSIX-based systems, Rio spawn processes instead of fork processes due to some compability issues between platforms.
-#
-# However you can also switch from spawn to fork, forking a process is faster than spawning a process.
-use-fork = false
 {% endhighlight %}
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
