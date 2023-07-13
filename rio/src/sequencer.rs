@@ -609,7 +609,6 @@ impl Sequencer {
                 } => match state {
                     ElementState::Pressed => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.screen.exec("echo", ["1"]);
                             sw.window.set_cursor_visible(false);
                             sw.screen.input_keycode(virtual_keycode, scancode);
                         }
