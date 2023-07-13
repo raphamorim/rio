@@ -255,7 +255,6 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.cursor_shape = self.state.get_cursor_state().content;
 
             terminal.resize::<SugarloafLayout>(columns, lines);
             drop(terminal);
