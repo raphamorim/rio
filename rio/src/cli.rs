@@ -34,6 +34,10 @@ impl TerminalOptions {
     /// Shell override passed through the CLI.
     pub fn command(&self) -> Option<Shell> {
         let (program, args) = self.command.split_first()?;
+        if program.is_empty() {
+            return None;
+        }
+
         Some(Shell {
             program: program.clone(),
             args: args.to_vec(),

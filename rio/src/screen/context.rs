@@ -19,8 +19,8 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
-    pub main_fd: Arc<i32>,
-    pub shell_pid: u32,
+    // pub main_fd: Arc<i32>,
+    // pub shell_pid: u32,
 }
 
 #[derive(Clone, Default)]
@@ -95,8 +95,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             );
         }
 
-        let main_fd = pty.child.id.clone();
-        let shell_pid = *pty.child.pid.clone() as u32;
+        // let main_fd = pty.child.id.clone();
+        // let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
@@ -112,8 +112,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
-            main_fd,
-            shell_pid,
+            // main_fd,
+            // shell_pid,
             messenger,
             terminal,
         })
