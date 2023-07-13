@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+#[cfg(target_os = "macos")]
 mod macos;
 mod signals;
 
@@ -823,7 +824,7 @@ pub fn foreground_process_path(
     let link_path = format!("/compat/linux/proc/{}/cwd", pid);
 
     #[cfg(not(target_os = "macos"))]
-    let cwd = fs::read_link(link_path)?;
+    let cwd = std::fs::read_link(link_path)?;
 
     #[cfg(target_os = "macos")]
     let cwd = macos_cwd(pid)?;
