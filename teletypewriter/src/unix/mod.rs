@@ -8,25 +8,20 @@ extern crate libc;
 
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
-use libc::pid_t;
 #[cfg(target_os = "macos")]
 use macos::*;
 use signal_hook::consts as sigconsts;
 use signals::Signals;
-use std::ffi::OsStr;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::os::fd::AsRawFd;
-use std::os::fd::FromRawFd;
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::Arc;
 
@@ -816,7 +811,7 @@ pub fn foreground_process_path(
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let mut pid = unsafe { libc::tcgetpgrp(main_fd) };
     if pid < 0 {
-        pid = shell_pid as pid_t;
+        pid = shell_pid as libc::pid_t;
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
@@ -842,7 +837,7 @@ pub fn spawn_daemon<I, S>(
 ) -> io::Result<()>
 where
     I: IntoIterator<Item = S> + Copy,
-    S: AsRef<OsStr>,
+    S: AsRef<std::ffi::OsStr>,
 {
     let mut command = Command::new(program);
     command

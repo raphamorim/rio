@@ -28,8 +28,6 @@ use state::State;
 use std::cmp::max;
 use std::cmp::min;
 use std::error::Error;
-use std::ffi::OsStr;
-use std::fmt::Debug;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
@@ -496,31 +494,34 @@ impl Screen {
         drop(terminal);
     }
 
-    #[allow(unused)]
-    pub fn exec<I, S>(&self, program: &str, args: I)
-    where
-        I: IntoIterator<Item = S> + Debug + Copy,
-        S: AsRef<OsStr>,
-    {
-        // #[cfg(not(any(target_os = "macos", windows)))]
-        // let action = HintAction::Command(Program::Just(String::from("xdg-open")));
-        // #[cfg(target_os = "macos")]
-        // let action = HintAction::Command(Program::Just(String::from("open")));
-        // #[cfg(windows)]
-        // let action = HintAction::Command(Program::WithArgs {
-        //     program: String::from("cmd"),
-        //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
-        // });
+    // TODO: Exec
+    // #[allow(unused)]
+    // pub fn exec<I, S>(&self, program: &str, args: I)
+    // where
+    //     I: IntoIterator<Item = S> + Debug + Copy,
+    //     S: AsRef<OsStr>,
+    // {
+    // Example:
+    // #[cfg(not(any(target_os = "macos", windows)))]
+    // let action = HintAction::Command(Program::Just(String::from("xdg-open")));
+    // #[cfg(target_os = "macos")]
+    // let action = HintAction::Command(Program::Just(String::from("open")));
+    // #[cfg(windows)]
+    // let action = HintAction::Command(Program::WithArgs {
+    //     program: String::from("cmd"),
+    //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
+    // });
 
-        let main_fd = *self.ctx().current().main_fd;
-        let shell_pid = &self.ctx().current().shell_pid;
-        match teletypewriter::spawn_daemon("nvim", ["./"], main_fd, *shell_pid) {
-            Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
-            Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
-        }
-        // std::process::exit(10);
-        // echo $?
-    }
+    // Early implementation
+    // let main_fd = *self.ctx().current().main_fd;
+    // let shell_pid = &self.ctx().current().shell_pid;
+    // match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
+    //     Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
+    //     Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+    // }
+    // std::process::exit(10);
+    // echo $?
+    // }
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
