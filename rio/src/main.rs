@@ -104,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(command) = options.window_options.terminal_options.command() {
         config.shell = command;
-        config.use_fork = false;
+        // config.use_fork = false;
     }
 
     setup_environment_variables(&config);
