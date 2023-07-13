@@ -67,9 +67,17 @@ pub fn setup_environment_variables(config: &config::Config) {
 
 static LOGGER: Logger = Logger;
 
-fn setup_logs_by_filter_level(log_level: LevelFilter) -> Result<(), SetLoggerError> {
+fn setup_logs_by_filter_level(log_level: &str) -> Result<(), SetLoggerError> {
+    let mut filter_level = LevelFilter::from_str(log_level).unwrap_or(LevelFilter::Off);
+
+    if let Ok(data) = std::env::var("RIO_LOG_LEVEL") {
+        if !data.is_empty() {
+            filter_level = LevelFilter::from_str(&data).unwrap_or(filter_level);
+        }
+    }
+
     info!("[setup_logs_by_filter_level] log_level: {log_level}");
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(log_level))
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(filter_level))
 }
 
 #[tokio::main]
@@ -90,10 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = options.window_options.terminal_options.command;
 
     let config = config::Config::load();
-    let filter_level =
-        LevelFilter::from_str(&config.developer.log_level).unwrap_or(LevelFilter::Off);
-
-    let setup_logs = setup_logs_by_filter_level(filter_level);
+    let setup_logs = setup_logs_by_filter_level(&config.developer.log_level);
     if setup_logs.is_err() {
         println!("unable to configure log level");
     }
