@@ -19,6 +19,8 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
+    pub main_fd: Arc<i32>,
+    pub shell_pid: u32,
 }
 
 #[derive(Clone, Default)]
@@ -57,22 +59,28 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let pty;
         #[cfg(not(target_os = "windows"))]
         {
-            pty = if config.use_fork {
+            if config.use_fork {
                 log::info!("rio -> teletypewriter: create_pty_with_fork");
-                create_pty_with_fork(
+                pty = create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
                     cols_rows.0 as u16,
                     cols_rows.1 as u16,
                 )
             } else {
                 log::info!("rio -> teletypewriter: create_pty_with_spawn");
-                create_pty_with_spawn(
+                pty = match create_pty_with_spawn(
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
                     &config.working_dir,
                     cols_rows.0 as u16,
                     cols_rows.1 as u16,
-                )
+                ) {
+                    Ok(created_pty) => created_pty,
+                    Err(err) => {
+                        println!("{}", err);
+                        std::process::exit(1);
+                    }
+                }
             };
         }
 
@@ -86,6 +94,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cols_rows.1 as u16,
             );
         }
+
+        let main_fd = pty.child.id.clone();
+        let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
@@ -101,6 +112,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
+            main_fd,
+            shell_pid,
             messenger,
             terminal,
         })

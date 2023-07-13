@@ -95,12 +95,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load command line options.
     let options = cli::Options::new();
-    let command = options.window_options.terminal_options.command;
 
-    let config = config::Config::load();
+    let mut config = config::Config::load();
     let setup_logs = setup_logs_by_filter_level(&config.developer.log_level);
     if setup_logs.is_err() {
         println!("unable to configure log level");
+    }
+
+    if let Some(command) = options.window_options.terminal_options.command() {
+        config.shell = command;
+        config.use_fork = false;
     }
 
     setup_environment_variables(&config);
@@ -109,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         winit::event_loop::EventLoopBuilder::<EventP>::with_user_event().build();
 
     let mut sequencer = Sequencer::new(config);
-    let _ = sequencer.run(window_event_loop, command).await;
+    let _ = sequencer.run(window_event_loop).await;
 
     #[cfg(windows)]
     unsafe {

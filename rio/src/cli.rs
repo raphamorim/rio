@@ -1,4 +1,5 @@
 use clap::{Args, Parser};
+use config::Shell;
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Default, Debug)]
@@ -27,4 +28,31 @@ pub struct TerminalOptions {
     /// Command and args to execute (must be last argument).
     #[clap(short = 'e', long, allow_hyphen_values = true, num_args = 1..)]
     pub command: Vec<String>,
+}
+
+impl TerminalOptions {
+    /// Shell override passed through the CLI.
+    pub fn command(&self) -> Option<Shell> {
+        let (program, args) = self.command.split_first()?;
+        Some(Shell {
+            program: program.clone(),
+            args: args.to_vec(),
+        })
+    }
+
+    // pub fn override_pty_config(&self, pty_config: &mut PtyConfig) {
+    //     if let Some(working_directory) = &self.working_directory {
+    //         if working_directory.is_dir() {
+    //             pty_config.working_directory = Some(working_directory.to_owned());
+    //         } else {
+    //             error!("Invalid working directory: {:?}", working_directory);
+    //         }
+    //     }
+
+    //     if let Some(command) = self.command() {
+    //         pty_config.shell = Some(command);
+    //     }
+
+    //     pty_config.hold |= self.hold;
+    // }
 }

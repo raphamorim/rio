@@ -120,7 +120,6 @@ impl Sequencer {
     pub async fn run(
         &mut self,
         mut event_loop: EventLoop<EventP>,
-        command: Vec<String>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
@@ -313,26 +312,7 @@ impl Sequencer {
                         _ => {}
                     }
                 }
-                Event::Resumed => {
-                    if !command.is_empty() {
-                        if let Some(sw) = self.windows.get_mut(&first_window) {
-                            let exec = command.clone();
-                            let mut exec = exec.join(" ");
-                            exec += &String::from("\n");
-                            sw.screen
-                                .ctx_mut()
-                                .current_mut()
-                                .messenger
-                                .send_bytes_and_close(exec.into());
-
-                            sw.screen
-                                .ctx_mut()
-                                .current_mut()
-                                .messenger
-                                .send_bytes(vec![0x04]);
-                        }
-                    }
-                }
+                Event::Resumed => {}
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
@@ -629,6 +609,7 @@ impl Sequencer {
                 } => match state {
                     ElementState::Pressed => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
+                            sw.screen.exec("echo", ["1"]);
                             sw.window.set_cursor_visible(false);
                             sw.screen.input_keycode(virtual_keycode, scancode);
                         }
