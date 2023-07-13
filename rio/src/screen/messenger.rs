@@ -12,11 +12,6 @@ impl Messenger {
     }
 
     #[inline]
-    pub fn send_bytes_and_close(&mut self, string: Vec<u8>) {
-        self.send_write(string);
-    }
-
-    #[inline]
     pub fn send_bytes(&mut self, string: Vec<u8>) {
         self.send_write(string);
     }

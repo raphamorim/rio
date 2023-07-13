@@ -1,13 +1,17 @@
 #![cfg(unix)]
 
+mod macos;
 mod signals;
 
 extern crate libc;
 
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
+use libc::pid_t;
+use macos::*;
 use signal_hook::consts as sigconsts;
 use signals::Signals;
+use std::ffi::OsStr;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
@@ -16,6 +20,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::os::fd::AsRawFd;
 use std::os::fd::FromRawFd;
+use std::os::fd::RawFd;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -396,7 +401,7 @@ pub fn create_pty_with_spawn(
     working_directory: &Option<String>,
     columns: u16,
     rows: u16,
-) -> Pty {
+) -> Result<Pty, Error> {
     let mut main: libc::c_int = 0;
     let mut child: libc::c_int = 0;
     let winsize = Winsize {
@@ -500,28 +505,36 @@ pub fn create_pty_with_spawn(
     let signals =
         Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
 
-    if let Ok(child_process) = builder.spawn() {
-        unsafe {
-            set_nonblocking(main);
-        }
+    match builder.spawn() {
+        Ok(child_process) => {
+            unsafe {
+                set_nonblocking(main);
+            }
 
-        let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-        let child_unix = Child {
-            id: Arc::new(main),
-            ptsname,
-            pid: Arc::new(child_process.id().try_into().unwrap()),
-            process: Some(child_process),
-        };
+            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
+            let child_unix = Child {
+                id: Arc::new(main),
+                ptsname,
+                pid: Arc::new(child_process.id().try_into().unwrap()),
+                process: Some(child_process),
+            };
 
-        Pty {
-            child: child_unix,
-            file: unsafe { File::from_raw_fd(main) },
-            token: corcovado::Token::from(0),
-            signals,
-            signals_token: corcovado::Token::from(0),
+            Ok(Pty {
+                child: child_unix,
+                file: unsafe { File::from_raw_fd(main) },
+                token: corcovado::Token::from(0),
+                signals,
+                signals_token: corcovado::Token::from(0),
+            })
         }
-    } else {
-        panic!("failed to spawn")
+        Err(err) => Err(Error::new(
+            err.kind(),
+            format!(
+                "Failed to spawn command '{}': {}",
+                builder.get_program().to_string_lossy(),
+                err
+            ),
+        )),
     }
 }
 
@@ -609,8 +622,8 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
 
 #[derive(Debug)]
 pub struct Child {
-    id: Arc<libc::c_int>,
-    pid: Arc<libc::pid_t>,
+    pub id: Arc<libc::c_int>,
+    pub pid: Arc<libc::pid_t>,
     #[allow(dead_code)]
     ptsname: String,
     #[allow(dead_code)]
@@ -793,4 +806,68 @@ pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
     let str_buf: String = str_slice.to_owned();
 
     Ok(str_buf)
+}
+
+pub fn foreground_process_path(
+    main_fd: RawFd,
+    shell_pid: u32,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut pid = unsafe { libc::tcgetpgrp(main_fd) };
+    if pid < 0 {
+        pid = shell_pid as pid_t;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+    let link_path = format!("/proc/{}/cwd", pid);
+    #[cfg(target_os = "freebsd")]
+    let link_path = format!("/compat/linux/proc/{}/cwd", pid);
+
+    #[cfg(not(target_os = "macos"))]
+    let cwd = fs::read_link(link_path)?;
+
+    #[cfg(target_os = "macos")]
+    let cwd = macos_cwd(pid)?;
+
+    Ok(cwd)
+}
+
+/// Start a new process in the background.
+pub fn spawn_daemon<I, S>(
+    program: &str,
+    args: I,
+    main_fd: RawFd,
+    shell_pid: u32,
+) -> io::Result<()>
+where
+    I: IntoIterator<Item = S> + Copy,
+    S: AsRef<OsStr>,
+{
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Ok(cwd) = foreground_process_path(main_fd, shell_pid) {
+        command.current_dir(cwd);
+    }
+    unsafe {
+        command
+            .pre_exec(|| {
+                match libc::fork() {
+                    -1 => return Err(io::Error::last_os_error()),
+                    0 => (),
+                    _ => libc::_exit(0),
+                }
+
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+
+                Ok(())
+            })
+            .spawn()?
+            .wait()
+            .map(|_| ())
+    }
 }
