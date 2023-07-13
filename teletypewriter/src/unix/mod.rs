@@ -591,7 +591,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
         )
     } {
         0 => {
-            default_shell_command(shell);
+            default_shell_command(shell_program);
             unreachable!();
         }
         id if id > 0 => {
