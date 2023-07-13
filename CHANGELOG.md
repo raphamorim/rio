@@ -2,10 +2,27 @@
 
 ## 0.0.9 (in progress)
 
+- Breaking changes for configuration file regarding `Advanced`. The configuration `Advanced` has moved to root level and `disable-render-when-unfocused` renamed to `disable-unfocused-render`.
+
+**before**
+
+```toml
+theme = "dracula"
+
+[advanced]
+disable-render-when-unfocused = true
+```
+
+**now**
+
+```toml
+theme = "dracula"
+disable-unfocused-render = true
+```
+
 - Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compability in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable `use-forky` in the configuration file:
 
 ```toml
-[advanced]
 use-fork = true
 ```
 

@@ -18,14 +18,6 @@ pub struct Shell {
     pub args: Vec<String>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Deserialize)]
-pub struct Advanced {
-    #[serde(default = "bool::default", rename = "disable-render-when-unfocused")]
-    pub disable_render_when_unfocused: bool,
-    #[serde(default = "bool::default", rename = "use-fork")]
-    pub use_fork: bool,
-}
-
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 pub struct Developer {
     #[serde(default = "bool::default", rename = "enable-fps-counter")]
@@ -51,6 +43,10 @@ pub struct Config {
     pub performance: Performance,
     #[serde(default = "default_shell")]
     pub shell: Shell,
+    #[serde(default = "bool::default", rename = "disable-unfocused-render")]
+    pub disable_unfocused_render: bool,
+    #[serde(default = "default_use_fork", rename = "use-fork")]
+    pub use_fork: bool,
     #[serde(default = "default_working_dir", rename = "working-dir")]
     pub working_dir: Option<String>,
     #[serde(rename = "font-size", default = "default_font_size")]
@@ -69,8 +65,6 @@ pub struct Config {
     pub option_as_alt: String,
     #[serde(default = "Colors::default")]
     pub colors: Colors,
-    #[serde(default = "Advanced::default")]
-    pub advanced: Advanced,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
 }
@@ -192,6 +186,8 @@ impl Default for Config {
         Config {
             shell: default_shell(),
             working_dir: default_working_dir(),
+            disable_unfocused_render: false,
+            use_fork: default_use_fork(),
             env_vars: default_env_vars(),
             window_opacity: default_window_opacity(),
             performance: Performance::default(),
@@ -202,7 +198,6 @@ impl Default for Config {
             cursor: default_cursor(),
             option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
-            advanced: Advanced::default(),
             developer: Developer::default(),
         }
     }
@@ -267,6 +262,8 @@ mod tests {
         "#,
         );
 
+        assert!(!result.disable_unfocused_render);
+
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.font, default_font());
         assert_eq!(result.font_size, default_font_size());
@@ -274,9 +271,6 @@ mod tests {
 
         // Colors
         assert_eq!(result.colors, Colors::default());
-
-        // Advanced
-        assert!(!result.advanced.disable_render_when_unfocused);
 
         // Developer
         assert_eq!(result.developer.log_level, default_log_level());
@@ -297,6 +291,7 @@ mod tests {
             window-opacity = 1.0
             cursor = '▇'
             env-vars = []
+            disable-unfocused-render = false
 
             [colors]
             background = '#0F0D0E'
@@ -308,9 +303,6 @@ mod tests {
             red = '#ED203D'
             blue = '#12B5E5'
             yellow = '#FCBA28'
-
-            [advanced]
-            disable-render-when-unfocused = false
 
             [developer]
             enable-fps-counter = false
@@ -325,11 +317,12 @@ mod tests {
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.font, default_font());
+        assert_eq!(result.shell, default_shell());
+        assert!(!result.disable_unfocused_render);
+        assert_eq!(result.use_fork, default_use_fork());
         assert_eq!(result.font_size, default_font_size());
         // Colors
         assert_eq!(result.colors, Colors::default());
-        // Advanced
-        assert_eq!(result.advanced, Advanced::default());
         // Developer
         assert_eq!(result.developer, Developer::default());
     }
@@ -656,22 +649,20 @@ mod tests {
     }
 
     #[test]
-    fn test_change_advanced() {
+    fn test_use_fork() {
         let result = create_temporary_config(
-            "change-advanced",
+            "change-use-fork",
             r#"
             performance = "Low"
-
-            [advanced]
-            disable-render-when-unfocused = true
+            disable-unfocused-render = true
             use-fork = true
         "#,
         );
 
         assert_eq!(result.performance, Performance::Low);
         // Advanced
-        assert!(result.advanced.disable_render_when_unfocused);
-        assert!(result.advanced.use_fork);
+        assert!(result.disable_unfocused_render);
+        assert!(result.use_fork);
 
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

@@ -114,7 +114,7 @@ impl Screen {
         let context_manager_config = context::ContextManagerConfig {
             shell: config.shell.clone(),
             spawn_performer: true,
-            use_fork: config.advanced.use_fork,
+            use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
         };
         let context_manager = context::ContextManager::start(
