@@ -5,12 +5,12 @@ pub mod mode;
 #[derive(Debug, Default, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum CursorShape {
     /// Cursor is a block like `▒`.
+    #[default]
     Block,
     /// Cursor is an underscore like `_`.
     Underline,
     /// Cursor is a vertical bar `⎸`.
     Beam,
-    #[default]
     Hidden,
 }
 

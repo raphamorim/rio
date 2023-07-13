@@ -847,7 +847,7 @@ impl<U: EventListener> Crosswords<U> {
         } else {
             let scroll = self.display_offset() as i32;
             if scroll != 0 {
-                content = CursorShape::Hidden
+                content = CursorShape::Hidden;
             }
             self.grid.cursor.pos
         };
@@ -1474,6 +1474,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // title
     }
 
+    #[inline]
+    fn set_cursor_style(&mut self, style: Option<CursorShape>) {
+        if let Some(cursor_shape) = style {
+            self.cursor_shape = cursor_shape;
+        } else {
+            self.cursor_shape = CursorShape::default();
+        }
+    }
+
+    #[inline]
     fn set_cursor_shape(&mut self, shape: CursorShape) {
         self.cursor_shape = shape;
     }
