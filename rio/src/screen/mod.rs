@@ -188,6 +188,11 @@ impl Screen {
         self.sugarloaf.layout.update();
         self.state = State::new(config);
 
+        for context in self.ctx().contexts() {
+            let mut terminal = context.terminal.lock();
+            terminal.cursor_shape = self.state.get_cursor_state().content;
+        }
+
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
         let columns = self.sugarloaf.layout.columns;
@@ -255,7 +260,6 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-
             terminal.resize::<SugarloafLayout>(columns, lines);
             drop(terminal);
             let _ = context.messenger.send_resize(
