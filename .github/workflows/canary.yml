@@ -1,9 +1,6 @@
 name: Release Canary
 
 on:
-  push:
-    branches:
-      - 'main'
   workflow_run:
     workflows: ['Test']
     types:
@@ -18,6 +15,7 @@ env:
 
 jobs:
   create_tag:
+    if: github.ref == 'refs/heads/main'
     outputs:
       created: ${{ steps.status.outputs.created }}
     runs-on: ubuntu-latest
