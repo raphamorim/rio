@@ -7,7 +7,7 @@ pub fn default_padding_x() -> f32 {
 }
 
 pub fn default_shell() -> crate::Shell {
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "windows"))]
     {
         crate::Shell {
             program: String::from(""),
@@ -19,14 +19,6 @@ pub fn default_shell() -> crate::Shell {
     {
         crate::Shell {
             program: String::from("powershell"),
-            args: vec![],
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        crate::Shell {
-            program: String::from(""),
             args: vec![],
         }
     }
