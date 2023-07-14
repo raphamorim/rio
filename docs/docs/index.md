@@ -67,7 +67,7 @@ window-opacity = 0.5
 # Entries in `shell.args` are passed unmodified as arguments to the shell.
 #
 # Default:
-#   - (macOS) /bin/zsh --login
+#   - (macOS) user login shell
 #   - (Linux/BSD) user login shell
 #   - (Windows) powershell
 # 
