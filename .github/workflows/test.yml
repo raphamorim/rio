@@ -11,7 +11,7 @@ env:
   RUST_BACKTRACE: full
 
 jobs:
-  test-native:
+  native:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
@@ -34,7 +34,7 @@ jobs:
         shell: bash
       - run: cargo test
 
-  test-web:
+  webassembly:
     runs-on: ubuntu-latest
     env:
       GECKODRIVER: chromedriver
