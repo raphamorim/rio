@@ -111,7 +111,7 @@ const AIO: usize = 0b01_0000;
 )))]
 const AIO: usize = 0b00_0000;
 
-#[cfg(any(target_os = "freebsd"))]
+#[cfg(target_os = "freebsd")]
 const LIO: usize = 0b10_0000;
 
 #[cfg(not(any(target_os = "freebsd")))]
@@ -268,7 +268,7 @@ impl UnixReady {
     ///
     /// [`Poll`]: struct.Poll.html
     #[inline]
-    #[cfg(any(target_os = "freebsd"))]
+    #[cfg(target_os = "freebsd")]
     pub fn lio() -> UnixReady {
         UnixReady(ready_from_usize(LIO))
     }
@@ -407,7 +407,7 @@ impl UnixReady {
     /// assert!(ready.is_lio());
     /// ```
     #[inline]
-    #[cfg(any(target_os = "freebsd"))]
+    #[cfg(target_os = "freebsd")]
     pub fn is_lio(&self) -> bool {
         self.contains(ready_from_usize(LIO))
     }
