@@ -31,7 +31,7 @@ mod test_udp_level;
 mod test_udp_socket;
 mod test_write_then_drop;
 
-#[cfg(any(target_os = "fuchsia"))]
+#[cfg(target_os = "fuchsia")]
 mod test_fuchsia_handles;
 
 use bytes::{Buf, MutBuf};
