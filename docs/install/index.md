@@ -22,6 +22,7 @@ language: 'en'
 	- [3.5 FreeBSD](#freebsd-1)
 	- [3.6 Fedora](#fedora)
 	- [3.7 Building](#building)
+- [4. Terminfo](#terminfo)
 
 ## Stable and Canary
 
@@ -227,3 +228,19 @@ After the command execution an executable will be created called Rio.exe inside 
 Optionally you can also build and run the terminal with "cargo run".
 
 If all goes well, this should place a zip file with Rio application inside at <span class="keyword">release</span> (folder created in rio root path after the command execution).
+
+## Terminfo
+
+To make sure Rio works correctly, the "rio" terminfo must be used. The rio terminfo will be picked up automatically if it is installed.
+
+If the following command returns without any errors, the rio terminfo is already installed:
+
+{% highlight bash %}
+infocmp rio
+{% endhighlight %}
+
+If it is not present already, you can install it globally with the following command:
+
+{% highlight bash %}
+sudo tic -xe rio misc/rio.terminfo
+{% endhighlight %}
