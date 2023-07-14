@@ -10,8 +10,8 @@ pub fn default_shell() -> crate::Shell {
     #[cfg(target_os = "macos")]
     {
         crate::Shell {
-            program: String::from("/bin/zsh"),
-            args: vec![String::from("--login")],
+            program: String::from(""),
+            args: vec![],
         }
     }
 
