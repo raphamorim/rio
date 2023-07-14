@@ -890,9 +890,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
                     }
                 };
 
-                let cursor_style =
-                    shape.map(|shape| shape);
-
+                let cursor_style = shape.map(|shape| shape);
                 handler.set_cursor_style(cursor_style);
             }
             ('r', []) => {
