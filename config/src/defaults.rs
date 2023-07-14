@@ -11,7 +11,7 @@ pub fn default_shell() -> crate::Shell {
     {
         crate::Shell {
             program: String::from(""),
-            args: vec![],
+            args: vec![String::from("--login")],
         }
     }
 
