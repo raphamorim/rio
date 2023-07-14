@@ -103,7 +103,7 @@ There's a few things to note about the installer and the portable version:
 If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Docs](https://raphamorim.io/rio/docs/) for more information):
 
 {% highlight bash %}
-env-vars = ['SHELL=/pwsh']
+shell = { program = "pwsh", args = ["--login"] }
 {% endhighlight %}
 
 You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware accelaration and improve performance of the application.
