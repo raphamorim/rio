@@ -2,6 +2,7 @@
 
 ## 0.0.9 (in progress)
 
+- Created "rio" terminfo.
 - Breaking changes for configuration file regarding `Advanced`. The configuration `Advanced` has moved to root level and `disable-render-when-unfocused` renamed to `disable-unfocused-render`.
 
 **before**
