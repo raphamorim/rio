@@ -49,8 +49,6 @@ Rio is avaible for [MacOS](#macos), [Linux](#linux), [Windows](#windows) and bro
 
 ### MacOS
 
-Note: Rio consider Ventura (Rome) as minimal requirement of macOS version.
-
 You can download Rio terminal application for macOS platform:
 
 - [Download macOS - v0.0.8](https://github.com/raphamorim/rio/releases/download/v0.0.8/Rio-v0.0.8.dmg)
