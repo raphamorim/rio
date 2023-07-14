@@ -52,3 +52,5 @@ light-red = '#F25E73'
 light-white = '#FFFFFF'
 light-yellow = '#FDF170'
 {% endhighlight %}
+
+[Move to command-line interface ->](/rio/docs/command-line-interface)
