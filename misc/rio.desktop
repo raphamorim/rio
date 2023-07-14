@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+TryExec=rio
+Exec=rio
+Icon=rio
+Terminal=false
+Categories=System;TerminalEmulator;
+
+Name=Rio
+GenericName=Terminal
+Comment=A hardware-accelerated GPU terminal emulator powered by WebGPU
+StartupWMClass=Rio
+Actions=New;
+
+[Desktop Action New]
+Name=New Terminal
+Exec=rio
