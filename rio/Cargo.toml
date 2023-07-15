@@ -85,3 +85,9 @@ assets = [
 extended-description = """\
 Rio terminal is a hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers.
 The supported platforms currently consist of BSD, Linux, macOS and Windows."""
+
+[package.metadata.deb.variants.x11]
+name = "rio-x11"
+
+[package.metadata.deb.variants.wayland]
+name = "rio-wayland"
