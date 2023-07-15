@@ -34,6 +34,20 @@ jobs:
         shell: bash
       - run: cargo test
 
+  cli:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo fetch
+      - run: cargo build -p rio --bin rio
+      - run: RIO_LOG_LEVEL=info ./target/debug/rio -e echo 1
+
   webassembly:
     runs-on: ubuntu-latest
     env:
