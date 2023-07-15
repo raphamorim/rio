@@ -66,3 +66,20 @@ wayland = [
     "winit/wayland-dlopen",
     "wayland-client"
 ]
+
+[package.metadata.deb]
+name = "rio"
+maintainer = "Raphael Amorim <rapha850@gmail.com>"
+depends = "$auto"
+section = "admin"
+priority = "optional"
+assets = [
+    ["../target/release/rio", "usr/local/bin/", "755"],
+    ["../misc/rio.desktop", "usr/share/applications/", "644"],
+    ["../misc/rio.terminfo", "usr/share/info/", "644"],
+    ["../README.md", "usr/share/doc/rio/", "644"],
+    ["../LICENSE", "usr/share/doc/rio/", "664"]
+]
+extended-description = """\
+Rio terminal is a hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers.
+The supported platforms currently consist of BSD, Linux, macOS and Windows."""
