@@ -2,6 +2,7 @@
 
 ## 0.1.0 (in progress)
 
+- Setting editor by keybindings.
 - Rio creates `.deb` packages (canary and release).
 
 ## 0.0.9
