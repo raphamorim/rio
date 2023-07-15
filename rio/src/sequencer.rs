@@ -65,12 +65,13 @@ impl SequencerWindow {
         })
     }
 
-    fn from_window_target(
+    fn from_target(
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
         config: &Rc<config::Config>,
+        window_name: &str,
     ) -> Self {
-        let window_builder = create_window_builder("Rio");
+        let window_builder = create_window_builder(window_name);
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
@@ -102,18 +103,29 @@ impl SequencerWindow {
 
 pub struct Sequencer {
     config: Rc<config::Config>,
+    editor_config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
+    window_config_editor: Option<WindowId>,
     has_updates: Vec<WindowId>,
     event_proxy: Option<EventProxy>,
 }
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
+        let mut editor_config = config.clone();
+        let editor = std::env::var("EDITOR").unwrap_or("vim".to_string());
+        let editor_program = config::Shell {
+            program: editor,
+            args: vec![config::config_file_path()],
+        };
+        editor_config.shell = editor_program;
         Sequencer {
             config: Rc::new(config),
+            editor_config: Rc::new(editor_config),
             windows: HashMap::new(),
             has_updates: vec![],
             event_proxy: None,
+            window_config_editor: None,
         }
     }
 
@@ -206,6 +218,14 @@ impl Sequencer {
                             {
                                 if !sequencer_window.screen.try_close_existent_tab() {
                                     self.windows.remove(&window_id);
+
+                                    if let Some(config_window_id) =
+                                        self.window_config_editor
+                                    {
+                                        if config_window_id == window_id {
+                                            self.window_config_editor = None;
+                                        }
+                                    }
 
                                     if self.windows.is_empty() {
                                         *control_flow =
@@ -301,13 +321,35 @@ impl Sequencer {
                                     .send_bytes(format(rgb).into_bytes());
                             }
                         }
-                        RioEventType::Rio(RioEvent::WindowCreateNew) => {
-                            let sw = SequencerWindow::from_window_target(
+                        RioEventType::Rio(RioEvent::CreateWindow) => {
+                            let sw = SequencerWindow::from_target(
                                 event_loop_window_target,
                                 self.event_proxy.clone().unwrap(),
                                 &self.config,
+                                "Rio",
                             );
                             self.windows.insert(sw.window.id(), sw);
+                        }
+                        RioEventType::Rio(RioEvent::CreateConfigEditor) => {
+                            if let Some(config_editor_window_id) =
+                                self.window_config_editor
+                            {
+                                if let Some(sequencer_window) =
+                                    self.windows.get_mut(&config_editor_window_id)
+                                {
+                                    sequencer_window.window.focus_window();
+                                }
+                            } else {
+                                let sw = SequencerWindow::from_target(
+                                    event_loop_window_target,
+                                    self.event_proxy.clone().unwrap(),
+                                    &self.editor_config,
+                                    "Rio Configuration",
+                                );
+                                let window_id = sw.window.id();
+                                self.windows.insert(window_id, sw);
+                                self.window_config_editor = Some(window_id);
+                            }
                         }
                         _ => {}
                     }
@@ -320,6 +362,12 @@ impl Sequencer {
                     ..
                 } => {
                     self.windows.remove(&window_id);
+
+                    if let Some(config_window_id) = self.window_config_editor {
+                        if config_window_id == window_id {
+                            self.window_config_editor = None;
+                        }
+                    }
 
                     if self.windows.is_empty() {
                         *control_flow = winit::event_loop::ControlFlow::Exit;

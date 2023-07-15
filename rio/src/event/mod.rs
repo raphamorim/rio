@@ -36,7 +36,8 @@ pub enum RioEvent {
     Render,
     Scroll(Scroll),
     UpdateConfig,
-    WindowCreateNew,
+    CreateWindow,
+    CreateConfigEditor,
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
@@ -107,7 +108,8 @@ impl Debug for RioEvent {
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
-            RioEvent::WindowCreateNew => write!(f, "WindowCreateNew"),
+            RioEvent::CreateWindow => write!(f, "CreateWindow"),
+            RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
         }
     }

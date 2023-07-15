@@ -389,6 +389,9 @@ impl Screen {
                         terminal.vi_motion(*motion);
                         drop(terminal);
                     }
+                    Act::ConfigEditor => {
+                        self.context_manager.create_config_editor();
+                    }
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();
                     }

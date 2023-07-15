@@ -223,6 +223,11 @@ pub enum Action {
     #[allow(dead_code)]
     WindowCreateNew,
 
+    /// Create config editor.
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
+    ConfigEditor,
+
     /// Create a new Rio tab.
     #[allow(dead_code)]
     TabCreateNew,
@@ -640,6 +645,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         T, ModifiersState::LOGO; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         W, ModifiersState::LOGO; Action::TabCloseCurrent;
+        Comma, ModifiersState::LOGO; Action::ConfigEditor;
     )
 }
 
