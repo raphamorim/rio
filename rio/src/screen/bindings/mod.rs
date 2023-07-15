@@ -224,7 +224,6 @@ pub enum Action {
     WindowCreateNew,
 
     /// Create config editor.
-    #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     ConfigEditor,
 
