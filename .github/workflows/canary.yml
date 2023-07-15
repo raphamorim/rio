@@ -113,8 +113,12 @@ jobs:
 
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deb
+      - run: mkdir -p release
+
       - run: make release-debian-x11
+      - run: cp ./target/debian/* ./release/
       - run: make release-debian-wayland
+      - run: cp ./target/debian/* ./release/
 
       - name: Release canary
         uses: softprops/action-gh-release@v1
@@ -125,7 +129,7 @@ jobs:
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            target/debian/*
+            release/*
 
   canary-release-windows:
     needs: create_tag
