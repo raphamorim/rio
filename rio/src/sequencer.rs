@@ -113,7 +113,12 @@ pub struct Sequencer {
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
         let mut editor_config = config.clone();
-        let editor = std::env::var("EDITOR").unwrap_or("vim".to_string());
+        #[cfg(target_os = "macos")]
+        let fallback = String::from("vim");
+        #[cfg(not(target_os = "macos"))]
+        let fallback = String::from("vi");
+
+        let editor = std::env::var("EDITOR").unwrap_or(fallback);
         let editor_program = config::Shell {
             program: editor,
             args: vec![config::config_file_path()],
