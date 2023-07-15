@@ -175,7 +175,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn create_new_window(&self) {
         self.event_proxy
-            .send_event(RioEvent::WindowCreateNew, self.window_id);
+            .send_event(RioEvent::CreateWindow, self.window_id);
+    }
+
+    #[inline]
+    pub fn create_config_editor(&self) {
+        self.event_proxy
+            .send_event(RioEvent::CreateConfigEditor, self.window_id);
     }
 
     #[inline]
