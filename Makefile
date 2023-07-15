@@ -68,13 +68,15 @@ release-wayland:
 # output: target/debian/*
 # To install: sudo target/debian/rio_<version>_<architecture>.deb
 release-debian-x11:
-	cargo deb -p rio --variant=rio-x11 -- --release --no-default-features --features=x11
+	cargo deb -p rio --deb-version="x11" -- --release --no-default-features --features=x11
 release-debian-wayland:
-	cargo deb -p rio --variant=wayland -- --release --no-default-features --features=wayland
+	cargo deb -p rio --deb-version="wayland" -- --release --no-default-features --features=wayland
 # Release and Install
 install-debian-x11:
+	cargo install cargo-deb
 	cargo deb -p rio --install -- --release --no-default-features --features=x11
 install-debian-wayland:
+	cargo install cargo-deb
 	cargo deb -p rio --install -- --release --no-default-features --features=wayland
 
 # cargo install cargo-wix

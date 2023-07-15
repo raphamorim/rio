@@ -93,6 +93,40 @@ jobs:
             release/macos-rio.zip
             LICENSE
 
+  canary-release-deb:
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo install cargo-deb
+      - run: make release-debian-x11
+      - run: make release-debian-wayland
+
+      - name: Release canary
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Canary - ${{ github.sha }}
+          tag_name: ${{ env.CANARY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            target/debian/*
+
   canary-release-windows:
     needs: create_tag
     if: ${{ needs.create_tag.outputs.created == 'true' }}
