@@ -63,6 +63,18 @@ release-wayland:
 	cargo build --release --no-default-features --features=wayland
 	WINIT_UNIX_BACKEND=wayland target/release/rio
 
+# Debian
+# cargo install cargo-deb
+debian-x11:
+	cargo deb -p rio --release --install --no-default-features --features=x11
+debian-x11:
+	cargo deb -p rio --release --install --no-default-features --features=wayland
+# Debian CI (output: target/debian/*)
+release-deb-x11:
+	cargo deb -p rio --release --no-default-features --features=x11
+release-deb-wayland:
+	cargo deb -p rio --release --no-default-features --features=wayland
+
 # cargo install cargo-wix
 # https://github.com/volks73/cargo-wix
 release-windows:

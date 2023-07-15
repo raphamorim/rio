@@ -70,6 +70,7 @@ wayland = [
 [package.metadata.deb]
 name = "rio"
 maintainer = "Raphael Amorim <rapha850@gmail.com>"
+copyright = "2023, Raphael Amorim <rapha850@gmail.com>"
 depends = "$auto"
 section = "admin"
 priority = "optional"
@@ -77,6 +78,7 @@ assets = [
     ["../target/release/rio", "usr/local/bin/", "755"],
     ["../misc/rio.desktop", "usr/share/applications/", "644"],
     ["../misc/rio.terminfo", "usr/share/info/", "644"],
+    ["../misc/logo.svg", "usr/share/icons/hicolor/scalable/apps/rio.svg", "644"],
     ["../README.md", "usr/share/doc/rio/", "644"],
     ["../LICENSE", "usr/share/doc/rio/", "664"]
 ]
