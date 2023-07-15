@@ -32,6 +32,35 @@ jobs:
             release/macos-rio.zip
             LICENSE
 
+  release-deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo install cargo-deb
+      - run: mkdir -p release
+
+      - run: make release-debian-x11
+      - run: cp ./target/debian/* ./release/
+      - run: make release-debian-wayland
+      - run: cp ./target/debian/* ./release/
+
+      - name: Release
+        with:
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            release/*
+
   release-windows:
     runs-on: windows-latest
     defaults:
@@ -54,7 +83,7 @@ jobs:
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
           -out "./Rio-installer.msi" "misc/windows/rio.wxs"
       - run: cp ./target/release/rio.exe ./Rio-portable.exe
-      - name: Release canary
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
           append_body: true
