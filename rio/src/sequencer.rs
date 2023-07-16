@@ -12,7 +12,7 @@ use crate::screen::{
     window::{configure_window, create_window_builder},
     Screen,
 };
-use crate::utils::watch::watch;
+use crate::{utils::settings::create_settings_config, utils::watch::watch};
 use colors::ColorRgb;
 use std::collections::HashMap;
 use std::error::Error;
@@ -112,22 +112,10 @@ pub struct Sequencer {
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
-        let mut editor_config = config.clone();
-        #[cfg(target_os = "macos")]
-        let fallback = String::from("vim");
-        #[cfg(not(target_os = "macos"))]
-        let fallback = String::from("vi");
-
-        let editor = std::env::var("EDITOR").unwrap_or(fallback);
-        let editor_program = config::Shell {
-            program: editor,
-            args: vec![config::config_file_path()],
-        };
-        editor_config.shell = editor_program;
-        editor_config.use_fork = false;
+        let editor_config = Rc::new(create_settings_config(&config));
         Sequencer {
             config: Rc::new(config),
-            editor_config: Rc::new(editor_config),
+            editor_config,
             windows: HashMap::new(),
             has_updates: vec![],
             event_proxy: None,
