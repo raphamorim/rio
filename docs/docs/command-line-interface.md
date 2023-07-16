@@ -33,4 +33,6 @@ You can also <span class="keyword">RIO_LOG_LEVEL</span> enviroment variable for 
 $ RIO_LOG_LEVEL=debug rio -e echo 85
 {% endhighlight %}
 
+--
+
 [Move to create custom key bindings ->](/rio/docs/create-custom-key-bindings#create-custom-key-bindings)

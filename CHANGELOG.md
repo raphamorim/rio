@@ -2,6 +2,7 @@
 
 ## 0.1.0 (in progress)
 
+- Updated terminfo.
 - Move to next and prev tab using keybindings.
 - Setting editor by keybindings and new property called `editor` in configuration file.
 - Rio creates `.deb` packages (canary and release).
