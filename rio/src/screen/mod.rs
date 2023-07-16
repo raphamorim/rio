@@ -412,6 +412,10 @@ impl Screen {
                         self.context_manager.switch_to_next();
                         self.render();
                     }
+                    Act::TabSwitchPrev => {
+                        self.context_manager.switch_to_prev();
+                        self.render();
+                    }
                     Act::TabCloseCurrent => {
                         self.context_manager.close_context();
                         self.render();
