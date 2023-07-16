@@ -2,6 +2,7 @@ use config::{Config, Shell};
 use std::fs::File;
 use std::path::Path;
 
+#[inline]
 pub fn try_to_create_config_file(filepath: &str) {
     let file = Path::new(&filepath);
     if file.exists() {
@@ -16,16 +17,20 @@ pub fn try_to_create_config_file(filepath: &str) {
     }
 }
 
+#[inline]
 pub fn create_settings_config(config: &Config) -> Config {
     let mut editor_config = config.clone();
-    #[cfg(target_os = "macos")]
-    let fallback = String::from("vim");
-    #[cfg(not(target_os = "macos"))]
-    let fallback = String::from("vi");
 
-    // TODO: What happens when path doesn't exist
-    // Maybe run try to create
-    let editor = std::env::var("EDITOR").unwrap_or(fallback);
+    #[cfg(target_os = "macos")]
+    let editor_fallback = String::from("vim");
+    #[cfg(not(target_os = "macos"))]
+    let editor_fallback = String::from("vi");
+
+    let editor = if editor_config.editor.is_empty() {
+        std::env::var("EDITOR").unwrap_or(editor_fallback)
+    } else {
+        editor_config.editor.to_string()
+    };
     let filepath = config::config_file_path();
     try_to_create_config_file(&filepath);
 

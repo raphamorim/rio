@@ -43,6 +43,8 @@ pub struct Config {
     pub performance: Performance,
     #[serde(default = "default_shell")]
     pub shell: Shell,
+    #[serde(default = "default_editor")]
+    pub editor: String,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
     #[serde(default = "default_use_fork", rename = "use-fork")]
@@ -185,6 +187,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             shell: default_shell(),
+            editor: default_editor(),
             working_dir: default_working_dir(),
             disable_unfocused_render: false,
             use_fork: default_use_fork(),
@@ -318,6 +321,7 @@ mod tests {
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.font, default_font());
         assert_eq!(result.shell, default_shell());
+        assert_eq!(result.editor, default_editor());
         assert!(!result.disable_unfocused_render);
         assert_eq!(result.use_fork, default_use_fork());
         assert_eq!(result.font_size, default_font_size());
@@ -669,6 +673,21 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_shell_and_editor() {
+        let result = create_temporary_config(
+            "change-shell-and-editor",
+            r#"
+            shell = { program = "/bin/fish", args = ["--hello"] }
+            editor = "code"
+        "#,
+        );
+
+        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.args, ["--hello"]);
+        assert_eq!(result.editor, "code");
     }
 
     #[test]

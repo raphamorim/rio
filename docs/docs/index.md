@@ -81,6 +81,18 @@ shell = { program = "/bin/zsh", args = ["--login"] }
 # This configuration only has effect if use-fork is disabled
 working_dir = "/Users/raphael/Documents/"
 
+# Editor
+#
+# You can set your default editor to open configuration file
+#
+# Default:
+#   - (macOS) value of $EDITOR with a fallback to "vim"
+#   - (Linux/BSD) value of $EDITOR with a fallback to "vi"
+#   - (Windows) value of $EDITOR with a fallback to "vi"
+# 
+# The example below sets VS Code as default editor
+editor = "code"
+
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars

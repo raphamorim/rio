@@ -2,7 +2,7 @@
 
 ## 0.1.0 (in progress)
 
-- Setting editor by keybindings.
+- Setting editor by keybindings and new property called `editor` in configuration file.
 - Rio creates `.deb` packages (canary and release).
 
 ## 0.0.9

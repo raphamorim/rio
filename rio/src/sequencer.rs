@@ -103,7 +103,7 @@ impl SequencerWindow {
 
 pub struct Sequencer {
     config: Rc<config::Config>,
-    editor_config: Rc<config::Config>,
+    settings_config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
     has_updates: Vec<WindowId>,
@@ -112,10 +112,10 @@ pub struct Sequencer {
 
 impl Sequencer {
     pub fn new(config: config::Config) -> Sequencer {
-        let editor_config = Rc::new(create_settings_config(&config));
+        let settings_config = Rc::new(create_settings_config(&config));
         Sequencer {
             config: Rc::new(config),
-            editor_config,
+            settings_config,
             windows: HashMap::new(),
             has_updates: vec![],
             event_proxy: None,
@@ -197,9 +197,11 @@ impl Sequencer {
                             }
                         }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
+                            let config = config::Config::load();
+                            self.config = config.into();
+                            self.settings_config =
+                                create_settings_config(&self.config).into();
                             for (_id, sw) in self.windows.iter_mut() {
-                                let config = config::Config::load();
-                                self.config = config.into();
                                 sw.screen.update_config(&self.config);
                                 if !self.has_updates.contains(&window_id) {
                                     self.has_updates.push(window_id);
@@ -337,7 +339,7 @@ impl Sequencer {
                                 let sw = SequencerWindow::from_target(
                                     event_loop_window_target,
                                     self.event_proxy.clone().unwrap(),
-                                    &self.editor_config,
+                                    &self.settings_config,
                                     "Rio Configuration",
                                 );
                                 let window_id = sw.window.id();
