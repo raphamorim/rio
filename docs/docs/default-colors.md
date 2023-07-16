@@ -53,4 +53,4 @@ light-white = '#FFFFFF'
 light-yellow = '#FDF170'
 {% endhighlight %}
 
-[Move to command-line interface ->](/rio/docs/command-line-interface)
+[Move to key bindings ->](/rio/docs/key-bindings#key-bindings)

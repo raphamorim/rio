@@ -132,4 +132,4 @@ log-level = "INFO"
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
 
-[Move to default colors ->](/rio/docs/default-colors)
+[Move to default colors ->](/rio/docs/default-colors#default-colors)
