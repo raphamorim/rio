@@ -53,4 +53,6 @@ light-white = '#FFFFFF'
 light-yellow = '#FDF170'
 {% endhighlight %}
 
-[Move to key bindings ->](/rio/docs/key-bindings#key-bindings)
+--
+
+[Move to tabs ->](/rio/docs/tabs#tabs)

@@ -5,10 +5,10 @@ title: 'Documentation'
 language: 'en'
 ---
 
-## Create custom key bindings
+## Tabs
 
 Work in progress.
 
 --
 
-[Move to plugins ->](/rio/docs/plugins#plugins)
+[Move to key bindings ->](/rio/docs/key-bindings#key-bindings)
