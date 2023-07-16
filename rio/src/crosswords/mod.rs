@@ -857,7 +857,7 @@ impl<U: EventListener> Crosswords<U> {
         {
             pos.col -= 1;
         }
-        // // Cursor shape.
+        // Cursor shape.
         if !vi_mode && !self.mode.contains(Mode::SHOW_CURSOR) {
             content = CursorShape::Hidden;
         }
