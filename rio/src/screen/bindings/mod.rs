@@ -6,8 +6,7 @@ use crate::crosswords::Mode;
 use bitflags::bitflags;
 use std::fmt::Debug;
 use winit::event::ModifiersState;
-use winit::event::VirtualKeyCode;
-use winit::event::VirtualKeyCode::*;
+use winit::event::VirtualKeyCode::{self, *};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontSizeAction {
@@ -235,7 +234,11 @@ pub enum Action {
     #[allow(dead_code)]
     TabSwitchNext,
 
-    /// Switch to next tab.
+    /// Switch to prev tab.
+    #[allow(dead_code)]
+    TabSwitchPrev,
+
+    /// Close tab.
     #[allow(dead_code)]
     TabCloseCurrent,
 
@@ -643,6 +646,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         N, ModifiersState::LOGO; Action::WindowCreateNew;
         T, ModifiersState::LOGO; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        LBracket, ModifiersState::LOGO | ModifiersState::SHIFT; Action::TabSwitchNext;
+        RBracket, ModifiersState::LOGO | ModifiersState::SHIFT; Action::TabSwitchPrev;
         W, ModifiersState::LOGO; Action::TabCloseCurrent;
         Comma, ModifiersState::LOGO; Action::ConfigEditor;
     )
@@ -667,6 +672,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         N, ModifiersState::CTRL; Action::WindowCreateNew;
         T, ModifiersState::CTRL; Action::TabCreateNew;
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
+        LBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        RBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchPrev;
         W, ModifiersState::CTRL; Action::TabCloseCurrent;
     )
 }
@@ -692,6 +699,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Tab, ModifiersState::CTRL; Action::TabSwitchNext;
         W, ModifiersState::CTRL; Action::TabCloseCurrent;
         N, ModifiersState::CTRL; Action::WindowCreateNew;
+        LBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        RBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchPrev;
     )
 }
 

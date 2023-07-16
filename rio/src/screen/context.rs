@@ -248,6 +248,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn switch_to_prev(&mut self) {
+        if self.current_index == 0 {
+            self.current_index = self.contexts.len() - 1;
+        } else {
+            self.current_index -= 1;
+        }
+    }
+
+    #[inline]
     pub fn add_context(
         &mut self,
         redirect: bool,
