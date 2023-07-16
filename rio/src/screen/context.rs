@@ -153,7 +153,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
-        let config = ContextManagerConfig::default();
+        let config = ContextManagerConfig {
+            use_fork: true,
+            working_dir: None,
+            shell: config::Shell {
+                program: std::env::var("SHELL").unwrap_or("bash".to_string()),
+                args: vec![],
+            },
+            spawn_performer: false,
+        };
         let initial_context = ContextManager::create_context(
             (100, 100),
             (1, 1),
