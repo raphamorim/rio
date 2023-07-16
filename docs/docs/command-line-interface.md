@@ -5,9 +5,9 @@ title: 'Documentation'
 language: 'en'
 ---
 
-## Command-line interface (CLI)
+## Command-line interface
 
-A command-line interface is a means of interacting with a device or computer program with commands from a user or client, and responses from the device or program, in the form of lines of text. Rio terminal has a command-line interface that you can use for different purposes.
+A command-line interface (CLI) is a means of interacting with a device or computer program with commands from a user or client, and responses from the device or program, in the form of lines of text. Rio terminal has a command-line interface that you can use for different purposes.
 
 {% highlight bash %}
 $ rio --help
@@ -32,3 +32,5 @@ You can also <span class="keyword">RIO_LOG_LEVEL</span> enviroment variable for 
 {% highlight bash %}
 $ RIO_LOG_LEVEL=debug rio -e echo 85
 {% endhighlight %}
+
+[Move to create custom key bindings ->](/rio/docs/create-custom-key-bindings#create-custom-key-bindings)
