@@ -124,6 +124,7 @@ impl Sequencer {
             args: vec![config::config_file_path()],
         };
         editor_config.shell = editor_program;
+        editor_config.use_fork = false;
         Sequencer {
             config: Rc::new(config),
             editor_config: Rc::new(editor_config),
