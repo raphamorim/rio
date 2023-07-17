@@ -8,10 +8,7 @@ pub const LOGO_ICON: &[u8; 119202] =
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
 
-pub const DEFAULT_HEIGHT: i32 = 400;
-pub const DEFAULT_WIDTH: i32 = 600;
-
-pub fn create_window_builder(title: &str) -> WindowBuilder {
+pub fn create_window_builder(title: &str, config: &Rc<Config>) -> WindowBuilder {
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
         image_icon.to_rgba8().into_raw(),
@@ -24,8 +21,8 @@ pub fn create_window_builder(title: &str) -> WindowBuilder {
     let mut window_builder = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(winit::dpi::LogicalSize {
-            width: DEFAULT_WIDTH,
-            height: DEFAULT_HEIGHT,
+            width: config.window_width,
+            height: config.window_height,
         })
         .with_min_inner_size(winit::dpi::LogicalSize {
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,
