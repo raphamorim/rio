@@ -39,7 +39,7 @@ performance = "High"
 # It makes Rio look for the specified theme in the themes folder
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
-# 
+#
 # Dracula theme code is available in:
 # https://github.com/dracula/rio-terminal
 theme = "dracula"
@@ -61,6 +61,18 @@ option_as_alt = 'both'
 # Only works for Windows / X11 / WebAssembly
 window-opacity = 0.5
 
+# Window Width
+#
+# window-width changes the intial window width.
+# Default: 600
+window-width = 1200
+
+# Window Height
+#
+# window-height changes the inital window height.
+# Default: 400
+window-height = 800
+
 # Shell
 #
 # You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
@@ -70,7 +82,7 @@ window-opacity = 0.5
 #   - (macOS) user login shell
 #   - (Linux/BSD) user login shell
 #   - (Windows) powershell
-# 
+#
 shell = { program = "/bin/zsh", args = ["--login"] }
 
 # Startup directory

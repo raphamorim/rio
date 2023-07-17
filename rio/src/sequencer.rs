@@ -42,7 +42,7 @@ impl SequencerWindow {
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = create_window_builder("Rio");
+        let window_builder = create_window_builder("Rio", config);
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
@@ -71,7 +71,7 @@ impl SequencerWindow {
         config: &Rc<config::Config>,
         window_name: &str,
     ) -> Self {
-        let window_builder = create_window_builder(window_name);
+        let window_builder = create_window_builder(window_name, config);
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 

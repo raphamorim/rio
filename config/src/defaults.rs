@@ -71,3 +71,11 @@ pub fn default_theme() -> String {
 pub fn default_font_size() -> f32 {
     16.
 }
+
+pub fn default_window_width() -> i32 {
+    600
+}
+
+pub fn default_window_height() -> i32 {
+    400
+}

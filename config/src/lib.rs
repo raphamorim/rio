@@ -39,6 +39,10 @@ impl Default for Developer {
 pub struct Config {
     #[serde(rename = "window-opacity", default = "default_window_opacity")]
     pub window_opacity: f32,
+    #[serde(rename = "window-width", default = "default_window_width")]
+    pub window_width: i32,
+    #[serde(rename = "window-height", default = "default_window_height")]
+    pub window_height: i32,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_shell")]
@@ -193,6 +197,8 @@ impl Default for Config {
             use_fork: default_use_fork(),
             env_vars: default_env_vars(),
             window_opacity: default_window_opacity(),
+            window_width: default_window_width(),
+            window_height: default_window_height(),
             performance: Performance::default(),
             padding_x: default_padding_x(),
             font_size: default_font_size(),
