@@ -57,6 +57,8 @@ pub struct Config {
     pub working_dir: Option<String>,
     #[serde(rename = "font-size", default = "default_font_size")]
     pub font_size: f32,
+    #[serde(rename = "line-height", default = "default_line_height")]
+    pub line_height: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_font")]
@@ -202,6 +204,7 @@ impl Default for Config {
             performance: Performance::default(),
             padding_x: default_padding_x(),
             font_size: default_font_size(),
+            line_height: default_line_height(),
             theme: default_theme(),
             font: default_font(),
             cursor: default_cursor(),
@@ -295,6 +298,7 @@ mod tests {
             performance = "High"
             font = "CascadiaMono"
             font-size = 16
+            line-height = 1.0
             theme = ""
             padding-x = 10
             window-opacity = 1.0
@@ -331,6 +335,7 @@ mod tests {
         assert!(!result.disable_unfocused_render);
         assert_eq!(result.use_fork, default_use_fork());
         assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.line_height, default_line_height());
         // Colors
         assert_eq!(result.colors, Colors::default());
         // Developer
@@ -485,6 +490,7 @@ mod tests {
             performance = "Low"
             font = "Novamono"
             font-size = 14.0
+            line-height = 2.0
             padding-x = 0.0
             window-opacity = 0.5
         "#,
@@ -493,6 +499,7 @@ mod tests {
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.font, "Novamono");
         assert_eq!(result.font_size, 14.0);
+        assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
         assert_eq!(result.window_opacity, 0.5);
         // Colors

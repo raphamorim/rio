@@ -362,8 +362,8 @@ impl Sugarloaf {
         self.text_brush.queue(section);
 
         self.acc_line_y =
-            (self.layout.style.screen_position.1 + self.acc_line) / self.ctx.scale;
-        self.acc_line += self.font_bounds.default.1;
+            ((self.layout.style.screen_position.1 + self.acc_line) * self.layout.style.line_height) / self.ctx.scale;
+        self.acc_line += self.font_bounds.default.1 * self.layout.style.line_height;
     }
 
     #[inline]
