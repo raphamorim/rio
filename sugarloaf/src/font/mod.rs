@@ -15,6 +15,14 @@ pub struct ComposedFontArc {
     pub bold: FontArc,
     pub italic: FontArc,
     pub bold_italic: FontArc,
+    pub extra_light: FontArc,
+    pub extra_light_italic: FontArc,
+    pub light: FontArc,
+    pub light_italic: FontArc,
+    pub semi_bold: FontArc,
+    pub semi_bold_italic: FontArc,
+    pub semi_light: FontArc,
+    pub semi_light_italic: FontArc,
 }
 
 pub struct Font {
@@ -22,7 +30,10 @@ pub struct Font {
     pub symbol: FontArc,
     pub emojis: FontArc,
     pub unicode: FontArc,
+    pub icons: FontArc,
 }
+
+pub type AllSystemFonts = Vec<font_kit::handle::Handle>;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
@@ -71,6 +82,29 @@ impl Font {
             font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
         }
 
+        let mut text_fonts = ComposedFontArc {
+            bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
+            bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+            extra_light: FontArc::try_from_slice(FONT_CASCADIAMONO_EXTRA_LIGHT).unwrap(),
+            extra_light_italic: FontArc::try_from_slice(
+                FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
+            )
+            .unwrap(),
+            italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+            light: FontArc::try_from_slice(FONT_CASCADIAMONO_LIGHT).unwrap(),
+            light_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_LIGHT_ITALIC)
+                .unwrap(),
+            regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+            semi_bold: FontArc::try_from_slice(FONT_CASCADIAMONO_SEMI_BOLD).unwrap(),
+            semi_bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_SEMI_BOLD_ITALIC)
+                .unwrap(),
+            semi_light: FontArc::try_from_slice(FONT_CASCADIAMONO_SEMI_LIGHT).unwrap(),
+            semi_light_italic: FontArc::try_from_slice(
+                FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC,
+            )
+            .unwrap(),
+        };
+
         let is_default_font = font_name.to_lowercase() == DEFAULT_FONT_NAME;
         if !is_default_font {
             if let Ok(system_fonts) =
@@ -78,17 +112,6 @@ impl Font {
             {
                 let fonts = system_fonts.fonts();
                 if !fonts.is_empty() {
-                    let mut text_fonts = ComposedFontArc {
-                        regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR)
-                            .unwrap(),
-                        bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                        italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC)
-                            .unwrap(),
-                        bold_italic: FontArc::try_from_slice(
-                            FONT_CASCADIAMONO_BOLD_ITALIC,
-                        )
-                        .unwrap(),
-                    };
                     for font in fonts.iter() {
                         let font = font.load();
                         if let Ok(font) = font {
@@ -147,6 +170,8 @@ impl Font {
                         symbol: font_arc_symbol,
                         emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                         unicode: font_arc_unicode,
+                        icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO)
+                            .unwrap(),
                     };
                 }
             }
@@ -155,16 +180,11 @@ impl Font {
         }
 
         Font {
-            text: ComposedFontArc {
-                regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-                bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
-                bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
-                    .unwrap(),
-            },
+            text: text_fonts,
             symbol: font_arc_symbol,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
+            icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
         }
     }
 
@@ -175,15 +195,60 @@ impl Font {
 
         Font {
             text: ComposedFontArc {
-                regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
                 bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
                     .unwrap(),
+                extra_light: FontArc::try_from_slice(FONT_CASCADIAMONO_EXTRA_LIGHT)
+                    .unwrap(),
+                extra_light_italic: FontArc::try_from_slice(
+                    FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
+                )
+                .unwrap(),
+                italic: FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
+                light: FontArc::try_from_slice(FONT_CASCADIAMONO_LIGHT).unwrap(),
+                light_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_LIGHT_ITALIC)
+                    .unwrap(),
+                regular: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+                semi_bold: FontArc::try_from_slice(FONT_CASCADIAMONO_SEMI_BOLD).unwrap(),
+                semi_bold_italic: FontArc::try_from_slice(
+                    FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
+                )
+                .unwrap(),
+                semi_light: FontArc::try_from_slice(FONT_CASCADIAMONO_SEMI_LIGHT)
+                    .unwrap(),
+                semi_light_italic: FontArc::try_from_slice(
+                    FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC,
+                )
+                .unwrap(),
             },
             symbol: font_arc_symbol,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
         }
     }
+
+    // pub async fn all() -> AllSystemFonts {
+    //     let source = SystemSource::new();
+    //     source.all_fonts().unwrap_or(vec![])
+    // }
+
+    // pub fn search_font_by_content(content: char, all_fonts: &AllSystemFonts) -> Option<FontArc> {
+    //     let mut fonts_found = vec![];
+    //     for system_font in all_fonts.iter() {
+    //         if let Ok(font) = system_font.load() {
+    //             match font.glyph_for_char(content) {
+    //                 Some(f) => {
+    //                     println!("{:?}", f);
+    //                     fonts_found.push(font);
+    //                 }
+    //                 None => {
+    //                     continue;
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     log::info!("{content:?} is available in {fonts_found:?}");
+    //     None
+    // }
 }

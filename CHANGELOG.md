@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.1.0 (in progress)
+## 0.0.10 (in progress)
 
+- Use fork by default in context tests.
 - Updated terminfo.
 - Move to next and prev tab using keybindings.
 - Setting editor by keybindings and new property called `editor` in configuration file.

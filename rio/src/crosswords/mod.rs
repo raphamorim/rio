@@ -267,6 +267,27 @@ impl IndexMut<Column> for TabStops {
     }
 }
 
+/// Terminal version for escape sequence reports.
+///
+/// This returns the current terminal version as a unique number based on alacritty_terminal's
+/// semver version. The different versions are padded to ensure that a higher semver version will
+/// always report a higher version number.
+fn version_number(mut version: &str) -> usize {
+    if let Some(separator) = version.rfind('-') {
+        version = &version[..separator];
+    }
+
+    let mut version_number = 0;
+
+    let semver_versions = version.split('.');
+    for (i, semver_version) in semver_versions.rev().enumerate() {
+        let semver_number = semver_version.parse::<usize>().unwrap_or(0);
+        version_number += usize::pow(100, i as u32) * semver_number;
+    }
+
+    version_number
+}
+
 #[derive(Debug, Clone)]
 pub struct Crosswords<U>
 where
@@ -1399,6 +1420,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn reset_state(&mut self) {
+        if self.mode.contains(Mode::ALT_SCREEN) {
+            std::mem::swap(&mut self.grid, &mut self.inactive_grid);
+        }
+        self.active_charset = Default::default();
+        // self.cursor_style = None;
+        self.grid.reset();
+        self.inactive_grid.reset();
+        self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
+        self.tabs = TabStops::new(self.grid.columns());
+        // self.title_stack = Vec::new();
+        self.title = None;
+        self.selection = None;
+        self.vi_mode_cursor = Default::default();
+
+        // Preserve vi mode across resets.
+        self.mode &= Mode::VI;
+        self.mode.insert(Mode::default());
+
+        // self.event_proxy.send_event(Event::CursorBlinkingChange);
+        self.mark_fully_damaged();
+    }
+
+    #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         let cursor = &mut self.grid.cursor;
         match attr {
@@ -1486,6 +1531,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_cursor_shape(&mut self, shape: CursorShape) {
         self.cursor_shape = shape;
+    }
+
+    #[inline]
+    fn set_keypad_application_mode(&mut self) {
+        log::trace!("Setting keypad application mode");
+        self.mode.insert(Mode::APP_KEYPAD);
+    }
+
+    #[inline]
+    fn unset_keypad_application_mode(&mut self) {
+        log::trace!("Unsetting keypad application mode");
+        self.mode.remove(Mode::APP_KEYPAD);
+    }
+
+    #[inline]
+    fn configure_charset(
+        &mut self,
+        index: pos::CharsetIndex,
+        charset: pos::StandardCharset,
+    ) {
+        log::trace!("Configuring charset {:?} as {:?}", index, charset);
+        self.grid.cursor.charsets[index] = charset;
     }
 
     fn input(&mut self, c: char) {
@@ -1588,6 +1655,45 @@ impl<U: EventListener> Handler for Crosswords<U> {
         } else {
             self.grid.cursor.should_wrap = true;
         }
+    }
+
+    #[inline]
+    fn identify_terminal(&mut self, intermediate: Option<char>) {
+        match intermediate {
+            None => {
+                log::trace!("Reporting primary device attributes");
+                let text = String::from("\x1b[?6c");
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(text), self.window_id);
+            }
+            Some('>') => {
+                log::trace!("Reporting secondary device attributes");
+                let version = version_number(env!("CARGO_PKG_VERSION"));
+                let text = format!("\x1b[>0;{version};1c");
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(text), self.window_id);
+            }
+            _ => debug!("Unsupported device attributes intermediate"),
+        }
+    }
+
+    #[inline]
+    fn device_status(&mut self, arg: usize) {
+        log::trace!("Reporting device status: {}", arg);
+        match arg {
+            5 => {
+                let text = String::from("\x1b[0n");
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(text), self.window_id);
+            }
+            6 => {
+                let pos = self.grid.cursor.pos;
+                let text = format!("\x1b[{};{}R", pos.row + 1, pos.col + 1);
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(text), self.window_id);
+            }
+            _ => debug!("unknown device status query: {}", arg),
+        };
     }
 
     #[inline]
@@ -1709,6 +1815,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.cursor.pos.row += 1;
             self.damage_cursor();
         }
+    }
+
+    #[inline]
+    fn set_horizontal_tabstop(&mut self) {
+        self.tabs[self.grid.cursor.pos.col] = true;
     }
 
     #[inline]
@@ -2190,5 +2301,13 @@ mod tests {
             term.selection_to_string(),
             Some(String::from("\na\"\na\"\na"))
         );
+    }
+
+    #[test]
+    fn parse_cargo_version() {
+        assert_eq!(version_number("0.0.1-canary"), 1);
+        assert_eq!(version_number("0.1.2-canary"), 1_02);
+        assert_eq!(version_number("1.2.3-canary"), 1_02_03);
+        assert_eq!(version_number("999.99.99"), 9_99_99_99);
     }
 }

@@ -70,6 +70,7 @@ struct FontBounds {
     symbols: FontBound,
     emojis: FontBound,
     unicode: FontBound,
+    icons: FontBound,
 }
 
 pub struct Sugarloaf {
@@ -85,12 +86,30 @@ pub struct Sugarloaf {
 }
 
 const FONT_ID_REGULAR: usize = 0;
-const FONT_ID_SYMBOL: usize = 1;
-const FONT_ID_EMOJIS: usize = 2;
-const FONT_ID_UNICODE: usize = 3;
-const FONT_ID_BOLD: usize = 4;
-const FONT_ID_ITALIC: usize = 5;
-const FONT_ID_BOLD_ITALIC: usize = 6;
+const FONT_ID_ITALIC: usize = 1;
+const FONT_ID_BOLD: usize = 2;
+const FONT_ID_BOLD_ITALIC: usize = 3;
+// TODO: Implement variants
+#[allow(dead_code)]
+const FONT_ID_EXTRA_LIGHT: usize = 4;
+#[allow(dead_code)]
+const FONT_ID_EXTRA_LIGHT_ITALIC: usize = 5;
+#[allow(dead_code)]
+const FONT_ID_LIGHT: usize = 6;
+#[allow(dead_code)]
+const FONT_ID_LIGHT_ITALIC: usize = 7;
+#[allow(dead_code)]
+const FONT_ID_SEMI_BOLD: usize = 8;
+#[allow(dead_code)]
+const FONT_ID_SEMI_BOLD_ITALIC: usize = 9;
+#[allow(dead_code)]
+const FONT_ID_SEMI_LIGHT: usize = 10;
+#[allow(dead_code)]
+const FONT_ID_SEMI_LIGHT_ITALIC: usize = 11;
+const FONT_ID_SYMBOL: usize = 12;
+const FONT_ID_EMOJIS: usize = 13;
+const FONT_ID_UNICODE: usize = 14;
+const FONT_ID_ICONS: usize = 15;
 
 impl Sugarloaf {
     pub async fn new(
@@ -105,12 +124,21 @@ impl Sugarloaf {
 
         let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
             font.text.regular,
+            font.text.italic,
+            font.text.bold,
+            font.text.bold_italic,
+            font.text.extra_light,
+            font.text.extra_light_italic,
+            font.text.light,
+            font.text.light_italic,
+            font.text.semi_bold,
+            font.text.semi_bold_italic,
+            font.text.semi_light,
+            font.text.semi_light_italic,
             font.symbol,
             font.emojis,
             font.unicode,
-            font.text.bold,
-            font.text.italic,
-            font.text.bold_italic,
+            font.icons,
         ])
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
@@ -164,6 +192,7 @@ impl Sugarloaf {
         }
     }
 
+    #[inline]
     pub fn update_font(&mut self, font_name: String) -> &mut Self {
         if self.font_name != font_name {
             log::info!("requested a font change {font_name}");
@@ -171,12 +200,21 @@ impl Sugarloaf {
 
             let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
                 font.text.regular,
+                font.text.italic,
+                font.text.bold,
+                font.text.bold_italic,
+                font.text.extra_light,
+                font.text.extra_light_italic,
+                font.text.light,
+                font.text.light_italic,
+                font.text.semi_bold,
+                font.text.semi_bold_italic,
+                font.text.semi_light,
+                font.text.semi_light_italic,
                 font.symbol,
                 font.emojis,
                 font.unicode,
-                font.text.bold,
-                font.text.italic,
-                font.text.bold_italic,
+                font.icons,
             ])
             .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;
@@ -185,12 +223,14 @@ impl Sugarloaf {
         self
     }
 
+    #[inline]
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
         self.ctx.resize(width, height);
         self.layout.resize(width, height).update();
         self
     }
 
+    #[inline]
     pub fn rescale(&mut self, scale: f32) -> &mut Self {
         self.ctx.scale = scale;
         self.layout.rescale(scale).update();
@@ -205,10 +245,11 @@ impl Sugarloaf {
         mod_size /= self.ctx.scale;
 
         let fonts = self.text_brush.fonts();
-        let regular: &FontArc = &fonts[0];
-        let symbols: &FontArc = &fonts[1];
-        let emojis: &FontArc = &fonts[2];
-        let unicode: &FontArc = &fonts[3];
+        let regular: &FontArc = &fonts[FONT_ID_REGULAR];
+        let symbols: &FontArc = &fonts[FONT_ID_SYMBOL];
+        let emojis: &FontArc = &fonts[FONT_ID_EMOJIS];
+        let unicode: &FontArc = &fonts[FONT_ID_UNICODE];
+        let icons: &FontArc = &fonts[FONT_ID_ICONS];
         let glyph_zero = ab_glyph::GlyphId(0);
 
         for sugar in stack.iter() {
@@ -230,12 +271,15 @@ impl Sugarloaf {
                 FontId(FONT_ID_EMOJIS)
             } else if unicode.glyph_id(sugar.content) != glyph_zero {
                 add_pos_x = self.font_bounds.unicode.0;
+                FontId(FONT_ID_UNICODE)
+            } else if icons.glyph_id(sugar.content) != glyph_zero {
+                add_pos_x = self.font_bounds.icons.0;
 
                 let cwidth = sugar.content.width().unwrap_or(1) as f32;
                 if cwidth > 1. {
-                    add_pos_x += self.font_bounds.default.0 * (cwidth - 1.);
+                    add_pos_x += self.font_bounds.icons.0 * (cwidth - 1.);
                 }
-                FontId(FONT_ID_UNICODE)
+                FontId(FONT_ID_ICONS)
             } else {
                 FontId(FONT_ID_REGULAR)
             };
@@ -258,11 +302,16 @@ impl Sugarloaf {
                     / self.ctx.scale;
             }
 
+            let mut scale = self.layout.style.text_scale;
+            if font_id == FontId(FONT_ID_ICONS) || font_id == FontId(FONT_ID_EMOJIS) {
+                scale = self.layout.style.icon_scale;
+            }
+
             text.push(
                 OwnedText::new(sugar.content.to_owned())
                     .with_font_id(font_id)
                     .with_color(sugar.foreground_color)
-                    .with_scale(self.layout.style.text_scale),
+                    .with_scale(scale),
             );
 
             self.rects.push(Rect {
@@ -318,20 +367,27 @@ impl Sugarloaf {
         self.acc_line += self.font_bounds.default.1;
     }
 
+    #[inline]
     pub fn get_context(&self) -> &Context {
         &self.ctx
     }
 
+    #[inline]
     pub fn get_scale(&self) -> f32 {
         self.ctx.scale
     }
 
     #[inline]
     pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> FontBound {
+        let mut scale = self.layout.style.text_scale;
+        if font_id == FontId(FONT_ID_ICONS) || font_id == FontId(FONT_ID_EMOJIS) {
+            scale = self.layout.style.icon_scale;
+        }
+
         let text = vec![OwnedText::new(content)
             .with_font_id(font_id)
             .with_color([0., 0., 0., 0.])
-            .with_scale(self.layout.style.text_scale)];
+            .with_scale(scale)];
 
         let section = &OwnedSection {
             screen_position: (
@@ -356,6 +412,7 @@ impl Sugarloaf {
         (0., 0.)
     }
 
+    #[inline]
     pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
         self.layout.background_color = color;
         self
@@ -413,6 +470,8 @@ impl Sugarloaf {
                 self.font_bounds.unicode =
                     // U+33D1 => \u{33D1} => ㏑
                     self.get_font_bounds('\u{33D1}', FontId(FONT_ID_UNICODE));
+                self.font_bounds.icons =
+                    self.get_font_bounds('\u{e70a}', FontId(FONT_ID_ICONS));
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
@@ -425,6 +484,7 @@ impl Sugarloaf {
         }
     }
 
+    #[inline]
     fn reset_state(&mut self) {
         self.acc_line = 0.0;
         self.acc_line_y = 0.0;
@@ -489,6 +549,7 @@ impl Sugarloaf {
         bytes
     }
 
+    #[inline]
     pub fn pile_rect(&mut self, mut instances: Vec<Rect>) -> &mut Self {
         self.rects.append(&mut instances);
         self
