@@ -33,8 +33,6 @@ pub struct Font {
     pub icons: FontArc,
 }
 
-pub type AllSystemFonts = Vec<font_kit::handle::Handle>;
-
 #[cfg(not(target_arch = "wasm32"))]
 fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
     let copied_font = font.copy_font_data();
@@ -224,6 +222,7 @@ impl Font {
             symbol: font_arc_symbol,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
+            icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
         }
     }
 
