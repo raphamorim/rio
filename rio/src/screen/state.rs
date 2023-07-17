@@ -210,7 +210,7 @@ impl State {
         let mut decoration = None;
         if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
-                position: (0.0, 0.92),
+                position: (0.0, 0.94),
                 size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });

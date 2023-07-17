@@ -2,6 +2,7 @@
 
 ## 0.0.10 (in progress)
 
+- Fix Glyph not rendered in prompt (ref: [#135](https://github.com/raphamorim/rio/issues/135)).
 - Use fork by default in context tests.
 - Updated terminfo.
 - Move to next and prev tab using keybindings.

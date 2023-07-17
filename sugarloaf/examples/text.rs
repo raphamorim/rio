@@ -148,7 +148,7 @@ async fn main() {
         ];
 
         let underline = SugarDecoration {
-            position: (0.0, 0.92),
+            position: (0.0, 0.94),
             size: (1.0, 0.03),
             color: [1.0, 0.4, 1.0, 1.0],
         };
