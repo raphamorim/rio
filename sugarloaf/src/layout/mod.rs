@@ -25,6 +25,7 @@ pub struct SugarloafLayout {
 
 #[inline]
 fn update_styles(layout: &mut SugarloafLayout) {
+    let text_scale = layout.font_size * layout.scale_factor;
     let new_styles = SugarloafStyle {
         screen_position: (
             layout.padding.x * layout.scale_factor,
@@ -34,7 +35,8 @@ fn update_styles(layout: &mut SugarloafLayout) {
             layout.width * layout.scale_factor,
             layout.height * layout.scale_factor,
         ),
-        text_scale: layout.font_size * layout.scale_factor,
+        text_scale,
+        icon_scale: text_scale - 4.,
     };
     layout.style = new_styles;
 }
