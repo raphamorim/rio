@@ -6,6 +6,10 @@ pub fn default_padding_x() -> f32 {
     10.
 }
 
+pub fn default_line_height() -> f32 {
+    1.0
+}
+
 pub fn default_shell() -> crate::Shell {
     #[cfg(not(target_os = "windows"))]
     {

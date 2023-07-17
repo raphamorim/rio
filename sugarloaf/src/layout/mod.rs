@@ -8,6 +8,7 @@ pub struct Delta<T: Default> {
 
 pub struct SugarloafLayout {
     pub scale_factor: f32,
+    pub line_height: f32,
     pub width: f32,
     pub height: f32,
     pub width_u32: u32,
@@ -27,6 +28,7 @@ pub struct SugarloafLayout {
 fn update_styles(layout: &mut SugarloafLayout) {
     let text_scale = layout.font_size * layout.scale_factor;
     let new_styles = SugarloafStyle {
+        line_height: layout.line_height,
         screen_position: (
             layout.padding.x * layout.scale_factor,
             ((layout.padding.y + layout.font_size) * layout.scale_factor),
@@ -74,6 +76,7 @@ impl SugarloafLayout {
         padding: (f32, f32),
         scale_factor: f32,
         font_size: f32,
+        line_height: f32,
         min_cols_lines: (usize, usize),
     ) -> SugarloafLayout {
         let style = SugarloafStyle::default();
@@ -93,6 +96,7 @@ impl SugarloafLayout {
             original_font_size: font_size,
             font_size,
             font_bound,
+            line_height,
             style,
             padding: Delta {
                 x: padding.0,

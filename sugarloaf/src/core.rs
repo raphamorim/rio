@@ -28,6 +28,7 @@ pub type SugarPile = Vec<SugarStack>;
 pub struct SugarloafStyle {
     pub screen_position: (f32, f32),
     pub bounds: (f32, f32),
+    pub line_height: f32,
     pub text_scale: f32,
     pub icon_scale: f32,
 }
