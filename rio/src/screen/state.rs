@@ -211,7 +211,7 @@ impl State {
         if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
                 position: (0.0, 0.92),
-                size: (1.0, 0.025),
+                size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });
         } else if flags.contains(Flags::STRIKEOUT) {

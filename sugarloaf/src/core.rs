@@ -14,7 +14,7 @@ pub struct SugarStyle {
     pub is_bold_italic: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct SugarDecoration {
     pub position: (f32, f32),
     pub size: (f32, f32),

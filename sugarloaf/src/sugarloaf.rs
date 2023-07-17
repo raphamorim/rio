@@ -339,8 +339,7 @@ impl Sugarloaf {
                     color: decoration.color,
                     size: [
                         (add_pos_x * decoration.size.0) * mod_size,
-                        ((self.font_bounds.default.0 * decoration.size.1) * mod_size)
-                            .ceil(),
+                        ((self.font_bounds.default.0 * decoration.size.1) * mod_size),
                     ],
                 });
             }

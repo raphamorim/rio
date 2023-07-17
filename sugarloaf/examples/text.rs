@@ -1,6 +1,10 @@
 extern crate tokio;
 
-use sugarloaf::{core::Sugar, layout::SugarloafLayout, Sugarloaf};
+use sugarloaf::{
+    core::{Sugar, SugarDecoration},
+    layout::SugarloafLayout,
+    Sugarloaf,
+};
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::{
     dpi::LogicalSize,
@@ -23,7 +27,7 @@ async fn main() {
         .unwrap();
 
     let scale_factor = window.scale_factor();
-    let font_size = 180.;
+    let font_size = 90.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -143,6 +147,12 @@ async fn main() {
             },
         ];
 
+        let underline = SugarDecoration {
+            position: (0.0, 0.92),
+            size: (1.0, 0.03),
+            color: [1.0, 0.4, 1.0, 1.0],
+        };
+
         let rio = vec![
             Sugar {
                 content: ' ',
@@ -156,21 +166,21 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(underline),
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(underline),
             },
             Sugar {
                 content: 'o',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
-                decoration: None,
+                decoration: Some(underline),
             },
             Sugar {
                 content: 'g',
@@ -237,6 +247,45 @@ async fn main() {
             },
         ];
 
+        let special_2 = vec![
+            // Font Symbol (char width 2)
+            Sugar {
+                content: 'a',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '％',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.5, 0.5, 0.5, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: 'a',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+        ];
+
         match event {
             Event::Resumed => {
                 sugarloaf.set_background_color(wgpu::Color::RED);
@@ -272,6 +321,7 @@ async fn main() {
             Event::RedrawRequested { .. } => {
                 sugarloaf.stack(sugar);
                 sugarloaf.stack(loaf);
+                sugarloaf.stack(special_2);
                 sugarloaf.stack(rio);
                 sugarloaf.stack(special);
                 sugarloaf.render();
