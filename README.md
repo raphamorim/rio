@@ -51,7 +51,7 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 * [![Sponsor Rio terminal](https://img.shields.io/github/sponsors/raphamorim?label=Sponsor%20Rio&logo=github&style=for-the-badge)](https://github.com/sponsors/raphamorim)
 * [Patreon](https://patreon.com/raphamorim)
 
-### Acknowledgments
+## Acknowledgments
 
 - Alacritty 🥇
 - Rio logo was made using _Adobe Sketchbook_ on iPad.
