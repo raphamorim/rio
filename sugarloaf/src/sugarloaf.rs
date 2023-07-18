@@ -251,6 +251,7 @@ impl Sugarloaf {
         let glyph_zero = ab_glyph::GlyphId(0);
 
         let sugar_x = self.layout.sugarwidth * self.ctx.scale;
+        let sugar_width = self.layout.sugarwidth * 2.;
         for sugar in stack.iter() {
             let mut add_pos_x = sugar_x;
 
@@ -310,7 +311,7 @@ impl Sugarloaf {
                 ],
                 color: sugar.background_color,
                 size: [
-                    sugar_x,
+                    sugar_width,
                     self.layout.sugarheight,
                 ],
             });
@@ -323,7 +324,7 @@ impl Sugarloaf {
                     ],
                     color: decoration.color,
                     size: [
-                        (sugar_x * decoration.size.0),
+                        (sugar_width * decoration.size.0),
                         (self.layout.sugarheight * decoration.size.1),
                     ],
                 });
