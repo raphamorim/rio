@@ -60,7 +60,7 @@ fn compute(
     let padding_x = ((padding.x) * scale_factor).floor();
     let padding_y = ((padding.y) * scale_factor).floor();
 
-    let mut lines = (height - padding_y) / scale_factor;
+    let mut lines = (height / scale_factor) - padding_y;
     lines /= font_size;
     let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
 
