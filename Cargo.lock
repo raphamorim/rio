@@ -295,12 +295,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c129aff112dcc562970abb69e2508b40850dd24c274761bb50fb8a0067ba6c27"
 
 [[package]]
-name = "bytes"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec8a7b6a70fde80372154c65702f00a0f56f3e1c36abbc6c440484be248856db"
-
-[[package]]
 name = "calloop"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -527,7 +521,7 @@ dependencies = [
 name = "corcovado"
 version = "0.0.1"
 dependencies = [
- "bytes 0.3.0",
+ "bytes",
  "cfg-if 0.1.10",
  "criterion",
  "env_logger 0.4.3",
@@ -2539,16 +2533,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "socket2"
-version = "0.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02e2d2db9033d13a1567121ddd7a095ee144db4e1ca1b1bda3419bc0da294ebd"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2724,15 +2708,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03201d01c3c27a29c8a5cee5b55a93ddae1ccf6f08f65365c2c918f8c1b76f64"
 dependencies = [
  "autocfg",
- "bytes 1.2.1",
- "libc",
- "memchr",
- "mio",
  "num_cpus",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
- "socket2",
  "tokio-macros",
  "windows-sys 0.45.0",
 ]
