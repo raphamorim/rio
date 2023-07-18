@@ -470,7 +470,7 @@ impl Sequencer {
                                         self.has_updates.push(window_id);
                                     }
                                 }
-                                // sequencer_window.screen.process_mouse_bindings(button);
+                                sequencer_window.screen.process_mouse_bindings(button);
                             }
                             ElementState::Released => {
                                 if !sequencer_window.screen.modifiers.shift()
@@ -515,6 +515,7 @@ impl Sequencer {
                         let rmb_pressed =
                             sw.screen.mouse.right_button_state == ElementState::Pressed;
 
+                        // TODO: Se começar do padding não dar scroll
                         if !sw.screen.selection_is_empty() && (lmb_pressed || rmb_pressed)
                         {
                             sw.screen.update_selection_scrolling(y);
