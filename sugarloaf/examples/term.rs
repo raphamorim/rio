@@ -48,7 +48,11 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        // sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        // "Fira Code".to_string(),
+        // "Monaco".to_string(),
+        "Space Mono".to_string(),
+        // "Menlo".to_string(),
         sugarloaf_layout,
     )
     .await
@@ -229,7 +233,7 @@ async fn main() {
                 decoration: None,
             },
             Sugar {
-                content: 'o',
+                content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,

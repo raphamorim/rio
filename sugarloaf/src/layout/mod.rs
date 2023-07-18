@@ -38,7 +38,7 @@ fn update_styles(layout: &mut SugarloafLayout) {
             layout.height * layout.scale_factor,
         ),
         text_scale,
-        icon_scale: text_scale - 4.,
+        icon_scale: text_scale / 1.5,
     };
     layout.style = new_styles;
 }
