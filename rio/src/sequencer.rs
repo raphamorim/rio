@@ -788,11 +788,7 @@ impl Sequencer {
                     if !self.has_updates.is_empty() {
                         for window_id in self.has_updates.iter() {
                             if let Some(sw) = self.windows.get_mut(window_id) {
-                                // 5-8ms
-                                let start = Instant::now();
                                 sw.screen.render();
-                                let duration = start.elapsed();
-                                println!("Time elapsed in expensive_function() is: {:?}", duration);
                             }
                         }
 

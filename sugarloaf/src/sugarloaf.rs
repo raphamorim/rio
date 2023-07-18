@@ -1,11 +1,13 @@
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
+use crate::core::Sugar;
 use crate::core::SugarStack;
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
+use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
 pub trait Renderable: 'static + Sized {
@@ -52,7 +54,14 @@ struct FontBounds {
     icons: FontBound,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct CachedSugar {
+    font_id: FontId,
+    char_width: f32,
+}
+
 pub struct Sugarloaf {
+    sugar_cache: HashMap<char, CachedSugar>,
     pub ctx: Context,
     pub layout: SugarloafLayout,
     text_brush: text::GlyphBrush<()>,
@@ -121,6 +130,7 @@ impl Sugarloaf {
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         Ok(Sugarloaf {
+            sugar_cache: HashMap::new(),
             font_name,
             ctx,
             rect_brush,
@@ -215,14 +225,13 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn stack(&mut self, mut stack: SugarStack) {
-        let mut x = 0.;
-        let text_brush = &mut self.text_brush;
-        let mod_pos_y = self.layout.style.screen_position.1;
-        let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
+    pub fn get_font_id(&mut self, sugar: &mut Sugar) -> CachedSugar {
+        if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
+            return *cached_sugar;
+        }
 
         #[allow(clippy::unnecessary_to_owned)]
-        let fonts: &[FontArc] = &text_brush.fonts().to_owned();
+        let fonts: &[FontArc] = &self.text_brush.fonts().to_owned();
         let regular: &FontArc = &fonts[FONT_ID_REGULAR];
         let symbols: &FontArc = &fonts[FONT_ID_SYMBOL];
         let emojis: &FontArc = &fonts[FONT_ID_EMOJIS];
@@ -230,41 +239,65 @@ impl Sugarloaf {
         let icons: &FontArc = &fonts[FONT_ID_ICONS];
         let glyph_zero = ab_glyph::GlyphId(0);
 
+        let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_REGULAR)
+        } else if symbols.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_SYMBOL)
+        } else if emojis.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_EMOJIS)
+        } else if unicode.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_UNICODE)
+        } else if icons.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_ICONS)
+        } else {
+            FontId(FONT_ID_REGULAR)
+        };
+
+        if font_id == FontId(FONT_ID_REGULAR) {
+            if let Some(style) = &sugar.style {
+                if style.is_bold_italic {
+                    font_id = FontId(FONT_ID_BOLD_ITALIC);
+                } else if style.is_bold {
+                    font_id = FontId(FONT_ID_BOLD);
+                } else if style.is_italic {
+                    font_id = FontId(FONT_ID_ITALIC);
+                }
+            }
+        }
+
+        let char_width = sugar.content.width().unwrap_or(1) as f32;
+        let cached_sugar = CachedSugar {
+            font_id,
+            char_width,
+        };
+
+        self.sugar_cache.insert(
+            sugar.content,
+            CachedSugar {
+                font_id,
+                char_width,
+            },
+        );
+
+        cached_sugar
+    }
+
+    #[inline]
+    pub fn stack(&mut self, mut stack: SugarStack) {
+        let mut x = 0.;
+        let mod_pos_y = self.layout.style.screen_position.1;
+        let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
+
         let sugar_x = self.layout.sugarwidth * self.ctx.scale;
         let sugar_width = self.layout.sugarwidth * 2.;
         for sugar in stack.iter_mut() {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
-            let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
-                FontId(FONT_ID_REGULAR)
-            } else if symbols.glyph_id(sugar.content) != glyph_zero {
-                FontId(FONT_ID_SYMBOL)
-            } else if emojis.glyph_id(sugar.content) != glyph_zero {
-                FontId(FONT_ID_EMOJIS)
-            } else if unicode.glyph_id(sugar.content) != glyph_zero {
-                FontId(FONT_ID_UNICODE)
-            } else if icons.glyph_id(sugar.content) != glyph_zero {
-                FontId(FONT_ID_ICONS)
-            } else {
-                FontId(FONT_ID_REGULAR)
-            };
+            let cached_sugar: CachedSugar = self.get_font_id(sugar);
 
-            let char_width = sugar.content.width().unwrap_or(1) as f32;
-            if char_width > 1. {
+            if cached_sugar.char_width > 1. {
                 sugar_char_width += 1.;
                 add_pos_x += sugar_x;
-            }
-
-            if font_id == FontId(FONT_ID_REGULAR) {
-                if let Some(style) = &sugar.style {
-                    if style.is_bold_italic {
-                        font_id = FontId(FONT_ID_BOLD_ITALIC);
-                    } else if style.is_bold {
-                        font_id = FontId(FONT_ID_BOLD);
-                    } else if style.is_italic {
-                        font_id = FontId(FONT_ID_ITALIC);
-                    }
-                }
             }
 
             if self.text_y == 0.0 {
@@ -272,21 +305,21 @@ impl Sugarloaf {
             }
 
             let mut scale = self.layout.style.text_scale;
-            if font_id == FontId(FONT_ID_EMOJIS)
-                || font_id == FontId(FONT_ID_SYMBOL)
-                || font_id == FontId(FONT_ID_UNICODE)
+            if cached_sugar.font_id == FontId(FONT_ID_EMOJIS)
+                || cached_sugar.font_id == FontId(FONT_ID_SYMBOL)
+                || cached_sugar.font_id == FontId(FONT_ID_UNICODE)
             {
                 scale = self.layout.style.icon_scale;
             }
 
-            if font_id == FontId(FONT_ID_ICONS) {
+            if cached_sugar.font_id == FontId(FONT_ID_ICONS) {
                 scale /= 2.6;
             }
 
             let text = crate::components::text::Text {
                 text: &sugar.content.to_owned().to_string(),
                 scale: PxScale::from(scale),
-                font_id,
+                font_id: cached_sugar.font_id,
                 extra: crate::components::text::Extra {
                     color: sugar.foreground_color,
                     z: 0.0,
@@ -306,7 +339,7 @@ impl Sugarloaf {
                     .h_align(glyph_brush::HorizontalAlign::Left),
             };
 
-            text_brush.queue(section);
+            self.text_brush.queue(section);
 
             self.rects.push(Rect {
                 position: [rect_pos_x / self.ctx.scale, rect_pos_y / self.ctx.scale],
