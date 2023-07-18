@@ -28,7 +28,7 @@ serde = { version = "1.0.163", features = ["derive"] }
 teletypewriter = { path = "teletypewriter" }
 sugarloaf = { path = "sugarloaf" }
 corcovado = { path = "corcovado" }
-tokio = { version = "1.26.0", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.29.1", features = ["rt", "rt-multi-thread", "macros"] }
 wgpu = "0.16.2"
 winit = { version = "0.28.6", default-features = false, features = ["serde"] }
 libc = "0.2.147"
