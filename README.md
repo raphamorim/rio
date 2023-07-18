@@ -36,7 +36,7 @@ Rio is built over a custom renderer called [Sugarloaf](https://crates.io/crates/
 | ----------- | ----------- |
 | ![Demo Rect](sugarloaf/resources/demo-rect.png) | ![Demo sugarloaf 3](sugarloaf/resources/demo-sugarloaf-3.png) |
 | ![Demo sugarloaf 4](sugarloaf/resources/demo-sugarloaf-4.png) | ![Demo sugarloaf 5](sugarloaf/resources/demo-sugarloaf-5.png) |
-| ![Demo sugarloaf 2](sugarloaf/resources/demo-sugarloaf-2.png) | |
+| ![Demo sugarloaf 6](sugarloaf/resources/demo-sugarloaf-6.png) | |
 
 ## About
 

@@ -1,53 +1,34 @@
-use sugarloaf::Sugarloaf;
+extern crate tokio;
+
+use sugarloaf::core::SugarStyle;
 use sugarloaf::{
-    core::{Sugar, SugarDecoration, SugarStyle},
+    core::{Sugar, SugarDecoration},
     layout::SugarloafLayout,
+    Sugarloaf,
 };
-use wasm_bindgen::prelude::*;
 
 use winit::{
-    event::*,
+    dpi::LogicalSize,
+    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
 };
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
-use web_sys::HtmlCanvasElement;
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::WindowBuilderExtWebSys;
-
-async fn run() {
+#[tokio::main]
+async fn main() {
     let event_loop = EventLoop::new();
-    let width = 600.0;
-    let height = 400.0;
+    let width = 1200.0;
+    let height = 800.0;
 
-    #[cfg(target_arch = "wasm32")]
-    let canvas_element = {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| doc.get_element_by_id("sugarloaf_canvas"))
-            .and_then(|element| element.dyn_into::<HtmlCanvasElement>().ok())
-            .expect("Get canvas element")
-    };
-
-    #[cfg(target_arch = "wasm32")]
-    let window = winit::window::WindowBuilder::new()
-        .with_title("sugarloaf-wasm")
-        .with_inner_size(winit::dpi::LogicalSize::new(width, height))
-        .with_resizable(false)
-        .with_canvas(Some(canvas_element))
+    let window = WindowBuilder::new()
+        .with_title("Text example")
+        .with_inner_size(LogicalSize::new(width, height))
+        .with_resizable(true)
         .build(&event_loop)
         .unwrap();
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let window = winit::window::Window::new(&event_loop).unwrap();
-
     let scale_factor = window.scale_factor();
-    let font_size = 60.;
-    let line_height = 1.0;
+    let font_size = 90.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -55,7 +36,7 @@ async fn run() {
         (10.0, 10.0),
         scale_factor as f32,
         font_size,
-        line_height,
+        1.0,
         (2, 1),
     );
 
@@ -67,8 +48,6 @@ async fn run() {
     )
     .await
     .expect("Sugarloaf instance should be created");
-
-    log::info!("started scale_factor: {scale_factor:?}");
 
     sugarloaf.calculate_bounds();
 
@@ -82,7 +61,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.90),
+                    relative_position: (0.0, 85.),
                     size: (1.0, 0.050),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -93,7 +72,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.90),
+                    relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -104,7 +83,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -115,7 +94,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -126,7 +105,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -137,7 +116,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -155,7 +134,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -166,7 +145,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -177,7 +156,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -188,7 +167,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -199,7 +178,7 @@ async fn run() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
+                    relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
@@ -433,7 +412,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
+                    relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
@@ -455,7 +434,7 @@ async fn run() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
+                    relative_position: (0.0, 0.85),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
@@ -469,7 +448,7 @@ async fn run() {
         });
 
         let underline = Some(SugarDecoration {
-            relative_position: (0.0, 0.92),
+            relative_position: (0.0, 85.),
             size: (1.0, 0.05),
             color: [1.0, 0.4, 1.0, 1.0],
         });
@@ -567,11 +546,4 @@ async fn run() {
             }
         }
     });
-}
-
-#[wasm_bindgen(start)]
-pub fn main() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init().expect("could not initialize logger");
-    wasm_bindgen_futures::spawn_local(run());
 }

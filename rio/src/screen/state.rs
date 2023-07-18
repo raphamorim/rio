@@ -210,13 +210,13 @@ impl State {
         let mut decoration = None;
         if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
-                position: (0.0, 0.94),
+                relative_position: (0.0, 0.94),
                 size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });
         } else if flags.contains(Flags::STRIKEOUT) {
             decoration = Some(SugarDecoration {
-                position: (0.0, 0.5),
+                relative_position: (0.0, 0.5),
                 size: (1.0, 0.025),
                 color: self.named_colors.foreground,
             });
@@ -235,17 +235,17 @@ impl State {
     fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
         match self.cursor.state.content {
             CursorShape::Block => Some(SugarDecoration {
-                position: (0.0, 0.0),
+                relative_position: (0.0, 0.0),
                 size: (1.0, 1.0),
                 color: self.named_colors.cursor,
             }),
             CursorShape::Underline => Some(SugarDecoration {
-                position: (0.0, 0.92),
+                relative_position: (0.0, 18.),
                 size: (1.0, 0.05),
                 color: self.named_colors.cursor,
             }),
             CursorShape::Beam => Some(SugarDecoration {
-                position: (0.0, 0.0),
+                relative_position: (0.0, 0.0),
                 size: (0.1, 1.0),
                 color: self.named_colors.cursor,
             }),

@@ -41,6 +41,15 @@ impl GlyphBrushBuilder<(), ()> {
             depth: (),
         }
     }
+
+    // pub fn using_scaled_fonts<F: Font>(fonts: Vec<PxScaleFont<FontArc>>) -> GlyphBrushBuilder<(), F> {
+    //     GlyphBrushBuilder {
+    //         inner: glyph_brush::GlyphBrushBuilder::using_fonts(fonts),
+    //         texture_filter_method: wgpu::FilterMode::Linear,
+    //         multisample_state: wgpu::MultisampleState::default(),
+    //         depth: (),
+    //     }
+    // }
 }
 
 impl<F: Font, D, H: BuildHasher> GlyphBrushBuilder<D, F, H> {

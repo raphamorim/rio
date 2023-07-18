@@ -35,6 +35,7 @@ async fn main() {
         (10.0, 10.0),
         scale_factor as f32,
         font_size,
+        1.0,
         (2, 1),
     );
 
@@ -46,6 +47,8 @@ async fn main() {
     )
     .await
     .expect("Sugarloaf instance should be created");
+
+    sugarloaf.calculate_bounds();
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
@@ -148,7 +151,7 @@ async fn main() {
         ];
 
         let underline = SugarDecoration {
-            position: (0.0, 0.94),
+            relative_position: (0.0, 0.94),
             size: (1.0, 0.03),
             color: [1.0, 0.4, 1.0, 1.0],
         };
@@ -313,7 +316,8 @@ async fn main() {
                     let scale_factor_f32 = scale_factor as f32;
                     sugarloaf
                         .rescale(scale_factor_f32)
-                        .resize(new_inner_size.width, new_inner_size.height);
+                        .resize(new_inner_size.width, new_inner_size.height)
+                        .calculate_bounds();
                     window.request_redraw();
                 }
                 _ => (),

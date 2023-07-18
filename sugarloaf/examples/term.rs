@@ -48,8 +48,8 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        // sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
-        "Fira Code".to_string(),
+        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        // "Fira Code".to_string(),
         // "Monaco".to_string(),
         // "Space Mono".to_string(),
         // "Menlo".to_string(),
@@ -179,7 +179,7 @@ async fn main() {
         ];
 
         let underline = SugarDecoration {
-            position: (0.0, 0.94),
+            relative_position: (0.0, 0.94),
             size: (1.0, 0.03),
             color: [1.0, 0.4, 1.0, 1.0],
         };
@@ -263,44 +263,44 @@ async fn main() {
                 decoration: None,
             },
             // // Font Unicode (unicode font)
-            // Sugar {
-            //     content: '㏑',
-            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
-            //     background_color: [0.0, 1.0, 1.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // // Font Symbol (apple symbols font)
-            // Sugar {
-            //     content: '⫹',
-            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
-            //     background_color: [0.0, 0.0, 0.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // // Font Regular (firamono)
-            // Sugar {
-            //     content: 'λ',
-            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
-            //     background_color: [0.0, 1.0, 1.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // // // Font Emojis
-            // Sugar {
-            //     content: '🥇',
-            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
-            //     background_color: [0.0, 0.0, 0.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // Sugar {
-            //     content: '👷',
-            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
-            //     background_color: [0.0, 0.0, 1.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
+            Sugar {
+                content: '㏑',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            // Font Symbol (apple symbols font)
+            Sugar {
+                content: '⫹',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            // Font Regular (firamono)
+            Sugar {
+                content: 'λ',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            // // Font Emojis
+            Sugar {
+                content: '🥇',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '👷',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
         ];
 
         let special = vec![
@@ -312,34 +312,42 @@ async fn main() {
                 style: None,
                 decoration: None,
             },
-            // Sugar {
-            //     content: '％',
-            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
-            //     background_color: [0.0, 1.0, 1.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // Sugar {
-            //     content: '',
-            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
-            //     background_color: [0.5, 0.5, 0.5, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // Sugar {
-            //     content: 'a',
-            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
-            //     background_color: [1.0, 1.0, 1.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
-            // Sugar {
-            //     content: '',
-            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
-            //     background_color: [0.0, 0.0, 0.0, 1.0],
-            //     style: None,
-            //     decoration: None,
-            // },
+            Sugar {
+                content: '％',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.5, 0.5, 0.5, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: 'a',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                // content: '',
+                content: '\u{e602}',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: '🥇',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
         ];
 
         match event {
