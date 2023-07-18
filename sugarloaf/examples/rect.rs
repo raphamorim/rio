@@ -28,6 +28,7 @@ async fn main() {
 
     let scale_factor = window.scale_factor();
     let font_size = 60.;
+    let line_height = 1.0;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -35,6 +36,7 @@ async fn main() {
         (0.0, 0.0),
         scale_factor as f32,
         font_size,
+        line_height,
         (2, 1),
     );
 

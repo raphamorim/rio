@@ -239,9 +239,8 @@ impl Sugarloaf {
     pub fn stack(&mut self, stack: SugarStack) {
         let mut text: Vec<OwnedText> = vec![];
         let mut x = 0.;
-        let mut mod_size = 2.0;
-        let mod_pos_y = self.layout.style.screen_position.1 / self.ctx.scale;
-        mod_size /= self.ctx.scale;
+        let mod_pos_y = self.layout.style.screen_position.1;
+        let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
 
         let fonts = self.text_brush.fonts();
         let regular: &FontArc = &fonts[FONT_ID_REGULAR];
@@ -251,8 +250,9 @@ impl Sugarloaf {
         let icons: &FontArc = &fonts[FONT_ID_ICONS];
         let glyph_zero = ab_glyph::GlyphId(0);
 
+        let sugar_x = self.layout.sugarwidth * self.ctx.scale;
         for sugar in stack.iter() {
-            let mut add_pos_x = self.font_bounds.default.0;
+            let mut add_pos_x = sugar_x;
 
             let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
                 FontId(FONT_ID_REGULAR)
@@ -270,7 +270,7 @@ impl Sugarloaf {
 
             let cwidth = sugar.content.width().unwrap_or(1) as f32;
             if cwidth > 1. {
-                add_pos_x += self.font_bounds.default.0 * (cwidth - 1.);
+                add_pos_x += sugar_x * (cwidth - 1.);
             }
 
             if font_id == FontId(FONT_ID_REGULAR) {
@@ -286,7 +286,7 @@ impl Sugarloaf {
             }
 
             if self.text_y == 0.0 {
-                self.text_y = self.layout.style.screen_position.1 / self.ctx.scale;
+                self.text_y = self.layout.style.screen_position.1;
             }
 
             let mut scale = self.layout.style.text_scale;
@@ -301,30 +301,30 @@ impl Sugarloaf {
                     .with_scale(scale),
             );
 
-            let rect_pos_x = (self.layout.style.screen_position.0 + x) / self.ctx.scale;
+            let rect_pos_x = self.layout.style.screen_position.0 + x;
             let rect_pos_y = self.text_y + mod_pos_y;
             self.rects.push(Rect {
                 position: [
-                    rect_pos_x,
-                    rect_pos_y,
+                    rect_pos_x / self.ctx.scale,
+                    rect_pos_y / self.ctx.scale,
                 ],
                 color: sugar.background_color,
                 size: [
-                    add_pos_x * mod_size,
-                    self.font_bounds.default.1 / self.ctx.scale,
+                    sugar_x,
+                    self.layout.sugarheight,
                 ],
             });
 
             if let Some(decoration) = &sugar.decoration {
                 self.rects.push(Rect {
                     position: [
-                        rect_pos_x + ((add_pos_x * decoration.position.0) / self.ctx.scale),
-                        rect_pos_y * (decoration.position.1 * mod_size),
+                        (rect_pos_x + (add_pos_x * decoration.position.0)) / self.ctx.scale,
+                        (rect_pos_y * decoration.position.1) / self.ctx.scale,
                     ],
                     color: decoration.color,
                     size: [
-                        (add_pos_x * decoration.size.0) * mod_size,
-                        ((self.font_bounds.default.0 * decoration.size.1) * mod_size),
+                        (sugar_x * decoration.size.0),
+                        (self.layout.sugarheight * decoration.size.1),
                     ],
                 });
             }
@@ -335,7 +335,7 @@ impl Sugarloaf {
         let section = &OwnedSection {
             screen_position: (
                 self.layout.style.screen_position.0,
-                mod_pos_y + (self.font_bounds.default.1 / self.ctx.scale) + (self.text_y * self.ctx.scale),
+                mod_text_y + self.text_y + mod_pos_y,
             ),
             bounds: self.layout.style.bounds,
             text,
@@ -344,11 +344,11 @@ impl Sugarloaf {
                 .h_align(glyph_brush::HorizontalAlign::Left),
         };
 
-        // println!("{:?} {:?}", rect_pos_y, self.text_y);
+        println!("{:?} {:?}", self.layout.sugarheight, self.layout.sugarwidth);
 
         self.text_brush.queue(section);
 
-        self.text_y += self.font_bounds.default.1 / self.ctx.scale;
+        self.text_y += self.font_bounds.default.1;
     }
 
     #[inline]
@@ -441,6 +441,14 @@ impl Sugarloaf {
                 // Bounds are defined in runtime
                 self.font_bounds.default =
                     self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
+
+                self.layout.sugarwidth = self.font_bounds.default.0;
+                self.layout.sugarheight = self.font_bounds.default.1;
+
+                if self.ctx.scale > 1. {
+                    self.layout.sugarwidth /= self.ctx.scale;
+                    self.layout.sugarheight /= self.ctx.scale;
+                }
 
                 self.layout
                     .update_columns_lines_per_font_bound(self.font_bounds.default.0);

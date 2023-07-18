@@ -22,6 +22,8 @@ pub struct SugarloafLayout {
     pub style: SugarloafStyle,
     pub background_color: wgpu::Color,
     pub min_cols_lines: (usize, usize),
+    pub sugarwidth: f32,
+    pub sugarheight: f32,
 }
 
 #[inline]
@@ -95,6 +97,8 @@ impl SugarloafLayout {
             scale_factor,
             original_font_size: font_size,
             font_size,
+            sugarwidth: font_size,
+            sugarheight: font_size,
             font_bound,
             line_height,
             style,
