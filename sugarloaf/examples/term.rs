@@ -33,7 +33,7 @@ async fn main() {
     let font_size = 90.;
     // Unitless values: use this number multiplied
     // by the element's font size
-    let line_height = 4.0;
+    let line_height = 2.0;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -48,8 +48,8 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
-        // "Fira Code".to_string(),
+        // sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        "Fira Code".to_string(),
         // "Monaco".to_string(),
         // "Space Mono".to_string(),
         // "Menlo".to_string(),
