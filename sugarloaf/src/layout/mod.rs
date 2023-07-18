@@ -31,7 +31,7 @@ fn update_styles(layout: &mut SugarloafLayout) {
         line_height: layout.line_height,
         screen_position: (
             layout.padding.x * layout.scale_factor,
-            ((layout.padding.y + layout.font_size) * layout.scale_factor),
+            layout.padding.y * layout.scale_factor,
         ),
         bounds: (
             layout.width * layout.scale_factor,
