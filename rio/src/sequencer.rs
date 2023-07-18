@@ -470,7 +470,7 @@ impl Sequencer {
                                         self.has_updates.push(window_id);
                                     }
                                 }
-                                sequencer_window.screen.process_mouse_bindings(button);
+                                // sequencer_window.screen.process_mouse_bindings(button);
                             }
                             ElementState::Released => {
                                 if !sequencer_window.screen.modifiers.shift()

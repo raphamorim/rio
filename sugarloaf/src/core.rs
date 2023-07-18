@@ -16,10 +16,18 @@ pub struct SugarStyle {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SugarDecoration {
-    pub position: (f32, f32),
+    pub relative_position: (f32, f32),
     pub size: (f32, f32),
     pub color: [f32; 4],
 }
+
+// #[derive(Debug, Copy, Clone)]
+// #[allow(unused)]
+// pub enum SugarDecorationPosition {
+//     TOP,
+//     MIDDLE,
+//     BOTTOM
+// }
 
 pub type SugarStack = Vec<Sugar>;
 pub type SugarPile = Vec<SugarStack>;

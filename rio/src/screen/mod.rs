@@ -90,6 +90,7 @@ impl Screen {
             (config.padding_x, constants::PADDING_Y),
             scale as f32,
             config.font_size,
+            config.line_height,
             (MIN_COLUMNS, MIN_LINES),
         );
 

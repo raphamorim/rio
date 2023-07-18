@@ -4,30 +4,9 @@ use crate::context::Context;
 use crate::core::SugarStack;
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
-use glyph_brush::ab_glyph::{self, Font as GFont, FontArc};
+use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
 use unicode_width::UnicodeWidthChar;
-
-pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
-    [
-        2.0 / width as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        -2.0 / height as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        -1.0,
-        1.0,
-        0.0,
-        1.0,
-    ]
-}
 
 pub trait Renderable: 'static + Sized {
     fn required_features() -> wgpu::Features {
@@ -56,7 +35,7 @@ pub trait Renderable: 'static + Sized {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
-        transform: [f32; 16],
+        dimensions: (u32, u32),
         instances: &[Rect],
         context: &mut Context,
     );
@@ -236,13 +215,14 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn stack(&mut self, stack: SugarStack) {
-        let mut text: Vec<OwnedText> = vec![];
+    pub fn stack(&mut self, mut stack: SugarStack) {
         let mut x = 0.;
+        let text_brush = &mut self.text_brush;
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
 
-        let fonts = self.text_brush.fonts();
+        #[allow(clippy::unnecessary_to_owned)]
+        let fonts: &[FontArc] = &text_brush.fonts().to_owned();
         let regular: &FontArc = &fonts[FONT_ID_REGULAR];
         let symbols: &FontArc = &fonts[FONT_ID_SYMBOL];
         let emojis: &FontArc = &fonts[FONT_ID_EMOJIS];
@@ -252,9 +232,9 @@ impl Sugarloaf {
 
         let sugar_x = self.layout.sugarwidth * self.ctx.scale;
         let sugar_width = self.layout.sugarwidth * 2.;
-        for sugar in stack.iter() {
+        for sugar in stack.iter_mut() {
             let mut add_pos_x = sugar_x;
-
+            let mut sugar_char_width = 1.;
             let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
                 FontId(FONT_ID_REGULAR)
             } else if symbols.glyph_id(sugar.content) != glyph_zero {
@@ -269,9 +249,10 @@ impl Sugarloaf {
                 FontId(FONT_ID_REGULAR)
             };
 
-            let cwidth = sugar.content.width().unwrap_or(1) as f32;
-            if cwidth > 1. {
-                add_pos_x += sugar_x * (cwidth - 1.);
+            let char_width = sugar.content.width().unwrap_or(1) as f32;
+            if char_width > 1. {
+                sugar_char_width += 1.;
+                add_pos_x += sugar_x;
             }
 
             if font_id == FontId(FONT_ID_REGULAR) {
@@ -291,40 +272,58 @@ impl Sugarloaf {
             }
 
             let mut scale = self.layout.style.text_scale;
-            if font_id == FontId(FONT_ID_ICONS) || font_id == FontId(FONT_ID_EMOJIS) || font_id == FontId(FONT_ID_SYMBOL) {
+            if font_id == FontId(FONT_ID_EMOJIS)
+                || font_id == FontId(FONT_ID_SYMBOL)
+                || font_id == FontId(FONT_ID_UNICODE)
+            {
                 scale = self.layout.style.icon_scale;
             }
 
-            text.push(
-                OwnedText::new(sugar.content.to_owned())
-                    .with_font_id(font_id)
-                    .with_color(sugar.foreground_color)
-                    .with_scale(scale),
-            );
+            if font_id == FontId(FONT_ID_ICONS) {
+                scale /= 2.6;
+            }
+
+            let text = crate::components::text::Text {
+                text: &sugar.content.to_owned().to_string(),
+                scale: PxScale::from(scale),
+                font_id,
+                extra: crate::components::text::Extra {
+                    color: sugar.foreground_color,
+                    z: 0.0,
+                },
+            };
 
             let rect_pos_x = self.layout.style.screen_position.0 + x;
             let rect_pos_y = self.text_y + mod_pos_y;
+            let width_bound = sugar_width * sugar_char_width;
+
+            let section = &crate::components::text::Section {
+                screen_position: (rect_pos_x, mod_text_y + self.text_y + mod_pos_y),
+                bounds: (width_bound, self.layout.sugarheight * self.ctx.scale),
+                text: vec![text],
+                layout: glyph_brush::Layout::default_single_line()
+                    .v_align(glyph_brush::VerticalAlign::Center)
+                    .h_align(glyph_brush::HorizontalAlign::Left),
+            };
+
+            text_brush.queue(section);
+
             self.rects.push(Rect {
-                position: [
-                    rect_pos_x / self.ctx.scale,
-                    rect_pos_y / self.ctx.scale,
-                ],
+                position: [rect_pos_x / self.ctx.scale, rect_pos_y / self.ctx.scale],
                 color: sugar.background_color,
-                size: [
-                    sugar_width,
-                    self.layout.sugarheight,
-                ],
+                size: [width_bound, self.layout.sugarheight],
             });
 
             if let Some(decoration) = &sugar.decoration {
                 self.rects.push(Rect {
                     position: [
-                        (rect_pos_x + (add_pos_x * decoration.position.0)) / self.ctx.scale,
-                        (rect_pos_y * decoration.position.1) / self.ctx.scale,
+                        (rect_pos_x + (add_pos_x * decoration.relative_position.0))
+                            / self.ctx.scale,
+                        (rect_pos_y) / self.ctx.scale + decoration.relative_position.1,
                     ],
                     color: decoration.color,
                     size: [
-                        (sugar_width * decoration.size.0),
+                        (width_bound * decoration.size.0),
                         (self.layout.sugarheight * decoration.size.1),
                     ],
                 });
@@ -332,22 +331,6 @@ impl Sugarloaf {
 
             x += add_pos_x;
         }
-
-        let section = &OwnedSection {
-            screen_position: (
-                self.layout.style.screen_position.0,
-                mod_text_y + self.text_y + mod_pos_y,
-            ),
-            bounds: self.layout.style.bounds,
-            text,
-            layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Center)
-                .h_align(glyph_brush::HorizontalAlign::Left),
-        };
-
-        println!("{:?} {:?}", self.layout.sugarheight, self.layout.sugarwidth);
-
-        self.text_brush.queue(section);
 
         self.text_y += self.font_bounds.default.1;
     }
@@ -365,14 +348,17 @@ impl Sugarloaf {
     #[inline]
     pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> FontBound {
         let mut scale = self.layout.style.text_scale;
-        if font_id == FontId(FONT_ID_ICONS) || font_id == FontId(FONT_ID_EMOJIS) || font_id == FontId(FONT_ID_SYMBOL) {
+        if font_id == FontId(FONT_ID_ICONS)
+            || font_id == FontId(FONT_ID_EMOJIS)
+            || font_id == FontId(FONT_ID_SYMBOL)
+        {
             scale = self.layout.style.icon_scale;
         }
 
         let text = vec![OwnedText::new(content)
             .with_font_id(font_id)
             .with_color([0., 0., 0., 0.])
-            .with_scale(scale)];
+            .with_scale(PxScale::from(scale))];
 
         let section = &OwnedSection {
             screen_position: (
@@ -412,7 +398,6 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
-        // TODO: Write tests for calculate_bounds
         self.reset_state();
         self.rects = vec![];
 
@@ -463,8 +448,10 @@ impl Sugarloaf {
                 self.font_bounds.unicode =
                     // U+33D1 => \u{33D1} => ㏑
                     self.get_font_bounds('\u{33D1}', FontId(FONT_ID_UNICODE));
+
+                // 
                 self.font_bounds.icons =
-                    self.get_font_bounds('\u{e70a}', FontId(FONT_ID_ICONS));
+                    self.get_font_bounds('\u{e602}', FontId(FONT_ID_ICONS));
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
@@ -577,7 +564,7 @@ impl Sugarloaf {
                 self.rect_brush.render(
                     &mut encoder,
                     view,
-                    orthographic_projection(self.ctx.size.width, self.ctx.size.height),
+                    (self.ctx.size.width, self.ctx.size.height),
                     &self.rects,
                     &mut self.ctx,
                 );
