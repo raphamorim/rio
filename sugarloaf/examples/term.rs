@@ -49,9 +49,9 @@ async fn main() {
         &window,
         wgpu::PowerPreference::HighPerformance,
         // sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
-        // "Fira Code".to_string(),
+        "Fira Code".to_string(),
         // "Monaco".to_string(),
-        "Space Mono".to_string(),
+        // "Space Mono".to_string(),
         // "Menlo".to_string(),
         sugarloaf_layout,
     )
@@ -261,37 +261,37 @@ async fn main() {
                 decoration: None,
             },
             // // Font Unicode (unicode font)
-            Sugar {
-                content: '㏑',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
+            // Sugar {
+            //     content: '㏑',
+            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
+            //     background_color: [0.0, 1.0, 1.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
             // // Font Symbol (apple symbols font)
-            Sugar {
-                content: '⫹',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-            },
+            // Sugar {
+            //     content: '⫹',
+            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
+            //     background_color: [0.0, 0.0, 0.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
             // // Font Regular (firamono)
-            Sugar {
-                content: 'λ',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
-            // // Font Emojis
-            Sugar {
-                content: '🥇',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-            },
+            // Sugar {
+            //     content: 'λ',
+            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
+            //     background_color: [0.0, 1.0, 1.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
+            // // // Font Emojis
+            // Sugar {
+            //     content: '🥇',
+            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
+            //     background_color: [0.0, 0.0, 0.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
             // Sugar {
             //     content: '👷',
             //     foreground_color: [0.0, 0.0, 0.0, 1.0],
@@ -310,34 +310,34 @@ async fn main() {
                 style: None,
                 decoration: None,
             },
-            Sugar {
-                content: '％',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
-            Sugar {
-                content: '',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.5, 0.5, 0.5, 1.0],
-                style: None,
-                decoration: None,
-            },
-            Sugar {
-                content: 'a',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
-            Sugar {
-                content: '',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-            },
+            // Sugar {
+            //     content: '％',
+            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
+            //     background_color: [0.0, 1.0, 1.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
+            // Sugar {
+            //     content: '',
+            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
+            //     background_color: [0.5, 0.5, 0.5, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
+            // Sugar {
+            //     content: 'a',
+            //     foreground_color: [0.0, 0.0, 0.0, 1.0],
+            //     background_color: [1.0, 1.0, 1.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
+            // Sugar {
+            //     content: '',
+            //     foreground_color: [1.0, 1.0, 1.0, 1.0],
+            //     background_color: [0.0, 0.0, 0.0, 1.0],
+            //     style: None,
+            //     decoration: None,
+            // },
         ];
 
         match event {
