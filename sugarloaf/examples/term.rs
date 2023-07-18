@@ -33,7 +33,7 @@ async fn main() {
     let font_size = 90.;
     // Unitless values: use this number multiplied
     // by the element's font size
-    let line_height = 1.0;
+    let line_height = 4.0;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -48,8 +48,8 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        // sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
-        "Fira Code".to_string(),
+        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        // "Fira Code".to_string(),
         // "Monaco".to_string(),
         // "Space Mono".to_string(),
         // "Menlo".to_string(),
@@ -57,6 +57,8 @@ async fn main() {
     )
     .await
     .expect("Sugarloaf instance should be created");
+
+    sugarloaf.calculate_bounds();
 
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
@@ -367,7 +369,8 @@ async fn main() {
                     let scale_factor_f32 = scale_factor as f32;
                     sugarloaf
                         .rescale(scale_factor_f32)
-                        .resize(new_inner_size.width, new_inner_size.height);
+                        .resize(new_inner_size.width, new_inner_size.height)
+                        .calculate_bounds();
                     window.request_redraw();
                 }
                 _ => (),
