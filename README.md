@@ -32,7 +32,7 @@ Note: Emojis are rendered with Noto Emoji.
 
 Rio is built over a custom renderer called [Sugarloaf](https://crates.io/crates/sugarloaf), which is responsible for font and style rendering. Sugarloaf demo:
 
-| ![Demo sugarloaf 1](sugarloaf/resources/demo-sugarloaf-1.png) | ![Demo Sugarloaf wasm](sugarloaf/resources/demo-wasm.png) |
+| ![Demo sugarloaf 1](sugarloaf/resources/demo-sugarloaf-1.png) | ![Demo Sugarloaf wasm](sugarloaf/resources/demo-wasm-1.png) |
 | ----------- | ----------- |
 | ![Demo Rect](sugarloaf/resources/demo-rect.png) | ![Demo sugarloaf 3](sugarloaf/resources/demo-sugarloaf-3.png) |
 | ![Demo sugarloaf 4](sugarloaf/resources/demo-sugarloaf-4.png) | ![Demo sugarloaf 5](sugarloaf/resources/demo-sugarloaf-5.png) |

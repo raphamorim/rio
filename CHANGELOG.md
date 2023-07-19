@@ -14,6 +14,7 @@
 - Fix Glyph not rendered in prompt (ref: [#135](https://github.com/raphamorim/rio/issues/135)).
 - Use fork by default in context tests.
 - Updated terminfo.
+- Increased default font size to 18.
 - Move to next and prev tab using keybindings.
 - Setting editor by keybindings and new property called `editor` in configuration file.
 - Rio creates `.deb` packages (canary and release).
