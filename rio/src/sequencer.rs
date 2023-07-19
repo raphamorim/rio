@@ -31,6 +31,8 @@ pub struct SequencerWindow {
     is_occluded: bool,
     window: Window,
     screen: Screen,
+    #[cfg(target_os = "macos")]
+    is_macos_deadzone: bool,
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     has_wayland_forcefully_reloaded: bool,
 }
@@ -60,6 +62,8 @@ impl SequencerWindow {
             is_occluded: false,
             window: winit_window,
             screen,
+            #[cfg(target_os = "macos")]
+            is_macos_deadzone: false,
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             has_wayland_forcefully_reloaded: false,
         })
@@ -95,6 +99,8 @@ impl SequencerWindow {
             is_occluded: false,
             window: winit_window,
             screen,
+            #[cfg(target_os = "macos")]
+            is_macos_deadzone: false,
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             has_wayland_forcefully_reloaded: false,
         }
@@ -401,6 +407,13 @@ impl Sequencer {
                             _ => (),
                         }
 
+                        #[cfg(target_os = "macos")]
+                        {
+                            if sequencer_window.is_macos_deadzone {
+                                return;
+                            }
+                        }
+
                         match state {
                             ElementState::Pressed => {
                                 // Process mouse press before bindings to update the `click_state`.
@@ -507,6 +520,7 @@ impl Sequencer {
                 } => {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         sw.window.set_cursor_visible(true);
+
                         let x = position.x;
                         let y = position.y;
 
@@ -515,7 +529,32 @@ impl Sequencer {
                         let rmb_pressed =
                             sw.screen.mouse.right_button_state == ElementState::Pressed;
 
-                        // TODO: Se começar do padding não dar scroll
+                        #[cfg(target_os = "macos")]
+                        {
+                            // Dead zone for MacOS only
+                            // e.g: Dragging the terminal
+                            if sw.screen.is_macos_deadzone(y) {
+                                if lmb_pressed || rmb_pressed {
+                                    sw.window.set_cursor_icon(CursorIcon::Grabbing);
+                                } else {
+                                    sw.window.set_cursor_icon(CursorIcon::Grab);
+                                }
+
+                                sw.is_macos_deadzone = true;
+                                return;
+                            }
+
+                            sw.is_macos_deadzone = false;
+                        }
+
+                        let cursor_icon =
+                            if !sw.screen.modifiers.shift() && sw.screen.mouse_mode() {
+                                CursorIcon::Default
+                            } else {
+                                CursorIcon::Text
+                            };
+
+                        sw.window.set_cursor_icon(cursor_icon);
                         if !sw.screen.selection_is_empty() && (lmb_pressed || rmb_pressed)
                         {
                             sw.screen.update_selection_scrolling(y);
@@ -547,15 +586,6 @@ impl Sequencer {
 
                         sw.screen.mouse.inside_text_area = inside_text_area;
                         sw.screen.mouse.square_side = square_side;
-
-                        let cursor_icon =
-                            if !sw.screen.modifiers.shift() && sw.screen.mouse_mode() {
-                                CursorIcon::Default
-                            } else {
-                                CursorIcon::Text
-                            };
-
-                        sw.window.set_cursor_icon(cursor_icon);
 
                         if (lmb_pressed || rmb_pressed)
                             && (sw.screen.modifiers.shift() || !sw.screen.mouse_mode())

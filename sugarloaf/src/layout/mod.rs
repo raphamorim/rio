@@ -191,7 +191,12 @@ impl SugarloafLayout {
     }
 
     // This method will run over the new font and font_size
-    pub fn recalculate(&mut self, font_size: f32, line_height: f32, padding_x: f32) -> &mut Self {
+    pub fn recalculate(
+        &mut self,
+        font_size: f32,
+        line_height: f32,
+        padding_x: f32,
+    ) -> &mut Self {
         let mut should_apply_changes = false;
         if self.font_size != font_size {
             self.font_size = font_size;

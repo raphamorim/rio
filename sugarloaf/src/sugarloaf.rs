@@ -366,8 +366,8 @@ impl Sugarloaf {
                 //     }
                 // };
 
-
-                let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1 * self.layout.line_height);
+                let dec_pos_y = (scaled_rect_pos_y)
+                    + (decoration.relative_position.1 * self.layout.line_height);
                 // A decoration with is_content_positioned has the width and height based on font_size
                 // and in this way is not affected by line_height (useful for decorations like Block and Beam)
                 // if decoration.is_content_positioned {
