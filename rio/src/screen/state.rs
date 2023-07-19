@@ -29,6 +29,7 @@ pub struct State {
     pub option_as_alt: bool,
     is_ime_enabled: bool,
     named_colors: Colors,
+    font_size: f32,
     pub colors: List,
     cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
@@ -75,6 +76,7 @@ impl State {
             option_as_alt,
             is_ime_enabled: false,
             colors,
+            font_size: config.font_size,
             selection_range: None,
             named_colors: config.colors,
             cursor: Cursor {
@@ -210,13 +212,13 @@ impl State {
         let mut decoration = None;
         if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
-                relative_position: (0.0, 0.94),
+                relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });
         } else if flags.contains(Flags::STRIKEOUT) {
             decoration = Some(SugarDecoration {
-                relative_position: (0.0, 0.5),
+                relative_position: (0.0, self.font_size / 2.),
                 size: (1.0, 0.025),
                 color: self.named_colors.foreground,
             });
@@ -240,8 +242,8 @@ impl State {
                 color: self.named_colors.cursor,
             }),
             CursorShape::Underline => Some(SugarDecoration {
-                relative_position: (0.0, 18.),
-                size: (1.0, 0.05),
+                relative_position: (0.0, self.font_size - 2.5),
+                size: (1.0, 0.08),
                 color: self.named_colors.cursor,
             }),
             CursorShape::Beam => Some(SugarDecoration {
@@ -393,6 +395,7 @@ impl State {
         display_offset: i32,
     ) {
         self.cursor.state = cursor;
+        self.font_size = sugarloaf.layout.font_size;
         let is_cursor_visible = self.cursor.state.is_visible();
 
         if let Some(active_selection) = self.selection_range {

@@ -19,8 +19,8 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
-    // pub main_fd: Arc<i32>,
-    // pub shell_pid: u32,
+    pub main_fd: Arc<i32>,
+    pub shell_pid: u32,
 }
 
 #[derive(Clone, Default)]
@@ -95,8 +95,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             );
         }
 
-        // let main_fd = pty.child.id.clone();
-        // let shell_pid = *pty.child.pid.clone() as u32;
+        let main_fd = pty.child.id.clone();
+        let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
@@ -112,8 +112,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
-            // main_fd,
-            // shell_pid,
+            main_fd,
+            shell_pid,
             messenger,
             terminal,
         })
@@ -275,13 +275,33 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let size = self.contexts.len();
         if size < self.capacity {
             let last_index = self.contexts.len();
+
+            #[cfg(target_os = "windows")]
+            let cloned_config = self.config;
+            #[cfg(not(target_os = "windows"))]
+            let mut cloned_config = self.config.clone();
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                if cloned_config.working_dir.is_none() {
+                    let current_context = self.current();
+                    if let Ok(path) = teletypewriter::foreground_process_path(
+                        *current_context.main_fd,
+                        current_context.shell_pid,
+                    ) {
+                        cloned_config.working_dir =
+                            Some(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+
             match ContextManager::create_context(
                 dimensions,
                 col_rows,
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
-                &self.config,
+                &cloned_config,
             ) {
                 Ok(new_context) => {
                     self.contexts.push(new_context);
