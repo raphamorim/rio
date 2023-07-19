@@ -6,7 +6,7 @@ use crate::core::SugarStack;
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
-use glyph_brush::{FontId, GlyphCruncher, OwnedSection, OwnedText};
+use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -43,17 +43,6 @@ pub trait Renderable: 'static + Sized {
     );
 }
 
-type FontBound = (f32, f32);
-
-#[derive(Default)]
-struct FontBounds {
-    default: FontBound,
-    symbols: FontBound,
-    emojis: FontBound,
-    unicode: FontBound,
-    icons: FontBound,
-}
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct CachedSugar {
     font_id: FontId,
@@ -68,7 +57,7 @@ pub struct Sugarloaf {
     rect_brush: RectBrush,
     rects: Vec<Rect>,
     text_y: f32,
-    font_bounds: FontBounds,
+    font_bound: (f32, f32),
     font_name: String,
 }
 
@@ -137,7 +126,7 @@ impl Sugarloaf {
             rects: vec![],
             text_brush,
             text_y: 0.0,
-            font_bounds: FontBounds::default(),
+            font_bound: (0.0, 0.0),
             layout,
         })
     }
@@ -308,15 +297,8 @@ impl Sugarloaf {
             }
 
             let mut scale = self.layout.style.text_scale;
-            if cached_sugar.font_id == FontId(FONT_ID_EMOJIS)
-                || cached_sugar.font_id == FontId(FONT_ID_SYMBOL)
-                || cached_sugar.font_id == FontId(FONT_ID_UNICODE)
-            {
-                scale = self.layout.style.icon_scale;
-            }
-
             if cached_sugar.font_id == FontId(FONT_ID_ICONS) {
-                scale /= 2.6;
+                scale /= 2.0;
             }
 
             let text = crate::components::text::Text {
@@ -404,7 +386,7 @@ impl Sugarloaf {
             x += add_pos_x;
         }
 
-        self.text_y += self.font_bounds.default.1;
+        self.text_y += self.font_bound.1;
     }
 
     #[inline]
@@ -418,32 +400,25 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> FontBound {
-        let mut scale = self.layout.style.text_scale;
-        if font_id == FontId(FONT_ID_ICONS)
-            || font_id == FontId(FONT_ID_EMOJIS)
-            || font_id == FontId(FONT_ID_SYMBOL)
-        {
-            scale = self.layout.style.icon_scale;
-        }
+    pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> (f32, f32) {
+        let scale = self.layout.style.text_scale;
 
-        let text = vec![OwnedText::new(content)
-            .with_font_id(font_id)
-            .with_color([0., 0., 0., 0.])
-            .with_scale(PxScale::from(scale))];
+        let text = crate::components::text::Text {
+            text: &content.to_owned().to_string(),
+            scale: PxScale::from(scale),
+            font_id,
+            extra: crate::components::text::Extra {
+                color: [0., 0., 0., 0.],
+                z: 0.0,
+            },
+        };
 
-        let section = &OwnedSection {
-            screen_position: (
-                self.layout.style.screen_position.0,
-                self.layout.style.screen_position.1 + self.text_y,
-            ),
-            bounds: (
-                self.layout.width * self.layout.scale_factor,
-                self.layout.height * self.layout.scale_factor,
-            ),
-            text,
+        let section = &crate::components::text::Section {
+            screen_position: (0., 0.),
+            bounds: (scale, scale),
+            text: vec![text],
             layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Bottom)
+                .v_align(glyph_brush::VerticalAlign::Center)
                 .h_align(glyph_brush::HorizontalAlign::Left),
         };
 
@@ -500,31 +475,16 @@ impl Sugarloaf {
                 });
 
                 // Bounds are defined in runtime
-                self.font_bounds.default =
-                    self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
+                self.font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
 
-                self.layout.sugarwidth = self.font_bounds.default.0;
-                self.layout.sugarheight = self.font_bounds.default.1;
+                self.layout.sugarwidth = self.font_bound.0;
+                self.layout.sugarheight = self.font_bound.1;
 
                 self.layout.sugarwidth /= self.ctx.scale;
                 self.layout.sugarheight /= self.ctx.scale;
 
                 self.layout
-                    .update_columns_lines_per_font_bound(self.font_bounds.default.0);
-
-                self.font_bounds.symbols =
-                    // U+2AF9 => \u{2AF9} => ⫹
-                    self.get_font_bounds('\u{2AF9}', FontId(FONT_ID_SYMBOL));
-                self.font_bounds.emojis =
-                    // U+1F947 => \u{1F947} => 🥇
-                    self.get_font_bounds('\u{1F947}', FontId(FONT_ID_EMOJIS));
-                self.font_bounds.unicode =
-                    // U+33D1 => \u{33D1} => ㏑
-                    self.get_font_bounds('\u{33D1}', FontId(FONT_ID_UNICODE));
-
-                // 
-                self.font_bounds.icons =
-                    self.get_font_bounds('\u{e602}', FontId(FONT_ID_ICONS));
+                    .update_columns_lines_per_font_bound(self.font_bound.0);
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
