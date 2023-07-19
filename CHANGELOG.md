@@ -6,9 +6,8 @@
 	- Perfomance improvements around 80-110%.
 	- Introduced CachedSugar.
 	- Usage of PixelScale.
-	- Selection of font-weight per configuration.
 	- Line-height support.
-- Open new tab in active tab directory.
+- Open new tab using the current tab directory.
 - Fix some symbols break the horizontal and vertical alignment of lines (ref [#148](https://github.com/raphamorim/rio/issues/148)).
 - Fix font size configuration is confusing (ref [#139](https://github.com/raphamorim/rio/issues/139)).
 - Fix Glyph not rendered in prompt (ref: [#135](https://github.com/raphamorim/rio/issues/135)).
