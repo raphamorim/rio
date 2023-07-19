@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.11
+
+- Fix for font styles using CachedSugar.
+
 ## 0.0.10
 
 - Major refactor of Sugarloaf.
