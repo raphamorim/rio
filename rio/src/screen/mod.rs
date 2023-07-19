@@ -184,7 +184,7 @@ impl Screen {
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
         self.sugarloaf
             .layout
-            .recalculate(config.font_size, config.padding_x);
+            .recalculate(config.font_size, config.line_height, config.padding_x);
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
         self.state = State::new(config);

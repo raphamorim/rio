@@ -50,6 +50,7 @@ fn compute(
     height: f32,
     scale_factor: f32,
     font_size: f32,
+    line_height: f32,
     font_bound: f32,
     padding: Delta<f32>,
     min_cols_lines: (usize, usize),
@@ -59,7 +60,7 @@ fn compute(
     let padding_y = (padding.y * 2.).floor();
 
     let mut lines = (height / scale_factor) - padding_y;
-    lines /= font_size;
+    lines /= font_size * line_height;
     let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
 
     let mut visible_columns = ((width) / scale_factor) - padding_x;
@@ -156,6 +157,7 @@ impl SugarloafLayout {
             self.height,
             self.scale_factor,
             self.font_size,
+            self.line_height,
             self.font_bound,
             self.padding,
             self.min_cols_lines,
@@ -189,11 +191,16 @@ impl SugarloafLayout {
     }
 
     // This method will run over the new font and font_size
-    pub fn recalculate(&mut self, font_size: f32, padding_x: f32) -> &mut Self {
+    pub fn recalculate(&mut self, font_size: f32, line_height: f32, padding_x: f32) -> &mut Self {
         let mut should_apply_changes = false;
         if self.font_size != font_size {
             self.font_size = font_size;
             self.original_font_size = font_size;
+            should_apply_changes = true;
+        }
+
+        if self.line_height != line_height {
+            self.line_height = line_height;
             should_apply_changes = true;
         }
 
