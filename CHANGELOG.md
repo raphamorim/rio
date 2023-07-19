@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.10 (in progress)
+## 0.0.10
 
 - Major refactor of Sugarloaf.
 	- Perfomance improvements around 80-110%.
