@@ -19,7 +19,9 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 9;
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
+    #[cfg(not(target_os = "windows"))]
     pub main_fd: Arc<i32>,
+    #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
 }
 
