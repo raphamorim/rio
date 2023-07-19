@@ -185,6 +185,9 @@ impl Sugarloaf {
             log::info!("requested a font change {font_name}");
             let font = Font::new(font_name.to_string());
 
+            // Clean font cache per instance
+            self.sugar_cache = HashMap::new();
+
             let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
                 font.text.regular,
                 font.text.italic,
