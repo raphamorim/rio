@@ -102,7 +102,7 @@
   <!-- <string>Rio-canary.icns</string> -->
   <string>Rio-stable.icns</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.0.10</string>
+  <string>0.0.11</string>
   <key>CFBundleVersion</key>
   <string>20230528.115631</string>
   <key>CFBundleURLTypes</key>
