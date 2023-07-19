@@ -15,7 +15,7 @@ env:
 
 jobs:
   create_tag:
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main' }}
     outputs:
       created: ${{ steps.status.outputs.created }}
     runs-on: ubuntu-latest
