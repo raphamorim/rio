@@ -6,6 +6,7 @@ pub struct Delta<T: Default> {
     pub y: T,
 }
 
+#[derive(Default)]
 pub struct SugarloafLayout {
     pub scale_factor: f32,
     pub line_height: f32,
@@ -35,10 +36,6 @@ fn update_styles(layout: &mut SugarloafLayout) {
             layout.padding.x * layout.scale_factor,
             layout.padding.y * layout.scale_factor,
         ),
-        bounds: (
-            layout.width * layout.scale_factor,
-            layout.height * layout.scale_factor,
-        ),
         text_scale,
         icon_scale: text_scale / 1.5,
     };
@@ -58,7 +55,8 @@ fn compute(
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
     let padding_x = ((padding.x) * scale_factor).floor();
-    let padding_y = ((padding.y) * scale_factor).floor();
+    // let padding_y = ((padding.y) * scale_factor).floor();
+    let padding_y = (padding.y * 2.).floor();
 
     let mut lines = (height / scale_factor) - padding_y;
     lines /= font_size;
@@ -174,7 +172,7 @@ impl SugarloafLayout {
         let current_stack_bound = self.font_bound * self.columns as f32;
         let expected_stack_bound = self.width / self.scale_factor - self.font_bound;
 
-        log::info!("expected {}", self.columns);
+        log::info!("expected columns {}", self.columns);
         if current_stack_bound < expected_stack_bound {
             let stack_difference =
                 ((expected_stack_bound - current_stack_bound) / self.font_bound) as usize;

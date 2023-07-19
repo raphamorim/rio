@@ -341,18 +341,34 @@ impl Sugarloaf {
 
             self.text_brush.queue(section);
 
+            let scaled_rect_pos_x = rect_pos_x / self.ctx.scale;
+            let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
             self.rects.push(Rect {
-                position: [rect_pos_x / self.ctx.scale, rect_pos_y / self.ctx.scale],
+                position: [scaled_rect_pos_x, scaled_rect_pos_y],
                 color: sugar.background_color,
                 size: [width_bound, self.layout.sugarheight],
             });
 
             if let Some(decoration) = &sugar.decoration {
+                // TODO:
+                //  let dec_position_y = match decoration.position.1 {
+                //     SugarDecorationPositionY::Bottom(pos_decoration_y) => {
+                //         scaled_rect_pos_y + ((pos_decoration_y) * self.ctx.scale)
+                //     }
+                //     SugarDecorationPositionY::Top(pos_decoration_y) => {
+                //         scaled_rect_pos_y + pos_decoration_y
+                //     }
+                //     SugarDecorationPositionY::Middle(pos_decoration_y) => {
+                //         scaled_rect_pos_y + (self.layout.sugarheight / 2.0) + pos_decoration_y
+                //     }
+                // };
+
                 self.rects.push(Rect {
                     position: [
-                        (rect_pos_x + (add_pos_x * decoration.relative_position.0))
-                            / self.ctx.scale,
-                        (rect_pos_y) / self.ctx.scale + decoration.relative_position.1,
+                        (scaled_rect_pos_x
+                            + (add_pos_x * decoration.relative_position.0)
+                                / self.ctx.scale),
+                        scaled_rect_pos_y + decoration.relative_position.1,
                     ],
                     color: decoration.color,
                     size: [
@@ -398,7 +414,10 @@ impl Sugarloaf {
                 self.layout.style.screen_position.0,
                 self.layout.style.screen_position.1 + self.text_y,
             ),
-            bounds: self.layout.style.bounds,
+            bounds: (
+                self.layout.width * self.layout.scale_factor,
+                self.layout.height * self.layout.scale_factor,
+            ),
             text,
             layout: glyph_brush::Layout::default_single_line()
                 .v_align(glyph_brush::VerticalAlign::Bottom)
@@ -464,10 +483,8 @@ impl Sugarloaf {
                 self.layout.sugarwidth = self.font_bounds.default.0;
                 self.layout.sugarheight = self.font_bounds.default.1;
 
-                if self.ctx.scale > 1. {
-                    self.layout.sugarwidth /= self.ctx.scale;
-                    self.layout.sugarheight /= self.ctx.scale;
-                }
+                self.layout.sugarwidth /= self.ctx.scale;
+                self.layout.sugarheight /= self.ctx.scale;
 
                 self.layout
                     .update_columns_lines_per_font_bound(self.font_bounds.default.0);
