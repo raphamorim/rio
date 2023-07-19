@@ -283,7 +283,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             let last_index = self.contexts.len();
 
             #[cfg(target_os = "windows")]
-            let cloned_config = self.config;
+            let cloned_config = &self.config;
             #[cfg(not(target_os = "windows"))]
             let mut cloned_config = self.config.clone();
 
