@@ -16,10 +16,11 @@ cargo run --example text
 
 ## Examples
 
-| ![Demo sugarloaf 1](resources/demo-sugarloaf-1.png) | ![Demo sugarloaf 2](resources/demo-sugarloaf-2.png) |
+| ![Demo sugarloaf 1](resources/demo-sugarloaf-1.png) | ![Demo Sugarloaf wasm](resources/demo-wasm-1.png) |
 | ----------- | ----------- |
 | ![Demo Rect](resources/demo-rect.png) | ![Demo sugarloaf 3](resources/demo-sugarloaf-3.png) |
 | ![Demo sugarloaf 4](resources/demo-sugarloaf-4.png) | ![Demo sugarloaf 5](resources/demo-sugarloaf-5.png) |
+| ![Demo sugarloaf 6](resources/demo-sugarloaf-6.png) | |
 
 ## WASM Tests
 
