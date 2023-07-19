@@ -297,7 +297,7 @@ mod tests {
             # Rio default configuration file
             performance = "High"
             font = "CascadiaMono"
-            font-size = 16
+            font-size = 18
             line-height = 1.0
             theme = ""
             padding-x = 10
