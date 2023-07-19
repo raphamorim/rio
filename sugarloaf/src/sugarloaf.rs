@@ -231,7 +231,7 @@ impl Sugarloaf {
         let icons: &FontArc = &fonts[FONT_ID_ICONS];
         let glyph_zero = ab_glyph::GlyphId(0);
 
-        let mut font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
+        let font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
             FontId(FONT_ID_REGULAR)
         } else if symbols.glyph_id(sugar.content) != glyph_zero {
             FontId(FONT_ID_SYMBOL)
@@ -244,18 +244,6 @@ impl Sugarloaf {
         } else {
             FontId(FONT_ID_REGULAR)
         };
-
-        if font_id == FontId(FONT_ID_REGULAR) {
-            if let Some(style) = &sugar.style {
-                if style.is_bold_italic {
-                    font_id = FontId(FONT_ID_BOLD_ITALIC);
-                } else if style.is_bold {
-                    font_id = FontId(FONT_ID_BOLD);
-                } else if style.is_italic {
-                    font_id = FontId(FONT_ID_ITALIC);
-                }
-            }
-        }
 
         let char_width = sugar.content.width().unwrap_or(1) as f32;
         let cached_sugar = CachedSugar {
@@ -286,6 +274,19 @@ impl Sugarloaf {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
             let cached_sugar: CachedSugar = self.get_font_id(sugar);
+            let mut font_id = cached_sugar.font_id;
+
+            if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
+                if let Some(style) = &sugar.style {
+                    if style.is_bold_italic {
+                        font_id = FontId(FONT_ID_BOLD_ITALIC);
+                    } else if style.is_bold {
+                        font_id = FontId(FONT_ID_BOLD);
+                    } else if style.is_italic {
+                        font_id = FontId(FONT_ID_ITALIC);
+                    }
+                }
+            }
 
             if cached_sugar.char_width > 1. {
                 sugar_char_width += 1.;
@@ -304,7 +305,7 @@ impl Sugarloaf {
             let text = crate::components::text::Text {
                 text: &sugar.content.to_owned().to_string(),
                 scale: PxScale::from(scale),
-                font_id: cached_sugar.font_id,
+                font_id,
                 extra: crate::components::text::Extra {
                     color: sugar.foreground_color,
                     z: 0.0,
