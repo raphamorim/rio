@@ -37,7 +37,6 @@ fn update_styles(layout: &mut SugarloafLayout) {
             layout.padding.y * layout.scale_factor,
         ),
         text_scale,
-        icon_scale: text_scale / 1.5,
     };
     layout.style = new_styles;
 }
@@ -46,8 +45,7 @@ fn update_styles(layout: &mut SugarloafLayout) {
 // $ tput lines
 #[inline]
 fn compute(
-    width: f32,
-    height: f32,
+    dimensions: (f32, f32),
     scale_factor: f32,
     font_size: f32,
     line_height: f32,
@@ -59,11 +57,11 @@ fn compute(
     // let padding_y = ((padding.y) * scale_factor).floor();
     let padding_y = (padding.y * 2.).floor();
 
-    let mut lines = (height / scale_factor) - padding_y;
+    let mut lines = (dimensions.1 / scale_factor) - padding_y;
     lines /= font_size * line_height;
     let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
 
-    let mut visible_columns = ((width) / scale_factor) - padding_x;
+    let mut visible_columns = (dimensions.0 / scale_factor) - padding_x;
     visible_columns /= font_bound;
     let visible_columns = std::cmp::max(visible_columns as usize, min_cols_lines.0);
 
@@ -153,8 +151,7 @@ impl SugarloafLayout {
     pub fn update(&mut self) -> &mut Self {
         update_styles(self);
         let (columns, lines) = compute(
-            self.width,
-            self.height,
+            (self.width, self.height),
             self.scale_factor,
             self.font_size,
             self.line_height,
