@@ -95,7 +95,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             );
         }
 
+        #[cfg(not(target_os = "windows"))]
         let main_fd = pty.child.id.clone();
+        #[cfg(not(target_os = "windows"))]
         let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine =
@@ -112,7 +114,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
+            #[cfg(not(target_os = "windows"))]
             main_fd,
+            #[cfg(not(target_os = "windows"))]
             shell_pid,
             messenger,
             terminal,

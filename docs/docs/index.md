@@ -19,7 +19,7 @@ Any file update in the configuration file will trigger a render operation in Rio
 
 {% highlight toml %}
 font = "CascadiaMono"
-font-size = 16
+font-size = 18
 
 # Cursor
 #
