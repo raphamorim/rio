@@ -15,3 +15,9 @@ pub const ACTIVE_TAB_WIDTH_SIZE: f32 = 8.;
 
 #[cfg(target_os = "macos")]
 pub const ACTIVE_TAB_WIDTH_SIZE: f32 = 26.;
+
+#[cfg(target_os = "macos")]
+pub const DEADZONE_START_Y: f64 = 30.;
+
+#[cfg(target_os = "macos")]
+pub const DEADZONE_END_Y: f64 = -2.0;

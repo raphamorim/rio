@@ -16,6 +16,7 @@ use crate::crosswords::{
 };
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
+use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::screen::{
     bindings::{Action as Act, BindingMode, FontSizeAction, Key},
     context::ContextManager,
@@ -171,20 +172,27 @@ impl Screen {
 
         let line = self.mouse.y.saturating_sub(
             layout.padding.y as usize * (self.sugarloaf.layout.scale_factor as usize),
-        ) / text_scale;
-        let line = std::cmp::min(line, layout.lines - 1);
+        ) / (text_scale);
 
-        let point = Pos::new(line, col);
-        let row = Line(point.row as i32) - (display_offset);
-        Pos::new(row, point.col)
+        let calc_line = std::cmp::min(line, layout.lines - 1);
+        let line = Line(calc_line as i32) - (display_offset);
+        Pos::new(line, col)
+    }
+
+    #[inline]
+    pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
+        let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
+        pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
 
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
-        self.sugarloaf
-            .layout
-            .recalculate(config.font_size, config.line_height, config.padding_x);
+        self.sugarloaf.layout.recalculate(
+            config.font_size,
+            config.line_height,
+            config.padding_x,
+        );
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
         self.state = State::new(config);
