@@ -17,7 +17,7 @@ use crate::crosswords::{
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 #[cfg(target_os = "macos")]
-use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
+use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::screen::{
     bindings::{Action as Act, BindingMode, FontSizeAction, Key},
     context::ContextManager,
@@ -185,6 +185,13 @@ impl Screen {
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
         let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
         pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
+    }
+
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn is_macos_deadzone_draggable(&self, pos_x: f64) -> bool {
+        let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
+        pos_x >= DEADZONE_START_X * scale_f64
     }
 
     /// update_config is triggered in any configuration file update

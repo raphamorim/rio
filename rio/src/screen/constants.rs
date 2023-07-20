@@ -21,3 +21,6 @@ pub const DEADZONE_START_Y: f64 = 30.;
 
 #[cfg(target_os = "macos")]
 pub const DEADZONE_END_Y: f64 = -2.0;
+
+#[cfg(target_os = "macos")]
+pub const DEADZONE_START_X: f64 = 80.;
