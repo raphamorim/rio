@@ -172,9 +172,8 @@ impl Screen {
         let col = std::cmp::min(Column(col), Column(layout.columns));
 
         let line = self.mouse.y.saturating_sub(
-            (layout.padding.y * self.sugarloaf.layout.scale_factor) as usize,
+            (layout.padding.y * 2. * self.sugarloaf.layout.scale_factor) as usize,
         ) / line_fac;
-
         let calc_line = std::cmp::min(line, layout.lines - 1);
         let line = Line(calc_line as i32) - (display_offset);
 
