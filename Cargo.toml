@@ -42,7 +42,8 @@ console_error_panic_hook = "0.1.7"
 [profile.release]
 opt-level = "s"
 lto = "thin"
-debug = 1
+strip = true
+debug = 0
 codegen-units = 1
 incremental = false
 
