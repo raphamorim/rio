@@ -818,7 +818,40 @@ impl Screen {
         let height = self.sugarloaf.layout.height as f64;
         let mode = self.get_mode();
 
-        if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
+        const MOUSE_WHEEL_UP: u8 = 64;
+        const MOUSE_WHEEL_DOWN: u8 = 65;
+        const MOUSE_WHEEL_LEFT: u8 = 66;
+        const MOUSE_WHEEL_RIGHT: u8 = 67;
+
+        if mode.intersects(Mode::MOUSE_MODE) && !mode.contains(Mode::VI) {
+            self.mouse.accumulated_scroll.x += new_scroll_x_px;
+            self.mouse.accumulated_scroll.y += new_scroll_y_px;
+
+            let code = if new_scroll_y_px > 0. {
+                MOUSE_WHEEL_UP
+            } else {
+                MOUSE_WHEEL_DOWN
+            };
+            let lines = (self.mouse.accumulated_scroll.y
+                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor)
+                    as f64)
+                .abs() as usize;
+
+            for _ in 0..lines {
+                self.mouse_report(code, ElementState::Pressed);
+            }
+
+            let code = if new_scroll_x_px > 0. {
+                MOUSE_WHEEL_LEFT
+            } else {
+                MOUSE_WHEEL_RIGHT
+            };
+            let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
+
+            for _ in 0..columns {
+                self.mouse_report(code, ElementState::Pressed);
+            }
+        } else if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
             && !self.modifiers.shift()
         {
             self.mouse.accumulated_scroll.x += new_scroll_x_px;
