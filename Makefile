@@ -1,6 +1,7 @@
 .PHONY: docs
 
 BUILD_MISC_DIR = misc
+DOCS_DIR = docs
 TARGET = rio
 RELEASE_DIR = target/release
 
@@ -15,7 +16,7 @@ TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 all: install run
 
 docs:
-	cd docs && make run
+	cd $(DOCS_DIR) && make run
 
 run:
 	cargo run --release
@@ -68,6 +69,15 @@ release-macos-app-signed:
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
 	rm -rf ./release/Rio.app
 	@unzip ./release/Rio-v$(version).zip -d ./release
+
+# e.g: make update-version old-version=0.0.13 new-version=0.0.12
+update-version:
+	@echo "Switching from $(old-version) to $(new-version)"
+	find Cargo.toml -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
+	find $(BUILD_MISC_DIR)/windows/rio.wxs -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
+	find $(APP_TEMPLATE)/Contents/Info.plist -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
+	find $(DOCS_DIR)/install/* -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
+	find $(DOCS_DIR)/_layouts/* -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
 
 release-macos-dmg:
 # 	Using https://www.npmjs.com/package/create-dmg
