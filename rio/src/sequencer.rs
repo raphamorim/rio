@@ -529,15 +529,22 @@ impl Sequencer {
                         let rmb_pressed =
                             sw.screen.mouse.right_button_state == ElementState::Pressed;
 
+                        let has_selection = !sw.screen.selection_is_empty();
+
                         #[cfg(target_os = "macos")]
                         {
                             // Dead zone for MacOS only
                             // e.g: Dragging the terminal
-                            if sw.screen.is_macos_deadzone(y) {
-                                if lmb_pressed || rmb_pressed {
-                                    sw.window.set_cursor_icon(CursorIcon::Grabbing);
+                            if !has_selection && sw.screen.is_macos_deadzone(y) {
+                                if sw.screen.is_macos_deadzone_draggable(x) {
+                                    if lmb_pressed || rmb_pressed {
+                                        sw.screen.clear_selection();
+                                        sw.window.set_cursor_icon(CursorIcon::Grabbing);
+                                    } else {
+                                        sw.window.set_cursor_icon(CursorIcon::Grab);
+                                    }
                                 } else {
-                                    sw.window.set_cursor_icon(CursorIcon::Grab);
+                                    sw.window.set_cursor_icon(CursorIcon::Default);
                                 }
 
                                 sw.is_macos_deadzone = true;
@@ -555,8 +562,7 @@ impl Sequencer {
                             };
 
                         sw.window.set_cursor_icon(cursor_icon);
-                        if !sw.screen.selection_is_empty() && (lmb_pressed || rmb_pressed)
-                        {
+                        if has_selection && (lmb_pressed || rmb_pressed) {
                             sw.screen.update_selection_scrolling(y);
                         }
 
@@ -591,6 +597,10 @@ impl Sequencer {
                             && (sw.screen.modifiers.shift() || !sw.screen.mouse_mode())
                         {
                             sw.screen.update_selection(point, square_side);
+
+                            if !self.has_updates.contains(&window_id) {
+                                self.has_updates.push(window_id);
+                            }
                         } else if square_changed && sw.screen.has_mouse_motion_and_drag()
                         {
                             if lmb_pressed {
@@ -606,10 +616,6 @@ impl Sequencer {
                             } else if sw.screen.has_mouse_motion() {
                                 sw.screen.mouse_report(35, ElementState::Pressed);
                             }
-                        }
-
-                        if !self.has_updates.contains(&window_id) {
-                            self.has_updates.push(window_id);
                         }
                     }
                 }

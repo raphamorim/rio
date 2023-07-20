@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.0.12
+## 0.0.12 (in progress)
 
+- Fix for MacOS deadzone chaging cursor to draggable on window buttons.
 - Fix for scroll using tmux.
 
 ## 0.0.11
