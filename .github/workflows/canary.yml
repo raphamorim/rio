@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
+  RUSTFLAGS: '-C link-arg=-s'
   CANARY_TAG: canary-${{ github.sha }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
