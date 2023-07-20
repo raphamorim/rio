@@ -1,7 +1,12 @@
 # Changelog
 
-## 0.0.12 (in progress)
+## 0.0.12
 
+- Strip binary is on for release builds.
+- Each paste or key binding that has writing leads to clear selection and scroll bottom.
+- Fixed over-rendering when scrolling.
+- Fix selection.
+- Support to copy using VIM.
 - Fix for MacOS deadzone chaging cursor to draggable on window buttons.
 - Fix for scroll using tmux.
 
