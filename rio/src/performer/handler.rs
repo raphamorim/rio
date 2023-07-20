@@ -499,7 +499,7 @@ impl<U: Handler> vte::Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        info!("[execute] {byte:04x}");
+        log::trace!("[execute] {byte:04x}");
 
         match byte {
             C0::HT => self.handler.put_tab(1),

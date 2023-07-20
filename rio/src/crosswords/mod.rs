@@ -1545,6 +1545,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.mode.remove(Mode::APP_KEYPAD);
     }
 
+    /// Store data into clipboard.
+    #[inline]
+    fn clipboard_store(&mut self, clipboard: u8, base64: &[u8]) {
+        let clipboard_type = match clipboard {
+            b'c' => ClipboardType::Clipboard,
+            b'p' | b's' => ClipboardType::Selection,
+            _ => return,
+        };
+
+        if let Ok(bytes) = general_purpose::STANDARD.decode(base64) {
+            if let Ok(text) = String::from_utf8(bytes) {
+                self.event_proxy.send_event(
+                    RioEvent::ClipboardStore(clipboard_type, text),
+                    self.window_id,
+                );
+            }
+        }
+    }
+
     #[inline]
     fn configure_charset(
         &mut self,
@@ -1555,6 +1574,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.grid.cursor.charsets[index] = charset;
     }
 
+    #[inline(never)]
     fn input(&mut self, c: char) {
         let width = match c.width() {
             Some(width) => width,
@@ -1806,6 +1826,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
     }
 
+    #[inline]
     fn linefeed(&mut self) {
         let next = self.grid.cursor.pos.row + 1;
         if next == self.scroll_region.end {
@@ -1911,6 +1932,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
     }
 
+    #[inline]
     fn carriage_return(&mut self) {
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
@@ -1918,6 +1940,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .damage_line(row, new_col, self.grid.cursor.pos.col.0);
         self.grid.cursor.pos.col = Column(new_col);
         self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
+    fn save_cursor_position(&mut self) {
+        self.grid.saved_cursor = self.grid.cursor.clone();
+    }
+
+    #[inline]
+    fn restore_cursor_position(&mut self) {
+        self.damage_cursor();
+        self.grid.cursor = self.grid.saved_cursor.clone();
+        self.damage_cursor();
     }
 
     #[inline]

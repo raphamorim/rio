@@ -299,8 +299,8 @@ impl Screen {
             return;
         }
 
-        self.clear_selection();
         self.scroll_bottom_when_cursor_not_visible();
+        self.clear_selection();
 
         let utf8_len = character.len_utf8();
         let mut bytes = vec![0; utf8_len];
@@ -359,7 +359,6 @@ impl Screen {
         mode
     }
 
-    #[inline]
     pub fn input_keycode(
         &mut self,
         virtual_keycode: Option<winit::event::VirtualKeyCode>,
@@ -386,9 +385,13 @@ impl Screen {
 
                 match &binding.action {
                     Act::Esc(s) => {
-                        self.context_manager.current_mut().messenger.send_bytes(
-                            s.replace("\r\n", "\r").replace('\n', "\r").into_bytes(),
-                        );
+                        let current_context = self.context_manager.current_mut();
+                        self.state.set_selection(None);
+                        let mut terminal = current_context.terminal.lock();
+                        terminal.selection.take();
+                        terminal.scroll_display(Scroll::Bottom);
+                        drop(terminal);
+                        current_context.messenger.send_bytes(s.clone().into_bytes());
                     }
                     Act::Paste => {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
