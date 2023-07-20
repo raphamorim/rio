@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.12
+
+- Fix for scroll using tmux.
+
 ## 0.0.11
 
 - Fix for font styles using CachedSugar.
