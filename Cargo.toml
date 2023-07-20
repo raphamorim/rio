@@ -44,6 +44,7 @@ opt-level = "s"
 lto = "thin"
 strip = true
 debug = 0
+panic = 'abort'
 codegen-units = 1
 incremental = false
 

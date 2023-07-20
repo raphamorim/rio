@@ -9,6 +9,7 @@ env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
+  RUSTFLAGS: '-C link-arg=-s'
 
 jobs:
   release-macos:
