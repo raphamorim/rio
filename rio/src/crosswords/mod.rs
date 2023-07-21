@@ -361,6 +361,7 @@ impl<U: EventListener> Crosswords<U> {
         self.grid.display_offset()
     }
 
+    #[inline]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
         self.event_proxy
@@ -505,6 +506,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Scroll display to point if it is outside of viewport.
+    #[inline]
     pub fn scroll_to_pos(&mut self, pos: Pos)
     where
         U: EventListener,
@@ -664,6 +666,7 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    #[inline]
     pub fn bracket_search(&self, point: Pos) -> Option<Pos> {
         let start_char = self.grid[point].c;
 
@@ -707,6 +710,7 @@ impl<U: EventListener> Crosswords<U> {
         None
     }
 
+    #[inline]
     pub fn semantic_search_left(&self, mut point: Pos) -> Pos {
         // Limit the starting point to the last line in the history
         point.row = std::cmp::max(point.row, self.grid.topmost_line());
@@ -735,6 +739,7 @@ impl<U: EventListener> Crosswords<U> {
         point
     }
 
+    #[inline]
     pub fn semantic_search_right(&self, mut point: Pos) -> Pos {
         // Limit the starting point to the last line in the history
         point.row = std::cmp::max(point.row, self.grid.topmost_line());
@@ -760,6 +765,7 @@ impl<U: EventListener> Crosswords<U> {
         point
     }
 
+    #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         let fg = self.grid.cursor.template.fg;
@@ -799,28 +805,6 @@ impl<U: EventListener> Crosswords<U> {
         cursor_square.bg = bg;
         cursor_square.flags = flags;
         cursor_square.extra = extra;
-    }
-
-    #[allow(dead_code)]
-    pub fn visible_to_string(&mut self) -> String {
-        let mut text = String::from("");
-        let columns = self.grid.columns();
-
-        for row in self.scroll_region.start.0..self.scroll_region.end.0 {
-            for column in 0..columns {
-                let square_content = &mut self.grid[Line(row)][Column(column)];
-                text.push(square_content.c);
-                for c in square_content.zerowidth().into_iter().flatten() {
-                    text.push(*c);
-                }
-
-                if column == (columns - 1) {
-                    text.push('\n');
-                }
-            }
-        }
-
-        text
     }
 
     #[inline]
@@ -1123,7 +1107,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
-        warn!(
+        info!(
             "Requested write of escape sequence for color code {}: color[{}]",
             prefix, index
         );
