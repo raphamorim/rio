@@ -3,7 +3,15 @@ pub fn default_env_vars() -> Vec<String> {
 }
 
 pub fn default_padding_x() -> f32 {
-    10.
+    #[cfg(not(target_os = "macos"))]
+    {
+        0.
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        10.
+    }
 }
 
 pub fn default_line_height() -> f32 {
