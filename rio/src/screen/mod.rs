@@ -19,7 +19,7 @@ use crate::ime::Ime;
 #[cfg(target_os = "macos")]
 use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::screen::{
-    bindings::{Action as Act, BindingMode, FontSizeAction, BindingKey},
+    bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
     context::ContextManager,
     mouse::Mouse,
 };
@@ -33,9 +33,9 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -358,10 +358,7 @@ impl Screen {
         mode
     }
 
-    pub fn process_key_event(
-        &mut self,
-        key: &winit::event::KeyEvent,
-    ) {
+    pub fn process_key_event(&mut self, key: &winit::event::KeyEvent) {
         if self.ime.preedit().is_some() {
             return;
         }
@@ -384,7 +381,10 @@ impl Screen {
 
             let key = match (&binding.trigger, logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
-                (_, code) => BindingKey::Keycode { key: code, location: key.location },
+                (_, code) => BindingKey::Keycode {
+                    key: code,
+                    location: key.location,
+                },
             };
 
             if binding.is_triggered_by(mode.clone(), self.modifiers, &key) {

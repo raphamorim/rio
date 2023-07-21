@@ -4,7 +4,6 @@ use {
     winit::platform::wayland::EventLoopWindowTargetExtWayland,
 };
 
-use winit::event::WindowEvent::KeyboardInput;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -20,6 +19,7 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use winit::event::WindowEvent::KeyboardInput;
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
@@ -415,7 +415,9 @@ impl Sequencer {
                                         MouseButton::Middle => 1,
                                         MouseButton::Right => 2,
                                         // Can't properly report more than three buttons..
-                                        MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
+                                        MouseButton::Back
+                                        | MouseButton::Forward
+                                        | MouseButton::Other(_) => return,
                                     };
 
                                     sequencer_window
@@ -481,7 +483,9 @@ impl Sequencer {
                                         MouseButton::Middle => 1,
                                         MouseButton::Right => 2,
                                         // Can't properly report more than three buttons.
-                                        MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
+                                        MouseButton::Back
+                                        | MouseButton::Forward
+                                        | MouseButton::Other(_) => return,
                                     };
                                     sequencer_window
                                         .screen
@@ -541,12 +545,13 @@ impl Sequencer {
                             sw.is_macos_deadzone = false;
                         }
 
-                        let cursor_icon =
-                            if !sw.screen.modifiers.shift_key() && sw.screen.mouse_mode() {
-                                CursorIcon::Default
-                            } else {
-                                CursorIcon::Text
-                            };
+                        let cursor_icon = if !sw.screen.modifiers.shift_key()
+                            && sw.screen.mouse_mode()
+                        {
+                            CursorIcon::Default
+                        } else {
+                            CursorIcon::Text
+                        };
 
                         sw.window.set_cursor_icon(cursor_icon);
                         if has_selection && (lmb_pressed || rmb_pressed) {
@@ -581,7 +586,8 @@ impl Sequencer {
                         sw.screen.mouse.square_side = square_side;
 
                         if (lmb_pressed || rmb_pressed)
-                            && (sw.screen.modifiers.shift_key() || !sw.screen.mouse_mode())
+                            && (sw.screen.modifiers.shift_key()
+                                || !sw.screen.mouse_mode())
                         {
                             sw.screen.update_selection(point, square_side);
 
@@ -659,7 +665,6 @@ impl Sequencer {
                 //         sw.screen.input_character(character);
                 //     }
                 // }
-
                 Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::KeyboardInput {
