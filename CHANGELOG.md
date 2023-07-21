@@ -3,6 +3,13 @@
 ## In progress
 
 - Fix Fuzzy Finder issue ([#132](https://github.com/raphamorim/rio/issues/132)).
+- Introduce Copa (Alacritty's VTE forked version to introduce new sequences/instructions in next versions).
+- Upgraded Winit to 0.29.0-beta.0
+- Support for keybindings with dead keys.
+- `Back`/`Forward` mouse buttons support in bindings.
+- Fix unconditional query of xdg-portal settings on Wayland
+- Fix `Maximized` startup mode not filling the screen properly on GNOME Wayland.
+- Fix Default Vi key bindings for `Last`/`First` actions not working on X11/Wayland.
 
 ## 0.0.12
 

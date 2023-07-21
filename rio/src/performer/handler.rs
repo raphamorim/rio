@@ -14,7 +14,7 @@ use colors::{AnsiColor, NamedColor};
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser
-use vte::{Params, ParamsIter};
+use copa::{Params, ParamsIter};
 
 /// Maximum time before a synchronized update is aborted.
 const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
@@ -370,7 +370,7 @@ enum Dcs {
 #[derive(Default)]
 pub struct ParserProcessor {
     state: ProcessorState,
-    parser: vte::Parser,
+    parser: copa::Parser,
 }
 
 impl ParserProcessor {
@@ -492,7 +492,7 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
     }
 }
 
-impl<U: Handler> vte::Perform for Performer<'_, U> {
+impl<U: Handler> copa::Perform for Performer<'_, U> {
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);

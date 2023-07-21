@@ -1,0 +1,15 @@
+[package]
+authors = ["Christian Duerr <contact@christianduerr.com>"]
+description = "Proc macro for generating VTE state changes"
+repository = "https://github.com/alacritty/vte"
+name = "copa_generate_state_changes"
+license = "Apache-2.0 OR MIT"
+version = "0.1.1"
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.6"
+quote = "1.0.2"

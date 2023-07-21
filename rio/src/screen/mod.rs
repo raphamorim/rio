@@ -19,7 +19,7 @@ use crate::ime::Ime;
 #[cfg(target_os = "macos")]
 use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::screen::{
-    bindings::{Action as Act, BindingMode, FontSizeAction, Key},
+    bindings::{Action as Act, BindingMode, FontSizeAction, BindingKey},
     context::ContextManager,
     mouse::Mouse,
 };
@@ -33,7 +33,9 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
-use winit::event::{ElementState, ModifiersState};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use winit::event::ElementState;
+use winit::keyboard::{Key, ModifiersState};
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -297,17 +299,9 @@ impl Screen {
         self.clipboard.get(clipboard_type)
     }
 
-    pub fn input_character(&mut self, character: char) {
-        if self.ime.preedit().is_some() || self.ignore_chars {
-            return;
-        }
-
+    pub fn input_str(&mut self, text: &str) {
         self.scroll_bottom_when_cursor_not_visible();
         self.clear_selection();
-
-        let utf8_len = character.len_utf8();
-        let mut bytes = vec![0; utf8_len];
-        character.encode_utf8(&mut bytes[..]);
 
         #[cfg(not(target_os = "macos"))]
         let alt_send_esc = true;
@@ -315,9 +309,11 @@ impl Screen {
         #[cfg(target_os = "macos")]
         let alt_send_esc = self.state.option_as_alt;
 
-        if alt_send_esc && self.modifiers.alt() && utf8_len == 1 {
-            bytes.insert(0, b'\x1b');
+        let mut bytes = Vec::with_capacity(text.len() + 1);
+        if text.len() == 1 && alt_send_esc && self.modifiers.alt_key() {
+            bytes.push(b'\x1b');
         }
+        bytes.extend_from_slice(text.as_bytes());
 
         self.ctx_mut().current_mut().messenger.send_bytes(bytes);
     }
@@ -362,14 +358,15 @@ impl Screen {
         mode
     }
 
-    pub fn input_keycode(
+    pub fn process_key_event(
         &mut self,
-        virtual_keycode: Option<winit::event::VirtualKeyCode>,
-        scancode: u32,
+        key: &winit::event::KeyEvent,
     ) {
         if self.ime.preedit().is_some() {
             return;
         }
+
+        let text = key.text_with_all_modifiers().unwrap_or_default();
 
         let mode = BindingMode::new(&self.get_mode());
         let mut ignore_chars = None;
@@ -377,10 +374,17 @@ impl Screen {
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
 
-            let key = match (binding.trigger, virtual_keycode) {
-                (Key::Scancode(_), _) => Key::Scancode(scancode),
-                (_, Some(key)) => Key::Keycode(key),
-                _ => continue,
+            // When the logical key is some named key, use it, otherwise fallback to
+            // key without modifiers to account for bindings.
+            let logical_key = if matches!(key.logical_key, Key::Character(_)) {
+                key.key_without_modifiers()
+            } else {
+                key.logical_key.clone()
+            };
+
+            let key = match (&binding.trigger, logical_key) {
+                (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
+                (_, code) => BindingKey::Keycode { key: code, location: key.location },
             };
 
             if binding.is_triggered_by(mode.clone(), self.modifiers, &key) {
@@ -459,7 +463,10 @@ impl Screen {
             }
         }
 
-        self.ignore_chars = ignore_chars.unwrap_or(false);
+        // input_str
+        if ignore_chars.unwrap_or(false) == false {
+            self.input_str(text);
+        }
     }
 
     pub fn try_close_existent_tab(&mut self) -> bool {
@@ -640,7 +647,7 @@ impl Screen {
                 self.clear_selection();
 
                 // Start new empty selection.
-                if self.modifiers.ctrl() {
+                if self.modifiers.control_key() {
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
                     self.start_selection(SelectionType::Simple, point, side);
@@ -771,13 +778,13 @@ impl Screen {
 
         // Calculate modifiers value.
         let mut mods = 0;
-        if self.modifiers.shift() {
+        if self.modifiers.shift_key() {
             mods += 4;
         }
-        if self.modifiers.alt() {
+        if self.modifiers.alt_key() {
             mods += 8;
         }
-        if self.modifiers.ctrl() {
+        if self.modifiers.control_key() {
             mods += 16;
         }
 
@@ -865,7 +872,7 @@ impl Screen {
                 self.mouse_report(code, ElementState::Pressed);
             }
         } else if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
-            && !self.modifiers.shift()
+            && !self.modifiers.shift_key()
         {
             self.mouse.accumulated_scroll.x += new_scroll_x_px;
             self.mouse.accumulated_scroll.y += new_scroll_y_px;

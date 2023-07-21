@@ -31,7 +31,7 @@ sugarloaf = { workspace = true }
 teletypewriter = { workspace = true }
 tokio = { workspace = true }
 unicode-width = "0.1.5"
-vte = { version = "0.11.1", default-features = false }
+copa = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 

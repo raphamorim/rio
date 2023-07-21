@@ -56,7 +56,7 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     winit_window.set_transparent(config.window_opacity < 1.);
 
     // TODO: Update ime position based on cursor
-    // winit_window.set_ime_position(winit::dpi::PhysicalPosition::new(500.0, 500.0));
+    // winit_window.set_ime_cursor_area(winit::dpi::PhysicalPosition::new(500.0, 500.0), winit::dpi::LogicalSize::new(400, 400));
 
     // This will ignore diacritical marks and accent characters from
     // being processed as received characters. Instead, the input
