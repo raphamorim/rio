@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.13
+
 - Fix Fuzzy Finder issue ([#132](https://github.com/raphamorim/rio/issues/132)).
 - Introduce Copa (Alacritty's VTE forked version to introduce new sequences/instructions in next versions).
 - Upgraded Winit to 0.29.0-beta.0
