@@ -302,6 +302,18 @@ impl Sequencer {
                                 }
                             }
                         }
+                        RioEventType::Rio(RioEvent::PtyWrite(text)) => {
+                            if let Some(sequencer_window) =
+                                self.windows.get_mut(&window_id)
+                            {
+                                sequencer_window
+                                    .screen
+                                    .ctx_mut()
+                                    .current_mut()
+                                    .messenger
+                                    .send_bytes(text.into_bytes());
+                            }
+                        }
                         RioEventType::Rio(RioEvent::ColorRequest(index, format)) => {
                             // TODO: colors could be coming terminal as well
                             // if colors has been declaratively changed
