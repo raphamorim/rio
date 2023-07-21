@@ -40,10 +40,11 @@ pub fn setup_environment_variables(config: &config::Config) {
     };
 
     #[cfg(unix)]
-    info!("[setup_environment_variables] terminfo: {terminfo}");
+    {
+        info!("[setup_environment_variables] terminfo: {terminfo}");
+        std::env::set_var("TERM", terminfo);
+    }
 
-    #[cfg(unix)]
-    std::env::set_var("TERM", terminfo);
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
     #[cfg(target_os = "macos")]

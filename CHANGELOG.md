@@ -1,5 +1,9 @@
 # Changelog
 
+## In progress
+
+- Fix Fuzzy Finder issue ([#132](https://github.com/raphamorim/rio/issues/132)).
+
 ## 0.0.12
 
 - Strip binary is on for release builds.

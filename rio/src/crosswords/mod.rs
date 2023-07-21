@@ -288,6 +288,9 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
+/// Max size of the window title stack.
+const TITLE_STACK_MAX_DEPTH: usize = 4096;
+
 #[derive(Debug, Clone)]
 pub struct Crosswords<U>
 where
@@ -309,6 +312,7 @@ where
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
     window_id: WindowId,
+    title_stack: Vec<Option<String>>,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -345,6 +349,7 @@ impl<U: EventListener> Crosswords<U> {
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
             window_id,
+            title_stack: vec![],
         }
     }
 
@@ -1301,6 +1306,31 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn push_title(&mut self) {
+        log::trace!("Pushing '{:?}' onto title stack", self.title);
+
+        if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
+            let removed = self.title_stack.remove(0);
+            log::trace!(
+                "Removing '{:?}' from bottom of title stack that exceeds its maximum depth",
+                removed
+            );
+        }
+
+        self.title_stack.push(self.title.clone());
+    }
+
+    #[inline]
+    fn pop_title(&mut self) {
+        log::trace!("Attempting to pop title from stack...");
+
+        if let Some(popped) = self.title_stack.pop() {
+            log::trace!("Title '{:?}' popped from stack", popped);
+            self.set_title(popped);
+        }
+    }
+
+    #[inline]
     fn erase_chars(&mut self, count: Column) {
         let cursor = &self.grid.cursor;
 
@@ -1924,6 +1954,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .damage_line(row, new_col, self.grid.cursor.pos.col.0);
         self.grid.cursor.pos.col = Column(new_col);
         self.grid.cursor.should_wrap = false;
+    }
+
+    #[inline]
+    fn move_forward_tabs(&mut self, count: u16) {
+        log::trace!("[unimplemented] Moving forward {} tabs", count);
     }
 
     #[inline]
