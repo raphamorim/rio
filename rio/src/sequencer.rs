@@ -19,7 +19,6 @@ use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use winit::event::WindowEvent::KeyboardInput;
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };

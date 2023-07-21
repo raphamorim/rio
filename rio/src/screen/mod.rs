@@ -64,7 +64,6 @@ pub struct Screen {
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
     pub modifiers: ModifiersState,
-    ignore_chars: bool,
     pub mouse: Mouse,
     pub ime: Ime,
     pub state: State,
@@ -140,7 +139,6 @@ impl Screen {
             state,
             bindings,
             clipboard,
-            ignore_chars: false,
         })
     }
 
@@ -463,8 +461,7 @@ impl Screen {
             }
         }
 
-        // input_str
-        if ignore_chars.unwrap_or(false) == false {
+        if !ignore_chars.unwrap_or(false) {
             self.input_str(text);
         }
     }

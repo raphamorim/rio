@@ -1,3 +1,6 @@
+// https://github.com/alacritty/vte/blob/master/vte_generate_state_changes/Cargo.toml
+// By Christian Duerr <contact@christianduerr.com>
+
 #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 
 extern crate proc_macro;
