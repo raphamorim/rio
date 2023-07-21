@@ -32,6 +32,20 @@ pub fn create_window_builder(title: &str, config: &Rc<Config>) -> WindowBuilder 
         .with_decorations(true)
         .with_window_icon(Some(icon));
 
+    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+    {
+        use crate::screen::constants::APPLICATION_ID;
+        use winit::platform::x11::WindowBuilderExtX11;
+        window_builder = window_builder.with_name(APPLICATION_ID, "");
+    }
+
+    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+    {
+        use crate::screen::constants::APPLICATION_ID;
+        use winit::platform::wayland::WindowBuilderExtWayland;
+        window_builder = window_builder.with_name(APPLICATION_ID, "");
+    }
+
     #[cfg(target_os = "macos")]
     {
         use winit::platform::macos::WindowBuilderExtMacOS;
