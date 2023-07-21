@@ -318,16 +318,24 @@ macro_rules! bindings {
     }};
 }
 
-
 macro_rules! trigger {
     (KeyBinding, $key:literal, $location:expr) => {{
-        BindingKey::Keycode { key: Character($key.into()), location: $location }
+        BindingKey::Keycode {
+            key: Character($key.into()),
+            location: $location,
+        }
     }};
     (KeyBinding, $key:literal,) => {{
-        BindingKey::Keycode { key: Character($key.into()), location: KeyLocation::Standard }
+        BindingKey::Keycode {
+            key: Character($key.into()),
+            location: KeyLocation::Standard,
+        }
     }};
     (KeyBinding, $key:expr,) => {{
-        BindingKey::Keycode { key: $key, location: KeyLocation::Standard }
+        BindingKey::Keycode {
+            key: $key,
+            location: KeyLocation::Standard,
+        }
     }};
     ($ty:ident, $key:expr,) => {{
         $key

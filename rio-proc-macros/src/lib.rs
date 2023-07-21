@@ -72,7 +72,10 @@ fn state_entry_stream(iter: &mut Peekable<token_stream::IntoIter>) -> TokenStrea
 }
 
 /// Generate the array assignment statement for a single byte->target mapping for one state.
-fn change_stream(iter: &mut Peekable<token_stream::IntoIter>, state: &TokenTree) -> TokenStream {
+fn change_stream(
+    iter: &mut Peekable<token_stream::IntoIter>,
+    state: &TokenTree,
+) -> TokenStream {
     // Start of input byte range
     let start = next_usize(iter);
 
@@ -158,7 +161,7 @@ fn next_usize(iter: &mut impl Iterator<Item = TokenTree>) -> usize {
             } else {
                 literal.parse::<usize>().unwrap()
             }
-        },
+        }
         token => panic!("Expected literal, but got {:?}", token),
     }
 }

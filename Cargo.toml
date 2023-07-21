@@ -7,7 +7,7 @@ members = [
   "config",
   "corcovado",
   "copa",
-  "copa_generate_state_changes",
+  "rio-proc-macros",
   "rio"
 ]
 resolver = "2"
