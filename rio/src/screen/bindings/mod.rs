@@ -5,8 +5,9 @@ use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
 use std::fmt::Debug;
-use winit::event::ModifiersState;
-use winit::event::VirtualKeyCode::{self, *};
+use winit::keyboard::Key::*;
+use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState};
+// use winit::platform::scancode::KeyCodeExtScancode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontSizeAction {
@@ -87,15 +88,14 @@ impl<T: Eq> Binding<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Key {
-    #[allow(dead_code)]
-    Scancode(u32),
-    Keycode(VirtualKeyCode),
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum BindingKey {
+    Scancode(KeyCode),
+    Keycode { key: Key, location: KeyLocation },
 }
 
+pub type KeyBinding = Binding<BindingKey>;
 pub type KeyBindings = Vec<KeyBinding>;
-pub type KeyBinding = Binding<Key>;
 
 bitflags! {
     /// Modes available for key bindings.
@@ -284,31 +284,10 @@ impl From<ViMotion> for Action {
 
 macro_rules! bindings {
     (
-        KeyBinding;
-        $(
-            $key:ident
-            $(,$mods:expr)*
-            $(,+$mode:expr)*
-            $(,~$notmode:expr)*
-            ;$action:expr
-        );*
-        $(;)*
-    ) => {{
-        bindings!(
-            KeyBinding;
-            $(
-                Key::Keycode($key)
-                $(,$mods)*
-                $(,+$mode)*
-                $(,~$notmode)*
-                ;$action
-            );*
-        )
-    }};
-    (
         $ty:ident;
         $(
             $key:expr
+            $(=>$location:expr)?
             $(,$mods:expr)*
             $(,+$mode:expr)*
             $(,~$notmode:expr)*
@@ -327,7 +306,7 @@ macro_rules! bindings {
             $(_notmode.insert($notmode);)*
 
             v.push($ty {
-                trigger: $key,
+                trigger: trigger!($ty, $key, $($location)?),
                 mods: _mods,
                 mode: _mode,
                 notmode: _notmode,
@@ -339,20 +318,36 @@ macro_rules! bindings {
     }};
 }
 
+
+macro_rules! trigger {
+    (KeyBinding, $key:literal, $location:expr) => {{
+        BindingKey::Keycode { key: Character($key.into()), location: $location }
+    }};
+    (KeyBinding, $key:literal,) => {{
+        BindingKey::Keycode { key: Character($key.into()), location: KeyLocation::Standard }
+    }};
+    (KeyBinding, $key:expr,) => {{
+        BindingKey::Keycode { key: $key, location: KeyLocation::Standard }
+    }};
+    ($ty:ident, $key:expr,) => {{
+        $key
+    }};
+}
+
 pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         Copy;  Action::Copy;
         Copy,  +BindingMode::VI; Action::ClearSelection;
         Paste, ~BindingMode::VI; Action::Paste;
-        L, ModifiersState::CTRL; Action::ClearLogNotice;
-        L,    ModifiersState::CTRL,  ~BindingMode::VI;
+        "l", ModifiersState::CONTROL; Action::ClearLogNotice;
+        "l",    ModifiersState::CONTROL,  ~BindingMode::VI;
             Action::Esc("\x0c".into());
         Tab,  ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[Z".into());
-        Back, ModifiersState::ALT,   ~BindingMode::VI;
+        Backspace, ModifiersState::ALT,   ~BindingMode::VI;
             Action::Esc("\x1b\x7f".into());
-        Back, ModifiersState::SHIFT, ~BindingMode::VI;
+        Backspace, ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x7f".into());
         Home,     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         End,      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
@@ -374,23 +369,23 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
             Action::Esc("\x1bOF".into());
         End,   ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[F".into());
-        Up,    +BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowUp,    +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOA".into());
-        Up,    ~BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowUp,    ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[A".into());
-        Down,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowDown,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOB".into());
-        Down,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowDown,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[B".into());
-        Right, +BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowRight, +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOC".into());
-        Right, ~BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowRight, ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[C".into());
-        Left,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowLeft,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOD".into());
-        Left,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
+        ArrowLeft,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[D".into());
-        Back,        ~BindingMode::VI; Action::Esc("\x7f".into());
+        Backspace,        ~BindingMode::VI; Action::Esc("\x7f".into());
         Insert,      ~BindingMode::VI; Action::Esc("\x1b[2~".into());
         Delete,      ~BindingMode::VI; Action::Esc("\x1b[3~".into());
         PageUp,      ~BindingMode::VI; Action::Esc("\x1b[5~".into());
@@ -415,43 +410,43 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         F18,         ~BindingMode::VI; Action::Esc("\x1b[32~".into());
         F19,         ~BindingMode::VI; Action::Esc("\x1b[33~".into());
         F20,         ~BindingMode::VI; Action::Esc("\x1b[34~".into());
-        NumpadEnter, ~BindingMode::VI; Action::Esc("\n".into());
-        Space, ModifiersState::SHIFT | ModifiersState::CTRL;
+        // NumpadEnter, ~BindingMode::VI; Action::Esc("\n".into());
+        Space, ModifiersState::SHIFT | ModifiersState::CONTROL;
             Action::ToggleViMode;
-        Space, ModifiersState::SHIFT | ModifiersState::CTRL, +BindingMode::VI;
+        Space, ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI;
             Action::ScrollToBottom;
         Escape,                        +BindingMode::VI;
             Action::ClearSelection;
-        I,                             +BindingMode::VI;
+        "i",                             +BindingMode::VI;
             Action::ToggleViMode;
-        I,                             +BindingMode::VI;
+        "i",                             +BindingMode::VI;
             Action::ScrollToBottom;
-        C,      ModifiersState::CTRL,  +BindingMode::VI;
+        "c",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ToggleViMode;
-        Y,      ModifiersState::CTRL,  +BindingMode::VI;
+        "y",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollLineUp;
-        E,      ModifiersState::CTRL,  +BindingMode::VI;
+        "e",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollLineDown;
-        G,                             +BindingMode::VI;
+        "g",                             +BindingMode::VI;
             Action::ScrollToTop;
-        G,      ModifiersState::SHIFT, +BindingMode::VI;
+        "g",      ModifiersState::SHIFT, +BindingMode::VI;
             Action::ScrollToBottom;
-        B,      ModifiersState::CTRL,  +BindingMode::VI;
+        "b",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollPageUp;
-        F,      ModifiersState::CTRL,  +BindingMode::VI;
+        "f",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollPageDown;
-        U,      ModifiersState::CTRL,  +BindingMode::VI;
+        "u",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollHalfPageUp;
-        D,      ModifiersState::CTRL,  +BindingMode::VI;
+        "d",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ScrollHalfPageDown;
-        Y,                             +BindingMode::VI; Action::Copy;
-        Y,                             +BindingMode::VI;
+        "y",                             +BindingMode::VI; Action::Copy;
+        "y",                             +BindingMode::VI;
             Action::ClearSelection;
         // V,                             +BindingMode::VI;
             // ViAction::ToggleNormalSelection;
         // V,      ModifiersState::SHIFT, +BindingMode::VI;
         //     ViAction::ToggleLineSelection;
-        // V,      ModifiersState::CTRL,  +BindingMode::VI;
+        // V,      ModifiersState::CONTROL,  +BindingMode::VI;
         //     ViAction::ToggleBlockSelection;
         // V,      ModifiersState::ALT,   +BindingMode::VI;
         //     ViAction::ToggleSemanticSelection;
@@ -459,51 +454,51 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         //     ViAction::SearchNext;
         // N,      ModifiersState::SHIFT, +BindingMode::VI;
         //     ViAction::SearchPrevious;
-        // Return,                        +BindingMode::VI;
+        // Enter,                        +BindingMode::VI;
         //     ViAction::Open;
         // Z,                             +BindingMode::VI;
             // ViAction::CenterAroundViCursor;
-        K,                             +BindingMode::VI;
+        "k",                             +BindingMode::VI;
             ViMotion::Up;
-        J,                             +BindingMode::VI;
+        "j",                             +BindingMode::VI;
             ViMotion::Down;
-        H,                             +BindingMode::VI;
+        "h",                             +BindingMode::VI;
             ViMotion::Left;
-        L,                             +BindingMode::VI;
+        "l",                             +BindingMode::VI;
             ViMotion::Right;
-        Up,                            +BindingMode::VI;
+        ArrowUp,                            +BindingMode::VI;
             ViMotion::Up;
-        Down,                          +BindingMode::VI;
+        ArrowDown,                          +BindingMode::VI;
             ViMotion::Down;
-        Left,                          +BindingMode::VI;
+        ArrowLeft,                          +BindingMode::VI;
             ViMotion::Left;
-        Right,                         +BindingMode::VI;
+        ArrowRight,                         +BindingMode::VI;
             ViMotion::Right;
-        Key0,                          +BindingMode::VI;
+        "0",                          +BindingMode::VI;
             ViMotion::First;
-        Key4,   ModifiersState::SHIFT, +BindingMode::VI;
+        "4",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Last;
-        Key6,   ModifiersState::SHIFT, +BindingMode::VI;
+        "6",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::FirstOccupied;
-        H,      ModifiersState::SHIFT, +BindingMode::VI;
+        "h",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::High;
-        M,      ModifiersState::SHIFT, +BindingMode::VI;
+        "m",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Middle;
-        L,      ModifiersState::SHIFT, +BindingMode::VI;
+        "l",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Low;
-        B,                             +BindingMode::VI;
+        "b",                             +BindingMode::VI;
             ViMotion::SemanticLeft;
-        W,                             +BindingMode::VI;
+        "w",                             +BindingMode::VI;
             ViMotion::SemanticRight;
-        E,                             +BindingMode::VI;
+        "e",                             +BindingMode::VI;
             ViMotion::SemanticRightEnd;
-        B,      ModifiersState::SHIFT, +BindingMode::VI;
+        "b",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::WordLeft;
-        W,      ModifiersState::SHIFT, +BindingMode::VI;
+        "w",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::WordRight;
-        E,      ModifiersState::SHIFT, +BindingMode::VI;
+        "e",      ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::WordRightEnd;
-        Key5,   ModifiersState::SHIFT, +BindingMode::VI;
+        "5",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Bracket;
     );
 
@@ -522,10 +517,10 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut modifiers = vec![
         ModifiersState::SHIFT,
         ModifiersState::SHIFT | ModifiersState::ALT,
-        ModifiersState::CTRL,
-        ModifiersState::SHIFT | ModifiersState::CTRL,
-        ModifiersState::ALT | ModifiersState::CTRL,
-        ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CTRL,
+        ModifiersState::CONTROL,
+        ModifiersState::SHIFT | ModifiersState::CONTROL,
+        ModifiersState::ALT | ModifiersState::CONTROL,
+        ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
     ];
 
     // In MacOs we target the same behaviour that Terminal.app has
@@ -541,13 +536,13 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
             KeyBinding;
             Delete, mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[3;{}~", modifiers_code));
-            Up,     mods, ~BindingMode::VI;
+            ArrowUp,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}A", modifiers_code));
-            Down,   mods, ~BindingMode::VI;
+            ArrowDown,   mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}B", modifiers_code));
-            Right,  mods, ~BindingMode::VI;
+            ArrowRight,  mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}C", modifiers_code));
-            Left,   mods, ~BindingMode::VI;
+            ArrowLeft,   mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}D", modifiers_code));
             F1,     mods, ~BindingMode::VI;
                 Action::Esc(format!("\x1b[1;{}P", modifiers_code));
@@ -619,37 +614,37 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        Key0,           ModifiersState::LOGO; Action::ResetFontSize;
-        Equals,         ModifiersState::LOGO; Action::IncreaseFontSize;
-        Plus,           ModifiersState::LOGO; Action::IncreaseFontSize;
-        NumpadAdd,      ModifiersState::LOGO; Action::IncreaseFontSize;
-        Minus,          ModifiersState::LOGO; Action::DecreaseFontSize;
-        NumpadSubtract, ModifiersState::LOGO; Action::DecreaseFontSize;
+        "0",           ModifiersState::SUPER; Action::ResetFontSize;
+        "=",         ModifiersState::SUPER; Action::IncreaseFontSize;
+        "+",           ModifiersState::SUPER; Action::IncreaseFontSize;
+        "+",      ModifiersState::SUPER; Action::IncreaseFontSize;
+        "-",          ModifiersState::SUPER; Action::DecreaseFontSize;
+        "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         Insert, ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[2;2~".into());
-        Left, ModifiersState::ALT,  ~BindingMode::VI;
+        ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bb".into());
-        Right, ModifiersState::ALT,  ~BindingMode::VI;
+        ArrowRight, ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bf".into());
-        K, ModifiersState::LOGO, ~BindingMode::VI;
+        "k", ModifiersState::SUPER, ~BindingMode::VI;
             Action::Esc("\x0c".into());
-        K, ModifiersState::LOGO, ~BindingMode::VI;  Action::ClearHistory;
-        V, ModifiersState::LOGO, ~BindingMode::VI; Action::Paste;
-        F, ModifiersState::CTRL | ModifiersState::LOGO; Action::ToggleFullscreen;
-        C, ModifiersState::LOGO; Action::Copy;
-        C, ModifiersState::LOGO, +BindingMode::VI; Action::ClearSelection;
-        H, ModifiersState::LOGO; Action::Hide;
-        H, ModifiersState::LOGO | ModifiersState::ALT; Action::HideOtherApplications;
-        M, ModifiersState::LOGO; Action::Minimize;
-        Q, ModifiersState::LOGO; Action::Quit;
-        W, ModifiersState::LOGO; Action::Quit;
-        N, ModifiersState::LOGO; Action::WindowCreateNew;
-        T, ModifiersState::LOGO; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
-        LBracket, ModifiersState::LOGO | ModifiersState::SHIFT; Action::TabSwitchNext;
-        RBracket, ModifiersState::LOGO | ModifiersState::SHIFT; Action::TabSwitchPrev;
-        W, ModifiersState::LOGO; Action::TabCloseCurrent;
-        Comma, ModifiersState::LOGO; Action::ConfigEditor;
+        "k", ModifiersState::SUPER, ~BindingMode::VI;  Action::ClearHistory;
+        "v", ModifiersState::SUPER, ~BindingMode::VI; Action::Paste;
+        "f", ModifiersState::CONTROL | ModifiersState::SUPER; Action::ToggleFullscreen;
+        "c", ModifiersState::SUPER; Action::Copy;
+        "c", ModifiersState::SUPER, +BindingMode::VI; Action::ClearSelection;
+        "h", ModifiersState::SUPER; Action::Hide;
+        "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
+        "m", ModifiersState::SUPER; Action::Minimize;
+        "q", ModifiersState::SUPER; Action::Quit;
+        "w", ModifiersState::SUPER; Action::Quit;
+        "n", ModifiersState::SUPER; Action::WindowCreateNew;
+        "t", ModifiersState::SUPER; Action::TabCreateNew;
+        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
+        "LBracket", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "RBracket", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "w", ModifiersState::SUPER; Action::TabCloseCurrent;
+        ",", ModifiersState::SUPER; Action::ConfigEditor;
     )
 }
 
@@ -658,23 +653,23 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        V,        ModifiersState::CTRL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT; Action::Copy;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT,
+        "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
+        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
-        Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
-        Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
-        NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
-        Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
-        NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
-        N, ModifiersState::CTRL; Action::WindowCreateNew;
-        T, ModifiersState::CTRL; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
-        LBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        RBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchPrev;
-        W, ModifiersState::CTRL; Action::TabCloseCurrent;
+        "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
+        "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "n", ModifiersState::CONTROL; Action::WindowCreateNew;
+        "t", ModifiersState::CONTROL; Action::TabCreateNew;
+        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
+        "LBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "RBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
     )
 }
 
@@ -683,24 +678,24 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        V,        ModifiersState::CTRL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT; Action::Copy;
-        C,        ModifiersState::CTRL | ModifiersState::SHIFT,
+        "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
+        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        Key0,     ModifiersState::CTRL;  Action::ResetFontSize;
-        Equals,   ModifiersState::CTRL;  Action::IncreaseFontSize;
-        Plus,     ModifiersState::CTRL;  Action::IncreaseFontSize;
-        NumpadAdd,      ModifiersState::CTRL;  Action::IncreaseFontSize;
-        Minus,          ModifiersState::CTRL;  Action::DecreaseFontSize;
-        NumpadSubtract, ModifiersState::CTRL;  Action::DecreaseFontSize;
-        Return, ModifiersState::ALT; Action::ToggleFullscreen;
-        T, ModifiersState::CTRL; Action::TabCreateNew;
-        Tab, ModifiersState::CTRL; Action::TabSwitchNext;
-        W, ModifiersState::CTRL; Action::TabCloseCurrent;
-        N, ModifiersState::CTRL; Action::WindowCreateNew;
-        LBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        RBracket, ModifiersState::CTRL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
+        "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        Enter, ModifiersState::ALT; Action::ToggleFullscreen;
+        T, ModifiersState::CONTROL; Action::TabCreateNew;
+        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
+        W, ModifiersState::CONTROL; Action::TabCloseCurrent;
+        N, ModifiersState::CONTROL; Action::WindowCreateNew;
+        LBracket, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        RBracket, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
     )
 }
 

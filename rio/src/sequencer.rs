@@ -4,6 +4,7 @@ use {
     winit::platform::wayland::EventLoopWindowTargetExtWayland,
 };
 
+use winit::event::WindowEvent::KeyboardInput;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -22,7 +23,7 @@ use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
-use winit::event_loop::{DeviceEventFilter, EventLoop, EventLoopWindowTarget};
+use winit::event_loop::{DeviceEvents, EventLoop, EventLoopWindowTarget};
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::window::{CursorIcon, Window, WindowId};
 
@@ -33,8 +34,6 @@ pub struct SequencerWindow {
     screen: Screen,
     #[cfg(target_os = "macos")]
     is_macos_deadzone: bool,
-    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-    has_wayland_forcefully_reloaded: bool,
 }
 
 impl SequencerWindow {
@@ -64,8 +63,6 @@ impl SequencerWindow {
             screen,
             #[cfg(target_os = "macos")]
             is_macos_deadzone: false,
-            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-            has_wayland_forcefully_reloaded: false,
         })
     }
 
@@ -101,8 +98,6 @@ impl SequencerWindow {
             screen,
             #[cfg(target_os = "macos")]
             is_macos_deadzone: false,
-            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-            has_wayland_forcefully_reloaded: false,
         }
     }
 }
@@ -158,7 +153,7 @@ impl Sequencer {
         let first_window = seq_win.window.id();
         self.windows.insert(first_window, seq_win);
 
-        event_loop.set_device_event_filter(DeviceEventFilter::Always);
+        event_loop.listen_device_events(DeviceEvents::Never);
         event_loop.run_return(move |event, event_loop_window_target, control_flow| {
             match event {
                 Event::UserEvent(EventP {
@@ -167,26 +162,6 @@ impl Sequencer {
                     match payload {
                         RioEventType::Rio(RioEvent::Wakeup) => {
                             // Emitted when the application has been resumed.
-                            // This is a hack to avoid an odd scenario in wayland window initialization
-                            // wayland windows starts with the wrong width/height.
-                            // Rio is ignoring wayland new dimension events, so the terminal
-                            // start with the wrong width/height (fix the ignore would be the best fix though)
-                            //
-                            // The code below forcefully reload dimensions in the terminal initialization
-                            // to load current width/height.
-                            #[cfg(all(
-                                feature = "wayland",
-                                not(any(target_os = "macos", windows))
-                            ))]
-                            {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    if !sw.has_wayland_forcefully_reloaded {
-                                        sw.screen.update_config(&self.config);
-                                        sw.has_wayland_forcefully_reloaded = true;
-                                    }
-                                }
-                            }
-
                             if !self.has_updates.contains(&window_id) {
                                 self.has_updates.push(window_id);
                             }
@@ -394,7 +369,7 @@ impl Sequencer {
                     ..
                 } => {
                     if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                        sequencer_window.screen.set_modifiers(modifiers);
+                        sequencer_window.screen.set_modifiers(modifiers.state());
                     }
                 }
 
@@ -429,7 +404,7 @@ impl Sequencer {
                         match state {
                             ElementState::Pressed => {
                                 // Process mouse press before bindings to update the `click_state`.
-                                if !sequencer_window.screen.modifiers.shift()
+                                if !sequencer_window.screen.modifiers.shift_key()
                                     && sequencer_window.screen.mouse_mode()
                                 {
                                     sequencer_window.screen.mouse.click_state =
@@ -440,7 +415,7 @@ impl Sequencer {
                                         MouseButton::Middle => 1,
                                         MouseButton::Right => 2,
                                         // Can't properly report more than three buttons..
-                                        MouseButton::Other(_) => return,
+                                        MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
                                     };
 
                                     sequencer_window
@@ -498,7 +473,7 @@ impl Sequencer {
                                 // sequencer_window.screen.process_mouse_bindings(button);
                             }
                             ElementState::Released => {
-                                if !sequencer_window.screen.modifiers.shift()
+                                if !sequencer_window.screen.modifiers.shift_key()
                                     && sequencer_window.screen.mouse_mode()
                                 {
                                     let code = match button {
@@ -506,7 +481,7 @@ impl Sequencer {
                                         MouseButton::Middle => 1,
                                         MouseButton::Right => 2,
                                         // Can't properly report more than three buttons.
-                                        MouseButton::Other(_) => return,
+                                        MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
                                     };
                                     sequencer_window
                                         .screen
@@ -567,7 +542,7 @@ impl Sequencer {
                         }
 
                         let cursor_icon =
-                            if !sw.screen.modifiers.shift() && sw.screen.mouse_mode() {
+                            if !sw.screen.modifiers.shift_key() && sw.screen.mouse_mode() {
                                 CursorIcon::Default
                             } else {
                                 CursorIcon::Text
@@ -606,7 +581,7 @@ impl Sequencer {
                         sw.screen.mouse.square_side = square_side;
 
                         if (lmb_pressed || rmb_pressed)
-                            && (sw.screen.modifiers.shift() || !sw.screen.mouse_mode())
+                            && (sw.screen.modifiers.shift_key() || !sw.screen.mouse_mode())
                         {
                             sw.screen.update_selection(point, square_side);
 
@@ -674,43 +649,39 @@ impl Sequencer {
                         }
                     }
                 }
-                Event::WindowEvent {
-                    event: winit::event::WindowEvent::ReceivedCharacter(character),
-                    window_id,
-                    ..
-                } => {
-                    if let Some(sw) = self.windows.get_mut(&window_id) {
-                        sw.screen.input_character(character);
-                    }
-                }
+
+                // Event::UserEvent {
+                //     event: winit::event::KeyEvent { physical_key, logical_key, text, .. },
+                //     window_id,
+                //     ..
+                // } => {
+                //     if let Some(sw) = self.windows.get_mut(&window_id) {
+                //         sw.screen.input_character(character);
+                //     }
+                // }
 
                 Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::KeyboardInput {
                             is_synthetic: false,
-                            input:
-                                winit::event::KeyboardInput {
-                                    virtual_keycode,
-                                    scancode,
-                                    state,
-                                    ..
-                                },
+                            event: key_event,
                             ..
                         },
                     window_id,
                     ..
-                } => match state {
+                } => match key_event.state {
                     ElementState::Pressed => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             sw.window.set_cursor_visible(false);
-                            sw.screen.input_keycode(virtual_keycode, scancode);
+
+                            sw.screen.process_key_event(&key_event);
                         }
                     }
 
                     ElementState::Released => {
-                        if !self.has_updates.contains(&window_id) {
-                            self.has_updates.push(window_id);
-                        }
+                        // if !self.has_updates.contains(&window_id) {
+                        //     self.has_updates.push(window_id);
+                        // }
                     }
                 },
 
