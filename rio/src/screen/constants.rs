@@ -24,3 +24,9 @@ pub const DEADZONE_END_Y: f64 = -2.0;
 
 #[cfg(target_os = "macos")]
 pub const DEADZONE_START_X: f64 = 80.;
+
+#[cfg(all(
+    any(feature = "wayland", feature = "x11"),
+    not(any(target_os = "macos", windows))
+))]
+pub const APPLICATION_ID: &str = "rio";

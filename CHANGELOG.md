@@ -10,6 +10,7 @@
 - Fix unconditional query of xdg-portal settings on Wayland
 - Fix `Maximized` startup mode not filling the screen properly on GNOME Wayland.
 - Fix Default Vi key bindings for `Last`/`First` actions not working on X11/Wayland.
+- Set `app_id`/`WM_CLASS` property on Wayland/X11
 
 ## 0.0.12
 
