@@ -8,7 +8,7 @@ use sugarloaf::{
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::{
     dpi::LogicalSize,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
 };
@@ -358,17 +358,6 @@ async fn main() {
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            virtual_keycode: Some(VirtualKeyCode::Space),
-                            state: ElementState::Released,
-                            ..
-                        },
-                    ..
-                } => {
-                    //
-                }
                 WindowEvent::ScaleFactorChanged {
                     new_inner_size,
                     scale_factor,

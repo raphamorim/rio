@@ -90,8 +90,12 @@ impl<T: Eq> Binding<T> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BindingKey {
+    #[allow(dead_code)]
     Scancode(KeyCode),
-    Keycode { key: Key, location: KeyLocation },
+    Keycode {
+        key: Key,
+        location: KeyLocation,
+    },
 }
 
 pub type KeyBinding = Binding<BindingKey>;
