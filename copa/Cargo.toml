@@ -1,0 +1,24 @@
+[package]
+authors = ["Raphael Amorim <rapha850@gmail.com>"]
+description = "Parser for implementing terminal emulators"
+repository = "https://github.com/alacritty/vte"
+documentation = "https://docs.rs/vte/"
+readme = "README.md"
+license = "Apache-2.0 OR MIT"
+version = "0.11.1"
+name = "copa"
+edition = "2021"
+rust-version = "1.62.1"
+
+[dependencies]
+rio_proc_macros = { version = "0.1.0", path = "../rio-proc-macros" }
+arrayvec = { version = "0.7.2", default-features = false, optional = true }
+log = { version = "0.4.17", optional = true }
+serde = { version = "1.0.160", features = ["derive"], optional = true }
+
+[features]
+ansi = ["log"]
+serde = ["dep:serde"]
+default = ["no_std"]
+no_std = ["arrayvec"]
+nightly = []
