@@ -79,7 +79,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
-                        println!("{}", err);
+                        log::error!("{err:?}");
                         std::process::exit(1);
                     }
                 }

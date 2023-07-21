@@ -702,12 +702,12 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
-        T, ModifiersState::CONTROL; Action::TabCreateNew;
+        "t", ModifiersState::CONTROL; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        W, ModifiersState::CONTROL; Action::TabCloseCurrent;
-        N, ModifiersState::CONTROL; Action::WindowCreateNew;
-        LBracket, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        RBracket, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
+        "n", ModifiersState::CONTROL; Action::WindowCreateNew;
+        "LBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "RBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
     )
 }
 
