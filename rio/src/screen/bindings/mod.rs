@@ -109,7 +109,6 @@ bitflags! {
         const APP_KEYPAD          = 0b0000_0010;
         const ALT_SCREEN          = 0b0000_0100;
         const VI                  = 0b0000_1000;
-        const SEARCH              = 0b0001_0000;
     }
 }
 
@@ -653,8 +652,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         "t", ModifiersState::SUPER; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        "LBracket", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "RBracket", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
     )
@@ -679,8 +678,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "n", ModifiersState::CONTROL; Action::WindowCreateNew;
         "t", ModifiersState::CONTROL; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        "LBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "RBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
         "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
     )
 }
@@ -706,8 +705,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
         "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
         "n", ModifiersState::CONTROL; Action::WindowCreateNew;
-        "LBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "RBracket", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
     )
 }
 

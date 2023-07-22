@@ -211,7 +211,7 @@ impl Screen {
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.cursor_shape = self.state.get_cursor_state().content;
+            terminal.cursor_shape = self.state.get_cursor_state_from_ref().content;
         }
 
         let width = self.sugarloaf.layout.width_u32 as u16;
@@ -428,7 +428,7 @@ impl Screen {
                                 self.sugarloaf.layout.height_u32,
                             ),
                             (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-                            self.state.get_cursor_state(),
+                            self.state.get_cursor_state_from_ref(),
                         );
                         self.render();
                     }

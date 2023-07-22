@@ -2,7 +2,9 @@
 
 ## In progress
 
+- Fix key binding for switch tab next (MacOS only).
 - Fix scroll when copying text outside of offset.
+- Fix copy key bindings.
 
 ## 0.0.13
 

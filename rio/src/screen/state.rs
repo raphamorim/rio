@@ -82,9 +82,13 @@ impl State {
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,
-                state: CursorState::new(config),
+                state: CursorState::new(config.cursor),
             },
         }
+    }
+
+    pub fn get_cursor_state_from_ref(&self) -> CursorState {
+        CursorState::new(self.cursor.content_ref)
     }
 
     pub fn get_cursor_state(&self) -> CursorState {
