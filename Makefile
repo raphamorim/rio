@@ -58,6 +58,10 @@ release-macos: app-universal
 	cp -rf ./target/release/osx/* ./release/
 	cd ./release && zip -r ./macos-rio.zip ./*
 
+release-macos-local: release-macos
+	rm -rf /Applications/$(APP_NAME)
+	mv ./release/$(APP_NAME) /Applications/
+
 version-not-found:
 	@echo "Rio version was not specified"
 	@echo " - usage: $ make release-macos-signed version=0.0.0"
@@ -67,9 +71,9 @@ release-macos-app-signed:
 	@echo "Releasing Rio v$(version)"
 	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	mkdir -p $(RELEASE_DIR) && cp -rf ./target/release/osx/* ./release/
-	@ditto -c -k --keepParent ./release/Rio.app ./release/Rio-v$(version).zip
+	@ditto -c -k --keepParent ./release/$(APP_NAME) ./release/Rio-v$(version).zip
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
-	rm -rf ./release/Rio.app
+	rm -rf ./release/$(APP_NAME)
 	@unzip ./release/Rio-v$(version).zip -d ./release
 
 # e.g: make update-version old-version=0.0.13 new-version=0.0.12
@@ -84,7 +88,7 @@ update-version:
 
 release-macos-dmg:
 # 	Using https://www.npmjs.com/package/create-dmg
-	cd ./release && create-dmg Rio.app --dmg-title="Rio ${version}" --overwrite
+	cd ./release && create-dmg $(APP_NAME) --dmg-title="Rio ${version}" --overwrite
 
 # 	Using https://github.com/create-dmg/create-dmg
 # 	create-dmg \
