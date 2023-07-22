@@ -3,7 +3,7 @@ use crate::ansi::CursorShape;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use colors::ColorRgb;
-use log::{info, warn};
+use log::{debug, warn};
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
@@ -541,7 +541,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     }
 
     fn put(&mut self, _byte: u8) {
-        info!("[put] {_byte:02x}");
+        debug!("[put] {_byte:02x}");
     }
 
     #[inline]
@@ -557,7 +557,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        info!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+        debug!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
 
         let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
@@ -752,7 +752,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
         should_ignore: bool,
         action: char,
     ) {
-        info!("[csi_dispatch] {params:?} {action:?}");
+        debug!("[csi_dispatch] {params:?} {action:?}");
         macro_rules! csi_unhandled {
             () => {{
                 warn!(

@@ -1112,7 +1112,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn dynamic_color_sequence(&mut self, prefix: String, index: usize, terminator: &str) {
-        info!(
+        debug!(
             "Requested write of escape sequence for color code {}: color[{}]",
             prefix, index
         );
@@ -2015,7 +2015,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let start = Line(top as i32 - 1);
         let end = Line(bottom as i32);
 
-        info!("Setting scrolling region: ({};{})", start, end);
+        debug!("Setting scrolling region: ({};{})", start, end);
 
         let screen_lines = Line(self.grid.screen_lines() as i32);
         self.scroll_region.start = std::cmp::min(start, screen_lines);
@@ -2025,7 +2025,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn text_area_size_pixels(&mut self) {
-        info!("text_area_size_pixels");
+        debug!("text_area_size_pixels");
         // self.event_proxy.send_event(RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
         //     let height = window_size.num_lines * window_size.cell_height;
         //     let width = window_size.num_cols * window_size.cell_width;
@@ -2040,7 +2040,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.screen_lines(),
             self.grid.columns()
         );
-        info!("text_area_size_chars {:?}", text);
+        debug!("text_area_size_chars {:?}", text);
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
     }

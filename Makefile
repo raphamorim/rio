@@ -3,14 +3,16 @@
 BUILD_MISC_DIR = misc
 DOCS_DIR = docs
 TARGET = rio
-RELEASE_DIR = target/release
+TARGET_DIR = target/release
+TARGET_DIR_DEBIAN = target/debian
+TARGET_DIR_OSX = $(TARGET_DIR)/osx
+RELEASE_DIR = release
 
 APP_NAME = Rio.app
 APP_TEMPLATE = $(BUILD_MISC_DIR)/osx/$(APP_NAME)
-APP_DIR = $(RELEASE_DIR)/osx
-APP_BINARY = $(RELEASE_DIR)/$(TARGET)
-APP_BINARY_DIR = $(APP_DIR)/$(APP_NAME)/Contents/MacOS
-APP_EXTRAS_DIR = $(APP_DIR)/$(APP_NAME)/Contents/Resources
+APP_BINARY = $(TARGET_DIR)/$(TARGET)
+APP_BINARY_DIR = $(TARGET_DIR_OSX)/$(APP_NAME)/Contents/MacOS
+APP_EXTRAS_DIR = $(TARGET_DIR_OSX)/$(APP_NAME)/Contents/Resources
 TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 
 all: install run
@@ -43,16 +45,16 @@ app-universal: $(APP_NAME)-universal ## Create a universal Rio.app
 $(APP_NAME)-%: $(TARGET)-%
 	@mkdir -p $(APP_BINARY_DIR)
 	@mkdir -p $(APP_EXTRAS_DIR)
-	@cp -fRp $(APP_TEMPLATE) $(APP_DIR)
+	@cp -fRp $(APP_TEMPLATE) $(TARGET_DIR_OSX)
 	@cp -fp $(APP_BINARY) $(APP_BINARY_DIR)
 	@tic -xe rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
-	@touch -r "$(APP_BINARY)" "$(APP_DIR)/$(APP_NAME)"
+	@touch -r "$(APP_BINARY)" "$(TARGET_DIR_OSX)/$(APP_NAME)"
 
 release-macos: app-universal
-	@codesign --remove-signature "$(APP_DIR)/$(APP_NAME)"
-	@codesign --force --deep --sign - "$(APP_DIR)/$(APP_NAME)"
-	@echo "Created '$(APP_NAME)' in '$(APP_DIR)'"
-	mkdir -p release
+	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
+	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"
+	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
+	mkdir -p $(RELEASE_DIR)
 	cp -rf ./target/release/osx/* ./release/
 	cd ./release && zip -r ./macos-rio.zip ./*
 
@@ -63,8 +65,8 @@ version-not-found:
 release-macos-app-signed:
 	@make app-universal
 	@echo "Releasing Rio v$(version)"
-	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(APP_DIR)/$(APP_NAME)"
-	mkdir -p release && cp -rf ./target/release/osx/* ./release/
+	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(TARGET_DIR_OSX)/$(APP_NAME)"
+	mkdir -p $(RELEASE_DIR) && cp -rf ./target/release/osx/* ./release/
 	@ditto -c -k --keepParent ./release/Rio.app ./release/Rio-v$(version).zip
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
 	rm -rf ./release/Rio.app
@@ -114,12 +116,20 @@ release-wayland:
 
 # Debian
 # cargo install cargo-deb
-# output: target/debian/*
-# To install: sudo target/debian/rio_<version>_<architecture>.deb
+# To install: sudo release/debian/rio_<version>_<architecture>_<feature>.deb
+# e.g: sudo release/debian/rio_0.0.13_arm64_wayland.deb
 release-debian-x11:
-	cargo deb -p rio --deb-version="x11" -- --release --no-default-features --features=x11
+	cargo deb -p rio -- --release --no-default-features --features=x11
+	mkdir -p $(RELEASE_DIR)/debian/x11
+	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/x11/
+	cd $(RELEASE_DIR)/debian/x11 && rename 's/.deb/_x11.deb/g' *
+
 release-debian-wayland:
-	cargo deb -p rio --deb-version="wayland" -- --release --no-default-features --features=wayland
+	cargo deb -p rio -- --release --no-default-features --features=wayland
+	mkdir -p $(RELEASE_DIR)/debian/wayland
+	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/wayland/
+	cd $(RELEASE_DIR)/debian/wayland && rename 's/.deb/_wayland.deb/g' *
+
 # Release and Install
 install-debian-x11:
 	cargo install cargo-deb
