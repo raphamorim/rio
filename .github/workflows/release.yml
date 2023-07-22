@@ -51,9 +51,7 @@ jobs:
       - run: mkdir -p release
 
       - run: make release-debian-x11
-      - run: cp ./target/debian/* ./release/
       - run: make release-debian-wayland
-      - run: cp ./target/debian/* ./release/
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -61,7 +59,8 @@ jobs:
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            release/*
+            release/debian/x11/*
+            release/debian/wayland/*
 
   release-windows:
     runs-on: windows-latest

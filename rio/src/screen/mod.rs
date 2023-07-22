@@ -361,8 +361,6 @@ impl Screen {
             return;
         }
 
-        let text = key.text_with_all_modifiers().unwrap_or_default();
-
         let mode = BindingMode::new(&self.get_mode());
         let mut ignore_chars = None;
 
@@ -461,9 +459,16 @@ impl Screen {
             }
         }
 
-        if !ignore_chars.unwrap_or(false) {
-            self.input_str(text);
+        if ignore_chars.unwrap_or(false) {
+            return;
         }
+
+        let text = key.text_with_all_modifiers().unwrap_or_default();
+        if self.get_mode().contains(Mode::VI) || text.is_empty() {
+            return;
+        }
+
+        self.input_str(text);
     }
 
     pub fn try_close_existent_tab(&mut self) -> bool {

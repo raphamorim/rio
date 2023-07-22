@@ -35,6 +35,29 @@ impl Default for Developer {
     }
 }
 
+// key_bindings:
+// - { key: V,        mods: Control|Shift, action: Paste            }
+// - { key: V,        mods: Command, action: Paste                        }
+// - { key: C,        mods: Command, action: Copy                         }
+// - { key: Q,        mods: Command, action: Quit                         }
+// - { key: W,        mods: Command, action: Quit                         }
+// - { key: Home,                    chars: "\x1bOH",   mode: AppCursor   }
+// - { key: Home,                    chars: "\x1b[H",   mode: ~AppCursor  }
+// - { key: End,                     chars: "\x1bOF",   mode: AppCursor   }
+// - { key: End,                     chars: "\x1b[F",   mode: ~AppCursor  }
+// - { key: Key0,     mods: Command, action: ResetFontSize                }
+// - { key: Equals,   mods: Command, action: IncreaseFontSize             }
+// - { key: Minus,    mods: Command, action: DecreaseFontSize             }
+// - { key: PageUp,   mods: Shift,   chars: "\x1b[5;2~"                   }
+// - { key: PageUp,   mods: Control, chars: "\x1b[5;5~"                   }
+// - { key: PageUp,                  chars: "\x1b[5~"                     }
+// - { key: PageDown, mods: Shift,   chars: "\x1b[6;2~"                   }
+
+#[derive(Debug, PartialEq, Clone, Deserialize)]
+pub struct KeyBinding {
+    key: String,
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(rename = "window-opacity", default = "default_window_opacity")]
@@ -75,6 +98,8 @@ pub struct Config {
     pub colors: Colors,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
+    #[serde(default = "Vec::default", rename = "key-bindings")]
+    pub key_bindings: Vec<KeyBinding>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -192,6 +217,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            key_bindings: vec![],
             shell: default_shell(),
             editor: default_editor(),
             working_dir: default_working_dir(),

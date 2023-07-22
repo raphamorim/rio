@@ -683,9 +683,9 @@ impl Sequencer {
                     }
 
                     ElementState::Released => {
-                        // if !self.has_updates.contains(&window_id) {
-                        //     self.has_updates.push(window_id);
-                        // }
+                        if !self.has_updates.contains(&window_id) {
+                            self.has_updates.push(window_id);
+                        }
                     }
                 },
 
