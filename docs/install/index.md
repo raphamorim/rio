@@ -52,7 +52,7 @@ Rio is avaible for [MacOS](#macos), [Linux](#linux), [Windows](#windows) and bro
 
 You can download Rio terminal application for macOS platform:
 
-- [Download macOS - v0.0.13](https://github.com/raphamorim/rio/releases/download/v0.0.13/Rio-v0.0.13.dmg)
+- [Download macOS - v0.0.14](https://github.com/raphamorim/rio/releases/download/v0.0.14/Rio-v0.0.14.dmg)
 
 Alternatively you can install Rio through [Homebrew](https://brew.sh/)
 
@@ -92,8 +92,8 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- • [Download Microsoft Windows Installer - v0.0.13](https://github.com/raphamorim/rio/releases/download/v0.0.13/Rio-installer.msi)
-- • [Download Rio Portable - v0.0.13](https://github.com/raphamorim/rio/releases/download/v0.0.13/Rio-portable.exe)
+- • [Download Microsoft Windows Installer - v0.0.14](https://github.com/raphamorim/rio/releases/download/v0.0.14/Rio-installer.msi)
+- • [Download Rio Portable - v0.0.14](https://github.com/raphamorim/rio/releases/download/v0.0.14/Rio-portable.exe)
 
 There's a few things to note about the installer and the portable version:
 
@@ -120,7 +120,7 @@ To make Windows utilize a GPU for a specific application through Windows display
 
 ### WebAssembly
 
-TBD in the version v0.0.13.
+TBD in the version v0.0.14.
 
 <br/>
 
