@@ -1,7 +1,7 @@
 ---
 layout: docs
 class: docs
-title: 'Documentation'
+title: 'Custom Key Bindings'
 language: 'en'
 ---
 
@@ -12,9 +12,9 @@ Key bindings are specified as a list of objects.
 {% highlight toml %}
 [bindings]
 keys = [
-	{ key = "q", mods: "super", action = "Quit" }
+	{ key = "q", with = "super", action = "Quit" }
 	# Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-	{ key = "home", mods: "super | shift", bytes = [27, 91, 53, 126] }
+	{ key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 ]
 {% endhighlight %}
 
