@@ -142,9 +142,9 @@ blue = "#454A12"
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 [bindings]
 keys = [
-	{ key = "q", mods: "super", action = "Quit" },
+	{ key = "q", with = "super", action = "Quit" },
 	// Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-	{ key = "home", mods: "super | shift", bytes = [27, 91, 53, 126] }
+	{ key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 ]
 
 [developer]
