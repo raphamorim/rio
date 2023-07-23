@@ -35,4 +35,4 @@ $ RIO_LOG_LEVEL=debug rio -e echo 85
 
 --
 
-[Move to create custom key bindings ->](/rio/docs/create-custom-key-bindings#create-custom-key-bindings)
+[Move to custom key bindings ->](/rio/docs/custom-key-bindings#custom-key-bindings)

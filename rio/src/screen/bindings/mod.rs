@@ -639,6 +639,14 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         )
     } else {
         match config_key_binding.key.to_lowercase().as_str() {
+            "home" => (Key::Home, KeyLocation::Standard),
+            "space" => (Key::Space, KeyLocation::Standard),
+            "delete" => (Key::Delete, KeyLocation::Standard),
+            "esc" => (Key::Escape, KeyLocation::Standard),
+            "insert" => (Key::Insert, KeyLocation::Standard),
+            "pageup" => (Key::PageUp, KeyLocation::Standard),
+            "pagedown" => (Key::PageDown, KeyLocation::Standard),
+            "end" => (Key::End, KeyLocation::Standard),
             "up" => (Key::ArrowUp, KeyLocation::Standard),
             "back" => (Key::Backspace, KeyLocation::Standard),
             "down" => (Key::ArrowDown, KeyLocation::Standard),
@@ -722,8 +730,14 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         config::bindings::Action::None => Action::None,
     };
 
-    if !config_key_binding.input.is_empty() {
-        action = Action::Esc(config_key_binding.input);
+    if !config_key_binding.text.is_empty() {
+        action = Action::Esc(config_key_binding.text).into();
+    }
+
+    if !config_key_binding.bytes.is_empty() {
+        if let Ok(str_from_bytes) = std::str::from_utf8(&config_key_binding.bytes) {
+            action = Action::Esc(str_from_bytes.into());
+        }
     }
 
     let mut res_mode = ModeWrapper {

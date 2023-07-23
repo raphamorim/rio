@@ -135,6 +135,18 @@ cursor = "#242805"
 tabs-active = "#F8A145"
 blue = "#454A12"
 
+
+# Bindings
+#
+# Create custom Key bindings for Rio terminal
+# More information in: raphamorim.io/rio/docs/custom-key-bindings
+[bindings]
+keys = [
+	{ key = "q", mods: "super", action = "Quit" },
+	// Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+	{ key = "home", mods: "super | shift", bytes = [27, 91, 53, 126] }
+]
+
 [developer]
 # Log level
 #
