@@ -112,7 +112,7 @@ impl Screen {
         #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let clipboard = Clipboard::new();
 
-        let bindings = bindings::default_key_bindings();
+        let bindings = bindings::default_key_bindings(config.bindings.keys.clone());
         let ime = Ime::new();
 
         let context_manager_config = context::ContextManagerConfig {
@@ -443,6 +443,9 @@ impl Screen {
                     Act::TabCloseCurrent => {
                         self.context_manager.close_context();
                         self.render();
+                    }
+                    Act::Quit => {
+                        std::process::exit(0);
                     }
                     Act::IncreaseFontSize => {
                         self.change_font_size(FontSizeAction::Increase);

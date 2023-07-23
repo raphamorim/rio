@@ -2,6 +2,8 @@
 
 ## In progress
 
+- Implementation of custom key bindings ([#117](https://github.com/raphamorim/rio/issues/117)).
+- Fix .deb packing in GH Actions.
 - Fix key binding for switch tab next (MacOS only).
 - Fix scroll when copying text outside of offset.
 - Fix copy key bindings.

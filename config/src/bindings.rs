@@ -1,33 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
-pub enum With {
-    Super,
-    Shift,
-    Control,
-    Option,
-    Alt,
-}
-
-// key_bindings:
-// - { key: V,        mods: Control|Shift, action: Paste            }
-// - { key: V,        mods: Command, action: Paste                        }
-// - { key: C,        mods: Command, action: Copy                         }
-// - { key: Q,        mods: Command, action: Quit                         }
-// - { key: W,        mods: Command, action: Quit                         }
-// - { key: Home,                    chars: "\x1bOH",   mode: AppCursor   }
-// - { key: Home,                    chars: "\x1b[H",   mode: ~AppCursor  }
-// - { key: End,                     chars: "\x1bOF",   mode: AppCursor   }
-// - { key: End,                     chars: "\x1b[F",   mode: ~AppCursor  }
-// - { key: Key0,     mods: Command, action: ResetFontSize                }
-// - { key: Equals,   mods: Command, action: IncreaseFontSize             }
-// - { key: Minus,    mods: Command, action: DecreaseFontSize             }
-// - { key: PageUp,   mods: Shift,   chars: "\x1b[5;2~"                   }
-// - { key: PageUp,   mods: Control, chars: "\x1b[5;5~"                   }
-// - { key: PageUp,                  chars: "\x1b[5~"                     }
-// - { key: PageDown, mods: Shift,   chars: "\x1b[6;2~"                   }
-
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Default, Deserialize, PartialEq, Clone, Copy)]
 pub enum Action {
     Paste,
     Quit,
@@ -37,39 +10,39 @@ pub enum Action {
     DecreaseFontSize,
     TabSwitchNext,
     TabSwitchPrev,
+    CreateWindow,
+    CreateTab,
+    #[default]
+    None,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
-pub enum Mode {
-    AppCursor,
-    AppKeypad,
-    AltScreen,
-    VI,
-}
-
-// { key = "W", mods: ["Command"], action = "Quit" }
-// { key = "Home", mods: ["Command", "Shift"], chars = "\x1b[5~" }
+// { key = "W", mods: "super", action = "Quit" }
+// { key = "Home", mods: "super | shift", chars = "\x1b[5~" }
 
 #[derive(Debug, PartialEq, Clone, Deserialize)]
 pub struct KeyBinding {
-    key: String,
-    with: Option<Vec<With>>,
-    action: Option<Action>,
-    input: Option<String>,
-    mode: Option<Mode>,
+    pub key: String,
+    #[serde(default = "String::default")]
+    pub with: String,
+    #[serde(default = "Action::default")]
+    pub action: Action,
+    #[serde(default = "String::default")]
+    pub input: String,
+    #[serde(default = "String::default")]
+    pub mode: String,
 }
 
 pub type KeyBindings = Vec<KeyBinding>;
 
 #[derive(Default, Debug, PartialEq, Clone, Deserialize)]
 pub struct Bindings {
-    keys: KeyBindings,
+    pub keys: KeyBindings,
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::bindings::{Action, Bindings, With};
+    use crate::bindings::{Action, Bindings};
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -83,55 +56,64 @@ mod tests {
         let content = r#"
             [bindings]
             keys = [
-                { key = 'Q', with = ['Super'], action = 'Quit' }
+                { key = 'Q', with = 'super', action = 'Quit' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.bindings.keys[0].key, "Q");
-        assert_eq!(
-            decoded.bindings.keys[0].with.to_owned().unwrap(),
-            vec![With::Super]
-        );
-        assert_eq!(
-            decoded.bindings.keys[0].action.to_owned().unwrap(),
-            Action::Quit
-        );
-        assert!(decoded.bindings.keys[0].input.to_owned().is_none());
+        assert_eq!(decoded.bindings.keys[0].with.to_owned(), "super");
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert!(decoded.bindings.keys[0].input.to_owned().is_empty());
     }
 
-    // #[test]
-    // fn test_invalid_key_input() {
-    //     let content = r#"
-    //         [bindings]
-    //         keys = [
-    //             { key = 'aa', input = '\x1bOH', action = 'Quita' },
-    //         ]
-    //     "#;
+    #[test]
+    fn test_invalid_key_input() {
+        let content = r#"
+            [bindings]
+            keys = [
+                { key = 'aa', input = '\x1bOH', action = 'Quit' },
+            ]
+        "#;
 
-    //     let decoded = toml::from_str::<Root>(content).unwrap();
-    //     assert_eq!(decoded.bindings.keys[0].key, "Home");
-    //     assert!(decoded.bindings.keys[0].with.to_owned().is_none());
-    //     assert!(decoded.bindings.keys[0].action.to_owned().is_none());
-    //     assert!(decoded.bindings.keys[0].input.to_owned().is_some());
-    //     // assert_eq!(decoded.bindings.keys[0].input.to_owned().unwrap(), "\x1bOH");
-    // }
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert_eq!(decoded.bindings.keys[0].key, "aa");
+        assert!(decoded.bindings.keys[0].with.to_owned().is_empty());
+    }
+
+    #[test]
+    fn test_mode_key_input() {
+        let content = r#"
+            [bindings]
+            keys = [
+                { key = 'Home', input = '\x1bOH', mode = 'appcursor' },
+            ]
+        "#;
+
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert_eq!(decoded.bindings.keys[0].key, "Home");
+        assert_eq!(decoded.bindings.keys[0].with, "");
+        assert_eq!(decoded.bindings.keys[0].mode, "appcursor");
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::None);
+        assert!(!decoded.bindings.keys[0].input.to_owned().is_empty());
+        // assert_eq!(decoded.bindings.keys[0].input.to_owned(), "\x1bOH");
+    }
 
     #[test]
     fn test_valid_key_input() {
         let content = r#"
             [bindings]
             keys = [
-                { key = 'Home', input = '\x1bOH' },
+                { key = 'Home', input = 'x1bOH' },
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.bindings.keys[0].key, "Home");
-        assert!(decoded.bindings.keys[0].with.to_owned().is_none());
-        assert!(decoded.bindings.keys[0].action.to_owned().is_none());
-        assert!(decoded.bindings.keys[0].input.to_owned().is_some());
-        // assert_eq!(decoded.bindings.keys[0].input.to_owned().unwrap(), "\x1bOH");
+        assert_eq!(decoded.bindings.keys[0].with, "");
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::None);
+        assert!(!decoded.bindings.keys[0].input.to_owned().is_empty());
+        // assert_eq!(decoded.bindings.keys[0].input.to_owned(), "\x1bOH");
     }
 
     #[test]
@@ -139,82 +121,61 @@ mod tests {
         let content = r#"
             [bindings]
             keys = [
-                { key = 'Q', with = ['Super'], action = 'Quit' },
-                { key = '+', with = ['Super'], action = 'IncreaseFontSize' },
-                { key = '-', with = ['Super'], action = 'DecreaseFontSize' },
-                { key = '0', with = ['Super'], action = 'ResetFontSize' },
+                { key = 'Q', with = 'super', action = 'Quit' },
+                { key = '+', with = 'super', action = 'IncreaseFontSize' },
+                { key = '-', with = 'super', action = 'DecreaseFontSize' },
+                { key = '0', with = 'super', action = 'ResetFontSize' },
 
-                { key = 'LBracket', with = ['Super', 'Shift'], action = 'TabSwitchNext' },
-                { key = 'RBracket', with = ['Super', 'Shift'], action = 'TabSwitchPrev' },
+                { key = '[', with = 'super | shift', action = 'TabSwitchNext' },
+                { key = ']', with = 'super | shift', action = 'TabSwitchPrev' },
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
 
         assert_eq!(decoded.bindings.keys[0].key, "Q");
-        assert_eq!(
-            decoded.bindings.keys[0].with.to_owned().unwrap(),
-            vec![With::Super]
-        );
-        assert_eq!(
-            decoded.bindings.keys[0].action.to_owned().unwrap(),
-            Action::Quit
-        );
-        assert!(decoded.bindings.keys[0].input.to_owned().is_none());
+        assert_eq!(decoded.bindings.keys[0].with, "super");
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert!(decoded.bindings.keys[0].input.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[1].key, "+");
+        assert_eq!(decoded.bindings.keys[1].with, "super");
         assert_eq!(
-            decoded.bindings.keys[1].with.to_owned().unwrap(),
-            vec![With::Super]
-        );
-        assert_eq!(
-            decoded.bindings.keys[1].action.to_owned().unwrap(),
+            decoded.bindings.keys[1].action.to_owned(),
             Action::IncreaseFontSize
         );
-        assert!(decoded.bindings.keys[1].input.to_owned().is_none());
+        assert!(decoded.bindings.keys[1].input.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[2].key, "-");
+        assert_eq!(decoded.bindings.keys[2].with, "super");
         assert_eq!(
-            decoded.bindings.keys[2].with.to_owned().unwrap(),
-            vec![With::Super]
-        );
-        assert_eq!(
-            decoded.bindings.keys[2].action.to_owned().unwrap(),
+            decoded.bindings.keys[2].action.to_owned(),
             Action::DecreaseFontSize
         );
-        assert!(decoded.bindings.keys[2].input.to_owned().is_none());
+        assert!(decoded.bindings.keys[2].input.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[3].key, "0");
+        assert_eq!(decoded.bindings.keys[3].with, "super");
         assert_eq!(
-            decoded.bindings.keys[3].with.to_owned().unwrap(),
-            vec![With::Super]
-        );
-        assert_eq!(
-            decoded.bindings.keys[3].action.to_owned().unwrap(),
+            decoded.bindings.keys[3].action.to_owned(),
             Action::ResetFontSize
         );
-        assert!(decoded.bindings.keys[3].input.to_owned().is_none());
+        assert!(decoded.bindings.keys[3].input.to_owned().is_empty());
 
-        assert_eq!(decoded.bindings.keys[4].key, "LBracket");
+        assert_eq!(decoded.bindings.keys[4].key, "[");
+        assert_eq!(decoded.bindings.keys[4].with, "super | shift");
         assert_eq!(
-            decoded.bindings.keys[4].with.to_owned().unwrap(),
-            vec![With::Super, With::Shift]
-        );
-        assert_eq!(
-            decoded.bindings.keys[4].action.to_owned().unwrap(),
+            decoded.bindings.keys[4].action.to_owned(),
             Action::TabSwitchNext
         );
-        assert!(decoded.bindings.keys[4].input.to_owned().is_none());
+        assert!(decoded.bindings.keys[4].input.to_owned().is_empty());
 
-        assert_eq!(decoded.bindings.keys[5].key, "RBracket");
+        assert_eq!(decoded.bindings.keys[5].key, "]");
+        assert_eq!(decoded.bindings.keys[5].with, "super | shift");
         assert_eq!(
-            decoded.bindings.keys[5].with.to_owned().unwrap(),
-            vec![With::Super, With::Shift]
-        );
-        assert_eq!(
-            decoded.bindings.keys[5].action.to_owned().unwrap(),
+            decoded.bindings.keys[5].action.to_owned(),
             Action::TabSwitchPrev
         );
-        assert!(decoded.bindings.keys[5].input.to_owned().is_none());
+        assert!(decoded.bindings.keys[5].input.to_owned().is_empty());
     }
 }

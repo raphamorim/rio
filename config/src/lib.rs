@@ -1,5 +1,6 @@
-mod bindings;
+pub mod bindings;
 mod defaults;
+use crate::bindings::Bindings;
 use crate::defaults::*;
 use colors::Colors;
 use log::warn;
@@ -76,8 +77,8 @@ pub struct Config {
     pub colors: Colors,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
-    #[serde(default = "Vec::default", rename = "bindings")]
-    pub bindings: bindings::KeyBindings,
+    #[serde(default = "Bindings::default")]
+    pub bindings: bindings::Bindings,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -195,7 +196,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            bindings: vec![],
+            bindings: Bindings::default(),
             shell: default_shell(),
             editor: default_editor(),
             working_dir: default_working_dir(),
@@ -222,6 +223,7 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bindings::Action;
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
@@ -324,6 +326,9 @@ mod tests {
             [developer]
             enable-fps-counter = false
             log-level = "OFF"
+
+            [bindings]
+            keys = []
         "#,
         );
 
@@ -340,10 +345,12 @@ mod tests {
         assert_eq!(result.use_fork, default_use_fork());
         assert_eq!(result.font_size, default_font_size());
         assert_eq!(result.line_height, default_line_height());
+
         // Colors
         assert_eq!(result.colors, Colors::default());
         // Developer
         assert_eq!(result.developer, Developer::default());
+        assert_eq!(result.bindings, Bindings::default());
     }
 
     #[test]
@@ -484,6 +491,29 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_bindings() {
+        let result = create_temporary_config(
+            "change-key-bindings",
+            r#"
+            [bindings]
+            keys = [
+                { key = 'Q', with = 'super', action = 'Quit' }
+            ]
+        "#,
+        );
+
+        assert_eq!(result.performance, Performance::default());
+        assert_eq!(result.font, default_font());
+        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.theme, default_theme());
+        // Bindings
+        assert_eq!(result.bindings.keys[0].key, "Q");
+        assert_eq!(result.bindings.keys[0].with, "super");
+        assert_eq!(result.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert!(result.bindings.keys[0].input.to_owned().is_empty());
     }
 
     #[test]
