@@ -10,8 +10,10 @@ pub enum Action {
     DecreaseFontSize,
     TabSwitchNext,
     TabSwitchPrev,
+    OpenConfigEditor,
     CreateWindow,
     CreateTab,
+    CloseTab,
     #[default]
     None,
 }
@@ -69,7 +71,7 @@ pub struct Bindings {
 #[cfg(test)]
 mod tests {
 
-use crate::bindings::{Action, Bindings};
+    use crate::bindings::{Action, Bindings};
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
