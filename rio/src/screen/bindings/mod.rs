@@ -1,9 +1,9 @@
-// Cria os bindings e usa struct actions
 // https://github.com/alacritty/alacritty/blob/828fdab7470c8d16d2edbe2cec919169524cb2bb/alacritty/src/config/bindings.rs#L43
 
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
+use config::bindings::KeyBinding as ConfigKeyBinding;
 use std::fmt::Debug;
 use winit::keyboard::Key::*;
 use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState};
@@ -345,7 +345,9 @@ macro_rules! trigger {
     }};
 }
 
-pub fn default_key_bindings() -> Vec<KeyBinding> {
+pub fn default_key_bindings(
+    unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
+) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         Copy;  Action::Copy;
@@ -617,6 +619,163 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 
     bindings.extend(platform_key_bindings());
 
+    bindings.extend(config_key_bindings(unprocessed_config_key_bindings));
+
+    bindings
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModeWrapper {
+    pub mode: BindingMode,
+    pub not_mode: BindingMode,
+}
+
+#[inline]
+fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
+    let (key, location) = if config_key_binding.key.chars().count() == 1 {
+        (
+            Key::Character(config_key_binding.key.to_lowercase().into()),
+            KeyLocation::Standard,
+        )
+    } else {
+        match config_key_binding.key.to_lowercase().as_str() {
+            "up" => (Key::ArrowUp, KeyLocation::Standard),
+            "back" => (Key::Backspace, KeyLocation::Standard),
+            "down" => (Key::ArrowDown, KeyLocation::Standard),
+            "left" => (Key::ArrowLeft, KeyLocation::Standard),
+            "right" => (Key::ArrowRight, KeyLocation::Standard),
+            "@" => (Key::Character("@".into()), KeyLocation::Standard),
+            "colon" => (Key::Character(":".into()), KeyLocation::Standard),
+            "." => (Key::Character(".".into()), KeyLocation::Standard),
+            "return" => (Key::Enter, KeyLocation::Standard),
+            "[" => (Key::Character("[".into()), KeyLocation::Standard),
+            "]" => (Key::Character("]".into()), KeyLocation::Standard),
+            ";" => (Key::Character(";".into()), KeyLocation::Standard),
+            "\\" => (Key::Character("\\".into()), KeyLocation::Standard),
+            "+" => (Key::Character("+".into()), KeyLocation::Standard),
+            "," => (Key::Character(",".into()), KeyLocation::Standard),
+            "/" => (Key::Character("/".into()), KeyLocation::Standard),
+            "=" => (Key::Character("=".into()), KeyLocation::Standard),
+            "-" => (Key::Character("-".into()), KeyLocation::Standard),
+            "*" => (Key::Character("*".into()), KeyLocation::Standard),
+            "1" => (Key::Character("1".into()), KeyLocation::Standard),
+            "2" => (Key::Character("2".into()), KeyLocation::Standard),
+            "3" => (Key::Character("3".into()), KeyLocation::Standard),
+            "4" => (Key::Character("4".into()), KeyLocation::Standard),
+            "5" => (Key::Character("5".into()), KeyLocation::Standard),
+            "6" => (Key::Character("6".into()), KeyLocation::Standard),
+            "7" => (Key::Character("7".into()), KeyLocation::Standard),
+            "8" => (Key::Character("8".into()), KeyLocation::Standard),
+            "9" => (Key::Character("9".into()), KeyLocation::Standard),
+            "0" => (Key::Character("0".into()), KeyLocation::Standard),
+
+            // Special case numpad.
+            "numpadenter" => (Key::Enter, KeyLocation::Numpad),
+            "numpadadd" => (Key::Character("+".into()), KeyLocation::Numpad),
+            "numpadcomma" => (Key::Character(",".into()), KeyLocation::Numpad),
+            "numpaddivide" => (Key::Character("/".into()), KeyLocation::Numpad),
+            "numpadequals" => (Key::Character("=".into()), KeyLocation::Numpad),
+            "numpadsubtract" => (Key::Character("-".into()), KeyLocation::Numpad),
+            "numpadmultiply" => (Key::Character("*".into()), KeyLocation::Numpad),
+            "numpad1" => (Key::Character("1".into()), KeyLocation::Numpad),
+            "numpad2" => (Key::Character("2".into()), KeyLocation::Numpad),
+            "numpad3" => (Key::Character("3".into()), KeyLocation::Numpad),
+            "numpad4" => (Key::Character("4".into()), KeyLocation::Numpad),
+            "numpad5" => (Key::Character("5".into()), KeyLocation::Numpad),
+            "numpad6" => (Key::Character("6".into()), KeyLocation::Numpad),
+            "numpad7" => (Key::Character("7".into()), KeyLocation::Numpad),
+            "numpad8" => (Key::Character("8".into()), KeyLocation::Numpad),
+            "numpad9" => (Key::Character("9".into()), KeyLocation::Numpad),
+            "numpad0" => (Key::Character("0".into()), KeyLocation::Numpad),
+
+            // Special cases
+            "tab" => (Key::Tab, KeyLocation::Standard),
+            _ => return Err("Unable to find defined 'keycode'".to_string()),
+        }
+    };
+
+    let trigger = BindingKey::Keycode { key, location };
+
+    let mut res = ModifiersState::empty();
+    for modifier in config_key_binding.with.split('|') {
+        match modifier.trim().to_lowercase().as_str() {
+            "command" | "super" => res.insert(ModifiersState::SUPER),
+            "shift" => res.insert(ModifiersState::SHIFT),
+            "alt" | "option" => res.insert(ModifiersState::ALT),
+            "control" => res.insert(ModifiersState::CONTROL),
+            "none" => (),
+            _ => (),
+        }
+    }
+
+    let mut action: Action = match config_key_binding.action {
+        config::bindings::Action::Paste => Action::Paste,
+        config::bindings::Action::Quit => Action::Quit,
+        config::bindings::Action::Copy => Action::Copy,
+        config::bindings::Action::ResetFontSize => Action::ResetFontSize,
+        config::bindings::Action::IncreaseFontSize => Action::IncreaseFontSize,
+        config::bindings::Action::DecreaseFontSize => Action::DecreaseFontSize,
+        config::bindings::Action::TabSwitchNext => Action::TabSwitchNext,
+        config::bindings::Action::TabSwitchPrev => Action::TabSwitchPrev,
+        config::bindings::Action::CreateWindow => Action::WindowCreateNew,
+        config::bindings::Action::CreateTab => Action::TabCreateNew,
+        config::bindings::Action::None => Action::None,
+    };
+
+    if !config_key_binding.input.is_empty() {
+        action = Action::Esc(config_key_binding.input);
+    }
+
+    let mut res_mode = ModeWrapper {
+        mode: BindingMode::empty(),
+        not_mode: BindingMode::empty(),
+    };
+
+    for modifier in config_key_binding.mode.split('|') {
+        match modifier.trim().to_lowercase().as_str() {
+            "appcursor" => res_mode.mode |= BindingMode::APP_CURSOR,
+            "~appcursor" => res_mode.not_mode |= BindingMode::APP_CURSOR,
+            "appkeypad" => res_mode.mode |= BindingMode::APP_KEYPAD,
+            "~appkeypad" => res_mode.not_mode |= BindingMode::APP_KEYPAD,
+            "alt" => res_mode.mode |= BindingMode::ALT_SCREEN,
+            "~alt" => res_mode.not_mode |= BindingMode::ALT_SCREEN,
+            "vi" => res_mode.mode |= BindingMode::VI,
+            "~vi" => res_mode.not_mode |= BindingMode::VI,
+            _ => {
+                res_mode.not_mode |= BindingMode::empty();
+                res_mode.mode |= BindingMode::empty();
+            }
+        }
+    }
+
+    Ok(KeyBinding {
+        trigger,
+        mods: res,
+        action,
+        mode: res_mode.mode,
+        notmode: res_mode.not_mode,
+    })
+}
+
+pub fn config_key_bindings(
+    config_key_bindings: Vec<ConfigKeyBinding>,
+) -> Vec<KeyBinding> {
+    if config_key_bindings.is_empty() {
+        return vec![];
+    }
+
+    let mut bindings: Vec<KeyBinding> = vec![];
+    for ckb in config_key_bindings {
+        match convert(ckb) {
+            Ok(key_binding) => bindings.push(key_binding),
+            Err(err_message) => {
+                log::error!("error loading key bindings: {:?}", err_message);
+            }
+        }
+    }
+
+    log::warn!("loaded key bindings from configuration: {:?}", bindings);
+
     bindings
 }
 
@@ -713,4 +872,259 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
 #[cfg(test)]
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use winit::keyboard::ModifiersState;
+
+    type MockBinding = Binding<usize>;
+
+    impl Default for MockBinding {
+        fn default() -> Self {
+            Self {
+                mods: Default::default(),
+                action: Action::None,
+                mode: BindingMode::empty(),
+                notmode: BindingMode::empty(),
+                trigger: Default::default(),
+            }
+        }
+    }
+
+    #[test]
+    fn binding_matches_itself() {
+        let binding = MockBinding::default();
+        let identical_binding = MockBinding::default();
+
+        assert!(binding.triggers_match(&identical_binding));
+        assert!(identical_binding.triggers_match(&binding));
+    }
+
+    #[test]
+    fn binding_matches_different_action() {
+        let binding = MockBinding::default();
+        let different_action = MockBinding {
+            action: Action::ClearHistory,
+            ..MockBinding::default()
+        };
+
+        assert!(binding.triggers_match(&different_action));
+        assert!(different_action.triggers_match(&binding));
+    }
+
+    #[test]
+    fn mods_binding_requires_strict_match() {
+        let superset_mods = MockBinding {
+            mods: ModifiersState::all(),
+            ..MockBinding::default()
+        };
+        let subset_mods = MockBinding {
+            mods: ModifiersState::ALT,
+            ..MockBinding::default()
+        };
+
+        assert!(!superset_mods.triggers_match(&subset_mods));
+        assert!(!subset_mods.triggers_match(&superset_mods));
+    }
+
+    #[test]
+    fn binding_matches_identical_mode() {
+        let b1 = MockBinding {
+            mode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            mode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+
+        assert!(b1.triggers_match(&b2));
+        assert!(b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_without_mode_matches_any_mode() {
+        let b1 = MockBinding::default();
+        let b2 = MockBinding {
+            mode: BindingMode::APP_KEYPAD,
+            notmode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+
+        assert!(b1.triggers_match(&b2));
+    }
+
+    #[test]
+    fn binding_with_mode_matches_empty_mode() {
+        let b1 = MockBinding {
+            mode: BindingMode::APP_KEYPAD,
+            notmode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding::default();
+
+        assert!(b1.triggers_match(&b2));
+        assert!(b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_matches_modes() {
+        let b1 = MockBinding {
+            mode: BindingMode::ALT_SCREEN | BindingMode::APP_KEYPAD,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            mode: BindingMode::APP_KEYPAD,
+            ..MockBinding::default()
+        };
+
+        assert!(b1.triggers_match(&b2));
+        assert!(b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_matches_partial_intersection() {
+        let b1 = MockBinding {
+            mode: BindingMode::ALT_SCREEN | BindingMode::APP_KEYPAD,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            mode: BindingMode::APP_KEYPAD | BindingMode::APP_CURSOR,
+            ..MockBinding::default()
+        };
+
+        assert!(b1.triggers_match(&b2));
+        assert!(b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_mismatches_notmode() {
+        let b1 = MockBinding {
+            mode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            notmode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+
+        assert!(!b1.triggers_match(&b2));
+        assert!(!b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_mismatches_unrelated() {
+        let b1 = MockBinding {
+            mode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            mode: BindingMode::APP_KEYPAD,
+            ..MockBinding::default()
+        };
+
+        assert!(!b1.triggers_match(&b2));
+        assert!(!b2.triggers_match(&b1));
+    }
+
+    #[test]
+    fn binding_matches_notmodes() {
+        let subset_notmodes = MockBinding {
+            notmode: BindingMode::VI | BindingMode::APP_CURSOR,
+            ..MockBinding::default()
+        };
+        let superset_notmodes = MockBinding {
+            notmode: BindingMode::APP_CURSOR,
+            ..MockBinding::default()
+        };
+
+        assert!(subset_notmodes.triggers_match(&superset_notmodes));
+        assert!(superset_notmodes.triggers_match(&subset_notmodes));
+    }
+
+    #[test]
+    fn binding_matches_mode_notmode() {
+        let b1 = MockBinding {
+            mode: BindingMode::VI,
+            notmode: BindingMode::APP_CURSOR,
+            ..MockBinding::default()
+        };
+        let b2 = MockBinding {
+            notmode: BindingMode::APP_CURSOR,
+            ..MockBinding::default()
+        };
+
+        assert!(b1.triggers_match(&b2));
+        assert!(b2.triggers_match(&b1));
+    }
+
+    // #[test]
+    // fn binding_trigger_input() {
+    //     let binding = MockBinding { trigger: 13, ..MockBinding::default() };
+
+    //     let mods = binding.mods;
+    //     let mode = binding.mode;
+
+    //     assert!(binding.is_triggered_by(mode, mods, &13));
+    //     assert!(!binding.is_triggered_by(mode, mods, &32));
+    // }
+
+    // #[test]
+    // fn binding_trigger_mods() {
+    //     let binding = MockBinding {
+    //         mods: ModifiersState::ALT | ModifiersState::SUPER,
+    //         ..MockBinding::default()
+    //     };
+
+    //     let superset_mods = ModifiersState::all();
+    //     let subset_mods = ModifiersState::empty();
+
+    //     let t = binding.trigger;
+    //     let mode = binding.mode;
+
+    //     assert!(binding.is_triggered_by(mode, binding.mods, &t));
+    //     assert!(!binding.is_triggered_by(mode, superset_mods, &t));
+    //     assert!(!binding.is_triggered_by(mode, subset_mods, &t));
+    // }
+
+    #[test]
+    fn binding_trigger_modes() {
+        let binding = MockBinding {
+            mode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+
+        let t = binding.trigger;
+        let mods = binding.mods;
+
+        assert!(!binding.is_triggered_by(BindingMode::VI, mods, &t));
+        assert!(binding.is_triggered_by(BindingMode::ALT_SCREEN, mods, &t));
+        assert!(binding.is_triggered_by(
+            BindingMode::ALT_SCREEN | BindingMode::VI,
+            mods,
+            &t
+        ));
+    }
+
+    #[test]
+    fn binding_trigger_notmodes() {
+        let binding = MockBinding {
+            notmode: BindingMode::ALT_SCREEN,
+            ..MockBinding::default()
+        };
+
+        let t = binding.trigger;
+        let mods = binding.mods;
+
+        assert!(binding.is_triggered_by(BindingMode::VI, mods, &t));
+        assert!(!binding.is_triggered_by(BindingMode::ALT_SCREEN, mods, &t));
+        assert!(!binding.is_triggered_by(
+            BindingMode::ALT_SCREEN | BindingMode::VI,
+            mods,
+            &t
+        ));
+    }
 }
