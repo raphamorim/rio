@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.14
+
 - Implementation of custom key bindings ([#117](https://github.com/raphamorim/rio/issues/117)).
 - Fix .deb packing in GH Actions.
 - Fix key binding for switch tab next (MacOS only).
