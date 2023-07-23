@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Upgrade wgpu to 0.17.0.
 
 ## 0.0.14
 
