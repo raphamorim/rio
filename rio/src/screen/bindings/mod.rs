@@ -823,7 +823,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
         "m", ModifiersState::SUPER; Action::Minimize;
         "q", ModifiersState::SUPER; Action::Quit;
-        "w", ModifiersState::SUPER; Action::Quit;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         "t", ModifiersState::SUPER; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
