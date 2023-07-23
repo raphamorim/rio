@@ -727,11 +727,13 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         config::bindings::Action::TabSwitchPrev => Action::TabSwitchPrev,
         config::bindings::Action::CreateWindow => Action::WindowCreateNew,
         config::bindings::Action::CreateTab => Action::TabCreateNew,
+        config::bindings::Action::CloseTab => Action::TabCloseCurrent,
+        config::bindings::Action::OpenConfigEditor => Action::ConfigEditor,
         config::bindings::Action::None => Action::None,
     };
 
     if !config_key_binding.text.is_empty() {
-        action = Action::Esc(config_key_binding.text).into();
+        action = Action::Esc(config_key_binding.text);
     }
 
     if !config_key_binding.bytes.is_empty() {

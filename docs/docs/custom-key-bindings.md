@@ -47,6 +47,8 @@ TabSwitchNext
 TabSwitchPrev
 CreateWindow
 CreateTab
+CloseTab
+OpenConfigEditor
 None
 {% endhighlight %}
 
