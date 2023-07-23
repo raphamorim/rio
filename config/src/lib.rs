@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(result.bindings.keys[0].key, "Q");
         assert_eq!(result.bindings.keys[0].with, "super");
         assert_eq!(result.bindings.keys[0].action.to_owned(), Action::Quit);
-        assert!(result.bindings.keys[0].input.to_owned().is_empty());
+        assert!(result.bindings.keys[0].text.to_owned().is_empty());
     }
 
     #[test]

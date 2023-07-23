@@ -445,6 +445,7 @@ impl Screen {
                         self.render();
                     }
                     Act::Quit => {
+                        // TODO: Add it in event system
                         std::process::exit(0);
                     }
                     Act::IncreaseFontSize => {

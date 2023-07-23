@@ -93,7 +93,7 @@ Close tab or quit: <span class="keyword">Control + W</span>
 
 ### Custom key bindings
 
-Rio also allows create custom keybindings, see how to [create custom key bindings](/rio/docs/create-custom-key-bindings).
+Rio also allows create custom keybindings, see how to [create custom key bindings](/rio/docs/custom-key-bindings).
 
 --
 
