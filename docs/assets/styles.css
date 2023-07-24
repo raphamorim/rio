@@ -159,21 +159,23 @@ section.gallery-background {
 
 .gallery {
   display: flex;
-  align-items: center;
-  max-width: 1280px;
+  align-items: left;
+  max-width: 920px;
   margin: 0 auto;
 }
 
-.gallery .demo {
-  background: #F38BA3;
-  height: 200px;
-  width: 200px;
-  overflow: hidden;
+.gallery-theater {
+  text-align: center;
+}
+
+.gallery-theater img {
+  width: 800px;
 }
 
 .gallery img {
 /*  border-top: 20px solid #12B5E5;*/
-  width: 340px;
+  width: 30%;
+  padding: 0 10px;
 }
 
 section.usage {
@@ -510,9 +512,15 @@ section.features .container.footer p {
   }
 }
 
+@media (max-width: 980px) {
+  .gallery-theater img {
+    width: 60%;
+  }
+}
+
 @media (max-width: 620px) {
-  .gallery-background {
-    display: none;
+  .gallery-theater img {
+    width: 100%;
   }
 
   #nav {
