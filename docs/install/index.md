@@ -1,6 +1,6 @@
 ---
-layout: docs
-class: docs
+layout: page
+class: page
 title: 'Install'
 language: 'en'
 ---
@@ -52,7 +52,7 @@ Rio is avaible for [MacOS](#macos), [Linux](#linux), [Windows](#windows) and bro
 
 You can download Rio terminal application for macOS platform:
 
-- ](https://github.com/raphamorim.dmg)
+- • [Download Rio for MacOS v{{ site.version }}](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-v{{ site.version }}.dmg)
 
 Alternatively you can install Rio through [Homebrew](https://brew.sh/)
 
@@ -92,8 +92,8 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- • [Download Microsoft](https://github.com/raphamorim/Rio-installer.msi)
-- • [Download](https://github.com/raphamorim/Rio-portable.exe)
+- • [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-installer.msi)
+- • [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-portable.exe)
 
 There's a few things to note about the installer and the portable version:
 
