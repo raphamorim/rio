@@ -159,7 +159,8 @@ section.gallery-background {
 
 .gallery {
   display: flex;
-  align-items: left;
+  align-items: center;
+  justify-content: center;
   max-width: 920px;
   margin: 0 auto;
 }
@@ -523,6 +524,10 @@ section.features .container.footer p {
     width: 100%;
   }
 
+  .gallery img {
+    width: 25%;
+  }
+
   #nav {
     display: block;
     width: 185px;
@@ -550,6 +555,12 @@ section.features .container.footer p {
   .container.content, .container.post {
     border-radius: 0px;
     padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .gallery {
+    display: none;
   }
 }
 
