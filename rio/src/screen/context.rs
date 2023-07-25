@@ -229,16 +229,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         if self.last_name_update.elapsed() >= Duration::from_secs(3) {
             for context in self.contexts.iter_mut() {
-                let mut name = teletypewriter::foreground_process_name(
+                context.name = teletypewriter::foreground_process_name(
                     *context.main_fd,
                     context.shell_pid,
                 );
-
-                if name.len() > 7 {
-                    name = name[0..7].to_string();
-                }
-
-                context.name = name;
             }
         }
     }

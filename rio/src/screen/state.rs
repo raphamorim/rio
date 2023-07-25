@@ -101,6 +101,7 @@ impl State {
     #[inline]
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
+
         let mut foreground_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
@@ -428,7 +429,7 @@ impl State {
             self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
         sugarloaf.stack(empty_last_line);
 
-        if context_manager.len() > 1 {
+        if context_manager.len() >= 1 {
             match self.tabs_style {
                 TabsStyle::Collapsed => {
                     self.render_collapsed_tabs(sugarloaf, context_manager)
@@ -479,36 +480,80 @@ impl State {
     ) {
         let mut renderable_tabs = vec![];
         let mut initial_position =
-            (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 60.;
+            (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 100.;
         let position_modifier = 60.;
+
+        let current = context_manager.current();
+        let bg_color = self.named_colors.tabs_active;
+        let foreground_color = self.named_colors.tabs;
+        let mut main_name = current.name.to_owned();
+        if main_name.len() > 12 {
+            main_name = main_name[0..12].to_string();
+        }
+
+        let renderable = Rect {
+            position: [initial_position, 0.0],
+            color: bg_color,
+            size: [200., 25.],
+        };
+
+        sugarloaf.pile_text(
+            (initial_position - 12., 14.0),
+            "".to_string(),
+            0,
+            23.,
+            self.named_colors.tabs_active,
+        );
+
+        sugarloaf.pile_text(
+            (initial_position + 4., 13.0),
+            format!("{}.{}", 0, main_name.clone()),
+            0,
+            14.,
+            foreground_color,
+        );
+
+        initial_position -= position_modifier;
+        renderable_tabs.push(renderable);
+
+        if context_manager.len() <= 1 {
+            sugarloaf.pile_rect(renderable_tabs);
+            return;
+        }
+
         for (i, context) in context_manager.contexts().iter().enumerate() {
-            let mut bg_color = self.named_colors.tabs;
-            let mut foreground_color = self.named_colors.tabs_active;
-            let size = 20.;
             if i == context_manager.current_index() {
-                bg_color = self.named_colors.tabs_active;
-                foreground_color = self.named_colors.tabs;
+                continue;
+            }
+            let bg_color = self.named_colors.tabs;
+            let foreground_color = self.named_colors.tabs_active;
+            let size = 25.;
+            let mut name = context.name.to_owned();
+            if name.len() > 7 {
+                name = name[0..7].to_string();
             }
 
             let renderable = Rect {
                 position: [initial_position, 0.0],
                 color: bg_color,
-                size: [120.0, size],
+                size: [120., size],
             };
 
-            if i == context_manager.len() - 1 {
-                sugarloaf.pile_text(
-                    (initial_position - 9.5, 11.0),
-                    "".to_string(),
-                    0,
-                    18.,
-                    bg_color,
-                );
-            }
+            // 
+            // 
+            // if i == context_manager.len() - 1 {
+            sugarloaf.pile_text(
+                (initial_position - 12., 14.0),
+                "".to_string(),
+                0,
+                23.,
+                self.named_colors.tabs,
+            );
+            // }
 
             sugarloaf.pile_text(
-                (initial_position + 4., 10.0),
-                context.name.to_owned(),
+                (initial_position + 4., 13.0),
+                format!("{}.{}", i + 1, name),
                 0,
                 14.,
                 foreground_color,
