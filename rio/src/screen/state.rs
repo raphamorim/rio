@@ -101,7 +101,6 @@ impl State {
     #[inline]
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
-
         let mut foreground_color = match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
@@ -479,30 +478,40 @@ impl State {
         context_manager: &context::ContextManager<EventProxy>,
     ) {
         let mut renderable_tabs = vec![];
-        // let mut initial_position = constants::DEADZONE_START_X as f32;
         let mut initial_position =
-            (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 30.;
-        let position_modifier = 33.;
+            (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 60.;
+        let position_modifier = 60.;
         for (i, context) in context_manager.contexts().iter().enumerate() {
-            // let tabs = vec![0, 1, 2, 3, 4];
-            // for (i, _) in tabs.iter().enumerate() {
-            let mut color = self.named_colors.tabs;
+            let mut bg_color = self.named_colors.tabs;
+            let mut foreground_color = self.named_colors.tabs_active;
             let size = 20.;
             if i == context_manager.current_index() {
-                color = self.named_colors.tabs_active;
+                bg_color = self.named_colors.tabs_active;
+                foreground_color = self.named_colors.tabs;
             }
 
             let renderable = Rect {
                 position: [initial_position, 0.0],
-                color,
-                size: [60.0, size],
+                color: bg_color,
+                size: [120.0, size],
             };
+
+            if i == context_manager.len() - 1 {
+                sugarloaf.pile_text(
+                    (initial_position - 9.5, 11.0),
+                    "".to_string(),
+                    0,
+                    18.,
+                    bg_color,
+                );
+            }
+
             sugarloaf.pile_text(
-                (initial_position + 3., 10.0),
-                context.name.to_string(),
+                (initial_position + 4., 10.0),
+                context.name.to_owned(),
                 0,
-                15.,
-                [0.0, 0.0, 0.0, 1.0],
+                14.,
+                foreground_color,
             );
 
             initial_position -= position_modifier;

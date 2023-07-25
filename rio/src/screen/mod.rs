@@ -87,6 +87,11 @@ impl Screen {
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
+        // let mut y_diff = 0.0;
+        // if config.tabs.is_placed_on_bottom {
+        //     y_diff += config.font_size
+        // }
+
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
@@ -120,7 +125,7 @@ impl Screen {
             spawn_performer: true,
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
-            is_collapsed: config.tabs.style == config::tabs::TabsStyle::Collapsed,
+            is_collapsed: config.tabs.is_collapsed_style(),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),

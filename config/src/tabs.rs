@@ -31,6 +31,16 @@ pub struct Tabs {
     pub clickable: bool,
 }
 
+impl Tabs {
+    pub fn is_collapsed_style(&self) -> bool {
+        self.style == TabsStyle::Collapsed
+    }
+
+    pub fn is_placed_on_bottom(&self) -> bool {
+        self.style == TabsStyle::ExpandedBottom
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
