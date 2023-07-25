@@ -27,6 +27,8 @@ pub struct Tabs {
     pub style: TabsStyle,
     #[serde(default = "Vec::default", rename = "color-rules")]
     pub color_rules: Vec<String>,
+    #[serde(default = "bool::default")]
+    pub clickable: bool,
 }
 
 #[cfg(test)]
@@ -50,6 +52,7 @@ mod tests {
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.tabs.style, TabsStyle::Collapsed);
+        assert!(!decoded.tabs.clickable);
         assert!(decoded.tabs.color_rules.is_empty());
     }
 
@@ -62,6 +65,7 @@ mod tests {
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.tabs.style, TabsStyle::ExpandedTop);
+        assert!(!decoded.tabs.clickable);
         assert!(decoded.tabs.color_rules.is_empty());
     }
 
@@ -74,6 +78,7 @@ mod tests {
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.tabs.style, TabsStyle::ExpandedBottom);
+        assert!(!decoded.tabs.clickable);
         assert!(decoded.tabs.color_rules.is_empty());
     }
 }
