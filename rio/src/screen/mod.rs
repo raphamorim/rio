@@ -170,7 +170,7 @@ impl Screen {
         let col_fac = (layout.sugarwidth * self.sugarloaf.layout.scale_factor) as usize;
 
         let col = self.mouse.x.saturating_sub(
-            (layout.padding.x * self.sugarloaf.layout.scale_factor) as usize,
+            (layout.padding.x * 2. * self.sugarloaf.layout.scale_factor) as usize,
         ) / col_fac;
         let col = std::cmp::min(Column(col), Column(layout.columns));
 

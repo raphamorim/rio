@@ -656,6 +656,40 @@ impl Sugarloaf {
     }
 
     #[inline]
+    pub fn pile_text(
+        &mut self,
+        pos: (f32, f32),
+        text_str: String,
+        font_id_usize: usize,
+        scale: f32,
+        color: [f32; 4],
+    ) -> &mut Self {
+        let font_id = FontId(font_id_usize);
+
+        let text = crate::components::text::Text {
+            text: &text_str,
+            scale: PxScale::from(scale * self.ctx.scale),
+            font_id,
+            extra: crate::components::text::Extra {
+                color,
+                z: 0.0,
+            },
+        };
+
+        let section = &crate::components::text::Section {
+            screen_position: (pos.0 * self.ctx.scale, pos.1 * self.ctx.scale),
+            bounds: (100., 100.),
+            text: vec![text],
+            layout: glyph_brush::Layout::default_single_line()
+                .v_align(glyph_brush::VerticalAlign::Center)
+                .h_align(glyph_brush::HorizontalAlign::Left),
+        };
+
+        self.text_brush.queue(section);
+        self
+    }
+
+    #[inline]
     pub fn render(&mut self) {
         self.reset_state();
 

@@ -1,5 +1,7 @@
 pub mod bindings;
+pub mod tabs;
 mod defaults;
+use crate::tabs::Tabs;
 use crate::bindings::Bindings;
 use crate::defaults::*;
 use colors::Colors;
@@ -39,6 +41,8 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default = "Tabs::default")]
+    pub tabs: Tabs,
     #[serde(rename = "window-opacity", default = "default_window_opacity")]
     pub window_opacity: f32,
     #[serde(rename = "window-width", default = "default_window_width")]
@@ -197,6 +201,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             bindings: Bindings::default(),
+            tabs: Tabs::default(),
             shell: default_shell(),
             editor: default_editor(),
             working_dir: default_working_dir(),
