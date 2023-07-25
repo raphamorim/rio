@@ -670,10 +670,7 @@ impl Sugarloaf {
             text: &text_str,
             scale: PxScale::from(scale * self.ctx.scale),
             font_id,
-            extra: crate::components::text::Extra {
-                color,
-                z: 0.0,
-            },
+            extra: crate::components::text::Extra { color, z: 0.0 },
         };
 
         let section = &crate::components::text::Section {

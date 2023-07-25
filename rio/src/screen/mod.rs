@@ -120,6 +120,7 @@ impl Screen {
             spawn_performer: true,
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
+            is_collapsed: config.tabs.style == config::tabs::TabsStyle::Collapsed,
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
@@ -731,6 +732,7 @@ impl Screen {
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
         drop(terminal);
+        self.context_manager.update_names();
 
         self.state.set_ime(self.ime.preedit());
 
