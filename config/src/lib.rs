@@ -1,9 +1,9 @@
 pub mod bindings;
-pub mod tabs;
 mod defaults;
-use crate::tabs::Tabs;
+pub mod tabs;
 use crate::bindings::Bindings;
 use crate::defaults::*;
+use crate::tabs::Tabs;
 use colors::Colors;
 use log::warn;
 use serde::Deserialize;

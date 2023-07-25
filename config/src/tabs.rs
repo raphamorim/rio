@@ -1,11 +1,12 @@
+use colors::{deserialize_to_arr, ColorArray};
 use serde::Deserialize;
-use colors::{ColorArray, deserialize_to_arr};
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum TabsStyle {
     #[default]
-    Minimalist,
-    Classic,
+    Collapsed,
+    ExpandedTop,
+    ExpandedBottom,
     // TODO: Custom comes from plugin system
     // Custom
 }
@@ -17,7 +18,7 @@ pub struct ColorRules {
         deserialize_with = "deserialize_to_arr",
         default = "colors::defaults::tabs"
     )]
-    color: ColorArray
+    color: ColorArray,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Deserialize)]
@@ -41,27 +42,38 @@ mod tests {
     }
 
     #[test]
-    fn test_minimalist_tabs() {
+    fn test_collapsed_tabs() {
         let content = r#"
             [tabs]
-            style = 'Minimalist'
+            style = 'Collapsed'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.tabs.style, TabsStyle::Minimalist);
+        assert_eq!(decoded.tabs.style, TabsStyle::Collapsed);
         assert!(decoded.tabs.color_rules.is_empty());
     }
 
     #[test]
-    fn test_classic_tabs() {
+    fn test_expanded_top_tabs() {
         let content = r#"
             [tabs]
-            style = 'Classic'
+            style = 'ExpandedTop'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.tabs.style, TabsStyle::Classic);
+        assert_eq!(decoded.tabs.style, TabsStyle::ExpandedTop);
         assert!(decoded.tabs.color_rules.is_empty());
     }
 
+    #[test]
+    fn test_expanded_bottom_tabs() {
+        let content = r#"
+            [tabs]
+            style = 'ExpandedBottom'
+        "#;
+
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert_eq!(decoded.tabs.style, TabsStyle::ExpandedBottom);
+        assert!(decoded.tabs.color_rules.is_empty());
+    }
 }

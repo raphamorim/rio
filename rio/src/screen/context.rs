@@ -4,9 +4,11 @@ use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
+use config::Shell;
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
@@ -23,14 +25,16 @@ pub struct Context<T: EventListener> {
     pub main_fd: Arc<i32>,
     #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
+    pub name: String,
 }
 
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
-    pub shell: config::Shell,
+    pub shell: Shell,
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
+    pub is_collapsed: bool,
 }
 
 pub struct ContextManager<T: EventListener> {
@@ -40,6 +44,7 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     config: ContextManagerConfig,
+    last_name_update: Instant,
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
@@ -115,6 +120,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let _ =
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
+        let mut name = String::from("");
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if !config.is_collapsed {
+                name = teletypewriter::foreground_process_name(*main_fd, shell_pid);
+            }
+        }
+
         Ok(Context {
             #[cfg(not(target_os = "windows"))]
             main_fd,
@@ -122,6 +136,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             shell_pid,
             messenger,
             terminal,
+            name,
         })
     }
 
@@ -150,6 +165,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
+            last_name_update: Instant::now(),
         })
     }
 
@@ -162,11 +178,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let config = ContextManagerConfig {
             use_fork: true,
             working_dir: None,
-            shell: config::Shell {
+            shell: Shell {
                 program: std::env::var("SHELL").unwrap_or("bash".to_string()),
                 args: vec![],
             },
             spawn_performer: false,
+            is_collapsed: true,
         };
         let initial_context = ContextManager::create_context(
             (100, 100),
@@ -183,6 +200,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
+            last_name_update: Instant::now(),
         })
     }
 
@@ -201,6 +219,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.contexts.len()
+    }
+
+    #[inline]
+    pub fn update_names(&mut self) {
+        if self.config.is_collapsed {
+            return;
+        }
+
+        if self.last_name_update.elapsed() >= Duration::from_secs(3) {
+            for context in self.contexts.iter_mut() {
+                context.name = teletypewriter::foreground_process_name(
+                    *context.main_fd,
+                    context.shell_pid,
+                );
+            }
+        }
     }
 
     #[inline]

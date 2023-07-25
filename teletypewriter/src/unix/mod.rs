@@ -833,6 +833,20 @@ pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
     Ok(str_buf)
 }
 
+pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
+    let mut pid = unsafe { libc::tcgetpgrp(main_fd) };
+    if pid < 0 {
+        pid = shell_pid as libc::pid_t;
+    }
+
+    let mut name = String::from("");
+
+    #[cfg(target_os = "macos")]
+    let name = macos_process_name(pid);
+
+    name
+}
+
 pub fn foreground_process_path(
     main_fd: RawFd,
     shell_pid: u32,

@@ -123,6 +123,8 @@ mod sys {
     }
 
     extern "C" {
+        pub fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+
         pub fn proc_pidinfo(
             pid: c_int,
             flavor: c_int,
@@ -130,7 +132,58 @@ mod sys {
             buffer: *mut c_void,
             buffersize: c_int,
         ) -> c_int;
+
+        // pub fn proc_name(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
     }
+}
+
+pub fn macos_process_name(pid: libc::c_int) -> String {
+    let mut name = String::new();
+
+    if pid >= 0 {
+        let proc_path = get_proc_path(pid);
+        name = std::path::Path::new(&proc_path)
+            .file_name()
+            .unwrap_or(std::ffi::OsStr::new(""))
+            .to_str()
+            .unwrap_or("")
+            .to_string();
+    }
+
+    //     // proc_name truncates the name to 16 bytes.
+    //     let mut name_buf: Vec<u8> = Vec::with_capacity(16);    // MAXCOMLEN (max command name remembered)
+    //     let mut var_int_t = 0 as usize;
+    //     unsafe {
+    //         var_int_t = sys::proc_name(pid, name_buf.as_mut_ptr() as *mut libc::c_void, 16) as usize;
+    //         name_buf.set_len(var_int_t);
+    //     };
+    //     name = String::from_utf8(name_buf).unwrap_or("".to_string());
+
+    name
+}
+
+fn get_proc_path(pid: i32) -> String {
+    let mut pathbuf: Vec<u8> = Vec::with_capacity(4 * 1024); // 4 * MAXPATHLEN
+    #[allow(unused)]
+    let mut ret = 0 as i32;
+    let mut out = String::new();
+
+    unsafe {
+        ret = sys::proc_pidpath(
+            pid,
+            pathbuf.as_mut_ptr() as *mut libc::c_void,
+            pathbuf.capacity() as u32,
+        );
+    };
+
+    if ret > 0 {
+        unsafe {
+            pathbuf.set_len(ret as usize);
+        }
+        out = String::from_utf8(pathbuf)
+            .unwrap_or("An error occurred while retrieving process path".to_string())
+    }
+    out
 }
 
 pub fn macos_cwd(pid: libc::c_int) -> Result<PathBuf, Error> {

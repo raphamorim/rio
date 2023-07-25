@@ -10,7 +10,7 @@ use colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
 };
-use config::{Config, tabs::TabsStyle};
+use config::{tabs::TabsStyle, Config};
 use std::rc::Rc;
 use sugarloaf::components::rect::Rect;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
@@ -429,18 +429,27 @@ impl State {
             self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
         sugarloaf.stack(empty_last_line);
 
-        // if context_manager.len() > 1 {
-        //     match self.tabs_style {
-        //         TabsStyle::Minimalist => self.create_minimalist_tabs(sugarloaf, context_manager),
-        //         TabsStyle::Classic => self.create_classic_tabs(sugarloaf, context_manager),
-        //     }
-        // }
-
-        self.create_classic_tabs(sugarloaf, context_manager);
+        if context_manager.len() > 1 {
+            match self.tabs_style {
+                TabsStyle::Collapsed => {
+                    self.render_collapsed_tabs(sugarloaf, context_manager)
+                }
+                TabsStyle::ExpandedTop => {
+                    self.render_expanded_top_tabs(sugarloaf, context_manager)
+                }
+                TabsStyle::ExpandedBottom => {
+                    self.render_expanded_top_tabs(sugarloaf, context_manager)
+                }
+            }
+        }
     }
 
     #[inline]
-    fn create_minimalist_tabs(&self, sugarloaf: &mut Sugarloaf, context_manager: &context::ContextManager<EventProxy>,) {
+    fn render_collapsed_tabs(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        context_manager: &context::ContextManager<EventProxy>,
+    ) {
         let mut renderable_tabs = vec![];
         let mut initial_position =
             (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - PADDING_X_TABS;
@@ -463,17 +472,20 @@ impl State {
         sugarloaf.pile_rect(renderable_tabs);
     }
 
-
     #[inline]
-    fn create_classic_tabs(&self, sugarloaf: &mut Sugarloaf, context_manager: &context::ContextManager<EventProxy>,) {
+    fn render_expanded_top_tabs(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        context_manager: &context::ContextManager<EventProxy>,
+    ) {
         let mut renderable_tabs = vec![];
         // let mut initial_position = constants::DEADZONE_START_X as f32;
         let mut initial_position =
             (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 30.;
         let position_modifier = 33.;
-        // for (i, _) in context_manager.contexts().iter().enumerate() {
-        let tabs = vec![0, 1,2,3,4];
-        for (i, _) in tabs.iter().enumerate() {
+        for (i, context) in context_manager.contexts().iter().enumerate() {
+            // let tabs = vec![0, 1, 2, 3, 4];
+            // for (i, _) in tabs.iter().enumerate() {
             let mut color = self.named_colors.tabs;
             let size = 20.;
             if i == context_manager.current_index() {
@@ -485,11 +497,46 @@ impl State {
                 color,
                 size: [60.0, size],
             };
-            sugarloaf.pile_text((initial_position + 3., 10.0), "zsh".to_string(), 0, 15., [0.0, 0.0, 0.0, 1.0]);
+            sugarloaf.pile_text(
+                (initial_position + 3., 10.0),
+                context.name.to_string(),
+                0,
+                15.,
+                [0.0, 0.0, 0.0, 1.0],
+            );
 
             initial_position -= position_modifier;
             renderable_tabs.push(renderable);
         }
         sugarloaf.pile_rect(renderable_tabs);
     }
+
+    // #[inline]
+    // fn render_expanded_bottom_tabs(&self, sugarloaf: &mut Sugarloaf, context_manager: &context::ContextManager<EventProxy>,) {
+    //     let mut renderable_tabs = vec![];
+    //     // let mut initial_position = constants::DEADZONE_START_X as f32;
+    //     let mut initial_position =
+    //         (sugarloaf.layout.width / sugarloaf.layout.scale_factor) - 30.;
+    //     let position_modifier = 33.;
+    //     // for (i, _) in context_manager.contexts().iter().enumerate() {
+    //     let tabs = vec![0, 1,2,3,4];
+    //     for (i, _) in tabs.iter().enumerate() {
+    //         let mut color = self.named_colors.tabs;
+    //         let size = 20.;
+    //         if i == context_manager.current_index() {
+    //             color = self.named_colors.tabs_active;
+    //         }
+
+    //         let renderable = Rect {
+    //             position: [initial_position, 0.0],
+    //             color,
+    //             size: [60.0, size],
+    //         };
+    //         sugarloaf.pile_text((initial_position + 3., 10.0), "zsh".to_string(), 0, 15., [0.0, 0.0, 0.0, 1.0]);
+
+    //         initial_position -= position_modifier;
+    //         renderable_tabs.push(renderable);
+    //     }
+    //     sugarloaf.pile_rect(renderable_tabs);
+    // }
 }
