@@ -439,14 +439,17 @@ impl Screen {
                         self.render();
                     }
                     Act::TabSwitchNext => {
+                        self.clear_selection();
                         self.context_manager.switch_to_next();
                         self.render();
                     }
                     Act::TabSwitchPrev => {
+                        self.clear_selection();
                         self.context_manager.switch_to_prev();
                         self.render();
                     }
                     Act::TabCloseCurrent => {
+                        self.clear_selection();
                         self.context_manager.close_context();
                         self.render();
                     }

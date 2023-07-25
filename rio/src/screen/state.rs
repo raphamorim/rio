@@ -505,9 +505,11 @@ impl State {
             self.named_colors.tabs_active,
         );
 
+        let current_index = context_manager.current_index();
+
         sugarloaf.pile_text(
             (initial_position + 4., 13.0),
-            format!("{}.{}", 0, main_name.clone()),
+            format!("{}.{}", current_index + 1, main_name),
             0,
             14.,
             foreground_color,
@@ -522,7 +524,49 @@ impl State {
         }
 
         for (i, context) in context_manager.contexts().iter().enumerate() {
-            if i == context_manager.current_index() {
+            if i >= context_manager.current_index() {
+                continue;
+            }
+            let bg_color = self.named_colors.tabs;
+            let foreground_color = self.named_colors.tabs_active;
+            let size = 25.;
+            let mut name = context.name.to_owned();
+            if name.len() > 7 {
+                name = name[0..7].to_string();
+            }
+
+            let renderable = Rect {
+                position: [initial_position, 0.0],
+                color: bg_color,
+                size: [120., size],
+            };
+
+            // 
+            // 
+            // if i == context_manager.len() - 1 {
+            sugarloaf.pile_text(
+                (initial_position - 12., 14.0),
+                "".to_string(),
+                0,
+                23.,
+                self.named_colors.tabs,
+            );
+            // }
+
+            sugarloaf.pile_text(
+                (initial_position + 4., 13.0),
+                format!("{}.{}", i + 1, name),
+                0,
+                14.,
+                foreground_color,
+            );
+
+            initial_position -= position_modifier;
+            renderable_tabs.push(renderable);
+        }
+
+        for (i, context) in context_manager.contexts().iter().enumerate() {
+            if i <= context_manager.current_index() {
                 continue;
             }
             let bg_color = self.named_colors.tabs;
