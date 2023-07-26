@@ -30,3 +30,5 @@ pub const DEADZONE_START_X: f64 = 80.;
     not(any(target_os = "macos", windows))
 ))]
 pub const APPLICATION_ID: &str = "rio";
+
+pub const PADDING_X_COLLAPSED_TABS: f32 = 30.;
