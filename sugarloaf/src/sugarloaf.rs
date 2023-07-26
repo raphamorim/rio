@@ -304,11 +304,15 @@ impl Sugarloaf {
 
             #[cfg(target_os = "macos")]
             {
-                if cached_sugar.font_id == FontId(FONT_ID_UNICODE) && cached_sugar.char_width == 1. {
+                if cached_sugar.font_id == FontId(FONT_ID_UNICODE)
+                    && cached_sugar.char_width == 1.
+                {
                     scale /= 1.5;
                 }
 
-                if cached_sugar.font_id == FontId(FONT_ID_SYMBOL) && cached_sugar.char_width == 1. {
+                if cached_sugar.font_id == FontId(FONT_ID_SYMBOL)
+                    && cached_sugar.char_width == 1.
+                {
                     scale /= 1.4;
                 }
             }
