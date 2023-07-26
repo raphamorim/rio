@@ -165,7 +165,7 @@ pub fn macos_process_name(pid: libc::c_int) -> String {
 fn get_proc_path(pid: i32) -> String {
     let mut pathbuf: Vec<u8> = Vec::with_capacity(4 * 1024); // 4 * MAXPATHLEN
     #[allow(unused)]
-    let mut ret = 0 as i32;
+    let mut ret: i32 = 0;
     let mut out = String::new();
 
     unsafe {

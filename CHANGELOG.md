@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Increased max tabs from 9 to 28.
 - Default colors `tab` and `tab-active` has changed.
 - Upgrade wgpu to 0.17.0.
 
