@@ -2,11 +2,12 @@ use colors::{deserialize_to_arr, ColorArray};
 use serde::Deserialize;
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
-pub enum TabsStyle {
+pub enum NavigationMode {
     #[default]
-    Collapsed,
-    ExpandedTop,
-    ExpandedBottom,
+    CollapsedTabs,
+    Breadcrumb,
+    TopTabs,
+    BottomTabs,
     // TODO: Custom comes from plugin system
     // Custom
 }
@@ -22,73 +23,73 @@ pub struct ColorRules {
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Deserialize)]
-pub struct Tabs {
-    #[serde(default = "TabsStyle::default")]
-    pub style: TabsStyle,
+pub struct Navigation {
+    #[serde(default = "NavigationMode::default")]
+    pub mode: NavigationMode,
     #[serde(default = "Vec::default", rename = "color-rules")]
     pub color_rules: Vec<String>,
     #[serde(default = "bool::default")]
     pub clickable: bool,
 }
 
-impl Tabs {
-    pub fn is_collapsed_style(&self) -> bool {
-        self.style == TabsStyle::Collapsed
+impl Navigation {
+    pub fn is_collapsed_mode(&self) -> bool {
+        self.mode == NavigationMode::CollapsedTabs
     }
 
     pub fn is_placed_on_bottom(&self) -> bool {
-        self.style == TabsStyle::ExpandedBottom
+        self.mode == NavigationMode::BottomTabs
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use crate::tabs::{Tabs, TabsStyle};
+    use crate::navigation::{Navigation, NavigationMode};
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
     struct Root {
-        #[serde(default = "Tabs::default")]
-        tabs: Tabs,
+        #[serde(default = "Navigation::default")]
+        navigation: Navigation,
     }
 
     #[test]
     fn test_collapsed_tabs() {
         let content = r#"
-            [tabs]
-            style = 'Collapsed'
+            [navigation]
+            mode = 'CollapsedTabs'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.tabs.style, TabsStyle::Collapsed);
-        assert!(!decoded.tabs.clickable);
-        assert!(decoded.tabs.color_rules.is_empty());
+        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTabs);
+        assert!(!decoded.navigation.clickable);
+        assert!(decoded.navigation.color_rules.is_empty());
     }
 
     #[test]
-    fn test_expanded_top_tabs() {
+    fn test_top_tabs() {
         let content = r#"
             [tabs]
-            style = 'ExpandedTop'
+            mode = 'TopTabs'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.tabs.style, TabsStyle::ExpandedTop);
-        assert!(!decoded.tabs.clickable);
-        assert!(decoded.tabs.color_rules.is_empty());
+        assert_eq!(decoded.navigation.mode, NavigationMode::TopTabs);
+        assert!(!decoded.navigation.clickable);
+        assert!(decoded.navigation.color_rules.is_empty());
     }
 
     #[test]
-    fn test_expanded_bottom_tabs() {
+    fn testbottom_tabs() {
         let content = r#"
             [tabs]
-            style = 'ExpandedBottom'
+            mode = 'BottomTabs'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.tabs.style, TabsStyle::ExpandedBottom);
-        assert!(!decoded.tabs.clickable);
-        assert!(decoded.tabs.color_rules.is_empty());
+        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTabs);
+        assert!(!decoded.navigation.clickable);
+        assert!(decoded.navigation.color_rules.is_empty());
     }
 }

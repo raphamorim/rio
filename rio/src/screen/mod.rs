@@ -125,7 +125,7 @@ impl Screen {
             spawn_performer: true,
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
-            is_collapsed: config.tabs.is_collapsed_style(),
+            is_collapsed: config.navigation.is_collapsed_mode(),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
