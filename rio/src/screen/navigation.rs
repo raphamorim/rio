@@ -47,9 +47,6 @@ pub struct ScreenNavigation {
     scale: f32,
 }
 
-// width, height
-// current_index
-//
 impl ScreenNavigation {
     pub fn new(
         mode: NavigationMode,
