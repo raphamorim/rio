@@ -207,13 +207,6 @@ async fn main() {
                 decoration: Some(underline),
             },
             Sugar {
-                content: 'o',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: Some(underline),
-            },
-            Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
@@ -305,6 +298,20 @@ async fn main() {
 
         let special = vec![
             // Font Symbol (char width 2)
+            Sugar {
+                content: '✔',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: None,
+                decoration: Some(underline),
+            },
+            Sugar {
+                content: '➜',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: Some(underline),
+            },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],

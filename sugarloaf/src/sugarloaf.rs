@@ -235,12 +235,12 @@ impl Sugarloaf {
             FontId(FONT_ID_REGULAR)
         } else if symbols.glyph_id(sugar.content) != glyph_zero {
             FontId(FONT_ID_SYMBOL)
-        } else if emojis.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_EMOJIS)
         } else if unicode.glyph_id(sugar.content) != glyph_zero {
             FontId(FONT_ID_UNICODE)
         } else if icons.glyph_id(sugar.content) != glyph_zero {
             FontId(FONT_ID_ICONS)
+        } else if emojis.glyph_id(sugar.content) != glyph_zero {
+            FontId(FONT_ID_EMOJIS)
         } else {
             FontId(FONT_ID_REGULAR)
         };
@@ -300,6 +300,17 @@ impl Sugarloaf {
             let mut scale = self.layout.style.text_scale;
             if cached_sugar.font_id == FontId(FONT_ID_ICONS) {
                 scale /= 2.0;
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                if cached_sugar.font_id == FontId(FONT_ID_UNICODE) && cached_sugar.char_width == 1. {
+                    scale /= 1.5;
+                }
+
+                if cached_sugar.font_id == FontId(FONT_ID_SYMBOL) && cached_sugar.char_width == 1. {
+                    scale /= 1.4;
+                }
             }
 
             let text = crate::components::text::Text {
