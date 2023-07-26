@@ -2,7 +2,17 @@
 
 ## In progress
 
-- Increased max tabs from 9 to 28.
+- Introduce configurable navigation with the following options: `CollapsedTabs` (default), `Breadcrumb`, `TopTabs` and `BottomTabs`.
+
+An example of configuration:
+
+```toml
+[navigation]
+mode = "Breadcrumb"
+```
+
+- Fix rendering unicode with 1 width glyphs (fix [#160]https://github.com/raphamorim/rio/issues/160)).
+- Increased max tabs from 9 to 72.
 - Default colors `tab` and `tab-active` has changed.
 - Upgrade wgpu to 0.17.0.
 
