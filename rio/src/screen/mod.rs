@@ -3,6 +3,7 @@ mod constants;
 mod context;
 mod messenger;
 mod mouse;
+mod navigation;
 mod state;
 pub mod window;
 

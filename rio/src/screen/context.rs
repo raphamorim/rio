@@ -6,6 +6,7 @@ use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use config::Shell;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,7 +26,6 @@ pub struct Context<T: EventListener> {
     pub main_fd: Arc<i32>,
     #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
-    pub name: String,
 }
 
 #[derive(Clone, Default)]
@@ -37,6 +37,31 @@ pub struct ContextManagerConfig {
     pub is_collapsed: bool,
 }
 
+pub struct ContextManagerTitles {
+    last_title_update: Instant,
+    pub titles: HashMap<usize, String>,
+    pub key: String,
+}
+
+impl ContextManagerTitles {
+    pub fn new(idx: usize, title_str: String) -> ContextManagerTitles {
+        let last_title_update = Instant::now();
+        ContextManagerTitles {
+            titles: HashMap::from([(idx, title_str.to_owned())]),
+            key: format!("{}{};", idx, title_str.to_owned()),
+            last_title_update,
+        }
+    }
+
+    pub fn set_key_val(&mut self, idx: usize, value: String) {
+        self.titles.insert(idx, value);
+    }
+
+    pub fn set_key(&mut self, key: String) {
+        self.key = key;
+    }
+}
+
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
     current_index: usize,
@@ -44,7 +69,7 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     config: ContextManagerConfig,
-    last_name_update: Instant,
+    pub titles: ContextManagerTitles,
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
@@ -120,15 +145,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let _ =
             messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
-        let mut name = String::from("");
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            if !config.is_collapsed {
-                name = teletypewriter::foreground_process_name(*main_fd, shell_pid);
-            }
-        }
-
         Ok(Context {
             #[cfg(not(target_os = "windows"))]
             main_fd,
@@ -136,7 +152,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             shell_pid,
             messenger,
             terminal,
-            name,
         })
     }
 
@@ -158,6 +173,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &ctx_config,
         )?;
 
+        let mut name = String::from("");
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if !ctx_config.is_collapsed {
+                name = teletypewriter::foreground_process_name(
+                    *initial_context.main_fd,
+                    initial_context.shell_pid,
+                );
+            }
+        }
+
+        let titles = ContextManagerTitles::new(0, name);
+
         Ok(ContextManager {
             current_index: 0,
             contexts: vec![initial_context],
@@ -165,7 +194,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
-            last_name_update: Instant::now(),
+            titles,
         })
     }
 
@@ -193,6 +222,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             &config,
         )?;
+
+        let titles = ContextManagerTitles::new(0, String::from(""));
+
         Ok(ContextManager {
             current_index: 0,
             contexts: vec![initial_context],
@@ -200,7 +232,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
-            last_name_update: Instant::now(),
+            titles,
         })
     }
 
@@ -227,14 +259,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.last_name_update.elapsed() > Duration::from_secs(3) {
-            self.last_name_update = Instant::now();
-            for context in self.contexts.iter_mut() {
-                context.name = teletypewriter::foreground_process_name(
+        if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+            self.titles.last_title_update = Instant::now();
+            let mut id = String::from("");
+            for (i, context) in self.contexts.iter_mut().enumerate() {
+                let name = teletypewriter::foreground_process_name(
                     *context.main_fd,
                     context.shell_pid,
                 );
+                id = id.to_owned() + &(format!("{}{};", i, name));
+                self.titles.set_key_val(i, name);
             }
+            self.titles.set_key(id);
         }
     }
 
@@ -269,6 +305,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.set_current(0);
         }
 
+        self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
     }
 

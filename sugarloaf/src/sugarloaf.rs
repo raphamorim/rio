@@ -650,13 +650,13 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn pile_rect(&mut self, mut instances: Vec<Rect>) -> &mut Self {
+    pub fn pile_rects(&mut self, mut instances: Vec<Rect>) -> &mut Self {
         self.rects.append(&mut instances);
         self
     }
 
     #[inline]
-    pub fn pile_text(
+    pub fn text(
         &mut self,
         pos: (f32, f32),
         text_str: String,
