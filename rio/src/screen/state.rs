@@ -498,13 +498,13 @@ impl State {
         let renderable = Rect {
             position: [initial_position, 0.0],
             color: bg_color,
-            size: [200., 25.],
+            size: [200., 26.0],
         };
 
         sugarloaf.pile_text(
-            (initial_position - 12., 14.0),
+            (initial_position - 12., 14.5),
             "".to_string(),
-            0,
+            9,
             23.,
             self.named_colors.tabs_active,
         );
@@ -566,7 +566,6 @@ impl State {
 
                 let bg_color = self.named_colors.tabs;
                 let foreground_color = self.named_colors.tabs_active;
-                let size = 25.;
                 let mut name = contexts[iterator].name.to_owned();
                 if name.len() > 7 {
                     name = name[0..7].to_string();
@@ -575,17 +574,17 @@ impl State {
                 let renderable = Rect {
                     position: [initial_position, 0.0],
                     color: bg_color,
-                    size: [160., size],
+                    size: [160., 26.],
                 };
 
                 // 
                 // 
                 // if i == context_manager.len() - 1 {
                 sugarloaf.pile_text(
-                    (initial_position - 12., 14.0),
+                    (initial_position - 12., 15.0),
                     "".to_string(),
-                    0,
-                    23.,
+                    10,
+                    22.,
                     self.named_colors.tabs,
                 );
                 // }
@@ -640,10 +639,10 @@ impl State {
         };
 
         sugarloaf.pile_text(
-            (initial_position - 12., 14.0),
+            (initial_position - 12., 13.0),
             "".to_string(),
             0,
-            23.,
+            22.,
             self.named_colors.tabs_active,
         );
 

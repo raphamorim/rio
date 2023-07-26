@@ -227,7 +227,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.last_name_update.elapsed() >= Duration::from_secs(3) {
+        if self.last_name_update.elapsed() > Duration::from_secs(3) {
+            self.last_name_update = Instant::now();
             for context in self.contexts.iter_mut() {
                 context.name = teletypewriter::foreground_process_name(
                     *context.main_fd,
