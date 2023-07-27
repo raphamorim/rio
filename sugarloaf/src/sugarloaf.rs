@@ -285,9 +285,7 @@ impl Sugarloaf {
                     }
                 }
             }
-            FontId(_) => {
-
-            }
+            FontId(_) => {}
         }
 
         let cached_sugar = CachedSugar {
