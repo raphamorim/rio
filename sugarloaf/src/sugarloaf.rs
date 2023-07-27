@@ -261,9 +261,9 @@ impl Sugarloaf {
 
         let font_ids = [
             FONT_ID_REGULAR,
-            FONT_ID_ICONS,
             FONT_ID_SYMBOL,
             FONT_ID_UNICODE,
+            FONT_ID_ICONS,
             FONT_ID_EMOJIS,
         ];
 
