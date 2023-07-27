@@ -246,7 +246,7 @@ impl Sugarloaf {
 
         log::info!("find_scale: {:?} {:?} {}", content, font_id, scale);
 
-        return Some(scale);
+        Some(scale)
     }
 
     #[inline]
