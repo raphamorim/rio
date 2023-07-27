@@ -16,11 +16,11 @@ cargo run --example text
 
 ## Examples
 
-| ![Demo sugarloaf 1](resources/demo-sugarloaf-1.png) | ![Demo Sugarloaf wasm](resources/demo-wasm-1.png) |
+| ![Demo sugarloaf 1](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-1.png?raw=true) | ![Demo Sugarloaf wasm](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-wasm-1.png?raw=true) |
 | ----------- | ----------- |
-| ![Demo Rect](resources/demo-rect.png) | ![Demo sugarloaf 3](resources/demo-sugarloaf-3.png) |
-| ![Demo sugarloaf 4](resources/demo-sugarloaf-4.png) | ![Demo sugarloaf 5](resources/demo-sugarloaf-5.png) |
-| ![Demo sugarloaf 6](resources/demo-sugarloaf-6.png) | |
+| ![Demo Rect](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-rect.png?raw=true) | ![Demo sugarloaf 3](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-3.png?raw=true) |
+| ![Demo sugarloaf 4](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-4.png?raw=true) | ![Demo sugarloaf 5](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-5.png?raw=true) |
+| ![Demo sugarloaf 6](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-6.png?raw=true) | |
 
 ## WASM Tests
 
