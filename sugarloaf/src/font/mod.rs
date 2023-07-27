@@ -235,6 +235,7 @@ impl Font {
 
         Font {
             text: ComposedFontArc {
+                is_monospace: true,
                 bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
                 bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
                     .unwrap(),
