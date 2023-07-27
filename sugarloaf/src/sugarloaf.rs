@@ -47,6 +47,7 @@ pub trait Renderable: 'static + Sized {
 pub struct CachedSugar {
     font_id: FontId,
     char_width: f32,
+    monospaced_font_scale: Option<f32>,
 }
 
 pub struct Sugarloaf {
@@ -224,31 +225,75 @@ impl Sugarloaf {
 
         #[allow(clippy::unnecessary_to_owned)]
         let fonts: &[FontArc] = &self.text_brush.fonts().to_owned();
-        let regular: &FontArc = &fonts[FONT_ID_REGULAR];
-        let symbols: &FontArc = &fonts[FONT_ID_SYMBOL];
-        let emojis: &FontArc = &fonts[FONT_ID_EMOJIS];
-        let unicode: &FontArc = &fonts[FONT_ID_UNICODE];
-        let icons: &FontArc = &fonts[FONT_ID_ICONS];
-        let glyph_zero = ab_glyph::GlyphId(0);
+        let mut font_id = FontId(FONT_ID_REGULAR);
 
-        let font_id: FontId = if regular.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_REGULAR)
-        } else if symbols.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_SYMBOL)
-        } else if unicode.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_UNICODE)
-        } else if icons.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_ICONS)
-        } else if emojis.glyph_id(sugar.content) != glyph_zero {
-            FontId(FONT_ID_EMOJIS)
-        } else {
-            FontId(FONT_ID_REGULAR)
-        };
+        let font_ids = [
+            FONT_ID_REGULAR,
+            FONT_ID_ICONS,
+            FONT_ID_SYMBOL,
+            FONT_ID_UNICODE,
+            FONT_ID_EMOJIS,
+        ];
 
+        for id in font_ids {
+            let found_glyph_id = fonts[id].glyph_id(sugar.content);
+            if found_glyph_id != ab_glyph::GlyphId(0) {
+                font_id = FontId(id);
+                break;
+            }
+        }
+
+        let mut monospaced_font_scale = None;
         let char_width = sugar.content.width().unwrap_or(1) as f32;
+
+        match font_id {
+            // Icons will look for width 1
+            FontId(FONT_ID_ICONS) => {
+                let mut found = false;
+                let mut scale = self.layout.style.text_scale;
+                while !found && scale > 0.0 {
+                    let width = self.get_font_bounds(sugar.content, font_id, scale).0
+                        / self.layout.scale_factor;
+
+                    if width <= self.layout.sugarwidth {
+                        monospaced_font_scale = Some(scale);
+                        found = true;
+                    } else {
+                        scale -= 1.0;
+                    }
+                }
+            }
+
+            FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) | FontId(FONT_ID_EMOJIS) => {
+                let mut found = false;
+                let mut scale = self.layout.style.text_scale;
+                let target = if char_width > 1. {
+                    self.layout.sugarwidth * 2.0
+                } else {
+                    self.layout.sugarwidth
+                };
+
+                while !found && scale > 0.0 {
+                    let width = self.get_font_bounds(sugar.content, font_id, scale).0
+                        / self.layout.scale_factor;
+
+                    if width <= target {
+                        monospaced_font_scale = Some(scale);
+                        found = true;
+                    } else {
+                        scale -= 1.0;
+                    }
+                }
+            }
+            FontId(_) => {
+
+            }
+        }
+
         let cached_sugar = CachedSugar {
             font_id,
             char_width,
+            monospaced_font_scale,
         };
 
         self.sugar_cache.insert(
@@ -256,6 +301,7 @@ impl Sugarloaf {
             CachedSugar {
                 font_id,
                 char_width,
+                monospaced_font_scale,
             },
         );
 
@@ -298,16 +344,8 @@ impl Sugarloaf {
             }
 
             let mut scale = self.layout.style.text_scale;
-            if cached_sugar.font_id == FontId(FONT_ID_ICONS) {
-                scale /= 2.0;
-            } else if cached_sugar.font_id == FontId(FONT_ID_UNICODE)
-                && cached_sugar.char_width == 1.
-            {
-                scale /= 1.5;
-            } else if cached_sugar.font_id == FontId(FONT_ID_SYMBOL)
-                && cached_sugar.char_width == 1.
-            {
-                scale /= 1.4;
+            if let Some(new_scale) = cached_sugar.monospaced_font_scale {
+                scale = new_scale;
             }
 
             let text = crate::components::text::Text {
@@ -328,7 +366,7 @@ impl Sugarloaf {
                 screen_position: (rect_pos_x, mod_text_y + self.text_y + mod_pos_y),
                 bounds: (width_bound, self.layout.sugarheight * self.ctx.scale),
                 text: vec![text],
-                layout: glyph_brush::Layout::default_single_line()
+                layout: glyph_brush::Layout::default()
                     .v_align(glyph_brush::VerticalAlign::Center)
                     .h_align(glyph_brush::HorizontalAlign::Left),
             };
@@ -409,9 +447,12 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn get_font_bounds(&mut self, content: char, font_id: FontId) -> (f32, f32) {
-        let scale = self.layout.style.text_scale;
-
+    pub fn get_font_bounds(
+        &mut self,
+        content: char,
+        font_id: FontId,
+        scale: f32,
+    ) -> (f32, f32) {
         let text = crate::components::text::Text {
             text: &content.to_owned().to_string(),
             scale: PxScale::from(scale),
@@ -483,8 +524,13 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
+                // Every time a font size change the cached bounds also changes
+                self.sugar_cache = HashMap::new();
+
+                let scale = self.layout.style.text_scale;
                 // Bounds are defined in runtime
-                self.font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR));
+                self.font_bound =
+                    self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), scale);
 
                 self.layout.sugarwidth = self.font_bound.0;
                 self.layout.sugarheight = self.font_bound.1;
