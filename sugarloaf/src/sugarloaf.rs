@@ -60,6 +60,7 @@ pub struct Sugarloaf {
     text_y: f32,
     font_bound: (f32, f32),
     font_name: String,
+    is_text_monospaced: bool,
 }
 
 const FONT_ID_REGULAR: usize = 0;
@@ -99,6 +100,8 @@ impl Sugarloaf {
 
         let font = Font::new(font_name.to_string());
 
+        let is_monospace = font.text.is_monospace;
+
         let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
             font.text.regular,
             font.text.italic,
@@ -129,6 +132,7 @@ impl Sugarloaf {
             text_y: 0.0,
             font_bound: (0.0, 0.0),
             layout,
+            is_text_monospaced: is_monospace,
         })
     }
 
@@ -175,6 +179,8 @@ impl Sugarloaf {
             log::info!("requested a font change {font_name}");
             let font = Font::new(font_name.to_string());
 
+            let is_monospace = font.text.is_monospace;
+
             // Clean font cache per instance
             self.sugar_cache = HashMap::new();
 
@@ -199,6 +205,7 @@ impl Sugarloaf {
             .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;
             self.font_name = font_name;
+            self.is_text_monospaced = is_monospace;
         }
         self
     }
@@ -264,7 +271,7 @@ impl Sugarloaf {
                 }
             }
 
-            FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) | FontId(FONT_ID_EMOJIS) => {
+            FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
                 let mut found = false;
                 let mut scale = self.layout.style.text_scale;
                 let target = if char_width > 1. {
@@ -285,6 +292,37 @@ impl Sugarloaf {
                     }
                 }
             }
+
+            FontId(FONT_ID_REGULAR) => {
+                if !self.is_text_monospaced {
+                    log::warn!("aligning non monospaced font {}", sugar.content);
+
+                    let mut found = false;
+                    let mut scale = self.layout.style.text_scale;
+                    let target = if char_width > 1. {
+                        self.layout.sugarwidth * 2.0
+                    } else {
+                        self.layout.sugarwidth
+                    };
+
+                    while !found && scale > 0.0 {
+                        let bounds = self.get_font_bounds(sugar.content, font_id, scale);
+                        let width = bounds.0 / self.layout.scale_factor;
+
+                        let height = bounds.1 / self.layout.scale_factor;
+
+                        if width < target && height < self.layout.sugarheight {
+                            monospaced_font_scale = Some(scale);
+                            found = true;
+                        } else {
+                            scale -= 1.0;
+                        }
+                    }
+                }
+            }
+
+            // Emojis does not need since it's loaded as monospaced
+            // Text font only need for cases where it's not monospaced
             FontId(_) => {}
         }
 
@@ -527,8 +565,13 @@ impl Sugarloaf {
 
                 let scale = self.layout.style.text_scale;
                 // Bounds are defined in runtime
-                self.font_bound =
-                    self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), scale);
+                if self.is_text_monospaced {
+                    self.font_bound =
+                        self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), scale);
+                } else {
+                    self.font_bound =
+                        self.get_font_bounds('-', FontId(FONT_ID_REGULAR), scale);
+                }
 
                 self.layout.sugarwidth = self.font_bound.0;
                 self.layout.sugarheight = self.font_bound.1;
