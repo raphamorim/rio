@@ -355,6 +355,13 @@ async fn main() {
                 style: None,
                 decoration: None,
             },
+            Sugar {
+                content: '',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: None,
+                decoration: None,
+            },
         ];
 
         match event {
