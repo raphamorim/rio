@@ -11,6 +11,7 @@ use log::warn;
 
 #[derive(Debug, Clone)]
 pub struct ComposedFontArc {
+    pub is_monospace: bool,
     pub regular: FontArc,
     pub bold: FontArc,
     pub italic: FontArc,
@@ -39,6 +40,28 @@ fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
     Some(FontArc::new(
         FontVec::try_from_vec_and_index(copied_font?.to_vec(), 0).unwrap(),
     ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn find_monospace_variant(font_name: String) -> Option<font_kit::font::Font> {
+    if let Ok(system_fonts) =
+        SystemSource::new().select_family_by_name(&(font_name + " mono"))
+    {
+        let fonts = system_fonts.fonts();
+        if !fonts.is_empty() {
+            for font in fonts.iter() {
+                let font = font.load();
+                if let Ok(font) = font {
+                    let is_monospace = font.is_monospace();
+                    if is_monospace {
+                        return Some(font);
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 impl Font {
@@ -81,6 +104,7 @@ impl Font {
         }
 
         let mut text_fonts = ComposedFontArc {
+            is_monospace: true,
             bold: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
             bold_italic: FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
             extra_light: FontArc::try_from_slice(FONT_CASCADIAMONO_EXTRA_LIGHT).unwrap(),
@@ -109,11 +133,24 @@ impl Font {
                 SystemSource::new().select_family_by_name(&font_name)
             {
                 let fonts = system_fonts.fonts();
+                let mut has_variant = true;
                 if !fonts.is_empty() {
                     for font in fonts.iter() {
                         let font = font.load();
                         if let Ok(font) = font {
                             let meta = font.properties();
+                            let is_monospace = font.is_monospace();
+                            if has_variant {
+                                if let Some(_monospaced_font) =
+                                    find_monospace_variant(font_name.to_string())
+                                {
+                                    warn!("using a monospaced variant from the font: {font_name}\n");
+                                    return Font::new(font_name + " mono");
+                                } else {
+                                    has_variant = false;
+                                }
+                            }
+
                             match meta.style {
                                 Style::Normal => {
                                     //TODO: Find a way to use struct Weight
@@ -124,6 +161,7 @@ impl Font {
                                                 font_arc_from_font(font)
                                             {
                                                 text_fonts.regular = font_arc;
+                                                text_fonts.is_monospace = is_monospace;
                                             }
                                         }
                                         //BOLD
@@ -161,6 +199,10 @@ impl Font {
                                 _ => {}
                             }
                         }
+                    }
+
+                    if !text_fonts.is_monospace {
+                        warn!("using a non monospaced font: {font_name}\nSugarloaf will do the best can do for render it although please consider use a monospaced font");
                     }
 
                     return Font {
