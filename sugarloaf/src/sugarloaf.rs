@@ -225,6 +225,31 @@ impl Sugarloaf {
     }
 
     #[inline]
+    pub fn find_scale(
+        &mut self,
+        target_scale: f32,
+        content: char,
+        font_id: FontId,
+    ) -> Option<f32> {
+        let mut found = false;
+        let mut scale = self.layout.style.text_scale;
+        while !found && scale > 0.0 {
+            let width = self.get_font_bounds(content, font_id, scale).0
+                / self.layout.scale_factor;
+
+            if width <= target_scale {
+                found = true;
+            } else {
+                scale -= 1.0;
+            }
+        }
+
+        log::info!("find_scale: {:?} {:?} {}", content, font_id, scale);
+
+        return Some(scale);
+    }
+
+    #[inline]
     pub fn get_font_id(&mut self, sugar: &mut Sugar) -> CachedSugar {
         if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
             return *cached_sugar;
@@ -253,77 +278,44 @@ impl Sugarloaf {
         let mut monospaced_font_scale = None;
         let char_width = sugar.content.width().unwrap_or(1) as f32;
 
+        let mut scale_target: f32 = 0.;
+
         match font_id {
             // Icons will look for width 1
             FontId(FONT_ID_ICONS) => {
-                let mut found = false;
-                let mut scale = self.layout.style.text_scale;
-                while !found && scale > 0.0 {
-                    let width = self.get_font_bounds(sugar.content, font_id, scale).0
-                        / self.layout.scale_factor;
-
-                    if width <= self.layout.sugarwidth {
-                        monospaced_font_scale = Some(scale);
-                        found = true;
-                    } else {
-                        scale -= 1.0;
-                    }
-                }
+                scale_target = self.layout.sugarwidth;
             }
 
             FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
-                let mut found = false;
-                let mut scale = self.layout.style.text_scale;
-                let target = if char_width > 1. {
+                scale_target = if char_width > 1. {
                     self.layout.sugarwidth * 2.0
                 } else {
                     self.layout.sugarwidth
                 };
+            }
 
-                while !found && scale > 0.0 {
-                    let width = self.get_font_bounds(sugar.content, font_id, scale).0
-                        / self.layout.scale_factor;
-
-                    if width <= target {
-                        monospaced_font_scale = Some(scale);
-                        found = true;
-                    } else {
-                        scale -= 1.0;
-                    }
-                }
+            FontId(FONT_ID_EMOJIS) => {
+                scale_target = self.layout.sugarwidth * 2.0;
             }
 
             FontId(FONT_ID_REGULAR) => {
                 if !self.is_text_monospaced {
                     log::warn!("aligning non monospaced font {}", sugar.content);
-
-                    let mut found = false;
-                    let mut scale = self.layout.style.text_scale;
-                    let target = if char_width > 1. {
-                        self.layout.sugarwidth * 2.0
+                    scale_target = if char_width > 1. {
+                        self.layout.sugarwidth * 2.
                     } else {
                         self.layout.sugarwidth
                     };
-
-                    while !found && scale > 0.0 {
-                        let bounds = self.get_font_bounds(sugar.content, font_id, scale);
-                        let width = bounds.0 / self.layout.scale_factor;
-
-                        let height = bounds.1 / self.layout.scale_factor;
-
-                        if width < target && height < self.layout.sugarheight {
-                            monospaced_font_scale = Some(scale);
-                            found = true;
-                        } else {
-                            scale -= 1.0;
-                        }
-                    }
                 }
             }
 
             // Emojis does not need since it's loaded as monospaced
             // Text font only need for cases where it's not monospaced
             FontId(_) => {}
+        }
+
+        if scale_target != 0.0 {
+            monospaced_font_scale = self.find_scale(scale_target, sugar.content, font_id);
         }
 
         let cached_sugar = CachedSugar {
