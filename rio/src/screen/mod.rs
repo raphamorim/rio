@@ -122,6 +122,7 @@ impl Screen {
         let ime = Ime::new();
 
         let context_manager_config = context::ContextManagerConfig {
+            use_current_path: config.navigation.use_current_path,
             shell: config.shell.clone(),
             spawn_performer: true,
             use_fork: config.use_fork,

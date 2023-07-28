@@ -114,19 +114,20 @@ impl ScreenNavigation {
         self.texts = vec![];
 
         match self.mode {
-            NavigationMode::CollapsedTabs => self.collapsed_tabs(len),
+            NavigationMode::CollapsedTab => self.collapsed_tab(len),
+            #[cfg(target_os = "macos")]
             NavigationMode::Breadcrumb => self.breadcrumb(&titles, len),
-            NavigationMode::TopTabs => {
+            NavigationMode::TopTab => {
                 // self.render_top(sugarloaf, context_manager)
             }
-            NavigationMode::BottomTabs => {
+            NavigationMode::BottomTab => {
                 // self.render_top(sugarloaf, context_manager)
             }
         }
     }
 
     #[inline]
-    pub fn collapsed_tabs(&mut self, len: usize) {
+    pub fn collapsed_tab(&mut self, len: usize) {
         let mut initial_position = (self.width / self.scale) - PADDING_X_COLLAPSED_TABS;
         let position_modifier = 20.;
         for i in 0..len {
