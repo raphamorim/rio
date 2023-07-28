@@ -35,6 +35,7 @@ pub struct ContextManagerConfig {
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
     pub is_collapsed: bool,
+    pub use_current_path: bool
 }
 
 pub struct ContextManagerTitles {
@@ -213,6 +214,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             },
             spawn_performer: false,
             is_collapsed: true,
+            use_current_path: false,
         };
         let initial_context = ContextManager::create_context(
             (100, 100),
@@ -361,7 +363,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
             #[cfg(not(target_os = "windows"))]
             {
-                if cloned_config.working_dir.is_none() {
+                if cloned_config.use_current_path && cloned_config.working_dir.is_none() {
                     let current_context = self.current();
                     if let Ok(path) = teletypewriter::foreground_process_path(
                         *current_context.main_fd,

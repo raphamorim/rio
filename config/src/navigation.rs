@@ -4,12 +4,11 @@ use serde::Deserialize;
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     #[default]
-    CollapsedTabs,
+    CollapsedTab,
+    TopTab,
+    BottomTab,
+    #[cfg(target_os = "macos")]
     Breadcrumb,
-    TopTabs,
-    BottomTabs,
-    // TODO: Custom comes from plugin system
-    // Custom
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
@@ -30,15 +29,17 @@ pub struct Navigation {
     pub color_rules: Vec<String>,
     #[serde(default = "bool::default")]
     pub clickable: bool,
+    #[serde(default = "bool::default", rename = "use-current-path")]
+    pub use_current_path: bool,
 }
 
 impl Navigation {
     pub fn is_collapsed_mode(&self) -> bool {
-        self.mode == NavigationMode::CollapsedTabs
+        self.mode == NavigationMode::CollapsedTab
     }
 
     pub fn is_placed_on_bottom(&self) -> bool {
-        self.mode == NavigationMode::BottomTabs
+        self.mode == NavigationMode::BottomTab
     }
 }
 
@@ -55,14 +56,14 @@ mod tests {
     }
 
     #[test]
-    fn test_collapsed_tabs() {
+    fn test_collapsed_tab() {
         let content = r#"
             [navigation]
-            mode = 'CollapsedTabs'
+            mode = 'CollapsedTab'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTabs);
+        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_rules.is_empty());
     }
@@ -72,37 +73,44 @@ mod tests {
         let content = r#"
             [navigation]
             mode = 'Breadcrumb'
+            use-current-path = true
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
+        #[cfg(target_os = "macos")]
         assert_eq!(decoded.navigation.mode, NavigationMode::Breadcrumb);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
         assert!(!decoded.navigation.clickable);
+        assert!(decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_rules.is_empty());
     }
 
     #[test]
-    fn test_top_tabs() {
+    fn test_top_tab() {
         let content = r#"
             [navigation]
-            mode = 'TopTabs'
+            mode = 'TopTab'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::TopTabs);
+        assert_eq!(decoded.navigation.mode, NavigationMode::TopTab);
         assert!(!decoded.navigation.clickable);
+        assert!(!decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_rules.is_empty());
     }
 
     #[test]
-    fn testbottom_tabs() {
+    fn testbottom_tab() {
         let content = r#"
             [navigation]
-            mode = 'BottomTabs'
+            mode = 'BottomTab'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTabs);
+        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
         assert!(!decoded.navigation.clickable);
+        assert!(!decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_rules.is_empty());
     }
 }
