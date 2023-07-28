@@ -68,9 +68,22 @@ mod tests {
     }
 
     #[test]
+    fn test_breadcrumb() {
+        let content = r#"
+            [navigation]
+            mode = 'Breadcrumb'
+        "#;
+
+        let decoded = toml::from_str::<Root>(content).unwrap();
+        assert_eq!(decoded.navigation.mode, NavigationMode::Breadcrumb);
+        assert!(!decoded.navigation.clickable);
+        assert!(decoded.navigation.color_rules.is_empty());
+    }
+
+    #[test]
     fn test_top_tabs() {
         let content = r#"
-            [tabs]
+            [navigation]
             mode = 'TopTabs'
         "#;
 
@@ -83,7 +96,7 @@ mod tests {
     #[test]
     fn testbottom_tabs() {
         let content = r#"
-            [tabs]
+            [navigation]
             mode = 'BottomTabs'
         "#;
 

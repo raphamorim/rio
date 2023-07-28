@@ -66,7 +66,7 @@ async fn main() {
                     sugarloaf
                         .rescale(scale_factor as f32)
                         .resize(new_inner_size.width, new_inner_size.height)
-                        .pile_rect(vec![
+                        .pile_rects(vec![
                             Rect {
                                 position: [10.0, 10.0],
                                 color: [1.0, 1.0, 1.0, 1.0],
@@ -99,7 +99,7 @@ async fn main() {
             },
             Event::RedrawRequested { .. } => {
                 sugarloaf
-                    .pile_rect(vec![
+                    .pile_rects(vec![
                         Rect {
                             position: [10.0, 10.0],
                             color: [1.0, 1.0, 1.0, 1.0],
