@@ -308,11 +308,11 @@ where
     pub selection: Option<Selection>,
     #[allow(dead_code)]
     colors: List,
-    title: Option<String>,
+    pub title: String,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
     window_id: WindowId,
-    title_stack: Vec<Option<String>>,
+    title_stack: Vec<String>,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -340,7 +340,7 @@ impl<U: EventListener> Crosswords<U> {
             scroll_region,
             event_proxy,
             colors,
-            title: None,
+            title: String::from(""),
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
@@ -1326,7 +1326,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         if let Some(popped) = self.title_stack.pop() {
             log::trace!("Title '{:?}' popped from stack", popped);
-            self.set_title(popped);
+            self.set_title(Some(popped));
         }
     }
 
@@ -1444,8 +1444,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.inactive_grid.reset();
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
-        // self.title_stack = Vec::new();
-        self.title = None;
+        self.title_stack = Vec::new();
+        self.title = String::from("");
         self.selection = None;
         self.vi_mode_cursor = Default::default();
 
@@ -1524,13 +1524,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_title(&mut self, title: Option<String>) {
-        self.title = title;
-
-        let _title: String = match &self.title {
-            Some(title) => title.to_string(),
+        let title_str: String = match title {
+            Some(title) => title,
             None => String::from(""),
         };
-        // title
+        self.title = title_str;
     }
 
     #[inline]

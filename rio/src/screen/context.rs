@@ -267,10 +267,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
-                    let name = teletypewriter::foreground_process_name(
-                        *context.main_fd,
-                        context.shell_pid,
-                    );
+                    let terminal = context.terminal.lock();
+                    let name = if !terminal.title.is_empty() {
+                        terminal.title.to_string()
+                    } else {
+                        teletypewriter::foreground_process_name(
+                            *context.main_fd,
+                            context.shell_pid,
+                        )
+                    };
+                    drop(terminal);
                     id = id.to_owned() + &(format!("{}{};", i, name));
                     self.titles.set_key_val(i, name);
                 }

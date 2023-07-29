@@ -32,7 +32,7 @@ async fn main() {
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
         height as f32,
-        (10.0, 10.0),
+        (10.0, 10.0, 0.0),
         scale_factor as f32,
         font_size,
         1.0,
