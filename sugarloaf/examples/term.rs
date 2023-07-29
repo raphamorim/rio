@@ -58,8 +58,6 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    sugarloaf.calculate_bounds();
-
     event_loop.run_return(move |event, _, control_flow| {
         control_flow.set_wait();
 

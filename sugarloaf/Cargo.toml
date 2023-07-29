@@ -53,6 +53,13 @@ tokio = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"
+criterion = "0.5.1"
+futures = "0.3"
+
+[[bench]]
+name = "bench_sugar_pile"
+path = "benches/bench_sugar_pile.rs"
+harness = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3.61", features = [
