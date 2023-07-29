@@ -88,15 +88,15 @@ impl Screen {
             config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        // let mut y_diff = 0.0;
-        // if config.tabs.is_placed_on_bottom {
-        //     y_diff += config.font_size
-        // }
+        let mut padding_y_bottom = 0.0;
+        if config.navigation.is_placed_on_bottom() {
+            padding_y_bottom += config.font_size
+        }
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
-            (config.padding_x, constants::PADDING_Y),
+            (config.padding_x, constants::PADDING_Y, padding_y_bottom),
             scale as f32,
             config.font_size,
             config.line_height,
@@ -178,12 +178,12 @@ impl Screen {
         let col_fac = (layout.sugarwidth * self.sugarloaf.layout.scale_factor) as usize;
 
         let col = self.mouse.x.saturating_sub(
-            (layout.padding.x * 2. * self.sugarloaf.layout.scale_factor) as usize,
+            (layout.margin.x * 2. * self.sugarloaf.layout.scale_factor) as usize,
         ) / col_fac;
         let col = std::cmp::min(Column(col), Column(layout.columns));
 
         let line = self.mouse.y.saturating_sub(
-            (layout.padding.y * 2. * self.sugarloaf.layout.scale_factor) as usize,
+            (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
         ) / line_fac;
         let calc_line = std::cmp::min(line, layout.lines - 1);
         let line = Line(calc_line as i32) - (display_offset);
@@ -614,27 +614,27 @@ impl Screen {
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
         let width = self.sugarloaf.layout.style.text_scale / 2.0;
-        x <= (self.sugarloaf.layout.padding.x
+        x <= (self.sugarloaf.layout.margin.x
             + self.sugarloaf.layout.columns as f32 * width) as usize
-            && x > self.sugarloaf.layout.padding.x as usize
-            && y <= (self.sugarloaf.layout.padding.y
+            && x > self.sugarloaf.layout.margin.x as usize
+            && y <= (self.sugarloaf.layout.margin.top_y
                 + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_size)
                 as usize
-            && y > self.sugarloaf.layout.padding.y as usize
+            && y > self.sugarloaf.layout.margin.top_y as usize
     }
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
         let width = (self.sugarloaf.layout.style.text_scale / 2.0) as usize;
 
-        let cell_x = x.saturating_sub(self.sugarloaf.layout.padding.x as usize) % width;
+        let cell_x = x.saturating_sub(self.sugarloaf.layout.margin.x as usize) % width;
         let half_cell_width = width / 2;
 
         let additional_padding = (self.sugarloaf.layout.width
-            - self.sugarloaf.layout.padding.x * 2.)
+            - self.sugarloaf.layout.margin.x * 2.)
             % width as f32;
         let end_of_grid = self.sugarloaf.layout.width
-            - self.sugarloaf.layout.padding.x
+            - self.sugarloaf.layout.margin.x
             - additional_padding;
 
         if cell_x > half_cell_width

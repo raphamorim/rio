@@ -31,6 +31,8 @@ pub struct Navigation {
     pub clickable: bool,
     #[serde(default = "bool::default", rename = "use-current-path")]
     pub use_current_path: bool,
+    #[serde(default = "bool::default", rename = "use-terminal-title")]
+    pub use_terminal_title: bool,
 }
 
 impl Navigation {
