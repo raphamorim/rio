@@ -57,21 +57,20 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
                 window.request_redraw();
             }
             Event::RedrawRequested { .. } => {
-                let mut pile = vec![];
-                for _i in 0..NUM {
-                    pile.push(Sugar {
-                        content: 'a',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: [0.0, 1.0, 1.0, 1.0],
-                        style: None,
-                        decoration: None,
-                    });
-                }
-
-                sugarloaf.stack(pile);
-
                 c.bench_function("bench_sugar_pile_with_screen", |b| {
                     b.iter(|| {
+                        let mut pile = vec![];
+                        for _i in 0..NUM {
+                            pile.push(Sugar {
+                                content: 'a',
+                                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                                background_color: [0.0, 1.0, 1.0, 1.0],
+                                style: None,
+                                decoration: None,
+                            });
+                        }
+
+                        sugarloaf.stack(pile);
                         sugarloaf.render();
                     })
                 });

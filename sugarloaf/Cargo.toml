@@ -61,6 +61,11 @@ name = "bench_sugar_pile"
 path = "benches/bench_sugar_pile.rs"
 harness = false
 
+[[bench]]
+name = "bench_sugar_pile_with_screen"
+path = "benches/bench_sugar_pile_with_screen.rs"
+harness = false
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3.61", features = [
     "Location",
