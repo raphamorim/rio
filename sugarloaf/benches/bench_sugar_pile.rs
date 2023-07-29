@@ -10,7 +10,7 @@ use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
 fn bench_sugar_pile(c: &mut Criterion) {
-    const NUM: usize = 1_00_000;
+    const NUM: usize = 1_000_000;
 
     let event_loop = EventLoop::new();
     let width = 1200.0;
