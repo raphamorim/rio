@@ -35,7 +35,7 @@ pub struct ContextManagerConfig {
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
     pub is_collapsed: bool,
-    pub use_current_path: bool
+    pub use_current_path: bool,
 }
 
 pub struct ContextManagerTitles {
@@ -49,7 +49,7 @@ impl ContextManagerTitles {
         let last_title_update = Instant::now();
         ContextManagerTitles {
             titles: HashMap::from([(idx, title_str.to_owned())]),
-            key: format!("{}{};", idx, title_str.to_owned()),
+            key: format!("{}{};", idx, title_str),
             last_title_update,
         }
     }
@@ -261,18 +261,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
-            self.titles.last_title_update = Instant::now();
-            let mut id = String::from("");
-            for (i, context) in self.contexts.iter_mut().enumerate() {
-                let name = teletypewriter::foreground_process_name(
-                    *context.main_fd,
-                    context.shell_pid,
-                );
-                id = id.to_owned() + &(format!("{}{};", i, name));
-                self.titles.set_key_val(i, name);
+        #[cfg(not(target_os = "windows"))]
+        {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+                self.titles.last_title_update = Instant::now();
+                let mut id = String::from("");
+                for (i, context) in self.contexts.iter_mut().enumerate() {
+                    let name = teletypewriter::foreground_process_name(
+                        *context.main_fd,
+                        context.shell_pid,
+                    );
+                    id = id.to_owned() + &(format!("{}{};", i, name));
+                    self.titles.set_key_val(i, name);
+                }
+                self.titles.set_key(id);
             }
-            self.titles.set_key(id);
         }
     }
 
