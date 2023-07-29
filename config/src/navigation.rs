@@ -43,6 +43,10 @@ impl Navigation {
     pub fn is_placed_on_bottom(&self) -> bool {
         self.mode == NavigationMode::BottomTab
     }
+
+    pub fn is_placed_on_top(&self) -> bool {
+        self.mode == NavigationMode::TopTab
+    }
 }
 
 #[cfg(test)]
