@@ -7,7 +7,7 @@ pub enum NavigationMode {
     CollapsedTab,
     TopTab,
     BottomTab,
-    #[cfg(target_os = "macos")]
+    #[cfg(not(windows))]
     Breadcrumb,
 }
 
@@ -69,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
+    #[cfg(not(windows))]
     fn test_breadcrumb() {
         let content = r#"
             [navigation]
