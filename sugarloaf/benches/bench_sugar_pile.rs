@@ -51,6 +51,8 @@ fn bench_sugar_pile(c: &mut Criterion) {
     c.bench_function("bench_sugar_pile", |b| {
         b.iter(|| {
             let mut pile = vec![];
+            let mut pile2 = vec![];
+            let mut pile3 = vec![];
             for _i in 0..NUM {
                 pile.push(Sugar {
                     content: ' ',
@@ -59,9 +61,27 @@ fn bench_sugar_pile(c: &mut Criterion) {
                     style: None,
                     decoration: None,
                 });
+
+                pile2.push(Sugar {
+                    content: '«',
+                    foreground_color: [0.0, 0.0, 0.0, 1.0],
+                    background_color: [0.0, 1.0, 1.0, 1.0],
+                    style: None,
+                    decoration: None,
+                });
+
+                pile3.push(Sugar {
+                    content: '≥',
+                    foreground_color: [0.0, 0.0, 0.0, 1.0],
+                    background_color: [0.0, 1.0, 1.0, 1.0],
+                    style: None,
+                    decoration: None,
+                });
             }
 
             sugarloaf.stack(pile);
+            sugarloaf.stack(pile2);
+            sugarloaf.stack(pile3);
 
             sugarloaf.render();
         })
