@@ -195,6 +195,7 @@ impl SugarloafLayout {
         font_size: f32,
         line_height: f32,
         margin_x: f32,
+        margin_y_bottom: f32,
     ) -> &mut Self {
         let mut should_apply_changes = false;
         if self.font_size != font_size {
@@ -210,6 +211,11 @@ impl SugarloafLayout {
 
         if self.margin.x != margin_x {
             self.margin.x = margin_x;
+            should_apply_changes = true;
+        }
+
+        if self.margin.bottom_y != margin_y_bottom {
+            self.margin.bottom_y = margin_y_bottom;
             should_apply_changes = true;
         }
 

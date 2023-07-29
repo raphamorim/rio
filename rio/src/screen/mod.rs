@@ -208,10 +208,16 @@ impl Screen {
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
+        let mut padding_y_bottom = 0.0;
+        if config.navigation.is_placed_on_bottom() {
+            padding_y_bottom += config.font_size
+        }
+
         self.sugarloaf.layout.recalculate(
             config.font_size,
             config.line_height,
             config.padding_x,
+            padding_y_bottom,
         );
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
