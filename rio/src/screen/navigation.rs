@@ -127,11 +127,11 @@ impl ScreenNavigation {
             NavigationMode::Breadcrumb => self.breadcrumb(titles, len),
             NavigationMode::TopTab => {
                 let position_y = 0.0;
-                self.tab(titles, len, position_y);
+                self.tab(titles, len, position_y, 11.);
             }
             NavigationMode::BottomTab => {
                 let position_y = (self.height / self.scale) - 20.;
-                self.tab(titles, len, position_y);
+                self.tab(titles, len, position_y, 9.);
             }
         }
     }
@@ -301,7 +301,13 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn tab(&mut self, titles: &HashMap<usize, String>, len: usize, position_y: f32) {
+    pub fn tab(
+        &mut self,
+        titles: &HashMap<usize, String>,
+        len: usize,
+        position_y: f32,
+        text_pos_mod: f32,
+    ) {
         let mut initial_position_x = 0.;
 
         let bg_color = self.colors.active;
@@ -344,7 +350,7 @@ impl ScreenNavigation {
             };
 
             self.texts.push(Text::new(
-                (initial_position_x + 4., position_y + 10.0),
+                (initial_position_x + 4., position_y + text_pos_mod),
                 format!("{}.{}", i + 1, name),
                 0,
                 14.,
