@@ -115,7 +115,7 @@ impl ScreenNavigation {
 
         match self.mode {
             NavigationMode::CollapsedTab => self.collapsed_tab(len),
-            #[cfg(target_os = "macos")]
+            #[cfg(not(windows))]
             NavigationMode::Breadcrumb => self.breadcrumb(titles, len),
             NavigationMode::TopTab => {
                 // self.render_top(sugarloaf, context_manager)
