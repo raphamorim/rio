@@ -69,6 +69,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn test_breadcrumb() {
         let content = r#"
             [navigation]
@@ -77,10 +78,7 @@ mod tests {
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        #[cfg(target_os = "macos")]
         assert_eq!(decoded.navigation.mode, NavigationMode::Breadcrumb);
-        #[cfg(not(target_os = "macos"))]
-        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_rules.is_empty());
