@@ -10,7 +10,7 @@ use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
 fn bench_sugar_pile(c: &mut Criterion) {
-    const NUM: usize = 1_000_000;
+    const NUM: usize = 1_00_000;
 
     let event_loop = EventLoop::new();
     let width = 1200.0;
@@ -48,21 +48,21 @@ fn bench_sugar_pile(c: &mut Criterion) {
     sugarloaf.set_background_color(wgpu::Color::RED);
     sugarloaf.calculate_bounds();
 
-    let mut pile = vec![];
-    for _i in 0..NUM {
-        pile.push(Sugar {
-            content: ' ',
-            foreground_color: [0.0, 0.0, 0.0, 1.0],
-            background_color: [0.0, 1.0, 1.0, 1.0],
-            style: None,
-            decoration: None,
-        });
-    }
-
-    sugarloaf.stack(pile);
-
     c.bench_function("bench_sugar_pile", |b| {
         b.iter(|| {
+            let mut pile = vec![];
+            for _i in 0..NUM {
+                pile.push(Sugar {
+                    content: ' ',
+                    foreground_color: [0.0, 0.0, 0.0, 1.0],
+                    background_color: [0.0, 1.0, 1.0, 1.0],
+                    style: None,
+                    decoration: None,
+                });
+            }
+
+            sugarloaf.stack(pile);
+
             sugarloaf.render();
         })
     });
