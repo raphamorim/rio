@@ -339,25 +339,29 @@ impl Sugarloaf {
         }
 
         let size = stack.len();
-
-        // for sugar in stack.iter_mut() {
         for i in 0..size {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
+            let rect_pos_x = self.layout.style.screen_position.0 + x;
 
+            let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
             if i < size - 1 {
-                if stack[i].content == stack[i + 1].content
+                if cached_sugar.char_width <= 1. &&
+                    stack[i].content == stack[i + 1].content
+                    && stack[i].foreground_color == stack[i + 1].foreground_color
+                    && stack[i].background_color == stack[i + 1].background_color
                     && stack[i].decoration.is_none()
                     && stack[i + 1].decoration.is_none() {
-                    repeated.set(&stack[i], self.layout.style.screen_position.0 + x, mod_text_y + self.text_y + mod_pos_y);
+
+                    repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
                     x += add_pos_x;
                     continue;
                 }
             }
 
-            let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-            let mut font_id = cached_sugar.font_id;
+            repeated.set_reset_on_next();
 
+            let mut font_id = cached_sugar.font_id;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
                 if let Some(style) = &stack[i].style {
                     if style.is_bold_italic {
@@ -380,11 +384,8 @@ impl Sugarloaf {
                 scale = new_scale;
             }
 
-            let rect_pos_x = self.layout.style.screen_position.0 + x;
             let rect_pos_y = self.text_y + mod_pos_y;
             let width_bound = sugar_width * sugar_char_width;
-
-            repeated.set_reset_on_next();
 
             let mut quantity = 1;
             if repeated.count() > 0 {
@@ -392,7 +393,7 @@ impl Sugarloaf {
             }
 
             let sugar_str = if quantity > 1 {
-                repeated.content_str.to_string()
+                repeated.content_str.to_owned()
             } else {
                 stack[i].content.to_string()
             };
@@ -447,7 +448,7 @@ impl Sugarloaf {
             self.rects.push(Rect {
                 position: [scaled_rect_pos_x, scaled_rect_pos_y],
                 color: bg_color,
-                size: [width_bound, self.layout.sugarheight],
+                size: [width_bound * quantity as f32, self.layout.sugarheight],
             });
 
             if let Some(decoration) = &stack[i].decoration {
@@ -506,13 +507,9 @@ impl Sugarloaf {
             x += add_pos_x;
         }
 
-        let start = std::time::Instant::now();
         for section in sections {
             self.text_brush.queue(&section);
         }
-        let duration = start.elapsed();
-        println!("Time elapsed in text_brush.queue() is: {:?}", duration);
-
         self.text_y += self.font_bound.1;
     }
 
