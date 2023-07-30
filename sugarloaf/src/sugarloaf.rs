@@ -1,8 +1,7 @@
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::Sugar;
-use crate::core::SugarStack;
+use crate::core::{Sugar, SugarStack, RepeatedSugar};
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
@@ -325,19 +324,42 @@ impl Sugarloaf {
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
         let mut x = 0.;
+        let mut sections = vec![];
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
 
         let sugar_x = self.layout.sugarwidth * self.ctx.scale;
         let sugar_width = self.layout.sugarwidth * 2.;
-        for sugar in stack.iter_mut() {
+
+        let mut repeated = RepeatedSugar::new(0);
+
+        let text_bound = self.layout.sugarheight * self.ctx.scale;
+        if self.text_y == 0.0 {
+            self.text_y = self.layout.style.screen_position.1;
+        }
+
+        let size = stack.len();
+
+        // for sugar in stack.iter_mut() {
+        for i in 0..size {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
-            let cached_sugar: CachedSugar = self.get_font_id(sugar);
+
+            if i < size - 1 {
+                if stack[i].content == stack[i + 1].content
+                    && stack[i].decoration.is_none()
+                    && stack[i + 1].decoration.is_none() {
+                    repeated.set(&stack[i], self.layout.style.screen_position.0 + x, mod_text_y + self.text_y + mod_pos_y);
+                    x += add_pos_x;
+                    continue;
+                }
+            }
+
+            let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
             let mut font_id = cached_sugar.font_id;
 
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-                if let Some(style) = &sugar.style {
+                if let Some(style) = &stack[i].style {
                     if style.is_bold_italic {
                         font_id = FontId(FONT_ID_BOLD_ITALIC);
                     } else if style.is_bold {
@@ -353,49 +375,82 @@ impl Sugarloaf {
                 add_pos_x += sugar_x;
             }
 
-            if self.text_y == 0.0 {
-                self.text_y = self.layout.style.screen_position.1;
-            }
-
             let mut scale = self.layout.style.text_scale;
             if let Some(new_scale) = cached_sugar.monospaced_font_scale {
                 scale = new_scale;
             }
 
-            let text = crate::components::text::Text {
-                text: &sugar.content.to_owned().to_string(),
-                scale: PxScale::from(scale),
-                font_id,
-                extra: crate::components::text::Extra {
-                    color: sugar.foreground_color,
-                    z: 0.0,
-                },
-            };
-
             let rect_pos_x = self.layout.style.screen_position.0 + x;
             let rect_pos_y = self.text_y + mod_pos_y;
             let width_bound = sugar_width * sugar_char_width;
 
-            let section = &crate::components::text::Section {
-                screen_position: (rect_pos_x, mod_text_y + self.text_y + mod_pos_y),
-                bounds: (width_bound, self.layout.sugarheight * self.ctx.scale),
+            repeated.set_reset_on_next();
+
+            let mut quantity = 1;
+            if repeated.count() > 0 {
+                quantity += repeated.count();
+            }
+
+            let sugar_str = if quantity > 1 {
+                repeated.content_str.to_string()
+            } else {
+                stack[i].content.to_string()
+            };
+
+            let fg_color = if quantity > 1 {
+                repeated.foreground_color
+            } else {
+                stack[i].foreground_color
+            };
+
+            let bg_color = if quantity > 1 {
+                repeated.background_color
+            } else {
+                stack[i].background_color
+            };
+
+            let text = crate::components::text::OwnedText {
+                text: sugar_str,
+                scale: PxScale::from(scale),
+                font_id,
+                extra: crate::components::text::Extra {
+                    color: fg_color,
+                    z: 0.0,
+                },
+            };
+
+            let section_pos_x = if quantity > 1 {
+                repeated.pos_x
+            } else {
+                rect_pos_x
+            };
+
+            let section_pos_y = if quantity > 1 {
+                repeated.pos_y
+            } else {
+                mod_text_y + self.text_y + mod_pos_y
+            };
+
+            let section = crate::components::text::OwnedSection {
+                screen_position: (section_pos_x, section_pos_y),
+                bounds: (width_bound * quantity as f32, text_bound),
                 text: vec![text],
-                layout: glyph_brush::Layout::default()
+                layout: glyph_brush::Layout::default_single_line()
                     .v_align(glyph_brush::VerticalAlign::Center)
                     .h_align(glyph_brush::HorizontalAlign::Left),
             };
 
-            self.text_brush.queue(section);
+            sections.push(section);
 
-            let scaled_rect_pos_x = rect_pos_x / self.ctx.scale;
+            let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
             let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
             self.rects.push(Rect {
                 position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                color: sugar.background_color,
+                color: bg_color,
                 size: [width_bound, self.layout.sugarheight],
             });
 
-            if let Some(decoration) = &sugar.decoration {
+            if let Some(decoration) = &stack[i].decoration {
                 // TODO:
                 //  let dec_position_y = match decoration.position.1 {
                 //     SugarDecorationPositionY::Bottom(pos_decoration_y) => {
@@ -444,8 +499,19 @@ impl Sugarloaf {
                 // }
             }
 
+            if repeated.reset_on_next() {
+                repeated.reset();
+            }
+
             x += add_pos_x;
         }
+
+        let start = std::time::Instant::now();
+        for section in sections {
+            self.text_brush.queue(&section);
+        }
+        let duration = start.elapsed();
+        println!("Time elapsed in text_brush.queue() is: {:?}", duration);
 
         self.text_y += self.font_bound.1;
     }

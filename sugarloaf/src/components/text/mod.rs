@@ -121,7 +121,7 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     /// Adds an additional font to the one(s) initially added on build.
     ///
     /// Returns a new [`FontId`](struct.FontId.html) to reference this font.
-    pub fn _add_font(&mut self, font: F) -> FontId {
+    pub fn add_font(&mut self, font: F) -> FontId {
         self.glyph_brush.add_font(font)
     }
 }
