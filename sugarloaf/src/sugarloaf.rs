@@ -1,7 +1,7 @@
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{Sugar, SugarStack, RepeatedSugar};
+use crate::core::{RepeatedSugar, Sugar, SugarStack};
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
@@ -345,18 +345,17 @@ impl Sugarloaf {
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
             let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-            if i < size - 1 {
-                if cached_sugar.char_width <= 1. &&
-                    stack[i].content == stack[i + 1].content
-                    && stack[i].foreground_color == stack[i + 1].foreground_color
-                    && stack[i].background_color == stack[i + 1].background_color
-                    && stack[i].decoration.is_none()
-                    && stack[i + 1].decoration.is_none() {
-
-                    repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
-                    x += add_pos_x;
-                    continue;
-                }
+            if i < size - 1
+                && cached_sugar.char_width <= 1.
+                && stack[i].content == stack[i + 1].content
+                && stack[i].foreground_color == stack[i + 1].foreground_color
+                && stack[i].background_color == stack[i + 1].background_color
+                && stack[i].decoration.is_none()
+                && stack[i + 1].decoration.is_none()
+            {
+                repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
+                x += add_pos_x;
+                continue;
             }
 
             repeated.set_reset_on_next();
