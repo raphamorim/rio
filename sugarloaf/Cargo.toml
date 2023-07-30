@@ -34,13 +34,6 @@ bytemuck = { workspace = true }
 winit = { workspace = true }
 glyph_brush = "0.7.7"
 log = { workspace = true }
-console_error_panic_hook = { workspace = true }
-console_log = { workspace = true }
-js-sys = "0.3.61"
-wasm-bindgen = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
-wasm-bindgen-test = { workspace = true }
-web-sys = "0.3.61"
 unicode-width = "0.1.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -67,6 +60,12 @@ path = "benches/bench_sugar_pile_with_screen.rs"
 harness = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+js-sys = "0.3.61"
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+wasm-bindgen-test = { workspace = true }
 web-sys = { version = "0.3.61", features = [
     "Location",
     "Document",
