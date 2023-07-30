@@ -2,16 +2,20 @@
 
 ## In progress
 
-- Introduce configurable navigation with the following options: `CollapsedTabs` (default), `Breadcrumb`, `TopTabs` and `BottomTabs`.
+- Introduce configurable navigation with the following options: `CollapsedTab` (default), `Breadcrumb`, `TopTab` and `BottomTab`.
 
 An example of configuration:
 
 ```toml
 [navigation]
-mode = "Breadcrumb"
+mode = "BottomTab"
 use-current-path = true
+clickable = false
 ```
 
+- Performance improvements with Sugarloaf de-duplication of input data.
+	- Before: `~253.5µs`.
+	- Now: `~51.5µs`.
 - Introduce `navigation.use-current-path` which sets if a tab/breacrumb should be open from the current context path.
 - Fix rendering unicode with 1 width glyphs (fix [#160](https://github.com/raphamorim/rio/issues/160)).
 - Increased max tabs from 9 to 72.
