@@ -310,10 +310,9 @@ impl ScreenNavigation {
     ) {
         let mut initial_position_x = 0.;
 
-        let bg_color = self.colors.active;
         let renderable = Rect {
             position: [initial_position_x, position_y],
-            color: bg_color,
+            color: self.colors.inactive,
             size: [self.width * (self.scale + 1.0), 22.0],
         };
 
@@ -328,12 +327,12 @@ impl ScreenNavigation {
         // }
 
         for i in tabs {
-            let mut bg_color = self.colors.active;
-            let mut foreground_color = self.colors.inactive;
+            let mut bg_color = self.colors.inactive;
+            let mut foreground_color = self.colors.active;
 
             if i == self.current {
-                foreground_color = self.colors.active;
-                bg_color = self.colors.inactive;
+                foreground_color = self.colors.inactive;
+                bg_color = self.colors.active;
             }
 
             let mut name = String::from("<new tab>");
