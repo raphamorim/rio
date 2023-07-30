@@ -9,7 +9,7 @@ pub struct Sugar {
 
 #[derive(Debug)]
 pub struct RepeatedSugar {
-    pub content: char,
+    pub content: Option<char>,
     pub content_str: String,
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
@@ -24,7 +24,7 @@ pub struct RepeatedSugar {
 impl RepeatedSugar {
     pub fn new(quantity: usize) -> RepeatedSugar {
         RepeatedSugar {
-            content: ' ',
+            content: None,
             content_str: String::from(""),
             foreground_color: [0.0, 0.0, 0.0, 0.0],
             background_color: [0.0, 0.0, 0.0, 0.0],
@@ -49,7 +49,7 @@ impl RepeatedSugar {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.content = ' ';
+        self.content = None;
         self.content_str = String::from("");
         self.foreground_color = [0.0, 0.0, 0.0, 0.0];
         self.background_color = [0.0, 0.0, 0.0, 0.0];
@@ -59,13 +59,14 @@ impl RepeatedSugar {
 
     #[inline]
     pub fn set(&mut self, sugar: &Sugar, pos_x: f32, pos_y: f32) {
-        self.content = sugar.content;
+        self.content = Some(sugar.content);
         self.content_str += &sugar.content.to_string();
         self.foreground_color = sugar.foreground_color;
         self.background_color = sugar.background_color;
         if self.quantity == 0 {
             self.pos_x = pos_x;
             self.pos_y = pos_y;
+            self.content_str += &sugar.content.to_string();
         }
         self.quantity += 1;
     }

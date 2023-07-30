@@ -428,10 +428,7 @@ impl State {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack(row, has_cursor);
-                let start = std::time::Instant::now();
                 sugarloaf.stack(sugar_stack);
-                let duration = start.elapsed();
-                println!("Time elapsed in create_sugar_stack() is: {:?}", duration);
             }
         }
 

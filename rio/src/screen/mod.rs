@@ -752,7 +752,6 @@ impl Screen {
 
         self.state.set_ime(self.ime.preedit());
 
-        let start = std::time::Instant::now();
         self.state.update(
             visible_rows,
             cursor,
@@ -760,8 +759,6 @@ impl Screen {
             &self.context_manager,
             display_offset as i32,
         );
-        let duration = start.elapsed();
-        println!("Time elapsed in update() is: {:?}", duration);
 
         self.sugarloaf.render();
     }
