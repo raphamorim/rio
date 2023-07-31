@@ -93,10 +93,22 @@ impl Screen {
             padding_y_bottom += config.font_size
         }
 
+        #[cfg(target_os = "macos")]
+        let padding_y_top = constants::PADDING_Y;
+        #[cfg(not(target_os = "macos"))]
+        let mut padding_y_top = constants::PADDING_Y;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if config.navigation.is_placed_on_top() {
+                padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
+            }
+        }
+
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
-            (config.padding_x, constants::PADDING_Y, padding_y_bottom),
+            (config.padding_x, padding_y_top, padding_y_bottom),
             scale as f32,
             config.font_size,
             config.line_height,
@@ -121,13 +133,18 @@ impl Screen {
         let bindings = bindings::default_key_bindings(config.bindings.keys.clone());
         let ime = Ime::new();
 
+        let is_collapsed = config.navigation.is_collapsed_mode();
         let context_manager_config = context::ContextManagerConfig {
             use_current_path: config.navigation.use_current_path,
             shell: config.shell.clone(),
             spawn_performer: true,
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
-            is_collapsed: config.navigation.is_collapsed_mode(),
+            is_collapsed,
+            // When navigation is collapsed and does not contain any color rule
+            // does not make sense fetch for foreground process names
+            should_update_titles: !(is_collapsed
+                && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),

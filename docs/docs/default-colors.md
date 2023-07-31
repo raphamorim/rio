@@ -1,7 +1,7 @@
 ---
 layout: docs
 class: docs
-title: 'Documentation'
+title: 'Default colors'
 language: 'en'
 ---
 
@@ -55,4 +55,4 @@ light-yellow = '#FDF170'
 
 --
 
-[Move to tabs ->](/rio/docs/tabs#tabs)
+[Move to navigation ->](/rio/docs/navigation#navigation)

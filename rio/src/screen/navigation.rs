@@ -46,12 +46,14 @@ pub struct ScreenNavigation {
     width: f32,
     height: f32,
     scale: f32,
+    color_automation: HashMap<String, [f32; 4]>,
 }
 
 impl ScreenNavigation {
     pub fn new(
         mode: NavigationMode,
         colors: [[f32; 4]; 3],
+        color_automation: HashMap<String, [f32; 4]>,
         width: f32,
         height: f32,
         scale: f32,
@@ -69,6 +71,7 @@ impl ScreenNavigation {
             rects: vec![],
             texts: vec![],
             keys: String::from(""),
+            color_automation,
             current: 0,
             colors,
             width,
@@ -83,7 +86,7 @@ impl ScreenNavigation {
         dimensions: (f32, f32),
         scale: f32,
         keys: &str,
-        titles: &HashMap<usize, String>,
+        titles: &HashMap<usize, [String; 2]>,
         current: usize,
         len: usize,
     ) {
@@ -122,7 +125,7 @@ impl ScreenNavigation {
         self.texts = vec![];
 
         match self.mode {
-            NavigationMode::CollapsedTab => self.collapsed_tab(len),
+            NavigationMode::CollapsedTab => self.collapsed_tab(titles, len),
             #[cfg(not(windows))]
             NavigationMode::Breadcrumb => self.breadcrumb(titles, len),
             NavigationMode::TopTab => {
@@ -137,7 +140,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn collapsed_tab(&mut self, len: usize) {
+    pub fn collapsed_tab(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
         if len <= 1 {
             return;
         }
@@ -151,6 +154,13 @@ impl ScreenNavigation {
                 color = self.colors.active;
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
+
+            if let Some(name_idx) = titles.get(&i) {
+                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                    color = *color_overwrite;
+                }
+            }
+
             let renderable = Rect {
                 position: [initial_position, 0.0],
                 color,
@@ -162,7 +172,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn breadcrumb(&mut self, titles: &HashMap<usize, String>, len: usize) {
+    pub fn breadcrumb(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
         let mut initial_position = (self.width / self.scale) - 100.;
         let position_modifier = 80.;
         let mut min_view = 9;
@@ -177,7 +187,7 @@ impl ScreenNavigation {
 
         let mut main_name = String::from("~");
         if let Some(main_name_idx) = titles.get(&current_index) {
-            main_name = main_name_idx.to_string();
+            main_name = main_name_idx[0].to_string();
         }
 
         if main_name.len() > 12 {
@@ -253,7 +263,7 @@ impl ScreenNavigation {
 
                 let mut name = String::from("~");
                 if let Some(name_idx) = titles.get(&iterator) {
-                    name = name_idx.to_string();
+                    name = name_idx[0].to_string();
                 }
 
                 if name.len() > 7 {
@@ -303,7 +313,7 @@ impl ScreenNavigation {
     #[inline]
     pub fn tab(
         &mut self,
-        titles: &HashMap<usize, String>,
+        titles: &HashMap<usize, [String; 2]>,
         len: usize,
         position_y: f32,
         text_pos_mod: f32,
@@ -327,25 +337,45 @@ impl ScreenNavigation {
         // }
 
         for i in tabs {
-            let mut bg_color = self.colors.inactive;
+            let mut background_color = self.colors.inactive;
             let mut foreground_color = self.colors.active;
 
             if i == self.current {
                 foreground_color = self.colors.inactive;
-                bg_color = self.colors.active;
+                background_color = self.colors.active;
             }
 
             let mut name = String::from("<new tab>");
             if let Some(name_idx) = titles.get(&i) {
-                name = name_idx.to_string();
+                if !name_idx[1].is_empty() {
+                    name = name_idx[1].to_string();
+                } else {
+                    name = name_idx[0].to_string();
+                }
+
+                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                    foreground_color = self.colors.inactive;
+                    background_color = *color_overwrite;
+                }
             }
 
-            let name_mod = (name.len() as f32) * 8.0;
+            let mut name_modifier = 100.;
+
+            if name.len() >= 20 {
+                name = name[0..20].to_string();
+                name_modifier += 80.;
+            } else if name.len() >= 15 {
+                name = name[0..15].to_string();
+                name_modifier += 40.;
+            } else if name.len() >= 10 {
+                name = name[0..10].to_string();
+                name_modifier += 20.;
+            }
 
             let renderable_item = Rect {
                 position: [initial_position_x, position_y],
-                color: bg_color,
-                size: [120. + name_mod + 30., 22.],
+                color: background_color,
+                size: [120. + name_modifier + 30., 22.],
             };
 
             self.texts.push(Text::new(
@@ -356,7 +386,7 @@ impl ScreenNavigation {
                 foreground_color,
             ));
 
-            initial_position_x += (name_mod) + 30.;
+            initial_position_x += name_modifier;
             self.rects.push(renderable_item);
         }
     }

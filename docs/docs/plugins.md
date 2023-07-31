@@ -1,7 +1,7 @@
 ---
 layout: docs
 class: docs
-title: 'Documentation'
+title: 'Plugins'
 language: 'en'
 ---
 
