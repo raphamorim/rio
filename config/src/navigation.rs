@@ -40,16 +40,17 @@ impl Navigation {
         self.mode == NavigationMode::CollapsedTab
     }
 
-    pub fn is_breadcrumb(&self) -> bool {
-        self.mode == NavigationMode::Breadcrumb
-    }
-
     pub fn is_placed_on_bottom(&self) -> bool {
         self.mode == NavigationMode::BottomTab
     }
 
     pub fn is_placed_on_top(&self) -> bool {
-        self.mode == NavigationMode::TopTab || self.mode == NavigationMode::Breadcrumb
+        #[cfg(windows)]
+        return self.mode == NavigationMode::TopTab;
+
+        #[cfg(not(windows))]
+        return self.mode == NavigationMode::TopTab
+            || self.mode == NavigationMode::Breadcrumb;
     }
 }
 
