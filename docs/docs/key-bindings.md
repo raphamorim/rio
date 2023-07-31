@@ -1,7 +1,7 @@
 ---
 layout: docs
 class: docs
-title: 'Documentation'
+title: 'Key Bindings'
 language: 'en'
 ---
 

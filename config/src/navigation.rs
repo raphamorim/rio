@@ -13,12 +13,12 @@ pub enum NavigationMode {
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
-    key: String,
+    pub program: String,
     #[serde(
         deserialize_with = "deserialize_to_arr",
         default = "colors::defaults::tabs"
     )]
-    color: ColorArray,
+    pub color: ColorArray,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Deserialize)]
@@ -129,7 +129,7 @@ mod tests {
             [navigation]
             mode = 'CollapsedTab'
             color-automation = [
-                { key = 'vim', color = '#333333' }
+                { program = 'vim', color = '#333333' }
             ]
         "#;
 
@@ -139,7 +139,7 @@ mod tests {
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
-            decoded.navigation.color_automation[0].key,
+            decoded.navigation.color_automation[0].program,
             "vim".to_string()
         );
         assert_eq!(
@@ -154,8 +154,8 @@ mod tests {
             [navigation]
             mode = 'BottomTab'
             color-automation = [
-                { key = 'ssh', color = '#F1F1F1' },
-                { key = 'tmux', color = '#333333' },
+                { program = 'ssh', color = '#F1F1F1' },
+                { program = 'tmux', color = '#333333' },
             ]
         "#;
 
@@ -165,7 +165,7 @@ mod tests {
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
-            decoded.navigation.color_automation[0].key,
+            decoded.navigation.color_automation[0].program,
             "ssh".to_string()
         );
         assert_eq!(
@@ -173,7 +173,7 @@ mod tests {
             hex_to_color_arr("#F1F1F1")
         );
         assert_eq!(
-            decoded.navigation.color_automation[1].key,
+            decoded.navigation.color_automation[1].program,
             "tmux".to_string()
         );
         assert_eq!(
