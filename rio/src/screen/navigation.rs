@@ -83,7 +83,7 @@ impl ScreenNavigation {
         dimensions: (f32, f32),
         scale: f32,
         keys: &str,
-        titles: &HashMap<usize, String>,
+        titles: &HashMap<usize, [String; 2]>,
         current: usize,
         len: usize,
     ) {
@@ -162,7 +162,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn breadcrumb(&mut self, titles: &HashMap<usize, String>, len: usize) {
+    pub fn breadcrumb(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
         let mut initial_position = (self.width / self.scale) - 100.;
         let position_modifier = 80.;
         let mut min_view = 9;
@@ -177,7 +177,7 @@ impl ScreenNavigation {
 
         let mut main_name = String::from("~");
         if let Some(main_name_idx) = titles.get(&current_index) {
-            main_name = main_name_idx.to_string();
+            main_name = main_name_idx[0].to_string();
         }
 
         if main_name.len() > 12 {
@@ -253,7 +253,7 @@ impl ScreenNavigation {
 
                 let mut name = String::from("~");
                 if let Some(name_idx) = titles.get(&iterator) {
-                    name = name_idx.to_string();
+                    name = name_idx[0].to_string();
                 }
 
                 if name.len() > 7 {
@@ -303,7 +303,7 @@ impl ScreenNavigation {
     #[inline]
     pub fn tab(
         &mut self,
-        titles: &HashMap<usize, String>,
+        titles: &HashMap<usize, [String; 2]>,
         len: usize,
         position_y: f32,
         text_pos_mod: f32,
@@ -337,7 +337,11 @@ impl ScreenNavigation {
 
             let mut name = String::from("<new tab>");
             if let Some(name_idx) = titles.get(&i) {
-                name = name_idx.to_string();
+                if !name_idx[1].is_empty() {
+                    name = name_idx[1].to_string();
+                } else {
+                    name = name_idx[0].to_string();
+                }
             }
 
             let mut name_modifier = 100.;

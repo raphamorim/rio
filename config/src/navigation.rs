@@ -40,20 +40,24 @@ impl Navigation {
         self.mode == NavigationMode::CollapsedTab
     }
 
+    pub fn is_breadcrumb(&self) -> bool {
+        self.mode == NavigationMode::Breadcrumb
+    }
+
     pub fn is_placed_on_bottom(&self) -> bool {
         self.mode == NavigationMode::BottomTab
     }
 
     pub fn is_placed_on_top(&self) -> bool {
-        self.mode == NavigationMode::TopTab
+        self.mode == NavigationMode::TopTab || self.mode == NavigationMode::Breadcrumb
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use colors::hex_to_color_arr;
     use crate::navigation::{Navigation, NavigationMode};
+    use colors::hex_to_color_arr;
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -134,8 +138,14 @@ mod tests {
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
-        assert_eq!(decoded.navigation.color_automation[0].key, "vim".to_string());
-        assert_eq!(decoded.navigation.color_automation[0].color, hex_to_color_arr("#333333"));
+        assert_eq!(
+            decoded.navigation.color_automation[0].key,
+            "vim".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[0].color,
+            hex_to_color_arr("#333333")
+        );
     }
 
     #[test]
@@ -154,9 +164,21 @@ mod tests {
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
-        assert_eq!(decoded.navigation.color_automation[0].key, "ssh".to_string());
-        assert_eq!(decoded.navigation.color_automation[0].color, hex_to_color_arr("#F1F1F1"));
-        assert_eq!(decoded.navigation.color_automation[1].key, "tmux".to_string());
-        assert_eq!(decoded.navigation.color_automation[1].color, hex_to_color_arr("#333333"));
+        assert_eq!(
+            decoded.navigation.color_automation[0].key,
+            "ssh".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[0].color,
+            hex_to_color_arr("#F1F1F1")
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[1].key,
+            "tmux".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[1].color,
+            hex_to_color_arr("#333333")
+        );
     }
 }

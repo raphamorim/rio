@@ -34,28 +34,35 @@ pub struct ContextManagerConfig {
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
-    pub is_collapsed: bool,
     pub use_current_path: bool,
+    pub is_collapsed: bool,
 }
 
 pub struct ContextManagerTitles {
     last_title_update: Instant,
-    pub titles: HashMap<usize, String>,
+    pub titles: HashMap<usize, [String; 2]>,
     pub key: String,
 }
 
 impl ContextManagerTitles {
-    pub fn new(idx: usize, title_str: String) -> ContextManagerTitles {
+    pub fn new(
+        idx: usize,
+        program: String,
+        terminal_title: String,
+    ) -> ContextManagerTitles {
         let last_title_update = Instant::now();
         ContextManagerTitles {
-            titles: HashMap::from([(idx, title_str.to_owned())]),
-            key: format!("{}{};", idx, title_str),
+            titles: HashMap::from([(
+                idx,
+                [program.to_owned(), terminal_title.to_owned()],
+            )]),
+            key: format!("{}{}{};", idx, program, terminal_title),
             last_title_update,
         }
     }
 
-    pub fn set_key_val(&mut self, idx: usize, value: String) {
-        self.titles.insert(idx, value);
+    pub fn set_key_val(&mut self, idx: usize, program: String, terminal_title: String) {
+        self.titles.insert(idx, [program, terminal_title]);
     }
 
     pub fn set_key(&mut self, key: String) {
@@ -186,7 +193,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        let titles = ContextManagerTitles::new(0, name);
+        let titles = ContextManagerTitles::new(0, name, String::from(""));
 
         Ok(ContextManager {
             current_index: 0,
@@ -225,7 +232,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::from(""));
+        let titles = ContextManagerTitles::new(0, String::from(""), String::from(""));
 
         Ok(ContextManager {
             current_index: 0,
@@ -267,18 +274,28 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
-                    let terminal = context.terminal.lock();
-                    let name = if !terminal.title.is_empty() {
-                        terminal.title.to_string()
-                    } else {
-                        teletypewriter::foreground_process_name(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                    };
-                    drop(terminal);
-                    id = id.to_owned() + &(format!("{}{};", i, name));
-                    self.titles.set_key_val(i, name);
+                    let program = teletypewriter::foreground_process_name(
+                        *context.main_fd,
+                        context.shell_pid,
+                    );
+
+                    #[cfg(not(target_os = "macos"))]
+                    let terminal_title = String::from("");
+
+                    #[cfg(target_os = "macos")]
+                    #[allow(unused)]
+                    let mut terminal_title = String::from("");
+
+                    #[cfg(target_os = "macos")]
+                    {
+                        let terminal = context.terminal.lock();
+                        terminal_title = terminal.title.to_string();
+                        drop(terminal);
+                    }
+
+                    id =
+                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
+                    self.titles.set_key_val(i, program, terminal_title);
                 }
                 self.titles.set_key(id);
             }

@@ -1,6 +1,9 @@
 #[cfg(not(any(target_os = "macos")))]
 pub const PADDING_Y: f32 = 2.0;
 
+#[cfg(not(any(target_os = "macos")))]
+pub const PADDING_Y_WITH_TAB_ON_TOP: f32 = 15.0;
+
 #[cfg(target_os = "macos")]
 pub const PADDING_Y: f32 = 15.;
 
