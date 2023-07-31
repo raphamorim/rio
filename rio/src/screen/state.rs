@@ -12,6 +12,7 @@ use colors::{
     AnsiColor, Colors, NamedColor,
 };
 use config::Config;
+use std::collections::HashMap;
 use std::rc::Rc;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
@@ -71,6 +72,11 @@ impl State {
             "both" | "left" | "right"
         );
 
+        let mut color_automation = HashMap::new();
+        for rule in &config.navigation.color_automation {
+            color_automation.insert(rule.program.to_string(), rule.color);
+        }
+
         State {
             option_as_alt,
             is_ime_enabled: false,
@@ -82,6 +88,7 @@ impl State {
                     config.colors.tabs_active,
                     config.colors.foreground,
                 ],
+                color_automation,
                 0.0,
                 0.0,
                 0.0,

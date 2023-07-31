@@ -14,6 +14,8 @@ Short introduction of Rio terminal features. Many other features are in developm
 - [• Minimal tabs](#minimal-tabs)
 - [• Multi windows architecture](#multi-windows)
 - [• Spawn or Fork processes](#spawn-or-fork)
+- [• Collapsed tabs, breadcrumb, expanded tabs on top or bottom](#navigation)
+- [• Colorize tabs based on programs](#color-automation-for-navigation)
 
 ### Cross-platform
 
@@ -47,4 +49,41 @@ In POSIX-based systems, Rio spawn processes instead of fork processes due to som
 
 However you can also switch from spawn to fork, forking a process is faster than spawning a process.
 
-See how in the advanced section [here](/rio/docs).
+See how to configure it in the advanced section [here](/rio/docs).
+
+### Navigation
+
+Rio support 4 types of navigation modes:
+
+<p>
+<img alt="Demo Breadcrumb" src="/rio/assets/features/demo-breadcrumb.png" width="48%"/>
+<img alt="Demo TopTab" src="/rio/assets/features/demo-top-tab.png" width="48%"/>
+</p>
+
+<p>
+<img alt="Demo CollapsedTab" src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="48%" />
+<img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="48%"/>
+</p>
+
+See more about it [here](/rio/docs/navigation).
+
+### Color automation for navigation
+
+Rio allows to specify color overwrites for tabs based on program context.
+
+The example below sets <span class="keyword">#FFFF00</span> as color background whenever <span class="keyword">nvim</span> is running.
+
+<p>
+<img alt="example navigation with color automation" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
+
+<img alt="second example navigation with color automation" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
+</p>
+
+The configuration would be like:
+
+{% highlight toml %}
+[navigation]
+color-automation = [
+	{ program = "nvim", color = "#FFFF00" }
+]
+{% endhighlight %}

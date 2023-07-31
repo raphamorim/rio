@@ -133,13 +133,18 @@ impl Screen {
         let bindings = bindings::default_key_bindings(config.bindings.keys.clone());
         let ime = Ime::new();
 
+        let is_collapsed = config.navigation.is_collapsed_mode();
         let context_manager_config = context::ContextManagerConfig {
             use_current_path: config.navigation.use_current_path,
             shell: config.shell.clone(),
             spawn_performer: true,
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
-            is_collapsed: config.navigation.is_collapsed_mode(),
+            is_collapsed,
+            // When navigation is collapsed and does not contain any color rule
+            // does not make sense fetch for foreground process names
+            should_update_titles: !(is_collapsed
+                && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),

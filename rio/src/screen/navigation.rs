@@ -46,12 +46,14 @@ pub struct ScreenNavigation {
     width: f32,
     height: f32,
     scale: f32,
+    color_automation: HashMap<String, [f32; 4]>,
 }
 
 impl ScreenNavigation {
     pub fn new(
         mode: NavigationMode,
         colors: [[f32; 4]; 3],
+        color_automation: HashMap<String, [f32; 4]>,
         width: f32,
         height: f32,
         scale: f32,
@@ -69,6 +71,7 @@ impl ScreenNavigation {
             rects: vec![],
             texts: vec![],
             keys: String::from(""),
+            color_automation,
             current: 0,
             colors,
             width,
@@ -122,7 +125,7 @@ impl ScreenNavigation {
         self.texts = vec![];
 
         match self.mode {
-            NavigationMode::CollapsedTab => self.collapsed_tab(len),
+            NavigationMode::CollapsedTab => self.collapsed_tab(titles, len),
             #[cfg(not(windows))]
             NavigationMode::Breadcrumb => self.breadcrumb(titles, len),
             NavigationMode::TopTab => {
@@ -137,7 +140,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn collapsed_tab(&mut self, len: usize) {
+    pub fn collapsed_tab(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
         if len <= 1 {
             return;
         }
@@ -151,6 +154,13 @@ impl ScreenNavigation {
                 color = self.colors.active;
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
+
+            if let Some(name_idx) = titles.get(&i) {
+                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                    color = *color_overwrite;
+                }
+            }
+
             let renderable = Rect {
                 position: [initial_position, 0.0],
                 color,
@@ -327,12 +337,12 @@ impl ScreenNavigation {
         // }
 
         for i in tabs {
-            let mut bg_color = self.colors.inactive;
+            let mut background_color = self.colors.inactive;
             let mut foreground_color = self.colors.active;
 
             if i == self.current {
                 foreground_color = self.colors.inactive;
-                bg_color = self.colors.active;
+                background_color = self.colors.active;
             }
 
             let mut name = String::from("<new tab>");
@@ -341,6 +351,11 @@ impl ScreenNavigation {
                     name = name_idx[1].to_string();
                 } else {
                     name = name_idx[0].to_string();
+                }
+
+                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                    foreground_color = self.colors.inactive;
+                    background_color = *color_overwrite;
                 }
             }
 
@@ -359,7 +374,7 @@ impl ScreenNavigation {
 
             let renderable_item = Rect {
                 position: [initial_position_x, position_y],
-                color: bg_color,
+                color: background_color,
                 size: [120. + name_modifier + 30., 22.],
             };
 

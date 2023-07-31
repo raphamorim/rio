@@ -36,6 +36,7 @@ pub struct ContextManagerConfig {
     pub spawn_performer: bool,
     pub use_current_path: bool,
     pub is_collapsed: bool,
+    pub should_update_titles: bool,
 }
 
 pub struct ContextManagerTitles {
@@ -221,6 +222,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             },
             spawn_performer: false,
             is_collapsed: true,
+            should_update_titles: false,
             use_current_path: false,
         };
         let initial_context = ContextManager::create_context(
@@ -264,7 +266,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn update_names(&mut self) {
-        if self.config.is_collapsed {
+        if !self.config.should_update_titles {
             return;
         }
 
