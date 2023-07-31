@@ -337,6 +337,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn switch_to_next(&mut self) {
+        if !self.config.is_collapsed {
+            self.move_next();
+        } else {
+            // Collapsed tabs are rendered in backwards
+            self.move_back();
+        }
+    }
+
+    #[inline]
+    fn move_back(&mut self) {
         if self.contexts.len() - 1 == self.current_index {
             self.current_index = 0;
         } else {
@@ -345,11 +355,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn switch_to_prev(&mut self) {
+    fn move_next(&mut self) {
         if self.current_index == 0 {
             self.current_index = self.contexts.len() - 1;
         } else {
             self.current_index -= 1;
+        }
+    }
+
+    #[inline]
+    pub fn switch_to_prev(&mut self) {
+        if !self.config.is_collapsed {
+            self.move_back();
+        } else {
+            // Collapsed tabs are rendered in backwards
+            self.move_next();
         }
     }
 

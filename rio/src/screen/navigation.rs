@@ -340,12 +340,23 @@ impl ScreenNavigation {
                 name = name_idx.to_string();
             }
 
-            let name_mod = (name.len() as f32) * 8.0;
+            let mut name_modifier = 100.;
+
+            if name.len() >= 20 {
+                name = name[0..20].to_string();
+                name_modifier += 80.;
+            } else if name.len() >= 15 {
+                name = name[0..15].to_string();
+                name_modifier += 40.;
+            } else if name.len() >= 10 {
+                name = name[0..10].to_string();
+                name_modifier += 20.;
+            }
 
             let renderable_item = Rect {
                 position: [initial_position_x, position_y],
                 color: bg_color,
-                size: [120. + name_mod + 30., 22.],
+                size: [120. + name_modifier + 30., 22.],
             };
 
             self.texts.push(Text::new(
@@ -356,7 +367,7 @@ impl ScreenNavigation {
                 foreground_color,
             ));
 
-            initial_position_x += (name_mod) + 30.;
+            initial_position_x += name_modifier;
             self.rects.push(renderable_item);
         }
     }
