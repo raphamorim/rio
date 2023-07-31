@@ -826,6 +826,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         "t", ModifiersState::SUPER; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
+        Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
         "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchNext;
         "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;

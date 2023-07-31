@@ -27,7 +27,7 @@ Create new tab: <span class="keyword">Command + T</span>
 
 Move to next tab: <span class="keyword">Command + Shift + RightBracket (])</span>
 
-Move to previous tab: <span class="keyword">Command + Shift + LeftBracket ([)</span>
+Move to previous tab: <span class="keyword">Command + Shift + LeftBracket ([)</span> or <span class="keyword">Control + Shift + Tab</span>
 
 Switch tabs by created order: <span class="keyword">Control + Tab</span>
 
