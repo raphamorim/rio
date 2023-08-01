@@ -20,7 +20,7 @@ lsi:         false
 highlighter: rouge
 markdown:    kramdown
 permalink:   /:title/
-paginate: 5
+paginate: 20
 
 # Serving
 detach:  false

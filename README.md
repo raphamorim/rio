@@ -20,11 +20,10 @@ _* Nintendo Switch development is just for fun, the goal is to have  the rendere
 
 ## Demo Gallery
 
-| ![Demo rio](docs/assets/demos/demo-rio.png) | ![Demo tmux](docs/assets/demos/demo-tmux.png) |
+| ![Demo rio](docs/assets/posts/0.0.11/demo-rio.png) | ![Demo tmux](docs/assets/demos/demo-tmux.png) |
 | ----------- | ----------- |
-| <img src="docs/assets/demos/demo-emacs.png" alt="Demo emacs" width="500px"/> |![Demo text styles](docs/assets/demos/demo-text-styles.png) |
-| ![Demo linux x11](docs/assets/demos/demo-x11.png) | ![Demo linux wayland](docs/assets/demos/demo-wayland.png) |
-| ![Demo Windows 10](docs/assets/demos/demo-windows-10.png) | ![Demo Windows 11](docs/assets/demos/demo-windows-11.png) |
+| ![Demo linux x11](docs/assets/posts/0.0.15/demo-navigation-x11.png) | ![Demo linux wayland](docs/assets/posts/0.0.15/demo-navigation-wayland.png) |
+| ![Demo Windows 10](docs/assets/posts/0.0.8/demo-windows-10.png) |<img src="docs/assets/demos/demo-emacs.png" alt="Demo emacs" width="500px"/> |
 
 Note: Emojis are rendered with Noto Emoji.
 

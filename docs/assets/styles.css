@@ -421,13 +421,14 @@ section.features .container.footer p {
 }
 
 .container.post h1.post-title {
-  font-size: 40px;
+  font-size: 36px;
   color: #0F0D0E;
   width: fit-content;
-  margin-left: 0.8em;
-  padding: 0.5em;
+  margin-left: 0.4em;
+  padding: 0.4em;
   background: #F9F4DA;  
-  font-family: 'Silkscreen', helvetica;
+  font-family: monospace;
+  line-height: 1.2em;
 }
 
 .container.post span.post-date {
@@ -473,6 +474,9 @@ section.features .container.footer p {
 
 .container.post .post-content img {
   width: 100%;
+}
+.container.post .post-content img.mid {
+  width: 45%;
 }
 
 .container.post a {
