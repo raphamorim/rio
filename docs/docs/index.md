@@ -80,7 +80,7 @@ window-height = 800
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
 #
-[navingation]
+[navigation]
 mode = "BottomTab"
 clickable = false
 use-current-path = true
