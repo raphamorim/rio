@@ -710,6 +710,12 @@ impl Child {
     }
 }
 
+pub fn kill_pid(pid: i32) {
+    unsafe {
+        libc::kill(pid, libc::SIGHUP);
+    }
+}
+
 impl Deref for Child {
     type Target = libc::c_int;
     fn deref(&self) -> &libc::c_int {

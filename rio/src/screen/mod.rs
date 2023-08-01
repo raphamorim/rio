@@ -475,8 +475,9 @@ impl Screen {
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
-                        self.context_manager.close_context();
-                        self.render();
+                        // Kill current context will trigger terminal.exit
+                        // then RioEvent::Exit and eventually try_close_existent_tab
+                        self.context_manager.kill_current_context();
                     }
                     Act::Quit => {
                         // TODO: Add it in event system
