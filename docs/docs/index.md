@@ -73,6 +73,21 @@ window-width = 1200
 # Default: 400
 window-height = 800
 
+# Navigation
+#
+# "mode" - Define navigation mode: CollapsedTab, BottomTab, TopTab, Breadcrumb.
+# "clickable" - Enable click on tabs to switch.
+# "use-current-path" - Use same path whenever a new tab is created.
+# "color-automation" - Set a specific color for the tab whenever a specific program is running.
+#
+[navingation]
+mode = "BottomTab"
+clickable = false
+use-current-path = true
+color-automation = [
+  { program = "nvim", color = "#FFFF00" }
+]
+
 # Shell
 #
 # You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
@@ -142,9 +157,9 @@ blue = "#454A12"
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 [bindings]
 keys = [
-	{ key = "q", with = "super", action = "Quit" },
-	// Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-	{ key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+  { key = "q", with = "super", action = "Quit" },
+  # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 ]
 
 [developer]
