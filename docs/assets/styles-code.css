@@ -1,4 +1,4 @@
-.highlight pre { padding: 30px; overflow-x: scroll; background-color: #000; border-left: 4px solid #F38BA3;}
+.highlight pre { padding: 30px; overflow-x: scroll; background-color: #000; border-left: 4px solid #F38BA3; font-family: monospace; }
 .highlight .hll { background-color: #000; }
 .highlight .c { color: #75715e } /* Comment */
 .highlight .err { color: #960050; background-color: #1e0010 } /* Error */
