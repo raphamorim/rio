@@ -347,12 +347,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn kill_current_context(&mut self) {
+        if self.contexts.len() <= 1 {
+            self.current_index = 0;
+            return;
+        }
+
         let index_to_remove = self.current_index;
 
         #[cfg(not(target_os = "windows"))]
         {
             let pid = self.contexts[index_to_remove].shell_pid;
-            println!("closing pid {}", pid);
             if pid > 0 {
                 teletypewriter::kill_pid(pid as i32);
             }
