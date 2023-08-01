@@ -765,7 +765,7 @@ impl Screen {
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
         drop(terminal);
-        self.context_manager.update_names();
+        self.context_manager.update_titles();
 
         self.state.set_ime(self.ime.preedit());
 

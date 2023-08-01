@@ -184,6 +184,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let mut name = String::from("");
 
+        #[cfg(target_os = "windows")]
+        {
+            name = ctx_config.shell.program.to_owned();
+        }
+
         #[cfg(not(target_os = "windows"))]
         {
             if !ctx_config.is_collapsed {
@@ -265,7 +270,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn update_names(&mut self) {
+    pub fn update_titles(&mut self) {
         if !self.config.should_update_titles {
             return;
         }
@@ -294,6 +299,26 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         terminal_title = terminal.title.to_string();
                         drop(terminal);
                     }
+
+                    id =
+                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
+                    self.titles.set_key_val(i, program, terminal_title);
+                }
+                self.titles.set_key(id);
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+                self.titles.last_title_update = Instant::now();
+                let mut id = String::from("");
+                for (i, context) in self.contexts.iter_mut().enumerate() {
+                    let program = self.config.shell.program.to_owned();
+
+                    let terminal = context.terminal.lock();
+                    let terminal_title = terminal.title.to_owned();
+                    drop(terminal);
 
                     id =
                         id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
