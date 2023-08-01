@@ -18,7 +18,7 @@ clickable = false
 	- Now: `~51.5µs`.
 - Introduce `navigation.use-current-path` which sets if a tab/breacrumb should be open from the current context path.
 - Fix rendering unicode with 1 width glyphs (fix [#160](https://github.com/raphamorim/rio/issues/160)).
-- Increased max tabs from 9 to 72.
+- Increased max tabs from 9 to 40.
 - Default colors `selection-foreground` and `selection-background` has changed.
 - Default colors `tab` and `tab-active` has changed.
 
