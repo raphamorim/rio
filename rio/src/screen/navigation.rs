@@ -329,12 +329,13 @@ impl ScreenNavigation {
         self.rects.push(renderable);
 
         let iter = 0..len;
-        let tabs = Vec::from_iter(iter);
+        let mut tabs = Vec::from_iter(iter);
 
-        // let mut starting_point = 0;
-        // if len > 4 && self.current >= 4 {
-        //     starting_point = 4
-        // }
+        let max_tab_width = 150.;
+        let screen_limit = ((self.width / self.scale) / max_tab_width).floor() as usize;
+        if len > screen_limit && self.current > screen_limit {
+            tabs = Vec::from_iter(self.current - screen_limit..len);
+        }
 
         for i in tabs {
             let mut background_color = self.colors.inactive;
@@ -345,7 +346,7 @@ impl ScreenNavigation {
                 background_color = self.colors.active;
             }
 
-            let mut name = String::from("<new tab>");
+            let mut name = String::from("new tab");
             if let Some(name_idx) = titles.get(&i) {
                 if !name_idx[1].is_empty() {
                     name = name_idx[1].to_string();
