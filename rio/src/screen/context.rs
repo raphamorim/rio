@@ -17,7 +17,7 @@ use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
-const DEFAULT_CONTEXT_CAPACITY: usize = 18;
+const DEFAULT_CONTEXT_CAPACITY: usize = 20;
 
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
@@ -182,7 +182,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &ctx_config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
+        let titles =
+            ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
 
         Ok(ContextManager {
             current_index: 0,
@@ -342,6 +343,25 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
+    }
+
+    #[inline]
+    pub fn kill_current_context(&mut self) {
+        let index_to_remove = self.current_index;
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let pid = self.contexts[index_to_remove].shell_pid;
+            println!("closing pid {}", pid);
+            if pid > 0 {
+                teletypewriter::kill_pid(pid as i32);
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            self.close_context();
+        }
     }
 
     #[inline]
