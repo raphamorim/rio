@@ -17,7 +17,7 @@ use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
-const DEFAULT_CONTEXT_CAPACITY: usize = 40;
+const DEFAULT_CONTEXT_CAPACITY: usize = 18;
 
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
@@ -182,24 +182,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &ctx_config,
         )?;
 
-        let mut name = String::from("");
-
-        #[cfg(target_os = "windows")]
-        {
-            name = ctx_config.shell.program.to_owned();
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            if !ctx_config.is_collapsed {
-                name = teletypewriter::foreground_process_name(
-                    *initial_context.main_fd,
-                    initial_context.shell_pid,
-                );
-            }
-        }
-
-        let titles = ContextManagerTitles::new(0, name, String::from(""));
+        let titles = ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
 
         Ok(ContextManager {
             current_index: 0,
@@ -277,7 +260,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(target_os = "windows"))]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(5) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
@@ -310,7 +293,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(5) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
