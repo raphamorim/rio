@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.15
+
 - Introduce configurable navigation with the following options: `CollapsedTab` (default), `Breadcrumb`, `TopTab` and `BottomTab`.
 
 An example of configuration:
