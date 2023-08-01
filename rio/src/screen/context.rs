@@ -314,7 +314,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
-                    let program = self.config.shell.program;
+                    let program = self.config.shell.program.to_owned();
                     let terminal_title = String::from("");
 
                     id =
