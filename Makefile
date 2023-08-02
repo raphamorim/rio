@@ -109,6 +109,9 @@ release-macos-signed:
 	$(eval VERSION = $(shell echo $(version)))
 	$(if $(strip $(VERSION)),make release-macos-app-signed, make version-not-found)
 
+bump-brew:
+	brew bump-cask-pr rio --version ${version}
+
 # TODO: Move to bin path
 release-x11:
 	RUSTFLAGS='-C link-arg=-s' cargo build --release --no-default-features --features=x11

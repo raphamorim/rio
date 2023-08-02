@@ -55,7 +55,7 @@ pub fn create_window_builder(title: &str, config: &Rc<Config>) -> WindowBuilder 
             .with_transparent(true)
             .with_fullsize_content_view(true);
 
-        if config.navigation.is_placed_on_top() {
+        if config.navigation.macos_hide_window_buttons {
             window_builder = window_builder.with_titlebar_buttons_hidden(true);
         }
     }

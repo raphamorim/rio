@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Introduce new configuration property: `navigation.macos-hide-window-button`.
 
 ## 0.0.15
 
