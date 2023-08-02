@@ -79,6 +79,7 @@ window-height = 800
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
+# "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
 [navigation]
 mode = "BottomTab"
@@ -87,6 +88,7 @@ use-current-path = true
 color-automation = [
   { program = "nvim", color = "#FFFF00" }
 ]
+macos-hide-window-buttons = false
 
 # Shell
 #
