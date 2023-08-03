@@ -2,6 +2,11 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.16
+
+- Fix tab/breadcrumb bug introduced in 0.0.15
 - Introduce new configuration property: `navigation.macos-hide-window-button`.
 
 ## 0.0.15
