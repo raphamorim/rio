@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Added `ReceiveChar` action for custom key bindings.
 
 ## 0.0.16
 
