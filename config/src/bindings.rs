@@ -14,6 +14,7 @@ pub enum Action {
     CreateWindow,
     CreateTab,
     CloseTab,
+    ReceiveChar,
     #[default]
     None,
 }

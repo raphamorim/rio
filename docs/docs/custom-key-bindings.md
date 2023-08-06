@@ -50,6 +50,7 @@ CreateTab
 CloseTab
 OpenConfigEditor
 None
+ReceiveChar
 {% endhighlight %}
 
 ### Bytes
@@ -89,7 +90,7 @@ with = "control | shift"
 
 ### Overwriting
 
-Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined. To unset a default binding, it can be mapped to the <span class="keyword">None</span> action.
+Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the <span class="keyword">ReceiveChar</span> action. Alternatively, you can use <span class="keyword">None</span> for a no-op if you do not wish to receive input characters for that binding.
 
 --
 

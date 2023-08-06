@@ -730,6 +730,7 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         config::bindings::Action::CloseTab => Action::TabCloseCurrent,
         config::bindings::Action::OpenConfigEditor => Action::ConfigEditor,
         config::bindings::Action::None => Action::None,
+        config::bindings::Action::ReceiveChar => Action::ReceiveChar,
     };
 
     if !config_key_binding.text.is_empty() {
