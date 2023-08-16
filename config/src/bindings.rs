@@ -1,24 +1,5 @@
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize, PartialEq, Clone, Copy)]
-pub enum Action {
-    Paste,
-    Quit,
-    Copy,
-    ResetFontSize,
-    IncreaseFontSize,
-    DecreaseFontSize,
-    TabSwitchNext,
-    TabSwitchPrev,
-    OpenConfigEditor,
-    CreateWindow,
-    CreateTab,
-    CloseTab,
-    ReceiveChar,
-    #[default]
-    None,
-}
-
 // { key = "W", mods: "super", action = "Quit" }
 // Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 // { key = "Home", mods: "super | shift", bytes = [27, 91, 53, 126] }
@@ -28,8 +9,8 @@ pub struct KeyBinding {
     pub key: String,
     #[serde(default = "String::default")]
     pub with: String,
-    #[serde(default = "Action::default")]
-    pub action: Action,
+    #[serde(default = "String::default")]
+    pub action: String,
     #[serde(default = "String::default")]
     pub text: String,
     #[serde(default = "Vec::default")]
@@ -72,7 +53,7 @@ pub struct Bindings {
 #[cfg(test)]
 mod tests {
 
-    use crate::bindings::{Action, Bindings};
+    use crate::bindings::Bindings;
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -86,14 +67,14 @@ mod tests {
         let content = r#"
             [bindings]
             keys = [
-                { key = 'Q', with = 'super', action = 'Quit' }
+                { key = 'Q', with = 'super', action = 'quit' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.bindings.keys[0].key, "Q");
         assert_eq!(decoded.bindings.keys[0].with.to_owned(), "super");
-        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), "quit");
         assert!(decoded.bindings.keys[0].text.to_owned().is_empty());
     }
 
@@ -124,7 +105,7 @@ mod tests {
         assert_eq!(decoded.bindings.keys[0].key, "Home");
         assert_eq!(decoded.bindings.keys[0].with, "");
         assert_eq!(decoded.bindings.keys[0].mode, "appcursor");
-        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::None);
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), "");
         assert!(!decoded.bindings.keys[0].text.to_owned().is_empty());
     }
 
@@ -140,7 +121,7 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.bindings.keys[0].key, "Home");
         assert_eq!(decoded.bindings.keys[0].with, "");
-        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::None);
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), "");
         assert!(decoded.bindings.keys[0].text.to_owned().is_empty());
         let binding = decoded.bindings.keys[0].bytes.to_owned();
         assert_eq!(std::str::from_utf8(&binding).unwrap(), "\x1bOH".to_string());
@@ -151,13 +132,13 @@ mod tests {
         let content = r#"
             [bindings]
             keys = [
-                { key = 'Q', with = 'super', action = 'Quit' },
-                { key = '+', with = 'super', action = 'IncreaseFontSize' },
-                { key = '-', with = 'super', action = 'DecreaseFontSize' },
-                { key = '0', with = 'super', action = 'ResetFontSize' },
+                { key = 'Q', with = 'super', action = 'quit' },
+                { key = '+', with = 'super', action = 'increasefontsize' },
+                { key = '-', with = 'super', action = 'decreasefontsize' },
+                { key = '0', with = 'super', action = 'resetfontsize' },
 
-                { key = '[', with = 'super | shift', action = 'TabSwitchNext' },
-                { key = ']', with = 'super | shift', action = 'TabSwitchPrev' },
+                { key = '[', with = 'super | shift', action = 'tabswitchnext' },
+                { key = ']', with = 'super | shift', action = 'tabswitchprev' },
             ]
         "#;
 
@@ -165,14 +146,14 @@ mod tests {
 
         assert_eq!(decoded.bindings.keys[0].key, "Q");
         assert_eq!(decoded.bindings.keys[0].with, "super");
-        assert_eq!(decoded.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert_eq!(decoded.bindings.keys[0].action.to_owned(), "quit");
         assert!(decoded.bindings.keys[0].text.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[1].key, "+");
         assert_eq!(decoded.bindings.keys[1].with, "super");
         assert_eq!(
             decoded.bindings.keys[1].action.to_owned(),
-            Action::IncreaseFontSize
+            "increasefontsize"
         );
         assert!(decoded.bindings.keys[1].text.to_owned().is_empty());
 
@@ -180,32 +161,23 @@ mod tests {
         assert_eq!(decoded.bindings.keys[2].with, "super");
         assert_eq!(
             decoded.bindings.keys[2].action.to_owned(),
-            Action::DecreaseFontSize
+            "decreasefontsize"
         );
         assert!(decoded.bindings.keys[2].text.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[3].key, "0");
         assert_eq!(decoded.bindings.keys[3].with, "super");
-        assert_eq!(
-            decoded.bindings.keys[3].action.to_owned(),
-            Action::ResetFontSize
-        );
+        assert_eq!(decoded.bindings.keys[3].action.to_owned(), "resetfontsize");
         assert!(decoded.bindings.keys[3].text.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[4].key, "[");
         assert_eq!(decoded.bindings.keys[4].with, "super | shift");
-        assert_eq!(
-            decoded.bindings.keys[4].action.to_owned(),
-            Action::TabSwitchNext
-        );
+        assert_eq!(decoded.bindings.keys[4].action.to_owned(), "tabswitchnext");
         assert!(decoded.bindings.keys[4].text.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[5].key, "]");
         assert_eq!(decoded.bindings.keys[5].with, "super | shift");
-        assert_eq!(
-            decoded.bindings.keys[5].action.to_owned(),
-            Action::TabSwitchPrev
-        );
+        assert_eq!(decoded.bindings.keys[5].action.to_owned(), "tabswitchprev");
         assert!(decoded.bindings.keys[5].text.to_owned().is_empty());
     }
 }

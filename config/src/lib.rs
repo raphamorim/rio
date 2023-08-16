@@ -228,7 +228,6 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bindings::Action;
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
@@ -517,7 +516,7 @@ mod tests {
         // Bindings
         assert_eq!(result.bindings.keys[0].key, "Q");
         assert_eq!(result.bindings.keys[0].with, "super");
-        assert_eq!(result.bindings.keys[0].action.to_owned(), Action::Quit);
+        assert_eq!(result.bindings.keys[0].action.to_owned(), "Quit");
         assert!(result.bindings.keys[0].text.to_owned().is_empty());
     }
 

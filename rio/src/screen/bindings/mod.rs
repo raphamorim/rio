@@ -54,7 +54,6 @@ impl<T: Eq> Binding<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn triggers_match(&self, binding: &Binding<T>) -> bool {
         // Check the binding's key and modifiers.
         if self.trigger != binding.trigger || self.mods != binding.mods {
@@ -265,11 +264,9 @@ pub enum Action {
     ToggleViMode,
 
     /// Allow receiving char input.
-    #[allow(dead_code)]
     ReceiveChar,
 
     /// No action.
-    #[allow(dead_code)]
     None,
 }
 
@@ -619,9 +616,10 @@ pub fn default_key_bindings(
 
     bindings.extend(platform_key_bindings());
 
-    bindings.extend(config_key_bindings(unprocessed_config_key_bindings));
+    let bindings_with_config =
+        config_key_bindings(unprocessed_config_key_bindings, bindings);
 
-    bindings
+    bindings_with_config
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -711,26 +709,25 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "shift" => res.insert(ModifiersState::SHIFT),
             "alt" | "option" => res.insert(ModifiersState::ALT),
             "control" => res.insert(ModifiersState::CONTROL),
-            "none" => (),
-            _ => (),
+            "none" | _ => (),
         }
     }
 
-    let mut action: Action = match config_key_binding.action {
-        config::bindings::Action::Paste => Action::Paste,
-        config::bindings::Action::Quit => Action::Quit,
-        config::bindings::Action::Copy => Action::Copy,
-        config::bindings::Action::ResetFontSize => Action::ResetFontSize,
-        config::bindings::Action::IncreaseFontSize => Action::IncreaseFontSize,
-        config::bindings::Action::DecreaseFontSize => Action::DecreaseFontSize,
-        config::bindings::Action::TabSwitchNext => Action::TabSwitchNext,
-        config::bindings::Action::TabSwitchPrev => Action::TabSwitchPrev,
-        config::bindings::Action::CreateWindow => Action::WindowCreateNew,
-        config::bindings::Action::CreateTab => Action::TabCreateNew,
-        config::bindings::Action::CloseTab => Action::TabCloseCurrent,
-        config::bindings::Action::OpenConfigEditor => Action::ConfigEditor,
-        config::bindings::Action::None => Action::None,
-        config::bindings::Action::ReceiveChar => Action::ReceiveChar,
+    let mut action: Action = match config_key_binding.action.to_lowercase().as_str() {
+        "paste" => Action::Paste,
+        "quit" => Action::Quit,
+        "copy" => Action::Copy,
+        "resetfontsize" => Action::ResetFontSize,
+        "increasefontsize" => Action::IncreaseFontSize,
+        "decreasefontsize" => Action::DecreaseFontSize,
+        "tabswitchnext" => Action::TabSwitchNext,
+        "tabswitchprev" => Action::TabSwitchPrev,
+        "createwindow" => Action::WindowCreateNew,
+        "createtab" => Action::TabCreateNew,
+        "closetab" => Action::TabCloseCurrent,
+        "openconfigeditor" => Action::ConfigEditor,
+        "receivechar" => Action::ReceiveChar,
+        "none" | _ => Action::None,
     };
 
     if !config_key_binding.text.is_empty() {
@@ -776,22 +773,46 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
 
 pub fn config_key_bindings(
     config_key_bindings: Vec<ConfigKeyBinding>,
+    mut bindings: Vec<KeyBinding>,
 ) -> Vec<KeyBinding> {
     if config_key_bindings.is_empty() {
-        return vec![];
+        return bindings;
     }
 
-    let mut bindings: Vec<KeyBinding> = vec![];
     for ckb in config_key_bindings {
         match convert(ckb) {
-            Ok(key_binding) => bindings.push(key_binding),
+            Ok(key_binding) => match key_binding.action {
+                Action::None | Action::ReceiveChar => {
+                    let mut found_idx = None;
+                    for (idx, binding) in bindings.iter().enumerate() {
+                        if binding.triggers_match(&key_binding) {
+                            found_idx = Some(idx);
+                            break;
+                        }
+                    }
+
+                    if let Some(idx) = found_idx {
+                        bindings.remove(idx);
+                        log::warn!(
+                            "overwritted a previous key_binding with new one: {:?}",
+                            key_binding
+                        );
+                    } else {
+                        log::info!("added a new key_binding: {:?}", key_binding);
+                    }
+
+                    bindings.push(key_binding)
+                }
+                _ => {
+                    log::info!("added a new key_binding: {:?}", key_binding);
+                    bindings.push(key_binding)
+                }
+            },
             Err(err_message) => {
-                log::error!("error loading key bindings: {:?}", err_message);
+                log::error!("error loading a key binding: {:?}", err_message);
             }
         }
     }
-
-    log::warn!("loaded key bindings from configuration: {:?}", bindings);
 
     bindings
 }
@@ -1143,5 +1164,28 @@ mod tests {
             mods,
             &t
         ));
+    }
+
+    #[test]
+    fn bindings_overwrite() {
+        let bindings = bindings!(
+            KeyBinding;
+            "q", ModifiersState::SUPER; Action::Quit;
+            ",", ModifiersState::SUPER; Action::ConfigEditor;
+        );
+
+        let config_bindings = vec![ConfigKeyBinding {
+            key: String::from("q"),
+            action: String::from("receivechar"),
+            with: String::from("super"),
+            bytes: vec![],
+            text: String::from(""),
+            mode: String::from(""),
+        }];
+
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+
+        assert_eq!(new_bindings.len(), 2);
+        assert_eq!(new_bindings[1].action, Action::ReceiveChar);
     }
 }
