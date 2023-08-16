@@ -616,10 +616,7 @@ pub fn default_key_bindings(
 
     bindings.extend(platform_key_bindings());
 
-    let bindings_with_config =
-        config_key_bindings(unprocessed_config_key_bindings, bindings);
-
-    bindings_with_config
+    config_key_bindings(unprocessed_config_key_bindings, bindings)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -709,7 +706,8 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "shift" => res.insert(ModifiersState::SHIFT),
             "alt" | "option" => res.insert(ModifiersState::ALT),
             "control" => res.insert(ModifiersState::CONTROL),
-            "none" | _ => (),
+            "none" => (),
+            _ => (),
         }
     }
 
@@ -727,7 +725,8 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         "closetab" => Action::TabCloseCurrent,
         "openconfigeditor" => Action::ConfigEditor,
         "receivechar" => Action::ReceiveChar,
-        "none" | _ => Action::None,
+        "none" => Action::None,
+        _ => Action::None,
     };
 
     if !config_key_binding.text.is_empty() {
