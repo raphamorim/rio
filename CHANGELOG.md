@@ -4,6 +4,7 @@
 
 - Support lowercased action and fix overwrite for actions in custom key bindings.
 - Added `ReceiveChar` action for custom key bindings.
+- New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed
 
 ## 0.0.16
 
