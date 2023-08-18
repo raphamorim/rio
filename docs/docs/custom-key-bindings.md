@@ -92,6 +92,26 @@ with = "control | shift"
 
 Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the <span class="keyword">ReceiveChar</span> action. Alternatively, you can use <span class="keyword">None</span> for a no-op if you do not wish to receive input characters for that binding.
 
+The example below will disable window creation binding in the macos:
+
+{% highlight toml %}
+[bindings]
+keys = [
+   { key = "n", with = "super", action = "ReceiveChar" }
+}
+{% endhighlight %}
+
+<span class="keyword">ReceiveChar</span> will treat the binding as non existent and simply receive the input and put the character into the terminal.
+
+Optionally you can ignore/disable completely a binding using <span class="keyword">None</span>. In the example below, whenever you use key "n" along with "super" key nothing will happen.
+
+{% highlight toml %}
+[bindings]
+keys = [
+   { key = "n", with = "super", action = "None" }
+}
+{% endhighlight %}
+
 --
 
 [Move to plugins ->](/rio/docs/plugins#plugins)
