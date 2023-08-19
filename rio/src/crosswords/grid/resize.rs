@@ -381,6 +381,9 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         reversed.truncate(self.max_scroll_limit + self.lines);
         self.raw.replace_inner(reversed);
 
+        // Clamp display offset in case some lines went off.
+        self.display_offset = min(self.display_offset, self.history_size());
+
         // Reflow the primary cursor, or clamp it if reflow is disabled.
         if !reflow {
             self.cursor.pos.col = min(self.cursor.pos.col, Column(columns - 1));
