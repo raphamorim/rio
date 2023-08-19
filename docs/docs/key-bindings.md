@@ -45,13 +45,13 @@ Close tab or quit: <span class="keyword">Command + W</span>
 
 ### Windows
 
-Copy: <span class="keyword">Control + C</span>
+Copy: <span class="keyword">Control + Shift + C</span>
 
-Paste: <span class="keyword">Control + V</span>
+Paste: <span class="keyword">Control + Shift + V</span>
 
-Create new window: <span class="keyword">Control + N</span>
+Create new window: <span class="keyword">Control + Shift + N</span>
 
-Create new tab: <span class="keyword">Control + T</span>
+Create new tab: <span class="keyword">Control + Shift + T</span>
 
 Move to next tab: <span class="keyword">Control + Shift + RightBracket (])</span>
 
@@ -65,17 +65,17 @@ Decrease font size: <span class="keyword">Control + Minus (-)</span>
 
 Reset font size: <span class="keyword">Control + 0</span>
 
-Close tab or quit: <span class="keyword">Control + W</span>
+Close tab or quit: <span class="keyword">Control + Shift + W</span>
 
 ### Linux and BSD
 
-Copy: <span class="keyword">Control + C</span>
+Copy: <span class="keyword">Control + Shift + C</span>
 
-Paste: <span class="keyword">Control + V</span>
+Paste: <span class="keyword">Control + Shift + V</span>
 
-Create new window: <span class="keyword">Control + N</span>
+Create new window: <span class="keyword">Control + Shift + N</span>
 
-Create new tab: <span class="keyword">Control + T</span>
+Create new tab: <span class="keyword">Control + Shift + T</span>
 
 Move to next tab: <span class="keyword">Control + Shift + RightBracket (])</span>
 
@@ -89,7 +89,7 @@ Decrease font size: <span class="keyword">Control + Minus (-)</span>
 
 Reset font size: <span class="keyword">Control + 0</span>
 
-Close tab or quit: <span class="keyword">Control + W</span>
+Close tab or quit: <span class="keyword">Control + Shift + W</span>
 
 ### Custom key bindings
 
