@@ -871,12 +871,12 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
-        "n", ModifiersState::CONTROL; Action::WindowCreateNew;
-        "t", ModifiersState::CONTROL; Action::TabCreateNew;
+        "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
+        "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
         "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
         "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
-        "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
+        "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
     )
 }
 
@@ -897,10 +897,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
-        "t", ModifiersState::CONTROL; Action::TabCreateNew;
+        "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        "w", ModifiersState::CONTROL; Action::TabCloseCurrent;
-        "n", ModifiersState::CONTROL; Action::WindowCreateNew;
+        "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+        "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
         "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
     )
