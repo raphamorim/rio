@@ -697,7 +697,8 @@ impl Sequencer {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
                         match ime {
                             Ime::Commit(text) => {
-                                sw.screen.paste(&text, true);
+                                // Don't use bracketed paste for single char input.
+                                sw.screen.paste(&text, text.chars().count() > 1);
                             }
                             Ime::Preedit(text, cursor_offset) => {
                                 let preedit = if text.is_empty() {
