@@ -13,12 +13,11 @@ rust-version = "1.62.1"
 [dependencies]
 rio_proc_macros = { version = "0.1.0", path = "../rio-proc-macros" }
 arrayvec = { version = "0.7.2", default-features = false, optional = true }
-log = { version = "0.4.17", optional = true }
-serde = { version = "1.0.160", features = ["derive"], optional = true }
+
+[dev-dependencies]
+unicode-normalization = "0.1"
 
 [features]
-ansi = ["log"]
-serde = ["dep:serde"]
 default = ["no_std"]
 no_std = ["arrayvec"]
 nightly = []

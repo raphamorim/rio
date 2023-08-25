@@ -34,6 +34,7 @@ unicode-width = "0.1.5"
 copa = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
+unicode-normalization = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.2"
