@@ -43,8 +43,6 @@ mod params;
 mod table;
 mod utf8;
 
-#[cfg(feature = "ansi")]
-pub mod ansi;
 pub use params::{Params, ParamsIter};
 
 use definitions::{unpack, Action, State};
@@ -657,6 +655,36 @@ mod tests {
             }
             _ => panic!("expected osc sequence"),
         }
+    }
+
+    #[test]
+    fn issue_191() {
+        use crate::std::string::{String, ToString};
+        use unicode_normalization::{UnicodeNormalization, IsNormalized, is_nfc_quick};
+
+        // https://github.com/raphamorim/rio/issues/191
+        // 한 isn't rendered correctly via printf '\xe1\x84\x92\xe1\x85\xa1\xe1\x86\xab\n'
+        let mut input = std::str::from_utf8(b"\xe1\x84\x92\xe1\x85\xa1\xe1\x86\xab").unwrap();
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        let p = std::mem::take(&mut input).to_string();
+        let normalized: String;
+        let text = if is_nfc_quick(p.chars()) != IsNormalized::Yes
+        {
+            normalized = p.as_str().nfc().collect();
+            normalized.as_str()
+        } else {
+            p.as_str()
+        };
+
+        let bytes: &[u8] = &text.bytes().collect::<Vec<u8>>();
+
+        for byte in bytes {
+            parser.advance(&mut dispatcher, *byte);
+        }
+
+        assert_eq!(text, "한");
     }
 
     #[test]
