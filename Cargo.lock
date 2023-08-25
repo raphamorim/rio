@@ -2383,6 +2383,7 @@ dependencies = [
  "copa",
  "copypasta",
  "corcovado",
+ "cursor-icon",
  "dirs",
  "futures",
  "glyph_brush",
