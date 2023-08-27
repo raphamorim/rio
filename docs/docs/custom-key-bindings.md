@@ -49,6 +49,16 @@ CreateWindow
 CreateTab
 CloseTab
 OpenConfigEditor
+SelectTab1
+SelectTab2
+SelectTab3
+SelectTab4
+SelectTab5
+SelectTab6
+SelectTab7
+SelectTab8
+SelectTab9
+SelectLastTab
 None
 ReceiveChar
 {% endhighlight %}

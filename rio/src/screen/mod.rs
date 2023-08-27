@@ -540,6 +540,37 @@ impl Screen {
                     Act::ResetFontSize => {
                         self.change_font_size(FontSizeAction::Reset);
                     }
+                    Act::SelectTab1 => {
+                        self.context_manager.select_tab(0);
+                    }
+                    Act::SelectTab2 => {
+                        self.context_manager.select_tab(1);
+                    }
+                    Act::SelectTab3 => {
+                        self.context_manager.select_tab(2);
+                    }
+                    Act::SelectTab4 => {
+                        self.context_manager.select_tab(3);
+                    }
+                    Act::SelectTab5 => {
+                        self.context_manager.select_tab(4);
+                    }
+                    Act::SelectTab6 => {
+                        self.context_manager.select_tab(5);
+                    }
+                    Act::SelectTab7 => {
+                        self.context_manager.select_tab(6);
+                    }
+                    Act::SelectTab8 => {
+                        self.context_manager.select_tab(7);
+                    }
+                    Act::SelectTab9 => {
+                        self.context_manager.select_tab(8);
+                    }
+                    Act::SelectLastTab => {
+                        self.context_manager.select_last_tab();
+                    }
+
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
                 }
