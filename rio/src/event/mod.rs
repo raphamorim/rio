@@ -37,6 +37,7 @@ pub enum RioEvent {
     Scroll(Scroll),
     UpdateConfig,
     CreateWindow,
+    CreateNativeTab,
     CreateConfigEditor,
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
@@ -109,6 +110,7 @@ impl Debug for RioEvent {
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
+            RioEvent::CreateNativeTab => write!(f, "CreateNativeTab"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
         }

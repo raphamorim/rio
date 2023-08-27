@@ -2,12 +2,14 @@
 
 ## In progress
 
+- Support to `NativeTab` (MacOS only).
 - Support lowercased action and fix overwrite for actions in custom key bindings.
 - Added `ReceiveChar` action for custom key bindings.
 - New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed.
 - Winit Version 0.29.1-beta.
 - Bindings to create and navigate tabs on macOS.
 - Support startup notify protocol to raise initial window on Wayland/X11.
+- Fix Double-tap by touchpad on the titlebar doesn't maximize/unmaximize the window in GNOME 44, Wayland.
 
 ## 0.0.16
 

@@ -78,6 +78,7 @@ impl Screen {
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
         _display: Option<*mut c_void>,
+        native_tab_id: Option<String>
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -93,9 +94,6 @@ impl Screen {
             padding_y_bottom += config.font_size
         }
 
-        #[cfg(target_os = "macos")]
-        let padding_y_top = constants::PADDING_Y;
-        #[cfg(not(target_os = "macos"))]
         let mut padding_y_top = constants::PADDING_Y;
 
         #[cfg(not(target_os = "macos"))]
@@ -103,6 +101,14 @@ impl Screen {
             if config.navigation.is_placed_on_top() {
                 padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
             }
+        }
+
+        if config.navigation.is_native() {
+            if native_tab_id.is_some() {
+                padding_y_top = padding_y_top * 2.0;
+            }
+            
+            padding_y_top += 2.0;
         }
 
         let sugarloaf_layout = SugarloafLayout::new(
@@ -134,6 +140,7 @@ impl Screen {
         let ime = Ime::new();
 
         let is_collapsed = config.navigation.is_collapsed_mode();
+        let is_native = config.navigation.is_native();
         let context_manager_config = context::ContextManagerConfig {
             use_current_path: config.navigation.use_current_path,
             shell: config.shell.clone(),
@@ -141,9 +148,10 @@ impl Screen {
             use_fork: config.use_fork,
             working_dir: config.working_dir.clone(),
             is_collapsed,
+            is_native,
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names
-            should_update_titles: !(is_collapsed
+            should_update_titles: !(is_collapsed || is_native
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
@@ -222,6 +230,18 @@ impl Screen {
         pos_x >= DEADZONE_START_X * scale_f64
     }
 
+    #[inline]
+    pub fn update_top_y_for_native_tabs(&mut self) {
+        let padding_y_top = constants::PADDING_Y;
+        self.sugarloaf.layout.set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
+
+        let width = self.sugarloaf.layout.width_u32 as u16;
+        let height = self.sugarloaf.layout.height_u32 as u16;
+        let columns = self.sugarloaf.layout.columns;
+        let lines = self.sugarloaf.layout.lines;
+        self.resize_all_contexts(width, height, columns, lines);
+    }
+
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
@@ -230,11 +250,24 @@ impl Screen {
             padding_y_bottom += config.font_size
         }
 
+        let mut padding_y_top = constants::PADDING_Y;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if config.navigation.is_placed_on_top() {
+                padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
+            }
+        }
+
+        if config.navigation.is_native() {
+            padding_y_top += 2.0;  
+        }
+
         self.sugarloaf.layout.recalculate(
             config.font_size,
             config.line_height,
             config.padding_x,
-            padding_y_bottom,
+            (padding_y_top, padding_y_bottom)
         );
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
@@ -452,6 +485,7 @@ impl Screen {
                     }
                     Act::TabCreateNew => {
                         let redirect = true;
+
                         self.context_manager.add_context(
                             redirect,
                             (
@@ -461,6 +495,7 @@ impl Screen {
                             (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
                             self.state.get_cursor_state_from_ref(),
                         );
+
                         self.render();
                     }
                     Act::TabSwitchNext => {

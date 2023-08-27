@@ -7,6 +7,8 @@ pub enum NavigationMode {
     CollapsedTab,
     TopTab,
     BottomTab,
+    #[cfg(target_os = "macos")]
+    NativeTab,
     #[cfg(not(windows))]
     Breadcrumb,
 }
@@ -44,6 +46,18 @@ impl Navigation {
 
     pub fn is_placed_on_bottom(&self) -> bool {
         self.mode == NavigationMode::BottomTab
+    }
+
+    pub fn is_native(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            return self.mode == NavigationMode::NativeTab;
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            return false;
+        }
     }
 
     pub fn is_placed_on_top(&self) -> bool {

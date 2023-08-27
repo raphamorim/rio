@@ -36,6 +36,7 @@ pub struct ContextManagerConfig {
     pub spawn_performer: bool,
     pub use_current_path: bool,
     pub is_collapsed: bool,
+    pub is_native: bool,
     pub should_update_titles: bool,
 }
 
@@ -77,7 +78,7 @@ pub struct ContextManager<T: EventListener> {
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,
-    config: ContextManagerConfig,
+    pub config: ContextManagerConfig,
     pub titles: ContextManagerTitles,
 }
 
@@ -211,6 +212,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             },
             spawn_performer: false,
             is_collapsed: true,
+            is_native: false,
             should_update_titles: false,
             use_current_path: false,
         };
@@ -243,9 +245,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    fn create_new_native_tab(&self) {
+        self.event_proxy
+            .send_event(RioEvent::CreateNativeTab, self.window_id);
+    }
+
+    #[inline]
     pub fn create_config_editor(&self) {
         self.event_proxy
             .send_event(RioEvent::CreateConfigEditor, self.window_id);
+    }
+
+    #[inline]
+    pub fn update_window_title(&self, title: String) {
+        self.event_proxy
+            .send_event(RioEvent::Title(title), self.window_id);
     }
 
     #[inline]
@@ -282,6 +296,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         let terminal = context.terminal.lock();
                         terminal_title = terminal.title.to_string();
                         drop(terminal);
+                    }
+
+                    if self.config.is_native {
+                        self.event_proxy
+                            .send_event(RioEvent::Title(program.clone()), self.window_id);
                     }
 
                     id =
@@ -429,6 +448,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         col_rows: (usize, usize),
         cursor_state: CursorState,
     ) {
+        // Native tabs do not use Context tabbing API, instead it will
+        // ask winit to create a window with a tab id
+        if self.config.is_native {
+            self.create_new_native_tab();
+            return;
+        }
+
         let size = self.contexts.len();
         if size < self.capacity {
             let last_index = self.contexts.len();
