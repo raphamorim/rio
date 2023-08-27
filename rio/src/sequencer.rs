@@ -108,7 +108,8 @@ pub struct Sequencer {
     settings_config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
-    has_updates: Vec<WindowId>,
+    // has_updates: Vec<WindowId>,
+    has_updates: bool,
     event_proxy: Option<EventProxy>,
 }
 
@@ -119,7 +120,7 @@ impl Sequencer {
             config: Rc::new(config),
             settings_config,
             windows: HashMap::new(),
-            has_updates: vec![],
+            has_updates: false,
             event_proxy: None,
             window_config_editor: None,
         }
@@ -173,9 +174,10 @@ impl Sequencer {
                                 create_settings_config(&self.config).into();
                             for (_id, sw) in self.windows.iter_mut() {
                                 sw.screen.update_config(&self.config);
-                                if !self.has_updates.contains(&window_id) {
-                                    self.has_updates.push(window_id);
-                                }
+                                sw.window.request_redraw();
+                                // if !self.has_updates.contains(&window_id) {
+                                    // self.has_updates.push(window_id);
+                                // }
                             }
                         }
                         RioEventType::Rio(RioEvent::Exit) => {
@@ -314,12 +316,7 @@ impl Sequencer {
                             use winit::platform::macos::WindowExtMacOS;
 
                             if let Some(current_sw) = self.windows.get_mut(&window_id) {
-
-                                // println!("{:?}", current_sw.window.num_tabs());
-
-                                if current_sw.window.num_tabs() == 1 {
-                                    current_sw.screen.update_top_y_for_native_tabs();
-                                }
+                                current_sw.screen.update_top_y_for_native_tabs(current_sw.window.num_tabs());
 
                                 let sw = SequencerWindow::from_target(
                                     event_loop_window_target,
@@ -352,6 +349,22 @@ impl Sequencer {
                                 let window_id = sw.window.id();
                                 self.windows.insert(window_id, sw);
                                 self.window_config_editor = Some(window_id);
+                            }
+                        }
+                        RioEventType::Rio(RioEvent::CloseWindow) => {
+                            use winit::platform::macos::WindowExtMacOS;
+
+                            if let Some(current_sw) = self.windows.get_mut(&window_id) {
+                                let num_tabs = current_sw.window.num_tabs();
+                                let mut has_removed = false;
+                                if num_tabs > 1 {
+                                    self.windows.remove(&window_id);
+                                    has_removed = true;
+                                }
+
+                                if num_tabs == 2 && has_removed {
+                                    self.has_updates = true;
+                                }
                             }
                         }
                         _ => {}
@@ -836,6 +849,12 @@ impl Sequencer {
                         // for window_id in self.has_updates.iter() {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
+
+                            use winit::platform::macos::WindowExtMacOS;
+                            if self.has_updates {
+                                sw.screen.update_top_y_for_native_tabs(sw.window.num_tabs());
+                            }
+
                             sw.screen.render();
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
