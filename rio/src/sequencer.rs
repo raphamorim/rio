@@ -361,6 +361,7 @@ impl Sequencer {
                                     self.window_config_editor = Some(window_id);
                                 }
                             }
+                            #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CloseWindow) => {
                                 use winit::platform::macos::WindowExtMacOS;
 
@@ -874,10 +875,14 @@ impl Sequencer {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
 
-                            use winit::platform::macos::WindowExtMacOS;
-                            if self.has_updates {
-                                sw.screen
-                                    .update_top_y_for_native_tabs(sw.window.num_tabs());
+                            #[cfg(target_os = "macos")]
+                            {
+                                use winit::platform::macos::WindowExtMacOS;
+                                if self.has_updates {
+                                    sw.screen.update_top_y_for_native_tabs(
+                                        sw.window.num_tabs(),
+                                    );
+                                }
                             }
 
                             sw.screen.render();
