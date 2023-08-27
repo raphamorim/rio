@@ -42,7 +42,7 @@ impl SequencerWindow {
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = create_window_builder("Rio", config);
+        let window_builder = create_window_builder("Rio", config, None);
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
@@ -51,7 +51,7 @@ impl SequencerWindow {
         #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
         let display: Option<*mut c_void> = Option::None;
 
-        let mut screen = Screen::new(&winit_window, config, event_proxy, display).await?;
+        let mut screen = Screen::new(&winit_window, config, event_proxy, display, None).await?;
 
         screen.init(config.colors.background.1);
 
@@ -70,8 +70,9 @@ impl SequencerWindow {
         event_proxy: EventProxy,
         config: &Rc<config::Config>,
         window_name: &str,
+        tab_id: Option<String>,
     ) -> Self {
-        let window_builder = create_window_builder(window_name, config);
+        let window_builder = create_window_builder(window_name, config, tab_id.clone());
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
@@ -85,6 +86,7 @@ impl SequencerWindow {
             config,
             event_proxy,
             display,
+            tab_id,
         ))
         .expect("Screen not created");
 
@@ -137,16 +139,6 @@ impl Sequencer {
             let display = unsafe { WaylandDisplay::from_external_display(display as _) };
             display.create_event_queue()
         });
-
-        // #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        // let _wayland_surface = if event_loop.is_wayland() {
-        //     // Attach surface to Rio internal wayland queue to handle frame callbacks.
-        //     let surface = winit_window.wayland_surface().unwrap();
-        //     let proxy: Proxy<WlSurface> = unsafe { Proxy::from_c_ptr(surface as _) };
-        //     Some(proxy.attach(wayland_event_queue.as_ref().unwrap().token()))
-        // } else {
-        //     None
-        // };
 
         let seq_win = SequencerWindow::new(&event_loop, &self.config).await?;
         let first_window = seq_win.window.id();
@@ -224,10 +216,10 @@ impl Sequencer {
                                 );
                             }
                         }
-                        RioEventType::Rio(RioEvent::Title(_title)) => {
-                            // if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
-                            // self.ctx.window().set_title(title);
-                            // }
+                        RioEventType::Rio(RioEvent::Title(title)) => {
+                            if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
+                                sequencer_window.window.set_title(&title);
+                            }
                         }
                         RioEventType::BlinkCursor | RioEventType::BlinkCursorTimeout => {}
                         RioEventType::Rio(RioEvent::MouseCursorDirty) => {
@@ -313,8 +305,32 @@ impl Sequencer {
                                 self.event_proxy.clone().unwrap(),
                                 &self.config,
                                 "Rio",
+                                None
                             );
                             self.windows.insert(sw.window.id(), sw);
+                        }
+                        #[cfg(target_os = "macos")]
+                        RioEventType::Rio(RioEvent::CreateNativeTab) => {
+                            use winit::platform::macos::WindowExtMacOS;
+
+                            if let Some(current_sw) = self.windows.get_mut(&window_id) {
+
+                                // println!("{:?}", current_sw.window.num_tabs());
+
+                                if current_sw.window.num_tabs() == 1 {
+                                    current_sw.screen.update_top_y_for_native_tabs();
+                                }
+
+                                let sw = SequencerWindow::from_target(
+                                    event_loop_window_target,
+                                    self.event_proxy.clone().unwrap(),
+                                    &self.config,
+                                    "zsh",
+                                    Some(current_sw.window.tabbing_identifier()),
+                                );
+
+                                self.windows.insert(sw.window.id(), sw);
+                            }
                         }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {
                             if let Some(config_editor_window_id) =
@@ -331,6 +347,7 @@ impl Sequencer {
                                     self.event_proxy.clone().unwrap(),
                                     &self.settings_config,
                                     "Rio Configuration",
+                                    None
                                 );
                                 let window_id = sw.window.id();
                                 self.windows.insert(window_id, sw);

@@ -125,6 +125,8 @@ impl ScreenNavigation {
         self.texts = vec![];
 
         match self.mode {
+            #[cfg(target_os = "macos")]
+            NavigationMode::NativeTab => {},
             NavigationMode::CollapsedTab => self.collapsed_tab(titles, len),
             #[cfg(not(windows))]
             NavigationMode::Breadcrumb => self.breadcrumb(titles, len),

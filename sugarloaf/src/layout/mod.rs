@@ -151,7 +151,6 @@ impl SugarloafLayout {
     }
 
     pub fn update(&mut self) -> &mut Self {
-        update_styles(self);
         let (columns, lines) = compute(
             (self.width, self.height),
             self.scale_factor,
@@ -189,13 +188,19 @@ impl SugarloafLayout {
         }
     }
 
+    pub fn set_top_y_for_native_tabs(&mut self, top_y: f32) {
+        self.margin.top_y = top_y;
+        update_styles(self);
+    }
+
     // This method will run over the new font and font_size
+    #[inline]
     pub fn recalculate(
         &mut self,
         font_size: f32,
         line_height: f32,
         margin_x: f32,
-        margin_y_bottom: f32,
+        margin_y: (f32, f32),
     ) -> &mut Self {
         let mut should_apply_changes = false;
         if self.font_size != font_size {
@@ -214,8 +219,13 @@ impl SugarloafLayout {
             should_apply_changes = true;
         }
 
-        if self.margin.bottom_y != margin_y_bottom {
-            self.margin.bottom_y = margin_y_bottom;
+        if self.margin.top_y != margin_y.0 {
+            self.margin.top_y = margin_y.0;
+            should_apply_changes = true;
+        }
+
+        if self.margin.bottom_y != margin_y.1 {
+            self.margin.bottom_y = margin_y.1;
             should_apply_changes = true;
         }
 

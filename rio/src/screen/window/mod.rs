@@ -8,7 +8,11 @@ pub const LOGO_ICON: &[u8; 119202] =
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
 
-pub fn create_window_builder(title: &str, config: &Rc<Config>) -> WindowBuilder {
+pub fn create_window_builder(
+    title: &str,
+    config: &Rc<Config>,
+    tab_id: Option<String>
+) -> WindowBuilder {
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
         image_icon.to_rgba8().into_raw(),
@@ -54,6 +58,17 @@ pub fn create_window_builder(title: &str, config: &Rc<Config>) -> WindowBuilder 
             .with_titlebar_transparent(true)
             .with_transparent(true)
             .with_fullsize_content_view(true);
+
+        if config.navigation.is_native() {
+            window_builder = window_builder
+                .with_title_hidden(false)
+                .with_titlebar_transparent(false);
+
+
+            if let Some(identifier) = tab_id {
+                window_builder = window_builder.with_tabbing_identifier(&identifier);
+            }
+        }
 
         if config.navigation.macos_hide_window_buttons {
             window_builder = window_builder.with_titlebar_buttons_hidden(true);
