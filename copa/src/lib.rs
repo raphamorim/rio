@@ -660,22 +660,22 @@ mod tests {
     #[test]
     fn issue_191() {
         use crate::std::string::{String, ToString};
-        use unicode_normalization::{UnicodeNormalization, IsNormalized, is_nfc_quick};
+        use unicode_normalization::{is_nfc_quick, IsNormalized, UnicodeNormalization};
 
         // https://github.com/raphamorim/rio/issues/191
         // 한 isn't rendered correctly via printf '\xe1\x84\x92\xe1\x85\xa1\xe1\x86\xab\n'
-        let mut input = std::str::from_utf8(b"\xe1\x84\x92\xe1\x85\xa1\xe1\x86\xab").unwrap();
+        let mut input =
+            std::str::from_utf8(b"\xe1\x84\x92\xe1\x85\xa1\xe1\x86\xab").unwrap();
         let mut dispatcher = Dispatcher::default();
         let mut parser = Parser::new();
 
         let p = std::mem::take(&mut input).to_string();
         let normalized: String;
-        let text = if is_nfc_quick(p.chars()) != IsNormalized::Yes
-        {
+        let text = if is_nfc_quick(p.chars()) == IsNormalized::Yes {
+            p.as_str()
+        } else {
             normalized = p.as_str().nfc().collect();
             normalized.as_str()
-        } else {
-            p.as_str()
         };
 
         let bytes: &[u8] = &text.bytes().collect::<Vec<u8>>();

@@ -5,7 +5,7 @@ use sugarloaf::{
     layout::SugarloafLayout,
     Sugarloaf,
 };
-use winit::platform::run_return::EventLoopExtRunReturn;
+use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -15,7 +15,7 @@ use winit::{
 
 #[tokio::main]
 async fn main() {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = EventLoop::new().unwrap();
     let width = 1200.0;
     let height = 800.0;
 
@@ -48,7 +48,7 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    event_loop.run_return(move |event, _, control_flow| {
+    let _ = event_loop.run_ondemand(move |event, _, control_flow| {
         control_flow.set_wait();
 
         let sugar = vec![
@@ -296,11 +296,12 @@ async fn main() {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::ScaleFactorChanged {
-                    new_inner_size,
+                    inner_size_writer: _,
                     scale_factor,
                     ..
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
+                    let new_inner_size = window.inner_size();
                     sugarloaf
                         .rescale(scale_factor_f32)
                         .resize(new_inner_size.width, new_inner_size.height)

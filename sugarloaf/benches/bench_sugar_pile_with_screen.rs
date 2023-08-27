@@ -1,4 +1,4 @@
-use winit::platform::run_return::EventLoopExtRunReturn;
+use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 extern crate criterion;
 extern crate sugarloaf;
 
@@ -14,7 +14,7 @@ use winit::window::WindowBuilder;
 fn bench_sugar_pile_with_screen(c: &mut Criterion) {
     const NUM: usize = 10_000;
 
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = EventLoop::new().unwrap();
     let width = 400.0;
     let height = 400.0;
 
@@ -47,7 +47,7 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
     ))
     .expect("Sugarloaf instance should be created");
 
-    event_loop.run_return(move |event, _, control_flow| {
+    let _ = event_loop.run_ondemand(move |event, _, control_flow| {
         control_flow.set_wait();
 
         match event {

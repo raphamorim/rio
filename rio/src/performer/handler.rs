@@ -1,11 +1,11 @@
-use std::str::FromStr;
-use cursor_icon::CursorIcon;
 use crate::ansi::mode::Mode;
 use crate::ansi::CursorShape;
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use colors::ColorRgb;
+use cursor_icon::CursorIcon;
 use log::{debug, warn};
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use crate::crosswords::attr::Attr;
@@ -689,7 +689,9 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 let shape = String::from_utf8_lossy(params[1]);
                 match CursorIcon::from_str(&shape) {
                     Ok(cursor_icon) => self.handler.set_mouse_cursor_icon(cursor_icon),
-                    Err(_) => debug!("[osc 22] unrecognized cursor icon shape: {shape:?}"),
+                    Err(_) => {
+                        debug!("[osc 22] unrecognized cursor icon shape: {shape:?}")
+                    }
                 }
             }
 

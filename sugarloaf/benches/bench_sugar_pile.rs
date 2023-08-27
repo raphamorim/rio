@@ -20,7 +20,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
         .with_title("Bench")
         .with_inner_size(LogicalSize::new(width, height))
         .with_resizable(true)
-        .build(&event_loop)
+        .build(&event_loop.unwrap())
         .unwrap();
 
     let scale_factor = window.scale_factor();
