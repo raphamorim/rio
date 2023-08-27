@@ -53,7 +53,7 @@ padding-x = 0
 #
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
-option_as_alt = 'both'
+option-as-alt = 'both'
 
 # Window Opacity
 #
