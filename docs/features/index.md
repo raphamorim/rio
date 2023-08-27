@@ -12,6 +12,7 @@ Short introduction of Rio terminal features. Many other features are in developm
 - [• Cross Platform](#cross-platform)
 - [• Fast](#Fast)
 - [• Minimal tabs](#minimal-tabs)
+- [• Native tabs](#native-tabs)
 - [• Multi windows architecture](#multi-windows)
 - [• Spawn or Fork processes](#spawn-or-fork)
 - [• Collapsed tabs, breadcrumb, expanded tabs on top or bottom](#navigation)
@@ -37,6 +38,12 @@ Most of the times you don't want to be spammed by on-going processes that are ha
 
 In the future new functionalities will be added to the Rio minimal tabs, to make even easier to navigate or gather information quickly.
 
+### Native tabs
+
+<img alt="Demo native tabs" src="/rio/assets/posts/0.0.17/demo-native-tabs.png" width="70%"/>
+
+Besides other navigation styles, Rio terminal does support native tabs as well.
+
 ### Multi windows
 
 The terminal supports multi window features in the following platforms: Windows, MacOS, FreeBSD and Linux.
@@ -53,7 +60,7 @@ See how to configure it in the advanced section [here](/rio/docs).
 
 ### Navigation
 
-Rio support 4 types of navigation modes:
+Rio support 5 types of navigation modes:
 
 <p>
 <img alt="Demo Breadcrumb" src="/rio/assets/features/demo-breadcrumb.png" width="48%"/>
@@ -64,6 +71,8 @@ Rio support 4 types of navigation modes:
 <img alt="Demo CollapsedTab" src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="48%" />
 <img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="48%"/>
 </p>
+
+And native tabs for MacOS.
 
 See more about it [here](/rio/docs/navigation).
 
