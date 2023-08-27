@@ -258,24 +258,11 @@ impl Screen {
             padding_y_bottom += config.font_size
         }
 
-        let mut padding_y_top = constants::PADDING_Y;
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            if config.navigation.is_placed_on_top() {
-                padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
-            }
-        }
-
-        if config.navigation.is_native() {
-            padding_y_top += 2.0;
-        }
-
         self.sugarloaf.layout.recalculate(
             config.font_size,
             config.line_height,
             config.padding_x,
-            (padding_y_top, padding_y_bottom),
+            padding_y_bottom,
         );
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();
