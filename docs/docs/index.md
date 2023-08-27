@@ -108,7 +108,7 @@ shell = { program = "/bin/zsh", args = ["--login"] }
 # directory of the parent process will be used.
 #
 # This configuration only has effect if use-fork is disabled
-working_dir = "/Users/raphael/Documents/"
+working-dir = "/Users/raphael/Documents/"
 
 # Editor
 #
