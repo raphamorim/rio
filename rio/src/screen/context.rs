@@ -251,15 +251,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn create_config_editor(&self) {
+    pub fn close_current_window(&self) {
         self.event_proxy
-            .send_event(RioEvent::CreateConfigEditor, self.window_id);
+            .send_event(RioEvent::CloseWindow, self.window_id);
     }
 
     #[inline]
-    pub fn update_window_title(&self, title: String) {
+    pub fn create_config_editor(&self) {
         self.event_proxy
-            .send_event(RioEvent::Title(title), self.window_id);
+            .send_event(RioEvent::CreateConfigEditor, self.window_id);
     }
 
     #[inline]

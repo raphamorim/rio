@@ -231,9 +231,13 @@ impl Screen {
     }
 
     #[inline]
-    pub fn update_top_y_for_native_tabs(&mut self) {
+    pub fn update_top_y_for_native_tabs(&mut self, tab_num: usize) {
         let padding_y_top = constants::PADDING_Y;
-        self.sugarloaf.layout.set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
+        if tab_num > 1 {
+            self.sugarloaf.layout.set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
+        } else {
+            self.sugarloaf.layout.set_top_y_for_native_tabs(padding_y_top + 2.0);
+        }
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
@@ -510,9 +514,14 @@ impl Screen {
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
-                        // Kill current context will trigger terminal.exit
-                        // then RioEvent::Exit and eventually try_close_existent_tab
-                        self.context_manager.kill_current_context();
+
+                        if self.context_manager.config.is_native {
+                            self.context_manager.close_current_window();
+                        } else {
+                            // Kill current context will trigger terminal.exit
+                            // then RioEvent::Exit and eventually try_close_existent_tab
+                            self.context_manager.kill_current_context();
+                        }
                     }
                     Act::Quit => {
                         // TODO: Add it in event system

@@ -37,6 +37,7 @@ pub enum RioEvent {
     Scroll(Scroll),
     UpdateConfig,
     CreateWindow,
+    CloseWindow,
     CreateNativeTab,
     CreateConfigEditor,
 
@@ -110,6 +111,7 @@ impl Debug for RioEvent {
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
+            RioEvent::CloseWindow => write!(f, "CloseWindow"),
             RioEvent::CreateNativeTab => write!(f, "CreateNativeTab"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
