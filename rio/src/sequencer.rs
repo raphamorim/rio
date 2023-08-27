@@ -354,6 +354,7 @@ impl Sequencer {
                                     }
                                 }
                             }
+                            #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::SelectNativeTabByIndex(
                                 tab_index,
                             )) => {
