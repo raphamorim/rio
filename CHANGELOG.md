@@ -3,6 +3,7 @@
 ## In progress
 
 - Support to `NativeTab` (MacOS only).
+- Added new actions for tab selection: `SelectTab1`, `SelectTab2`, `SelectTab3`, `SelectTab4`, `SelectTab5`, `SelectTab6`, `SelectTab7`, `SelectTab8`, `SelectTab9`, `SelectLastTab`.
 - Support lowercased action and fix overwrite for actions in custom key bindings.
 - Added `ReceiveChar` action for custom key bindings.
 - New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed.
