@@ -151,6 +151,7 @@ impl SugarloafLayout {
     }
 
     pub fn update(&mut self) -> &mut Self {
+        update_styles(self);
         let (columns, lines) = compute(
             (self.width, self.height),
             self.scale_factor,

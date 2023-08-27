@@ -371,7 +371,7 @@ async fn main() {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::ScaleFactorChanged {
-                    inner_size_writer: _,
+                    // mut inner_size_writer,
                     scale_factor,
                     ..
                 } => {
@@ -380,6 +380,12 @@ async fn main() {
                     sugarloaf
                         .rescale(scale_factor_f32)
                         .resize(new_inner_size.width, new_inner_size.height)
+                        .calculate_bounds();
+                    window.request_redraw();
+                }
+                winit::event::WindowEvent::Resized(new_size) => {
+                    sugarloaf
+                        .resize(new_size.width, new_size.height)
                         .calculate_bounds();
                     window.request_redraw();
                 }

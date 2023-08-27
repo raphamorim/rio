@@ -603,14 +603,14 @@ impl Sugarloaf {
                 // Every time a font size change the cached bounds also changes
                 self.sugar_cache = HashMap::new();
 
-                let scale = self.layout.style.text_scale;
+                let text_scale = self.layout.style.text_scale;
                 // Bounds are defined in runtime
                 if self.is_text_monospaced {
                     self.font_bound =
-                        self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), scale);
+                        self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
                 } else {
                     self.font_bound =
-                        self.get_font_bounds('-', FontId(FONT_ID_REGULAR), scale);
+                        self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
                 }
 
                 self.layout.sugarwidth = self.font_bound.0;
