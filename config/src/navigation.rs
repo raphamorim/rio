@@ -56,7 +56,7 @@ impl Navigation {
 
         #[cfg(not(target_os = "macos"))]
         {
-            return false;
+            false
         }
     }
 
