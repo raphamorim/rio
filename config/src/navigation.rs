@@ -51,7 +51,7 @@ impl Navigation {
     pub fn is_native(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
-            return self.mode == NavigationMode::NativeTab;
+            self.mode == NavigationMode::NativeTab
         }
 
         #[cfg(not(target_os = "macos"))]

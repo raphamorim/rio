@@ -527,16 +527,11 @@ async fn run() {
             }
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::ScaleFactorChanged {
-                    scale_factor,
-                    ..
-                } => {
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                     log::info!("changed scale_factor: {scale_factor:?}");
 
                     let scale_factor_f32 = scale_factor as f32;
-                    sugarloaf
-                        .rescale(scale_factor_f32)
-                        .calculate_bounds();
+                    sugarloaf.rescale(scale_factor_f32).calculate_bounds();
                     window.request_redraw();
                 }
                 _ => (),

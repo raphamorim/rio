@@ -78,7 +78,7 @@ impl Screen {
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
         _display: Option<*mut c_void>,
-        native_tab_id: Option<String>
+        native_tab_id: Option<String>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -105,9 +105,9 @@ impl Screen {
 
         if config.navigation.is_native() {
             if native_tab_id.is_some() {
-                padding_y_top = padding_y_top * 2.0;
+                padding_y_top *= 2.0;
             }
-            
+
             padding_y_top += 2.0;
         }
 
@@ -151,8 +151,8 @@ impl Screen {
             is_native,
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names
-            should_update_titles: !(is_collapsed || is_native
-                && config.navigation.color_automation.is_empty()),
+            should_update_titles: !(is_collapsed
+                || is_native && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
@@ -234,9 +234,13 @@ impl Screen {
     pub fn update_top_y_for_native_tabs(&mut self, tab_num: usize) {
         let padding_y_top = constants::PADDING_Y;
         if tab_num > 1 {
-            self.sugarloaf.layout.set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
+            self.sugarloaf
+                .layout
+                .set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
         } else {
-            self.sugarloaf.layout.set_top_y_for_native_tabs(padding_y_top + 2.0);
+            self.sugarloaf
+                .layout
+                .set_top_y_for_native_tabs(padding_y_top + 2.0);
         }
 
         let width = self.sugarloaf.layout.width_u32 as u16;
@@ -264,14 +268,14 @@ impl Screen {
         }
 
         if config.navigation.is_native() {
-            padding_y_top += 2.0;  
+            padding_y_top += 2.0;
         }
 
         self.sugarloaf.layout.recalculate(
             config.font_size,
             config.line_height,
             config.padding_x,
-            (padding_y_top, padding_y_bottom)
+            (padding_y_top, padding_y_bottom),
         );
         self.sugarloaf.update_font(config.font.to_string());
         self.sugarloaf.layout.update();

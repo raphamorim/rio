@@ -16,7 +16,7 @@ use winit::{
 
 #[tokio::main]
 async fn main() {
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let width = 1200.0;
     let height = 800.0;
 
@@ -51,7 +51,7 @@ async fn main() {
 
     sugarloaf.calculate_bounds();
 
-    event_loop.run(move |event, _, control_flow| {
+    let _ = event_loop.run(move |event, _, control_flow| {
         control_flow.set_wait();
 
         let sugar = vec![
@@ -507,13 +507,14 @@ async fn main() {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::ScaleFactorChanged {
-                    new_inner_size,
+                    inner_size_writer: _,
                     scale_factor,
                     ..
                 } => {
                     log::info!("changed scale_factor: {scale_factor:?}");
 
                     let scale_factor_f32 = scale_factor as f32;
+                    let new_inner_size = window.inner_size();
                     sugarloaf
                         .rescale(scale_factor_f32)
                         .resize(new_inner_size.width, new_inner_size.height)
