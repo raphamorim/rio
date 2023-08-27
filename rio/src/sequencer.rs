@@ -23,7 +23,7 @@ use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
 use winit::event_loop::{DeviceEvents, EventLoop, EventLoopWindowTarget};
-use winit::platform::run_return::EventLoopExtRunReturn;
+use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Window, WindowId};
 
 pub struct SequencerWindow {
@@ -153,7 +153,7 @@ impl Sequencer {
         self.windows.insert(first_window, seq_win);
 
         event_loop.listen_device_events(DeviceEvents::Never);
-        event_loop.run_return(move |event, event_loop_window_target, control_flow| {
+        let _ = event_loop.run_ondemand(move |event, event_loop_window_target, control_flow| {
             match event {
                 Event::UserEvent(EventP {
                     payload, window_id, ..
@@ -161,8 +161,8 @@ impl Sequencer {
                     match payload {
                         RioEventType::Rio(RioEvent::Wakeup) => {
                             // Emitted when the application has been resumed.
-                            if !self.has_updates.contains(&window_id) {
-                                self.has_updates.push(window_id);
+                            if let Some(sw) = self.windows.get_mut(&window_id) {
+                                sw.window.request_redraw();
                             }
                         }
                         RioEventType::Rio(RioEvent::Render) => {
@@ -171,9 +171,7 @@ impl Sequencer {
                                 {
                                     return;
                                 }
-                                if !self.has_updates.contains(&window_id) {
-                                    self.has_updates.push(window_id);
-                                }
+                                sw.window.request_redraw();
                             }
                         }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
@@ -467,9 +465,11 @@ impl Sequencer {
                                         sequencer_window.screen.on_left_click(point);
                                     }
 
-                                    if !self.has_updates.contains(&window_id) {
-                                        self.has_updates.push(window_id);
-                                    }
+                                    // if !self.has_updates.contains(&window_id) {
+                                    //     self.has_updates.push(window_id);
+                                    // }
+
+                                    sequencer_window.window.request_redraw();
                                 }
                                 // sequencer_window.screen.process_mouse_bindings(button);
                             }
@@ -590,9 +590,10 @@ impl Sequencer {
                         {
                             sw.screen.update_selection(point, square_side);
 
-                            if !self.has_updates.contains(&window_id) {
-                                self.has_updates.push(window_id);
-                            }
+                            // if !self.has_updates.contains(&window_id) {
+                            //     self.has_updates.push(window_id);
+                            // }
+                            sw.window.request_redraw();
                         } else if square_changed && sw.screen.has_mouse_motion_and_drag()
                         {
                             if lmb_pressed {
@@ -673,18 +674,21 @@ impl Sequencer {
                         },
                     window_id,
                     ..
-                } => match key_event.state {
-                    ElementState::Pressed => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.window.set_cursor_visible(false);
+                } => {
+                    if let Some(sw) = self.windows.get_mut(&window_id) {
+                        match key_event.state {
+                            ElementState::Pressed => {
+                                    sw.window.set_cursor_visible(false);
 
-                            sw.screen.process_key_event(&key_event);
-                        }
-                    }
+                                    sw.screen.process_key_event(&key_event);
+                            }
 
-                    ElementState::Released => {
-                        if !self.has_updates.contains(&window_id) {
-                            self.has_updates.push(window_id);
+                            ElementState::Released => {
+                                // if !self.has_updates.contains(&window_id) {
+                                //     self.has_updates.push(window_id);
+                                // }
+                                sw.window.request_redraw();
+                            }
                         }
                     }
                 },
@@ -774,30 +778,32 @@ impl Sequencer {
                 Event::WindowEvent {
                     event:
                         winit::event::WindowEvent::ScaleFactorChanged {
-                            new_inner_size,
+                            inner_size_writer: _,
                             scale_factor,
                         },
                     window_id,
                     ..
                 } => {
                     if let Some(sw) = self.windows.get_mut(&window_id) {
-                        sw.screen.set_scale(scale_factor as f32, *new_inner_size);
-                        if !self.has_updates.contains(&window_id) {
-                            self.has_updates.push(window_id);
-                        }
+                        sw.screen.set_scale(scale_factor as f32, sw.window.inner_size());
+                        // if !self.has_updates.contains(&window_id) {
+                        //     self.has_updates.push(window_id);
+                        // }
+                        sw.window.request_redraw();
                     }
                 }
 
                 // Emitted when the event loop is being shut down.
                 // This is irreversible - if this event is emitted, it is guaranteed to be the last event that gets emitted.
                 // You generally want to treat this as an “do on quit” event.
-                Event::LoopDestroyed { .. } => {
+                Event::LoopExiting { .. } => {
                     // TODO: Now we are forcing an exit operation
                     // but it should be revaluated since CloseRequested in MacOs
                     // not necessarily exit the process
                     std::process::exit(0);
                 }
-                Event::RedrawEventsCleared { .. } => {
+
+                Event::RedrawRequested(window_id) => {
                     // Skip render for macos and x11 windows that are fully occluded
                     #[cfg(all(
                         feature = "wayland",
@@ -809,23 +815,21 @@ impl Sequencer {
                             .expect("failed to dispatch wayland event queue");
                     }
 
-                    if !self.has_updates.is_empty() {
-                        for window_id in self.has_updates.iter() {
-                            if let Some(sw) = self.windows.get_mut(window_id) {
-                                // let start = std::time::Instant::now();
-                                sw.screen.render();
-                                // let duration = start.elapsed();
-                                // println!("Time elapsed in render() is: {:?}", duration);
-                            }
+                    // if !self.has_updates.is_empty() {
+                        // for window_id in self.has_updates.iter() {
+                        if let Some(sw) = self.windows.get_mut(&window_id) {
+                            // let start = std::time::Instant::now();
+                            sw.screen.render();
+                            // let duration = start.elapsed();
+                            // println!("Time elapsed in render() is: {:?}", duration);
                         }
+                    // }
 
-                        self.has_updates = vec![];
-                    }
+                    // self.has_updates = vec![];
+                    // }
 
                     scheduler.update();
-                }
-                Event::MainEventsCleared { .. } => {}
-                Event::RedrawRequested(_window_id) => {
+
                     *control_flow = winit::event_loop::ControlFlow::Wait;
                 }
                 _ => {}
