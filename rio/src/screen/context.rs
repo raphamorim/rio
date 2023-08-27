@@ -291,7 +291,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(target_os = "windows"))]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(5) {
+            let interval_time = if self.config.is_native {
+                Duration::from_secs(3)
+            } else {
+                Duration::from_secs(5)
+            };
+
+            if self.titles.last_title_update.elapsed() > interval_time {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
@@ -315,8 +321,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     }
 
                     if self.config.is_native {
+                        let window_title = if terminal_title.is_empty() {
+                            program.to_owned()
+                        } else {
+                            terminal_title.to_owned()
+                        };
+
                         self.event_proxy
-                            .send_event(RioEvent::Title(program.clone()), self.window_id);
+                            .send_event(RioEvent::Title(window_title), self.window_id);
                     }
 
                     id =

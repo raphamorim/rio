@@ -302,8 +302,10 @@ impl Sequencer {
                                 if let Some(current_sw) = self.windows.get_mut(&window_id)
                                 {
                                     current_sw.screen.update_top_y_for_native_tabs(
-                                        current_sw.window.num_tabs(),
+                                        current_sw.window.num_tabs() + 1,
                                     );
+
+                                    current_sw.window.request_redraw();
 
                                     let sw = SequencerWindow::from_target(
                                         event_loop_window_target,
