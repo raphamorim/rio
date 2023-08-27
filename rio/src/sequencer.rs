@@ -91,6 +91,7 @@ pub struct Sequencer {
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
     // has_updates: Vec<WindowId>,
+    #[allow(unused)]
     has_updates: bool,
     event_proxy: Option<EventProxy>,
 }
@@ -116,12 +117,6 @@ impl Sequencer {
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
         let _ = watch(config::config_dir_path(), self.event_proxy.clone().unwrap());
         let mut scheduler = Scheduler::new(proxy);
-
-        // #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        // let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
-        //     let display = unsafe { WaylandDisplay::from_external_display(display as _) };
-        //     display.create_event_queue()
-        // });
 
         let seq_win = SequencerWindow::new(&event_loop, &self.config).await?;
         let first_window = seq_win.window.id();
@@ -840,17 +835,6 @@ impl Sequencer {
                     }
 
                     Event::RedrawRequested(window_id) => {
-                        // Skip render for macos and x11 windows that are fully occluded
-                        // #[cfg(all(
-                        //     feature = "wayland",
-                        //     not(any(target_os = "macos", target_os = "windows"))
-                        // ))]
-                        // if let Some(w_event_queue) = wayland_event_queue.as_mut() {
-                        //     w_event_queue
-                        //         .dispatch_pending(&mut (), |_, _, _| {})
-                        //         .expect("failed to dispatch wayland event queue");
-                        // }
-
                         // if !self.has_updates.is_empty() {
                         // for window_id in self.has_updates.iter() {
                         if let Some(sw) = self.windows.get_mut(&window_id) {

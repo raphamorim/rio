@@ -11,7 +11,7 @@ pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
 pub fn create_window_builder(
     title: &str,
     config: &Rc<Config>,
-    tab_id: Option<String>,
+    #[allow(unused)] tab_id: Option<String>,
 ) -> WindowBuilder {
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(

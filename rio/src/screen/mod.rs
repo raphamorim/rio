@@ -230,6 +230,7 @@ impl Screen {
     }
 
     #[inline]
+    #[cfg(target_os = "macos")]
     pub fn update_top_y_for_native_tabs(&mut self, tab_num: usize) {
         let padding_y_top = constants::PADDING_Y;
         if tab_num > 1 {
