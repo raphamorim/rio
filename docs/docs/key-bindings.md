@@ -41,7 +41,25 @@ Minimize window: <span class="keyword">Command + M</span>
 
 Quit: <span class="keyword">Command + Q</span>
 
-Close tab or quit: <span class="keyword">Command + W</span>
+Close tab: <span class="keyword">Command + W</span>
+
+Select the first tab: <span>Command + 1</span>
+
+Select the second tab: <span>Command + 2</span>
+
+Select the third tab: <span>Command + 3</span>
+
+Select the fourth tab: <span>Command + 4</span>
+
+Select the fifth tab: <span>Command + 5</span>
+
+Select the sixth tab: <span>Command + 6</span>
+
+Select the seventh tab: <span>Command + 7</span>
+
+Select the eighth tab: <span>Command + 8</span>
+
+Select the last tab: <span>Command + 9</span>
 
 ### Windows
 

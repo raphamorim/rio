@@ -268,6 +268,27 @@ pub enum Action {
 
     /// No action.
     None,
+
+    #[allow(dead_code)]
+    SelectTab1,
+    #[allow(dead_code)]
+    SelectTab2,
+    #[allow(dead_code)]
+    SelectTab3,
+    #[allow(dead_code)]
+    SelectTab4,
+    #[allow(dead_code)]
+    SelectTab5,
+    #[allow(dead_code)]
+    SelectTab6,
+    #[allow(dead_code)]
+    SelectTab7,
+    #[allow(dead_code)]
+    SelectTab8,
+    #[allow(dead_code)]
+    SelectTab9,
+    #[allow(dead_code)]
+    SelectLastTab,
 }
 
 impl From<&'static str> for Action {
@@ -852,6 +873,15 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
+        "1", ModifiersState::SUPER; Action::SelectTab1;
+        "2", ModifiersState::SUPER; Action::SelectTab2;
+        "3", ModifiersState::SUPER; Action::SelectTab3;
+        "4", ModifiersState::SUPER; Action::SelectTab4;
+        "5", ModifiersState::SUPER; Action::SelectTab5;
+        "6", ModifiersState::SUPER; Action::SelectTab6;
+        "7", ModifiersState::SUPER; Action::SelectTab7;
+        "8", ModifiersState::SUPER; Action::SelectTab8;
+        "9", ModifiersState::SUPER; Action::SelectLastTab;
     )
 }
 

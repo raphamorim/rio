@@ -1,3 +1,6 @@
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowExtMacOS;
+
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -296,8 +299,6 @@ impl Sequencer {
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CreateNativeTab) => {
-                                use winit::platform::macos::WindowExtMacOS;
-
                                 if let Some(current_sw) = self.windows.get_mut(&window_id)
                                 {
                                     current_sw.screen.update_top_y_for_native_tabs(
@@ -339,8 +340,6 @@ impl Sequencer {
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CloseWindow) => {
-                                use winit::platform::macos::WindowExtMacOS;
-
                                 if let Some(current_sw) = self.windows.get_mut(&window_id)
                                 {
                                     let num_tabs = current_sw.window.num_tabs();
@@ -353,6 +352,20 @@ impl Sequencer {
                                     if num_tabs == 2 && has_removed {
                                         self.has_updates = true;
                                     }
+                                }
+                            }
+                            RioEventType::Rio(RioEvent::SelectNativeTabByIndex(
+                                tab_index,
+                            )) => {
+                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                    sw.window.select_tab_at_index(tab_index);
+                                }
+                            }
+                            #[cfg(target_os = "macos")]
+                            RioEventType::Rio(RioEvent::SelectNativeTabLast) => {
+                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                    sw.window
+                                        .select_tab_at_index(sw.window.num_tabs() - 1);
                                 }
                             }
                             _ => {}
@@ -842,7 +855,6 @@ impl Sequencer {
 
                             #[cfg(target_os = "macos")]
                             {
-                                use winit::platform::macos::WindowExtMacOS;
                                 if self.has_updates {
                                     sw.screen.update_top_y_for_native_tabs(
                                         sw.window.num_tabs(),
