@@ -7,6 +7,8 @@ mod navigation;
 mod state;
 pub mod window;
 
+use winit::window::raw_window_handle::HasRawDisplayHandle;
+// use winit::window::raw_window_handle::HasRawWindowHandle;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Column, Line};
@@ -31,7 +33,6 @@ use state::State;
 use std::cmp::max;
 use std::cmp::min;
 use std::error::Error;
-use std::os::raw::c_void;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ElementState;
@@ -77,11 +78,12 @@ impl Screen {
         winit_window: &winit::window::Window,
         config: &Rc<config::Config>,
         event_proxy: EventProxy,
-        _display: Option<*mut c_void>,
         native_tab_id: Option<String>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
+        // let raw_window_handle = winit_window.raw_window_handle();
+        let raw_display_handle = winit_window.raw_display_handle();
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
@@ -131,10 +133,7 @@ impl Screen {
 
         let state = State::new(config);
 
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let clipboard = unsafe { Clipboard::new(_display) };
-        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
-        let clipboard = Clipboard::new();
+        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
         let bindings = bindings::default_key_bindings(config.bindings.keys.clone());
         let ime = Ime::new();

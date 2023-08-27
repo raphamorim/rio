@@ -1,9 +1,3 @@
-#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-use {
-    wayland_client::Display as WaylandDisplay,
-    winit::platform::wayland::EventLoopWindowTargetExtWayland,
-};
-
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -16,7 +10,6 @@ use crate::{utils::settings::create_settings_config, utils::watch::watch};
 use colors::ColorRgb;
 use std::collections::HashMap;
 use std::error::Error;
-use std::os::raw::c_void;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::event::{
@@ -46,13 +39,7 @@ impl SequencerWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let display: Option<*mut c_void> = event_loop.wayland_display();
-        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
-        let display: Option<*mut c_void> = Option::None;
-
-        let mut screen =
-            Screen::new(&winit_window, config, event_proxy, display, None).await?;
+        let mut screen = Screen::new(&winit_window, config, event_proxy, None).await?;
 
         screen.init(config.colors.background.1);
 
@@ -77,16 +64,10 @@ impl SequencerWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let display: Option<*mut c_void> = event_loop.wayland_display();
-        #[cfg(any(not(feature = "wayland"), target_os = "macos", windows))]
-        let display: Option<*mut c_void> = Option::None;
-
         let mut screen = futures::executor::block_on(Screen::new(
             &winit_window,
             config,
             event_proxy,
-            display,
             tab_id,
         ))
         .expect("Screen not created");
@@ -136,11 +117,11 @@ impl Sequencer {
         let _ = watch(config::config_dir_path(), self.event_proxy.clone().unwrap());
         let mut scheduler = Scheduler::new(proxy);
 
-        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
-        let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
-            let display = unsafe { WaylandDisplay::from_external_display(display as _) };
-            display.create_event_queue()
-        });
+        // #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        // let mut wayland_event_queue = event_loop.wayland_display().map(|display| {
+        //     let display = unsafe { WaylandDisplay::from_external_display(display as _) };
+        //     display.create_event_queue()
+        // });
 
         let seq_win = SequencerWindow::new(&event_loop, &self.config).await?;
         let first_window = seq_win.window.id();
@@ -860,15 +841,15 @@ impl Sequencer {
 
                     Event::RedrawRequested(window_id) => {
                         // Skip render for macos and x11 windows that are fully occluded
-                        #[cfg(all(
-                            feature = "wayland",
-                            not(any(target_os = "macos", target_os = "windows"))
-                        ))]
-                        if let Some(w_event_queue) = wayland_event_queue.as_mut() {
-                            w_event_queue
-                                .dispatch_pending(&mut (), |_, _, _| {})
-                                .expect("failed to dispatch wayland event queue");
-                        }
+                        // #[cfg(all(
+                        //     feature = "wayland",
+                        //     not(any(target_os = "macos", target_os = "windows"))
+                        // ))]
+                        // if let Some(w_event_queue) = wayland_event_queue.as_mut() {
+                        //     w_event_queue
+                        //         .dispatch_pending(&mut (), |_, _, _| {})
+                        //         .expect("failed to dispatch wayland event queue");
+                        // }
 
                         // if !self.has_updates.is_empty() {
                         // for window_id in self.has_updates.iter() {
