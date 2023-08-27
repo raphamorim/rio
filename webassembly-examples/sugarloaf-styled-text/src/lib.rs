@@ -18,7 +18,7 @@ use web_sys::HtmlCanvasElement;
 use winit::platform::web::WindowBuilderExtWebSys;
 
 async fn run() {
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let width = 600.0;
     let height = 400.0;
 
@@ -72,7 +72,7 @@ async fn run() {
 
     sugarloaf.calculate_bounds();
 
-    event_loop.run(move |event, _, control_flow| {
+    let _ = event_loop.run(move |event, _, control_flow| {
         control_flow.set_wait();
 
         let sugar = vec![
@@ -528,7 +528,6 @@ async fn run() {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::ScaleFactorChanged {
-                    new_inner_size,
                     scale_factor,
                     ..
                 } => {
@@ -537,7 +536,6 @@ async fn run() {
                     let scale_factor_f32 = scale_factor as f32;
                     sugarloaf
                         .rescale(scale_factor_f32)
-                        .resize(new_inner_size.width, new_inner_size.height)
                         .calculate_bounds();
                     window.request_redraw();
                 }

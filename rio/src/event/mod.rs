@@ -142,7 +142,7 @@ impl EventP {
     }
 }
 
-impl From<EventP> for winit::event::Event<'_, EventP> {
+impl From<EventP> for winit::event::Event<EventP> {
     fn from(event: EventP) -> Self {
         winit::event::Event::UserEvent(event)
     }
