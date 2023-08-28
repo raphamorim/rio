@@ -527,6 +527,15 @@ impl Screen {
                     Act::ResetFontSize => {
                         self.change_font_size(FontSizeAction::Reset);
                     }
+                    Act::ClearHistory => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.clear_saved_history();
+                        drop(terminal);
+                    }
+                    Act::Minimize => {
+                        self.context_manager.minimize();
+                    }
                     Act::SelectTab1 => {
                         self.context_manager.select_tab(0);
                     }

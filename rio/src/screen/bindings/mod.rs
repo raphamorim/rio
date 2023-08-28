@@ -193,7 +193,6 @@ pub enum Action {
     ScrollToBottom,
 
     /// Clear the display buffer(s) to remove history.
-    #[allow(dead_code)]
     ClearHistory,
 
     /// Hide the Rio window.
@@ -269,25 +268,16 @@ pub enum Action {
     /// No action.
     None,
 
-    #[allow(dead_code)]
+    // Tab selections
     SelectTab1,
-    #[allow(dead_code)]
     SelectTab2,
-    #[allow(dead_code)]
     SelectTab3,
-    #[allow(dead_code)]
     SelectTab4,
-    #[allow(dead_code)]
     SelectTab5,
-    #[allow(dead_code)]
     SelectTab6,
-    #[allow(dead_code)]
     SelectTab7,
-    #[allow(dead_code)]
     SelectTab8,
-    #[allow(dead_code)]
     SelectTab9,
-    #[allow(dead_code)]
     SelectLastTab,
 }
 
