@@ -48,7 +48,7 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        sugarloaf::font::fonts::Fonts::default(),
         // "Fira Code".to_string(),
         // "Monaco".to_string(),
         // "Space Mono".to_string(),
