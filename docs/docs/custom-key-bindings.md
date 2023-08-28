@@ -43,12 +43,12 @@ Quit
 ResetFontSize
 IncreaseFontSize
 DecreaseFontSize
-TabSwitchNext
-TabSwitchPrev
 CreateWindow
 CreateTab
 CloseTab
 OpenConfigEditor
+SelectPrevTab
+SelectNextTab
 SelectTab1
 SelectTab2
 SelectTab3

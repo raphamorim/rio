@@ -2,7 +2,9 @@
 
 ## In progress
 
+- *breaking change*: Action `TabSwitchNext` and `TabSwitchPrev` has been renamed to `SelectNextTab` and `SelectPrevTab`.
 - Support to `NativeTab` (MacOS only).
+- Support for kitty's keyboard protocol (`CSI u`). Ref: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 - Added new actions for tab selection: `SelectTab1`, `SelectTab2`, `SelectTab3`, `SelectTab4`, `SelectTab5`, `SelectTab6`, `SelectTab7`, `SelectTab8`, `SelectTab9`, `SelectLastTab`.
 - Support lowercased action and fix overwrite for actions in custom key bindings.
 - Added action `Minimize` for minimize Rio terminal window.

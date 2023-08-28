@@ -108,6 +108,8 @@ bitflags! {
         const APP_KEYPAD          = 0b0000_0010;
         const ALT_SCREEN          = 0b0000_0100;
         const VI                  = 0b0000_1000;
+        const DISAMBIGUATE_KEYS   = 0b0010_0000;
+        const ALL_KEYS_AS_ESC     = 0b0100_0000;
     }
 }
 
@@ -117,6 +119,14 @@ impl BindingMode {
         binding_mode.set(BindingMode::APP_CURSOR, mode.contains(Mode::APP_CURSOR));
         binding_mode.set(BindingMode::APP_KEYPAD, mode.contains(Mode::APP_KEYPAD));
         binding_mode.set(BindingMode::ALT_SCREEN, mode.contains(Mode::ALT_SCREEN));
+        binding_mode.set(
+            BindingMode::DISAMBIGUATE_KEYS,
+            mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES),
+        );
+        binding_mode.set(
+            BindingMode::ALL_KEYS_AS_ESC,
+            mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC),
+        );
         binding_mode.set(BindingMode::VI, mode.contains(Mode::VI));
         binding_mode
     }
@@ -233,11 +243,11 @@ pub enum Action {
 
     /// Switch to next tab.
     #[allow(dead_code)]
-    TabSwitchNext,
+    SelectNextTab,
 
     /// Switch to prev tab.
     #[allow(dead_code)]
-    TabSwitchPrev,
+    SelectPrevTab,
 
     /// Close tab.
     #[allow(dead_code)]
@@ -362,9 +372,8 @@ pub fn default_key_bindings(
         Copy,  +BindingMode::VI; Action::ClearSelection;
         Paste, ~BindingMode::VI; Action::Paste;
         "l", ModifiersState::CONTROL; Action::ClearLogNotice;
-        "l",    ModifiersState::CONTROL,  ~BindingMode::VI;
-            Action::Esc("\x0c".into());
-        Tab,  ModifiersState::SHIFT, ~BindingMode::VI;
+        "l", ModifiersState::CONTROL; Action::ReceiveChar;
+         Tab,  ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[Z".into());
         Backspace, ModifiersState::ALT,   ~BindingMode::VI;
             Action::Esc("\x1b\x7f".into());
@@ -406,32 +415,8 @@ pub fn default_key_bindings(
             Action::Esc("\x1bOD".into());
         ArrowLeft,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[D".into());
-        Backspace,        ~BindingMode::VI; Action::Esc("\x7f".into());
-        Insert,      ~BindingMode::VI; Action::Esc("\x1b[2~".into());
-        Delete,      ~BindingMode::VI; Action::Esc("\x1b[3~".into());
-        PageUp,      ~BindingMode::VI; Action::Esc("\x1b[5~".into());
-        PageDown,    ~BindingMode::VI; Action::Esc("\x1b[6~".into());
-        F1,          ~BindingMode::VI; Action::Esc("\x1bOP".into());
-        F2,          ~BindingMode::VI; Action::Esc("\x1bOQ".into());
-        F3,          ~BindingMode::VI; Action::Esc("\x1bOR".into());
-        F4,          ~BindingMode::VI; Action::Esc("\x1bOS".into());
-        F5,          ~BindingMode::VI; Action::Esc("\x1b[15~".into());
-        F6,          ~BindingMode::VI; Action::Esc("\x1b[17~".into());
-        F7,          ~BindingMode::VI; Action::Esc("\x1b[18~".into());
-        F8,          ~BindingMode::VI; Action::Esc("\x1b[19~".into());
-        F9,          ~BindingMode::VI; Action::Esc("\x1b[20~".into());
-        F10,         ~BindingMode::VI; Action::Esc("\x1b[21~".into());
-        F11,         ~BindingMode::VI; Action::Esc("\x1b[23~".into());
-        F12,         ~BindingMode::VI; Action::Esc("\x1b[24~".into());
-        F13,         ~BindingMode::VI; Action::Esc("\x1b[25~".into());
-        F14,         ~BindingMode::VI; Action::Esc("\x1b[26~".into());
-        F15,         ~BindingMode::VI; Action::Esc("\x1b[28~".into());
-        F16,         ~BindingMode::VI; Action::Esc("\x1b[29~".into());
-        F17,         ~BindingMode::VI; Action::Esc("\x1b[31~".into());
-        F18,         ~BindingMode::VI; Action::Esc("\x1b[32~".into());
-        F19,         ~BindingMode::VI; Action::Esc("\x1b[33~".into());
-        F20,         ~BindingMode::VI; Action::Esc("\x1b[34~".into());
-        // NumpadEnter, ~BindingMode::VI; Action::Esc("\n".into());
+        Backspace, ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x1b\x7f".into());
+        Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
         Space, ModifiersState::SHIFT | ModifiersState::CONTROL;
             Action::ToggleViMode;
         Space, ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI;
@@ -463,22 +448,6 @@ pub fn default_key_bindings(
         "y",                             +BindingMode::VI; Action::Copy;
         "y",                             +BindingMode::VI;
             Action::ClearSelection;
-        // V,                             +BindingMode::VI;
-            // ViAction::ToggleNormalSelection;
-        // V,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViAction::ToggleLineSelection;
-        // V,      ModifiersState::CONTROL,  +BindingMode::VI;
-        //     ViAction::ToggleBlockSelection;
-        // V,      ModifiersState::ALT,   +BindingMode::VI;
-        //     ViAction::ToggleSemanticSelection;
-        // N,                             +BindingMode::VI;
-        //     ViAction::SearchNext;
-        // N,      ModifiersState::SHIFT, +BindingMode::VI;
-        //     ViAction::SearchPrevious;
-        // Enter,                        +BindingMode::VI;
-        //     ViAction::Open;
-        // Z,                             +BindingMode::VI;
-            // ViAction::CenterAroundViCursor;
         "k",                             +BindingMode::VI;
             ViMotion::Up;
         "j",                             +BindingMode::VI;
@@ -522,108 +491,6 @@ pub fn default_key_bindings(
         "5",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Bracket;
     );
-
-    //   Code     Modifiers
-    // ---------+---------------------------
-    //    2     | Shift
-    //    3     | Alt
-    //    4     | Shift + Alt
-    //    5     | Control
-    //    6     | Shift + Control
-    //    7     | Alt + Control
-    //    8     | Shift + Alt + Control
-    // ---------+---------------------------
-    //
-    // from: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
-    let mut modifiers = vec![
-        ModifiersState::SHIFT,
-        ModifiersState::SHIFT | ModifiersState::ALT,
-        ModifiersState::CONTROL,
-        ModifiersState::SHIFT | ModifiersState::CONTROL,
-        ModifiersState::ALT | ModifiersState::CONTROL,
-        ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
-    ];
-
-    // In MacOs we target the same behaviour that Terminal.app has
-    // Terminal.app does not deal with ctlseqs with ALT keys
-    #[cfg(not(target_os = "macos"))]
-    {
-        modifiers.push(ModifiersState::ALT);
-    }
-
-    for (index, mods) in modifiers.drain(..).enumerate() {
-        let modifiers_code = index + 2;
-        bindings.extend(bindings!(
-            KeyBinding;
-            Delete, mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[3;{}~", modifiers_code));
-            ArrowUp,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}A", modifiers_code));
-            ArrowDown,   mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}B", modifiers_code));
-            ArrowRight,  mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}C", modifiers_code));
-            ArrowLeft,   mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}D", modifiers_code));
-            F1,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}P", modifiers_code));
-            F2,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}Q", modifiers_code));
-            F3,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}R", modifiers_code));
-            F4,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[1;{}S", modifiers_code));
-            F5,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[15;{}~", modifiers_code));
-            F6,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[17;{}~", modifiers_code));
-            F7,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[18;{}~", modifiers_code));
-            F8,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[19;{}~", modifiers_code));
-            F9,     mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[20;{}~", modifiers_code));
-            F10,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[21;{}~", modifiers_code));
-            F11,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[23;{}~", modifiers_code));
-            F12,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[24;{}~", modifiers_code));
-            F13,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[25;{}~", modifiers_code));
-            F14,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[26;{}~", modifiers_code));
-            F15,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[28;{}~", modifiers_code));
-            F16,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[29;{}~", modifiers_code));
-            F17,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[31;{}~", modifiers_code));
-            F18,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[32;{}~", modifiers_code));
-            F19,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[33;{}~", modifiers_code));
-            F20,    mods, ~BindingMode::VI;
-                Action::Esc(format!("\x1b[34;{}~", modifiers_code));
-        ));
-
-        // We're adding the following bindings with `Shift` manually above, so skipping them here.
-        if modifiers_code != 2 {
-            bindings.extend(bindings!(
-                KeyBinding;
-                Insert,   mods, ~BindingMode::VI;
-                    Action::Esc(format!("\x1b[2;{}~", modifiers_code));
-                PageUp,   mods, ~BindingMode::VI;
-                    Action::Esc(format!("\x1b[5;{}~", modifiers_code));
-                PageDown, mods, ~BindingMode::VI;
-                    Action::Esc(format!("\x1b[6;{}~", modifiers_code));
-                End,      mods, ~BindingMode::VI;
-                    Action::Esc(format!("\x1b[1;{}F", modifiers_code));
-                Home,     mods, ~BindingMode::VI;
-                    Action::Esc(format!("\x1b[1;{}H", modifiers_code));
-            ));
-        }
-    }
 
     bindings.extend(platform_key_bindings());
 
@@ -729,12 +596,12 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         "resetfontsize" => Action::ResetFontSize,
         "increasefontsize" => Action::IncreaseFontSize,
         "decreasefontsize" => Action::DecreaseFontSize,
-        "tabswitchnext" => Action::TabSwitchNext,
-        "tabswitchprev" => Action::TabSwitchPrev,
         "createwindow" => Action::WindowCreateNew,
         "createtab" => Action::TabCreateNew,
         "closetab" => Action::TabCloseCurrent,
         "openconfigeditor" => Action::ConfigEditor,
+        "selectprevtab" => Action::SelectPrevTab,
+        "selectnexttab" => Action::SelectNextTab,
         "selecttab1" => Action::SelectTab1,
         "selecttab2" => Action::SelectTab2,
         "selecttab3" => Action::SelectTab3,
@@ -848,8 +715,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "+",      ModifiersState::SUPER; Action::IncreaseFontSize;
         "-",          ModifiersState::SUPER; Action::DecreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
-        Insert, ModifiersState::SHIFT, ~BindingMode::VI;
-            Action::Esc("\x1b[2;2~".into());
         ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bb".into());
         ArrowRight, ModifiersState::ALT,  ~BindingMode::VI;
@@ -867,10 +732,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "q", ModifiersState::SUPER; Action::Quit;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         "t", ModifiersState::SUPER; Action::TabCreateNew;
-        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
-        "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        Tab, ModifiersState::CONTROL; Action::SelectNextTab;
+        Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
+        "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
         "1", ModifiersState::SUPER; Action::SelectTab1;
@@ -903,9 +768,9 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
-        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
-        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        Tab, ModifiersState::CONTROL; Action::SelectNextTab;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
         "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
     )
 }
@@ -928,11 +793,11 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
         "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
-        Tab, ModifiersState::CONTROL; Action::TabSwitchNext;
+        Tab, ModifiersState::CONTROL; Action::SelectNextTab;
         "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
-        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchNext;
-        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabSwitchPrev;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
     )
 }
 

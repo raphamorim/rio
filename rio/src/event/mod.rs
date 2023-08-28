@@ -43,6 +43,8 @@ pub enum RioEvent {
     CreateConfigEditor,
     SelectNativeTabByIndex(usize),
     SelectNativeTabLast,
+    SelectNativeTabNext,
+    SelectNativeTabPrev,
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
@@ -121,6 +123,8 @@ impl Debug for RioEvent {
                 write!(f, "SelectNativeTabByIndex({tab_index})")
             }
             RioEvent::SelectNativeTabLast => write!(f, "SelectNativeTabLast"),
+            RioEvent::SelectNativeTabNext => write!(f, "SelectNativeTabNext"),
+            RioEvent::SelectNativeTabPrev => write!(f, "SelectNativeTabPrev"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
         }

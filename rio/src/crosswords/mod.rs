@@ -19,7 +19,8 @@ pub mod square;
 pub mod vi_mode;
 
 use crate::ansi::{
-    mode::Mode as AnsiMode, ClearMode, CursorShape, LineClearMode, TabulationClearMode,
+    mode::Mode as AnsiMode, ClearMode, CursorShape, KeyboardModes,
+    KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
 };
 use crate::clipboard::ClipboardType;
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
@@ -54,35 +55,72 @@ pub const MIN_LINES: usize = 1;
 const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
 
 bitflags! {
-    #[derive(Debug, Clone)]
-    pub struct Mode: u32 {
-        const NONE                = 0;
-        const SHOW_CURSOR         = 0b0000_0000_0000_0000_0001;
-        const APP_CURSOR          = 0b0000_0000_0000_0000_0010;
-        const APP_KEYPAD          = 0b0000_0000_0000_0000_0100;
-        const MOUSE_REPORT_CLICK  = 0b0000_0000_0000_0000_1000;
-        const BRACKETED_PASTE     = 0b0000_0000_0000_0001_0000;
-        const SGR_MOUSE           = 0b0000_0000_0000_0010_0000;
-        const MOUSE_MOTION        = 0b0000_0000_0000_0100_0000;
-        const LINE_WRAP           = 0b0000_0000_0000_1000_0000;
-        const LINE_FEED_NEW_LINE  = 0b0000_0000_0001_0000_0000;
-        const ORIGIN              = 0b0000_0000_0010_0000_0000;
-        const INSERT              = 0b0000_0000_0100_0000_0000;
-        const FOCUS_IN_OUT        = 0b0000_0000_1000_0000_0000;
-        const ALT_SCREEN          = 0b0000_0001_0000_0000_0000;
-        const MOUSE_DRAG          = 0b0000_0010_0000_0000_0000;
-        const MOUSE_MODE          = 0b0000_0010_0000_0100_1000;
-        const UTF8_MOUSE          = 0b0000_0100_0000_0000_0000;
-        const ALTERNATE_SCROLL    = 0b0000_1000_0000_0000_0000;
-        const VI                  = 0b0001_0000_0000_0000_0000;
-        const URGENCY_HINTS       = 0b0010_0000_0000_0000_0000;
-        const ANY                 = u32::MAX;
+    #[derive(Debug, Copy, Clone)]
+     pub struct Mode: u32 {
+        const NONE                             = 0;
+        const SHOW_CURSOR                      = 0b0000_0000_0000_0000_0000_0001;
+        const APP_CURSOR                       = 0b0000_0000_0000_0000_0000_0010;
+        const APP_KEYPAD                       = 0b0000_0000_0000_0000_0000_0100;
+        const MOUSE_REPORT_CLICK               = 0b0000_0000_0000_0000_0000_1000;
+        const BRACKETED_PASTE                  = 0b0000_0000_0000_0000_0001_0000;
+        const SGR_MOUSE                        = 0b0000_0000_0000_0000_0010_0000;
+        const MOUSE_MOTION                     = 0b0000_0000_0000_0000_0100_0000;
+        const LINE_WRAP                        = 0b0000_0000_0000_0000_1000_0000;
+        const LINE_FEED_NEW_LINE               = 0b0000_0000_0000_0001_0000_0000;
+        const ORIGIN                           = 0b0000_0000_0000_0010_0000_0000;
+        const INSERT                           = 0b0000_0000_0000_0100_0000_0000;
+        const FOCUS_IN_OUT                     = 0b0000_0000_0000_1000_0000_0000;
+        const ALT_SCREEN                       = 0b0000_0000_0001_0000_0000_0000;
+        const MOUSE_DRAG                       = 0b0000_0000_0010_0000_0000_0000;
+        const MOUSE_MODE                       = 0b0000_0000_0010_0000_0100_1000;
+        const UTF8_MOUSE                       = 0b0000_0000_0100_0000_0000_0000;
+        const ALTERNATE_SCROLL                 = 0b0000_0000_1000_0000_0000_0000;
+        const VI                               = 0b0000_0001_0000_0000_0000_0000;
+        const URGENCY_HINTS                    = 0b0000_0010_0000_0000_0000_0000;
+        const KEYBOARD_DISAMBIGUATE_ESC_CODES  = 0b0000_0100_0000_0000_0000_0000;
+        const KEYBOARD_REPORT_EVENT_TYPES      = 0b0000_1000_0000_0000_0000_0000;
+        const KEYBOARD_REPORT_ALTERNATE_KEYS   = 0b0001_0000_0000_0000_0000_0000;
+        const KEYBOARD_REPORT_ALL_KEYS_AS_ESC  = 0b0010_0000_0000_0000_0000_0000;
+        const KEYBOARD_REPORT_ASSOCIATED_TEXT  = 0b0100_0000_0000_0000_0000_0000;
+        const KEYBOARD_PROTOCOL = Self::KEYBOARD_DISAMBIGUATE_ESC_CODES.bits()
+                                | Self::KEYBOARD_REPORT_EVENT_TYPES.bits()
+                                | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
+                                | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
+                                | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
+         const ANY                 = u32::MAX;
     }
 }
 
 impl Default for Mode {
     fn default() -> Mode {
         Mode::SHOW_CURSOR | Mode::LINE_WRAP | Mode::ALTERNATE_SCROLL | Mode::URGENCY_HINTS
+    }
+}
+
+impl From<KeyboardModes> for Mode {
+    fn from(value: KeyboardModes) -> Self {
+        let mut mode = Self::empty();
+        mode.set(
+            Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES,
+            value.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES),
+        );
+        mode.set(
+            Mode::KEYBOARD_REPORT_EVENT_TYPES,
+            value.contains(KeyboardModes::REPORT_EVENT_TYPES),
+        );
+        mode.set(
+            Mode::KEYBOARD_REPORT_ALTERNATE_KEYS,
+            value.contains(KeyboardModes::REPORT_ALTERNATE_KEYS),
+        );
+        mode.set(
+            Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC,
+            value.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC),
+        );
+        mode.set(
+            Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT,
+            value.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT),
+        );
+        mode
     }
 }
 
@@ -288,8 +326,11 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
-/// Max size of the window title stack.
+// Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
+
+// Max size of the keyboard modes.
+const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
 
 #[derive(Debug, Clone)]
 pub struct Crosswords<U>
@@ -313,6 +354,12 @@ where
     pub cursor_shape: CursorShape,
     window_id: WindowId,
     title_stack: Vec<String>,
+
+    // The stack for the keyboard modes.
+    keyboard_mode_stack: Vec<KeyboardModes>,
+
+    // Currently inactive keyboard mode stack.
+    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -349,7 +396,9 @@ impl<U: EventListener> Crosswords<U> {
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
             window_id,
-            title_stack: vec![],
+            title_stack: Default::default(),
+            keyboard_mode_stack: Default::default(),
+            inactive_keyboard_mode_stack: Default::default(),
         }
     }
 
@@ -849,7 +898,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn mode(&self) -> Mode {
-        self.mode.clone()
+        self.mode
     }
 
     #[inline]
@@ -890,6 +939,19 @@ impl<U: EventListener> Crosswords<U> {
             // Reset alternate screen contents.
             self.inactive_grid.reset_region(..);
         }
+
+        mem::swap(
+            &mut self.keyboard_mode_stack,
+            &mut self.inactive_keyboard_mode_stack,
+        );
+        self.set_keyboard_mode(
+            self.keyboard_mode_stack
+                .last()
+                .copied()
+                .unwrap_or(KeyboardModes::NO_MODE)
+                .into(),
+            KeyboardModesApplyBehavior::Replace,
+        );
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
@@ -1025,6 +1087,19 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         text
+    }
+
+    #[inline]
+    fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
+        let active_mode = self.mode & Mode::KEYBOARD_PROTOCOL;
+        self.mode &= !Mode::KEYBOARD_PROTOCOL;
+        let new_mode = match apply {
+            KeyboardModesApplyBehavior::Replace => mode,
+            KeyboardModesApplyBehavior::Union => active_mode.union(mode),
+            KeyboardModesApplyBehavior::Difference => active_mode.difference(mode),
+        };
+        info!("Setting keyboard mode to {new_mode:?}");
+        self.mode |= new_mode;
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -1449,9 +1524,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
+        self.keyboard_mode_stack = Vec::new();
         self.title = String::from("");
         self.selection = None;
         self.vi_mode_cursor = Default::default();
+        self.keyboard_mode_stack = Default::default();
+        self.inactive_keyboard_mode_stack = Default::default();
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -1711,6 +1789,54 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             _ => debug!("Unsupported device attributes intermediate"),
         }
+    }
+
+    #[inline]
+    fn report_keyboard_mode(&mut self) {
+        let current_mode = self
+            .keyboard_mode_stack
+            .last()
+            .unwrap_or(&KeyboardModes::NO_MODE)
+            .bits();
+        let text = format!("\x1b[?{current_mode}u");
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
+    fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
+        if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            let _removed = self.title_stack.remove(0);
+        }
+
+        self.keyboard_mode_stack.push(mode);
+        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+    }
+
+    #[inline]
+    fn pop_keyboard_modes(&mut self, to_pop: u16) {
+        let new_len = self
+            .keyboard_mode_stack
+            .len()
+            .saturating_sub(to_pop as usize);
+        self.keyboard_mode_stack.truncate(new_len);
+
+        // Reload active mode.
+        let mode = self
+            .keyboard_mode_stack
+            .last()
+            .copied()
+            .unwrap_or(KeyboardModes::NO_MODE);
+        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+    }
+
+    #[inline]
+    fn set_keyboard_mode(
+        &mut self,
+        mode: KeyboardModes,
+        apply: KeyboardModesApplyBehavior,
+    ) {
+        self.set_keyboard_mode(mode.into(), apply);
     }
 
     #[inline]
