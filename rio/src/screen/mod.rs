@@ -631,7 +631,7 @@ impl Screen {
     /// Whether we should send `ESC` due to `Alt` being pressed.
     #[cfg(not(target_os = "macos"))]
     fn alt_send_esc(&mut self) -> bool {
-        self.modifiers.alt_key()
+        self.modifiers.state().alt_key()
     }
 
     #[cfg(target_os = "macos")]
