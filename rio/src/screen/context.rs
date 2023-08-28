@@ -268,6 +268,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn minimize(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::Minimize(true), self.window_id);
+    }
+
+    #[inline]
     pub fn select_last_tab(&mut self) {
         if self.config.is_native {
             self.event_proxy

@@ -366,6 +366,10 @@ impl<U: EventListener> Crosswords<U> {
         self.grid.display_offset()
     }
 
+    pub fn clear_saved_history(&mut self) {
+        self.clear_screen(ClearMode::Saved);
+    }
+
     #[inline]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
