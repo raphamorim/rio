@@ -25,7 +25,7 @@ struct Cursor {
 }
 
 pub struct State {
-    pub option_as_alt: bool,
+    pub option_as_alt: String,
     is_ime_enabled: bool,
     named_colors: Colors,
     font_size: f32,
@@ -67,18 +67,13 @@ impl State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
 
-        let option_as_alt = matches!(
-            config.option_as_alt.to_lowercase().as_str(),
-            "both" | "left" | "right"
-        );
-
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
             color_automation.insert(rule.program.to_string(), rule.color);
         }
 
         State {
-            option_as_alt,
+            option_as_alt: config.option_as_alt.to_lowercase(),
             is_ime_enabled: false,
             colors,
             navigation: ScreenNavigation::new(
