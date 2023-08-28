@@ -12,6 +12,7 @@
 - Added action `ReceiveChar` for custom key bindings.
 - New default key bindings for Linux and Windows so that conflicts with readline key bindings are removed.
 - Winit Version 0.29.1-beta.
+- Allow paste with the middle mouse of the button (fixes https://github.com/raphamorim/rio/issues/123).
 - Support startup notify protocol to raise initial window on Wayland/X11.
 - Fix Double-tap by touchpad on the titlebar doesn't maximize/unmaximize the window in GNOME 44, Wayland.
 

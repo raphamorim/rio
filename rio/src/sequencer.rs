@@ -478,6 +478,10 @@ impl Sequencer {
                                         sequencer_window
                                             .screen
                                             .mouse_report(code, ElementState::Pressed);
+
+                                        sequencer_window
+                                            .screen
+                                            .process_mouse_bindings(button);
                                     } else {
                                         // Calculate time since the last click to handle double/triple clicks.
                                         let now = Instant::now();
