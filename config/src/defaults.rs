@@ -68,20 +68,12 @@ pub fn default_log_level() -> String {
     String::from("OFF")
 }
 
-pub fn default_font() -> String {
-    String::from("CascadiaMono")
-}
-
 pub fn default_cursor() -> char {
     '▇'
 }
 
 pub fn default_theme() -> String {
     String::from("")
-}
-
-pub fn default_font_size() -> f32 {
-    18.
 }
 
 pub fn default_window_width() -> i32 {
