@@ -417,7 +417,7 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                            sequencer_window.screen.set_modifiers(modifiers.state());
+                            sequencer_window.screen.set_modifiers(modifiers);
                         }
                     }
 
@@ -455,7 +455,7 @@ impl Sequencer {
                             match state {
                                 ElementState::Pressed => {
                                     // Process mouse press before bindings to update the `click_state`.
-                                    if !sequencer_window.screen.modifiers.shift_key()
+                                    if !sequencer_window.screen.modifiers.state().shift_key()
                                         && sequencer_window.screen.mouse_mode()
                                     {
                                         sequencer_window.screen.mouse.click_state =
@@ -534,7 +534,7 @@ impl Sequencer {
                                     // sequencer_window.screen.process_mouse_bindings(button);
                                 }
                                 ElementState::Released => {
-                                    if !sequencer_window.screen.modifiers.shift_key()
+                                    if !sequencer_window.screen.modifiers.state().shift_key()
                                         && sequencer_window.screen.mouse_mode()
                                     {
                                         let code = match button {
@@ -606,7 +606,7 @@ impl Sequencer {
                                 sw.is_macos_deadzone = false;
                             }
 
-                            let cursor_icon = if !sw.screen.modifiers.shift_key()
+                            let cursor_icon = if !sw.screen.modifiers.state().shift_key()
                                 && sw.screen.mouse_mode()
                             {
                                 CursorIcon::Default
@@ -647,7 +647,7 @@ impl Sequencer {
                             sw.screen.mouse.square_side = square_side;
 
                             if (lmb_pressed || rmb_pressed)
-                                && (sw.screen.modifiers.shift_key()
+                                && (sw.screen.modifiers.state().shift_key()
                                     || !sw.screen.mouse_mode())
                             {
                                 sw.screen.update_selection(point, square_side);

@@ -7,6 +7,7 @@ mod navigation;
 mod state;
 pub mod window;
 
+use winit::event::Modifiers;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
 use winit::window::raw_window_handle::HasRawDisplayHandle;
@@ -40,6 +41,8 @@ use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ElementState;
 use winit::keyboard::{Key, KeyLocation, ModifiersState};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+#[cfg(target_os = "macos")]
+use winit::keyboard::ModifiersKeyState;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -67,7 +70,7 @@ impl Dimensions for SugarloafLayout {
 pub struct Screen {
     bindings: bindings::KeyBindings,
     clipboard: Clipboard,
-    pub modifiers: ModifiersState,
+    pub modifiers: Modifiers,
     pub mouse: Mouse,
     pub ime: Ime,
     pub state: State,
@@ -165,7 +168,7 @@ impl Screen {
         )?;
 
         Ok(Screen {
-            modifiers: ModifiersState::default(),
+            modifiers: Modifiers::default(),
             context_manager,
             ime,
             sugarloaf,
@@ -187,7 +190,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn set_modifiers(&mut self, modifiers: ModifiersState) {
+    pub fn set_modifiers(&mut self, modifiers: Modifiers) {
         self.modifiers = modifiers;
     }
 
@@ -404,7 +407,7 @@ impl Screen {
         }
 
         let mode = self.get_mode();
-        let mods = self.modifiers;
+        let mods = self.modifiers.state();
 
         if key.state == ElementState::Released {
             if mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
@@ -449,7 +452,7 @@ impl Screen {
                 },
             };
 
-            if binding.is_triggered_by(binding_mode.clone(), self.modifiers, &key) {
+            if binding.is_triggered_by(binding_mode.clone(), mods, &key) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -597,7 +600,7 @@ impl Screen {
             && !text.is_empty()
             && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
                 || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                    && (self.modifiers.is_empty() || self.modifiers.shift_key())
+                    && (mods.is_empty() || mods.shift_key())
                     && key.location != KeyLocation::Numpad
                     // Special case escape here.
                     && key.logical_key != Key::Escape));
@@ -613,7 +616,7 @@ impl Screen {
             bytes
         } else {
             // Otherwise we should build the key sequence for the given input.
-            self.build_key_sequence(key.to_owned(), self.modifiers, mode)
+            self.build_key_sequence(key.to_owned(), mods, mode)
         };
 
         // Write only when we have something to write.
@@ -633,9 +636,12 @@ impl Screen {
 
     #[cfg(target_os = "macos")]
     fn alt_send_esc(&mut self) -> bool {
-        let alt_send_esc = self.state.option_as_alt;
-
-        self.modifiers.alt_key() || alt_send_esc
+        self.modifiers.state().alt_key()
+            && (self.state.option_as_alt == String::from("both")
+                || (self.state.option_as_alt == String::from("left")
+                    && self.modifiers.lalt_state() == ModifiersKeyState::Pressed)
+                || (self.state.option_as_alt == String::from("right")
+                    && self.modifiers.ralt_state() == ModifiersKeyState::Pressed))
     }
 
     #[inline(never)]
@@ -1084,7 +1090,7 @@ impl Screen {
                 self.clear_selection();
 
                 // Start new empty selection.
-                if self.modifiers.control_key() {
+                if self.modifiers.state().control_key() {
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
                     self.start_selection(SelectionType::Simple, point, side);
@@ -1216,13 +1222,14 @@ impl Screen {
 
         // Calculate modifiers value.
         let mut mods = 0;
-        if self.modifiers.shift_key() {
+        let mod_state = self.modifiers.state();
+        if mod_state.shift_key() {
             mods += 4;
         }
-        if self.modifiers.alt_key() {
+        if mod_state.alt_key() {
             mods += 8;
         }
-        if self.modifiers.control_key() {
+        if mod_state.control_key() {
             mods += 16;
         }
 
@@ -1310,7 +1317,7 @@ impl Screen {
                 self.mouse_report(code, ElementState::Pressed);
             }
         } else if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
-            && !self.modifiers.shift_key()
+            && !self.modifiers.state().shift_key()
         {
             self.mouse.accumulated_scroll.x += new_scroll_x_px;
             self.mouse.accumulated_scroll.y += new_scroll_y_px;
