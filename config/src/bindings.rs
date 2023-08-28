@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
-// { key = "W", mods: "super", action = "Quit" }
+// Examples:
+// { key = "w", mods: "super", action = "quit" }
 // Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 // { key = "Home", mods: "super | shift", bytes = [27, 91, 53, 126] }
 
@@ -25,30 +26,6 @@ pub type KeyBindings = Vec<KeyBinding>;
 pub struct Bindings {
     pub keys: KeyBindings,
 }
-
-// pub(crate) fn bytes_deserialize<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     de.deserialize_byte_buf(ByteBufVisitor)
-// }
-
-// struct ByteBufVisitor;
-
-// impl<'de> Visitor<'de> for ByteBufVisitor {
-//     type Value = String;
-
-//     fn expecting(&self, out: &mut fmt::Formatter) -> fmt::Result {
-//         out.write_str("string")
-//     }
-
-//     fn visit_str<E>(self, v: &str) -> Result<String, E>
-//     where
-//         E: Error,
-//     {
-//         Ok(v.to_string())
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -137,8 +114,8 @@ mod tests {
                 { key = '-', with = 'super', action = 'decreasefontsize' },
                 { key = '0', with = 'super', action = 'resetfontsize' },
 
-                { key = '[', with = 'super | shift', action = 'tabswitchnext' },
-                { key = ']', with = 'super | shift', action = 'tabswitchprev' },
+                { key = '[', with = 'super | shift', action = 'selectnexttab' },
+                { key = ']', with = 'super | shift', action = 'selectprevtab' },
             ]
         "#;
 
@@ -172,12 +149,12 @@ mod tests {
 
         assert_eq!(decoded.bindings.keys[4].key, "[");
         assert_eq!(decoded.bindings.keys[4].with, "super | shift");
-        assert_eq!(decoded.bindings.keys[4].action.to_owned(), "tabswitchnext");
+        assert_eq!(decoded.bindings.keys[4].action.to_owned(), "selectnexttab");
         assert!(decoded.bindings.keys[4].text.to_owned().is_empty());
 
         assert_eq!(decoded.bindings.keys[5].key, "]");
         assert_eq!(decoded.bindings.keys[5].with, "super | shift");
-        assert_eq!(decoded.bindings.keys[5].action.to_owned(), "tabswitchprev");
+        assert_eq!(decoded.bindings.keys[5].action.to_owned(), "selectprevtab");
         assert!(decoded.bindings.keys[5].text.to_owned().is_empty());
     }
 }

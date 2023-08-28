@@ -1,5 +1,5 @@
-use crate::ansi::mode::Mode;
 use crate::ansi::CursorShape;
+use crate::ansi::{mode::Mode, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use colors::ColorRgb;
@@ -323,6 +323,27 @@ pub trait Handler {
 
     /// Set mouse cursor icon.
     fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
+
+    /// Report current keyboard mode.
+    fn report_keyboard_mode(&mut self) {}
+
+    /// Push keyboard mode into the keyboard mode stack.
+    fn push_keyboard_mode(&mut self, _mode: KeyboardModes) {}
+
+    /// Pop the given amount of keyboard modes from the
+    /// keyboard mode stack.
+    fn pop_keyboard_modes(&mut self, _to_pop: u16) {}
+
+    /// Set the [`keyboard mode`] using the given [`behavior`].
+    ///
+    /// [`keyboard mode`]: crate::ansi::KeyboardModes
+    /// [`behavior`]: crate::ansi::KeyboardModesApplyBehavior
+    fn set_keyboard_mode(
+        &mut self,
+        _mode: KeyboardModes,
+        _behavior: KeyboardModesApplyBehavior,
+    ) {
+    }
 }
 
 #[derive(Debug, Default)]
@@ -925,6 +946,25 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 23 => handler.pop_title(),
                 _ => csi_unhandled!(),
             },
+            ('u', [b'?']) => handler.report_keyboard_mode(),
+            ('u', [b'=']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                let behavior = match next_param_or(1) {
+                    3 => KeyboardModesApplyBehavior::Difference,
+                    2 => KeyboardModesApplyBehavior::Union,
+                    // Default is replace.
+                    _ => KeyboardModesApplyBehavior::Replace,
+                };
+                handler.set_keyboard_mode(mode, behavior);
+            }
+            ('u', [b'>']) => {
+                let mode = KeyboardModes::from_bits_truncate(next_param_or(0) as u8);
+                handler.push_keyboard_mode(mode);
+            }
+            ('u', [b'<']) => {
+                // The default is 1.
+                handler.pop_keyboard_modes(next_param_or(1));
+            }
             ('u', []) => handler.restore_cursor_position(),
             ('X', []) => handler.erase_chars(Column(next_param_or(1) as usize)),
             ('Z', []) => handler.move_backward_tabs(next_param_or(1)),

@@ -371,6 +371,18 @@ impl Sequencer {
                                         .select_tab_at_index(sw.window.num_tabs() - 1);
                                 }
                             }
+                            #[cfg(target_os = "macos")]
+                            RioEventType::Rio(RioEvent::SelectNativeTabNext) => {
+                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                    sw.window.select_next_tab();
+                                }
+                            }
+                            #[cfg(target_os = "macos")]
+                            RioEventType::Rio(RioEvent::SelectNativeTabPrev) => {
+                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                    sw.window.select_previous_tab();
+                                }
+                            }
                             RioEventType::Rio(RioEvent::Minimize(set_minimize)) => {
                                 if let Some(sw) = self.windows.get_mut(&window_id) {
                                     sw.window.set_minimized(set_minimize);

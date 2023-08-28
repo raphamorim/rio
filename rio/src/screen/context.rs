@@ -444,6 +444,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn switch_to_next(&mut self) {
+        if self.config.is_native {
+            self.event_proxy
+                .send_event(RioEvent::SelectNativeTabNext, self.window_id);
+            return;
+        }
+
         if !self.config.is_collapsed {
             self.move_next();
         } else {
@@ -472,6 +478,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn switch_to_prev(&mut self) {
+        if self.config.is_native {
+            self.event_proxy
+                .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
+            return;
+        }
+
         if !self.config.is_collapsed {
             self.move_back();
         } else {
