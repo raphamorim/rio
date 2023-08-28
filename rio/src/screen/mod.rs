@@ -647,14 +647,11 @@ impl Screen {
                 binding.mods |= ModifiersState::SHIFT;
             }
 
-            if binding.is_triggered_by(binding_mode.to_owned(), mods, &button) {
-                match &binding.action {
-                    Act::PasteSelection => {
-                        let content = self.clipboard.get(ClipboardType::Selection);
-                        self.paste(&content, true);
-                    }
-                    _ => {}
-                }
+            if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
+                && binding.action == Act::PasteSelection
+            {
+                let content = self.clipboard.get(ClipboardType::Selection);
+                self.paste(&content, true);
             }
         }
     }
