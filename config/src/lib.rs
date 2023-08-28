@@ -1,8 +1,11 @@
 pub mod bindings;
 mod defaults;
+pub mod fonts;
 pub mod navigation;
+
 use crate::bindings::Bindings;
 use crate::defaults::*;
+use crate::fonts::Fonts;
 use crate::navigation::Navigation;
 use colors::Colors;
 use log::warn;
@@ -61,14 +64,12 @@ pub struct Config {
     pub use_fork: bool,
     #[serde(default = "default_working_dir", rename = "working-dir")]
     pub working_dir: Option<String>,
-    #[serde(rename = "font-size", default = "default_font_size")]
-    pub font_size: f32,
     #[serde(rename = "line-height", default = "default_line_height")]
     pub line_height: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
-    #[serde(default = "default_font")]
-    pub font: String,
+    #[serde(default = "Fonts::default")]
+    pub fonts: Fonts,
     #[serde(rename = "padding-x", default = "default_padding_x")]
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
@@ -213,10 +214,9 @@ impl Default for Config {
             window_height: default_window_height(),
             performance: Performance::default(),
             padding_x: default_padding_x(),
-            font_size: default_font_size(),
             line_height: default_line_height(),
             theme: default_theme(),
-            font: default_font(),
+            fonts: Fonts::default(),
             cursor: default_cursor(),
             option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
@@ -287,8 +287,7 @@ mod tests {
         assert!(!result.disable_unfocused_render);
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
 
         // Colors
@@ -306,8 +305,6 @@ mod tests {
             r#"
             # Rio default configuration file
             performance = "High"
-            font = "CascadiaMono"
-            font-size = 18
             line-height = 1.0
             theme = ""
             padding-x = 10
@@ -315,6 +312,24 @@ mod tests {
             cursor = '▇'
             env-vars = []
             disable-unfocused-render = false
+
+            [fonts]
+            size = 18
+
+            [fonts.regular]
+            family = "CascadiaMono"
+            style = "regular"
+            weight = 300
+            
+            [fonts.bold]
+            family = "CascadiaMono"
+            style = "bold"
+            weight = 600
+            
+            [fonts.italic]
+            family = "CascadiaMono"
+            style = "italic"
+            weight = 400
 
             [colors]
             background = '#0F0D0E'
@@ -342,12 +357,11 @@ mod tests {
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
-        assert_eq!(result.font, default_font());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.shell, default_shell());
         assert_eq!(result.editor, default_editor());
         assert!(!result.disable_unfocused_render);
         assert_eq!(result.use_fork, default_use_fork());
-        assert_eq!(result.font_size, default_font_size());
         assert_eq!(result.line_height, default_line_height());
 
         // Colors
@@ -374,8 +388,7 @@ mod tests {
         let result = Config::load_from_path(&file_name);
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -394,8 +407,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -416,8 +428,7 @@ mod tests {
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor, default_cursor());
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -445,8 +456,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.cursor, '_');
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -466,8 +476,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -487,8 +496,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -510,8 +518,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, default_theme());
         // Bindings
         assert_eq!(result.bindings.keys[0].key, "Q");
@@ -526,17 +533,18 @@ mod tests {
             "change-style",
             r#"
             performance = "Low"
-            font = "Novamono"
             font-size = 14.0
             line-height = 2.0
             padding-x = 0.0
             window-opacity = 0.5
+
+            [fonts]
+            size = 14.0
         "#,
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.font, "Novamono");
-        assert_eq!(result.font_size, 14.0);
+        assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
         assert_eq!(result.window_opacity, 0.5);
@@ -557,8 +565,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::High);
-        assert_eq!(result.font, default_font());
-        assert_eq!(result.font_size, default_font_size());
+        assert_eq!(result.fonts, Fonts::default());
         assert_eq!(result.theme, "lucario");
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

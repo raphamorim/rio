@@ -581,7 +581,7 @@ impl Screen {
             }
         }
 
-        if ignore_chars.unwrap_or(false) || mode.contains(Mode::VI){
+        if ignore_chars.unwrap_or(false) || mode.contains(Mode::VI) {
             return;
         }
 
@@ -635,8 +635,7 @@ impl Screen {
     fn alt_send_esc(&mut self) -> bool {
         let alt_send_esc = self.state.option_as_alt;
 
-        self.modifiers.alt_key()
-            || alt_send_esc
+        self.modifiers.alt_key() || alt_send_esc
     }
 
     #[inline(never)]
