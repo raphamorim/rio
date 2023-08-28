@@ -257,19 +257,25 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn select_tab(&self, tab_index: usize) {
+    pub fn select_tab(&mut self, tab_index: usize) {
         if self.config.is_native {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabByIndex(tab_index), self.window_id);
+            return;
         }
+
+        self.set_current(tab_index);
     }
 
     #[inline]
-    pub fn select_last_tab(&self) {
+    pub fn select_last_tab(&mut self) {
         if self.config.is_native {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabLast, self.window_id);
+            return;
         }
+
+        self.set_current(self.contexts.len() - 1);
     }
 
     #[inline]
