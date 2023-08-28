@@ -203,6 +203,8 @@ pub enum Action {
     ScrollToBottom,
 
     /// Clear the display buffer(s) to remove history.
+    #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     ClearHistory,
 
     /// Hide the Rio window.
