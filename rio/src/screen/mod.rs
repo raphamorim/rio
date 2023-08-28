@@ -7,9 +7,11 @@ mod navigation;
 mod state;
 pub mod window;
 
+use crate::screen::bindings::MouseBinding;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
 use winit::event::Modifiers;
+use winit::event::MouseButton;
 use winit::window::raw_window_handle::HasRawDisplayHandle;
 // use winit::window::raw_window_handle::HasRawWindowHandle;
 use crate::clipboard::{Clipboard, ClipboardType};
@@ -69,6 +71,7 @@ impl Dimensions for SugarloafLayout {
 
 pub struct Screen {
     bindings: bindings::KeyBindings,
+    mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub modifiers: Modifiers,
     pub mouse: Mouse,
@@ -168,6 +171,7 @@ impl Screen {
         )?;
 
         Ok(Screen {
+            mouse_bindings: bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
             ime,
@@ -452,7 +456,7 @@ impl Screen {
                 },
             };
 
-            if binding.is_triggered_by(binding_mode.clone(), mods, &key) {
+            if binding.is_triggered_by(binding_mode.to_owned(), mods, &key) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -625,6 +629,33 @@ impl Screen {
             self.clear_selection();
 
             self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+        }
+    }
+
+    #[inline]
+    pub fn process_mouse_bindings(&mut self, button: MouseButton) {
+        let mode = self.get_mode();
+        let binding_mode = BindingMode::new(&mode);
+        let mouse_mode = self.mouse_mode();
+        let mods = self.modifiers.state();
+
+        for i in 0..self.mouse_bindings.len() {
+            let mut binding = self.mouse_bindings[i].clone();
+
+            // Require shift for all modifiers when mouse mode is active.
+            if mouse_mode {
+                binding.mods |= ModifiersState::SHIFT;
+            }
+
+            if binding.is_triggered_by(binding_mode.to_owned(), mods, &button) {
+                match &binding.action {
+                    Act::PasteSelection => {
+                        let content = self.clipboard.get(ClipboardType::Selection);
+                        self.paste(&content, true);
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 

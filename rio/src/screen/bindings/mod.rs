@@ -5,6 +5,7 @@ use crate::crosswords::Mode;
 use bitflags::bitflags;
 use config::bindings::KeyBinding as ConfigKeyBinding;
 use std::fmt::Debug;
+use winit::event::MouseButton;
 use winit::keyboard::Key::*;
 use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState};
 // use winit::platform::scancode::KeyCodeExtScancode;
@@ -100,6 +101,9 @@ pub enum BindingKey {
 pub type KeyBinding = Binding<BindingKey>;
 pub type KeyBindings = Vec<KeyBinding>;
 
+/// Bindings that are triggered by a mouse button.
+pub type MouseBinding = Binding<MouseButton>;
+
 bitflags! {
     /// Modes available for key bindings.
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -149,7 +153,7 @@ pub enum Action {
     // Perform vi mode action.
     // Vi(ViAction),
     /// Perform mouse binding exclusive action.
-    // Mouse(MouseAction),
+    Mouse(MouseAction),
 
     /// Paste contents of system clipboard.
     Paste,
@@ -362,6 +366,28 @@ macro_rules! trigger {
     ($ty:ident, $key:expr,) => {{
         $key
     }};
+}
+
+/// Mouse binding specific actions.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MouseAction {
+    /// Expand the selection to the current mouse cursor position.
+    ExpandSelection,
+}
+
+impl From<MouseAction> for Action {
+    fn from(action: MouseAction) -> Self {
+        Self::Mouse(action)
+    }
+}
+
+pub fn default_mouse_bindings() -> Vec<MouseBinding> {
+    bindings!(
+        MouseBinding;
+        MouseButton::Right;                            MouseAction::ExpandSelection;
+        MouseButton::Right,   ModifiersState::CONTROL; MouseAction::ExpandSelection;
+        MouseButton::Middle, ~BindingMode::VI;         Action::PasteSelection;
+    )
 }
 
 pub fn default_key_bindings(
