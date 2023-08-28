@@ -630,17 +630,19 @@ impl Screen {
 
     /// Whether we should send `ESC` due to `Alt` being pressed.
     #[cfg(not(target_os = "macos"))]
+    #[inline]
     fn alt_send_esc(&mut self) -> bool {
         self.modifiers.state().alt_key()
     }
 
     #[cfg(target_os = "macos")]
+    #[inline]
     fn alt_send_esc(&mut self) -> bool {
         self.modifiers.state().alt_key()
-            && (self.state.option_as_alt == String::from("both")
-                || (self.state.option_as_alt == String::from("left")
+            && (self.state.option_as_alt == *"both"
+                || (self.state.option_as_alt == *"left"
                     && self.modifiers.lalt_state() == ModifiersKeyState::Pressed)
-                || (self.state.option_as_alt == String::from("right")
+                || (self.state.option_as_alt == *"right"
                     && self.modifiers.ralt_state() == ModifiersKeyState::Pressed))
     }
 
