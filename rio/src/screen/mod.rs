@@ -7,9 +7,9 @@ mod navigation;
 mod state;
 pub mod window;
 
-use winit::event::Modifiers;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
+use winit::event::Modifiers;
 use winit::window::raw_window_handle::HasRawDisplayHandle;
 // use winit::window::raw_window_handle::HasRawWindowHandle;
 use crate::clipboard::{Clipboard, ClipboardType};
@@ -39,10 +39,10 @@ use std::error::Error;
 use std::rc::Rc;
 use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
 use winit::event::ElementState;
-use winit::keyboard::{Key, KeyLocation, ModifiersState};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 #[cfg(target_os = "macos")]
 use winit::keyboard::ModifiersKeyState;
+use winit::keyboard::{Key, KeyLocation, ModifiersState};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;

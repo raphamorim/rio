@@ -455,7 +455,11 @@ impl Sequencer {
                             match state {
                                 ElementState::Pressed => {
                                     // Process mouse press before bindings to update the `click_state`.
-                                    if !sequencer_window.screen.modifiers.state().shift_key()
+                                    if !sequencer_window
+                                        .screen
+                                        .modifiers
+                                        .state()
+                                        .shift_key()
                                         && sequencer_window.screen.mouse_mode()
                                     {
                                         sequencer_window.screen.mouse.click_state =
@@ -534,7 +538,11 @@ impl Sequencer {
                                     // sequencer_window.screen.process_mouse_bindings(button);
                                 }
                                 ElementState::Released => {
-                                    if !sequencer_window.screen.modifiers.state().shift_key()
+                                    if !sequencer_window
+                                        .screen
+                                        .modifiers
+                                        .state()
+                                        .shift_key()
                                         && sequencer_window.screen.mouse_mode()
                                     {
                                         let code = match button {
