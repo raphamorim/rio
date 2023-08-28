@@ -5,7 +5,7 @@ macro_rules! font {
     };
 }
 
-pub const DEFAULT_FONT_NAME: &str = "cascadiamono";
+pub const DEFAULT_FONT_FAMILY: &str = "cascadiamono";
 
 // Fonts:
 // CascadiaMonoPL-Bold.otf

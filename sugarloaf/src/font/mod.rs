@@ -1,6 +1,8 @@
 pub mod constants;
+pub mod fonts;
 
 use crate::font::constants::*;
+use crate::font::fonts::Fonts;
 #[cfg(not(target_arch = "wasm32"))]
 use font_kit::{properties::Style, source::SystemSource};
 use glyph_brush::ab_glyph::FontArc;
@@ -68,7 +70,7 @@ impl Font {
     // TODO: Refactor multiple unwraps in this code
     // TODO: Use FontAttributes bold and italic
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(font_name: String) -> Font {
+    pub fn new(font_spec: Fonts) -> Font {
         let font_arc_unicode;
         let font_arc_symbol;
 
@@ -127,11 +129,9 @@ impl Font {
             .unwrap(),
         };
 
-        let is_default_font = font_name.to_lowercase() == DEFAULT_FONT_NAME;
-        if !is_default_font {
-            if let Ok(system_fonts) =
-                SystemSource::new().select_family_by_name(&font_name)
-            {
+        if font_spec.is_not_default() {
+            let family = font_spec.family.to_string();
+            if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&family) {
                 let fonts = system_fonts.fonts();
                 let mut has_variant = true;
                 if !fonts.is_empty() {
@@ -142,10 +142,15 @@ impl Font {
                             let is_monospace = font.is_monospace();
                             if has_variant {
                                 if let Some(_monospaced_font) =
-                                    find_monospace_variant(font_name.to_string())
+                                    find_monospace_variant(font_spec.family.to_string())
                                 {
-                                    warn!("using a monospaced variant from the font: {font_name}\n");
-                                    return Font::new(font_name + " mono");
+                                    warn!("using a monospaced variant from the font\n");
+                                    let try_to_find_fonts = Fonts {
+                                        family: family + "mono",
+                                        ..font_spec.clone()
+                                    };
+
+                                    return Font::new(try_to_find_fonts);
                                 } else {
                                     has_variant = false;
                                 }
@@ -202,7 +207,7 @@ impl Font {
                     }
 
                     if !text_fonts.is_monospace {
-                        warn!("using a non monospaced font: {font_name}\nSugarloaf will do the best can do for render it although please consider use a monospaced font");
+                        warn!("using a non monospaced font: {family}\nSugarloaf will do the best can do for render it although please consider use a monospaced font");
                     }
 
                     return Font {
@@ -216,7 +221,7 @@ impl Font {
                 }
             }
 
-            warn!("failed to load font {font_name}");
+            warn!("failed to load font {family}");
         }
 
         Font {
@@ -229,7 +234,7 @@ impl Font {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new(_font_name: String) -> Font {
+    pub fn new(_font_name: Fonts) -> Font {
         let font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
         let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
 
@@ -268,29 +273,4 @@ impl Font {
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
         }
     }
-
-    // pub async fn all() -> AllSystemFonts {
-    //     let source = SystemSource::new();
-    //     source.all_fonts().unwrap_or(vec![])
-    // }
-
-    // pub fn search_font_by_content(content: char, all_fonts: &AllSystemFonts) -> Option<FontArc> {
-    //     let mut fonts_found = vec![];
-    //     for system_font in all_fonts.iter() {
-    //         if let Ok(font) = system_font.load() {
-    //             match font.glyph_for_char(content) {
-    //                 Some(f) => {
-    //                     println!("{:?}", f);
-    //                     fonts_found.push(font);
-    //                 }
-    //                 None => {
-    //                     continue;
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     log::info!("{content:?} is available in {fonts_found:?}");
-    //     None
-    // }
 }

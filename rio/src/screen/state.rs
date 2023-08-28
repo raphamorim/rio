@@ -93,7 +93,7 @@ impl State {
                 0.0,
                 0.0,
             ),
-            font_size: config.font_size,
+            font_size: config.fonts.size,
             selection_range: None,
             named_colors: config.colors,
             cursor: Cursor {

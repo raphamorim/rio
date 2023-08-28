@@ -95,7 +95,7 @@ impl Screen {
 
         let mut padding_y_bottom = 0.0;
         if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.font_size
+            padding_y_bottom += config.fonts.size
         }
 
         let mut padding_y_top = constants::PADDING_Y;
@@ -120,7 +120,7 @@ impl Screen {
             size.height as f32,
             (config.padding_x, padding_y_top, padding_y_bottom),
             scale as f32,
-            config.font_size,
+            config.fonts.size,
             config.line_height,
             (MIN_COLUMNS, MIN_LINES),
         );
@@ -128,7 +128,7 @@ impl Screen {
         let sugarloaf = Sugarloaf::new(
             winit_window,
             power_preference,
-            config.font.to_string(),
+            config.fonts.to_owned(),
             sugarloaf_layout,
         )
         .await?;
@@ -257,16 +257,16 @@ impl Screen {
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
         let mut padding_y_bottom = 0.0;
         if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.font_size
+            padding_y_bottom += config.fonts.size
         }
 
         self.sugarloaf.layout.recalculate(
-            config.font_size,
+            config.fonts.size,
             config.line_height,
             config.padding_x,
             padding_y_bottom,
         );
-        self.sugarloaf.update_font(config.font.to_string());
+        self.sugarloaf.update_font(config.fonts.to_owned());
         self.sugarloaf.layout.update();
         self.state = State::new(config);
 
