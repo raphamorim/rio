@@ -147,7 +147,7 @@ impl Font {
                                     warn!("using a monospaced variant from the font\n");
                                     let try_to_find_fonts = Fonts {
                                         family: family + "mono",
-                                        ..font_spec.clone()
+                                        ..font_spec
                                     };
 
                                     return Font::new(try_to_find_fonts);
