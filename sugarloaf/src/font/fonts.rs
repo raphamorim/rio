@@ -79,7 +79,7 @@ impl Default for Fonts {
             size: default_font_size(),
             family: DEFAULT_FONT_FAMILY.to_string(),
             regular: Font {
-                weight: Some(500),
+                weight: Some(300),
                 style: String::from("regular"),
             },
             bold: Font {

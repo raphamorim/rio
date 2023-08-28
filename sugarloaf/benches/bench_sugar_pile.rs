@@ -40,7 +40,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
         &window,
         wgpu::PowerPreference::LowPower,
-        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        sugarloaf::font::fonts::Fonts::default(),
         sugarloaf_layout,
     ))
     .expect("Sugarloaf instance should be created");

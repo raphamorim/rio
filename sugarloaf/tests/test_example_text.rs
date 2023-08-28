@@ -57,7 +57,7 @@ async fn run() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        sugarloaf::font::constants::DEFAULT_FONT_NAME.to_string(),
+        sugarloaf::font::fonts::Fonts::default(),
     )
     .await
     .expect("Sugarloaf instance should be created");
