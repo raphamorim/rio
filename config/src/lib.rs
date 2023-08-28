@@ -1,16 +1,15 @@
 pub mod bindings;
 mod defaults;
-pub mod fonts;
 pub mod navigation;
 
 use crate::bindings::Bindings;
 use crate::defaults::*;
-use crate::fonts::Fonts;
 use crate::navigation::Navigation;
 use colors::Colors;
 use log::warn;
 use serde::Deserialize;
 use std::default::Default;
+use sugarloaf::font::fonts::Fonts;
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {

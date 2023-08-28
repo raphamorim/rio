@@ -2,6 +2,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
+use crate::font::fonts::Fonts;
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
@@ -44,7 +45,7 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     text_y: f32,
     font_bound: (f32, f32),
-    font_name: String,
+    fonts: Fonts,
     is_text_monospaced: bool,
 }
 
@@ -78,38 +79,38 @@ impl Sugarloaf {
     pub async fn new(
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
-        font_name: String,
+        fonts: Fonts,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf, String> {
         let ctx = Context::new(winit_window, power_preference).await;
 
-        let font = Font::new(font_name.to_string());
+        let loaded_fonts = Font::new(fonts.to_owned());
 
-        let is_monospace = font.text.is_monospace;
+        let is_monospace = loaded_fonts.text.is_monospace;
 
         let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
-            font.text.regular,
-            font.text.italic,
-            font.text.bold,
-            font.text.bold_italic,
-            font.text.extra_light,
-            font.text.extra_light_italic,
-            font.text.light,
-            font.text.light_italic,
-            font.text.semi_bold,
-            font.text.semi_bold_italic,
-            font.text.semi_light,
-            font.text.semi_light_italic,
-            font.symbol,
-            font.emojis,
-            font.unicode,
-            font.icons,
+            loaded_fonts.text.regular,
+            loaded_fonts.text.italic,
+            loaded_fonts.text.bold,
+            loaded_fonts.text.bold_italic,
+            loaded_fonts.text.extra_light,
+            loaded_fonts.text.extra_light_italic,
+            loaded_fonts.text.light,
+            loaded_fonts.text.light_italic,
+            loaded_fonts.text.semi_bold,
+            loaded_fonts.text.semi_bold_italic,
+            loaded_fonts.text.semi_light,
+            loaded_fonts.text.semi_light_italic,
+            loaded_fonts.symbol,
+            loaded_fonts.emojis,
+            loaded_fonts.unicode,
+            loaded_fonts.icons,
         ])
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         Ok(Sugarloaf {
             sugar_cache: HashMap::new(),
-            font_name,
+            fonts,
             ctx,
             rect_brush,
             rects: vec![],
@@ -159,10 +160,10 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn update_font(&mut self, font_name: String) -> &mut Self {
-        if self.font_name != font_name {
-            log::info!("requested a font change {font_name}");
-            let font = Font::new(font_name.to_string());
+    pub fn update_font(&mut self, fonts: Fonts) -> &mut Self {
+        if self.fonts != fonts {
+            log::info!("requested a font change");
+            let font = Font::new(fonts.to_owned());
 
             let is_monospace = font.text.is_monospace;
 
@@ -189,7 +190,7 @@ impl Sugarloaf {
             ])
             .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;
-            self.font_name = font_name;
+            self.fonts = fonts;
             self.is_text_monospaced = is_monospace;
         }
         self

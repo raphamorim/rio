@@ -512,6 +512,7 @@ dependencies = [
  "dirs",
  "log 0.4.19",
  "serde",
+ "sugarloaf",
  "toml 0.7.3",
 ]
 
@@ -2753,6 +2754,7 @@ dependencies = [
  "js-sys",
  "log 0.4.19",
  "png",
+ "serde",
  "tokio",
  "unicode-width",
  "wasm-bindgen",
