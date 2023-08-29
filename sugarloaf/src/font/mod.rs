@@ -26,6 +26,7 @@ pub struct Font {
     pub emojis: FontArc,
     pub unicode: FontArc,
     pub icons: FontArc,
+    pub breadcrumbs: FontArc,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -242,6 +243,7 @@ impl Font {
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
+            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap()
         }
     }
 
@@ -263,6 +265,7 @@ impl Font {
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
+            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap()
         }
     }
 }

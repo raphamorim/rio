@@ -205,7 +205,7 @@ impl ScreenNavigation {
         self.texts.push(Text::new(
             (initial_position - 12., 14.5),
             "".to_string(),
-            9,
+            8,
             23.,
             self.colors.active,
         ));
@@ -284,7 +284,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position - 12., 15.0),
                     "".to_string(),
-                    10,
+                    8,
                     22.,
                     self.colors.inactive,
                 ));
