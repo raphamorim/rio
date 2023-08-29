@@ -4,7 +4,7 @@ baseurl: /rio
 name: Rio Terminal
 description: A modern terminal for the 21th century. Rio is built over WebGPU, WebAssembly and Rust. The WebGPU API makes it suitable for general purpose graphics and compute on the GPU.
 keywords: "Rio, WebGPU, Rust, Terminal, GPU"
-version: "0.0.16"
+version: "0.0.17"
 
 domain: raphamorim.io
 commentlinks: true
