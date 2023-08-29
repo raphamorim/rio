@@ -43,7 +43,7 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
-        sugarloaf::font::fonts::Fonts::default(),
+        sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
     )
     .await

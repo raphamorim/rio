@@ -10,7 +10,6 @@ use glyph_brush::ab_glyph::FontArc;
 use glyph_brush::ab_glyph::FontVec;
 #[cfg(not(target_arch = "wasm32"))]
 use log::{info, warn};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct ComposedFontArc {
@@ -37,28 +36,29 @@ fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
     ))
 }
 
+// #[cfg(not(target_arch = "wasm32"))]
+// fn find_monospace_variant(font_name: String) -> Option<font_kit::font::Font> {
+//     if let Ok(system_fonts) =
+//         SystemSource::new().select_family_by_name(&(font_name + " mono"))
+//     {
+//         let fonts = system_fonts.fonts();
+//         if !fonts.is_empty() {
+//             for font in fonts.iter() {
+//                 let font = font.load();
+//                 if let Ok(font) = font {
+//                     let is_monospace = font.is_monospace();
+//                     if is_monospace {
+//                         return Some(font);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     None
+// }
+
 #[cfg(not(target_arch = "wasm32"))]
-fn find_monospace_variant(font_name: String) -> Option<font_kit::font::Font> {
-    if let Ok(system_fonts) =
-        SystemSource::new().select_family_by_name(&(font_name + " mono"))
-    {
-        let fonts = system_fonts.fonts();
-        if !fonts.is_empty() {
-            for font in fonts.iter() {
-                let font = font.load();
-                if let Ok(font) = font {
-                    let is_monospace = font.is_monospace();
-                    if is_monospace {
-                        return Some(font);
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
 #[inline]
 fn find_font(
     font_spec: SugarloafFont,
@@ -85,7 +85,7 @@ fn find_font(
                 900 => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
                 _ => constants::FONT_CASCADIAMONO_ITALIC,
             },
-            "normal" | _ => match weight {
+            _ => match weight {
                 100 => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
                 200 => constants::FONT_CASCADIAMONO_LIGHT,
                 300 => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
@@ -103,17 +103,16 @@ fn find_font(
     }
 
     let family = font_spec.family.to_string();
-    warn!("sugarloaf: search font {family} with {style} {weight}");
+    info!("sugarloaf: search font '{family}' with style '{style}' and weight '{weight}'");
 
     let weight_f32 = weight as f32;
     let font_spec_style = match style.as_str() {
         "italic" => Style::Italic,
-        "normal" | _ => Style::Normal,
+        _ => Style::Normal,
     };
     let mut nearest_font_weight = None;
     if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&family) {
         let fonts = system_fonts.fonts();
-        println!("{:?}", fonts.len());
         // let mut has_variant = true;
 
         if !fonts.is_empty() {
@@ -139,23 +138,20 @@ fn find_font(
                     //     }
                     // }
 
-                    println!("{:?} {:?} {:?}", meta.style, meta.weight.0, weight_f32);
-
                     if meta.style != font_spec_style {
                         continue;
                     }
 
                     if meta.weight.0 != weight_f32 {
                         // TODO: Improve nearest logic
-                        if weight_f32 <= 300. && meta.weight.0 <= 300. {
-                            nearest_font_weight = Some(meta.weight.0);
-                        } else if weight_f32 >= 700. && meta.weight.0 >= 700. {
-                            nearest_font_weight = Some(meta.weight.0);
-                        } else if weight_f32 < 700.
+                        let is_both_light = weight_f32 <= 300. && meta.weight.0 <= 300.;
+                        let is_both_bold = weight_f32 >= 700. && meta.weight.0 >= 700.;
+                        let is_both_regular = weight_f32 < 700.
                             && meta.weight.0 < 700.
                             && weight_f32 > 300.
-                            && meta.weight.0 > 300.
-                        {
+                            && meta.weight.0 > 300.;
+
+                        if is_both_light || is_both_bold || is_both_regular {
                             nearest_font_weight = Some(meta.weight.0);
                         }
 
@@ -163,6 +159,7 @@ fn find_font(
                     }
 
                     if let Some(font_arc) = font_arc_from_font(font) {
+                        info!("sugarloaf: OK font found '{family}' with style '{style}' and weight '{weight}'");
                         return (font_arc, is_monospace);
                     }
                 }
@@ -170,7 +167,7 @@ fn find_font(
         }
     }
 
-    warn!("sugarloaf: failed to load font {family} with {style} {weight}");
+    warn!("sugarloaf: failed to load font '{family}' with style '{style}' and weight '{weight}'");
     if let Some(nearest) = nearest_font_weight {
         warn!(
             "sugarloaf: falling back to nearest font weight found is {:?}",
@@ -184,7 +181,7 @@ fn find_font(
             fallback,
         )
     } else {
-        find_font(fallback.unwrap_or_else(|| default_font_regular()), None)
+        find_font(fallback.unwrap_or_else(default_font_regular), None)
     }
 }
 
