@@ -72,7 +72,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
-        style: Some(String::from("normal")),
+        style: Some(String::from("italic")),
     }
 }
 
@@ -84,7 +84,7 @@ pub struct SugarloafFonts {
     pub regular: SugarloafFont,
     #[serde(default = "default_font_bold")]
     pub bold: SugarloafFont,
-    #[serde(default = "default_font_bold_italic")]
+    #[serde(default = "default_font_bold_italic", rename = "bold-italic")]
     pub bold_italic: SugarloafFont,
     #[serde(default = "default_font_italic")]
     pub italic: SugarloafFont,
