@@ -93,9 +93,6 @@ pub struct Sequencer {
     settings_config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
-    // has_updates: Vec<WindowId>,
-    #[allow(unused)]
-    has_updates: bool,
     event_proxy: Option<EventProxy>,
 }
 
@@ -106,7 +103,6 @@ impl Sequencer {
             config: Rc::new(config),
             settings_config,
             windows: HashMap::new(),
-            has_updates: false,
             event_proxy: None,
             window_config_editor: None,
         }
@@ -157,9 +153,6 @@ impl Sequencer {
                                 for (_id, sw) in self.windows.iter_mut() {
                                     sw.screen.update_config(&self.config);
                                     sw.window.request_redraw();
-                                    // if !self.has_updates.contains(&window_id) {
-                                    // self.has_updates.push(window_id);
-                                    // }
                                 }
                             }
                             RioEventType::Rio(RioEvent::Exit) => {
@@ -301,10 +294,6 @@ impl Sequencer {
                             RioEventType::Rio(RioEvent::CreateNativeTab) => {
                                 if let Some(current_sw) = self.windows.get_mut(&window_id)
                                 {
-                                    current_sw.screen.update_top_y_for_native_tabs(
-                                        current_sw.window.num_tabs() + 1,
-                                    );
-
                                     current_sw.window.request_redraw();
 
                                     let sw = SequencerWindow::from_target(
@@ -344,15 +333,8 @@ impl Sequencer {
                             RioEventType::Rio(RioEvent::CloseWindow) => {
                                 if let Some(current_sw) = self.windows.get_mut(&window_id)
                                 {
-                                    let num_tabs = current_sw.window.num_tabs();
-                                    let mut has_removed = false;
-                                    if num_tabs > 1 {
+                                    if current_sw.window.num_tabs() > 1 {
                                         self.windows.remove(&window_id);
-                                        has_removed = true;
-                                    }
-
-                                    if num_tabs == 2 && has_removed {
-                                        self.has_updates = true;
                                     }
                                 }
                             }
@@ -533,10 +515,6 @@ impl Sequencer {
                                             sequencer_window.screen.on_left_click(point);
                                         }
 
-                                        // if !self.has_updates.contains(&window_id) {
-                                        //     self.has_updates.push(window_id);
-                                        // }
-
                                         sequencer_window.window.request_redraw();
                                     }
                                     // sequencer_window.screen.process_mouse_bindings(button);
@@ -663,10 +641,6 @@ impl Sequencer {
                                     || !sw.screen.mouse_mode())
                             {
                                 sw.screen.update_selection(point, square_side);
-
-                                // if !self.has_updates.contains(&window_id) {
-                                //     self.has_updates.push(window_id);
-                                // }
                                 sw.window.request_redraw();
                             } else if square_changed
                                 && sw.screen.has_mouse_motion_and_drag()
@@ -759,9 +733,6 @@ impl Sequencer {
                                 }
 
                                 ElementState::Released => {
-                                    // if !self.has_updates.contains(&window_id) {
-                                    //     self.has_updates.push(window_id);
-                                    // }
                                     sw.window.request_redraw();
                                 }
                             }
@@ -862,9 +833,6 @@ impl Sequencer {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             sw.screen
                                 .set_scale(scale_factor as f32, sw.window.inner_size());
-                            // if !self.has_updates.contains(&window_id) {
-                            //     self.has_updates.push(window_id);
-                            // }
                             sw.window.request_redraw();
                         }
                     }
@@ -880,14 +848,12 @@ impl Sequencer {
                     }
 
                     Event::RedrawRequested(window_id) => {
-                        // if !self.has_updates.is_empty() {
-                        // for window_id in self.has_updates.iter() {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
 
                             #[cfg(target_os = "macos")]
                             {
-                                if self.has_updates {
+                                if sw.screen.context_manager.config.is_native {
                                     sw.screen.update_top_y_for_native_tabs(
                                         sw.window.num_tabs(),
                                     );
@@ -900,11 +866,7 @@ impl Sequencer {
                         }
                         // }
 
-                        // self.has_updates = vec![];
-                        // }
-
                         scheduler.update();
-
                         *control_flow = winit::event_loop::ControlFlow::Wait;
                     }
                     _ => {}
