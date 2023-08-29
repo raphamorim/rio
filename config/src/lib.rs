@@ -9,7 +9,7 @@ use colors::Colors;
 use log::warn;
 use serde::Deserialize;
 use std::default::Default;
-use sugarloaf::font::fonts::Fonts;
+use sugarloaf::font::fonts::SugarloafFonts;
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
@@ -67,8 +67,8 @@ pub struct Config {
     pub line_height: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
-    #[serde(default = "Fonts::default")]
-    pub fonts: Fonts,
+    #[serde(default = "SugarloafFonts::default")]
+    pub fonts: SugarloafFonts,
     #[serde(rename = "padding-x", default = "default_padding_x")]
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
@@ -215,7 +215,7 @@ impl Default for Config {
             padding_x: default_padding_x(),
             line_height: default_line_height(),
             theme: default_theme(),
-            fonts: Fonts::default(),
+            fonts: SugarloafFonts::default(),
             cursor: default_cursor(),
             option_as_alt: default_option_as_alt(),
             colors: Colors::default(),
@@ -286,7 +286,7 @@ mod tests {
         assert!(!result.disable_unfocused_render);
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
 
         // Colors
@@ -314,19 +314,17 @@ mod tests {
 
             [fonts]
             size = 18
+            family = "CascadiaMono"
 
             [fonts.regular]
-            family = "CascadiaMono"
             style = "regular"
             weight = 300
             
             [fonts.bold]
-            family = "CascadiaMono"
             style = "bold"
             weight = 600
             
             [fonts.italic]
-            family = "CascadiaMono"
             style = "italic"
             weight = 400
 
@@ -356,7 +354,7 @@ mod tests {
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
         assert_eq!(result.editor, default_editor());
         assert!(!result.disable_unfocused_render);
@@ -387,7 +385,7 @@ mod tests {
         let result = Config::load_from_path(&file_name);
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -406,7 +404,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::Low);
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -427,7 +425,7 @@ mod tests {
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor, default_cursor());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -455,7 +453,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.cursor, '_');
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -475,7 +473,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -495,7 +493,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
@@ -517,7 +515,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::default());
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, default_theme());
         // Bindings
         assert_eq!(result.bindings.keys[0].key, "Q");
@@ -564,7 +562,7 @@ mod tests {
         );
 
         assert_eq!(result.performance, Performance::High);
-        assert_eq!(result.fonts, Fonts::default());
+        assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, "lucario");
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

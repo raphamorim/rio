@@ -2,7 +2,32 @@
 
 ## In progress
 
-- *breaking change*: Action `TabSwitchNext` and `TabSwitchPrev` has been renamed to `SelectNextTab` and `SelectPrevTab`.
+#### Breaking changes
+
+- Configuration `font` does not work anymore, a new configuration API of font selection has been introduced.
+
+```toml
+[fonts]
+size = 18
+family = "CascadiaMono"
+
+[fonts.regular]
+style = "regular"
+weight = 300
+
+[fonts.bold]
+style = "bold"
+weight = 600
+
+[fonts.italic]
+style = "italic"
+weight = 400
+```
+
+- Action `TabSwitchNext` and `TabSwitchPrev` has been renamed to `SelectNextTab` and `SelectPrevTab`.
+
+#### Rest of 0.0.17 changelog
+
 - Support to `NativeTab` (MacOS only).
 - Support for kitty's keyboard protocol (`CSI u`). Ref: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 - Added new actions for tab selection: `SelectTab1`, `SelectTab2`, `SelectTab3`, `SelectTab4`, `SelectTab5`, `SelectTab6`, `SelectTab7`, `SelectTab8`, `SelectTab9`, `SelectLastTab`.
