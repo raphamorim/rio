@@ -80,6 +80,7 @@ impl Sugarloaf {
             loaded_fonts.emojis,
             loaded_fonts.unicode,
             loaded_fonts.icons,
+            loaded_fonts.breadcrumbs,
         ])
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
