@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Fix Breadcrumb navigation crash.
 
 ## 0.0.17
 
