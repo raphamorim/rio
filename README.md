@@ -4,7 +4,7 @@
 
 ![Rio banner](docs/assets/banner.png)
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal-emulator.svg)](https://repology.org/project/rio-terminal-emulator/versions)
+[![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
 
 ## Platforms
 
