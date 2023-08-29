@@ -7,19 +7,24 @@ use serde::Deserialize;
 size = 18
 
 [fonts.regular]
-family = "CascadiaMono"
+family = "cascadiamono"
 style = "normal"
-weight = 300
+weight = 400
 
 [fonts.bold]
-family = "CascadiaMono"
+family = "cascadiamono"
 style = "normal"
-weight = 600
+weight = 800
 
 [fonts.italic]
-family = "CascadiaMono"
+family = "cascadiamono"
 style = "italic"
 weight = 400
+
+[fonts.bold-italic]
+family = "cascadiamono"
+style = "italic"
+weight = 800
 */
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
