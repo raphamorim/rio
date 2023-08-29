@@ -243,7 +243,7 @@ impl Font {
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap()
+            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
         }
     }
 
@@ -265,7 +265,7 @@ impl Font {
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
             unicode: font_arc_unicode,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap()
+            breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
         }
     }
 }
