@@ -110,7 +110,13 @@ weight = 800
 
 # Navigation
 #
-# "mode" - Define navigation mode: CollapsedTab, BottomTab, TopTab, Breadcrumb.
+# "mode" - Define navigation mode
+#   - NativeTab (MacOs only)
+#   - CollapsedTab
+#   - BottomTab
+#   - TopTab
+#   - Breadcrumb
+#
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
