@@ -246,7 +246,7 @@ impl Font {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn new(_font_name: Fonts) -> Font {
+    pub fn new(_font_spec: SugarloafFonts) -> Font {
         let font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
         let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
 
