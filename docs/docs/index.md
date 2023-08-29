@@ -18,9 +18,6 @@ Windows	configuration file path is <span class="keyword">C:\Users\USER\AppData\L
 Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
 
 {% highlight toml %}
-font = "CascadiaMono"
-font-size = 18
-
 # Cursor
 #
 # Default cursor is Block
@@ -32,6 +29,7 @@ cursor = '_'
 # Set WGPU rendering performance
 # High: Adapter that has the highest performance. This is often a discrete GPU.
 # Low: Adapter that uses the least possible power. This is often an integrated GPU.
+#
 performance = "High"
 
 # Theme
@@ -42,36 +40,73 @@ performance = "High"
 #
 # Dracula theme code is available in:
 # https://github.com/dracula/rio-terminal
+#
 theme = "dracula"
 
 # Padding-x
 #
 # define x axis padding (default is 10)
+#
 padding-x = 0
 
 # Option as Alt
 #
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
+#
 option-as-alt = 'both'
 
 # Window Opacity
 #
 # window-opacity changes the window transparency state.
 # Only works for Windows / X11 / WebAssembly
+#
 window-opacity = 0.5
 
 # Window Width
 #
 # window-width changes the intial window width.
 # Default: 600
+#
 window-width = 1200
 
 # Window Height
 #
 # window-height changes the inital window height.
 # Default: 400
+#
 window-height = 800
+
+
+# Fonts
+#
+# Configure fonts used by the terminal
+#
+# Note: You can set different font families but Rio terminal
+# will always look for regular font bounds whene
+#
+[fonts]
+size = 18
+
+[fonts.regular]
+family = "cascadiamono"
+style = "normal"
+weight = 400
+
+[fonts.bold]
+family = "cascadiamono"
+style = "normal"
+weight = 800
+
+[fonts.italic]
+family = "cascadiamono"
+style = "italic"
+weight = 400
+
+[fonts.bold-italic]
+family = "cascadiamono"
+style = "italic"
+weight = 800
 
 # Navigation
 #
@@ -108,6 +143,7 @@ shell = { program = "/bin/zsh", args = ["--login"] }
 # directory of the parent process will be used.
 #
 # This configuration only has effect if use-fork is disabled
+#
 working-dir = "/Users/raphael/Documents/"
 
 # Editor
@@ -120,17 +156,20 @@ working-dir = "/Users/raphael/Documents/"
 #   - (Windows) value of $EDITOR with a fallback to "vi"
 # 
 # The example below sets VS Code as default editor
+#
 editor = "code"
 
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars
 # please do not copy this if you do not need
+#
 env-vars = ['SHELL=/opt/homebrew/bin/fish']
 
 # Disable render when unfocused
 #
 # This property disable renderer processes while Rio is unfocused.
+#
 disable-renderer-when-unfocused = false
 
 # Use fork
@@ -145,6 +184,7 @@ use-fork = false
 #
 # Colors definition will overwrite any property in theme
 # (considering if theme folder does exists and is being used)
+#
 [colors]
 background = "#BBBD64"
 foreground = "#040400"
@@ -157,6 +197,7 @@ blue = "#454A12"
 #
 # Create custom Key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
+#
 [bindings]
 keys = [
   { key = "q", with = "super", action = "Quit" },
@@ -168,6 +209,7 @@ keys = [
 # Log level
 #
 # This property enables log level filter. Default is "OFF".
+#
 log-level = "INFO"
 {% endhighlight %}
 
