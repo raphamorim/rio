@@ -2,6 +2,11 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.18
+
+- Fix delete key inputs square character.
 - Fix Breadcrumb navigation crash.
 
 ## 0.0.17
