@@ -9,19 +9,26 @@
 ```toml
 [fonts]
 size = 18
-family = "CascadiaMono"
 
 [fonts.regular]
-style = "regular"
-weight = 300
+family = "cascadiamono"
+style = "normal"
+weight = 400
 
 [fonts.bold]
-style = "bold"
-weight = 600
+family = "cascadiamono"
+style = "normal"
+weight = 800
 
 [fonts.italic]
+family = "cascadiamono"
 style = "italic"
 weight = 400
+
+[fonts.bold-italic]
+family = "cascadiamono"
+style = "italic"
+weight = 800
 ```
 
 - Action `TabSwitchNext` and `TabSwitchPrev` has been renamed to `SelectNextTab` and `SelectPrevTab`.
