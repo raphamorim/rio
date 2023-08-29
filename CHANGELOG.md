@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.17
+
 #### Breaking changes
 
 - Configuration `font` does not work anymore, a new configuration API of font selection has been introduced.
