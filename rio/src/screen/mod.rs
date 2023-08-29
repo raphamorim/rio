@@ -78,7 +78,7 @@ pub struct Screen {
     pub ime: Ime,
     pub state: State,
     pub sugarloaf: Sugarloaf,
-    context_manager: context::ContextManager<EventProxy>,
+    pub context_manager: context::ContextManager<EventProxy>,
 }
 
 impl Screen {
@@ -241,16 +241,21 @@ impl Screen {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn update_top_y_for_native_tabs(&mut self, tab_num: usize) {
-        let padding_y_top = constants::PADDING_Y;
-        if tab_num > 1 {
-            self.sugarloaf
-                .layout
-                .set_top_y_for_native_tabs((padding_y_top * 2.0) + 2.0);
-        } else {
-            self.sugarloaf
-                .layout
-                .set_top_y_for_native_tabs(padding_y_top + 2.0);
+        if !self.context_manager.config.is_native {
+            return;
         }
+
+        let expected = if tab_num > 1 {
+            constants::PADDING_Y_WITH_MANY_NATIVE_TAB
+        } else {
+            constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
+        };
+
+        if self.sugarloaf.layout.margin.top_y == expected {
+            return;
+        }
+
+        self.sugarloaf.layout.set_top_y_for_native_tabs(expected);
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
