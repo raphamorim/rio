@@ -410,6 +410,7 @@ impl Screen {
         mode
     }
 
+    #[inline]
     pub fn process_key_event(&mut self, key: &winit::event::KeyEvent) {
         if self.ime.preedit().is_some() {
             return;
@@ -947,6 +948,7 @@ impl Screen {
         payload.into_bytes()
     }
 
+    #[inline]
     pub fn try_close_existent_tab(&mut self) -> bool {
         if self.context_manager.len() > 1 {
             self.context_manager.close_context();
@@ -1242,6 +1244,7 @@ impl Screen {
         self.get_mode().intersects(Mode::MOUSE_MOTION)
     }
 
+    #[inline]
     pub fn mouse_report(&mut self, button: u8, state: ElementState) {
         let mut terminal = self.ctx().current().terminal.lock();
         let display_offset = terminal.display_offset();
@@ -1278,6 +1281,7 @@ impl Screen {
         }
     }
 
+    #[inline]
     fn normal_mouse_report(&mut self, position: Pos, button: u8) {
         let Pos { row, col } = position;
         let utf8 = self.get_mode().contains(Mode::UTF8_MOUSE);

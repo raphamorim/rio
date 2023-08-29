@@ -2,7 +2,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
-use crate::font::fonts::Fonts;
+use crate::font::fonts::SugarloafFonts;
 use crate::font::Font;
 use crate::layout::SugarloafLayout;
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
@@ -45,7 +45,7 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     text_y: f32,
     font_bound: (f32, f32),
-    fonts: Fonts,
+    fonts: SugarloafFonts,
     is_text_monospaced: bool,
 }
 
@@ -53,33 +53,16 @@ const FONT_ID_REGULAR: usize = 0;
 const FONT_ID_ITALIC: usize = 1;
 const FONT_ID_BOLD: usize = 2;
 const FONT_ID_BOLD_ITALIC: usize = 3;
-// TODO: Implement variants
-#[allow(dead_code)]
-const FONT_ID_EXTRA_LIGHT: usize = 4;
-#[allow(dead_code)]
-const FONT_ID_EXTRA_LIGHT_ITALIC: usize = 5;
-#[allow(dead_code)]
-const FONT_ID_LIGHT: usize = 6;
-#[allow(dead_code)]
-const FONT_ID_LIGHT_ITALIC: usize = 7;
-#[allow(dead_code)]
-const FONT_ID_SEMI_BOLD: usize = 8;
-#[allow(dead_code)]
-const FONT_ID_SEMI_BOLD_ITALIC: usize = 9;
-#[allow(dead_code)]
-const FONT_ID_SEMI_LIGHT: usize = 10;
-#[allow(dead_code)]
-const FONT_ID_SEMI_LIGHT_ITALIC: usize = 11;
-const FONT_ID_SYMBOL: usize = 12;
-const FONT_ID_EMOJIS: usize = 13;
-const FONT_ID_UNICODE: usize = 14;
-const FONT_ID_ICONS: usize = 15;
+const FONT_ID_SYMBOL: usize = 4;
+const FONT_ID_EMOJIS: usize = 5;
+const FONT_ID_UNICODE: usize = 6;
+const FONT_ID_ICONS: usize = 7;
 
 impl Sugarloaf {
     pub async fn new(
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
-        fonts: Fonts,
+        fonts: SugarloafFonts,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf, String> {
         let ctx = Context::new(winit_window, power_preference).await;
@@ -93,14 +76,6 @@ impl Sugarloaf {
             loaded_fonts.text.italic,
             loaded_fonts.text.bold,
             loaded_fonts.text.bold_italic,
-            loaded_fonts.text.extra_light,
-            loaded_fonts.text.extra_light_italic,
-            loaded_fonts.text.light,
-            loaded_fonts.text.light_italic,
-            loaded_fonts.text.semi_bold,
-            loaded_fonts.text.semi_bold_italic,
-            loaded_fonts.text.semi_light,
-            loaded_fonts.text.semi_light_italic,
             loaded_fonts.symbol,
             loaded_fonts.emojis,
             loaded_fonts.unicode,
@@ -160,7 +135,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn update_font(&mut self, fonts: Fonts) -> &mut Self {
+    pub fn update_font(&mut self, fonts: SugarloafFonts) -> &mut Self {
         if self.fonts != fonts {
             log::info!("requested a font change");
             let font = Font::new(fonts.to_owned());
@@ -175,14 +150,6 @@ impl Sugarloaf {
                 font.text.italic,
                 font.text.bold,
                 font.text.bold_italic,
-                font.text.extra_light,
-                font.text.extra_light_italic,
-                font.text.light,
-                font.text.light_italic,
-                font.text.semi_bold,
-                font.text.semi_bold_italic,
-                font.text.semi_light,
-                font.text.semi_light_italic,
                 font.symbol,
                 font.emojis,
                 font.unicode,
