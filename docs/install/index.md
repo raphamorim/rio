@@ -75,7 +75,7 @@ Canary versions for MacOS are not notarized, so if you want to install a canary 
 
 Installation options:
 
-- • Arch Linux package: [aur.archlinux.org/packages/rio](https://aur.archlinux.org/packages/rio)
+- • Arch Linux package: [archlinux.org/packages/extra/x86_64/rio/](https://archlinux.org/packages/extra/x86_64/rio/)
 - • Nix package: [NixOS/nixpkgs/rio](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/applications/terminal-emulators/rio/default.nix)
 
 In case your distro doesn't have the package manager option listed above, proceed to [build from the source](#build-from-the-source).
