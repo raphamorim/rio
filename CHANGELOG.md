@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Whenever native tabs is on disable macos deadzone logic.
 
 ## 0.0.18
 
