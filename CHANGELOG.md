@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (fix https://github.com/raphamorim/rio/issues/200).
 - Whenever native tabs is on disable macos deadzone logic.
 
 ## 0.0.18
