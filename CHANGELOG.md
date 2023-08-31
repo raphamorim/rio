@@ -122,7 +122,7 @@ clickable = false
 ## 0.0.10
 
 - Major refactor of Sugarloaf.
-	- Perfomance improvements around 80-110%.
+	- Performance improvements around 80-110%.
 	- Introduced CachedSugar.
 	- Usage of PixelScale.
 	- Line-height support.
