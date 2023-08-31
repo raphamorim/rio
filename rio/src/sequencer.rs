@@ -576,7 +576,10 @@ impl Sequencer {
                             {
                                 // Dead zone for MacOS only
                                 // e.g: Dragging the terminal
-                                if !has_selection && sw.screen.is_macos_deadzone(y) {
+                                if !has_selection
+                                    && !sw.screen.context_manager.config.is_native
+                                    && sw.screen.is_macos_deadzone(y)
+                                {
                                     if sw.screen.is_macos_deadzone_draggable(x) {
                                         if lmb_pressed || rmb_pressed {
                                             sw.screen.clear_selection();
