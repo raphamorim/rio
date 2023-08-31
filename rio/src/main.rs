@@ -45,6 +45,10 @@ pub fn setup_environment_variables(config: &config::Config) {
         std::env::set_var("TERM", terminfo);
     }
 
+    // https://github.com/raphamorim/rio/issues/200
+    std::env::set_var("TERM_PROGRAM", "rio");
+    std::env::set_var("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
     #[cfg(target_os = "macos")]
