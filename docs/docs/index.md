@@ -24,7 +24,7 @@ Any file update in the configuration file will trigger a render operation in Rio
 # Other available options are: '_' and '|'
 cursor = '_'
 
-# Perfomance
+# Performance
 #
 # Set WGPU rendering performance
 # High: Adapter that has the highest performance. This is often a discrete GPU.
