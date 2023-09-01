@@ -5,6 +5,7 @@ use std::os::unix::io::AsRawFd;
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 use std::os::unix::io::RawFd;
 use std::process;
+use std::rc::Rc;
 use std::sync::atomic::Ordering::{self, AcqRel, Acquire, Relaxed, Release, SeqCst};
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize};
 use std::sync::{Arc, Condvar, Mutex};
@@ -474,7 +475,7 @@ struct RegistrationInner {
 
 #[derive(Clone)]
 struct ReadinessQueue {
-    inner: Arc<ReadinessQueueInner>,
+    inner: Rc<ReadinessQueueInner>,
 }
 
 unsafe impl Send for ReadinessQueue {}
@@ -2164,7 +2165,7 @@ impl ReadinessQueue {
         let ptr = &*end_marker as *const _ as *mut _;
 
         Ok(ReadinessQueue {
-            inner: Arc::new(ReadinessQueueInner {
+            inner: Rc::new(ReadinessQueueInner {
                 awakener: sys::Awakener::new()?,
                 head_readiness: AtomicPtr::new(ptr),
                 tail_readiness: UnsafeCell::new(ptr),

@@ -340,7 +340,7 @@ mod stress {
 
         done.store(true, Release);
 
-        let mut final_ready = vec![false; N];
+        let mut final_ready = [false; N];
 
         for _ in 0..5 {
             poll.poll(&mut events, None).unwrap();

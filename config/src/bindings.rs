@@ -71,12 +71,12 @@ mod tests {
 
     #[test]
     fn test_mode_key_input() {
-        let content = r#"
+        let content = r"
             [bindings]
             keys = [
                 { key = 'Home', text = '\x1bOH', mode = 'appcursor' },
             ]
-        "#;
+        ";
 
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.bindings.keys[0].key, "Home");
