@@ -446,6 +446,7 @@ pub fn default_key_bindings(
         Delete,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[3~".into());
         PageUp,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[5~".into());
         PageDown,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[6~".into());
+        Backspace,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
         Backspace, ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x1b\x7f".into());
         Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
         Space, ModifiersState::SHIFT | ModifiersState::CONTROL;
