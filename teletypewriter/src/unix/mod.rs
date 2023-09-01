@@ -445,20 +445,8 @@ pub fn create_pty_with_spawn(
         },
     };
 
-    let mut buf = [0; 1024];
-    let default_shell: &str = match get_pw_entry(&mut buf) {
-        Ok(pw) => {
-            if pw.shell.is_empty() {
-                user.shell.as_ref()
-            } else {
-                pw.shell
-            }
-        }
-        Err(..) => user.shell.as_ref(),
-    };
-
     if shell.is_empty() {
-        shell_program = default_shell;
+        shell_program = &user.shell;
     }
 
     log::info!("spawn {:?} {:?}", shell_program, args);
@@ -576,20 +564,8 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
         },
     };
 
-    let mut buf = [0; 1024];
-    let default_shell: &str = match get_pw_entry(&mut buf) {
-        Ok(pw) => {
-            if pw.shell.is_empty() {
-                user.shell.as_ref()
-            } else {
-                pw.shell
-            }
-        }
-        Err(..) => user.shell.as_ref(),
-    };
-
     if shell.is_empty() {
-        shell_program = default_shell;
+        shell_program = &user.shell;
     }
 
     log::info!("fork {:?}", shell_program);
