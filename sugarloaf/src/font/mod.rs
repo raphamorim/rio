@@ -202,7 +202,9 @@ impl Font {
                 .load()
                 .unwrap();
             let copied_font_symbol = font_symbols.copy_font_data();
-            let Some(copied_font_symbol) = copied_font_symbol else { todo!() };
+            let Some(copied_font_symbol) = copied_font_symbol else {
+                todo!()
+            };
             let font_vec_symbol =
                 FontVec::try_from_vec_and_index(copied_font_symbol.to_vec(), 1).unwrap();
             font_arc_symbol = FontArc::new(font_vec_symbol);
@@ -213,7 +215,9 @@ impl Font {
                 .load()
                 .unwrap();
             let copied_font_unicode = font_unicode.copy_font_data();
-            let Some(copied_font_unicode) = copied_font_unicode else { todo!() };
+            let Some(copied_font_unicode) = copied_font_unicode else {
+                todo!()
+            };
             let font_vec_unicode =
                 FontVec::try_from_vec_and_index(copied_font_unicode.to_vec(), 3).unwrap();
             font_arc_unicode = FontArc::new(font_vec_unicode);
