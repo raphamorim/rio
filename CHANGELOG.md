@@ -8,6 +8,7 @@
 
 ## 0.0.18
 
+- Upgraded to Rust 1.72.0.
 - Fix delete key inputs square character.
 - Fix Breadcrumb navigation crash.
 

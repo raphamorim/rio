@@ -917,7 +917,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);
                 let shape = match cursor_style_id {
-                    0 | 1 | 2 => CursorShape::Block,
+                    0..=2 => CursorShape::Block,
                     3 | 4 => CursorShape::Underline,
                     5 | 6 => CursorShape::Beam,
                     _ => {
