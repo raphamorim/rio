@@ -71,7 +71,7 @@ impl Display for Assistant {
 
             write!(f, "{}", assistant_report)
         } else {
-            write!(f, "{}", "")
+            write!(f, "")
         }
     }
 }
