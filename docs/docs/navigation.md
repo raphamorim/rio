@@ -10,13 +10,14 @@ language: 'en'
 Rio allows to choose navigation between the following options:
 
 - • <span class="keyword">CollapsedTab</span>
+- • <span class="keyword">NativeTab</span> (Available only for MacOs)
 - • <span class="keyword">BottomTab</span>
 - • <span class="keyword">TopTab</span>
 - • <span class="keyword">Breadcrumb</span> (Available only for MacOs, BSD and Linux)
 
 ### CollapsedTab
 
-The <span class="keyword">CollapsedTab</span> is Rio terminal default navigation mode.
+The <span class="keyword">CollapsedTab</span> is Rio terminal default navigation mode for Linux, BSD and Windows.
 
 Note: The example below is using Dracula color scheme instead of Rio default colors.
 
@@ -27,6 +28,21 @@ Usage:
 {% highlight toml %}
 [navigation]
 mode = "CollapsedTab"
+{% endhighlight %}
+
+### NativeTab
+
+The <span class="keyword">NativeTab</span> is Rio terminal default navigation mode for MacOs.
+
+Note: NativeTab only works for MacOS.
+
+<img alt="Demo NativeTab" src="/rio/assets/posts/0.0.17/demo-native-tabs.png" width="60%"/>
+
+Usage:
+
+{% highlight toml %}
+[navigation]
+mode = "NativeTab"
 {% endhighlight %}
 
 ### BottomTab
