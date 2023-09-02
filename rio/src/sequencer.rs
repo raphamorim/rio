@@ -165,7 +165,7 @@ impl Sequencer {
                                     Ok(config) => {
                                         self.assistant.clear();
                                         config
-                                    },
+                                    }
                                     Err(error) => {
                                         config_error = Some(error);
                                         config::Config::default()
@@ -884,7 +884,9 @@ impl Sequencer {
                             }
 
                             if self.assistant.inner.is_some() {
-                                if let Some(config_editor_window_id) = self.window_config_editor  {
+                                if let Some(config_editor_window_id) =
+                                    self.window_config_editor
+                                {
                                     if window_id != config_editor_window_id {
                                         sw.screen.render_assistant(&self.assistant);
                                         return;
