@@ -160,7 +160,19 @@ impl Sequencer {
                                 self.assistant.add(report);
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                                let config = config::Config::load();
+                                let mut config_error: Option<config::ConfigError> = None;
+                                let config = match config::Config::try_load() {
+                                    Ok(config) => config,
+                                    Err(error) => {
+                                        config_error = Some(error);
+                                        config::Config::default()
+                                    }
+                                };
+
+                                if let Some(error) = config_error {
+                                    self.assistant.add(error.into());
+                                }
+
                                 self.config = config.into();
                                 self.settings_config =
                                     create_settings_config(&self.config).into();
