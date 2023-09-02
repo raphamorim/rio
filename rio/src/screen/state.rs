@@ -438,17 +438,17 @@ impl State {
             true,
         );
 
-        sugarloaf.text(
-            (
-                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
-                sugarloaf.layout.margin.top_y + 40.,
-            ),
-            "".to_string(),
-            7,
-            30.,
-            self.named_colors.foreground,
-            true,
-        );
+        // sugarloaf.text(
+        //     (
+        //         sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
+        //         sugarloaf.layout.margin.top_y + 40.,
+        //     ),
+        //     "".to_string(),
+        //     7,
+        //     30.,
+        //     self.named_colors.foreground,
+        //     true,
+        // );
 
         sugarloaf.text(
             (70., sugarloaf.layout.margin.top_y + 80.),

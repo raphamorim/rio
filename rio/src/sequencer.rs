@@ -105,7 +105,7 @@ impl Sequencer {
     ) -> Sequencer {
         let mut assistant = Assistant::new();
         if let Some(error) = config_error {
-            assistant.add(error.into());
+            assistant.set(error.into());
         }
 
         let settings_config = Rc::new(create_settings_config(&config));
@@ -157,12 +157,15 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::ReportToAssistant(report)) => {
-                                self.assistant.add(report);
+                                self.assistant.set(report);
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
                                 let mut config_error: Option<config::ConfigError> = None;
                                 let config = match config::Config::try_load() {
-                                    Ok(config) => config,
+                                    Ok(config) => {
+                                        self.assistant.clear();
+                                        config
+                                    },
                                     Err(error) => {
                                         config_error = Some(error);
                                         config::Config::default()
@@ -170,7 +173,7 @@ impl Sequencer {
                                 };
 
                                 if let Some(error) = config_error {
-                                    self.assistant.add(error.into());
+                                    self.assistant.set(error.into());
                                 }
 
                                 self.config = config.into();
@@ -880,17 +883,26 @@ impl Sequencer {
                                 }
                             }
 
-                            if !self.assistant.inner.is_empty() {
-                                sw.screen.render_assistant(&self.assistant);
-                            } else {
-                                sw.screen.render();
+                            if self.assistant.inner.is_some() {
+                                if let Some(config_editor_window_id) = self.window_config_editor  {
+                                    if window_id != config_editor_window_id {
+                                        sw.screen.render_assistant(&self.assistant);
+                                        return;
+                                    }
+                                } else {
+                                    sw.screen.render_assistant(&self.assistant);
+                                    return;
+                                }
                             }
+
+                            sw.screen.render();
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }
                         // }
 
-                        scheduler.update();
+                        // We are not using scheduler for now
+                        // scheduler.update();
                         *control_flow = winit::event_loop::ControlFlow::Wait;
                     }
                     _ => {}
