@@ -2,17 +2,6 @@
 
 ## In progress
 
-#### Breaking changes
-
-- Navigation mode `NativeTab` has became default navigation system for MacOS platform. To return to the previous default, update the configuration file with:
-
-```toml
-[navigation]
-mode = "CollapsedTab"
-```
-
-#### Rest of 0.0.19 changelog
-
 - Created Assistant, Rio terminal UI for display error (Ref: https://github.com/raphamorim/rio/issues/168).
 - Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: https://github.com/raphamorim/rio/issues/197).
 - Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (Ref: https://github.com/raphamorim/rio/issues/200).

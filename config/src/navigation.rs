@@ -1,8 +1,9 @@
 use colors::{deserialize_to_arr, ColorArray};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
+    #[default]
     CollapsedTab,
     TopTab,
     BottomTab,
@@ -10,20 +11,6 @@ pub enum NavigationMode {
     NativeTab,
     #[cfg(not(windows))]
     Breadcrumb,
-}
-
-impl Default for NavigationMode {
-    fn default() -> NavigationMode {
-        #[cfg(target_os = "macos")]
-        {
-            NavigationMode::NativeTab
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            NavigationMode::CollapsedTab
-        }
-    }
 }
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
