@@ -437,6 +437,10 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
+                        if self.assistant.inner.is_some() {
+                            return;
+                        }
+
                         if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
                             sequencer_window.window.set_cursor_visible(true);
 
@@ -589,6 +593,11 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
+                            if self.assistant.inner.is_some() {
+                                sw.window.set_cursor_icon(CursorIcon::Default);
+                                return;
+                            }
+
                             sw.window.set_cursor_visible(true);
 
                             let x = position.x;
@@ -699,6 +708,10 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
+                        if self.assistant.inner.is_some() {
+                            return;
+                        }
+
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             sw.window.set_cursor_visible(true);
                             match delta {
@@ -748,6 +761,13 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
+                            if self.assistant.inner.is_some() {
+                                if key_event.logical_key == winit::keyboard::Key::Enter {
+                                    self.assistant.clear();
+                                }
+                                return;
+                            }
+
                             match key_event.state {
                                 ElementState::Pressed => {
                                     sw.window.set_cursor_visible(false);
@@ -767,6 +787,10 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
+                        if self.assistant.inner.is_some() {
+                            return;
+                        }
+
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             match ime {
                                 Ime::Commit(text) => {
@@ -824,6 +848,10 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
+                        if self.assistant.inner.is_some() {
+                            return;
+                        }
+
                         if let Some(sw) = self.windows.get_mut(&window_id) {
                             let path: String = path.to_string_lossy().into();
                             sw.screen.paste(&(path + " "), true);
