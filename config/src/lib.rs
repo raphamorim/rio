@@ -11,6 +11,13 @@ use serde::Deserialize;
 use std::default::Default;
 use sugarloaf::font::fonts::SugarloafFonts;
 
+#[derive(Clone, Debug)]
+pub enum ConfigError {
+    ErrLoadingConfig(String),
+    ErrLoadingTheme(String),
+    PathNotFound,
+}
+
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
     #[default]
@@ -193,6 +200,38 @@ impl Config {
             }
         } else {
             Config::default()
+        }
+    }
+
+    pub fn try_load() -> Result<Self, ConfigError> {
+        let config_path_str = config_dir_path();
+        let path = format!("{config_path_str}/config.toml");
+        if std::path::Path::new(&path).exists() {
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.theme;
+                    if theme.is_empty() {
+                        return Ok(decoded);
+                    }
+
+                    let path = format!("{config_path_str}/themes/{theme}.toml");
+                    match Config::load_theme(&path) {
+                        Ok(loaded_theme) => {
+                            decoded.colors = loaded_theme.colors;
+                            Ok(decoded)
+                        }
+                        Err(err_message) => {
+                            Err(ConfigError::ErrLoadingTheme(err_message))
+                        }
+                    }
+                }
+                Err(err_message) => {
+                    Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
+                }
+            }
+        } else {
+            Err(ConfigError::PathNotFound)
         }
     }
 }

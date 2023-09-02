@@ -24,7 +24,7 @@ _* Nintendo Switch development is just for fun, the goal is to have  the rendere
 | ----------- | ----------- |
 | ![Demo linux x11](docs/assets/posts/0.0.15/demo-navigation-x11.png) | ![Demo linux wayland](docs/assets/posts/0.0.15/demo-navigation-wayland.png) |
 | ![Demo Windows 10](docs/assets/posts/0.0.8/demo-windows-10.png) |<img src="docs/assets/demos/demo-emacs.png" alt="Demo emacs" width="500px"/> |
-| ![Demo native tabs macos](docs/assets/posts/0.0.17/demo-native-tabs.png) |  |
+| ![Demo native tabs macos](docs/assets/posts/0.0.17/demo-native-tabs.png) | ![Demo error handling](docs/assets/posts/0.0.19/demo-error-handling.png) |
 
 Note: Emojis are rendered with Noto Emoji.
 
