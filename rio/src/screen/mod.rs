@@ -7,6 +7,7 @@ mod navigation;
 mod state;
 pub mod window;
 
+use crate::assistant::Assistant;
 use crate::screen::bindings::MouseBinding;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
@@ -1199,6 +1200,13 @@ impl Screen {
     }
 
     #[inline]
+    pub fn render_assistant(&mut self, assistant: &Assistant) {
+        self.state
+            .prepare_assistant(&mut self.sugarloaf, assistant.to_string());
+        self.sugarloaf.render();
+    }
+
+    #[inline]
     pub fn render(&mut self) {
         let mut terminal = self.ctx().current().terminal.lock();
         let visible_rows = terminal.visible_rows();
@@ -1209,7 +1217,7 @@ impl Screen {
 
         self.state.set_ime(self.ime.preedit());
 
-        self.state.update(
+        self.state.prepare_term(
             visible_rows,
             cursor,
             &mut self.sugarloaf,

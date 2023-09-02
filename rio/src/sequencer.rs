@@ -1,6 +1,7 @@
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 
+use crate::assistant::Assistant;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -94,10 +95,19 @@ pub struct Sequencer {
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
     event_proxy: Option<EventProxy>,
+    assistant: Assistant,
 }
 
 impl Sequencer {
-    pub fn new(config: config::Config) -> Sequencer {
+    pub fn new(
+        config: config::Config,
+        config_error: Option<config::ConfigError>,
+    ) -> Sequencer {
+        let mut assistant = Assistant::new();
+        if let Some(error) = config_error {
+            assistant.add(error.into());
+        }
+
         let settings_config = Rc::new(create_settings_config(&config));
         Sequencer {
             config: Rc::new(config),
@@ -105,6 +115,7 @@ impl Sequencer {
             windows: HashMap::new(),
             event_proxy: None,
             window_config_editor: None,
+            assistant,
         }
     }
 
@@ -144,6 +155,9 @@ impl Sequencer {
                                     }
                                     sw.window.request_redraw();
                                 }
+                            }
+                            RioEventType::Rio(RioEvent::ReportToAssistant(report)) => {
+                                self.assistant.add(report);
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
                                 let config = config::Config::load();
@@ -708,15 +722,6 @@ impl Sequencer {
                         }
                     }
 
-                    // Event::UserEvent {
-                    //     event: winit::event::KeyEvent { physical_key, logical_key, text, .. },
-                    //     window_id,
-                    //     ..
-                    // } => {
-                    //     if let Some(sw) = self.windows.get_mut(&window_id) {
-                    //         sw.screen.input_character(character);
-                    //     }
-                    // }
                     Event::WindowEvent {
                         event:
                             winit::event::WindowEvent::KeyboardInput {
@@ -765,7 +770,7 @@ impl Sequencer {
 
                                     if sw.screen.ime.preedit() != preedit.as_ref() {
                                         sw.screen.ime.set_preedit(preedit);
-                                        sw.screen.render();
+                                        sw.window.request_redraw();
                                     }
                                 }
                                 Ime::Enabled => {
@@ -863,7 +868,11 @@ impl Sequencer {
                                 }
                             }
 
-                            sw.screen.render();
+                            if !self.assistant.inner.is_empty() {
+                                sw.screen.render_assistant(&self.assistant);
+                            } else {
+                                sw.screen.render();
+                            }
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }

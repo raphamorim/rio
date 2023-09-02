@@ -2,8 +2,9 @@
 
 ## In progress
 
-- Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. Ref: https://github.com/raphamorim/rio/issues/197
-- Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (fix https://github.com/raphamorim/rio/issues/200).
+- Created Assistant, Rio terminal UI for display error (Ref: https://github.com/raphamorim/rio/issues/168).
+- Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: https://github.com/raphamorim/rio/issues/197).
+- Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (Ref: https://github.com/raphamorim/rio/issues/200).
 - Whenever native tabs is on disable macos deadzone logic.
 
 ## 0.0.18

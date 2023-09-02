@@ -5,6 +5,7 @@
 #![windows_subsystem = "windows"]
 
 mod ansi;
+mod assistant;
 mod cli;
 mod clipboard;
 mod crosswords;
@@ -101,7 +102,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load command line options.
     let options = cli::Options::new();
 
-    let mut config = config::Config::load();
+    let mut config_error: Option<config::ConfigError> = None;
+    let mut config = match config::Config::try_load() {
+        Ok(config) => config,
+        Err(error) => {
+            config_error = Some(error);
+            config::Config::default()
+        }
+    };
+
     let setup_logs = setup_logs_by_filter_level(&config.developer.log_level);
     if setup_logs.is_err() {
         println!("unable to configure log level");
@@ -119,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()
             .unwrap();
 
-    let mut sequencer = Sequencer::new(config);
+    let mut sequencer = Sequencer::new(config, config_error);
     let _ = sequencer.run(window_event_loop).await;
 
     #[cfg(windows)]

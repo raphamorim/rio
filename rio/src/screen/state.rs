@@ -14,6 +14,7 @@ use colors::{
 use config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
+use sugarloaf::components::rect::Rect;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
@@ -402,7 +403,74 @@ impl State {
     }
 
     #[inline]
-    pub fn update(
+    pub fn prepare_assistant(&self, sugarloaf: &mut Sugarloaf, report: String) {
+        let assistant_background = vec![
+            Rect {
+                position: [30., 0.0],
+                color: self.named_colors.background.0,
+                size: [sugarloaf.layout.width, sugarloaf.layout.height],
+            },
+            Rect {
+                position: [0., 30.0],
+                color: self.named_colors.blue,
+                size: [30., sugarloaf.layout.height],
+            },
+            Rect {
+                position: [15., sugarloaf.layout.margin.top_y + 40.],
+                color: self.named_colors.yellow,
+                size: [30., sugarloaf.layout.height],
+            },
+            Rect {
+                position: [30., sugarloaf.layout.margin.top_y + 120.],
+                color: self.named_colors.red,
+                size: [30., sugarloaf.layout.height],
+            },
+        ];
+
+        sugarloaf.pile_rects(assistant_background);
+
+        sugarloaf.text(
+            (70., sugarloaf.layout.margin.top_y + 50.),
+            "Woops! Rio got errors".to_string(),
+            0,
+            28.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
+                sugarloaf.layout.margin.top_y + 40.,
+            ),
+            "".to_string(),
+            7,
+            30.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (70., sugarloaf.layout.margin.top_y + 80.),
+            "(press enter to continue)".to_string(),
+            0,
+            18.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (70., sugarloaf.layout.margin.top_y + 170.),
+            report,
+            0,
+            14.,
+            self.named_colors.foreground,
+            false,
+        );
+    }
+
+    #[inline]
+    pub fn prepare_term(
         &mut self,
         rows: Vec<Row<Square>>,
         cursor: CursorState,
@@ -457,6 +525,7 @@ impl State {
                 text.font_id,
                 text.font_size,
                 text.color,
+                true,
             );
         }
     }

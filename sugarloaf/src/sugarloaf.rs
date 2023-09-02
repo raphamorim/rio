@@ -680,6 +680,7 @@ impl Sugarloaf {
         font_id_usize: usize,
         scale: f32,
         color: [f32; 4],
+        single_line: bool,
     ) -> &mut Self {
         let font_id = FontId(font_id_usize);
 
@@ -690,13 +691,21 @@ impl Sugarloaf {
             extra: crate::components::text::Extra { color, z: 0.0 },
         };
 
+        let layout = if single_line {
+            glyph_brush::Layout::default_single_line()
+                .v_align(glyph_brush::VerticalAlign::Center)
+                .h_align(glyph_brush::HorizontalAlign::Left)
+        } else {
+            glyph_brush::Layout::default()
+                .v_align(glyph_brush::VerticalAlign::Center)
+                .h_align(glyph_brush::HorizontalAlign::Left)
+        };
+
         let section = &crate::components::text::Section {
             screen_position: (pos.0 * self.ctx.scale, pos.1 * self.ctx.scale),
             bounds: (self.layout.width, self.layout.height),
             text: vec![text],
-            layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Center)
-                .h_align(glyph_brush::HorizontalAlign::Left),
+            layout,
         };
 
         self.text_brush.queue(section);
