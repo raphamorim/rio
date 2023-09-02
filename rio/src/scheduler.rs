@@ -31,12 +31,14 @@ pub struct Timer {
     pub event: EventP,
     pub id: TimerId,
 
+    #[allow(unused)]
     interval: Option<Duration>,
 }
 
 /// Scheduler tracking all pending timers.
 pub struct Scheduler {
     timers: VecDeque<Timer>,
+    #[allow(dead_code)]
     event_proxy: EventLoopProxy<EventP>,
 }
 
@@ -52,6 +54,7 @@ impl Scheduler {
     ///
     /// If there are still timers pending after all ready events have been processed, the closest
     /// pending deadline will be returned.
+    #[allow(dead_code)]
     pub fn update(&mut self) -> Option<Instant> {
         let now = Instant::now();
 

@@ -38,7 +38,7 @@ impl std::fmt::Display for AssistantReport {
             }
             AssistantReport::IgnoredReport => write!(f, ""),
             AssistantReport::InvalidConfigurationFormat(message) => {
-                write!(f, "Found an issue in the configuration file:\n\n{message}")
+                write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/#configuration-file")
             }
             AssistantReport::InvalidConfigurationTheme(message) => {
                 write!(f, "Found an issue in the configured theme:\n\n{message}")
