@@ -414,7 +414,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route == Route::Assistant {
+                        if self.router.route != Route::Terminal {
                             return;
                         }
 
@@ -570,7 +570,7 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.router.route == Route::Assistant {
+                            if self.router.route != Route::Terminal {
                                 sw.window.set_cursor_icon(CursorIcon::Default);
                                 return;
                             }
@@ -685,7 +685,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route == Route::Assistant {
+                        if self.router.route != Route::Terminal {
                             return;
                         }
 
@@ -738,7 +738,7 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.router.route == Route::Assistant {
+                            if self.router.route != Route::Terminal {
                                 if key_event.logical_key == winit::keyboard::Key::Enter {
                                     self.router.clear_errors();
                                 }
