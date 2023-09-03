@@ -5,7 +5,6 @@
 #![windows_subsystem = "windows"]
 
 mod ansi;
-mod assistant;
 mod cli;
 mod clipboard;
 mod crosswords;
@@ -16,6 +15,7 @@ mod logger;
 mod panic;
 mod performer;
 mod platform;
+mod router;
 mod scheduler;
 mod screen;
 mod selection;

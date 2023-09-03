@@ -36,10 +36,6 @@ pub fn default_shell() -> crate::Shell {
     }
 }
 
-pub fn default_editor() -> String {
-    String::from("")
-}
-
 pub fn default_use_fork() -> bool {
     #[cfg(target_os = "macos")]
     {
