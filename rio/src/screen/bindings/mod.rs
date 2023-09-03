@@ -804,6 +804,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
         "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+        ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
     )
 }
 
@@ -830,6 +831,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
     )
 }
 

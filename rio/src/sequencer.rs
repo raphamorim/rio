@@ -1,16 +1,16 @@
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 
-use crate::assistant::Assistant;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
+use crate::router::{Route, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{
     window::{configure_window, create_window_builder},
     Screen,
 };
-use crate::{utils::settings::create_settings_config, utils::watch::watch};
+use crate::utils::watch::watch;
 use colors::ColorRgb;
 use std::collections::HashMap;
 use std::error::Error;
@@ -91,11 +91,10 @@ impl SequencerWindow {
 
 pub struct Sequencer {
     config: Rc<config::Config>,
-    settings_config: Rc<config::Config>,
     windows: HashMap<WindowId, SequencerWindow>,
     window_config_editor: Option<WindowId>,
     event_proxy: Option<EventProxy>,
-    assistant: Assistant,
+    router: Router,
 }
 
 impl Sequencer {
@@ -103,19 +102,17 @@ impl Sequencer {
         config: config::Config,
         config_error: Option<config::ConfigError>,
     ) -> Sequencer {
-        let mut assistant = Assistant::new();
+        let mut router = Router::new();
         if let Some(error) = config_error {
-            assistant.set(error.into());
+            router.report_error(error.into());
         }
 
-        let settings_config = Rc::new(create_settings_config(&config));
         Sequencer {
             config: Rc::new(config),
-            settings_config,
             windows: HashMap::new(),
             event_proxy: None,
             window_config_editor: None,
-            assistant,
+            router,
         }
     }
 
@@ -156,14 +153,14 @@ impl Sequencer {
                                     sw.window.request_redraw();
                                 }
                             }
-                            RioEventType::Rio(RioEvent::ReportToAssistant(report)) => {
-                                self.assistant.set(report);
+                            RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
+                                self.router.report_error(error);
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
                                 let mut config_error: Option<config::ConfigError> = None;
                                 let config = match config::Config::try_load() {
                                     Ok(config) => {
-                                        self.assistant.clear();
+                                        self.router.clear_errors();
                                         config
                                     }
                                     Err(error) => {
@@ -173,12 +170,10 @@ impl Sequencer {
                                 };
 
                                 if let Some(error) = config_error {
-                                    self.assistant.set(error.into());
+                                    self.router.report_error(error.into());
                                 }
 
                                 self.config = config.into();
-                                self.settings_config =
-                                    create_settings_config(&self.config).into();
                                 for (_id, sw) in self.windows.iter_mut() {
                                     sw.screen.update_config(&self.config);
                                     sw.window.request_redraw();
@@ -337,26 +332,8 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                                if let Some(config_editor_window_id) =
-                                    self.window_config_editor
-                                {
-                                    if let Some(sequencer_window) =
-                                        self.windows.get_mut(&config_editor_window_id)
-                                    {
-                                        sequencer_window.window.focus_window();
-                                    }
-                                } else {
-                                    let sw = SequencerWindow::from_target(
-                                        event_loop_window_target,
-                                        self.event_proxy.clone().unwrap(),
-                                        &self.settings_config,
-                                        "Rio Configuration",
-                                        None,
-                                    );
-                                    let window_id = sw.window.id();
-                                    self.windows.insert(window_id, sw);
-                                    self.window_config_editor = Some(window_id);
-                                }
+                                self.window_config_editor = Some(window_id);
+                                // self.router.
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -437,7 +414,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.assistant.inner.is_some() {
+                        if self.router.route == Route::Assistant {
                             return;
                         }
 
@@ -593,7 +570,7 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.assistant.inner.is_some() {
+                            if self.router.route == Route::Assistant {
                                 sw.window.set_cursor_icon(CursorIcon::Default);
                                 return;
                             }
@@ -708,7 +685,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.assistant.inner.is_some() {
+                        if self.router.route == Route::Assistant {
                             return;
                         }
 
@@ -761,9 +738,9 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.assistant.inner.is_some() {
+                            if self.router.route == Route::Assistant {
                                 if key_event.logical_key == winit::keyboard::Key::Enter {
-                                    self.assistant.clear();
+                                    self.router.clear_errors();
                                 }
                                 return;
                             }
@@ -787,7 +764,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.assistant.inner.is_some() {
+                        if self.router.route == Route::Assistant {
                             return;
                         }
 
@@ -848,7 +825,7 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.assistant.inner.is_some() {
+                        if self.router.route == Route::Assistant {
                             return;
                         }
 
@@ -911,21 +888,35 @@ impl Sequencer {
                                 }
                             }
 
-                            if self.assistant.inner.is_some() {
-                                if let Some(config_editor_window_id) =
-                                    self.window_config_editor
-                                {
-                                    if window_id != config_editor_window_id {
-                                        sw.screen.render_assistant(&self.assistant);
-                                        return;
-                                    }
-                                } else {
-                                    sw.screen.render_assistant(&self.assistant);
-                                    return;
+                            match self.router.route {
+                                Route::Assistant => {
+                                    sw.screen.render_assistant(
+                                        self.router.assistant_to_string(),
+                                    );
+                                }
+                                Route::Terminal => {
+                                    sw.screen.render();
+                                }
+                                Route::Settings => {
+                                    sw.screen.render();
                                 }
                             }
 
-                            sw.screen.render();
+                            // if self.router.route == Route::Assistant {
+                            //     if let Some(config_editor_window_id) =
+                            //         self.window_config_editor
+                            //     {
+                            //         if window_id != config_editor_window_id {
+                            //             sw.screen.render_assistant(&self.assistant);
+                            //             return;
+                            //         }
+                            //     } else {
+                            //         sw.screen.render_assistant(&self.assistant);
+                            //         return;
+                            //     }
+                            // }
+
+                            // sw.screen.render();
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }

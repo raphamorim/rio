@@ -7,7 +7,6 @@ mod navigation;
 mod state;
 pub mod window;
 
-use crate::assistant::Assistant;
 use crate::screen::bindings::MouseBinding;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
@@ -1200,9 +1199,9 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_assistant(&mut self, assistant: &Assistant) {
+    pub fn render_assistant(&mut self, assistant_srt: String) {
         self.state
-            .prepare_assistant(&mut self.sugarloaf, assistant.to_string());
+            .prepare_assistant(&mut self.sugarloaf, assistant_srt);
         self.sugarloaf.render();
     }
 

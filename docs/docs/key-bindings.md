@@ -15,11 +15,11 @@ Key bindings per platform:
 
 ### MacOS
 
+Open configuration: <span class="keyword">Command + Comma (,)</span> 
+
 Copy: <span class="keyword">Command + C</span>
 
 Paste: <span class="keyword">Command + V</span>
-
-Open configuration editor: <span class="keyword">Command + Comma (,)</span> 
 
 Create new window: <span class="keyword">Command + N</span>
 
@@ -63,6 +63,8 @@ Select the last tab: <span>Command + 9</span>
 
 ### Windows
 
+Open configuration: <span class="keyword">Control + Shift + Comma (,)</span>
+
 Copy: <span class="keyword">Control + Shift + C</span>
 
 Paste: <span class="keyword">Control + Shift + V</span>
@@ -86,6 +88,8 @@ Reset font size: <span class="keyword">Control + 0</span>
 Close tab or quit: <span class="keyword">Control + Shift + W</span>
 
 ### Linux and BSD
+
+Open configuration: <span class="keyword">Control + Shift + Comma (,)</span>
 
 Copy: <span class="keyword">Control + Shift + C</span>
 
