@@ -87,7 +87,7 @@ bitflags! {
                                 | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
                                 | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
                                 | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
-         const ANY                 = u32::MAX;
+        const ANY                 = u32::MAX;
     }
 }
 
