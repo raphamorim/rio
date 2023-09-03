@@ -403,13 +403,155 @@ impl State {
     }
 
     #[inline]
+    pub fn prepare_settings(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        config: &Rc<config::Config>,
+    ) {
+        let settings_background = vec![Rect {
+            position: [00., 140.0],
+            color: self.named_colors.foreground,
+            size: [sugarloaf.layout.width, 50.],
+        }];
+
+        sugarloaf.pile_rects(settings_background);
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 30.),
+            "Settings".to_string(),
+            8,
+            28.,
+            self.named_colors.blue,
+            true,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 60.),
+            format!("~/.config/rio/config.toml • v{}\n------------------------------------------------", env!("CARGO_PKG_VERSION")),
+            8,
+            15.,
+            self.named_colors.blue,
+            false,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 100.),
+            format!("Font Family: \"{}\"", config.fonts.regular.family),
+            8,
+            18.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (80., sugarloaf.layout.margin.top_y + 150.),
+            format!("Performance: {:?}", config.performance),
+            8,
+            28.,
+            self.named_colors.background.0,
+            true,
+        );
+
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 40.,
+                sugarloaf.layout.margin.top_y + 150.,
+            ),
+            format!("󰁔"),
+            7,
+            28.,
+            self.named_colors.background.0,
+            true,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 150.),
+            format!("󰁍"),
+            7,
+            28.,
+            self.named_colors.background.0,
+            true,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 200.),
+            format!("Cursor: {}", config.cursor),
+            8,
+            18.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 240.),
+            format!("Navigation Mode: {:?}", config.navigation.mode),
+            8,
+            18.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + 280.),
+            format!("Font Size: {}", config.fonts.size),
+            8,
+            18.,
+            self.named_colors.foreground,
+            true,
+        );
+
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 125.,
+                sugarloaf.layout.margin.top_y + 320.,
+            ),
+            "󰌑".to_string(),
+            7,
+            26.,
+            self.named_colors.yellow,
+            true,
+        );
+
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 180.,
+                sugarloaf.layout.margin.top_y + 320.,
+            ),
+            "press     to save".to_string(),
+            8,
+            18.,
+            self.named_colors.blue,
+            true,
+        );
+
+        // If no changes or forced to save
+        // sugarloaf.text(
+        //     (sugarloaf.layout.width / sugarloaf.layout.scale_factor - 125., sugarloaf.layout.margin.top_y + 320.),
+        //     "󱊷".to_string(),
+        //     7,
+        //     26.,
+        //     self.named_colors.yellow,
+        //     true,
+        // );
+
+        // sugarloaf.text(
+        //     (sugarloaf.layout.width / sugarloaf.layout.scale_factor - 180., sugarloaf.layout.margin.top_y + 320.),
+        //     "press     to leave".to_string(),
+        //     8,
+        //     18.,
+        //     self.named_colors.blue,
+        //     true,
+        // );
+    }
+
+    #[inline]
     pub fn prepare_assistant(&self, sugarloaf: &mut Sugarloaf, report: String) {
         let assistant_background = vec![
-            Rect {
-                position: [30., 0.0],
-                color: self.named_colors.background.0,
-                size: [sugarloaf.layout.width, sugarloaf.layout.height],
-            },
+            // Rect {
+            //     position: [30., 0.0],
+            //     color: self.named_colors.background.0,
+            //     size: [sugarloaf.layout.width, sugarloaf.layout.height],
+            // },
             Rect {
                 position: [0., 30.0],
                 color: self.named_colors.blue,
@@ -432,7 +574,7 @@ impl State {
         sugarloaf.text(
             (70., sugarloaf.layout.margin.top_y + 50.),
             "Woops! Rio got errors".to_string(),
-            0,
+            8,
             28.,
             self.named_colors.foreground,
             true,
@@ -453,7 +595,7 @@ impl State {
         sugarloaf.text(
             (70., sugarloaf.layout.margin.top_y + 80.),
             "(press enter to continue)".to_string(),
-            0,
+            8,
             18.,
             self.named_colors.foreground,
             true,
@@ -462,7 +604,7 @@ impl State {
         sugarloaf.text(
             (70., sugarloaf.layout.margin.top_y + 170.),
             report,
-            0,
+            8,
             14.,
             self.named_colors.foreground,
             false,
