@@ -24,6 +24,7 @@ use crate::crosswords::{
 };
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
+use crate::router;
 #[cfg(target_os = "macos")]
 use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::screen::{
@@ -1199,8 +1200,13 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_settings(&mut self, config: &Rc<config::Config>) {
-        self.state.prepare_settings(&mut self.sugarloaf, config);
+    pub fn render_settings(
+        &mut self,
+        config: &Rc<config::Config>,
+        settings: &router::settings::Settings,
+    ) {
+        self.state
+            .prepare_settings(&mut self.sugarloaf, config, settings);
         self.sugarloaf.render();
     }
 
