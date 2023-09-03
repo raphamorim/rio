@@ -427,7 +427,7 @@ impl State {
 
         sugarloaf.text(
             (10., sugarloaf.layout.margin.top_y + 60.),
-            format!("~/.config/rio/config.toml • v{}\n------------------------------------------------", env!("CARGO_PKG_VERSION")),
+            format!("~/.config/rio/config.toml • v{}", env!("CARGO_PKG_VERSION")),
             8,
             15.,
             self.named_colors.blue,
@@ -502,7 +502,7 @@ impl State {
 
         sugarloaf.text(
             (
-                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 125.,
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
                 sugarloaf.layout.margin.top_y + 320.,
             ),
             "󰌑".to_string(),
@@ -514,34 +514,40 @@ impl State {
 
         sugarloaf.text(
             (
-                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 180.,
-                sugarloaf.layout.margin.top_y + 320.,
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
+                sugarloaf.layout.margin.top_y + 340.,
             ),
-            "press     to save".to_string(),
+            "save".to_string(),
             8,
-            18.,
-            self.named_colors.blue,
+            14.,
+            self.named_colors.yellow,
             true,
         );
 
         // If no changes or forced to save
-        // sugarloaf.text(
-        //     (sugarloaf.layout.width / sugarloaf.layout.scale_factor - 125., sugarloaf.layout.margin.top_y + 320.),
-        //     "󱊷".to_string(),
-        //     7,
-        //     26.,
-        //     self.named_colors.yellow,
-        //     true,
-        // );
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 90.,
+                sugarloaf.layout.margin.top_y + 320.,
+            ),
+            "󱊷".to_string(),
+            7,
+            26.,
+            self.named_colors.blue,
+            true,
+        );
 
-        // sugarloaf.text(
-        //     (sugarloaf.layout.width / sugarloaf.layout.scale_factor - 180., sugarloaf.layout.margin.top_y + 320.),
-        //     "press     to leave".to_string(),
-        //     8,
-        //     18.,
-        //     self.named_colors.blue,
-        //     true,
-        // );
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 90.,
+                sugarloaf.layout.margin.top_y + 340.,
+            ),
+            "exit".to_string(),
+            8,
+            14.,
+            self.named_colors.blue,
+            true,
+        );
     }
 
     #[inline]
