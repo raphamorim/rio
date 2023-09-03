@@ -601,8 +601,8 @@ impl Screen {
 
         let text = key.text_with_all_modifiers().unwrap_or_default();
 
-        // We use legacy input when we have associated text with the given key and we have one
-        // of the following situations:
+        // We use legacy input when we have associated text with
+        // the given key and we have one of the following situations:
         //
         // 1. No keyboard input protocol is enabled.
         // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
@@ -611,7 +611,7 @@ impl Screen {
             && !text.is_empty()
             && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
                 || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                    && (mods.is_empty() || mods.shift_key())
+                    && (mods.is_empty() || mods == ModifiersState::SHIFT)
                     && key.location != KeyLocation::Numpad
                     // Special case escape here.
                     && key.logical_key != Key::Escape));
