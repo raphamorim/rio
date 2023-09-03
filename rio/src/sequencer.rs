@@ -897,8 +897,8 @@ impl Sequencer {
                                 Route::Terminal => {
                                     sw.screen.render();
                                 }
-                                Route::Settings => {
-                                    sw.screen.render();
+                                Route::Settings(_) => {
+                                    sw.screen.render_settings(&self.config);
                                 }
                             }
 

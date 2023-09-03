@@ -2,16 +2,18 @@ use config::ConfigError;
 use std::fmt;
 use std::fmt::Display;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum AssistantReport {
     // font family was not found
     FontFamilyNotFound(String),
     // font weight was not found
     FontWeightNotFound(String, usize),
-    // configured editor not found
-    EditorNotFound(String),
+
     // navigation configuration has changed, please reopen the terminal
     NavigationHasChanged,
+
+    // configurlation file was not found
+    ConfigurationNotFound,
     // configuration file have an invalid format
     InvalidConfigurationFormat(String),
     // configuration invalid theme
@@ -30,8 +32,8 @@ impl std::fmt::Display for AssistantReport {
             AssistantReport::FontWeightNotFound(font_family, font_weight) => {
                 write!(f, "Font weight not found:\n{font_family}, \n{font_weight}")
             }
-            AssistantReport::EditorNotFound(editor) => {
-                write!(f, "Configured editor not found:\n\n{editor}")
+            AssistantReport::ConfigurationNotFound => {
+                write!(f, "Configuration file was not found")
             }
             AssistantReport::NavigationHasChanged => {
                 write!(f, "Navigation has changed\n\nPlease reopen Rio terminal.")
@@ -56,7 +58,7 @@ impl From<ConfigError> for AssistantReport {
             ConfigError::ErrLoadingTheme(message) => {
                 AssistantReport::InvalidConfigurationTheme(message)
             }
-            ConfigError::PathNotFound => AssistantReport::IgnoredReport,
+            ConfigError::PathNotFound => AssistantReport::ConfigurationNotFound,
         }
     }
 }

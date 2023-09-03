@@ -8,7 +8,7 @@ pub type ErrorReport = AssistantReport;
 #[derive(PartialEq)]
 pub enum Route {
     Assistant,
-    Settings,
+    Settings(bool),
     Terminal,
 }
 
@@ -27,6 +27,11 @@ impl Router {
 
     #[inline]
     pub fn report_error(&mut self, report: AssistantReport) {
+        if report == AssistantReport::ConfigurationNotFound {
+            self.route = Route::Settings(true);
+            return;
+        }
+
         self.assistant.set(report);
         self.route = Route::Assistant;
     }
