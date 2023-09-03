@@ -1,20 +1,23 @@
 mod assistant;
-mod settings;
+pub mod settings;
 
 use assistant::{Assistant, AssistantReport};
+use settings::Settings;
 
 pub type ErrorReport = AssistantReport;
 
 #[derive(PartialEq)]
 pub enum Route {
     Assistant,
-    Settings(bool),
     Terminal,
+    // Settings(should forcefully create configuration file)
+    Settings(bool),
 }
 
 pub struct Router {
     pub route: Route,
     assistant: Assistant,
+    pub settings: Settings,
 }
 
 impl Router {
@@ -22,6 +25,7 @@ impl Router {
         Router {
             route: Route::Terminal,
             assistant: Assistant::new(),
+            settings: Settings::new(),
         }
     }
 
@@ -29,6 +33,7 @@ impl Router {
     pub fn report_error(&mut self, report: AssistantReport) {
         if report == AssistantReport::ConfigurationNotFound {
             self.route = Route::Settings(true);
+            self.settings.create_file();
             return;
         }
 

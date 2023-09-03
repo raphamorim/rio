@@ -97,6 +97,7 @@ pub struct Theme {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[inline]
 pub fn config_dir_path() -> String {
     let base_dir_buffer = dirs::home_dir().unwrap();
     let home = base_dir_buffer.to_str().unwrap_or_default();
@@ -104,12 +105,14 @@ pub fn config_dir_path() -> String {
 }
 
 #[cfg(target_os = "windows")]
+#[inline]
 pub fn config_dir_path() -> String {
     let base_dir_buffer = dirs::home_dir().unwrap();
     let home = base_dir_buffer.to_str().unwrap_or_default();
     format!("{home}/AppData/Local/rio")
 }
 
+#[inline]
 pub fn config_file_path() -> String {
     let config_dir_path_str = config_dir_path();
     format!("{config_dir_path_str}/config.toml")

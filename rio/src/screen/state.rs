@@ -407,6 +407,7 @@ impl State {
         &self,
         sugarloaf: &mut Sugarloaf,
         config: &Rc<config::Config>,
+        settings: &crate::router::settings::Settings,
     ) {
         let settings_background = vec![Rect {
             position: [00., 140.0],
@@ -427,7 +428,7 @@ impl State {
 
         sugarloaf.text(
             (10., sugarloaf.layout.margin.top_y + 60.),
-            format!("~/.config/rio/config.toml • v{}", env!("CARGO_PKG_VERSION")),
+            format!("{} • v{}", settings.default_path, env!("CARGO_PKG_VERSION")),
             8,
             15.,
             self.named_colors.blue,

@@ -898,7 +898,10 @@ impl Sequencer {
                                     sw.screen.render();
                                 }
                                 Route::Settings(_) => {
-                                    sw.screen.render_settings(&self.config);
+                                    sw.screen.render_settings(
+                                        &self.config,
+                                        &self.router.settings,
+                                    );
                                 }
                             }
 
