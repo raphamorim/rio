@@ -1,6 +1,9 @@
+use colors::Colors;
 use config::ConfigError;
 use std::fmt;
 use std::fmt::Display;
+use sugarloaf::components::rect::Rect;
+use sugarloaf::Sugarloaf;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum AssistantReport {
@@ -96,4 +99,71 @@ impl Assistant {
     pub fn clear(&mut self) {
         self.inner = None;
     }
+}
+
+#[inline]
+pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String) {
+    let assistant_background = vec![
+        // Rect {
+        //     position: [30., 0.0],
+        //     color: self.named_colors.background.0,
+        //     size: [sugarloaf.layout.width, sugarloaf.layout.height],
+        // },
+        Rect {
+            position: [0., 30.0],
+            color: named_colors.blue,
+            size: [30., sugarloaf.layout.height],
+        },
+        Rect {
+            position: [15., sugarloaf.layout.margin.top_y + 40.],
+            color: named_colors.yellow,
+            size: [30., sugarloaf.layout.height],
+        },
+        Rect {
+            position: [30., sugarloaf.layout.margin.top_y + 120.],
+            color: named_colors.red,
+            size: [30., sugarloaf.layout.height],
+        },
+    ];
+
+    sugarloaf.pile_rects(assistant_background);
+
+    sugarloaf.text(
+        (70., sugarloaf.layout.margin.top_y + 50.),
+        "Woops! Rio got errors".to_string(),
+        8,
+        28.,
+        named_colors.foreground,
+        true,
+    );
+
+    // sugarloaf.text(
+    //     (
+    //         sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
+    //         sugarloaf.layout.margin.top_y + 40.,
+    //     ),
+    //     "".to_string(),
+    //     7,
+    //     30.,
+    //     named_colors.foreground,
+    //     true,
+    // );
+
+    sugarloaf.text(
+        (70., sugarloaf.layout.margin.top_y + 80.),
+        "(press enter to continue)".to_string(),
+        8,
+        18.,
+        named_colors.foreground,
+        true,
+    );
+
+    sugarloaf.text(
+        (70., sugarloaf.layout.margin.top_y + 170.),
+        content,
+        8,
+        14.,
+        named_colors.foreground,
+        false,
+    );
 }

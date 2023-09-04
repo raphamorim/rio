@@ -1200,13 +1200,8 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_settings(
-        &mut self,
-        config: &Rc<config::Config>,
-        settings: &router::settings::Settings,
-    ) {
-        self.state
-            .prepare_settings(&mut self.sugarloaf, config, settings);
+    pub fn render_settings(&mut self, settings: &router::settings::Settings) {
+        self.state.prepare_settings(&mut self.sugarloaf, settings);
         self.sugarloaf.render();
     }
 
@@ -1214,6 +1209,12 @@ impl Screen {
     pub fn render_assistant(&mut self, assistant_srt: String) {
         self.state
             .prepare_assistant(&mut self.sugarloaf, assistant_srt);
+        self.sugarloaf.render();
+    }
+
+    #[inline]
+    pub fn render_welcome(&mut self) {
+        self.state.prepare_welcome(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 

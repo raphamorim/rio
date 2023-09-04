@@ -10,7 +10,7 @@ use crate::screen::{
     window::{configure_window, create_window_builder},
     Screen,
 };
-use crate::utils::watch::watch;
+use crate::watch::watch;
 use colors::ColorRgb;
 use std::collections::HashMap;
 use std::error::Error;
@@ -738,18 +738,15 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.router.route != Route::Terminal {
-                                if key_event.logical_key == winit::keyboard::Key::Enter {
-                                    self.router.clear_errors();
-                                }
+                            if self.router.current_route_key_wait(&key_event) {
                                 return;
                             }
+
+                            sw.screen.process_key_event(&key_event);
 
                             match key_event.state {
                                 ElementState::Pressed => {
                                     sw.window.set_cursor_visible(false);
-
-                                    sw.screen.process_key_event(&key_event);
                                 }
 
                                 ElementState::Released => {
@@ -894,14 +891,14 @@ impl Sequencer {
                                         self.router.assistant_to_string(),
                                     );
                                 }
+                                Route::Welcome => {
+                                    sw.screen.render_welcome();
+                                }
                                 Route::Terminal => {
                                     sw.screen.render();
                                 }
-                                Route::Settings(_) => {
-                                    sw.screen.render_settings(
-                                        &self.config,
-                                        &self.router.settings,
-                                    );
+                                Route::Settings => {
+                                    sw.screen.render_settings(&self.router.settings);
                                 }
                             }
 
