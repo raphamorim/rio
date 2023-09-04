@@ -7,6 +7,7 @@ mod navigation;
 mod state;
 pub mod window;
 
+use crate::crosswords::vi_mode::ViMotion;
 use crate::screen::bindings::MouseBinding;
 use std::borrow::Cow;
 use winit::event::KeyEvent;
@@ -537,6 +538,87 @@ impl Screen {
                     }
                     Act::ResetFontSize => {
                         self.change_font_size(FontSizeAction::Reset);
+                    }
+                    Act::ScrollPageUp => {
+                        // Move vi mode cursor.
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        let scroll_lines = terminal.grid.screen_lines() as i32;
+                        terminal.vi_mode_cursor =
+                            terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+                        terminal.scroll_display(Scroll::PageUp);
+                        drop(terminal);
+                    }
+                    Act::ScrollPageDown => {
+                        // Move vi mode cursor.
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        let scroll_lines = -(terminal.grid.screen_lines() as i32);
+
+                        terminal.vi_mode_cursor =
+                            terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+
+                        terminal.scroll_display(Scroll::PageDown);
+                        drop(terminal);
+                    }
+                    Act::ScrollHalfPageUp => {
+                        // Move vi mode cursor.
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        let scroll_lines = terminal.grid.screen_lines() as i32 / 2;
+
+                        terminal.vi_mode_cursor =
+                            terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+
+                        terminal.scroll_display(Scroll::Delta(scroll_lines));
+                        drop(terminal);
+                    }
+                    Act::ScrollHalfPageDown => {
+                        // Move vi mode cursor.
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        let scroll_lines = -(terminal.grid.screen_lines() as i32 / 2);
+
+                        terminal.vi_mode_cursor =
+                            terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+
+                        terminal.scroll_display(Scroll::Delta(scroll_lines));
+                        drop(terminal);
+                    }
+                    Act::ScrollToTop => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Top);
+
+                        let topmost_line = terminal.grid.topmost_line();
+                        terminal.vi_mode_cursor.pos.row = topmost_line;
+                        terminal.vi_motion(ViMotion::FirstOccupied);
+                        drop(terminal);
+                    }
+                    Act::ScrollToBottom => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Bottom);
+
+                        // Move vi mode cursor.
+                        terminal.vi_mode_cursor.pos.row = terminal.grid.bottommost_line();
+
+                        // Move to beginning twice, to always jump across linewraps.
+                        terminal.vi_motion(ViMotion::FirstOccupied);
+                        terminal.vi_motion(ViMotion::FirstOccupied);
+                        drop(terminal);
+                    }
+                    Act::ScrollLineUp => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Delta(1));
+                        drop(terminal);
+                    }
+                    Act::ScrollLineDown => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Delta(-1));
+                        drop(terminal);
                     }
                     Act::ClearHistory => {
                         let mut terminal =
