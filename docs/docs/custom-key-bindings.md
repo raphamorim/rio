@@ -59,6 +59,14 @@ SelectTab7
 SelectTab8
 SelectTab9
 SelectLastTab
+ScrollPageUp
+ScrollPageDown
+ScrollHalfPageUp
+ScrollHalfPageDown
+ScrollToTop
+ScrollToBottom
+ScrollLineUp
+ScrollLineDown
 None
 ReceiveChar
 {% endhighlight %}
