@@ -190,9 +190,17 @@ impl Font {
     // TODO: Refactor multiple unwraps in this code
     // TODO: Use FontAttributes bold and italic
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(font_spec: SugarloafFonts) -> Font {
+    pub fn new(mut font_spec: SugarloafFonts) -> Font {
         let font_arc_unicode;
         let font_arc_symbol;
+
+        // If fonts.family does exist it will overwrite all families
+        if let Some(font_family_overwrite) = font_spec.family {
+            font_spec.regular.family = font_family_overwrite.to_owned();
+            font_spec.bold.family = font_family_overwrite.to_owned();
+            font_spec.bold_italic.family = font_family_overwrite.to_owned();
+            font_spec.italic.family = font_family_overwrite.to_owned();
+        }
 
         #[cfg(target_os = "macos")]
         {

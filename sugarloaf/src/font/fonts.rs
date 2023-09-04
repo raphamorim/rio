@@ -5,6 +5,8 @@ use serde::Deserialize;
 
 [fonts]
 size = 18
+# You can also set family on root to overwritte all fonts
+# family = "cascadiamono"
 
 [fonts.regular]
 family = "cascadiamono"
@@ -85,6 +87,8 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
+    #[serde(default = "Option::default")]
+    pub family: Option<String>,
     #[serde(default = "default_font_regular")]
     pub regular: SugarloafFont,
     #[serde(default = "default_font_bold")]
@@ -99,6 +103,7 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             size: default_font_size(),
+            family: None,
             regular: default_font_regular(),
             bold: default_font_bold(),
             bold_italic: default_font_bold_italic(),

@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
 - Rio creates a configuration file with all defaults if does not exist.
