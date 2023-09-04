@@ -11,6 +11,7 @@
 - Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: https://github.com/raphamorim/rio/issues/197).
 - Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (Ref: https://github.com/raphamorim/rio/issues/200).
 - Whenever native tabs is on disable macos deadzone logic.
+- Font size default is now using 16.
 
 ## 0.0.18
 

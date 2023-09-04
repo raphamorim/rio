@@ -86,6 +86,7 @@ pub fn default_config_file_content() -> String {
 #
 # Default cursor is Block
 # Other available options are: '_' and '|'
+#
 cursor = '▇'
 
 # Performance
@@ -102,34 +103,39 @@ performance = "High"
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
-theme = ""
+# Example
+#   theme = "dracula"
 
 # Padding-x
 #
 # define x axis padding (default is 10)
 #
-padding-x = 10
+# Example
+#   padding-x = 10
 
 # Option as Alt
 #
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
 #
-option-as-alt = ''
+# Example
+# option-as-alt = 'left'
 
 # Window Width
 #
 # window-width changes the intial window width.
 # Default: 600
 #
-window-width = 600
+# Example
+#   window-width = 600
 
 # Window Height
 #
 # window-height changes the inital window height.
 # Default: 400
 #
-window-height = 400
+# Example
+#   window-height = 400
 
 # Fonts
 #
@@ -138,49 +144,51 @@ window-height = 400
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-[fonts]
-size = 18
-
-[fonts.regular]
-family = "cascadiamono"
-style = "normal"
-weight = 400
-
-[fonts.bold]
-family = "cascadiamono"
-style = "normal"
-weight = 800
-
-[fonts.italic]
-family = "cascadiamono"
-style = "italic"
-weight = 400
-
-[fonts.bold-italic]
-family = "cascadiamono"
-style = "italic"
-weight = 800
+# Example
+#   [fonts]
+#   size = 16
+#
+#   [fonts.regular]
+#   family = "cascadiamono"
+#   style = "normal"
+#   weight = 400
+#
+#   [fonts.bold]
+#   family = "cascadiamono"
+#   style = "normal"
+#   weight = 800
+#
+#   [fonts.italic]
+#   family = "cascadiamono"
+#   style = "italic"
+#   weight = 400
+#
+#   [fonts.bold-italic]
+#   family = "cascadiamono"
+#   style = "italic"
+#   weight = 800
 
 # Navigation
 #
 # "mode" - Define navigation mode
-#   - NativeTab (MacOs only)
-#   - CollapsedTab
-#   - BottomTab
-#   - TopTab
-#   - Breadcrumb
+#   • NativeTab (MacOs only)
+#   • CollapsedTab
+#   • BottomTab
+#   • TopTab
+#   • Breadcrumb
 #
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
 # "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
-[navigation]
-mode = "CollapsedTab"
-clickable = false
-use-current-path = false
-color-automation = []
-macos-hide-window-buttons = false
+# Example
+#   [navigation]
+#   mode = "CollapsedTab"
+#   clickable = false
+#   use-current-path = false
+#   color-automation = []
+#   macos-hide-window-buttons = false
 
 # Shell
 #
@@ -194,7 +202,6 @@ macos-hide-window-buttons = false
 #
 # Example:
 #   shell = { program = "/bin/fish", args = ["--login"] }
-shell = { program = "", args = ["--login"] }
 
 # Startup directory
 #
@@ -205,20 +212,21 @@ shell = { program = "", args = ["--login"] }
 #
 # Example
 #  working-dir = "/Users/raphael/Documents/"
-working-dir = ""
 
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars
 # please do not copy this if you do not need
 #
-env-vars = []
+# Example
+#   env-vars = []
 
 # Disable render when unfocused
 #
 # This property disable renderer processes while Rio is unfocused.
 #
-disable-renderer-when-unfocused = false
+# Example
+#   disable-renderer-when-unfocused = false
 
 # Use fork
 #
@@ -226,37 +234,46 @@ disable-renderer-when-unfocused = false
 # MacOS: spawn processes
 # Linux/BSD: fork processes
 #
-use-fork = false
+# Example
+#   use-fork = false
 
 # Colors
 #
 # Colors definition will overwrite any property in theme
 # (considering if theme folder does exists and is being used)
 #
-[colors]
-background = '#0F0D0E'
-foreground = '#F9F4DA'
-cursor = '#F38BA3'
-tabs = '#443d40'
-tabs-active = '#F38BA3'
-green = '#0BA95B'
-red = '#ED203D'
-blue = '#12B5E5'
-yellow = '#FCBA28'
+# Example:
+#
+#   [colors]
+#   background = '#0F0D0E'
+#   foreground = '#F9F4DA'
+#   cursor = '#F38BA3'
+#   tabs = '#443d40'
+#   tabs-active = '#F38BA3'
+#   green = '#0BA95B'
+#   red = '#ED203D'
+#   blue = '#12B5E5'
+#   yellow = '#FCBA28'
 
 # Bindings
 #
 # Create custom Key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 #
-[bindings]
-keys = []
-
-[developer]
+# Example
+#   [bindings]
+#   keys = [
+#     { key = "q", with = "super", action = "Quit" },
+#     # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+#     { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+#   ]
+ 
 # Log level
 #
 # This property enables log level filter. Default is "OFF".
 #
-log-level = "OFF"
+# Example
+#   [developer]
+#   log-level = "OFF"
 "#.to_string()
 }
