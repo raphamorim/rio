@@ -164,6 +164,7 @@ impl Router {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[inline]
     pub fn create_native_tab(
         &mut self,
