@@ -2,8 +2,10 @@
 
 ## In progress
 
+- Added a welcome screen UI.
+- Added a settings UI.
+- Rio creates a configuration file with all defaults if does not exist.
 - Added `OpenConfigEditor` key binding for all platforms.
-- Created Settings UI inside of the Rio terminal.
 - Configuration property `editor` was removed.
 - Created Assistant, Rio terminal UI for display error (Ref: https://github.com/raphamorim/rio/issues/168).
 - Fix 'Backspace' keypress triggers Ctrl+h keybinding in Zellij instead of deleting character. (Ref: https://github.com/raphamorim/rio/issues/197).
