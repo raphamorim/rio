@@ -28,7 +28,7 @@ impl Settings {
             return;
         }
 
-        match std::fs::create_dir_all(self.default_dir_path.to_owned()) {
+        match std::fs::create_dir_all(&self.default_dir_path) {
             Ok(_) => {
                 log::info!("configuration path created {}", self.default_dir_path);
             }

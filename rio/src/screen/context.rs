@@ -285,7 +285,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn create_config_editor(&self) {
+    pub fn switch_to_settings(&self) {
         self.event_proxy
             .send_event(RioEvent::CreateConfigEditor, self.window_id);
     }

@@ -14,7 +14,6 @@ use colors::{
 use config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
-use sugarloaf::components::rect::Rect;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 
