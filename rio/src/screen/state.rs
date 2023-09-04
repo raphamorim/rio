@@ -458,7 +458,7 @@ impl State {
                 sugarloaf.layout.width / sugarloaf.layout.scale_factor - 40.,
                 sugarloaf.layout.margin.top_y + 150.,
             ),
-            format!("󰁔"),
+            "󰁔".to_string(),
             7,
             28.,
             self.named_colors.background.0,
@@ -467,7 +467,7 @@ impl State {
 
         sugarloaf.text(
             (10., sugarloaf.layout.margin.top_y + 150.),
-            format!("󰁍"),
+            "󰁍".to_string(),
             7,
             28.,
             self.named_colors.background.0,
