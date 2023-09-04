@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Implemented ScrollPageUp, ScrollPageDown, ScrollHalfPageUp, ScrollHalfPageDown, ScrollToTop, ScrollToBottom, ScrollLineUp, ScrollLineDown (Ref: https://github.com/raphamorim/rio/issues/206).
 - Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
