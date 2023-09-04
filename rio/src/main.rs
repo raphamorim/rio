@@ -20,7 +20,7 @@ mod scheduler;
 mod screen;
 mod selection;
 mod sequencer;
-mod utils;
+mod watch;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
 use log::{info, LevelFilter, SetLoggerError};

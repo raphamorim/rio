@@ -118,6 +118,11 @@ pub fn config_file_path() -> String {
     format!("{config_dir_path_str}/config.toml")
 }
 
+#[inline]
+pub fn config_file_content() -> String {
+    default_config_file_content()
+}
+
 impl Config {
     #[cfg(test)]
     fn load_from_path(path: &str) -> Self {
@@ -338,61 +343,7 @@ mod tests {
 
     #[test]
     fn test_if_explict_defaults_match() {
-        let result = create_temporary_config(
-            "defaults",
-            r#"
-            # Rio default configuration file
-            performance = "High"
-            line-height = 1.0
-            theme = ""
-            padding-x = 10
-            window-opacity = 1.0
-            cursor = '▇'
-            env-vars = []
-            disable-unfocused-render = false
-
-            [fonts]
-            size = 18
-
-            [fonts.regular]
-            family = "cascadiamono"
-            style = "normal"
-            weight = 400
-            
-            [fonts.bold]
-            family = "cascadiamono"
-            style = "normal"
-            weight = 800
-            
-            [fonts.italic]
-            family = "cascadiamono"
-            style = "italic"
-            weight = 400
-
-            [fonts.bold-italic]
-            family = "cascadiamono"
-            style = "italic"
-            weight = 800
-
-            [colors]
-            background = '#0F0D0E'
-            foreground = '#F9F4DA'
-            cursor = '#F38BA3'
-            tabs = '#443d40'
-            tabs-active = '#F38BA3'
-            green = '#0BA95B'
-            red = '#ED203D'
-            blue = '#12B5E5'
-            yellow = '#FCBA28'
-
-            [developer]
-            enable-fps-counter = false
-            log-level = "OFF"
-
-            [bindings]
-            keys = []
-        "#,
-        );
+        let result = create_temporary_config("defaults", &default_config_file_content());
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());

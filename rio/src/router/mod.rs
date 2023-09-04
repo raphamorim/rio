@@ -1,5 +1,6 @@
-mod assistant;
+pub mod assistant;
 pub mod settings;
+pub mod welcome;
 
 use assistant::{Assistant, AssistantReport};
 use settings::Settings;
@@ -10,8 +11,8 @@ pub type ErrorReport = AssistantReport;
 pub enum Route {
     Assistant,
     Terminal,
-    // Settings(should forcefully create configuration file)
-    Settings(bool),
+    Settings,
+    Welcome,
 }
 
 pub struct Router {
@@ -32,13 +33,34 @@ impl Router {
     #[inline]
     pub fn report_error(&mut self, report: AssistantReport) {
         if report == AssistantReport::ConfigurationNotFound {
-            self.route = Route::Settings(true);
-            self.settings.create_file();
+            self.route = Route::Welcome;
             return;
         }
 
         self.assistant.set(report);
         self.route = Route::Assistant;
+    }
+
+    #[inline]
+    pub fn current_route_key_wait(&mut self, key_event: &winit::event::KeyEvent) -> bool {
+        if self.route == Route::Terminal {
+            return false;
+        }
+
+        if key_event.logical_key == winit::keyboard::Key::Enter {
+            match self.route {
+                Route::Assistant => {
+                    self.assistant.clear();
+                    self.route = Route::Terminal;
+                }
+                Route::Welcome => {
+                    self.settings.create_file();
+                    self.route = Route::Terminal;
+                }
+                _ => {}
+            }
+        }
+        return true;
     }
 
     #[inline]
