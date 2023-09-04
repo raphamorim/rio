@@ -494,7 +494,7 @@ impl Screen {
                         drop(terminal);
                     }
                     Act::ConfigEditor => {
-                        self.context_manager.create_config_editor();
+                        self.context_manager.switch_to_settings();
                     }
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();

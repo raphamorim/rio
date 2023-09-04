@@ -4,95 +4,22 @@ use winit::platform::macos::WindowExtMacOS;
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
-use crate::router::{Route, Router};
+use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::screen::{
-    window::{configure_window, create_window_builder},
-    Screen,
-};
 use crate::watch::watch;
 use colors::ColorRgb;
-use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
 };
-use winit::event_loop::{DeviceEvents, EventLoop, EventLoopWindowTarget};
+use winit::event_loop::{DeviceEvents, EventLoop};
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
-use winit::window::{CursorIcon, Window, WindowId};
-
-pub struct SequencerWindow {
-    is_focused: bool,
-    is_occluded: bool,
-    window: Window,
-    screen: Screen,
-    #[cfg(target_os = "macos")]
-    is_macos_deadzone: bool,
-}
-
-impl SequencerWindow {
-    async fn new(
-        event_loop: &EventLoop<EventP>,
-        config: &Rc<config::Config>,
-    ) -> Result<Self, Box<dyn Error>> {
-        let proxy = event_loop.create_proxy();
-        let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = create_window_builder("Rio", config, None);
-        let winit_window = window_builder.build(event_loop).unwrap();
-        let winit_window = configure_window(winit_window, config);
-
-        let mut screen = Screen::new(&winit_window, config, event_proxy, None).await?;
-
-        screen.init(config.colors.background.1);
-
-        Ok(Self {
-            is_focused: false,
-            is_occluded: false,
-            window: winit_window,
-            screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
-        })
-    }
-
-    fn from_target(
-        event_loop: &EventLoopWindowTarget<EventP>,
-        event_proxy: EventProxy,
-        config: &Rc<config::Config>,
-        window_name: &str,
-        tab_id: Option<String>,
-    ) -> Self {
-        let window_builder = create_window_builder(window_name, config, tab_id.clone());
-        let winit_window = window_builder.build(event_loop).unwrap();
-        let winit_window = configure_window(winit_window, config);
-
-        let mut screen = futures::executor::block_on(Screen::new(
-            &winit_window,
-            config,
-            event_proxy,
-            tab_id,
-        ))
-        .expect("Screen not created");
-
-        screen.init(config.colors.background.1);
-
-        Self {
-            is_focused: false,
-            is_occluded: false,
-            window: winit_window,
-            screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
-        }
-    }
-}
+use winit::window::CursorIcon;
 
 pub struct Sequencer {
     config: Rc<config::Config>,
-    windows: HashMap<WindowId, SequencerWindow>,
-    window_config_editor: Option<WindowId>,
     event_proxy: Option<EventProxy>,
     router: Router,
 }
@@ -104,14 +31,12 @@ impl Sequencer {
     ) -> Sequencer {
         let mut router = Router::new();
         if let Some(error) = config_error {
-            router.report_error(error.into());
+            router.propagate_error_to_next_route(error.into());
         }
 
         Sequencer {
             config: Rc::new(config),
-            windows: HashMap::new(),
             event_proxy: None,
-            window_config_editor: None,
             router,
         }
     }
@@ -125,9 +50,8 @@ impl Sequencer {
         let _ = watch(config::config_dir_path(), self.event_proxy.clone().unwrap());
         let mut scheduler = Scheduler::new(proxy);
 
-        let seq_win = SequencerWindow::new(&event_loop, &self.config).await?;
-        let first_window = seq_win.window.id();
-        self.windows.insert(first_window, seq_win);
+        let window = RouteWindow::new(&event_loop, &self.config).await?;
+        self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
         let _ = event_loop.run_ondemand(
@@ -139,30 +63,35 @@ impl Sequencer {
                         match payload {
                             RioEventType::Rio(RioEvent::Wakeup) => {
                                 // Emitted when the application has been resumed.
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window.request_redraw();
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.redraw();
                                 }
                             }
                             RioEventType::Rio(RioEvent::Render) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
                                     if self.config.disable_unfocused_render
-                                        && !sw.is_focused
+                                        && !route.window.is_focused
                                     {
                                         return;
                                     }
-                                    sw.window.request_redraw();
+                                    route.redraw();
                                 }
                             }
                             RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
-                                self.router.report_error(error);
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.report_error(error);
+                                }
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
                                 let mut config_error: Option<config::ConfigError> = None;
                                 let config = match config::Config::try_load() {
-                                    Ok(config) => {
-                                        self.router.clear_errors();
-                                        config
-                                    }
+                                    Ok(config) => config,
                                     Err(error) => {
                                         config_error = Some(error);
                                         config::Config::default()
@@ -170,31 +99,29 @@ impl Sequencer {
                                 };
 
                                 if let Some(error) = config_error {
-                                    self.router.report_error(error.into());
+                                    if let Some(route) =
+                                        self.router.routes.get_mut(&window_id)
+                                    {
+                                        route.report_error(error.into());
+                                        return;
+                                    }
                                 }
 
                                 self.config = config.into();
-                                for (_id, sw) in self.windows.iter_mut() {
-                                    sw.screen.update_config(&self.config);
-                                    sw.window.request_redraw();
+                                for (_id, route) in self.router.routes.iter_mut() {
+                                    route.clear_errors();
+                                    route.update_config(&self.config);
+                                    route.redraw();
                                 }
                             }
                             RioEventType::Rio(RioEvent::Exit) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    if !sequencer_window.screen.try_close_existent_tab() {
-                                        self.windows.remove(&window_id);
+                                    if !route.try_close_existent_tab() {
+                                        self.router.routes.remove(&window_id);
 
-                                        if let Some(config_window_id) =
-                                            self.window_config_editor
-                                        {
-                                            if config_window_id == window_id {
-                                                self.window_config_editor = None;
-                                            }
-                                        }
-
-                                        if self.windows.is_empty() {
+                                        if self.router.routes.is_empty() {
                                             *control_flow =
                                                 winit::event_loop::ControlFlow::Exit;
                                         }
@@ -218,26 +145,27 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::Title(title)) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    sequencer_window.window.set_title(&title);
+                                    route.set_window_title(title);
                                 }
                             }
                             RioEventType::BlinkCursor
                             | RioEventType::BlinkCursorTimeout => {}
                             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    sequencer_window.screen.reset_mouse();
+                                    route.window.screen.reset_mouse();
                                 }
                             }
                             RioEventType::Rio(RioEvent::Scroll(scroll)) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    let mut terminal = sequencer_window
+                                    let mut terminal = route
+                                        .window
                                         .screen
                                         .ctx()
                                         .current()
@@ -251,17 +179,19 @@ impl Sequencer {
                                 clipboard_type,
                                 format,
                             )) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    if sequencer_window.is_focused {
+                                    if route.window.is_focused {
                                         let text = format(
-                                            sequencer_window
+                                            route
+                                                .window
                                                 .screen
                                                 .clipboard_get(clipboard_type)
                                                 .as_str(),
                                         );
-                                        sequencer_window
+                                        route
+                                            .window
                                             .screen
                                             .ctx_mut()
                                             .current_mut()
@@ -271,10 +201,11 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::PtyWrite(text)) => {
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    sequencer_window
+                                    route
+                                        .window
                                         .screen
                                         .ctx_mut()
                                         .current_mut()
@@ -288,15 +219,15 @@ impl Sequencer {
                                 // Rio doesn't cover this case yet.
                                 //
                                 // In the future should try first get
-                                // from Crosswords then state colors
+                                // from Crosrouteords then state colors
                                 // screen.colors()[index] or screen.state.colors[index]
-                                if let Some(sequencer_window) =
-                                    self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    let color =
-                                        sequencer_window.screen.state.colors[index];
+                                    let color = route.window.screen.state.colors[index];
                                     let rgb = ColorRgb::from_color_arr(color);
-                                    sequencer_window
+                                    route
+                                        .window
                                         .screen
                                         .ctx_mut()
                                         .current_mut()
@@ -305,42 +236,45 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::CreateWindow) => {
-                                let sw = SequencerWindow::from_target(
+                                self.router.create_window(
                                     event_loop_window_target,
                                     self.event_proxy.clone().unwrap(),
                                     &self.config,
-                                    "Rio",
-                                    None,
                                 );
-                                self.windows.insert(sw.window.id(), sw);
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CreateNativeTab) => {
-                                if let Some(current_sw) = self.windows.get_mut(&window_id)
-                                {
-                                    current_sw.window.request_redraw();
+                                if let Some(route) = self.router.routes.get(&window_id) {
+                                    route.redraw();
 
-                                    let sw = SequencerWindow::from_target(
+                                    self.router.create_native_tab(
                                         event_loop_window_target,
                                         self.event_proxy.clone().unwrap(),
                                         &self.config,
-                                        "zsh",
-                                        Some(current_sw.window.tabbing_identifier()),
+                                        Some(
+                                            route
+                                                .window
+                                                .winit_window
+                                                .tabbing_identifier(),
+                                        ),
                                     );
-
-                                    self.windows.insert(sw.window.id(), sw);
                                 }
                             }
                             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                                self.window_config_editor = Some(window_id);
-                                // self.router.
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.open_settings();
+                                    route.redraw();
+                                }
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::CloseWindow) => {
-                                if let Some(current_sw) = self.windows.get_mut(&window_id)
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
                                 {
-                                    if current_sw.window.num_tabs() > 1 {
-                                        self.windows.remove(&window_id);
+                                    if route.window.winit_window.num_tabs() > 1 {
+                                        self.router.routes.remove(&window_id);
                                     }
                                 }
                             }
@@ -348,32 +282,46 @@ impl Sequencer {
                             RioEventType::Rio(RioEvent::SelectNativeTabByIndex(
                                 tab_index,
                             )) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window.select_tab_at_index(tab_index);
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route
+                                        .window
+                                        .winit_window
+                                        .select_tab_at_index(tab_index);
                                 }
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::SelectNativeTabLast) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window
-                                        .select_tab_at_index(sw.window.num_tabs() - 1);
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.winit_window.select_tab_at_index(
+                                        route.window.winit_window.num_tabs() - 1,
+                                    );
                                 }
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::SelectNativeTabNext) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window.select_next_tab();
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.winit_window.select_next_tab();
                                 }
                             }
                             #[cfg(target_os = "macos")]
                             RioEventType::Rio(RioEvent::SelectNativeTabPrev) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window.select_previous_tab();
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.winit_window.select_previous_tab();
                                 }
                             }
                             RioEventType::Rio(RioEvent::Minimize(set_minimize)) => {
-                                if let Some(sw) = self.windows.get_mut(&window_id) {
-                                    sw.window.set_minimized(set_minimize);
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.winit_window.set_minimized(set_minimize);
                                 }
                             }
                             _ => {}
@@ -386,15 +334,9 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        self.windows.remove(&window_id);
+                        self.router.routes.remove(&window_id);
 
-                        if let Some(config_window_id) = self.window_config_editor {
-                            if config_window_id == window_id {
-                                self.window_config_editor = None;
-                            }
-                        }
-
-                        if self.windows.is_empty() {
+                        if self.router.routes.is_empty() {
                             *control_flow = winit::event_loop::ControlFlow::Exit;
                         }
                     }
@@ -404,8 +346,8 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                            sequencer_window.screen.set_modifiers(modifiers);
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route.window.screen.set_modifiers(modifiers);
                         }
                     }
 
@@ -414,32 +356,29 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route != Route::Terminal {
-                            return;
-                        }
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.path != RoutePath::Terminal {
+                                return;
+                            }
 
-                        if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                            sequencer_window.window.set_cursor_visible(true);
+                            route.window.winit_window.set_cursor_visible(true);
 
                             match button {
                                 MouseButton::Left => {
-                                    sequencer_window.screen.mouse.left_button_state =
-                                        state
+                                    route.window.screen.mouse.left_button_state = state
                                 }
                                 MouseButton::Middle => {
-                                    sequencer_window.screen.mouse.middle_button_state =
-                                        state
+                                    route.window.screen.mouse.middle_button_state = state
                                 }
                                 MouseButton::Right => {
-                                    sequencer_window.screen.mouse.right_button_state =
-                                        state
+                                    route.window.screen.mouse.right_button_state = state
                                 }
                                 _ => (),
                             }
 
                             #[cfg(target_os = "macos")]
                             {
-                                if sequencer_window.is_macos_deadzone {
+                                if route.window.is_macos_deadzone {
                                     return;
                                 }
                             }
@@ -447,14 +386,10 @@ impl Sequencer {
                             match state {
                                 ElementState::Pressed => {
                                     // Process mouse press before bindings to update the `click_state`.
-                                    if !sequencer_window
-                                        .screen
-                                        .modifiers
-                                        .state()
-                                        .shift_key()
-                                        && sequencer_window.screen.mouse_mode()
+                                    if !route.window.screen.modifiers.state().shift_key()
+                                        && route.window.screen.mouse_mode()
                                     {
-                                        sequencer_window.screen.mouse.click_state =
+                                        route.window.screen.mouse.click_state =
                                             ClickState::None;
 
                                         let code = match button {
@@ -467,35 +402,37 @@ impl Sequencer {
                                             | MouseButton::Other(_) => return,
                                         };
 
-                                        sequencer_window
+                                        route
+                                            .window
                                             .screen
                                             .mouse_report(code, ElementState::Pressed);
 
-                                        sequencer_window
+                                        route
+                                            .window
                                             .screen
                                             .process_mouse_bindings(button);
                                     } else {
                                         // Calculate time since the last click to handle double/triple clicks.
                                         let now = Instant::now();
                                         let elapsed = now
-                                            - sequencer_window
+                                            - route
+                                                .window
                                                 .screen
                                                 .mouse
                                                 .last_click_timestamp;
-                                        sequencer_window
-                                            .screen
-                                            .mouse
-                                            .last_click_timestamp = now;
+                                        route.window.screen.mouse.last_click_timestamp =
+                                            now;
 
                                         let threshold = Duration::from_millis(300);
-                                        let mouse = &sequencer_window.screen.mouse;
-                                        sequencer_window.screen.mouse.click_state =
+                                        let mouse = &route.window.screen.mouse;
+                                        route.window.screen.mouse.click_state =
                                             match mouse.click_state {
                                                 // Reset click state if button has changed.
                                                 _ if button
                                                     != mouse.last_click_button =>
                                                 {
-                                                    sequencer_window
+                                                    route
+                                                        .window
                                                         .screen
                                                         .mouse
                                                         .last_click_button = button;
@@ -516,26 +453,23 @@ impl Sequencer {
 
                                         // Load mouse point, treating message bar and padding as the closest square.
                                         let display_offset =
-                                            sequencer_window.screen.display_offset();
+                                            route.window.screen.display_offset();
 
                                         if let MouseButton::Left = button {
-                                            let point = sequencer_window
+                                            let point = route
+                                                .window
                                                 .screen
                                                 .mouse_position(display_offset);
-                                            sequencer_window.screen.on_left_click(point);
+                                            route.window.screen.on_left_click(point);
                                         }
 
-                                        sequencer_window.window.request_redraw();
+                                        route.window.winit_window.request_redraw();
                                     }
-                                    // sequencer_window.screen.process_mouse_bindings(button);
+                                    // route.screen.process_mouse_bindings(button);
                                 }
                                 ElementState::Released => {
-                                    if !sequencer_window
-                                        .screen
-                                        .modifiers
-                                        .state()
-                                        .shift_key()
-                                        && sequencer_window.screen.mouse_mode()
+                                    if !route.window.screen.modifiers.state().shift_key()
+                                        && route.window.screen.mouse_mode()
                                     {
                                         let code = match button {
                                             MouseButton::Left => 0,
@@ -546,7 +480,8 @@ impl Sequencer {
                                             | MouseButton::Forward
                                             | MouseButton::Other(_) => return,
                                         };
-                                        sequencer_window
+                                        route
+                                            .window
                                             .screen
                                             .mouse_report(code, ElementState::Released);
                                         return;
@@ -555,7 +490,8 @@ impl Sequencer {
                                     if let MouseButton::Left | MouseButton::Right = button
                                     {
                                         // Copy selection on release, to prevent flooding the display server.
-                                        sequencer_window
+                                        route
+                                            .window
                                             .screen
                                             .copy_selection(ClipboardType::Selection);
                                     }
@@ -569,112 +505,151 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.router.route != Route::Terminal {
-                                sw.window.set_cursor_icon(CursorIcon::Default);
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.path != RoutePath::Terminal {
+                                route
+                                    .window
+                                    .winit_window
+                                    .set_cursor_icon(CursorIcon::Default);
                                 return;
                             }
 
-                            sw.window.set_cursor_visible(true);
+                            route.window.winit_window.set_cursor_visible(true);
 
                             let x = position.x;
                             let y = position.y;
 
-                            let lmb_pressed = sw.screen.mouse.left_button_state
+                            let lmb_pressed = route.window.screen.mouse.left_button_state
                                 == ElementState::Pressed;
-                            let rmb_pressed = sw.screen.mouse.right_button_state
-                                == ElementState::Pressed;
+                            let rmb_pressed =
+                                route.window.screen.mouse.right_button_state
+                                    == ElementState::Pressed;
 
-                            let has_selection = !sw.screen.selection_is_empty();
+                            let has_selection = !route.window.screen.selection_is_empty();
 
                             #[cfg(target_os = "macos")]
                             {
                                 // Dead zone for MacOS only
                                 // e.g: Dragging the terminal
                                 if !has_selection
-                                    && !sw.screen.context_manager.config.is_native
-                                    && sw.screen.is_macos_deadzone(y)
+                                    && !route
+                                        .window
+                                        .screen
+                                        .context_manager
+                                        .config
+                                        .is_native
+                                    && route.window.screen.is_macos_deadzone(y)
                                 {
-                                    if sw.screen.is_macos_deadzone_draggable(x) {
+                                    if route.window.screen.is_macos_deadzone_draggable(x)
+                                    {
                                         if lmb_pressed || rmb_pressed {
-                                            sw.screen.clear_selection();
-                                            sw.window
+                                            route.window.screen.clear_selection();
+                                            route
+                                                .window
+                                                .winit_window
                                                 .set_cursor_icon(CursorIcon::Grabbing);
                                         } else {
-                                            sw.window.set_cursor_icon(CursorIcon::Grab);
+                                            route
+                                                .window
+                                                .winit_window
+                                                .set_cursor_icon(CursorIcon::Grab);
                                         }
                                     } else {
-                                        sw.window.set_cursor_icon(CursorIcon::Default);
+                                        route
+                                            .window
+                                            .winit_window
+                                            .set_cursor_icon(CursorIcon::Default);
                                     }
 
-                                    sw.is_macos_deadzone = true;
+                                    route.window.is_macos_deadzone = true;
                                     return;
                                 }
 
-                                sw.is_macos_deadzone = false;
+                                route.window.is_macos_deadzone = false;
                             }
 
-                            let cursor_icon = if !sw.screen.modifiers.state().shift_key()
-                                && sw.screen.mouse_mode()
-                            {
-                                CursorIcon::Default
-                            } else {
-                                CursorIcon::Text
-                            };
+                            let cursor_icon =
+                                if !route.window.screen.modifiers.state().shift_key()
+                                    && route.window.screen.mouse_mode()
+                                {
+                                    CursorIcon::Default
+                                } else {
+                                    CursorIcon::Text
+                                };
 
-                            sw.window.set_cursor_icon(cursor_icon);
+                            route.window.winit_window.set_cursor_icon(cursor_icon);
                             if has_selection && (lmb_pressed || rmb_pressed) {
-                                sw.screen.update_selection_scrolling(y);
+                                route.window.screen.update_selection_scrolling(y);
                             }
 
-                            let display_offset = sw.screen.display_offset();
-                            let old_point = sw.screen.mouse_position(display_offset);
+                            let display_offset = route.window.screen.display_offset();
+                            let old_point =
+                                route.window.screen.mouse_position(display_offset);
 
-                            let x = x.clamp(0.0, sw.screen.sugarloaf.layout.width.into())
-                                as usize;
-                            let y = y.clamp(0.0, sw.screen.sugarloaf.layout.height.into())
-                                as usize;
-                            sw.screen.mouse.x = x;
-                            sw.screen.mouse.y = y;
+                            let x = x.clamp(
+                                0.0,
+                                route.window.screen.sugarloaf.layout.width.into(),
+                            ) as usize;
+                            let y = y.clamp(
+                                0.0,
+                                route.window.screen.sugarloaf.layout.height.into(),
+                            ) as usize;
+                            route.window.screen.mouse.x = x;
+                            route.window.screen.mouse.y = y;
 
-                            let point = sw.screen.mouse_position(display_offset);
+                            let point =
+                                route.window.screen.mouse_position(display_offset);
                             let square_changed = old_point != point;
 
-                            let inside_text_area = sw.screen.contains_point(x, y);
-                            let square_side = sw.screen.side_by_pos(x);
+                            let inside_text_area =
+                                route.window.screen.contains_point(x, y);
+                            let square_side = route.window.screen.side_by_pos(x);
 
                             // If the mouse hasn't changed cells, do nothing.
                             if !square_changed
-                                && sw.screen.mouse.square_side == square_side
-                                && sw.screen.mouse.inside_text_area == inside_text_area
+                                && route.window.screen.mouse.square_side == square_side
+                                && route.window.screen.mouse.inside_text_area
+                                    == inside_text_area
                             {
                                 return;
                             }
 
-                            sw.screen.mouse.inside_text_area = inside_text_area;
-                            sw.screen.mouse.square_side = square_side;
+                            route.window.screen.mouse.inside_text_area = inside_text_area;
+                            route.window.screen.mouse.square_side = square_side;
 
                             if (lmb_pressed || rmb_pressed)
-                                && (sw.screen.modifiers.state().shift_key()
-                                    || !sw.screen.mouse_mode())
+                                && (route.window.screen.modifiers.state().shift_key()
+                                    || !route.window.screen.mouse_mode())
                             {
-                                sw.screen.update_selection(point, square_side);
-                                sw.window.request_redraw();
+                                route.window.screen.update_selection(point, square_side);
+                                route.redraw();
                             } else if square_changed
-                                && sw.screen.has_mouse_motion_and_drag()
+                                && route.window.screen.has_mouse_motion_and_drag()
                             {
                                 if lmb_pressed {
-                                    sw.screen.mouse_report(32, ElementState::Pressed);
-                                } else if sw.screen.mouse.middle_button_state
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(32, ElementState::Pressed);
+                                } else if route.window.screen.mouse.middle_button_state
                                     == ElementState::Pressed
                                 {
-                                    sw.screen.mouse_report(33, ElementState::Pressed);
-                                } else if sw.screen.mouse.right_button_state
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(33, ElementState::Pressed);
+                                } else if route.window.screen.mouse.right_button_state
                                     == ElementState::Pressed
                                 {
-                                    sw.screen.mouse_report(34, ElementState::Pressed);
-                                } else if sw.screen.has_mouse_motion() {
-                                    sw.screen.mouse_report(35, ElementState::Pressed);
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(34, ElementState::Pressed);
+                                } else if route.window.screen.has_mouse_motion() {
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(35, ElementState::Pressed);
                                 }
                             }
                         }
@@ -685,19 +660,19 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route != Route::Terminal {
-                            return;
-                        }
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.path != RoutePath::Terminal {
+                                return;
+                            }
 
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.window.set_cursor_visible(true);
+                            route.window.winit_window.set_cursor_visible(true);
                             match delta {
                                 MouseScrollDelta::LineDelta(columns, lines) => {
-                                    let new_scroll_px_x =
-                                        columns * sw.screen.sugarloaf.layout.font_size;
-                                    let new_scroll_px_y =
-                                        lines * sw.screen.sugarloaf.layout.font_size;
-                                    sw.screen.scroll(
+                                    let new_scroll_px_x = columns
+                                        * route.window.screen.sugarloaf.layout.font_size;
+                                    let new_scroll_px_y = lines
+                                        * route.window.screen.sugarloaf.layout.font_size;
+                                    route.window.screen.scroll(
                                         new_scroll_px_x as f64,
                                         new_scroll_px_y as f64,
                                     );
@@ -706,8 +681,11 @@ impl Sequencer {
                                     match phase {
                                         TouchPhase::Started => {
                                             // Reset offset to zero.
-                                            sw.screen.mouse.accumulated_scroll =
-                                                Default::default();
+                                            route
+                                                .window
+                                                .screen
+                                                .mouse
+                                                .accumulated_scroll = Default::default();
                                         }
                                         TouchPhase::Moved => {
                                             // When the angle between (x, 0) and (x, y) is lower than ~25 degrees
@@ -718,7 +696,7 @@ impl Sequencer {
                                                 lpos.x = 0.;
                                             }
 
-                                            sw.screen.scroll(lpos.x, lpos.y);
+                                            route.window.screen.scroll(lpos.x, lpos.y);
                                         }
                                         _ => (),
                                     }
@@ -737,20 +715,20 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            if self.router.current_route_key_wait(&key_event) {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.has_key_wait(&key_event) {
                                 return;
                             }
 
-                            sw.screen.process_key_event(&key_event);
+                            route.window.screen.process_key_event(&key_event);
 
                             match key_event.state {
                                 ElementState::Pressed => {
-                                    sw.window.set_cursor_visible(false);
+                                    route.window.winit_window.set_cursor_visible(false);
                                 }
 
                                 ElementState::Released => {
-                                    sw.window.request_redraw();
+                                    route.redraw();
                                 }
                             }
                         }
@@ -761,15 +739,18 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route == Route::Assistant {
-                            return;
-                        }
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.path == RoutePath::Assistant {
+                                return;
+                            }
 
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
                             match ime {
                                 Ime::Commit(text) => {
                                     // Don't use bracketed paste for single char input.
-                                    sw.screen.paste(&text, text.chars().count() > 1);
+                                    route
+                                        .window
+                                        .screen
+                                        .paste(&text, text.chars().count() > 1);
                                 }
                                 Ime::Preedit(text, cursor_offset) => {
                                     let preedit = if text.is_empty() {
@@ -781,16 +762,18 @@ impl Sequencer {
                                         ))
                                     };
 
-                                    if sw.screen.ime.preedit() != preedit.as_ref() {
-                                        sw.screen.ime.set_preedit(preedit);
-                                        sw.window.request_redraw();
+                                    if route.window.screen.ime.preedit()
+                                        != preedit.as_ref()
+                                    {
+                                        route.window.screen.ime.set_preedit(preedit);
+                                        route.redraw();
                                     }
                                 }
                                 Ime::Enabled => {
-                                    sw.screen.ime.set_enabled(true);
+                                    route.window.screen.ime.set_enabled(true);
                                 }
                                 Ime::Disabled => {
-                                    sw.screen.ime.set_enabled(false);
+                                    route.window.screen.ime.set_enabled(false);
                                 }
                             }
                         }
@@ -801,9 +784,9 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                            sequencer_window.window.set_cursor_visible(true);
-                            sequencer_window.is_focused = focused;
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route.window.winit_window.set_cursor_visible(true);
+                            route.window.is_focused = focused;
                         }
                     }
 
@@ -812,8 +795,8 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sequencer_window) = self.windows.get_mut(&window_id) {
-                            sequencer_window.is_occluded = occluded;
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route.window.is_occluded = occluded;
                         }
                     }
 
@@ -822,13 +805,13 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if self.router.route == Route::Assistant {
-                            return;
-                        }
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            if route.path == RoutePath::Assistant {
+                                return;
+                            }
 
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
                             let path: String = path.to_string_lossy().into();
-                            sw.screen.paste(&(path + " "), true);
+                            route.window.screen.paste(&(path + " "), true);
                         }
                     }
 
@@ -841,8 +824,8 @@ impl Sequencer {
                             return;
                         }
 
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.screen.resize(new_size);
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route.window.screen.resize(new_size);
                         }
                     }
 
@@ -855,10 +838,12 @@ impl Sequencer {
                         window_id,
                         ..
                     } => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
-                            sw.screen
-                                .set_scale(scale_factor as f32, sw.window.inner_size());
-                            sw.window.request_redraw();
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route.window.screen.set_scale(
+                                scale_factor as f32,
+                                route.window.winit_window.inner_size(),
+                            );
+                            route.redraw();
                         }
                     }
 
@@ -873,50 +858,37 @@ impl Sequencer {
                     }
 
                     Event::RedrawRequested(window_id) => {
-                        if let Some(sw) = self.windows.get_mut(&window_id) {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
 
                             #[cfg(target_os = "macos")]
                             {
-                                if sw.screen.context_manager.config.is_native {
-                                    sw.screen.update_top_y_for_native_tabs(
-                                        sw.window.num_tabs(),
+                                if route.window.screen.context_manager.config.is_native {
+                                    route.window.screen.update_top_y_for_native_tabs(
+                                        route.window.winit_window.num_tabs(),
                                     );
                                 }
                             }
 
-                            match self.router.route {
-                                Route::Assistant => {
-                                    sw.screen.render_assistant(
-                                        self.router.assistant_to_string(),
-                                    );
+                            match route.path {
+                                RoutePath::Assistant => {
+                                    route
+                                        .window
+                                        .screen
+                                        .render_assistant(route.assistant_to_string());
                                 }
-                                Route::Welcome => {
-                                    sw.screen.render_welcome();
+                                RoutePath::Welcome => {
+                                    route.window.screen.render_welcome();
                                 }
-                                Route::Terminal => {
-                                    sw.screen.render();
+                                RoutePath::Terminal => {
+                                    route.window.screen.render();
                                 }
-                                Route::Settings => {
-                                    sw.screen.render_settings(&self.router.settings);
+                                RoutePath::Settings => {
+                                    route.window.screen.render_settings(&route.settings);
                                 }
                             }
 
-                            // if self.router.route == Route::Assistant {
-                            //     if let Some(config_editor_window_id) =
-                            //         self.window_config_editor
-                            //     {
-                            //         if window_id != config_editor_window_id {
-                            //             sw.screen.render_assistant(&self.assistant);
-                            //             return;
-                            //         }
-                            //     } else {
-                            //         sw.screen.render_assistant(&self.assistant);
-                            //         return;
-                            //     }
-                            // }
-
-                            // sw.screen.render();
+                            // route.window.screen.render();
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }
