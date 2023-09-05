@@ -7,154 +7,6 @@ use sugarloaf::Sugarloaf;
 use std::fs::File;
 use std::path::Path;
 
-pub struct ScreenSetting {
-    title: String,
-    #[allow(unused)]
-    options: Vec<String>,
-    current: String,
-    requires_restart: bool,
-}
-
-fn config_to_settings_screen(current_config: config::Config) -> Vec<ScreenSetting> {
-    let settings: Vec<ScreenSetting> = vec![
-        ScreenSetting {
-            title: String::from("Navigation Mode"),
-            options: vec![
-                String::from("CollapsedTab"),
-                String::from("NativeTab"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: current_config.navigation.mode.to_string(),
-            requires_restart: true,
-        },
-        ScreenSetting {
-            title: String::from("Option as Alt"),
-            options: vec![
-                String::from("Disabled"),
-                String::from("Enabled"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: String::from("Disabled"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("A"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("B"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("C"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Navigation Mode"),
-            options: vec![
-                String::from("CollapsedTab"),
-                String::from("NativeTab"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: current_config.navigation.mode.to_string(),
-            requires_restart: true,
-        },
-        ScreenSetting {
-            title: String::from("Option as Alt"),
-            options: vec![
-                String::from("Disabled"),
-                String::from("Enabled"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: String::from("Disabled"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("A"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("B"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Last"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-    ];
-
-    // ScreenSetting {
-    // title: String::from("Regular font size"),
-    // options: 10..60.to_vec(),
-    // });
-
-    settings
-}
-
 pub struct SettingsState {
     current: usize,
 }
@@ -491,4 +343,163 @@ pub fn screen(
         named_colors.foreground,
         true,
     );
+}
+
+pub struct ScreenSetting {
+    title: String,
+    #[allow(unused)]
+    options: Vec<String>,
+    current: String,
+    requires_restart: bool,
+}
+
+#[inline]
+fn config_to_settings_screen(current_config: config::Config) -> Vec<ScreenSetting> {
+    let settings: Vec<ScreenSetting> = vec![
+        ScreenSetting {
+            title: String::from("Navigation Mode"),
+            options: vec![
+                String::from("CollapsedTab"),
+                String::from("NativeTab"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: current_config.navigation.mode.to_string(),
+            requires_restart: true,
+        },
+        ScreenSetting {
+            title: String::from("Option as Alt"),
+            options: vec![
+                String::from("Disabled"),
+                String::from("Enabled"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: String::from("Disabled"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Cursor"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Font size"),
+            options: vec![
+                String::from("16"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("16"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Regular font family"),
+            options: vec![
+                String::from("Cascadia Mono (built-in)"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Cascadia Mono (built-in)"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Regular font weight"),
+            options: vec![
+                String::from("400"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("400"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Regular font style"),
+            options: vec![
+                String::from("Regular"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Regular"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Bold font family"),
+            options: vec![
+                String::from("Cascadia Mono (built-in)"),
+                String::from("NativeTab"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: String::from("Cascadia Mono (built-in)"),
+            requires_restart: true,
+        },
+        ScreenSetting {
+            title: String::from("Bold font weight"),
+            options: vec![
+                String::from("800"),
+                String::from("Enabled"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: String::from("800"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Bold font weight"),
+            options: vec![
+                String::from("Regular"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("A"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("B"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Performance"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("High"),
+            requires_restart: false,
+        },
+    ];
+
+    // ScreenSetting {
+    // title: String::from("Regular font size"),
+    // options: 10..60.to_vec(),
+    // });
+
+    settings
 }
