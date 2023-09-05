@@ -30,6 +30,8 @@ serde = { version = "1.0.174", features = ["derive"] }
 teletypewriter = { path = "teletypewriter" }
 sugarloaf = { path = "sugarloaf" }
 corcovado = { path = "corcovado" }
+config = { path = "config" }
+colors = { path = "colors" }
 tokio = { version = "1.29.1", features = ["rt", "rt-multi-thread", "macros"] }
 wgpu = "0.16.0"
 copa = { path = "copa", default-features = true }
