@@ -46,6 +46,8 @@ pub fn setup_environment_variables(config: &config::Config) {
         std::env::set_var("TERM", terminfo);
     }
 
+    std::env::set_var("RIO_CONFIG", config::config_file_path());
+
     // https://github.com/raphamorim/rio/issues/200
     std::env::set_var("TERM_PROGRAM", "rio");
     std::env::set_var("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));

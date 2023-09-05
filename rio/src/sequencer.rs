@@ -717,6 +717,11 @@ impl Sequencer {
                     } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             if route.has_key_wait(&key_event) {
+                                if route.path == RoutePath::Settings
+                                    && key_event.state == ElementState::Released
+                                {
+                                    route.window.winit_window.request_redraw();
+                                }
                                 return;
                             }
 

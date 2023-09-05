@@ -6,6 +6,7 @@
 - Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
+- Exposes `RIO_CONFIG` environment variable that contains the path of the configuration.
 - Rio creates a configuration file with all defaults if does not exist.
 - Added `OpenConfigEditor` key binding for all platforms.
 - Configuration property `editor` was removed.

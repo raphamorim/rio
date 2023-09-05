@@ -13,6 +13,29 @@ pub enum NavigationMode {
     Breadcrumb,
 }
 
+impl std::fmt::Display for NavigationMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            NavigationMode::CollapsedTab => {
+                write!(f, "CollapsedTab")
+            }
+            NavigationMode::TopTab => {
+                write!(f, "TopTab")
+            }
+            NavigationMode::BottomTab => {
+                write!(f, "BottomTab")
+            }
+            #[cfg(target_os = "macos")]
+            NavigationMode::NativeTab => {
+                write!(f, "NativeTab")
+            }
+            NavigationMode::Breadcrumb => {
+                write!(f, "Breadcrumb")
+            }
+        }
+    }
+}
+
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
     pub program: String,
