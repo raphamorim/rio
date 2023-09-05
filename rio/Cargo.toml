@@ -1,20 +1,24 @@
 [package]
-name = "rio"
-version.workspace = true
+name = "rio-terminal"
+version = "0.0.19-canary-0"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
-description = "Rio terminal app"
+description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
+
+[[bin]]
+name = "rio"
+path = "src/main.rs"
 
 [dependencies]
 base64 = "0.21.0"
 bitflags = "2.0.2"
 futures = "0.3"
 bytemuck = { workspace = true }
-colors = { path = "../colors" }
-config = { path = "../config" }
+colors = { worskpace = true }
+config = { worskpace = true }
 corcovado = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }
