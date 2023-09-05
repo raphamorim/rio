@@ -1,18 +1,171 @@
 use colors::Colors;
 use std::io::Write;
+use std::time::{Duration, Instant};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::Sugarloaf;
 // use config::{Config, Shell};
 use std::fs::File;
 use std::path::Path;
 
-pub struct ConfigInfo {}
+pub struct ScreenSetting {
+    title: String,
+    #[allow(unused)]
+    options: Vec<String>,
+    current: String,
+    requires_restart: bool,
+}
+
+fn config_to_settings_screen(current_config: config::Config) -> Vec<ScreenSetting> {
+    let settings: Vec<ScreenSetting> = vec![
+        ScreenSetting {
+            title: String::from("Navigation Mode"),
+            options: vec![
+                String::from("CollapsedTab"),
+                String::from("NativeTab"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: current_config.navigation.mode.to_string(),
+            requires_restart: true,
+        },
+        ScreenSetting {
+            title: String::from("Option as Alt"),
+            options: vec![
+                String::from("Disabled"),
+                String::from("Enabled"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: String::from("Disabled"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Cursor"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("A"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("B"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("C"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Navigation Mode"),
+            options: vec![
+                String::from("CollapsedTab"),
+                String::from("NativeTab"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: current_config.navigation.mode.to_string(),
+            requires_restart: true,
+        },
+        ScreenSetting {
+            title: String::from("Option as Alt"),
+            options: vec![
+                String::from("Disabled"),
+                String::from("Enabled"),
+                String::from("Breadcrumb"),
+                String::from("TopTab"),
+                String::from("BottomTab"),
+            ],
+            current: String::from("Disabled"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Cursor"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("A"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("B"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+        ScreenSetting {
+            title: String::from("Last"),
+            options: vec![
+                String::from("Block"),
+                String::from("Underline"),
+                String::from("Beam"),
+            ],
+            current: String::from("Block"),
+            requires_restart: false,
+        },
+    ];
+
+    // ScreenSetting {
+    // title: String::from("Regular font size"),
+    // options: 10..60.to_vec(),
+    // });
+
+    settings
+}
+
+pub struct SettingsState {
+    current: usize,
+}
 
 pub struct Settings {
     pub default_file_path: String,
     pub default_dir_path: String,
     pub config: config::Config,
-    // pub screen_struct: HashMap<String, >
+    pub items: Vec<ScreenSetting>,
+    pub state: SettingsState,
+    last_update: Instant,
 }
 
 impl Settings {
@@ -21,6 +174,33 @@ impl Settings {
             default_file_path: config::config_file_path(),
             default_dir_path: config::config_dir_path(),
             config: config::Config::default(),
+            items: config_to_settings_screen(config::Config::default()),
+            state: SettingsState { current: 0 },
+            last_update: Instant::now(),
+        }
+    }
+
+    #[inline]
+    pub fn move_up(&mut self) {
+        if self.last_update.elapsed() > Duration::from_millis(150) {
+            if self.state.current == 0 {
+                self.state.current = self.items.len() - 1;
+            } else {
+                self.state.current -= 1;
+            }
+            self.last_update = Instant::now();
+        }
+    }
+
+    #[inline]
+    pub fn move_down(&mut self) {
+        if self.last_update.elapsed() > Duration::from_millis(150) {
+            if self.state.current >= self.items.len() - 1 {
+                self.state.current = 0;
+            } else {
+                self.state.current += 1;
+            }
+            self.last_update = Instant::now();
         }
     }
 
@@ -118,47 +298,83 @@ pub fn screen(
         false,
     );
 
+    let items_len = settings.items.len();
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + 130.),
+        String::from("..."),
+        8,
+        16.,
+        named_colors.cursor,
+        true,
+    );
+
+    let previous_item = if settings.state.current > 0 {
+        settings.state.current - 1
+    } else {
+        items_len - 1
+    };
+
+    sugarloaf.text(
+        (10., sugarloaf.layout.margin.top_y + 150.),
         format!(
-            "Regular Font Family | \"{}\"",
-            settings.config.fonts.regular.family
+            "{} | \"{}\"",
+            settings.items[previous_item].title, settings.items[previous_item].current,
         ),
         8,
         16.,
         named_colors.dim_white,
         true,
     );
+    //     if settings.state.current >= 2 {
+    //         prev_items_iter = settings.state.current - 1..settings.state.current - 2;
+    //     } else {
+    //         prev_items_iter = (items_len)..(settings.state.current - 1);
+    //     }
+    // }
 
-    sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 150.),
-        format!("Regular Font Weight | 400"),
-        8,
-        16.,
-        named_colors.dim_white,
-        true,
-    );
+    // let prev_items_iterator = Vec::from_iter(prev_items_iter);
 
+    // let mut spacing_between = 130.;
+    // for i in prev_items_iterator {
+    //     sugarloaf.text(
+    //         (10., sugarloaf.layout.margin.top_y + spacing_between),
+    //         format!(
+    //             "{} | \"{}\"",
+    //             settings.items[i].title,
+    //             settings.items[i].current,
+    //         ),
+    //         8,
+    //         16.,
+    //         named_colors.dim_white,
+    //         true,
+    //     );
+
+    //     spacing_between += 20.;
+    // }
+
+    let active_setting = &settings.items[settings.state.current];
     sugarloaf.text(
-        (80., sugarloaf.layout.margin.top_y + 190.),
-        format!("Performance | {:?}", settings.config.performance),
+        (70., sugarloaf.layout.margin.top_y + 190.),
+        format!("{} | {:?}", active_setting.title, active_setting.current),
         8,
         28.,
         named_colors.background.0,
         true,
     );
 
-    sugarloaf.text(
-        (
-            sugarloaf.layout.width / sugarloaf.layout.scale_factor - 160.,
-            sugarloaf.layout.margin.top_y + 225.,
-        ),
-        "* restart is needed".to_string(),
-        8,
-        14.,
-        named_colors.foreground,
-        true,
-    );
+    if active_setting.requires_restart {
+        sugarloaf.text(
+            (
+                sugarloaf.layout.width / sugarloaf.layout.scale_factor - 160.,
+                sugarloaf.layout.margin.top_y + 225.,
+            ),
+            "* restart is needed".to_string(),
+            8,
+            14.,
+            named_colors.foreground,
+            true,
+        );
+    }
 
     sugarloaf.text(
         (
@@ -181,55 +397,57 @@ pub fn screen(
         true,
     );
 
-    sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 230.),
-        format!("Cursor | {}", settings.config.cursor),
-        8,
-        16.,
-        named_colors.dim_white,
-        true,
-    );
+    let mut iter = if settings.state.current + 5 >= items_len {
+        Vec::from_iter(settings.state.current..items_len)
+    } else {
+        Vec::from_iter(settings.state.current..settings.state.current + 5)
+    };
+
+    let created_iter_len = iter.len();
+    // Is always expected 5 items
+    if created_iter_len < 5 {
+        let diff = 5 - created_iter_len;
+        for i in 0..diff {
+            iter.push(i);
+        }
+    }
+
+    let settings_iterator = Vec::from_iter(iter);
+
+    let mut spacing_between = 230.;
+    for i in settings_iterator {
+        if i == settings.state.current {
+            continue;
+        }
+
+        sugarloaf.text(
+            (10., sugarloaf.layout.margin.top_y + spacing_between),
+            format!(
+                "{} | \"{}\"",
+                settings.items[i].title, settings.items[i].current,
+            ),
+            8,
+            16.,
+            named_colors.dim_white,
+            true,
+        );
+
+        spacing_between += 20.;
+    }
 
     sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 250.),
-        format!("Navigation Mode | {:?}", settings.config.navigation.mode),
+        (10., sugarloaf.layout.margin.top_y + spacing_between),
+        String::from("..."),
         8,
         16.,
-        named_colors.dim_white,
-        true,
-    );
-
-    sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 270.),
-        format!("Font Size | {}", settings.config.fonts.size),
-        8,
-        16.,
-        named_colors.dim_white,
-        true,
-    );
-
-    sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 290.),
-        format!("Option as Alt | DISABLED"),
-        8,
-        16.,
-        named_colors.dim_white,
-        true,
-    );
-
-    sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 310.),
-        format!("..."),
-        8,
-        16.,
-        named_colors.dim_white,
+        named_colors.cursor,
         true,
     );
 
     sugarloaf.text(
         (
             sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
-            sugarloaf.layout.margin.top_y + 320.,
+            sugarloaf.layout.height / sugarloaf.layout.scale_factor - 30.,
         ),
         "󰌑".to_string(),
         7,
@@ -241,7 +459,7 @@ pub fn screen(
     sugarloaf.text(
         (
             sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
-            sugarloaf.layout.margin.top_y + 340.,
+            sugarloaf.layout.height / sugarloaf.layout.scale_factor - 50.,
         ),
         "save".to_string(),
         8,
@@ -250,11 +468,10 @@ pub fn screen(
         true,
     );
 
-    // If no changes or forced to save
     sugarloaf.text(
         (
-            sugarloaf.layout.width / sugarloaf.layout.scale_factor - 90.,
-            sugarloaf.layout.margin.top_y + 320.,
+            sugarloaf.layout.width / sugarloaf.layout.scale_factor - 100.,
+            sugarloaf.layout.height / sugarloaf.layout.scale_factor - 30.,
         ),
         "󱊷".to_string(),
         7,
@@ -265,8 +482,8 @@ pub fn screen(
 
     sugarloaf.text(
         (
-            sugarloaf.layout.width / sugarloaf.layout.scale_factor - 90.,
-            sugarloaf.layout.margin.top_y + 340.,
+            sugarloaf.layout.width / sugarloaf.layout.scale_factor - 100.,
+            sugarloaf.layout.height / sugarloaf.layout.scale_factor - 50.,
         ),
         "exit".to_string(),
         8,

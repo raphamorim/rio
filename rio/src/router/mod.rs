@@ -79,6 +79,18 @@ impl Route {
             return false;
         }
 
+        if self.path == RoutePath::Settings {
+            if key_event.logical_key == winit::keyboard::Key::ArrowDown {
+                self.settings.move_down();
+                return true;
+            }
+
+            if key_event.logical_key == winit::keyboard::Key::ArrowUp {
+                self.settings.move_up();
+                return true;
+            }
+        }
+
         if key_event.logical_key == winit::keyboard::Key::Enter {
             match self.path {
                 RoutePath::Assistant => {
