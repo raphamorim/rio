@@ -85,11 +85,13 @@ window-height = 800
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# # You can also set family on root to overwritte all fonts
-# family = "cascadiamono"
+# Another Note: "cascadiamono" font is built-in.
 #
 [fonts]
 size = 18
+
+# # You can also set family on root to overwritte all fonts
+# family = "cascadiamono"
 
 [fonts.regular]
 family = "cascadiamono"
