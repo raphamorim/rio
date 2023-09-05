@@ -38,8 +38,9 @@ pub struct SugarloafFont {
 }
 
 impl SugarloafFont {
+    #[inline]
     pub fn is_default_family(&self) -> bool {
-        self.family == default_font_family()
+        self.family.trim().to_lowercase() == default_font_family()
     }
 }
 
