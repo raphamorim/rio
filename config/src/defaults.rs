@@ -150,7 +150,7 @@ performance = "High"
 #
 # Example
 #   [fonts]
-#   size = 16
+#   size = 18
 #
 #   [fonts.regular]
 #   family = "cascadiamono"
