@@ -1,6 +1,6 @@
 [package]
 name = "rio-terminal"
-version = "0.0.19-canary-0"
+version = "0.0.18"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -17,8 +17,8 @@ base64 = "0.21.0"
 bitflags = "2.0.2"
 futures = "0.3"
 bytemuck = { workspace = true }
-colors = { worskpace = true }
-config = { worskpace = true }
+colors = { workspace = true }
+config = { workspace = true }
 corcovado = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }

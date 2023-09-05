@@ -1,6 +1,6 @@
 [package]
 name = "colors"
-version = "0.0.1"
+version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
 

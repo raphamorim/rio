@@ -44,7 +44,7 @@ impl SugarloafFont {
 }
 
 fn default_font_size() -> f32 {
-    16.
+    18.
 }
 
 fn default_font_family() -> String {
