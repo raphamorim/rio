@@ -1,6 +1,7 @@
 pub mod bindings;
 mod defaults;
 pub mod navigation;
+pub mod theme;
 
 use crate::bindings::Bindings;
 use crate::defaults::*;
@@ -10,6 +11,7 @@ use log::warn;
 use serde::Deserialize;
 use std::default::Default;
 use sugarloaf::font::fonts::SugarloafFonts;
+use theme::{AdaptiveColors, AdaptiveTheme, Theme};
 
 #[derive(Clone, Debug)]
 pub enum ConfigError {
@@ -72,6 +74,8 @@ pub struct Config {
     pub line_height: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "Option::default", rename = "adaptive-theme")]
+    pub adaptive_theme: Option<AdaptiveTheme>,
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
     #[serde(rename = "padding-x", default = "default_padding_x")]
@@ -84,16 +88,12 @@ pub struct Config {
     pub option_as_alt: String,
     #[serde(default = "Colors::default")]
     pub colors: Colors,
+    #[serde(default = "Option::default", skip_serializing)]
+    pub adaptive_colors: Option<AdaptiveColors>,
     #[serde(default = "Developer::default")]
     pub developer: Developer,
     #[serde(default = "Bindings::default")]
     pub bindings: bindings::Bindings,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct Theme {
-    #[serde(default = "Colors::default")]
-    pub colors: Colors,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -157,6 +157,37 @@ impl Config {
                         warn!("failed to load theme: {}", theme);
                     }
 
+                    if let Some(adaptive_theme) = &decoded.adaptive_theme {
+                        let light_theme = &adaptive_theme.light;
+                        let path = format!("{tmp}/{light_theme}.toml");
+                        let mut adaptive_colors = AdaptiveColors {
+                            dark: None,
+                            light: None,
+                        };
+
+                        if let Ok(light_loaded_theme) = Config::load_theme(&path) {
+                            adaptive_colors.light = Some(light_loaded_theme.colors);
+                            println!("carregou");
+                        } else {
+                            println!("failed to load light theme: {}", light_theme);
+                        }
+
+                        let dark_theme = &adaptive_theme.dark;
+                        let path = format!("{tmp}/{dark_theme}.toml");
+                        if let Ok(dark_loaded_theme) = Config::load_theme(&path) {
+                            adaptive_colors.dark = Some(dark_loaded_theme.colors);
+                            println!("carregou");
+                        } else {
+                            println!("failed to load dark theme: {}", dark_theme);
+                        }
+
+                        if adaptive_colors.light.is_some()
+                            && adaptive_colors.dark.is_some()
+                        {
+                            decoded.adaptive_colors = Some(adaptive_colors);
+                        }
+                    }
+
                     Ok(decoded)
                 }
                 Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
@@ -217,20 +248,57 @@ impl Config {
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
                     let theme = &decoded.theme;
-                    if theme.is_empty() {
-                        return Ok(decoded);
+                    let theme_path = format!("{config_path_str}/themes");
+                    if !theme.is_empty() {
+                        let path = format!("{theme_path}/{theme}.toml");
+                        match Config::load_theme(&path) {
+                            Ok(loaded_theme) => {
+                                decoded.colors = loaded_theme.colors;
+                            }
+                            Err(err_message) => {
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
+                        }
                     }
 
-                    let path = format!("{config_path_str}/themes/{theme}.toml");
-                    match Config::load_theme(&path) {
-                        Ok(loaded_theme) => {
-                            decoded.colors = loaded_theme.colors;
-                            Ok(decoded)
+                    if let Some(adaptive_theme) = &decoded.adaptive_theme {
+                        let mut adaptive_colors = AdaptiveColors {
+                            dark: None,
+                            light: None,
+                        };
+
+                        let light_theme = &adaptive_theme.light;
+                        let path = format!("{theme_path}/{light_theme}.toml");
+                        match Config::load_theme(&path) {
+                            Ok(light_loaded_theme) => {
+                                adaptive_colors.light = Some(light_loaded_theme.colors)
+                            }
+                            Err(err_message) => {
+                                warn!("failed to load light theme: {}", light_theme);
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
                         }
-                        Err(err_message) => {
-                            Err(ConfigError::ErrLoadingTheme(err_message))
+
+                        let dark_theme = &adaptive_theme.dark;
+                        let path = format!("{theme_path}/{dark_theme}.toml");
+                        match Config::load_theme(&path) {
+                            Ok(dark_loaded_theme) => {
+                                adaptive_colors.dark = Some(dark_loaded_theme.colors)
+                            }
+                            Err(err_message) => {
+                                warn!("failed to load dark theme: {}", dark_theme);
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
+                        }
+
+                        if adaptive_colors.light.is_some()
+                            && adaptive_colors.dark.is_some()
+                        {
+                            decoded.adaptive_colors = Some(adaptive_colors);
                         }
                     }
+
+                    Ok(decoded)
                 }
                 Err(err_message) => {
                     Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
@@ -245,25 +313,27 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            adaptive_theme: None,
+            adaptive_colors: None,
             bindings: Bindings::default(),
-            navigation: Navigation::default(),
-            shell: default_shell(),
-            working_dir: default_working_dir(),
+            colors: Colors::default(),
+            cursor: default_cursor(),
+            developer: Developer::default(),
             disable_unfocused_render: false,
-            use_fork: default_use_fork(),
             env_vars: default_env_vars(),
+            fonts: SugarloafFonts::default(),
+            line_height: default_line_height(),
+            navigation: Navigation::default(),
+            option_as_alt: default_option_as_alt(),
+            padding_x: default_padding_x(),
+            performance: Performance::default(),
+            shell: default_shell(),
+            theme: default_theme(),
+            use_fork: default_use_fork(),
+            window_height: default_window_height(),
             window_opacity: default_window_opacity(),
             window_width: default_window_width(),
-            window_height: default_window_height(),
-            performance: Performance::default(),
-            padding_x: default_padding_x(),
-            line_height: default_line_height(),
-            theme: default_theme(),
-            fonts: SugarloafFonts::default(),
-            cursor: default_cursor(),
-            option_as_alt: default_option_as_alt(),
-            colors: Colors::default(),
-            developer: Developer::default(),
+            working_dir: default_working_dir(),
         }
     }
 }
