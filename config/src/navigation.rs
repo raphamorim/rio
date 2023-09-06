@@ -29,6 +29,7 @@ impl std::fmt::Display for NavigationMode {
             NavigationMode::NativeTab => {
                 write!(f, "NativeTab")
             }
+            #[cfg(not(windows))]
             NavigationMode::Breadcrumb => {
                 write!(f, "Breadcrumb")
             }
