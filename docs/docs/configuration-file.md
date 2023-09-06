@@ -43,6 +43,16 @@ performance = "High"
 #
 theme = "dracula"
 
+# Adaptive Theme
+#
+# Changes theme based on the system theme (light and dark)
+# Only works for Web, MacOS and Windows
+# This configuration is disabled by default
+#
+[adaptive-theme]
+light = "belafonte-day"
+dark = "belafonte-night"
+
 # Padding-x
 #
 # define x axis padding (default is 10)

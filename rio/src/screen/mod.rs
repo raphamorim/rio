@@ -141,7 +141,7 @@ impl Screen {
         )
         .await?;
 
-        let state = State::new(config);
+        let state = State::new(config, winit_window.theme());
 
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
@@ -268,7 +268,11 @@ impl Screen {
 
     /// update_config is triggered in any configuration file update
     #[inline]
-    pub fn update_config(&mut self, config: &Rc<config::Config>) {
+    pub fn update_config(
+        &mut self,
+        config: &Rc<config::Config>,
+        current_theme: Option<winit::window::Theme>,
+    ) {
         let mut padding_y_bottom = 0.0;
         if config.navigation.is_placed_on_bottom() {
             padding_y_bottom += config.fonts.size
@@ -282,7 +286,7 @@ impl Screen {
         );
         self.sugarloaf.update_font(config.fonts.to_owned());
         self.sugarloaf.layout.update();
-        self.state = State::new(config);
+        self.state = State::new(config, current_theme);
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
@@ -295,7 +299,7 @@ impl Screen {
         let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
-        self.init(config.colors.background.1);
+        self.init(self.state.named_colors.background.1);
     }
 
     #[inline]

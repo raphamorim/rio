@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
+use winit::window::Theme;
 
 #[derive(Default)]
 struct Cursor {
@@ -27,7 +28,7 @@ struct Cursor {
 pub struct State {
     pub option_as_alt: String,
     is_ime_enabled: bool,
-    named_colors: Colors,
+    pub named_colors: Colors,
     font_size: f32,
     pub colors: List,
     navigation: ScreenNavigation,
@@ -63,9 +64,23 @@ impl From<Square> for Sugar {
 }
 
 impl State {
-    pub fn new(config: &Rc<Config>) -> State {
+    pub fn new(config: &Rc<Config>, current_theme: Option<Theme>) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
+        let mut named_colors = config.colors;
+
+        if let Some(theme) = current_theme {
+            if let Some(adaptive_colors) = &config.adaptive_colors {
+                match theme {
+                    Theme::Light => {
+                        named_colors = adaptive_colors.light.unwrap_or(named_colors);
+                    }
+                    Theme::Dark => {
+                        named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                    }
+                }
+            }
+        }
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
@@ -79,9 +94,9 @@ impl State {
             navigation: ScreenNavigation::new(
                 config.navigation.mode,
                 [
-                    config.colors.tabs,
-                    config.colors.tabs_active,
-                    config.colors.foreground,
+                    named_colors.tabs,
+                    named_colors.tabs_active,
+                    named_colors.foreground,
                 ],
                 color_automation,
                 0.0,
@@ -90,7 +105,7 @@ impl State {
             ),
             font_size: config.fonts.size,
             selection_range: None,
-            named_colors: config.colors,
+            named_colors,
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,

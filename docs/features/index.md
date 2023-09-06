@@ -11,9 +11,10 @@ Short introduction of Rio terminal features. Many other features are in developm
 
 - [• Cross Platform](#cross-platform)
 - [• Fast](#Fast)
+- [• Multi windows architecture](#multi-windows)
 - [• Minimal tabs](#minimal-tabs)
 - [• Native tabs](#native-tabs)
-- [• Multi windows architecture](#multi-windows)
+- [• Adaptive Theme](#adaptive-theme)
 - [• Spawn or Fork processes](#spawn-or-fork)
 - [• Collapsed tabs, breadcrumb, expanded tabs on top or bottom](#navigation)
 - [• Colorize tabs based on programs](#color-automation-for-navigation)
@@ -31,6 +32,12 @@ The renderer called Sugarloaf has a "sugar" architecture created for minimal and
 
 <img src="https://miro.medium.com/v2/resize:fit:1400/1*1enyoIVZivAcHY_kfYXUvQ.gif" width="100%" />
 
+### Multi windows
+
+The terminal supports multi window features in the following platforms: Windows, MacOS, FreeBSD and Linux.
+
+<img src="https://miro.medium.com/v2/resize:fit:2914/format:webp/1*KyVD4EJ-wQU8pTmOFTwaQg.png" width="100%" />
+
 ### Minimal tabs
 
 Most of the times you don't want to be spammed by on-going processes that are happening in other tabs and if you are actively following multi processes then you can use tools like tmux to keep minimal and easy to the eyes.
@@ -45,11 +52,26 @@ In the future new functionalities will be added to the Rio minimal tabs, to make
 
 Besides other navigation styles, Rio terminal does support native tabs as well.
 
-### Multi windows
+To enable native tabs:
 
-The terminal supports multi window features in the following platforms: Windows, MacOS, FreeBSD and Linux.
+{% highlight toml %}
+[navigation]
+mode = "NativeTab"
+{% endhighlight %}
 
-<img src="https://miro.medium.com/v2/resize:fit:2914/format:webp/1*KyVD4EJ-wQU8pTmOFTwaQg.png" width="100%" />
+### Adaptive theme
+
+Rio support theme based on the system theme (light and dark). This configuration only works for Web, MacOS and Windows.
+
+{% highlight toml %}
+[adaptive-theme]
+light = "belafonte-day"
+dark = "belafonte-night"
+{% endhighlight %}
+
+Example of usage with MacOS:
+
+![Adaptive theme](/rio/assets/features/adaptive-theme.gif)
 
 ### Spawn or Fork
 

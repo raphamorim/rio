@@ -806,6 +806,19 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
+                        event: winit::event::WindowEvent::ThemeChanged(new_theme),
+                        window_id,
+                        ..
+                    } => {
+                        if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            route
+                                .window
+                                .screen
+                                .update_config(&self.config, Some(new_theme));
+                        }
+                    }
+
+                    Event::WindowEvent {
                         event: winit::event::WindowEvent::DroppedFile(path),
                         window_id,
                         ..

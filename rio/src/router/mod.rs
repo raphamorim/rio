@@ -38,7 +38,9 @@ impl Route {
 
     #[inline]
     pub fn update_config(&mut self, config: &Rc<config::Config>) {
-        self.window.screen.update_config(config);
+        self.window
+            .screen
+            .update_config(config, self.window.winit_window.theme());
     }
 
     #[inline]
@@ -143,7 +145,8 @@ impl Router {
         let id = route_window.winit_window.id();
         let mut route = Route {
             window: route_window,
-            path: RoutePath::Settings,
+            // path: RoutePath::Settings,
+            path: RoutePath::Terminal,
             settings: Settings::new(),
             assistant: Assistant::new(),
         };
@@ -221,7 +224,7 @@ impl RouteWindow {
 
         let mut screen = Screen::new(&winit_window, config, event_proxy, None).await?;
 
-        screen.init(config.colors.background.1);
+        screen.init(screen.state.named_colors.background.1);
 
         Ok(Self {
             is_focused: false,
@@ -252,7 +255,7 @@ impl RouteWindow {
         ))
         .expect("Screen not created");
 
-        screen.init(config.colors.background.1);
+        screen.init(screen.state.named_colors.background.1);
 
         Self {
             is_focused: false,
