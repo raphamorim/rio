@@ -3,10 +3,6 @@ use crate::ui::appkit::{InitializedApplication, MenuBar, NSMenuItem};
 #[cfg(target_os = "macos")]
 use objc2::rc::autoreleasepool;
 
-use winit::event::StartCause;
-// #[cfg(target_os = "macos")]
-// use objc2::rc::autoreleasepool;
-
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 
@@ -21,7 +17,8 @@ use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::event::{
-    ElementState, Event, Ime, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
+    ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
+    WindowEvent,
 };
 use winit::event_loop::{DeviceEvents, EventLoop};
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
