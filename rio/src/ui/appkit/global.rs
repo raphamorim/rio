@@ -1,16 +1,14 @@
 use core::cell::UnsafeCell;
-use core::marker::PhantomData;
-use objc2::rc::{AutoreleasePool, Id, Owned, Shared};
-use objc2::runtime::{Bool, Class, Object};
-use objc2::{class, msg_send, sel};
+
+use objc2::rc::{AutoreleasePool, Id, Shared};
+use objc2::runtime::Bool;
+use objc2::{class, msg_send};
 use objc2::{Encoding, Message, RefEncode};
 
 use super::menu::NSMenu;
 use super::menubar::MenuBar;
 
 /// Helper to make various functions on the global application object safe.
-#[doc(alias = "NSApp")]
-#[doc(alias = "NSApplication")]
 #[repr(C)]
 pub struct InitializedApplication {
     /// The application contains syncronization primitives that allows mutable
@@ -34,20 +32,18 @@ impl InitializedApplication {
     ///
     /// In `winit`, this is at or after
     /// [`winit::event::StartCause::Init`] has been emitted.
-    #[doc(alias = "sharedApplication")]
     pub unsafe fn new() -> &'static Self {
         msg_send![class!(NSApplication), sharedApplication]
     }
 
-    #[doc(alias = "mainMenu")]
-    pub fn menubar<'p>(&self, pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
+    #[allow(unused)]
+    pub fn menubar<'p>(&self, _pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
         unsafe { msg_send![self, mainMenu] }
     }
 
     /// Setting the menubar to `null` does not work properly, so we don't allow
     /// that functionality here!
-    #[doc(alias = "setMainMenu")]
-    #[doc(alias = "setMainMenu:")]
+    #[allow(unused)]
     pub fn set_menubar(&self, menubar: MenuBar) -> Id<NSMenu, Shared> {
         let menu = menubar.into_raw();
         let _: () = unsafe { msg_send![self, setMainMenu: &*menu] };
@@ -55,8 +51,8 @@ impl InitializedApplication {
     }
 
     /// Returns the first menu set with [`set_window_menu`]
-    #[doc(alias = "windowsMenu")]
-    pub fn window_menu<'p>(&self, pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
+    #[allow(unused)]
+    pub fn window_menu<'p>(&self, _pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
         unsafe { msg_send![self, windowsMenu] }
     }
 
@@ -74,16 +70,15 @@ impl InitializedApplication {
     ///
     /// Additionally, you can have luck setting the window menu more than once,
     /// though this is not recommended.
-    #[doc(alias = "setWindowsMenu")]
-    #[doc(alias = "setWindowsMenu:")]
+    #[allow(unused)]
     pub fn set_window_menu(&self, menu: &NSMenu) {
         // TODO: Is it safe to immutably set this?
         unsafe { msg_send![self, setWindowsMenu: menu] }
     }
 
     /// Returns the first menu set with [`set_services_menu`]
-    #[doc(alias = "servicesMenu")]
-    pub fn services_menu<'p>(&self, pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
+    #[allow(unused)]
+    pub fn services_menu<'p>(&self, _pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
         unsafe { msg_send![self, servicesMenu] }
     }
 
@@ -97,8 +92,7 @@ impl InitializedApplication {
     ///
     /// Additionally, you can sometimes have luck setting the services menu
     /// more than once, but this is really flaky.
-    #[doc(alias = "setServicesMenu")]
-    #[doc(alias = "setServicesMenu:")]
+    #[allow(unused)]
     pub fn set_services_menu(&self, menu: &NSMenu) {
         // TODO: Is it safe to immutably set this?
         // TODO: The menu should (must?) not contain any items!
@@ -109,8 +103,8 @@ impl InitializedApplication {
     // TODO: registerServicesMenuSendTypes
 
     /// Get the menu that is currently assigned as the help menu, or `None` if the system is configured to autodetect this.
-    #[doc(alias = "helpMenu")]
-    pub fn help_menu<'p>(&self, pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
+    #[allow(unused)]
+    pub fn help_menu<'p>(&self, _pool: &'p AutoreleasePool) -> Option<&'p NSMenu> {
         unsafe { msg_send![self, helpMenu] }
     }
 
@@ -120,8 +114,7 @@ impl InitializedApplication {
     /// If this is set to `None`, the system will place the search bar somewhere
     /// else, usually on an item named "Help" (unknown if localization applies).
     /// To prevent this, specify a menu that does not appear anywhere.
-    #[doc(alias = "setHelpMenu")]
-    #[doc(alias = "setHelpMenu:")]
+    #[allow(unused)]
     pub fn set_help_menu(&self, menu: Option<&NSMenu>) {
         // TODO: Is it safe to immutably set this?
         unsafe { msg_send![self, setHelpMenu: menu] }
@@ -129,7 +122,7 @@ impl InitializedApplication {
 
     // TODO: applicationDockMenu (the application delegate should implement this function)
 
-    #[doc(alias = "menuBarVisible")]
+    #[allow(unused)]
     pub fn menubar_visible(&self) -> bool {
         let visible: Bool = unsafe { msg_send![class!(NSMenu), menuBarVisible] };
         visible.is_true()
@@ -139,15 +132,13 @@ impl InitializedApplication {
     /// This also hides or shows the yellow minimize button.
     ///
     /// Might silently fail to set the menubar visible if in fullscreen mode or similar.
-    #[doc(alias = "setMenuBarVisible")]
-    #[doc(alias = "setMenuBarVisible:")]
+    #[allow(unused)]
     pub fn set_menubar_visible(&self, visible: bool) {
         let visible = Bool::new(visible);
         unsafe { msg_send![class!(NSMenu), setMenuBarVisible: visible] }
     }
 
     // Only available on the global menu bar object
-    // #[doc(alias = "menuBarHeight")]
     // pub fn global_height(&self) -> f64 {
     //     let height: CGFloat = unsafe { msg_send![self, menuBarHeight] };
     //     height
@@ -157,6 +148,7 @@ impl InitializedApplication {
 #[cfg(test)]
 mod tests {
     use objc2::rc::autoreleasepool;
+    use objc2::rc::Owned;
 
     use super::*;
 

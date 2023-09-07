@@ -11,12 +11,15 @@ pub struct Error(Box<Impl>);
 
 enum Impl {
     /// Standard input/output error.
+    #[allow(unused)]
     Io(std::io::Error),
 
     /// A menu already exists.
+    #[allow(unused)]
     MenuExists,
 
     /// This isn't the window type we expected.
+    #[allow(unused)]
     UnexpectedWindowType,
 }
 
@@ -52,14 +55,17 @@ impl std::error::Error for Error {
 }
 
 impl Error {
+    #[allow(unused)]
     fn last_io_error() -> Self {
         Impl::Io(std::io::Error::last_os_error()).into()
     }
 
+    #[allow(unused)]
     fn menu_exists() -> Self {
         Impl::MenuExists.into()
     }
 
+    #[allow(unused)]
     fn unexpected_window_type() -> Self {
         Impl::UnexpectedWindowType.into()
     }
