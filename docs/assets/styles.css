@@ -499,6 +499,26 @@ section.features .container.footer p {
   border-radius: 5px;
 }
 
+#go-to-top {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  border: none;
+  outline: none;
+  background-color: red;
+  color: white;
+  cursor: pointer;
+  padding: 15px;
+  border-radius: 10px;
+  font-size: 18px;
+}
+
+#go-to-top:hover {
+  background-color: #555;
+}
+
 @keyframes float {
   0% {
     transform: translatey(0px);
