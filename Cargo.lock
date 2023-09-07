@@ -552,7 +552,7 @@ name = "copa"
 version = "0.12.0"
 dependencies = [
  "arrayvec",
- "rio_proc_macros",
+ "rio-proc-macros",
  "unicode-normalization",
 ]
 
@@ -2472,8 +2472,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rio_proc_macros"
-version = "0.1.1"
+name = "rio-proc-macros"
+version = "0.0.18"
 dependencies = [
  "proc-macro2",
  "quote",

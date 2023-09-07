@@ -29,7 +29,7 @@ documentation = "https://github.com/raphamorim/rio#readme"
 sugarloaf = { path = "sugarloaf" }
 corcovado = { path = "corcovado" }
 rio-config = { path = "rio-config" }
-rio_proc_macros = { path = "rio-proc-macros" }
+rio-proc-macros = { path = "rio-proc-macros" }
 copa = { path = "copa", default-features = true }
 
 bytemuck = { version = "1.13.1", features = [ "derive" ] }

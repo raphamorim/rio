@@ -11,7 +11,7 @@ edition = "2021"
 rust-version = "1.62.1"
 
 [dependencies]
-rio_proc_macros = { workspace = true  }
+rio-proc-macros = { workspace = true  }
 arrayvec = { version = "0.7.2", default-features = false, optional = true }
 
 [dev-dependencies]

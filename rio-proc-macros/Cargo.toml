@@ -1,11 +1,11 @@
 [package]
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 description = "Rio proc macros"
-repository = "https://github.com/alacritty/vte"
-name = "rio_proc_macros"
+repository = { workspace = true }
+name = "rio-proc-macros"
 license = "MIT"
-version = "0.1.1"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
 
 [lib]
 proc-macro = true
