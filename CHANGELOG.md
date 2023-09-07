@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane`.
 - Support to MacOS tile window positioning feature (left or right).
 - Added support to MacOS and Windows display native top bar items.
 - Support to adaptive theme (theme selection based on user system theme variant `dark` or `light`).
