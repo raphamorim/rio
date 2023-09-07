@@ -223,6 +223,17 @@ section h3 {
   margin: 60px 0 10px 0;
 }
 
+section h2 a, section h3 a {
+  /* TODO: rewrite inheritance */
+  color: #0F0D0E !important;
+  text-decoration: none !important;
+}
+
+section h2 a:hover, section h3 a:hover {
+  /* TODO: rewrite inheritance */
+  text-decoration: underline !important;
+}
+
 section h4 {
   font-family: helvetica;
   font-size: 18px;
