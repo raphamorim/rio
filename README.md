@@ -62,3 +62,4 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 - https://www.gaijin.at/en/infos/ascii-ansi-character-table#asciicontrol
 - https://en.wikipedia.org/wiki/ANSI_escape_code
 - https://www.scratchapixel.com/lessons/3d-basic-rendering/perspective-and-orthographic-projection-matrix/orthographic-projection-matrix.html
+- https://github.com/madsmtm/menubar/

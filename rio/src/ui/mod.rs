@@ -4,9 +4,6 @@ pub mod appkit;
 #[cfg(windows)]
 pub mod win32;
 
-#[cfg(test)]
-mod test_util;
-
 use core::fmt;
 
 /// Error that can occur during operation of `menubar`.

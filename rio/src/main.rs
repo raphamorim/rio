@@ -11,7 +11,6 @@ mod crosswords;
 mod event;
 mod ime;
 mod logger;
-mod ui;
 #[cfg(windows)]
 mod panic;
 mod performer;
@@ -21,6 +20,7 @@ mod scheduler;
 mod screen;
 mod selection;
 mod sequencer;
+mod ui;
 mod watch;
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
