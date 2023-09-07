@@ -11,6 +11,10 @@ commentlinks: true
 twitter-username: raphamorims
 plugins: [jekyll-paginate, jekyll-gist, jekyll-feed, jekyll-minifier]
 
+jekyll-minifier:
+  uglifier_args:
+    harmony: true
+
 source:      .
 destination: ./_site
 paginate_path: "/blog/:num/"
