@@ -48,7 +48,10 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
-        let _ = watch(rio_config::config_dir_path(), self.event_proxy.clone().unwrap());
+        let _ = watch(
+            rio_config::config_dir_path(),
+            self.event_proxy.clone().unwrap(),
+        );
         let mut scheduler = Scheduler::new(proxy);
 
         let window = RouteWindow::new(&event_loop, &self.config).await?;
@@ -90,7 +93,8 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                                let mut config_error: Option<rio_config::ConfigError> = None;
+                                let mut config_error: Option<rio_config::ConfigError> =
+                                    None;
                                 let config = match rio_config::Config::try_load() {
                                     Ok(config) => config,
                                     Err(error) => {

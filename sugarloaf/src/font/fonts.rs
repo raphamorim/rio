@@ -33,7 +33,7 @@ weight = 800
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
-    pub weight: Option<u32>,
+    pub weight: Option<u16>,
     pub style: Option<String>,
 }
 

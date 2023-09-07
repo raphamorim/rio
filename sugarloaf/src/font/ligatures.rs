@@ -1,6 +1,6 @@
-// Fow now Rio implement programming ligatures based 
+// Fow now Rio implement programming ligatures based
 // on pre-compiled combinations and not on font features
-// 
+//
 // Some good resources about ligatures in programming fonts
 // - https://practicaltypography.com/ligatures-in-programming-fonts-hell-no.html
 //
@@ -15,31 +15,28 @@ type LigatureStartingInput = char;
 type LigatureSequence = Vec<char>;
 
 struct Ligature {
-	sequence: LigatureSequence,
-	value: String,
+    sequence: LigatureSequence,
+    value: String,
 }
 
 impl Ligature {
-	fn new(sequence: LigatureSequence, value: &str) -> Ligature {
-		Ligature {
-			sequence,
-			value: value.to_string(),
-		}
-	}
+    fn new(sequence: LigatureSequence, value: &str) -> Ligature {
+        Ligature {
+            sequence,
+            value: value.to_string(),
+        }
+    }
 }
 
 struct Ligatures {
-	combinations:  HashMap<LigatureStartingInput, Ligature>,
+    combinations: HashMap<LigatureStartingInput, Ligature>,
 }
 
 impl Ligatures {
-	fn new() -> Ligatures {
-		let mut combinations = HashMap::new();
-		combinations.insert('-', Ligature::new(vec!['>'], ""));
+    fn new() -> Ligatures {
+        let mut combinations = HashMap::new();
+        combinations.insert('-', Ligature::new(vec!['>'], ""));
 
-		Ligatures {
-			combinations
-
-		}
-	}
+        Ligatures { combinations }
+    }
 }

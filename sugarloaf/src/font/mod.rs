@@ -1,11 +1,10 @@
 pub mod constants;
-pub mod ligatures;
 pub mod fonts;
+pub mod ligatures;
 
 use crate::font::constants::*;
 use crate::font::fonts::*;
 #[cfg(not(target_arch = "wasm32"))]
-use font_kit::{properties::Style, source::SystemSource};
 use glyph_brush::ab_glyph::FontArc;
 #[cfg(not(target_arch = "wasm32"))]
 use glyph_brush::ab_glyph::FontVec;
@@ -31,38 +30,9 @@ pub struct Font {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn font_arc_from_font(font: font_kit::font::Font) -> Option<FontArc> {
-    let copied_font = font.copy_font_data();
-    Some(FontArc::new(
-        FontVec::try_from_vec_and_index(copied_font?.to_vec(), 0).unwrap(),
-    ))
-}
-
-// #[cfg(not(target_arch = "wasm32"))]
-// fn find_monospace_variant(font_name: String) -> Option<font_kit::font::Font> {
-//     if let Ok(system_fonts) =
-//         SystemSource::new().select_family_by_name(&(font_name + " mono"))
-//     {
-//         let fonts = system_fonts.fonts();
-//         if !fonts.is_empty() {
-//             for font in fonts.iter() {
-//                 let font = font.load();
-//                 if let Ok(font) = font {
-//                     let is_monospace = font.is_monospace();
-//                     if is_monospace {
-//                         return Some(font);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     None
-// }
-
-#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 fn find_font(
+    db: &fontdb::Database,
     font_spec: SugarloafFont,
     fallback: Option<SugarloafFont>,
 ) -> (FontArc, bool) {
@@ -105,86 +75,122 @@ fn find_font(
     }
 
     let family = font_spec.family.to_string();
-    info!("sugarloaf: search font '{family}' with style '{style}' and weight '{weight}'");
+    info!("Font search: family '{family}' with style '{style}' and weight '{weight}'");
 
-    let weight_f32 = weight as f32;
-    let font_spec_style = match style.as_str() {
-        "italic" => Style::Italic,
-        _ => Style::Normal,
+    let query_style = match style.as_str() {
+        "italic" => fontdb::Style::Italic,
+        _ => fontdb::Style::Normal,
     };
-    let mut nearest_font_weight = None;
-    if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&family) {
-        let fonts = system_fonts.fonts();
-        // let mut has_variant = true;
 
-        if !fonts.is_empty() {
-            for font in fonts.iter() {
-                let font = font.load();
-                if let Ok(font) = font {
-                    let meta = font.properties();
-                    let is_monospace = font.is_monospace();
-                    // TODO: Look for variants
-                    // if has_variant {
-                    //     if let Some(_monospaced_font) =
-                    //         find_monospace_variant(font_spec.family.to_string())
-                    //     {
-                    //         warn!("using a monospaced variant from the font\n");
-                    //         let try_to_find_fonts = SugarloafFont {
-                    //             family: family + "mono",
-                    //             ..font_spec
-                    //         };
+    let query = fontdb::Query {
+        families: &[fontdb::Family::Name(&family), fontdb::Family::Monospace],
+        weight: fontdb::Weight(weight),
+        style: query_style,
+        ..fontdb::Query::default()
+    };
 
-                    //         return Font::new(try_to_find_fonts);
-                    //     } else {
-                    //         has_variant = false;
-                    //     }
-                    // }
-
-                    if meta.style != font_spec_style {
-                        continue;
-                    }
-
-                    if meta.weight.0 != weight_f32 {
-                        // TODO: Improve nearest logic
-                        let is_both_light = weight_f32 <= 300. && meta.weight.0 <= 300.;
-                        let is_both_bold = weight_f32 >= 700. && meta.weight.0 >= 700.;
-                        let is_both_regular = weight_f32 < 700.
-                            && meta.weight.0 < 700.
-                            && weight_f32 > 300.
-                            && meta.weight.0 > 300.;
-
-                        if is_both_light || is_both_bold || is_both_regular {
-                            nearest_font_weight = Some(meta.weight.0);
+    match db.query(&query) {
+        Some(id) => {
+            if let Some((src, _index)) = db.face_source(id) {
+                if let fontdb::Source::File(ref path) = &src {
+                    if let Ok(bytes) = std::fs::read(path) {
+                        match FontArc::try_from_vec(bytes.to_vec()) {
+                            Ok(arc) => {
+                                info!("Font '{}' found in {}", family, path.display());
+                                return (arc, false);
+                            }
+                            Err(_) => {
+                                return (
+                                    FontArc::try_from_slice(
+                                        constants::FONT_CASCADIAMONO_REGULAR,
+                                    )
+                                    .unwrap(),
+                                    true,
+                                );
+                            }
                         }
-
-                        continue;
-                    }
-
-                    if let Some(font_arc) = font_arc_from_font(font) {
-                        info!("sugarloaf: OK font found '{family}' with style '{style}' and weight '{weight}'");
-                        return (font_arc, is_monospace);
                     }
                 }
             }
         }
+        None => {
+            warn!("Font '{}' not found.", family);
+        }
     }
 
+    // let mut nearest_font_weight = None;
+    // if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&family) {
+    //     let fonts = system_fonts.fonts();
+    //     // let mut has_variant = true;
+
+    //     if !fonts.is_empty() {
+    //         for font in fonts.iter() {
+    //             let font = font.load();
+    //             if let Ok(font) = font {
+    //                 let meta = font.properties();
+    //                 let is_monospace = font.is_monospace();
+    //                 // TODO: Look for variants
+    //                 // if has_variant {
+    //                 //     if let Some(_monospaced_font) =
+    //                 //         find_monospace_variant(font_spec.family.to_string())
+    //                 //     {
+    //                 //         warn!("using a monospaced variant from the font\n");
+    //                 //         let try_to_find_fonts = SugarloafFont {
+    //                 //             family: family + "mono",
+    //                 //             ..font_spec
+    //                 //         };
+
+    //                 //         return Font::new(try_to_find_fonts);
+    //                 //     } else {
+    //                 //         has_variant = false;
+    //                 //     }
+    //                 // }
+
+    //                 if meta.style != font_spec_style {
+    //                     continue;
+    //                 }
+
+    //                 if meta.weight.0 != weight_f32 {
+    //                     // TODO: Improve nearest logic
+    //                     let is_both_light = weight_f32 <= 300. && meta.weight.0 <= 300.;
+    //                     let is_both_bold = weight_f32 >= 700. && meta.weight.0 >= 700.;
+    //                     let is_both_regular = weight_f32 < 700.
+    //                         && meta.weight.0 < 700.
+    //                         && weight_f32 > 300.
+    //                         && meta.weight.0 > 300.;
+
+    //                     if is_both_light || is_both_bold || is_both_regular {
+    //                         nearest_font_weight = Some(meta.weight.0);
+    //                     }
+
+    //                     continue;
+    //                 }
+
+    //                 if let Some(font_arc) = font_arc_from_font(font) {
+    //                     info!("sugarloaf: OK font found '{family}' with style '{style}' and weight '{weight}'");
+    //                     return (font_arc, is_monospace);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
     warn!("sugarloaf: failed to load font '{family}' with style '{style}' and weight '{weight}'");
-    if let Some(nearest) = nearest_font_weight {
-        warn!(
-            "sugarloaf: falling back to nearest font weight found is {:?}",
-            nearest
-        );
-        find_font(
-            SugarloafFont {
-                weight: Some(nearest as u32),
-                ..font_spec
-            },
-            fallback,
-        )
-    } else {
-        find_font(fallback.unwrap_or_else(default_font_regular), None)
-    }
+    // if let Some(nearest) = nearest_font_weight {
+    //     warn!(
+    //         "sugarloaf: falling back to nearest font weight found is {:?}",
+    //         nearest
+    //     );
+    //     find_font(
+    //         SugarloafFont {
+    //             weight: Some(nearest as u32),
+    //             ..font_spec
+    //         },
+    //         fallback,
+    //     )
+    // } else {
+    find_font(db, fallback.unwrap_or_else(default_font_regular), None)
+    // }
 }
 
 impl Font {
@@ -194,6 +200,14 @@ impl Font {
     pub fn new(mut font_spec: SugarloafFonts) -> Font {
         let font_arc_unicode;
         let font_arc_symbol;
+
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        db.set_serif_family("Times New Roman");
+        db.set_sans_serif_family("Arial");
+        db.set_cursive_family("Comic Sans MS");
+        db.set_fantasy_family("Impact");
+        db.set_monospace_family("Courier New");
 
         // If fonts.family does exist it will overwrite all families
         if let Some(font_family_overwrite) = font_spec.family {
@@ -205,31 +219,25 @@ impl Font {
 
         #[cfg(target_os = "macos")]
         {
-            let font_symbols = SystemSource::new()
-                .select_by_postscript_name("Apple Symbols")
-                .unwrap()
-                .load()
-                .unwrap();
-            let copied_font_symbol = font_symbols.copy_font_data();
-            let Some(copied_font_symbol) = copied_font_symbol else {
-                todo!()
-            };
-            let font_vec_symbol =
-                FontVec::try_from_vec_and_index(copied_font_symbol.to_vec(), 1).unwrap();
-            font_arc_symbol = FontArc::new(font_vec_symbol);
+            font_arc_symbol = find_font(
+                &db,
+                SugarloafFont {
+                    family: String::from("Apple Symbols"),
+                    style: None,
+                    weight: None,
+                },
+                Some(default_font_regular()),
+            );
 
-            let font_unicode = SystemSource::new()
-                .select_by_postscript_name("Arial Unicode MS")
-                .unwrap()
-                .load()
-                .unwrap();
-            let copied_font_unicode = font_unicode.copy_font_data();
-            let Some(copied_font_unicode) = copied_font_unicode else {
-                todo!()
-            };
-            let font_vec_unicode =
-                FontVec::try_from_vec_and_index(copied_font_unicode.to_vec(), 3).unwrap();
-            font_arc_unicode = FontArc::new(font_vec_unicode);
+            font_arc_unicode = find_font(
+                &db,
+                SugarloafFont {
+                    family: String::from("Arial Unicode MS"),
+                    style: None,
+                    weight: None,
+                },
+                Some(default_font_regular()),
+            );
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -238,11 +246,11 @@ impl Font {
             font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
         }
 
-        let regular = find_font(font_spec.regular, Some(default_font_regular()));
-        let bold = find_font(font_spec.bold, Some(default_font_bold()));
+        let regular = find_font(&db, font_spec.regular, Some(default_font_regular()));
+        let bold = find_font(&db, font_spec.bold, Some(default_font_bold()));
         let bold_italic =
-            find_font(font_spec.bold_italic, Some(default_font_bold_italic()));
-        let italic = find_font(font_spec.italic, Some(default_font_italic()));
+            find_font(&db, font_spec.bold_italic, Some(default_font_bold_italic()));
+        let italic = find_font(&db, font_spec.italic, Some(default_font_italic()));
 
         Font {
             text: ComposedFontArc {
@@ -252,9 +260,9 @@ impl Font {
                 bold_italic: bold_italic.0,
                 italic: italic.0,
             },
-            symbol: font_arc_symbol,
+            symbol: font_arc_symbol.0,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-            unicode: font_arc_unicode,
+            unicode: font_arc_unicode.0,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
             breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
         }

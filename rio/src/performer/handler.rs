@@ -2,9 +2,9 @@ use crate::ansi::CursorShape;
 use crate::ansi::{mode::Mode, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
-use rio_config::colors::{AnsiColor, NamedColor, ColorRgb};
 use cursor_icon::CursorIcon;
 use log::{debug, warn};
+use rio_config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 

@@ -1,8 +1,8 @@
 pub mod bindings;
+pub mod colors;
 mod defaults;
 pub mod navigation;
 pub mod theme;
-pub mod colors;
 
 use crate::bindings::Bindings;
 use crate::defaults::*;
