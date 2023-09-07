@@ -7,7 +7,7 @@
 - Support to MacOS tile window positioning feature (left or right).
 - Added support to MacOS and Windows display native top bar items.
 - Support to adaptive theme (theme selection based on user system theme variant `dark` or `light`).
-- Implemented ScrollPageUp, ScrollPageDown, ScrollHalfPageUp, ScrollHalfPageDown, ScrollToTop, ScrollToBottom, ScrollLineUp, ScrollLineDown (Ref: https://github.com/raphamorim/rio/issues/206).
+- Implemented `ScrollPageUp`, `ScrollPageDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`, `ScrollToBottom`, `ScrollLineUp`, `ScrollLineDown` (Ref: https://github.com/raphamorim/rio/issues/206).
 - Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
