@@ -5,7 +5,7 @@ title: 'Custom Key Bindings'
 language: 'en'
 ---
 
-## Custom key bindings
+## [Custom key bindings](#custom-key-bindings)
 
 Key bindings are specified as a list of objects.
 
@@ -18,7 +18,7 @@ keys = [
 ]
 {% endhighlight %}
 
-### Key
+### [Key](#key)
 
 Each value in key binding will specify an identifier of the key pressed:
 
@@ -32,46 +32,68 @@ Each value in key binding will specify an identifier of the key pressed:
 - <span class="keyword">numpadenter</span> <span class="keyword">numpadadd</span> <span class="keyword">numpadcomma</span> <span class="keyword">numpaddivide</span> <span class="keyword">numpadequals</span> <span class="keyword">numpadsubtract</span> <span class="keyword">numpadmultiply</span>
 - <span class="keyword">numpad1</span> <span class="keyword">numpad2</span> <span class="keyword">numpad3</span> <span class="keyword">numpad4</span> <span class="keyword">numpad5</span> <span class="keyword">numpad6</span> <span class="keyword">numpad7</span> <span class="keyword">numpad8</span> <span class="keyword">numpad9</span> <span class="keyword">numpad0</span>
 
-### Action
+### [Action](#action)
 
 Execute a predefined action in Rio terminal.
 
-{% highlight rust %}
-Paste
-Copy
-Quit
-ResetFontSize
-IncreaseFontSize
-DecreaseFontSize
-CreateWindow
-CreateTab
-CloseTab
-OpenConfigEditor
-SelectPrevTab
-SelectNextTab
-SelectTab1
-SelectTab2
-SelectTab3
-SelectTab4
-SelectTab5
-SelectTab6
-SelectTab7
-SelectTab8
-SelectTab9
-SelectLastTab
-ScrollPageUp
-ScrollPageDown
-ScrollHalfPageUp
-ScrollHalfPageDown
-ScrollToTop
-ScrollToBottom
-ScrollLineUp
-ScrollLineDown
-None
-ReceiveChar
-{% endhighlight %}
+#### [Basic Actions](#basic-actions)
 
-### Bytes
+| Action | Description |
+| :-- | :-- |
+| None | |
+| ReceiveChar | |
+| Paste | Paste command |
+| Copy | |
+| OpenConfigEditor | |
+| ResetFontSize | |
+| IncreaseFontSize | |
+| DecreaseFontSize | |
+
+#### [Window Actions](#window-actions)
+
+| Action | Description |
+| CreateWindow | |
+| Quit | |
+
+#### [Pane Actions](#pane-actions)
+
+| Action | Description |
+| :-- | :-- |
+| SplitHorizontally | |
+| SplitVertically | |
+| ClosePane | |
+
+#### [Tab Actions](#tab-actions)
+
+| Action | Description |
+| CreateTab | |
+| CloseTab | |
+| SelectPrevTab | |
+| SelectNextTab | |
+| SelectTab1 | |
+| SelectTab2 | |
+| SelectTab3 | |
+| SelectTab4 | |
+| SelectTab5 | |
+| SelectTab6 | |
+| SelectTab7 | |
+| SelectTab8 | |
+| SelectTab9 | |
+| SelectLastTab | |
+
+#### [Scroll Actions](#scroll-actions)
+
+| Action | Description |
+| ScrollPageUp | |
+| ScrollPageDown | |
+| ScrollHalfPageUp | |
+| ScrollHalfPageDown | |
+| ScrollToTop | |
+| ScrollToBottom | |
+| ScrollLineUp | |
+| ScrollLineDown | |
+
+### [Bytes](#bytes)
 
 Send a byte sequence to the running application.
 
@@ -79,7 +101,7 @@ The <span class="keyword">bytes</span> field writes the specified string to the 
 it possible to pass escape sequences, like <span class="keyword">PageUp</span> ("\x1b[5~"). Note that applications use terminfo to map escape sequences back
 to keys. It is therefore required to update the terminfo when changing an escape sequence.
 
-### With
+### [With](#with)
 
 Key modifiers to filter binding actions
 
@@ -106,7 +128,7 @@ with = "control | shift"
     A `~` operator can be used before a mode to apply the binding whenever
     the mode is *not* active, e.g. `~Alt`. -->
 
-### Overwriting
+### [Overwriting](#overwriting)
 
 Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the <span class="keyword">ReceiveChar</span> action. Alternatively, you can use <span class="keyword">None</span> for a no-op if you do not wish to receive input characters for that binding.
 
