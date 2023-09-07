@@ -123,7 +123,6 @@ impl NSMenuItem {
     // }
 
     // Target and action
-
     #[allow(unused)]
     fn target(&self) -> Target {
         unimplemented!()
