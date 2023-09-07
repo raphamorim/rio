@@ -18,7 +18,10 @@ TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 all: install run
 
 docs:
-	cd $(DOCS_DIR) && make run
+	cd $(DOCS_DIR) && make dev
+
+docs-prod:
+	cd $(DOCS_DIR) && make prod
 
 run:
 	cargo run --release
