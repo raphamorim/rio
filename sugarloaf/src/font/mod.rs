@@ -6,8 +6,7 @@ use crate::font::constants::*;
 use crate::font::fonts::*;
 #[cfg(not(target_arch = "wasm32"))]
 use glyph_brush::ab_glyph::FontArc;
-#[cfg(not(target_arch = "wasm32"))]
-use glyph_brush::ab_glyph::FontVec;
+
 #[cfg(not(target_arch = "wasm32"))]
 use log::{info, warn};
 
