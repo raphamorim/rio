@@ -6,8 +6,8 @@ use std::{env, slice, str};
 
 use libc::{setlocale, LC_ALL, LC_CTYPE};
 use log::debug;
-use objc::runtime::{Class, Object};
-use objc::{msg_send, sel, sel_impl};
+use objc2::runtime::{Class, Object};
+use objc2::{msg_send, sel};
 const FALLBACK_LOCALE: &str = "UTF-8";
 
 pub fn set_locale_environment() {

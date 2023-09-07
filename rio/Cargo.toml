@@ -16,6 +16,7 @@ path = "src/main.rs"
 base64 = "0.21.0"
 bitflags = "2.0.2"
 futures = "0.3"
+raw-window-handle = { version = "0.5", default-features = false }
 bytemuck = { workspace = true }
 colors = { workspace = true }
 config = { workspace = true }
@@ -41,14 +42,20 @@ winit = { workspace = true }
 unicode-normalization = "0.1"
 cursor-icon = { version = "1.0.0", default-features = false }
 
+#[target.'cfg(target_os = "macos")'.dependencies]
+#objc = "0.2.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2.2"
+objc2 = { version = "=0.3.0-beta.0" }
+objc2-foundation = { version = "=0.2.0-alpha.5" }
 
 [target.'cfg(not(any(target_os="windows", target_os="macos")))'.dependencies]
 x11-dl = { version = "2", optional = true }
 wayland-client = { version = "0.29.0", features = ["dlopen"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
+ahash = { version = "0.8.2", default-features = false, features = ["std"] }
+tinyvec = { version = "1.6.0", features = ["alloc"] }
 windows-sys = { version = "0.48", features = [
     "Win32_System_Console",
     "Win32_Foundation",
