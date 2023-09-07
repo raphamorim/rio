@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod ligatures;
 pub mod fonts;
 
 use crate::font::constants::*;

@@ -1,9 +1,8 @@
-use colors::Colors;
+use rio_config::colors::Colors;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::Sugarloaf;
-// use config::{Config, Shell};
 use std::fs::File;
 use std::path::Path;
 
@@ -14,7 +13,7 @@ pub struct SettingsState {
 pub struct Settings {
     pub default_file_path: String,
     pub default_dir_path: String,
-    pub config: config::Config,
+    pub config: rio_config::Config,
     pub items: Vec<ScreenSetting>,
     pub state: SettingsState,
     last_update: Instant,
@@ -23,10 +22,10 @@ pub struct Settings {
 impl Settings {
     pub fn new() -> Self {
         Settings {
-            default_file_path: config::config_file_path(),
-            default_dir_path: config::config_dir_path(),
-            config: config::Config::default(),
-            items: config_to_settings_screen(config::Config::default()),
+            default_file_path: rio_config::config_file_path(),
+            default_dir_path: rio_config::config_dir_path(),
+            config: rio_config::Config::default(),
+            items: config_to_settings_screen(rio_config::Config::default()),
             state: SettingsState { current: 0 },
             last_update: Instant::now(),
         }
@@ -81,7 +80,7 @@ impl Settings {
                 log::info!("configuration file created {}", self.default_file_path);
 
                 if let Err(err_message) =
-                    writeln!(created_file, "{}", config::config_file_content())
+                    writeln!(created_file, "{}", rio_config::config_file_content())
                 {
                     log::error!(
                         "could not update config file with defaults: {err_message}"
@@ -354,7 +353,7 @@ pub struct ScreenSetting {
 }
 
 #[inline]
-fn config_to_settings_screen(current_config: config::Config) -> Vec<ScreenSetting> {
+fn config_to_settings_screen(current_config: rio_config::Config) -> Vec<ScreenSetting> {
     let settings: Vec<ScreenSetting> = vec![
         ScreenSetting {
             title: String::from("Navigation Mode"),

@@ -1,5 +1,5 @@
 use clap::{Args, Parser};
-use config::Shell;
+use rio_config::Shell;
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Default, Debug)]

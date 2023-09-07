@@ -4,7 +4,7 @@ use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
-use config::Shell;
+use rio_config::Shell;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;

@@ -7,11 +7,11 @@ use crate::ime::Preedit;
 use crate::screen::navigation::ScreenNavigation;
 use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
-use colors::{
+use rio_config::colors::{
     term::{List, TermColors},
     AnsiColor, Colors, NamedColor,
 };
-use config::Config;
+use rio_config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};

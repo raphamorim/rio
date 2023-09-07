@@ -7,7 +7,7 @@ use crate::ime::Preedit;
 use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::watch::watch;
-use colors::ColorRgb;
+use rio_config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -20,15 +20,15 @@ use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::window::CursorIcon;
 
 pub struct Sequencer {
-    config: Rc<config::Config>,
+    config: Rc<rio_config::Config>,
     event_proxy: Option<EventProxy>,
     router: Router,
 }
 
 impl Sequencer {
     pub fn new(
-        config: config::Config,
-        config_error: Option<config::ConfigError>,
+        config: rio_config::Config,
+        config_error: Option<rio_config::ConfigError>,
     ) -> Sequencer {
         let mut router = Router::new();
         if let Some(error) = config_error {
@@ -48,7 +48,7 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
-        let _ = watch(config::config_dir_path(), self.event_proxy.clone().unwrap());
+        let _ = watch(rio_config::config_dir_path(), self.event_proxy.clone().unwrap());
         let mut scheduler = Scheduler::new(proxy);
 
         let window = RouteWindow::new(&event_loop, &self.config).await?;
@@ -90,12 +90,12 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                                let mut config_error: Option<config::ConfigError> = None;
-                                let config = match config::Config::try_load() {
+                                let mut config_error: Option<rio_config::ConfigError> = None;
+                                let config = match rio_config::Config::try_load() {
                                     Ok(config) => config,
                                     Err(error) => {
                                         config_error = Some(error);
-                                        config::Config::default()
+                                        rio_config::Config::default()
                                     }
                                 };
 

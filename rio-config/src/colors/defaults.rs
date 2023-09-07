@@ -1,4 +1,4 @@
-use crate::{ColorArray, ColorBuilder, ColorComposition, Format};
+use crate::colors::{ColorArray, ColorBuilder, ColorComposition, Format};
 
 // These functions are expected to panic if cannot convert the hex string
 

@@ -33,7 +33,7 @@ use windows_sys::Win32::System::Console::{
     AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS,
 };
 
-pub fn setup_environment_variables(config: &config::Config) {
+pub fn setup_environment_variables(config: &rio_config::Config) {
     #[cfg(unix)]
     let terminfo = if teletypewriter::terminfo_exists("rio") {
         "rio"
@@ -47,7 +47,7 @@ pub fn setup_environment_variables(config: &config::Config) {
         std::env::set_var("TERM", terminfo);
     }
 
-    std::env::set_var("RIO_CONFIG", config::config_file_path());
+    std::env::set_var("RIO_CONFIG", rio_config::config_file_path());
 
     // https://github.com/raphamorim/rio/issues/200
     std::env::set_var("TERM_PROGRAM", "rio");
@@ -105,12 +105,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load command line options.
     let options = cli::Options::new();
 
-    let mut config_error: Option<config::ConfigError> = None;
-    let mut config = match config::Config::try_load() {
+    let mut config_error: Option<rio_config::ConfigError> = None;
+    let mut config = match rio_config::Config::try_load() {
         Ok(config) => config,
         Err(error) => {
             config_error = Some(error);
-            config::Config::default()
+            rio_config::Config::default()
         }
     };
 

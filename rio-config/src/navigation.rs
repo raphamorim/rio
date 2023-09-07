@@ -1,4 +1,4 @@
-use colors::{deserialize_to_arr, ColorArray};
+use crate::colors::{deserialize_to_arr, ColorArray};
 use serde::Deserialize;
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
@@ -42,7 +42,7 @@ pub struct ColorAutomation {
     pub program: String,
     #[serde(
         deserialize_with = "deserialize_to_arr",
-        default = "colors::defaults::tabs"
+        default = "crate::colors::defaults::tabs"
     )]
     pub color: ColorArray,
 }
