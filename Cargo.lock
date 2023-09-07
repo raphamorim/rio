@@ -51,6 +51,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
+dependencies = [
+ "cfg-if 1.0.0",
+ "once_cell",
+ "version_check",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -254,11 +265,27 @@ checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
 name = "block-sys"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078aa3a3535876bebff823280f99839535c406a34438b2a877106db45ae53575"
+
+[[package]]
+name = "block-sys"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dd7cf50912cddc06dc5ea7c08c5e81c1b2c842a70d19def1848d54c586fed92"
 dependencies = [
- "objc-sys",
+ "objc-sys 0.3.1",
+]
+
+[[package]]
+name = "block2"
+version = "0.2.0-alpha.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "602e30baab86355a0ec4c99e65fa350cc4b92d8d3d404f8ecf4683e59e462325"
+dependencies = [
+ "block-sys 0.0.4",
+ "objc2-encode 2.0.0-pre.0",
 ]
 
 [[package]]
@@ -267,8 +294,8 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15b55663a85f33501257357e6421bb33e769d5c9ffb5ba0921c975a123e35e68"
 dependencies = [
- "block-sys",
- "objc2",
+ "block-sys 0.2.0",
+ "objc2 0.4.1",
 ]
 
 [[package]]
@@ -1310,7 +1337,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
- "ahash",
+ "ahash 0.7.6",
 ]
 
 [[package]]
@@ -1367,9 +1394,9 @@ version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d3aaff8a54577104bafdf686ff18565c3b6903ca5782a2026ef06e2c7aa319"
 dependencies = [
- "block2",
+ "block2 0.3.0",
  "dispatch",
- "objc2",
+ "objc2 0.4.1",
 ]
 
 [[package]]
@@ -1972,9 +1999,25 @@ dependencies = [
 
 [[package]]
 name = "objc-sys"
+version = "0.2.0-beta.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7cb23a031fed7d6cb8f2d03b04b981d1b7cfe56dc3d0ad5fb1d8daab67d0e26"
+
+[[package]]
+name = "objc-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99e1d07c6eab1ce8b6382b8e3c7246fe117ff3f8b34be065f5ebace6749fe845"
+
+[[package]]
+name = "objc2"
+version = "0.3.0-beta.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f325aba6a304899c08c8db71e40d86e58b54d70febfe22212c23ab8a732e6267"
+dependencies = [
+ "objc-sys 0.2.0-beta.0",
+ "objc2-encode 2.0.0-pre.0",
+]
 
 [[package]]
 name = "objc2"
@@ -1982,15 +2025,31 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "559c5a40fdd30eb5e344fbceacf7595a81e242529fb4e21cf5f43fb4f11ff98d"
 dependencies = [
- "objc-sys",
- "objc2-encode",
+ "objc-sys 0.3.1",
+ "objc2-encode 3.0.0",
 ]
+
+[[package]]
+name = "objc2-encode"
+version = "2.0.0-pre.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f345f5981fb5b9f68c5f3ec79efd8a9fb01385d199fa0eff9ed739d854e321ea"
 
 [[package]]
 name = "objc2-encode"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d079845b37af429bfe5dfa76e6d087d788031045b25cfc6fd898486fd9847666"
+
+[[package]]
+name = "objc2-foundation"
+version = "0.2.0-alpha.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eeca4b9f5cb162b14fd3da3f8efe8424b7550dc8bb255515ec8441d65a1738d0"
+dependencies = [
+ "block2 0.2.0-alpha.4",
+ "objc2 0.3.0-beta.0",
+]
 
 [[package]]
 name = "objc_exception"
@@ -2425,6 +2484,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 name = "rio-terminal"
 version = "0.0.18"
 dependencies = [
+ "ahash 0.8.3",
  "base64",
  "bitflags 2.3.3",
  "bytemuck",
@@ -2443,11 +2503,14 @@ dependencies = [
  "libc",
  "log 0.4.19",
  "notify",
- "objc",
+ "objc2 0.3.0-beta.0",
+ "objc2-foundation",
  "parking_lot",
+ "raw-window-handle",
  "serde",
  "sugarloaf",
  "teletypewriter",
+ "tinyvec",
  "tokio",
  "unicode-normalization",
  "unicode-width",
@@ -3668,7 +3731,7 @@ dependencies = [
  "memmap2",
  "ndk",
  "ndk-sys",
- "objc2",
+ "objc2 0.4.1",
  "once_cell",
  "orbclient",
  "percent-encoding",

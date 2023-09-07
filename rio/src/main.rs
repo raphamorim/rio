@@ -11,6 +11,7 @@ mod crosswords;
 mod event;
 mod ime;
 mod logger;
+mod ui;
 #[cfg(windows)]
 mod panic;
 mod performer;
