@@ -71,6 +71,7 @@ body {
   line-height: 1.8em;
   /*background: #333;*/
   background: #F38BA3;
+  background-image: url("/rio/assets/images/noise-light.png");
   color: #F9F4DA;
   text-rendering: optimizeLegibility;
   -moz-osx-font-smoothing: grayscale;
@@ -140,43 +141,13 @@ body {
 section.highlight {
   background: #F38BA3;
   padding-bottom: 60px;
+  background-image: url("/rio/assets/images/noise-light.png");
 }
 
 section.features {
   border-top: 20px solid #12B5E5;
   background: #0F0D0E;
   padding: 40px 0;
-}
-
-section.gallery {
-/*  border-top: 20px solid #12B5E5;*/
-}
-
-section.gallery-background {
-  background: #F9F4DA;
-  padding: 40px 0;
-}
-
-.gallery {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 920px;
-  margin: 0 auto;
-}
-
-.gallery-theater {
-  text-align: center;
-}
-
-.gallery-theater img {
-  width: 800px;
-}
-
-.gallery img {
-/*  border-top: 20px solid #12B5E5;*/
-  width: 30%;
-  padding: 0 10px;
 }
 
 section.usage {
@@ -275,29 +246,39 @@ section.features .container.footer p {
   font-family: 'Silkscreen', helvetica;
 }
 
-.info .block-logo {
+.info .logo {
   margin-bottom: 30px;
 }
 
-.info .block-logo #logo {
+.info .logo img {
   margin-bottom: -45px;
 }
 
-.info .block {
-  background: black;
+.info .button a {
+  background: rgb(255, 51, 51);
+  color: #FFF;
+  font-family: Helvetica;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 18px;
+  text-align: center;
+  width: 90vw;
+  max-width: 200px;
+  border-radius: 12px;
+  display: block;
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 5px 5px;
+  transition: transform 0.125s ease-out 0s, box-shadow 0.15s ease-out 0s;
+  cursor: pointer;
 }
 
-.info .block a {
-  font-size: 18px;
-  color: #FCBA28;
-  text-decoration: none;
-  box-shadow: 1px 1px 15px 1px rgba(0, 0, 0, .9);
+.info .theater img {
+  width: 100%;
 }
 
 .info h1 {
   font-size: 60px;
   color: #F9F4DA;
-  font-family: 'Silkscreen', helvetica;
+  font-family: helvetica;
 }
 
 .list {
@@ -309,6 +290,7 @@ section.features .container.footer p {
   position: relative;
   height: 80px;
   background: #F38BA3;
+  background-image: url("/rio/assets/images/noise-light.png");
   max-width: 1020px;
   margin: 0 auto;
   margin-top: 20px;
@@ -347,6 +329,8 @@ section.features .container.footer p {
 
 .community {
   margin-top: 2em;
+  background: #F9F4DA;
+  background-image: url("/rio/assets/images/noise-light.png");
 }
 
 .testimonials {
@@ -412,12 +396,6 @@ section.features .container.footer p {
   font-size: 9px;
   margin-top: 14px;
   color: #FCBA28;
-}
-
-.testimonial .person img {
-  border-radius: 50%;
-  height: 60px;
-  width: 60px;
 }
 
 .container.post {
@@ -548,20 +526,7 @@ section.features .container.footer p {
   }
 }
 
-@media (max-width: 980px) {
-  .gallery-theater img {
-    width: 60%;
-  }
-}
-
 @media (max-width: 620px) {
-  .gallery-theater img {
-    width: 100%;
-  }
-
-  .gallery img {
-    width: 25%;
-  }
 
   #nav {
     display: block;
@@ -590,12 +555,6 @@ section.features .container.footer p {
   .container.content, .container.post {
     border-radius: 0px;
     padding: 20px;
-  }
-}
-
-@media (max-width: 480px) {
-  .gallery {
-    display: none;
   }
 }
 
