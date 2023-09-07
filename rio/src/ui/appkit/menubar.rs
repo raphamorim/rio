@@ -1,13 +1,13 @@
 use super::menu::NSMenu;
 use super::menuitem::NSMenuItem;
 use objc2::rc::{Id, Owned, Shared};
-use objc2::{class, msg_send, sel};
 
 /// Helper to make constructing the menu bar easier
 #[derive(Debug)]
 pub struct MenuBar(Id<NSMenu, Owned>);
 
 impl MenuBar {
+    #[allow(unused)]
     pub unsafe fn from_raw(menu: Id<NSMenu, Owned>) -> Self {
         Self(menu)
     }
@@ -44,22 +44,6 @@ impl MenuBar {
         let mut menu = NSMenu::new_with_title(title);
         f(&mut menu);
         self.add_menu(menu)
-    }
-
-    #[doc(alias = "menuBarVisible")]
-    fn global_visible() -> bool {
-        unimplemented!()
-    }
-
-    #[doc(alias = "setMenuBarVisible")]
-    #[doc(alias = "setMenuBarVisible:")]
-    fn set_global_visible(visible: bool) {
-        unimplemented!()
-    }
-
-    #[doc(alias = "menuBarHeight")]
-    fn global_height() -> f64 {
-        unimplemented!()
     }
 
     // How do we handle this???
