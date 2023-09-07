@@ -3,10 +3,9 @@ members = [
   "teletypewriter",
   "sugarloaf",
   "webassembly-examples/*",
-  "colors",
-  "config",
   "corcovado",
   "copa",
+  "rio-config",
   "rio-proc-macros",
   "rio"
 ]
@@ -29,8 +28,7 @@ documentation = "https://github.com/raphamorim/rio#readme"
 # version from crates.io when published.
 sugarloaf = { path = "sugarloaf" }
 corcovado = { path = "corcovado" }
-config = { path = "config" }
-colors = { path = "colors" }
+rio-config = { path = "rio-config" }
 rio_proc_macros = { path = "rio-proc-macros" }
 copa = { path = "copa", default-features = true }
 

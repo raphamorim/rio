@@ -37,7 +37,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn update_config(&mut self, config: &Rc<config::Config>) {
+    pub fn update_config(&mut self, config: &Rc<rio_config::Config>) {
         self.window
             .screen
             .update_config(config, self.window.winit_window.theme());
@@ -164,7 +164,7 @@ impl Router {
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
     ) {
         let window =
             RouteWindow::from_target(event_loop, event_proxy, config, "Rio", None);
@@ -185,7 +185,7 @@ impl Router {
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
         tab_id: Option<String>,
     ) {
         let window =
@@ -214,7 +214,7 @@ pub struct RouteWindow {
 impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventP>,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -239,7 +239,7 @@ impl RouteWindow {
     pub fn from_target(
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
         window_name: &str,
         tab_id: Option<String>,
     ) -> Self {

@@ -1,4 +1,4 @@
-use config::Config;
+use rio_config::Config;
 use std::rc::Rc;
 use winit::window::{CursorIcon, Icon, ImePurpose, Window, WindowBuilder};
 

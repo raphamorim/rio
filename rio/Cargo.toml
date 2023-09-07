@@ -1,5 +1,5 @@
 [package]
-name = "rio-terminal"
+name = "rioterm"
 version = "0.0.18"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
@@ -18,8 +18,7 @@ bitflags = "2.0.2"
 futures = "0.3"
 raw-window-handle = { version = "0.5", default-features = false }
 bytemuck = { workspace = true }
-colors = { workspace = true }
-config = { workspace = true }
+rio-config = { workspace = true }
 corcovado = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }

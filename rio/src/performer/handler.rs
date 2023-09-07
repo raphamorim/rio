@@ -2,7 +2,7 @@ use crate::ansi::CursorShape;
 use crate::ansi::{mode::Mode, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
-use colors::ColorRgb;
+use rio_config::colors::{AnsiColor, NamedColor, ColorRgb};
 use cursor_icon::CursorIcon;
 use log::{debug, warn};
 use std::str::FromStr;
@@ -12,7 +12,6 @@ use crate::crosswords::attr::Attr;
 
 use crate::ansi::control::C0;
 use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
-use colors::{AnsiColor, NamedColor};
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser

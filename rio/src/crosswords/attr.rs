@@ -1,4 +1,4 @@
-use colors::AnsiColor;
+use rio_config::colors::AnsiColor;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Attr {

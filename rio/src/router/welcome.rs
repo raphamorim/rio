@@ -1,4 +1,4 @@
-use colors::Colors;
+use rio_config::colors::Colors;
 use sugarloaf::components::rect::Rect;
 use sugarloaf::Sugarloaf;
 
@@ -116,12 +116,12 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
 #[cfg(target_os = "macos")]
 fn welcome_content() -> String {
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n\"Command\" + \",\" (comma)\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", config::config_file_path())
+    ", rio_config::config_file_path())
 }
 
 #[inline]
 #[cfg(not(target_os = "macos"))]
 fn welcome_content() -> String {
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n\"Control\" + \"Shift\" + \",\" (comma)\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", config::config_file_path())
+    ", rio_config::config_file_path())
 }

@@ -34,7 +34,7 @@ use crate::screen::{
     mouse::Mouse,
 };
 use crate::selection::{Selection, SelectionType};
-use colors::term::List;
+use rio_config::colors::{ColorWGPU, term::List};
 use messenger::Messenger;
 use state::State;
 use std::cmp::max;
@@ -86,7 +86,7 @@ pub struct Screen {
 impl Screen {
     pub async fn new(
         winit_window: &winit::window::Window,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
         event_proxy: EventProxy,
         native_tab_id: Option<String>,
     ) -> Result<Screen, Box<dyn Error>> {
@@ -97,8 +97,8 @@ impl Screen {
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
-            config::Performance::High => wgpu::PowerPreference::HighPerformance,
-            config::Performance::Low => wgpu::PowerPreference::LowPower,
+            rio_config::Performance::High => wgpu::PowerPreference::HighPerformance,
+            rio_config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
         let mut padding_y_bottom = 0.0;
@@ -270,7 +270,7 @@ impl Screen {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<config::Config>,
+        config: &Rc<rio_config::Config>,
         current_theme: Option<winit::window::Theme>,
     ) {
         let mut padding_y_bottom = 0.0;
@@ -1270,7 +1270,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn init(&mut self, color: colors::ColorWGPU) {
+    pub fn init(&mut self, color: ColorWGPU) {
         let initial_columns = self.sugarloaf.layout.columns;
         self.sugarloaf
             .set_background_color(color)

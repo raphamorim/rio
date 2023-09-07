@@ -30,9 +30,7 @@ use crate::selection::{Selection, SelectionRange, SelectionType};
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use colors::term::List;
-use colors::term::TermColors;
-use colors::{AnsiColor, ColorRgb};
+use rio_config::colors::{self, AnsiColor, ColorRgb, term::{List, TermColors}};
 use grid::row::Row;
 use log::{debug, info, warn};
 use pos::{

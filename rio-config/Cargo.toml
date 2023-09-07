@@ -1,5 +1,5 @@
 [package]
-name = "config"
+name = "rio-config"
 version = { workspace = true }
 edition = { workspace = true }
 authors = { workspace = true }
@@ -7,7 +7,8 @@ authors = { workspace = true }
 [dependencies]
 toml = "0.7.3"
 dirs = "5.0"
-colors = { path = "../colors" }
+regex = "1.7.2"
 serde = { workspace = true }
 sugarloaf = { workspace = true }
 log = { workspace = true }
+wgpu = { workspace = true }

@@ -506,16 +506,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
-name = "colors"
-version = "0.0.18"
-dependencies = [
- "log 0.4.19",
- "regex",
- "serde",
- "wgpu",
-]
-
-[[package]]
 name = "com-rs"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -529,18 +519,6 @@ checksum = "35ed6e9d84f0b51a7f52daf1c7d71dd136fd7a3f41a8462b8cdb8c78d920fad4"
 dependencies = [
  "bytes 1.4.0",
  "memchr",
-]
-
-[[package]]
-name = "config"
-version = "0.0.18"
-dependencies = [
- "colors",
- "dirs",
- "log 0.4.19",
- "serde",
- "sugarloaf",
- "toml 0.7.3",
 ]
 
 [[package]]
@@ -2481,7 +2459,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
-name = "rio-terminal"
+name = "rio-config"
+version = "0.0.18"
+dependencies = [
+ "dirs",
+ "log 0.4.19",
+ "regex",
+ "serde",
+ "sugarloaf",
+ "toml 0.7.3",
+ "wgpu",
+]
+
+[[package]]
+name = "rio_proc_macros"
+version = "0.1.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "rioterm"
 version = "0.0.18"
 dependencies = [
  "ahash 0.8.3",
@@ -2489,8 +2488,6 @@ dependencies = [
  "bitflags 2.3.3",
  "bytemuck",
  "clap",
- "colors",
- "config",
  "copa",
  "copypasta",
  "corcovado",
@@ -2507,6 +2504,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "raw-window-handle",
+ "rio-config",
  "serde",
  "sugarloaf",
  "teletypewriter",
@@ -2519,14 +2517,6 @@ dependencies = [
  "windows-sys 0.48.0",
  "winit",
  "x11-dl",
-]
-
-[[package]]
-name = "rio_proc_macros"
-version = "0.1.1"
-dependencies = [
- "proc-macro2",
- "quote",
 ]
 
 [[package]]
