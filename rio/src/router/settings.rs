@@ -1,10 +1,10 @@
 use rio_config::colors::Colors;
+use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::Sugarloaf;
-use std::fs::File;
-use std::path::Path;
 
 pub struct SettingsState {
     current: usize,

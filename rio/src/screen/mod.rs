@@ -34,8 +34,8 @@ use crate::screen::{
     mouse::Mouse,
 };
 use crate::selection::{Selection, SelectionType};
-use rio_config::colors::{ColorWGPU, term::List};
 use messenger::Messenger;
+use rio_config::colors::{term::List, ColorWGPU};
 use state::State;
 use std::cmp::max;
 use std::cmp::min;

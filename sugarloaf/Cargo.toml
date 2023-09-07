@@ -38,7 +38,8 @@ serde = { workspace = true }
 unicode-width = "0.1.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-font-kit = "0.11.0"
+fontdb = "0.14.1"
+harfbuzz_rs = { version = "2.0.1", default-features = false, features = ["build-native-harfbuzz"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }

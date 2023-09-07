@@ -1,4 +1,4 @@
-use rio_config::{ConfigError, colors::Colors};
+use rio_config::{colors::Colors, ConfigError};
 use std::fmt;
 use std::fmt::Display;
 use sugarloaf::components::rect::Rect;

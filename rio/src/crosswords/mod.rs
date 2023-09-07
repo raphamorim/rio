@@ -30,11 +30,15 @@ use crate::selection::{Selection, SelectionRange, SelectionType};
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use rio_config::colors::{self, AnsiColor, ColorRgb, term::{List, TermColors}};
 use grid::row::Row;
 use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
+};
+use rio_config::colors::{
+    self,
+    term::{List, TermColors},
+    AnsiColor, ColorRgb,
 };
 use square::{Hyperlink, LineLength, Square};
 use std::mem;
