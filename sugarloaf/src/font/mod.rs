@@ -115,79 +115,8 @@ fn find_font(
         }
     }
 
-    // let mut nearest_font_weight = None;
-    // if let Ok(system_fonts) = SystemSource::new().select_family_by_name(&family) {
-    //     let fonts = system_fonts.fonts();
-    //     // let mut has_variant = true;
-
-    //     if !fonts.is_empty() {
-    //         for font in fonts.iter() {
-    //             let font = font.load();
-    //             if let Ok(font) = font {
-    //                 let meta = font.properties();
-    //                 let is_monospace = font.is_monospace();
-    //                 // TODO: Look for variants
-    //                 // if has_variant {
-    //                 //     if let Some(_monospaced_font) =
-    //                 //         find_monospace_variant(font_spec.family.to_string())
-    //                 //     {
-    //                 //         warn!("using a monospaced variant from the font\n");
-    //                 //         let try_to_find_fonts = SugarloafFont {
-    //                 //             family: family + "mono",
-    //                 //             ..font_spec
-    //                 //         };
-
-    //                 //         return Font::new(try_to_find_fonts);
-    //                 //     } else {
-    //                 //         has_variant = false;
-    //                 //     }
-    //                 // }
-
-    //                 if meta.style != font_spec_style {
-    //                     continue;
-    //                 }
-
-    //                 if meta.weight.0 != weight_f32 {
-    //                     // TODO: Improve nearest logic
-    //                     let is_both_light = weight_f32 <= 300. && meta.weight.0 <= 300.;
-    //                     let is_both_bold = weight_f32 >= 700. && meta.weight.0 >= 700.;
-    //                     let is_both_regular = weight_f32 < 700.
-    //                         && meta.weight.0 < 700.
-    //                         && weight_f32 > 300.
-    //                         && meta.weight.0 > 300.;
-
-    //                     if is_both_light || is_both_bold || is_both_regular {
-    //                         nearest_font_weight = Some(meta.weight.0);
-    //                     }
-
-    //                     continue;
-    //                 }
-
-    //                 if let Some(font_arc) = font_arc_from_font(font) {
-    //                     info!("sugarloaf: OK font found '{family}' with style '{style}' and weight '{weight}'");
-    //                     return (font_arc, is_monospace);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     warn!("sugarloaf: failed to load font '{family}' with style '{style}' and weight '{weight}'");
-    // if let Some(nearest) = nearest_font_weight {
-    //     warn!(
-    //         "sugarloaf: falling back to nearest font weight found is {:?}",
-    //         nearest
-    //     );
-    //     find_font(
-    //         SugarloafFont {
-    //             weight: Some(nearest as u32),
-    //             ..font_spec
-    //         },
-    //         fallback,
-    //     )
-    // } else {
     find_font(db, fallback.unwrap_or_else(default_font_regular), None)
-    // }
 }
 
 impl Font {
