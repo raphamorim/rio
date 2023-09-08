@@ -32,7 +32,7 @@ macro_rules! syscall {
     (nul $fname: ident $($args: tt)*) => {{
         let res = unsafe { $fname $($args)* };
         if res == 0 {
-            return Err(crate::Error::last_io_error());
+            return Err(crate::ui::Error::last_io_error());
         } else {
             res
         }
