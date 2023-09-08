@@ -1,6 +1,6 @@
 pub mod constants;
 pub mod fonts;
-pub mod ligatures;
+// pub mod ligatures;
 
 use crate::font::constants::*;
 use crate::font::fonts::*;
@@ -90,23 +90,21 @@ fn find_font(
 
     match db.query(&query) {
         Some(id) => {
-            if let Some((src, _index)) = db.face_source(id) {
-                if let fontdb::Source::File(ref path) = &src {
-                    if let Ok(bytes) = std::fs::read(path) {
-                        match FontArc::try_from_vec(bytes.to_vec()) {
-                            Ok(arc) => {
-                                info!("Font '{}' found in {}", family, path.display());
-                                return (arc, false);
-                            }
-                            Err(_) => {
-                                return (
-                                    FontArc::try_from_slice(
-                                        constants::FONT_CASCADIAMONO_REGULAR,
-                                    )
-                                    .unwrap(),
-                                    true,
-                                );
-                            }
+            if let Some((fontdb::Source::File(ref path), _index)) = db.face_source(id) {
+                if let Ok(bytes) = std::fs::read(path) {
+                    match FontArc::try_from_vec(bytes.to_vec()) {
+                        Ok(arc) => {
+                            info!("Font '{}' found in {}", family, path.display());
+                            return (arc, false);
+                        }
+                        Err(_) => {
+                            return (
+                                FontArc::try_from_slice(
+                                    constants::FONT_CASCADIAMONO_REGULAR,
+                                )
+                                .unwrap(),
+                                true,
+                            );
                         }
                     }
                 }

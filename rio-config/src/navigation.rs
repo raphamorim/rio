@@ -96,9 +96,8 @@ impl Navigation {
 
 #[cfg(test)]
 mod tests {
-
+    use crate::colors::hex_to_color_arr;
     use crate::navigation::{Navigation, NavigationMode};
-    use colors::hex_to_color_arr;
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]
