@@ -4,7 +4,6 @@ pub mod fonts;
 
 use crate::font::constants::*;
 use crate::font::fonts::*;
-#[cfg(not(target_arch = "wasm32"))]
 use glyph_brush::ab_glyph::FontArc;
 
 #[cfg(not(target_arch = "wasm32"))]

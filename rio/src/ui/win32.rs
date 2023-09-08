@@ -1,6 +1,6 @@
 //! Win32 implementation of menubars.
 
-use crate::Error;
+use crate::ui::Error;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
