@@ -342,9 +342,9 @@ section.features .container.footer p {
   position: relative;
   box-shadow: 20px 20px #ED203D;
   width: 220px;
-  height: 250px;
   margin: 0 30px;
   margin-bottom: 8em;
+  margin-top: 50px;
 }
 
 .testimonial:after {
