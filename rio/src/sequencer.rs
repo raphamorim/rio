@@ -103,19 +103,16 @@ impl Sequencer {
                                     }
                                 };
 
-                                if let Some(error) = config_error {
-                                    if let Some(route) =
-                                        self.router.routes.get_mut(&window_id)
-                                    {
-                                        route.report_error(error.into());
-                                        return;
-                                    }
-                                }
-
                                 self.config = config.into();
                                 for (_id, route) in self.router.routes.iter_mut() {
-                                    route.clear_errors();
                                     route.update_config(&self.config);
+
+                                    if let Some(error) = &config_error {
+                                        route.report_error(error.to_owned().into());
+                                    } else {
+                                        route.clear_errors();
+                                    }
+
                                     route.redraw();
                                 }
                             }
