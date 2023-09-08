@@ -153,7 +153,8 @@ impl Font {
                     weight: None,
                 },
                 Some(default_font_regular()),
-            );
+            )
+            .0;
 
             font_arc_unicode = find_font(
                 &db,
@@ -163,7 +164,8 @@ impl Font {
                     weight: None,
                 },
                 Some(default_font_regular()),
-            );
+            )
+            .0;
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -186,9 +188,9 @@ impl Font {
                 bold_italic: bold_italic.0,
                 italic: italic.0,
             },
-            symbol: font_arc_symbol.0,
+            symbol: font_arc_symbol,
             emojis: FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-            unicode: font_arc_unicode.0,
+            unicode: font_arc_unicode,
             icons: FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
             breadcrumbs: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
         }
