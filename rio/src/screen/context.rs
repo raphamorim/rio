@@ -98,7 +98,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let mut terminal =
             Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
         terminal.cursor_shape = cursor_state.0.content;
-        terminal.cursor_blinking = cursor_state.1;
+        terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty;
@@ -255,7 +255,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn schedule_cursor_blinking_render(&self) {
         self.event_proxy
-            .send_event(RioEvent::PrepareRender(1000), self.window_id);
+            .send_event(RioEvent::PrepareRender(800), self.window_id);
     }
 
     #[inline]

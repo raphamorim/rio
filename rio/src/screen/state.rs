@@ -458,20 +458,6 @@ impl State {
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
-        if self.has_blinking_enabled && terminal_has_blinking_enabled {
-            let mut should_blink = true;
-            if let Some(last_typing_time) = self.last_typing {
-                if last_typing_time.elapsed() < Duration::from_secs(1) {
-                    should_blink = false;
-                }
-            }
-
-            if should_blink {
-                self.is_blinking = !self.is_blinking;
-                is_cursor_visible = self.is_blinking;
-            }
-        }
-
         self.font_size = sugarloaf.layout.font_size;
         if let Some(active_selection) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
@@ -486,6 +472,21 @@ impl State {
                 sugarloaf.stack(sugar_stack);
             }
         } else {
+            // Only blink cursor if does not contain selection
+            if self.has_blinking_enabled && terminal_has_blinking_enabled {
+                let mut should_blink = true;
+                if let Some(last_typing_time) = self.last_typing {
+                    if last_typing_time.elapsed() < Duration::from_secs(1) {
+                        should_blink = false;
+                    }
+                }
+
+                if should_blink {
+                    self.is_blinking = !self.is_blinking;
+                    is_cursor_visible = self.is_blinking;
+                }
+            }
+
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
                 let sugar_stack = self.create_sugar_stack(row, has_cursor);

@@ -354,7 +354,7 @@ where
     pub title: String,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
-    pub cursor_blinking: bool,
+    pub blinking_cursor: bool,
     window_id: WindowId,
     title_stack: Vec<String>,
 
@@ -398,7 +398,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
-            cursor_blinking: false,
+            blinking_cursor: false,
             window_id,
             title_stack: Default::default(),
             keyboard_mode_stack: Default::default(),
@@ -1186,7 +1186,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::Column => self.deccolm(),
             AnsiMode::Insert => self.mode.insert(Mode::INSERT),
             AnsiMode::BlinkingCursor => {
-                self.cursor_blinking = false;
+                self.blinking_cursor = true;
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
@@ -1255,9 +1255,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.mark_fully_damaged();
             }
             AnsiMode::BlinkingCursor => {
-                self.cursor_blinking = false;
-                self.event_proxy
-                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+                // TODO: Update it
+                // self.blinking_cursor = false;
+                // self.event_proxy
+                //     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
         }
     }
@@ -1619,15 +1620,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn set_cursor_style(&mut self, style: Option<CursorShape>) {
+    fn set_cursor_style(&mut self, style: Option<CursorShape>, _blinking: bool) {
         if let Some(cursor_shape) = style {
             self.cursor_shape = cursor_shape;
         } else {
             self.cursor_shape = CursorShape::default();
         }
 
-        self.event_proxy
-            .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+        // self.blinking_cursor = blinking;
+        // self.event_proxy
+        //     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
 
     #[inline]
