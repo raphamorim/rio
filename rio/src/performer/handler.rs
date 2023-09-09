@@ -132,7 +132,7 @@ pub trait Handler {
     fn set_title(&mut self, _: Option<String>) {}
 
     /// Set the cursor style.
-    fn set_cursor_style(&mut self, _style: Option<CursorShape>) {}
+    fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
 
     /// Set the cursor shape.
     fn set_cursor_shape(&mut self, _shape: CursorShape) {}
@@ -916,15 +916,17 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);
                 let shape = match cursor_style_id {
-                    0..=2 => CursorShape::Block,
-                    3 | 4 => CursorShape::Underline,
-                    5 | 6 => CursorShape::Beam,
+                    0 => None,
+                    1 | 2 => Some(CursorShape::Block),
+                    3 | 4 => Some(CursorShape::Underline),
+                    5 | 6 => Some(CursorShape::Beam),
                     _ => {
                         csi_unhandled!();
                         return;
                     }
                 };
-                handler.set_cursor_shape(shape);
+
+                handler.set_cursor_style(shape, cursor_style_id % 2 == 1);
             }
             ('r', []) => {
                 let top = next_param_or(1) as usize;

@@ -310,7 +310,7 @@ impl Screen {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
             terminal.cursor_shape = self.state.get_cursor_state_from_ref().content;
-            terminal.cursor_blinking = config.blinking_cursor;
+            terminal.blinking_cursor = config.blinking_cursor;
         }
 
         let width = self.sugarloaf.layout.width_u32 as u16;
@@ -1333,7 +1333,7 @@ impl Screen {
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
-        let terminal_has_blinking_enabled = terminal.cursor_blinking;
+        let terminal_has_blinking_enabled = terminal.blinking_cursor;
         drop(terminal);
         self.context_manager.update_titles();
 
