@@ -1,6 +1,6 @@
 [package]
 name = "corcovado"
-version = "0.0.1"
+version = { workspace = true }
 license = "MIT"
 authors = ["Raphael Amorim <rapha850@gmail.com"]
 description = "Non-blocking IO library"

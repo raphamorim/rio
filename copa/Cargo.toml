@@ -5,13 +5,13 @@ repository = "https://github.com/alacritty/vte"
 documentation = "https://docs.rs/vte/"
 readme = "README.md"
 license = "Apache-2.0 OR MIT"
-version = "0.12.0"
+version = { workspace = true }
 name = "copa"
 edition = "2021"
 rust-version = "1.62.1"
 
 [dependencies]
-rio-proc-macros = { workspace = true  }
+rio-proc-macros = { workspace = true }
 arrayvec = { version = "0.7.2", default-features = false, optional = true }
 
 [dev-dependencies]

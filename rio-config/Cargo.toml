@@ -1,8 +1,12 @@
 [package]
 name = "rio-config"
-version = { workspace = true }
-edition = { workspace = true }
-authors = { workspace = true }
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+description = "Rio terminal config."
+documentation = "https://docs.rs/crate/rio-config/latest"
 
 [dependencies]
 toml = "0.7.3"

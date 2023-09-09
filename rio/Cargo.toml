@@ -1,9 +1,10 @@
 [package]
 name = "rioterm"
-version = "0.0.18"
-authors = ["Raphael Amorim <rapha850@gmail.com>"]
-edition = "2021"
-license = "MIT"
+version = "0.0.19"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
