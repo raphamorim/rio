@@ -811,7 +811,12 @@ impl Sequencer {
                     } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             route.window.winit_window.set_cursor_visible(true);
+                            let has_regained_focus = !route.window.is_focused && focused;
                             route.window.is_focused = focused;
+
+                            if has_regained_focus {
+                                route.redraw();
+                            }
                         }
                     }
 
