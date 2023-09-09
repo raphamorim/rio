@@ -1,4 +1,4 @@
-use crate::font::DEFAULT_FONT_FAMILY;
+use crate::font::{DEFAULT_FONT_FAMILY, DEFAULT_FONT_FAMILY_VARIANT};
 use serde::Deserialize;
 
 /* Example:
@@ -40,7 +40,8 @@ pub struct SugarloafFont {
 impl SugarloafFont {
     #[inline]
     pub fn is_default_family(&self) -> bool {
-        self.family.trim().to_lowercase() == default_font_family()
+        let current = self.family.replace(' ', "").trim().to_lowercase();
+        current == default_font_family() || current == default_font_family_variant()
     }
 }
 
@@ -50,6 +51,9 @@ fn default_font_size() -> f32 {
 
 fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
+}
+fn default_font_family_variant() -> String {
+    DEFAULT_FONT_FAMILY_VARIANT.to_string()
 }
 
 pub fn default_font_regular() -> SugarloafFont {
