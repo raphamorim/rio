@@ -2,9 +2,14 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
-use crate::font::fonts::SugarloafFonts;
+use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 use crate::font::Font;
+use crate::font::{
+    FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
+    FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
+};
 use crate::layout::SugarloafLayout;
+use core::fmt::{Debug, Formatter};
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
@@ -49,14 +54,21 @@ pub struct Sugarloaf {
     is_text_monospaced: bool,
 }
 
-const FONT_ID_REGULAR: usize = 0;
-const FONT_ID_ITALIC: usize = 1;
-const FONT_ID_BOLD: usize = 2;
-const FONT_ID_BOLD_ITALIC: usize = 3;
-const FONT_ID_SYMBOL: usize = 4;
-const FONT_ID_EMOJIS: usize = 5;
-const FONT_ID_UNICODE: usize = 6;
-const FONT_ID_ICONS: usize = 7;
+#[derive(Debug)]
+pub struct SugarloafErrors {
+    pub fonts_not_found: Vec<SugarloafFont>,
+}
+
+pub struct SugarloafWithErrors {
+    pub instance: Sugarloaf,
+    pub errors: SugarloafErrors,
+}
+
+impl Debug for SugarloafWithErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.errors)
+    }
+}
 
 impl Sugarloaf {
     pub async fn new(
@@ -64,10 +76,17 @@ impl Sugarloaf {
         power_preference: wgpu::PowerPreference,
         fonts: SugarloafFonts,
         layout: SugarloafLayout,
-    ) -> Result<Sugarloaf, String> {
+    ) -> Result<Sugarloaf, SugarloafWithErrors> {
         let ctx = Context::new(winit_window, power_preference).await;
+        let mut sugarloaf_errors = None;
 
         let loaded_fonts = Font::new(fonts.to_owned());
+        let fonts_not_found = loaded_fonts.1;
+        let loaded_fonts = loaded_fonts.0;
+
+        if !fonts_not_found.is_empty() {
+            sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
+        }
 
         let is_monospace = loaded_fonts.text.is_monospace;
 
@@ -84,7 +103,8 @@ impl Sugarloaf {
         ])
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
-        Ok(Sugarloaf {
+
+        let instance = Sugarloaf {
             sugar_cache: HashMap::new(),
             fonts,
             ctx,
@@ -95,7 +115,13 @@ impl Sugarloaf {
             font_bound: (0.0, 0.0),
             layout,
             is_text_monospaced: is_monospace,
-        })
+        };
+
+        if let Some(errors) = sugarloaf_errors {
+            return Err(SugarloafWithErrors { instance, errors });
+        }
+
+        Ok(instance)
     }
 
     #[allow(unused)]
@@ -136,11 +162,18 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn update_font(&mut self, fonts: SugarloafFonts) -> &mut Self {
+    pub fn update_font(&mut self, fonts: SugarloafFonts) -> Option<SugarloafErrors> {
         if self.fonts != fonts {
             log::info!("requested a font change");
-            let font = Font::new(fonts.to_owned());
 
+            let loaded_fonts = Font::new(fonts.to_owned());
+
+            let fonts_not_found = loaded_fonts.1;
+            if !fonts_not_found.is_empty() {
+                return Some(SugarloafErrors { fonts_not_found });
+            }
+
+            let font = loaded_fonts.0;
             let is_monospace = font.text.is_monospace;
 
             // Clean font cache per instance
@@ -161,7 +194,8 @@ impl Sugarloaf {
             self.fonts = fonts;
             self.is_text_monospaced = is_monospace;
         }
-        self
+
+        None
     }
 
     #[inline]

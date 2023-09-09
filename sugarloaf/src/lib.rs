@@ -5,4 +5,4 @@ pub mod font;
 pub mod layout;
 mod sugarloaf;
 pub mod tools;
-pub use crate::sugarloaf::{Renderable, Sugarloaf};
+pub use crate::sugarloaf::{Renderable, Sugarloaf, SugarloafErrors, SugarloafWithErrors};
