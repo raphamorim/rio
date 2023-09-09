@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use sugarloaf::components::rect::Rect;
+use sugarloaf::font::FONT_ID_BREADCRUMBS;
 use sugarloaf::Sugarloaf;
 
 pub struct SettingsState {
@@ -130,7 +131,7 @@ pub fn screen(
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + 30.),
         "Settings".to_string(),
-        8,
+        FONT_ID_BREADCRUMBS,
         28.,
         named_colors.blue,
         true,
@@ -143,7 +144,7 @@ pub fn screen(
             settings.default_file_path,
             env!("CARGO_PKG_VERSION")
         ),
-        8,
+        FONT_ID_BREADCRUMBS,
         15.,
         named_colors.blue,
         false,
@@ -153,7 +154,7 @@ pub fn screen(
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + 130.),
         String::from("..."),
-        8,
+        FONT_ID_BREADCRUMBS,
         16.,
         named_colors.cursor,
         true,
@@ -171,7 +172,7 @@ pub fn screen(
             "{} | \"{}\"",
             settings.items[previous_item].title, settings.items[previous_item].current,
         ),
-        8,
+        FONT_ID_BREADCRUMBS,
         16.,
         named_colors.dim_white,
         true,
@@ -194,7 +195,7 @@ pub fn screen(
     //             settings.items[i].title,
     //             settings.items[i].current,
     //         ),
-    //         8,
+    //         FONT_ID_BREADCRUMBS,
     //         16.,
     //         named_colors.dim_white,
     //         true,
@@ -207,7 +208,7 @@ pub fn screen(
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 190.),
         format!("{} | {:?}", active_setting.title, active_setting.current),
-        8,
+        FONT_ID_BREADCRUMBS,
         28.,
         named_colors.background.0,
         true,
@@ -220,7 +221,7 @@ pub fn screen(
                 sugarloaf.layout.margin.top_y + 225.,
             ),
             "* restart is needed".to_string(),
-            8,
+            FONT_ID_BREADCRUMBS,
             14.,
             named_colors.foreground,
             true,
@@ -277,7 +278,7 @@ pub fn screen(
                 "{} | \"{}\"",
                 settings.items[i].title, settings.items[i].current,
             ),
-            8,
+            FONT_ID_BREADCRUMBS,
             16.,
             named_colors.dim_white,
             true,
@@ -289,7 +290,7 @@ pub fn screen(
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + spacing_between),
         String::from("..."),
-        8,
+        FONT_ID_BREADCRUMBS,
         16.,
         named_colors.cursor,
         true,
@@ -313,7 +314,7 @@ pub fn screen(
             sugarloaf.layout.height / sugarloaf.layout.scale_factor - 50.,
         ),
         "save".to_string(),
-        8,
+        FONT_ID_BREADCRUMBS,
         14.,
         named_colors.foreground,
         true,
@@ -337,7 +338,7 @@ pub fn screen(
             sugarloaf.layout.height / sugarloaf.layout.scale_factor - 50.,
         ),
         "exit".to_string(),
-        8,
+        FONT_ID_BREADCRUMBS,
         14.,
         named_colors.foreground,
         true,

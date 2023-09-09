@@ -2,16 +2,14 @@ use rio_config::{colors::Colors, ConfigError};
 use std::fmt;
 use std::fmt::Display;
 use sugarloaf::components::rect::Rect;
-use sugarloaf::Sugarloaf;
+use sugarloaf::{font::SugarloafFont, Sugarloaf};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub enum AssistantReport {
-    // font family was not found
-    FontFamilyNotFound(String),
-    // font weight was not found
-    FontWeightNotFound(String, usize),
+    // font was not found
+    FontsNotFound(Vec<SugarloafFont>),
 
-    // navigation configuration has changed, please reopen the terminal
+    // navigation configuration has changed
     NavigationHasChanged,
 
     // configurlation file was not found
@@ -28,11 +26,17 @@ pub enum AssistantReport {
 impl std::fmt::Display for AssistantReport {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AssistantReport::FontFamilyNotFound(font_family) => {
-                write!(f, "Font family not found:\n\n{font_family}")
-            }
-            AssistantReport::FontWeightNotFound(font_family, font_weight) => {
-                write!(f, "Font weight not found:\n{font_family}, \n{font_weight}")
+            AssistantReport::FontsNotFound(fonts) => {
+                let mut font_str = String::from("");
+                for font in fonts.iter() {
+                    font_str += format!(
+                        "\n• \"{}\" using {:?} {:?}",
+                        font.family, font.weight, font.style
+                    )
+                    .as_str();
+                }
+
+                write!(f, "Font(s) not found:\n{font_str}")
             }
             AssistantReport::ConfigurationNotFound => {
                 write!(f, "Configuration file was not found")
@@ -129,7 +133,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String)
 
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 50.),
-        "Woops! Rio got errors".to_string(),
+        "Woops! Rio got warnings".to_string(),
         8,
         28.,
         named_colors.foreground,

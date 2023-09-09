@@ -59,14 +59,17 @@ async fn run() {
         (2, 1),
     );
 
-    let mut sugarloaf = Sugarloaf::new(
+    let mut sugarloaf = match Sugarloaf::new(
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
     )
     .await
-    .expect("Sugarloaf instance should be created");
+    {
+        Ok(instance) => instance,
+        Err(instance_with_errors) => instance_with_errors.instance,
+    };
 
     log::info!("started scale_factor: {scale_factor:?}");
 

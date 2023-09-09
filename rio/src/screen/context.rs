@@ -2,6 +2,7 @@ use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
+use crate::router::assistant::AssistantReport::FontsNotFound;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use rio_config::Shell;
@@ -10,6 +11,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
@@ -173,6 +175,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
         ctx_config: ContextManagerConfig,
+        sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
             (dimensions.0, dimensions.1),
@@ -185,6 +188,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let titles =
             ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
+
+        // Sugarloaf has found errors and context need to notify it for the user
+        if let Some(errors) = sugarloaf_errors {
+            if !errors.fonts_not_found.is_empty() {
+                event_proxy.send_event(
+                    RioEvent::ReportToAssistant(FontsNotFound(errors.fonts_not_found)),
+                    window_id,
+                );
+            }
+        }
 
         Ok(ContextManager {
             current_index: 0,
@@ -236,6 +249,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config,
             titles,
         })
+    }
+
+    #[inline]
+    pub fn report_error_fonts_not_found(&self, fonts_not_found: Vec<SugarloafFont>) {
+        if !fonts_not_found.is_empty() {
+            self.event_proxy.send_event(
+                RioEvent::ReportToAssistant(FontsNotFound(fonts_not_found)),
+                self.window_id,
+            );
+        }
     }
 
     #[inline]

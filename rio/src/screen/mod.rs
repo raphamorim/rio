@@ -41,7 +41,7 @@ use std::cmp::max;
 use std::cmp::min;
 use std::error::Error;
 use std::rc::Rc;
-use sugarloaf::{layout::SugarloafLayout, Sugarloaf};
+use sugarloaf::{layout::SugarloafLayout, Sugarloaf, SugarloafErrors};
 use winit::event::ElementState;
 #[cfg(target_os = "macos")]
 use winit::keyboard::ModifiersKeyState;
@@ -133,13 +133,21 @@ impl Screen {
             (MIN_COLUMNS, MIN_LINES),
         );
 
-        let sugarloaf = Sugarloaf::new(
+        let mut sugarloaf_errors: Option<SugarloafErrors> = None;
+        let sugarloaf: Sugarloaf = match Sugarloaf::new(
             winit_window,
             power_preference,
             config.fonts.to_owned(),
             sugarloaf_layout,
         )
-        .await?;
+        .await
+        {
+            Ok(instance) => instance,
+            Err(instance_with_errors) => {
+                sugarloaf_errors = Some(instance_with_errors.errors);
+                instance_with_errors.instance
+            }
+        };
 
         let state = State::new(config, winit_window.theme());
 
@@ -170,6 +178,7 @@ impl Screen {
             event_proxy,
             window_id,
             context_manager_config,
+            sugarloaf_errors,
         )?;
 
         Ok(Screen {
@@ -273,6 +282,12 @@ impl Screen {
         config: &Rc<rio_config::Config>,
         current_theme: Option<winit::window::Theme>,
     ) {
+        if let Some(err) = self.sugarloaf.update_font(config.fonts.to_owned()) {
+            self.context_manager
+                .report_error_fonts_not_found(err.fonts_not_found);
+            return;
+        }
+
         let mut padding_y_bottom = 0.0;
         if config.navigation.is_placed_on_bottom() {
             padding_y_bottom += config.fonts.size
@@ -284,7 +299,7 @@ impl Screen {
             config.padding_x,
             padding_y_bottom,
         );
-        self.sugarloaf.update_font(config.fonts.to_owned());
+
         self.sugarloaf.layout.update();
         self.state = State::new(config, current_theme);
 
