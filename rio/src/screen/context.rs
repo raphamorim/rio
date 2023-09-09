@@ -89,7 +89,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
         dimensions: (u32, u32),
         cols_rows: (usize, usize),
-        cursor_state: CursorState,
+        cursor_state: (CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         config: &ContextManagerConfig,
@@ -97,7 +97,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let event_proxy_clone = event_proxy.clone();
         let mut terminal =
             Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
-        terminal.cursor_shape = cursor_state.content;
+        terminal.cursor_shape = cursor_state.0.content;
+        terminal.cursor_blinking = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty;
@@ -171,7 +172,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn start(
         dimensions: (u32, u32),
         col_rows: (usize, usize),
-        cursor_state: CursorState,
+        cursor_state: (CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         ctx_config: ContextManagerConfig,
@@ -232,7 +233,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let initial_context = ContextManager::create_context(
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
             event_proxy.clone(),
             window_id,
             &config,
@@ -249,6 +250,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config,
             titles,
         })
+    }
+
+    #[inline]
+    pub fn schedule_cursor_blinking_render(&self) {
+        self.event_proxy
+            .send_event(RioEvent::PrepareRender(1000), self.window_id);
     }
 
     #[inline]
@@ -521,7 +528,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         redirect: bool,
         dimensions: (u32, u32),
         col_rows: (usize, usize),
-        cursor_state: CursorState,
+        cursor_state: (CursorState, bool),
     ) {
         // Native tabs do not use Context tabbing API, instead it will
         // ask winit to create a window with a tab id
@@ -607,7 +614,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
@@ -617,7 +624,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
@@ -635,14 +642,14 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 2);
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -651,7 +658,7 @@ pub mod test {
                 should_redirect,
                 (100, 100),
                 (1, 1),
-                CursorState::default(),
+                (CursorState::default(), false),
             );
         }
 
@@ -670,7 +677,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
@@ -683,13 +690,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.set_current(3);
         assert_eq!(context_manager.current_index, 3);
@@ -709,13 +716,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -741,25 +748,25 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
 
         context_manager.close_context();
@@ -774,7 +781,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
 
         assert_eq!(context_manager.len(), 2);
@@ -796,13 +803,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
@@ -826,31 +833,31 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            CursorState::default(),
+            (CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 5);
         assert_eq!(context_manager.current_index, 0);

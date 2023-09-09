@@ -89,6 +89,12 @@ pub fn default_config_file_content() -> String {
 #
 cursor = '▇'
 
+# Blinking Cursor
+#
+# Default is false
+#
+blinking_cursor = true
+
 # Performance
 #
 # Set WGPU rendering performance

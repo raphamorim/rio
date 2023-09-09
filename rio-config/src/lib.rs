@@ -53,6 +53,8 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default = "bool::default")]
+    pub blinking_cursor: bool,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
     #[serde(rename = "window-opacity", default = "default_window_opacity")]
@@ -314,6 +316,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            blinking_cursor: false,
             adaptive_theme: None,
             adaptive_colors: None,
             bindings: Bindings::default(),

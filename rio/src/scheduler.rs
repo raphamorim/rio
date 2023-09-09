@@ -20,12 +20,11 @@ impl TimerId {
 /// Available timer topics.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Topic {
-    #[allow(unused)]
-    SelectionScrolling,
-    Frame,
+    Render,
 }
 
 /// Event scheduled to be emitted at a specific time.
+#[derive(Debug)]
 pub struct Timer {
     pub deadline: Instant,
     pub event: EventP,
@@ -38,7 +37,6 @@ pub struct Timer {
 /// Scheduler tracking all pending timers.
 pub struct Scheduler {
     timers: VecDeque<Timer>,
-    #[allow(dead_code)]
     event_proxy: EventLoopProxy<EventP>,
 }
 
@@ -54,7 +52,6 @@ impl Scheduler {
     ///
     /// If there are still timers pending after all ready events have been processed, the closest
     /// pending deadline will be returned.
-    #[allow(dead_code)]
     pub fn update(&mut self) -> Option<Instant> {
         let now = Instant::now();
 
@@ -64,7 +61,6 @@ impl Scheduler {
                 if let Some(interval) = timer.interval {
                     self.schedule(timer.event.clone(), interval, true, timer.id);
                 }
-
                 let _ = self.event_proxy.send_event(timer.event);
             }
         }
@@ -104,7 +100,6 @@ impl Scheduler {
     }
 
     /// Cancel a scheduled event.
-    #[allow(dead_code)]
     pub fn unschedule(&mut self, id: TimerId) -> Option<Timer> {
         let index = self.timers.iter().position(|timer| timer.id == id)?;
         self.timers.remove(index)
