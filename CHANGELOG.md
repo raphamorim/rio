@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Rio terminal is now also available in crates.io: https://crates.io/crates/rioterm .
 - Support for blinking cursor (Ref: https://github.com/raphamorim/rio/issues/137) (this option is not enabled by default).
 - Migrated font-kit to fontdb.
 - Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane`.
