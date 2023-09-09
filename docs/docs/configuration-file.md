@@ -24,6 +24,12 @@ Any file update in the configuration file will trigger a render operation in Rio
 # Other available options are: '_' and '|'
 cursor = '_'
 
+# Blinking Cursor
+#
+# Default is false
+#
+blinking_cursor = true
+
 # Performance
 #
 # Set WGPU rendering performance

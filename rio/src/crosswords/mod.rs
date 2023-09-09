@@ -354,6 +354,7 @@ where
     pub title: String,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
+    pub cursor_blinking: bool,
     window_id: WindowId,
     title_stack: Vec<String>,
 
@@ -397,6 +398,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
+            cursor_blinking: false,
             window_id,
             title_stack: Default::default(),
             keyboard_mode_stack: Default::default(),
@@ -1184,9 +1186,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::Column => self.deccolm(),
             AnsiMode::Insert => self.mode.insert(Mode::INSERT),
             AnsiMode::BlinkingCursor => {
-                // let style = self.grid.cursor_style.get_or_insert(self.default_cursor_style);
-                // style.blinking = true;
-                // self.event_proxy.send_event(Event::CursorBlinkingChange, self.window_id);
+                self.cursor_blinking = false;
+                self.event_proxy
+                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
         }
     }
@@ -1253,9 +1255,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.mark_fully_damaged();
             }
             AnsiMode::BlinkingCursor => {
-                // let style = self.cursor_style.get_or_insert(self.default_cursor_style);
-                // style.blinking = false;
-                // self.event_proxy.send_event(Event::CursorBlinkingChange);
+                self.cursor_blinking = false;
+                self.event_proxy
+                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
         }
     }
@@ -1537,7 +1539,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.mode &= Mode::VI;
         self.mode.insert(Mode::default());
 
-        // self.event_proxy.send_event(Event::CursorBlinkingChange);
+        self.event_proxy
+            .send_event(RioEvent::CursorBlinkingChange, self.window_id);
         self.mark_fully_damaged();
     }
 
@@ -1622,6 +1625,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         } else {
             self.cursor_shape = CursorShape::default();
         }
+
+        self.event_proxy
+            .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
 
     #[inline]

@@ -1,6 +1,3 @@
-#[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
-
 use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
@@ -15,7 +12,10 @@ use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
     WindowEvent,
 };
+use winit::event_loop::ControlFlow;
 use winit::event_loop::{DeviceEvents, EventLoop};
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::window::CursorIcon;
 
@@ -130,8 +130,15 @@ impl Sequencer {
                                     }
                                 }
                             }
+                            RioEventType::Rio(RioEvent::CursorBlinkingChange) => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.screen.render();
+                                }
+                            }
                             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                                let timer_id = TimerId::new(Topic::Frame, 0);
+                                let timer_id = TimerId::new(Topic::Render, 0);
                                 let event = EventP::new(
                                     RioEventType::Rio(RioEvent::Render),
                                     window_id,
@@ -730,11 +737,14 @@ impl Sequencer {
                                 if route.path == RoutePath::Settings
                                     && key_event.state == ElementState::Released
                                 {
+                                    // Scheduler must be cleaned after leave the terminal route
+                                    scheduler.unschedule(TimerId::new(Topic::Render, 0));
                                     route.window.winit_window.request_redraw();
                                 }
                                 return;
                             }
 
+                            route.window.screen.state.last_typing = Some(Instant::now());
                             route.window.screen.process_key_event(&key_event);
 
                             match key_event.state {
@@ -885,6 +895,15 @@ impl Sequencer {
                         std::process::exit(0);
                     }
 
+                    Event::AboutToWait => {
+                        // Update the scheduler after event processing to ensure
+                        // the event loop deadline is as accurate as possible.
+                        *control_flow = match scheduler.update() {
+                            Some(instant) => ControlFlow::WaitUntil(instant),
+                            None => ControlFlow::Wait,
+                        };
+                    }
+
                     Event::RedrawRequested(window_id) => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
@@ -921,10 +940,7 @@ impl Sequencer {
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }
                         // }
-
-                        // We are not using scheduler for now
-                        // scheduler.update();
-                        *control_flow = winit::event_loop::ControlFlow::Wait;
+                        *control_flow = ControlFlow::Wait;
                     }
                     _ => {}
                 }

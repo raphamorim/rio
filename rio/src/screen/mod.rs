@@ -171,10 +171,14 @@ impl Screen {
             should_update_titles: !(is_collapsed
                 || is_native && config.navigation.color_automation.is_empty()),
         };
+        // let default_cursor_style = CursorStyle {
+        //     shape: state.get_cursor_state(),
+        //     blinking: config.blinking_cursor,
+        // };
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
             (sugarloaf.layout.columns, sugarloaf.layout.lines),
-            state.get_cursor_state(),
+            (state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
             context_manager_config,
@@ -306,6 +310,7 @@ impl Screen {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
             terminal.cursor_shape = self.state.get_cursor_state_from_ref().content;
+            terminal.cursor_blinking = config.blinking_cursor;
         }
 
         let width = self.sugarloaf.layout.width_u32 as u16;
@@ -529,7 +534,10 @@ impl Screen {
                                 self.sugarloaf.layout.height_u32,
                             ),
                             (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-                            self.state.get_cursor_state_from_ref(),
+                            (
+                                self.state.get_cursor_state_from_ref(),
+                                self.state.has_blinking_enabled,
+                            ),
                         );
 
                         self.render();
@@ -1325,6 +1333,7 @@ impl Screen {
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
+        let terminal_has_blinking_enabled = terminal.cursor_blinking;
         drop(terminal);
         self.context_manager.update_titles();
 
@@ -1336,9 +1345,16 @@ impl Screen {
             &mut self.sugarloaf,
             &self.context_manager,
             display_offset as i32,
+            terminal_has_blinking_enabled,
         );
 
         self.sugarloaf.render();
+
+        // In this case the configuration of blinking cursor is enabled
+        // and the terminal also have instructions of blinking enabled
+        if self.state.has_blinking_enabled && terminal_has_blinking_enabled {
+            self.context_manager.schedule_cursor_blinking_render();
+        }
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {

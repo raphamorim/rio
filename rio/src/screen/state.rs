@@ -14,6 +14,7 @@ use rio_config::colors::{
 use rio_config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 use winit::window::Theme;
@@ -28,12 +29,15 @@ struct Cursor {
 pub struct State {
     pub option_as_alt: String,
     is_ime_enabled: bool,
+    pub last_typing: Option<Instant>,
     pub named_colors: Colors,
     font_size: f32,
     pub colors: List,
     navigation: ScreenNavigation,
     cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
+    pub has_blinking_enabled: bool,
+    pub is_blinking: bool,
 }
 
 // TODO: Finish from
@@ -90,6 +94,9 @@ impl State {
         State {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_ime_enabled: false,
+            is_blinking: false,
+            last_typing: None,
+            has_blinking_enabled: config.blinking_cursor,
             colors,
             navigation: ScreenNavigation::new(
                 config.navigation.mode,
@@ -114,10 +121,12 @@ impl State {
         }
     }
 
+    #[inline]
     pub fn get_cursor_state_from_ref(&self) -> CursorState {
         CursorState::new(self.cursor.content_ref)
     }
 
+    #[inline]
     pub fn get_cursor_state(&self) -> CursorState {
         self.cursor.state.clone()
     }
@@ -398,6 +407,7 @@ impl State {
         sugar
     }
 
+    #[inline]
     pub fn set_ime(&mut self, ime_preedit: Option<&Preedit>) {
         if let Some(preedit) = ime_preedit {
             if let Some(content) = preedit.text.chars().next() {
@@ -443,11 +453,26 @@ impl State {
         sugarloaf: &mut Sugarloaf,
         context_manager: &context::ContextManager<EventProxy>,
         display_offset: i32,
+        terminal_has_blinking_enabled: bool,
     ) {
         self.cursor.state = cursor;
-        self.font_size = sugarloaf.layout.font_size;
-        let is_cursor_visible = self.cursor.state.is_visible();
+        let mut is_cursor_visible = self.cursor.state.is_visible();
 
+        if self.has_blinking_enabled && terminal_has_blinking_enabled {
+            let mut should_blink = true;
+            if let Some(last_typing_time) = self.last_typing {
+                if last_typing_time.elapsed() < Duration::from_secs(1) {
+                    should_blink = false;
+                }
+            }
+
+            if should_blink {
+                self.is_blinking = !self.is_blinking;
+                is_cursor_visible = self.is_blinking;
+            }
+        }
+
+        self.font_size = sugarloaf.layout.font_size;
         if let Some(active_selection) = self.selection_range {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
