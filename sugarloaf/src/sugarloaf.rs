@@ -188,6 +188,7 @@ impl Sugarloaf {
                 font.emojis,
                 font.unicode,
                 font.icons,
+                font.breadcrumbs,
             ])
             .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;

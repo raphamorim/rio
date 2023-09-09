@@ -2,6 +2,7 @@ use rio_config::{colors::Colors, ConfigError};
 use std::fmt;
 use std::fmt::Display;
 use sugarloaf::components::rect::Rect;
+use sugarloaf::font::FONT_ID_BUILTIN;
 use sugarloaf::{font::SugarloafFont, Sugarloaf};
 
 #[derive(Clone, PartialEq)]
@@ -134,7 +135,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String)
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 50.),
         "Woops! Rio got warnings".to_string(),
-        8,
+        FONT_ID_BUILTIN,
         28.,
         named_colors.foreground,
         true,
@@ -155,7 +156,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String)
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 80.),
         "(press enter to continue)".to_string(),
-        8,
+        FONT_ID_BUILTIN,
         18.,
         named_colors.foreground,
         true,
@@ -164,7 +165,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String)
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 170.),
         content,
-        8,
+        FONT_ID_BUILTIN,
         14.,
         named_colors.foreground,
         false,

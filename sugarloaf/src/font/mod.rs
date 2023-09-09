@@ -10,7 +10,7 @@ pub const FONT_ID_SYMBOL: usize = 4;
 pub const FONT_ID_EMOJIS: usize = 5;
 pub const FONT_ID_UNICODE: usize = 6;
 pub const FONT_ID_ICONS: usize = 7;
-pub const FONT_ID_BREADCRUMBS: usize = 8;
+pub const FONT_ID_BUILTIN: usize = 8;
 
 use crate::font::constants::*;
 use glyph_brush::ab_glyph::FontArc;
