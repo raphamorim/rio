@@ -6,6 +6,7 @@ macro_rules! font {
 }
 
 pub const DEFAULT_FONT_FAMILY: &str = "cascadiamono";
+pub const DEFAULT_FONT_FAMILY_VARIANT: &str = "cascadiacode";
 
 // Fonts:
 // CascadiaMonoPL-Bold.otf
