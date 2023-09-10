@@ -11,7 +11,7 @@ pub enum AssistantReport {
     FontsNotFound(Vec<SugarloafFont>),
 
     // navigation configuration has changed
-    NavigationHasChanged,
+    // NavigationHasChanged,
 
     // configurlation file was not found
     ConfigurationNotFound,
@@ -42,9 +42,9 @@ impl std::fmt::Display for AssistantReport {
             AssistantReport::ConfigurationNotFound => {
                 write!(f, "Configuration file was not found")
             }
-            AssistantReport::NavigationHasChanged => {
-                write!(f, "Navigation has changed\n\nPlease reopen Rio terminal.")
-            }
+            // AssistantReport::NavigationHasChanged => {
+            //     write!(f, "Navigation has changed\n\nPlease reopen Rio terminal.")
+            // }
             AssistantReport::IgnoredReport => write!(f, ""),
             AssistantReport::InvalidConfigurationFormat(message) => {
                 write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/#configuration-file")
