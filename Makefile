@@ -128,13 +128,13 @@ release-wayland:
 # To install: sudo release/debian/rio_<version>_<architecture>_<feature>.deb
 # e.g: sudo release/debian/rio_0.0.13_arm64_wayland.deb
 release-debian-x11:
-	cargo deb -p rio -- --release --no-default-features --features=x11
+	cargo deb -p rioterm -- --release --no-default-features --features=x11
 	mkdir -p $(RELEASE_DIR)/debian/x11
 	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/x11/
 	cd $(RELEASE_DIR)/debian/x11 && rename 's/.deb/_x11.deb/g' *
 
 release-debian-wayland:
-	cargo deb -p rio -- --release --no-default-features --features=wayland
+	cargo deb -p rioterm -- --release --no-default-features --features=wayland
 	mkdir -p $(RELEASE_DIR)/debian/wayland
 	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/wayland/
 	cd $(RELEASE_DIR)/debian/wayland && rename 's/.deb/_wayland.deb/g' *
@@ -142,15 +142,15 @@ release-debian-wayland:
 # Release and Install
 install-debian-x11:
 	cargo install cargo-deb
-	cargo deb -p rio --install -- --release --no-default-features --features=x11
+	cargo deb -p rioterm --install -- --release --no-default-features --features=x11
 install-debian-wayland:
 	cargo install cargo-deb
-	cargo deb -p rio --install -- --release --no-default-features --features=wayland
+	cargo deb -p rioterm --install -- --release --no-default-features --features=wayland
 
 # cargo install cargo-wix
 # https://github.com/volks73/cargo-wix
 release-windows:
-	cargo wix -p rio
+	cargo wix -p rioterm
 
 lint:
 	cargo fmt -- --check --color always
