@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.12.0"
+version = "0.0.18"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.0.1"
+version = "0.0.18"
 dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
@@ -2362,7 +2362,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "ahash 0.8.3",
  "base64",
@@ -2713,7 +2713,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "2.0.1"
+version = "0.0.18"
 dependencies = [
  "corcovado",
  "dirs",
