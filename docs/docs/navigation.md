@@ -14,6 +14,7 @@ Rio allows to choose navigation between the following options:
 - • <span class="keyword">BottomTab</span>
 - • <span class="keyword">TopTab</span>
 - • <span class="keyword">Breadcrumb</span> (Available only for MacOs, BSD and Linux)
+- • <span class="keyword">Plain</span>
 
 ### CollapsedTab
 
@@ -88,6 +89,19 @@ Usage:
 {% highlight toml %}
 [navigation]
 mode = "Breadcrumb"
+{% endhighlight %}
+
+### Plain
+
+Plain navigation mode will simply turn off any platform key binding, will not add any key binding (like creation of tabs, windows, panels and other platform key bindings).
+
+This mode is perfect if you want set yourself how Rio key binding rules will work.
+
+Usage:
+
+{% highlight toml %}
+[navigation]
+mode = "Plain"
 {% endhighlight %}
 
 ### Color automation for navigation

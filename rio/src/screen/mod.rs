@@ -153,7 +153,10 @@ impl Screen {
 
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
-        let bindings = bindings::default_key_bindings(config.bindings.keys.clone());
+        let bindings = bindings::default_key_bindings(
+            config.bindings.keys.clone(),
+            config.navigation.is_plain(),
+        );
         let ime = Ime::new();
 
         let is_collapsed = config.navigation.is_collapsed_mode();

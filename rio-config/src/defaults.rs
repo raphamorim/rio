@@ -186,6 +186,7 @@ performance = "High"
 #   • BottomTab
 #   • TopTab
 #   • Breadcrumb
+#   • Plain
 #
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
