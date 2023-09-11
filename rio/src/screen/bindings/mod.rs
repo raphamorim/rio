@@ -392,6 +392,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 
 pub fn default_key_bindings(
     unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
+    ignore_platform_key_bindings: bool,
 ) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
@@ -568,7 +569,9 @@ pub fn default_key_bindings(
         ArrowDown,   ModifiersState::ALT, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[1;3B".into());
     ));
 
-    bindings.extend(platform_key_bindings());
+    if !ignore_platform_key_bindings {
+        bindings.extend(platform_key_bindings());
+    }
 
     config_key_bindings(unprocessed_config_key_bindings, bindings)
 }

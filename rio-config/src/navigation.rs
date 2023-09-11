@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 #[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
+    Plain,
     #[default]
     CollapsedTab,
     TopTab,
@@ -32,6 +33,9 @@ impl std::fmt::Display for NavigationMode {
             #[cfg(not(windows))]
             NavigationMode::Breadcrumb => {
                 write!(f, "Breadcrumb")
+            }
+            NavigationMode::Plain => {
+                write!(f, "Plain")
             }
         }
     }
@@ -64,14 +68,17 @@ pub struct Navigation {
 }
 
 impl Navigation {
+    #[inline]
     pub fn is_collapsed_mode(&self) -> bool {
         self.mode == NavigationMode::CollapsedTab
     }
 
+    #[inline]
     pub fn is_placed_on_bottom(&self) -> bool {
         self.mode == NavigationMode::BottomTab
     }
 
+    #[inline]
     pub fn is_native(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -84,6 +91,12 @@ impl Navigation {
         }
     }
 
+    #[inline]
+    pub fn is_plain(&self) -> bool {
+        self.mode == NavigationMode::Plain
+    }
+
+    #[inline]
     pub fn is_placed_on_top(&self) -> bool {
         #[cfg(windows)]
         return self.mode == NavigationMode::TopTab;
