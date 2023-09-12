@@ -139,7 +139,7 @@ performance = "High"
 #   Default: 1.0
 #
 # • mode - define how the window will be created
-#     - "Regular" (default) is based on width and height
+#     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
@@ -148,7 +148,7 @@ performance = "High"
 #   width = 600
 #   height = 400
 #   opacity = 1.0
-#   mode = "Regular"
+#   mode = "Windowed"
 
 # Window Height
 #
@@ -293,7 +293,7 @@ performance = "High"
 #     # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 #     { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 #   ]
- 
+
 # Log level
 #
 # This property enables log level filter. Default is "OFF".

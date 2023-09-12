@@ -84,7 +84,7 @@ option-as-alt = 'both'
 #   Default: 1.0
 #
 # • mode - define how the window will be created
-#     - "Regular" (default) is based on width and height
+#     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
@@ -92,7 +92,7 @@ option-as-alt = 'both'
 width = 600
 height = 400
 opacity = 1.0
-mode = "Regular"
+mode = "Windowed"
 
 # Fonts
 #
