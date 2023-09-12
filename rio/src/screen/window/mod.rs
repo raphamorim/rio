@@ -71,11 +71,12 @@ pub fn create_window_builder(
 
     match config.window.mode {
         rio_config::window::WindowMode::Fullscreen => {
-            window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
-        },
+            window_builder =
+                window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
         rio_config::window::WindowMode::Maximized => {
             window_builder = window_builder.with_maximized(true);
-        },
+        }
         _ => {
             window_builder = window_builder.with_inner_size(winit::dpi::LogicalSize {
                 width: config.window.width,
