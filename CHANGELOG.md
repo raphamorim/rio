@@ -2,6 +2,34 @@
 
 ## In progress
 
+**Breaking change**
+
+Configuration properties: `window_height`, `window_width` and `window_opacity` has been moved to a new window API:
+
+```toml
+# Window configuration
+#
+# • width - define the intial window width.
+#   Default: 600
+#
+# • height - define the inital window height.
+#   Default: 400
+#
+# • opacity - changes the window transparency state (only Windows / X11)
+#   Default: 1.0
+#
+# • mode - define how the window will be created
+#     - "Regular" (default) is based on width and height
+#     - "Maximized" window is created with maximized
+#     - "Fullscreen" window is created with fullscreen
+#
+[window]
+width = 600
+height = 400
+opacity = 1.0
+mode = "Regular"
+```
+
 - Rio terminal is now also available in crates.io: https://crates.io/crates/rioterm .
 - Added `navigation.mode = "Plain"`, it basically disables all platform key bindings for tabs, windows and panels creation (Ref https://github.com/raphamorim/rio/issues/213).
 - Support for blinking cursor (Ref: https://github.com/raphamorim/rio/issues/137) (this option is not enabled by default).

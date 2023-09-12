@@ -72,27 +72,27 @@ padding-x = 0
 #
 option-as-alt = 'both'
 
-# Window Opacity
+# Window configuration
 #
-# window-opacity changes the window transparency state.
-# Only works for Windows / X11 / WebAssembly
+# • width - define the intial window width.
+#   Default: 600
 #
-window-opacity = 0.5
-
-# Window Width
+# • height - define the inital window height.
+#   Default: 400
 #
-# window-width changes the intial window width.
-# Default: 600
+# • opacity - changes the window transparency state (only Windows / X11)
+#   Default: 1.0
 #
-window-width = 1200
-
-# Window Height
+# • mode - define how the window will be created
+#     - "Regular" (default) is based on width and height
+#     - "Maximized" window is created with maximized
+#     - "Fullscreen" window is created with fullscreen
 #
-# window-height changes the inital window height.
-# Default: 400
-#
-window-height = 800
-
+[window]
+width = 600
+height = 400
+opacity = 1.0
+mode = "Regular"
 
 # Fonts
 #

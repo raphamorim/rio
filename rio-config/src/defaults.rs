@@ -127,18 +127,33 @@ performance = "High"
 # Example
 # option-as-alt = 'left'
 
-# Window Width
+# Window configuration
 #
-# window-width changes the intial window width.
-# Default: 600
+# • width - define the intial window width.
+#   Default: 600
+#
+# • height - define the inital window height.
+#   Default: 400
+#
+# • opacity - define the window opacity (only for MacOS and Wayland)
+#   Default: 1.0
+#
+# • mode - define how the window will be created
+#     - "Regular" (default) is based on width and height
+#     - "Maximized" window is created with maximized
+#     - "Fullscreen" window is created with fullscreen
 #
 # Example
-#   window-width = 600
+#   [window]
+#   width = 600
+#   height = 400
+#   opacity = 1.0
+#   mode = "Regular"
 
 # Window Height
 #
 # window-height changes the inital window height.
-# Default: 400
+#   Default: 400
 #
 # Example
 #   window-height = 400
