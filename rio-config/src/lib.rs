@@ -1,14 +1,14 @@
 pub mod bindings;
-pub mod window;
 pub mod colors;
 mod defaults;
 pub mod navigation;
 pub mod theme;
+pub mod window;
 
-use crate::window::Window;
 use crate::bindings::Bindings;
 use crate::defaults::*;
 use crate::navigation::Navigation;
+use crate::window::Window;
 use colors::Colors;
 use log::warn;
 use serde::Deserialize;
