@@ -371,28 +371,32 @@ impl ShellUser {
             },
         };
 
-        let shell;
-
-        match std::env::var("SHELL") {
-            Ok(env_shell) => shell = env_shell,
+        #[allow(unused_mut)]
+        let mut shell = match std::env::var("SHELL") {
+            Ok(env_shell) => {
+                env_shell
+            },
             Err(_) => match pw {
                 Ok(ref pw) => {
-                    // Running inside a flatpak sandbox.
-                    // We can't read $SHELL from inside the sandbox, so ask the host.
-                    if std::path::PathBuf::from("/.flatpak-info").exists() {
-                        log::info!("running inside a flatpak sandbox, requesting $SHELL via flatpak-spawn");
-                        let output = std::process::Command::new("flatpak-spawn")
-                            .args(["--host", "sh", "-c", "echo $SHELL"])
-                            .output()?;
-                        let flatpak_shell = String::from_utf8_lossy(&output.stdout);
-                        shell = flatpak_shell.trim().to_string();
-                    } else {
-                        shell = pw.shell.to_owned()
-                    }
+                    pw.shell.to_owned()
                 }
                 Err(err) => return Err(err),
             },
         };
+
+        #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+        {
+            // If running inside a flatpak sandbox.
+            // Must retrieve $SHELL from outside the sandbox, so ask the host.
+            if std::path::PathBuf::from("/.flatpak-info").exists() {
+                log::info!("running inside a flatpak sandbox, requesting $SHELL via flatpak-spawn");
+                let output = std::process::Command::new("flatpak-spawn")
+                    .args(["--host", "sh", "-c", "echo $SHELL"])
+                    .output()?;
+                let flatpak_shell = String::from_utf8_lossy(&output.stdout);
+                shell = flatpak_shell.trim().to_string();
+            }
+        }
 
         Ok(Self { user, home, shell })
     }
