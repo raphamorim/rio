@@ -53,7 +53,7 @@ pub fn default_working_dir() -> Option<String> {
 }
 
 pub fn default_window_opacity() -> f32 {
-    1.
+    1.0
 }
 
 pub fn default_option_as_alt() -> String {
