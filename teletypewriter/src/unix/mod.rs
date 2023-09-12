@@ -373,13 +373,9 @@ impl ShellUser {
 
         #[allow(unused_mut)]
         let mut shell = match std::env::var("SHELL") {
-            Ok(env_shell) => {
-                env_shell
-            },
+            Ok(env_shell) => env_shell,
             Err(_) => match pw {
-                Ok(ref pw) => {
-                    pw.shell.to_owned()
-                }
+                Ok(ref pw) => pw.shell.to_owned(),
                 Err(err) => return Err(err),
             },
         };
