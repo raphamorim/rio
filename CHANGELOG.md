@@ -19,7 +19,7 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 #   Default: 1.0
 #
 # • mode - define how the window will be created
-#     - "Regular" (default) is based on width and height
+#     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
@@ -27,7 +27,7 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 width = 600
 height = 400
 opacity = 1.0
-mode = "Regular"
+mode = "Windowed"
 ```
 
 - Rio terminal is now also available in crates.io: https://crates.io/crates/rioterm .
