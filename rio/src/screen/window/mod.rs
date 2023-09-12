@@ -1,6 +1,6 @@
 use rio_config::Config;
 use std::rc::Rc;
-use winit::window::{CursorIcon, Icon, ImePurpose, Window, WindowBuilder};
+use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
 pub const LOGO_ICON: &[u8; 119202] =
     include_bytes!("./resources/images/embedded-logo.ico");
@@ -21,13 +21,8 @@ pub fn create_window_builder(
     )
     .unwrap();
 
-    #[allow(unused_mut)]
     let mut window_builder = WindowBuilder::new()
         .with_title(title)
-        .with_inner_size(winit::dpi::LogicalSize {
-            width: config.window_width,
-            height: config.window_height,
-        })
         .with_min_inner_size(winit::dpi::LogicalSize {
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,
             height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
@@ -74,6 +69,21 @@ pub fn create_window_builder(
         }
     }
 
+    match config.window.mode {
+        rio_config::window::WindowMode::Fullscreen => {
+            window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        },
+        rio_config::window::WindowMode::Maximized => {
+            window_builder = window_builder.with_maximized(true);
+        },
+        _ => {
+            window_builder = window_builder.with_inner_size(winit::dpi::LogicalSize {
+                width: config.window.width,
+                height: config.window.height,
+            })
+        }
+    };
+
     window_builder
 }
 
@@ -85,7 +95,7 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     winit_window.set_ime_purpose(ImePurpose::Terminal);
     winit_window.set_ime_allowed(true);
 
-    winit_window.set_transparent(config.window_opacity < 1.);
+    winit_window.set_transparent(config.window.opacity < 1.);
 
     // TODO: Update ime position based on cursor
     // winit_window.set_ime_cursor_area(winit::dpi::PhysicalPosition::new(500.0, 500.0), winit::dpi::LogicalSize::new(400, 400));

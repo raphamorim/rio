@@ -1,9 +1,11 @@
 pub mod bindings;
+pub mod window;
 pub mod colors;
 mod defaults;
 pub mod navigation;
 pub mod theme;
 
+use crate::window::Window;
 use crate::bindings::Bindings;
 use crate::defaults::*;
 use crate::navigation::Navigation;
@@ -57,12 +59,8 @@ pub struct Config {
     pub blinking_cursor: bool,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
-    #[serde(rename = "window-opacity", default = "default_window_opacity")]
-    pub window_opacity: f32,
-    #[serde(rename = "window-width", default = "default_window_width")]
-    pub window_width: i32,
-    #[serde(rename = "window-height", default = "default_window_height")]
-    pub window_height: i32,
+    #[serde(default = "Window::default")]
+    pub window: Window,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_shell")]
@@ -334,9 +332,7 @@ impl Default for Config {
             shell: default_shell(),
             theme: default_theme(),
             use_fork: default_use_fork(),
-            window_height: default_window_height(),
-            window_opacity: default_window_opacity(),
-            window_width: default_window_width(),
+            window: Window::default(),
             working_dir: default_working_dir(),
         }
     }
@@ -421,7 +417,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
-        assert_eq!(result.window_opacity, default_window_opacity());
+        assert_eq!(result.window.opacity, default_window_opacity());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
@@ -603,7 +599,9 @@ mod tests {
             font-size = 14.0
             line-height = 2.0
             padding-x = 0.0
-            window-opacity = 0.5
+
+            [window]
+            opacity = 0.5
 
             [fonts]
             size = 14.0
@@ -614,7 +612,7 @@ mod tests {
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
-        assert_eq!(result.window_opacity, 0.5);
+        assert_eq!(result.window.opacity, 0.5);
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
