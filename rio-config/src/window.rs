@@ -10,7 +10,7 @@ pub enum WindowMode {
     Regular,
 }
 
-#[derive(PartialEq, Default, Deserialize, Clone, Copy, Debug)]
+#[derive(PartialEq, Deserialize, Clone, Copy, Debug)]
 pub struct Window {
     #[serde(default = "default_window_opacity")]
     pub opacity: f32,
@@ -20,4 +20,15 @@ pub struct Window {
     pub height: i32,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
+}
+
+impl Default for Window {
+    fn default() -> Window {
+        Window {
+            width: default_window_width(),
+            height: default_window_height(),
+            opacity: default_window_opacity(),
+            mode: WindowMode::default(),
+        }
+    }
 }
