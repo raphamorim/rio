@@ -18,5 +18,6 @@ pub struct Window {
     pub width: i32,
     #[serde(default = "default_window_height")]
     pub height: i32,
+    #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
 }
