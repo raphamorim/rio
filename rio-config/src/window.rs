@@ -5,9 +5,9 @@ use serde::Deserialize;
 pub enum WindowMode {
     Maximized,
     Fullscreen,
-    // Regular will use width and height definition
+    // Windowed will use width and height definition
     #[default]
-    Regular,
+    Windowed,
 }
 
 #[derive(PartialEq, Deserialize, Clone, Copy, Debug)]
