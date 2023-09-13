@@ -466,6 +466,15 @@ pub fn create_pty_with_spawn(
                 ));
             }
 
+            // Map only base environment variables
+            for (k, v) in std::env::vars_os() {
+                let key: String = k.into_string().unwrap_or_default();
+                let value: String = v.into_string().unwrap_or_default();
+                with_args.push(format!("--env={key}={value}"));
+            }
+
+            with_args.push("--env=TERM_PROGRAM=rio".to_string());
+
             let output = std::process::Command::new("flatpak-spawn")
                 .args(["--host", "sh", "-c", "echo $SHELL"])
                 .output()?;
