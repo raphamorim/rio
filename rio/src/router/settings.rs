@@ -375,13 +375,8 @@ pub struct ScreenSetting {
     requires_restart: bool,
 }
 
-pub struct ScreenSettingOptions {
-    title: String,
-    value: String,
-}
-
 #[inline]
-fn config_to_settings_screen(current_config: rio_config::Config) -> Vec<ScreenSetting> {
+fn config_to_settings_screen(_current_config: rio_config::Config) -> Vec<ScreenSetting> {
     let settings: Vec<ScreenSetting> = vec![
         ScreenSetting {
             title: String::from("Cursor"),
