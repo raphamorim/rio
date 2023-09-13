@@ -436,8 +436,12 @@ impl State {
     }
 
     #[inline]
-    pub fn prepare_assistant(&self, sugarloaf: &mut Sugarloaf, report: String) {
-        crate::router::assistant::screen(sugarloaf, &self.named_colors, report);
+    pub fn prepare_assistant(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        assistant: &crate::router::assistant::Assistant,
+    ) {
+        crate::router::assistant::screen(sugarloaf, &self.named_colors, assistant);
     }
 
     #[inline]

@@ -1318,9 +1318,8 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_assistant(&mut self, assistant_srt: String) {
-        self.state
-            .prepare_assistant(&mut self.sugarloaf, assistant_srt);
+    pub fn render_assistant(&mut self, assistant: &router::assistant::Assistant) {
+        self.state.prepare_assistant(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 

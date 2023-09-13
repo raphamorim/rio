@@ -128,10 +128,21 @@ impl Assistant {
     pub fn clear(&mut self) {
         self.inner = None;
     }
+
+    #[inline]
+    pub fn is_warning(&self) -> bool {
+        if let Some(report) = &self.inner {
+            if report.level == AssistantReportLevel::Error {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[inline]
-pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String) {
+pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assistant) {
     let assistant_background = vec![
         // Rect {
         //     position: [30., 0.0],
@@ -159,40 +170,43 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, content: String)
 
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 50.),
-        "Woops! Rio got warnings".to_string(),
+        "Woops! Rio got errors".to_string(),
         FONT_ID_BUILTIN,
         28.,
         named_colors.foreground,
         true,
     );
 
-    // sugarloaf.text(
-    //     (
-    //         sugarloaf.layout.width / sugarloaf.layout.scale_factor - 50.,
-    //         sugarloaf.layout.margin.top_y + 40.,
-    //     ),
-    //     "".to_string(),
-    //     7,
-    //     30.,
-    //     named_colors.foreground,
-    //     true,
-    // );
+    if let Some(report) = &assistant.inner {
+        if report.level == AssistantReportLevel::Error {
+            sugarloaf.text(
+                (70., sugarloaf.layout.margin.top_y + 80.),
+                "after fix it, restart the terminal".to_string(),
+                FONT_ID_BUILTIN,
+                18.,
+                named_colors.foreground,
+                true,
+            );
+        }
 
-    sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 80.),
-        "(press enter to continue)".to_string(),
-        FONT_ID_BUILTIN,
-        18.,
-        named_colors.foreground,
-        true,
-    );
+        if report.level == AssistantReportLevel::Warning {
+            sugarloaf.text(
+                (70., sugarloaf.layout.margin.top_y + 80.),
+                "(press enter to continue)".to_string(),
+                FONT_ID_BUILTIN,
+                18.,
+                named_colors.foreground,
+                true,
+            );
+        }
 
-    sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 170.),
-        content,
-        FONT_ID_BUILTIN,
-        14.,
-        named_colors.foreground,
-        false,
-    );
+        sugarloaf.text(
+            (70., sugarloaf.layout.margin.top_y + 170.),
+            report.report.to_string(),
+            FONT_ID_BUILTIN,
+            14.,
+            named_colors.foreground,
+            false,
+        );
+    }
 }
