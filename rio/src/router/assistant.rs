@@ -94,7 +94,6 @@ impl std::fmt::Display for AssistantReport {
 impl Display for Assistant {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(error) = &self.inner {
-
             if error.level == AssistantReportLevel::Error {
                 return write!(f, "{}", &error.report.to_string());
             }
