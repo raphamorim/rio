@@ -2,7 +2,8 @@ use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
-use crate::router::assistant::AssistantReport::FontsNotFound;
+use crate::router::assistant::AssistantReport::{FontsNotFound, InitializationError};
+use crate::router::assistant::{AssistantReportLevel, ErrorReport};
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use rio_config::Shell;
@@ -86,10 +87,24 @@ pub struct ContextManager<T: EventListener> {
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
+    pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
+        let terminal = Crosswords::new(1, 1, event_proxy, window_id);
+        let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+        let (sender, _receiver) = corcovado::channel::channel();
+
+        Context {
+            main_fd: Arc::new(-1),
+            shell_pid: 1,
+            messenger: Messenger::new(sender),
+            terminal,
+        }
+    }
+
+    #[inline]
     pub fn create_context(
         dimensions: (u32, u32),
         cols_rows: (usize, usize),
-        cursor_state: (CursorState, bool),
+        cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         config: &ContextManagerConfig,
@@ -123,7 +138,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
                         log::error!("{err:?}");
-                        std::process::exit(1);
+                        return Err(Box::new(err));
                     }
                 }
             };
@@ -172,20 +187,35 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn start(
         dimensions: (u32, u32),
         col_rows: (usize, usize),
-        cursor_state: (CursorState, bool),
+        cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         ctx_config: ContextManagerConfig,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
-        let initial_context = ContextManager::create_context(
+        let initial_context = match ContextManager::create_context(
             (dimensions.0, dimensions.1),
             (col_rows.0, col_rows.1),
             cursor_state,
             event_proxy.clone(),
             window_id,
             &ctx_config,
-        )?;
+        ) {
+            Ok(context) => context,
+            Err(err_message) => {
+                log::error!("{:?}", err_message);
+
+                event_proxy.send_event(
+                    RioEvent::ReportToAssistant(ErrorReport {
+                        report: InitializationError(err_message.to_string()),
+                        level: AssistantReportLevel::Error,
+                    }),
+                    window_id,
+                );
+
+                ContextManager::create_dead_context(event_proxy.clone(), window_id)
+            }
+        };
 
         let titles =
             ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
@@ -194,7 +224,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if let Some(errors) = sugarloaf_errors {
             if !errors.fonts_not_found.is_empty() {
                 event_proxy.send_event(
-                    RioEvent::ReportToAssistant(FontsNotFound(errors.fonts_not_found)),
+                    RioEvent::ReportToAssistant({
+                        ErrorReport {
+                            report: FontsNotFound(errors.fonts_not_found),
+                            level: AssistantReportLevel::Warning,
+                        }
+                    }),
                     window_id,
                 );
             }
@@ -233,7 +268,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let initial_context = ContextManager::create_context(
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
             event_proxy.clone(),
             window_id,
             &config,
@@ -262,7 +297,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn report_error_fonts_not_found(&self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
-                RioEvent::ReportToAssistant(FontsNotFound(fonts_not_found)),
+                RioEvent::ReportToAssistant({
+                    ErrorReport {
+                        report: FontsNotFound(fonts_not_found),
+                        level: AssistantReportLevel::Warning,
+                    }
+                }),
                 self.window_id,
             );
         }
@@ -528,7 +568,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         redirect: bool,
         dimensions: (u32, u32),
         col_rows: (usize, usize),
-        cursor_state: (CursorState, bool),
+        cursor_state: (&CursorState, bool),
     ) {
         // Native tabs do not use Context tabbing API, instead it will
         // ask winit to create a window with a tab id
@@ -614,7 +654,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
@@ -624,7 +664,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
@@ -642,14 +682,14 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 2);
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -658,7 +698,7 @@ pub mod test {
                 should_redirect,
                 (100, 100),
                 (1, 1),
-                (CursorState::default(), false),
+                (&CursorState::default(), false),
             );
         }
 
@@ -677,7 +717,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
@@ -690,13 +730,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.set_current(3);
         assert_eq!(context_manager.current_index, 3);
@@ -716,13 +756,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -748,25 +788,25 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
 
         context_manager.close_context();
@@ -781,7 +821,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
 
         assert_eq!(context_manager.len(), 2);
@@ -803,13 +843,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
@@ -833,31 +873,31 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (CursorState::default(), false),
+            (&CursorState::default(), false),
         );
         assert_eq!(context_manager.len(), 5);
         assert_eq!(context_manager.current_index, 0);

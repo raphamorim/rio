@@ -130,8 +130,8 @@ impl Debug for RioEvent {
             RioEvent::SelectNativeTabPrev => write!(f, "SelectNativeTabPrev"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
-            RioEvent::ReportToAssistant(message) => {
-                write!(f, "ReportToAssistant({message})")
+            RioEvent::ReportToAssistant(error_report) => {
+                write!(f, "ReportToAssistant({})", error_report.report)
             }
         }
     }

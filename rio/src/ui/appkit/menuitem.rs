@@ -1,6 +1,7 @@
 use core::{ffi, fmt, ptr};
 use objc2::ffi::NSInteger;
 use objc2::rc::{autoreleasepool, AutoreleasePool, Id, Owned, Shared};
+// use objc2::runtime;
 use objc2::runtime::{Bool, Object};
 use objc2::{class, msg_send};
 use objc2::{Encoding, Message, RefEncode};
@@ -8,6 +9,15 @@ use objc2_foundation::NSString;
 use std::ptr::NonNull;
 
 use super::menu::NSMenu;
+// pub type SEL = runtime::Sel;
+
+// #[allow(non_camel_case_types)]
+// pub type id = *mut runtime::Object;
+
+// #[inline]
+// pub fn selector(name: &str) -> SEL {
+//     runtime::Sel::register(name)
+// }
 
 #[allow(dead_code)]
 struct Target; // Normal NSObject. Should return YES in worksWhenModal.
@@ -97,9 +107,8 @@ impl NSMenuItem {
         unimplemented!()
     }
 
-    #[allow(dead_code)]
-    fn set_enabled(&mut self, _state: bool) {
-        unimplemented!()
+    pub fn set_enabled(&mut self, state: bool) {
+        unsafe { msg_send![self, setEnabled: Bool::new(state)] }
     }
 
     // Managing Hidden Status
@@ -128,10 +137,9 @@ impl NSMenuItem {
         unimplemented!()
     }
 
-    #[allow(unused)]
-    fn set_target(&mut self, _target: Target) {
-        unimplemented!()
-    }
+    // pub fn set_target(&mut self, target: ) {
+    // unsafe { msg_send![self, setTarget: target] }
+    // }
 
     #[allow(unused)]
     fn action(&self) -> ActionSelector {
