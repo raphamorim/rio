@@ -9,6 +9,8 @@ use sugarloaf::Sugarloaf;
 
 pub struct SettingsState {
     current: usize,
+    current_item: usize,
+    config: rio_config::Config,
 }
 
 pub struct Settings {
@@ -27,7 +29,11 @@ impl Settings {
             default_dir_path: rio_config::config_dir_path(),
             config: rio_config::Config::default(),
             items: config_to_settings_screen(rio_config::Config::default()),
-            state: SettingsState { current: 0 },
+            state: SettingsState {
+                current: 0,
+                current_item: 0,
+                config: rio_config::Config::default(),
+            },
             last_update: Instant::now(),
         }
     }
@@ -40,6 +46,7 @@ impl Settings {
             } else {
                 self.state.current -= 1;
             }
+            self.state.current_item = 0;
             self.last_update = Instant::now();
         }
     }
@@ -52,8 +59,39 @@ impl Settings {
             } else {
                 self.state.current += 1;
             }
+            self.state.current_item = 0;
             self.last_update = Instant::now();
         }
+    }
+
+    #[inline]
+    pub fn move_right(&mut self) {
+        if self.last_update.elapsed() > Duration::from_millis(100) {
+            if self.state.current_item >= self.items[self.state.current].options.len() - 1
+            {
+                self.state.current_item = 0;
+            } else {
+                self.state.current_item += 1;
+            }
+        }
+        self.items[self.state.current].current =
+            self.items[self.state.current].options[self.state.current_item].to_owned();
+        self.last_update = Instant::now();
+    }
+
+    #[inline]
+    pub fn move_left(&mut self) {
+        if self.last_update.elapsed() > Duration::from_millis(100) {
+            if self.state.current_item == 0 {
+                self.state.current_item =
+                    self.items[self.state.current].options.len() - 1;
+            } else {
+                self.state.current_item -= 1;
+            }
+        }
+        self.items[self.state.current].current =
+            self.items[self.state.current].options[self.state.current_item].to_owned();
+        self.last_update = Instant::now();
     }
 
     #[inline]
@@ -98,7 +136,7 @@ pub fn screen(
     named_colors: &Colors,
     settings: &crate::router::settings::Settings,
 ) {
-    let has_changes = false;
+    let has_changes = settings.config != settings.state.config;
     let settings_background = vec![
         Rect {
             position: [0., 100.0],
@@ -182,7 +220,10 @@ pub fn screen(
     let active_setting = &settings.items[settings.state.current];
     sugarloaf.text(
         (60., sugarloaf.layout.margin.top_y + 190.),
-        format!("{} | {:?}", active_setting.title, active_setting.current),
+        format!(
+            "{} | {:?}",
+            active_setting.title, active_setting.options[settings.state.current_item]
+        ),
         FONT_ID_BUILTIN,
         18.,
         named_colors.background.0,
@@ -334,145 +375,48 @@ pub struct ScreenSetting {
     requires_restart: bool,
 }
 
+pub struct ScreenSettingOptions {
+    title: String,
+    value: String,
+}
+
 #[inline]
 fn config_to_settings_screen(current_config: rio_config::Config) -> Vec<ScreenSetting> {
     let settings: Vec<ScreenSetting> = vec![
         ScreenSetting {
-            title: String::from("Navigation Mode"),
-            options: vec![
-                String::from("CollapsedTab"),
-                String::from("NativeTab"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: current_config.navigation.mode.to_string(),
-            requires_restart: true,
-        },
-        ScreenSetting {
-            title: String::from("Option as Alt"),
-            options: vec![
-                String::from("Disabled"),
-                String::from("Enabled"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: String::from("Disabled"),
+            title: String::from("Cursor"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
         ScreenSetting {
             title: String::from("Cursor"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
         ScreenSetting {
-            title: String::from("Font size"),
-            options: vec![
-                String::from("16"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("16"),
+            title: String::from("Cursor"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
         ScreenSetting {
-            title: String::from("Regular font family"),
-            options: vec![
-                String::from("Cascadia Mono (built-in)"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Cascadia Mono (built-in)"),
+            title: String::from("Cursor"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
         ScreenSetting {
-            title: String::from("Regular font weight"),
-            options: vec![
-                String::from("400"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("400"),
+            title: String::from("Cursor"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
         ScreenSetting {
-            title: String::from("Regular font style"),
-            options: vec![
-                String::from("Regular"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Regular"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Bold font family"),
-            options: vec![
-                String::from("Cascadia Mono (built-in)"),
-                String::from("NativeTab"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: String::from("Cascadia Mono (built-in)"),
-            requires_restart: true,
-        },
-        ScreenSetting {
-            title: String::from("Bold font weight"),
-            options: vec![
-                String::from("800"),
-                String::from("Enabled"),
-                String::from("Breadcrumb"),
-                String::from("TopTab"),
-                String::from("BottomTab"),
-            ],
-            current: String::from("800"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Bold font weight"),
-            options: vec![
-                String::from("Regular"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("A"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("B"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("Block"),
-            requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Performance"),
-            options: vec![
-                String::from("Block"),
-                String::from("Underline"),
-                String::from("Beam"),
-            ],
-            current: String::from("High"),
+            title: String::from("Cursor"),
+            options: vec![String::from("▇"), String::from("_"), String::from("|")],
+            current: String::from("▇"),
             requires_restart: false,
         },
     ];

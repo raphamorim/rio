@@ -77,14 +77,29 @@ impl Route {
         }
 
         if self.path == RoutePath::Settings {
-            if key_event.logical_key == winit::keyboard::Key::ArrowDown {
-                self.settings.move_down();
-                return true;
-            }
-
-            if key_event.logical_key == winit::keyboard::Key::ArrowUp {
-                self.settings.move_up();
-                return true;
+            match key_event.logical_key {
+                winit::keyboard::Key::ArrowDown => {
+                    self.settings.move_down();
+                    return true;
+                }
+                winit::keyboard::Key::ArrowUp => {
+                    self.settings.move_up();
+                    return true;
+                }
+                winit::keyboard::Key::ArrowLeft => {
+                    self.settings.move_left();
+                    return true;
+                }
+                winit::keyboard::Key::ArrowRight => {
+                    self.settings.move_right();
+                    return true;
+                }
+                winit::keyboard::Key::Enter => {
+                    // self.settings.create_file();
+                    self.path = RoutePath::Terminal;
+                    return true;
+                }
+                _ => {}
             }
         }
 
@@ -98,10 +113,6 @@ impl Route {
                 }
                 RoutePath::Welcome => {
                     self.settings.create_file();
-                    self.path = RoutePath::Terminal;
-                }
-                RoutePath::Settings => {
-                    // self.settings.create_file();
                     self.path = RoutePath::Terminal;
                 }
                 _ => {}
@@ -142,8 +153,8 @@ impl Router {
         let id = route_window.winit_window.id();
         let mut route = Route {
             window: route_window,
-            // path: RoutePath::Settings,
-            path: RoutePath::Terminal,
+            path: RoutePath::Settings,
+            // path: RoutePath::Terminal,
             settings: Settings::new(),
             assistant: Assistant::new(),
         };
