@@ -42,8 +42,18 @@ pub fn default_use_fork() -> bool {
         false
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "freebsd")]
     {
+        true
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+    {
+        // If Rio is running inside a flatpak sandbox, the default is spawn
+        if std::path::PathBuf::from("/.flatpak-info").exists() {
+            return false;
+        }
+
         true
     }
 }
