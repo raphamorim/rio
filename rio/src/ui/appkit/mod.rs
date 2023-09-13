@@ -3,6 +3,7 @@ pub mod menu;
 pub mod menubar;
 pub mod menuitem;
 
+use core::ptr::NonNull;
 use objc2::rc::autoreleasepool;
 
 pub use self::menubar::MenuBar;
@@ -15,6 +16,10 @@ pub use menuitem::{MenuItemState, NSMenuItem};
 extern "C" {}
 #[link(name = "Foundation", kind = "framework")]
 extern "C" {}
+
+fn print() {
+    println!("oi");
+}
 
 pub fn create_toolbar() {
     autoreleasepool(|_pool| {
@@ -31,8 +36,13 @@ pub fn create_toolbar() {
             menu.add(NSMenuItem::new("Quit Rio", "q", None));
         });
 
+        let oi = NonNull::new(print as *mut std::ffi::c_void);
+
         menubar.add("Shell", |menu| {
-            menu.add(NSMenuItem::new("Will be above the window data", "", None));
+            let mut item = NSMenuItem::new("Will be above the window data", "a", oi);
+            item.set_enabled(true);
+            // item.set_target(1)
+            menu.add(item);
         });
 
         menubar.add("Edit", |menu| {

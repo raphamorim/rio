@@ -181,7 +181,7 @@ impl Screen {
         let context_manager = context::ContextManager::start(
             (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
             (sugarloaf.layout.columns, sugarloaf.layout.lines),
-            (state.get_cursor_state(), config.blinking_cursor),
+            (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
             context_manager_config,
@@ -538,7 +538,7 @@ impl Screen {
                             ),
                             (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
                             (
-                                self.state.get_cursor_state_from_ref(),
+                                &self.state.get_cursor_state_from_ref(),
                                 self.state.has_blinking_enabled,
                             ),
                         );

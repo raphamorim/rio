@@ -89,7 +89,7 @@ impl Sequencer {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    route.report_error(error);
+                                    route.report_error(&error);
                                 }
                             }
                             RioEventType::Rio(RioEvent::UpdateConfig) => {
@@ -108,7 +108,7 @@ impl Sequencer {
                                     route.update_config(&self.config);
 
                                     if let Some(error) = &config_error {
-                                        route.report_error(error.to_owned().into());
+                                        route.report_error(&error.to_owned().into());
                                     } else {
                                         route.clear_errors();
                                     }

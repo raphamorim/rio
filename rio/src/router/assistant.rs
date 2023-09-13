@@ -5,6 +5,37 @@ use sugarloaf::components::rect::Rect;
 use sugarloaf::font::FONT_ID_BUILTIN;
 use sugarloaf::{font::SugarloafFont, Sugarloaf};
 
+#[derive(Clone, Copy)]
+pub enum AssistantReportLevel {
+    Warning,
+    Error,
+}
+
+#[derive(Clone)]
+pub struct ErrorReport {
+    pub report: AssistantReport,
+    pub level: AssistantReportLevel,
+}
+
+impl From<ConfigError> for ErrorReport {
+    fn from(error: ConfigError) -> Self {
+        match error {
+            ConfigError::ErrLoadingConfig(message) => ErrorReport {
+                report: AssistantReport::InvalidConfigurationFormat(message),
+                level: AssistantReportLevel::Warning,
+            },
+            ConfigError::ErrLoadingTheme(message) => ErrorReport {
+                report: AssistantReport::InvalidConfigurationTheme(message),
+                level: AssistantReportLevel::Warning,
+            },
+            ConfigError::PathNotFound => ErrorReport {
+                report: AssistantReport::ConfigurationNotFound,
+                level: AssistantReportLevel::Warning,
+            },
+        }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub enum AssistantReport {
     // font was not found
@@ -12,6 +43,7 @@ pub enum AssistantReport {
 
     // navigation configuration has changed
     // NavigationHasChanged,
+    InitializationError(String),
 
     // configurlation file was not found
     ConfigurationNotFound,
@@ -45,6 +77,9 @@ impl std::fmt::Display for AssistantReport {
             // AssistantReport::NavigationHasChanged => {
             //     write!(f, "Navigation has changed\n\nPlease reopen Rio terminal.")
             // }
+            AssistantReport::InitializationError(message) => {
+                write!(f, "Error initializing Rio terminal {message}")
+            }
             AssistantReport::IgnoredReport => write!(f, ""),
             AssistantReport::InvalidConfigurationFormat(message) => {
                 write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/#configuration-file")
@@ -56,27 +91,13 @@ impl std::fmt::Display for AssistantReport {
     }
 }
 
-impl From<ConfigError> for AssistantReport {
-    fn from(error: ConfigError) -> Self {
-        match error {
-            ConfigError::ErrLoadingConfig(message) => {
-                AssistantReport::InvalidConfigurationFormat(message)
-            }
-            ConfigError::ErrLoadingTheme(message) => {
-                AssistantReport::InvalidConfigurationTheme(message)
-            }
-            ConfigError::PathNotFound => AssistantReport::ConfigurationNotFound,
-        }
-    }
-}
-
 impl Display for Assistant {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(report) = &self.inner {
+        if let Some(error) = &self.inner {
             let mut assistant_report =
                 String::from("------------------------------------------------\n");
 
-            assistant_report += &report.to_string();
+            assistant_report += &error.report.to_string();
 
             write!(f, "{}", assistant_report)
         } else {
@@ -86,7 +107,7 @@ impl Display for Assistant {
 }
 
 pub struct Assistant {
-    pub inner: Option<AssistantReport>,
+    pub inner: Option<ErrorReport>,
 }
 
 impl Assistant {
@@ -95,7 +116,7 @@ impl Assistant {
     }
 
     #[inline]
-    pub fn set(&mut self, report: AssistantReport) {
+    pub fn set(&mut self, report: ErrorReport) {
         self.inner = Some(report);
     }
 

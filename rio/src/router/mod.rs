@@ -16,7 +16,7 @@ use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
 use winit::window::WindowId;
 
-pub type ErrorReport = AssistantReport;
+pub type ErrorReport = assistant::ErrorReport;
 
 pub struct Route {
     assistant: Assistant,
@@ -54,13 +54,13 @@ impl Route {
     }
 
     #[inline]
-    pub fn report_error(&mut self, report: AssistantReport) {
-        if report == AssistantReport::ConfigurationNotFound {
+    pub fn report_error(&mut self, error: &ErrorReport) {
+        if error.report == AssistantReport::ConfigurationNotFound {
             self.path = RoutePath::Welcome;
             return;
         }
 
-        self.assistant.set(report);
+        self.assistant.set(error.to_owned());
         self.path = RoutePath::Assistant;
     }
 
@@ -125,7 +125,7 @@ pub enum RoutePath {
 
 pub struct Router {
     pub routes: HashMap<WindowId, Route>,
-    propagated_report: Option<AssistantReport>,
+    propagated_report: Option<ErrorReport>,
 }
 
 impl Router {
@@ -136,8 +136,8 @@ impl Router {
         }
     }
 
-    pub fn propagate_error_to_next_route(&mut self, report: AssistantReport) {
-        self.propagated_report = Some(report);
+    pub fn propagate_error_to_next_route(&mut self, error: ErrorReport) {
+        self.propagated_report = Some(error);
     }
 
     #[inline]
@@ -152,7 +152,7 @@ impl Router {
         };
 
         if let Some(err) = &self.propagated_report {
-            route.report_error(err.to_owned());
+            route.report_error(err);
             self.propagated_report = None;
         }
 
