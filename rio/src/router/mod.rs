@@ -19,7 +19,7 @@ use winit::window::WindowId;
 pub type ErrorReport = assistant::ErrorReport;
 
 pub struct Route {
-    assistant: Assistant,
+    pub assistant: Assistant,
     pub settings: Settings,
     pub path: RoutePath,
     pub window: RouteWindow,
@@ -65,11 +65,6 @@ impl Route {
     }
 
     #[inline]
-    pub fn assistant_to_string(&self) -> String {
-        self.assistant.to_string()
-    }
-
-    #[inline]
     pub fn clear_errors(&mut self) {
         self.assistant.clear();
         self.path = RoutePath::Terminal;
@@ -96,8 +91,10 @@ impl Route {
         if key_event.logical_key == winit::keyboard::Key::Enter {
             match self.path {
                 RoutePath::Assistant => {
-                    self.assistant.clear();
-                    self.path = RoutePath::Terminal;
+                    if self.assistant.is_warning() {
+                        self.assistant.clear();
+                        self.path = RoutePath::Terminal;
+                    }
                 }
                 RoutePath::Welcome => {
                     self.settings.create_file();

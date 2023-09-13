@@ -927,7 +927,7 @@ impl Sequencer {
                                     route
                                         .window
                                         .screen
-                                        .render_assistant(route.assistant_to_string());
+                                        .render_assistant(&route.assistant);
                                 }
                                 RoutePath::Welcome => {
                                     route.window.screen.render_welcome();
