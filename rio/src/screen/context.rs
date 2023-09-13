@@ -93,7 +93,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let (sender, _receiver) = corcovado::channel::channel();
 
         Context {
+            #[cfg(not(target_os = "windows"))]
             main_fd: Arc::new(-1),
+            #[cfg(not(target_os = "windows"))]
             shell_pid: 1,
             messenger: Messenger::new(sender),
             terminal,

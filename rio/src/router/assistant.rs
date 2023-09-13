@@ -5,7 +5,7 @@ use sugarloaf::components::rect::Rect;
 use sugarloaf::font::FONT_ID_BUILTIN;
 use sugarloaf::{font::SugarloafFont, Sugarloaf};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum AssistantReportLevel {
     Warning,
     Error,
@@ -78,7 +78,7 @@ impl std::fmt::Display for AssistantReport {
             //     write!(f, "Navigation has changed\n\nPlease reopen Rio terminal.")
             // }
             AssistantReport::InitializationError(message) => {
-                write!(f, "Error initializing Rio terminal {message}")
+                write!(f, "Error initializing Rio terminal:\n{message}")
             }
             AssistantReport::IgnoredReport => write!(f, ""),
             AssistantReport::InvalidConfigurationFormat(message) => {
@@ -94,6 +94,11 @@ impl std::fmt::Display for AssistantReport {
 impl Display for Assistant {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(error) = &self.inner {
+
+            if error.level == AssistantReportLevel::Error {
+                return write!(f, "{}", &error.report.to_string());
+            }
+
             let mut assistant_report =
                 String::from("------------------------------------------------\n");
 
