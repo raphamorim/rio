@@ -380,20 +380,6 @@ impl ShellUser {
             },
         };
 
-        // #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-        // {
-        //     // If running inside a flatpak sandbox.
-        //     // Must retrieve $SHELL from outside the sandbox, so ask the host.
-        //     if std::path::PathBuf::from("/.flatpak-info").exists() {
-        //         log::info!("running inside a flatpak sandbox, requesting $SHELL via flatpak-spawn");
-        //         let output = std::process::Command::new("flatpak-spawn")
-        //             .args(["--host", "sh", "-c", "echo $SHELL"])
-        //             .output()?;
-        //         let flatpak_shell = String::from_utf8_lossy(&output.stdout);
-        //         shell = flatpak_shell.trim().to_string();
-        //     }
-        // }
-
         Ok(Self { user, home, shell })
     }
 }
@@ -414,8 +400,11 @@ pub fn create_pty_with_spawn(
     columns: u16,
     rows: u16,
 ) -> Result<Pty, Error> {
-    #[allow(unused_mut)]
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     let mut is_controling_terminal = true;
+
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    let is_controling_terminal = true;
 
     let mut main: libc::c_int = 0;
     let mut child: libc::c_int = 0;
@@ -470,9 +459,9 @@ pub fn create_pty_with_spawn(
         if std::path::PathBuf::from("/.flatpak-info").exists() {
             builder = Command::new("flatpak-spawn");
             let mut with_args = vec!["--host".to_string(), "--watch-bus".to_string()];
-            // if let Some(cwd) = cmd.get_cwd() {
-            //     new_args.push(format!("--directory={}", Path::new(cwd).display()));
-            // }
+            if let Some(directory) = working_directory {
+                new_args.push(format!("--directory={}", Path::new(directory).display()));
+            }
 
             let output = std::process::Command::new("flatpak-spawn")
                 .args(["--host", "sh", "-c", "echo $SHELL"])
