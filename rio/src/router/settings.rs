@@ -98,6 +98,7 @@ pub fn screen(
     named_colors: &Colors,
     settings: &crate::router::settings::Settings,
 ) {
+    let has_changes = false;
     let settings_background = vec![
         Rect {
             position: [0., 100.0],
@@ -153,8 +154,8 @@ pub fn screen(
     let items_len = settings.items.len();
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + 130.),
-        String::from("..."),
-        FONT_ID_BUILTIN,
+        String::from(""),
+        7,
         16.,
         named_colors.cursor,
         true,
@@ -177,39 +178,13 @@ pub fn screen(
         named_colors.dim_white,
         true,
     );
-    //     if settings.state.current >= 2 {
-    //         prev_items_iter = settings.state.current - 1..settings.state.current - 2;
-    //     } else {
-    //         prev_items_iter = (items_len)..(settings.state.current - 1);
-    //     }
-    // }
-
-    // let prev_items_iterator = Vec::from_iter(prev_items_iter);
-
-    // let mut spacing_between = 130.;
-    // for i in prev_items_iterator {
-    //     sugarloaf.text(
-    //         (10., sugarloaf.layout.margin.top_y + spacing_between),
-    //         format!(
-    //             "{} | \"{}\"",
-    //             settings.items[i].title,
-    //             settings.items[i].current,
-    //         ),
-    //         FONT_ID_BUILTIN,
-    //         16.,
-    //         named_colors.dim_white,
-    //         true,
-    //     );
-
-    //     spacing_between += 20.;
-    // }
 
     let active_setting = &settings.items[settings.state.current];
     sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 190.),
+        (60., sugarloaf.layout.margin.top_y + 190.),
         format!("{} | {:?}", active_setting.title, active_setting.current),
         FONT_ID_BUILTIN,
-        28.,
+        18.,
         named_colors.background.0,
         true,
     );
@@ -289,12 +264,18 @@ pub fn screen(
 
     sugarloaf.text(
         (10., sugarloaf.layout.margin.top_y + spacing_between),
-        String::from("..."),
-        FONT_ID_BUILTIN,
+        String::from(""),
+        7,
         16.,
         named_colors.cursor,
         true,
     );
+
+    let enter_button_color = if has_changes {
+        named_colors.foreground
+    } else {
+        named_colors.background.0
+    };
 
     sugarloaf.text(
         (
@@ -304,7 +285,7 @@ pub fn screen(
         "󰌑".to_string(),
         7,
         26.,
-        named_colors.foreground,
+        enter_button_color,
         true,
     );
 
@@ -316,7 +297,7 @@ pub fn screen(
         "save".to_string(),
         FONT_ID_BUILTIN,
         14.,
-        named_colors.foreground,
+        enter_button_color,
         true,
     );
 

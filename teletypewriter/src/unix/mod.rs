@@ -380,19 +380,19 @@ impl ShellUser {
             },
         };
 
-        #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-        {
-            // If running inside a flatpak sandbox.
-            // Must retrieve $SHELL from outside the sandbox, so ask the host.
-            if std::path::PathBuf::from("/.flatpak-info").exists() {
-                log::info!("running inside a flatpak sandbox, requesting $SHELL via flatpak-spawn");
-                let output = std::process::Command::new("flatpak-spawn")
-                    .args(["--host", "sh", "-c", "echo $SHELL"])
-                    .output()?;
-                let flatpak_shell = String::from_utf8_lossy(&output.stdout);
-                shell = flatpak_shell.trim().to_string();
-            }
-        }
+        // #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+        // {
+        //     // If running inside a flatpak sandbox.
+        //     // Must retrieve $SHELL from outside the sandbox, so ask the host.
+        //     if std::path::PathBuf::from("/.flatpak-info").exists() {
+        //         log::info!("running inside a flatpak sandbox, requesting $SHELL via flatpak-spawn");
+        //         let output = std::process::Command::new("flatpak-spawn")
+        //             .args(["--host", "sh", "-c", "echo $SHELL"])
+        //             .output()?;
+        //         let flatpak_shell = String::from_utf8_lossy(&output.stdout);
+        //         shell = flatpak_shell.trim().to_string();
+        //     }
+        // }
 
         Ok(Self { user, home, shell })
     }
@@ -414,6 +414,9 @@ pub fn create_pty_with_spawn(
     columns: u16,
     rows: u16,
 ) -> Result<Pty, Error> {
+    #[allow(unused_mut)]
+    let mut is_controling_terminal = true;
+
     let mut main: libc::c_int = 0;
     let mut child: libc::c_int = 0;
     let winsize = Winsize {
@@ -460,6 +463,31 @@ pub fn create_pty_with_spawn(
         cmd
     };
 
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+    {
+        // If running inside a flatpak sandbox.
+        // Must retrieve $SHELL from outside the sandbox, so ask the host.
+        if std::path::PathBuf::from("/.flatpak-info").exists() {
+            builder = Command::new("flatpak-spawn");
+            let mut with_args = vec!["--host".to_string(), "--watch-bus".to_string()];
+            // if let Some(cwd) = cmd.get_cwd() {
+            //     new_args.push(format!("--directory={}", Path::new(cwd).display()));
+            // }
+
+            let output = std::process::Command::new("flatpak-spawn")
+                .args(["--host", "sh", "-c", "echo $SHELL"])
+                .output()?;
+            let shell = String::from_utf8_lossy(&output.stdout);
+
+            with_args.push(shell.trim().to_string());
+            with_args.push("-l".to_string());
+
+            builder.args(with_args);
+
+            is_controling_terminal = false;
+        }
+    }
+
     // Setup child stdin/stdout/stderr as child fd of PTY.
     // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
     // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
@@ -479,7 +507,9 @@ pub fn create_pty_with_spawn(
                 return Err(Error::new(ErrorKind::Other, "Failed to set session id"));
             }
 
-            set_controlling_terminal(child);
+            if is_controling_terminal {
+                set_controlling_terminal(child);
+            }
 
             // No longer need child/main fds.
             libc::close(child);
