@@ -460,7 +460,10 @@ pub fn create_pty_with_spawn(
             builder = Command::new("flatpak-spawn");
             let mut with_args = vec!["--host".to_string(), "--watch-bus".to_string()];
             if let Some(directory) = working_directory {
-                new_args.push(format!("--directory={}", Path::new(directory).display()));
+                with_args.push(format!(
+                    "--directory={}",
+                    std::path::Path::new(directory).display()
+                ));
             }
 
             let output = std::process::Command::new("flatpak-spawn")
