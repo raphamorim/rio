@@ -1,9 +1,5 @@
 // Originally retired from https://github.com/RazrFalcon/fontdb/blob/master/Cargo.toml
 
-#![warn(missing_docs)]
-#![warn(missing_debug_implementations)]
-#![warn(missing_copy_implementations)]
-
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
@@ -18,22 +14,11 @@ pub use ttf_parser::Width as Stretch;
 use slotmap::SlotMap;
 use tinyvec::TinyVec;
 
-/// A unique per database face ID.
-///
-/// Since `Database` is not global/unique, we cannot guarantee that a specific ID
-/// is actually from the same db instance. This is up to the caller.
-///
-/// ID overflow will cause a panic, but it's highly unlikely that someone would
-/// load more than 4 billion font faces.
-///
-/// Because the internal representation of ID is private, The `Display` trait
-/// implementation for this type only promise that unequal IDs will be displayed
-/// as different strings, but does not make any guarantees about format or
-/// content of the strings.
-///
-/// [`KeyData`]: https://docs.rs/slotmap/latest/slotmap/struct.KeyData.html
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Debug, Default)]
 pub struct ID(InnerId);
+
+pub type SharedFaceDataResult =
+    Option<(std::sync::Arc<dyn AsRef<[u8]> + Send + Sync>, u32)>;
 
 slotmap::new_key_type! {
     /// Internal ID type.
@@ -60,9 +45,6 @@ impl core::fmt::Display for ID {
 #[derive(Debug)]
 enum LoadError {
     /// A malformed font.
-    ///
-    /// Typically means that [ttf-parser](https://github.com/RazrFalcon/ttf-parser)
-    /// wasn't able to parse it.
     MalformedFont,
     /// A valid TrueType font without a valid *Family Name*.
     UnnamedFont,
@@ -199,7 +181,10 @@ impl Database {
     }
 
     // // A non-generic version.
-    fn load_font_file_impl(&mut self, path: &std::path::Path) -> Result<(), std::io::Error> {
+    fn load_font_file_impl(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<(), std::io::Error> {
         let file = std::fs::File::open(path)?;
         let data: &[u8] = unsafe { &memmap2::MmapOptions::new().map(&file)? };
 
@@ -231,10 +216,14 @@ impl Database {
             let path = entry.path();
             if path.is_file() {
                 match path.extension().and_then(|e| e.to_str()) {
-                    Some("ttf") | Some("ttc") | Some("TTF") | Some("TTC") |
-                    Some("otf") | Some("otc") | Some("OTF") | Some("OTC") => {
+                    Some("ttf") | Some("ttc") | Some("TTF") | Some("TTC")
+                    | Some("otf") | Some("otc") | Some("OTF") | Some("OTC") => {
                         if let Err(e) = self.load_font_file(&path) {
-                            log::warn!("Failed to load '{}' cause {}.", path.display(), e);
+                            log::warn!(
+                                "Failed to load '{}' cause {}.",
+                                path.display(),
+                                e
+                            );
                         }
                     }
                     _ => {}
@@ -249,13 +238,6 @@ impl Database {
     /// Attempts to load system fonts.
     ///
     /// Supports Windows, Linux and macOS.
-    ///
-    /// System fonts loading is a surprisingly complicated task,
-    /// mostly unsolvable without interacting with system libraries.
-    /// And since `fontdb` tries to be small and portable, this method
-    /// will simply scan some predefined directories.
-    /// Which means that fonts that are not in those directories must
-    /// be added manually.
     pub fn load_system_fonts(&mut self) {
         #[cfg(target_os = "windows")]
         {
@@ -263,8 +245,12 @@ impl Database {
 
             if let Ok(ref home) = std::env::var("USERPROFILE") {
                 let home_path = std::path::Path::new(home);
-                self.load_fonts_dir(home_path.join("AppData\\Local\\Microsoft\\Windows\\Fonts"));
-                self.load_fonts_dir(home_path.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"));
+                self.load_fonts_dir(
+                    home_path.join("AppData\\Local\\Microsoft\\Windows\\Fonts"),
+                );
+                self.load_fonts_dir(
+                    home_path.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"),
+                );
             }
         }
 
@@ -323,85 +309,6 @@ impl Database {
             }
         }
     }
-
-    // TODO: Decide to include it
-    // [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
-    // fontconfig-parser = { version = "0.5", optional = true, default-features = false }
-    // #[cfg(all(
-    //     unix,
-    //     feature = "fontconfig",
-    //     not(any(target_os = "macos", target_os = "android"))
-    // ))]
-    // fn load_fontconfig(&mut self) {
-    //     use std::path::Path;
-
-    //     let mut fontconfig = fontconfig_parser::FontConfig::default();
-    //     let home = std::env::var("HOME");
-
-    //     if let Ok(ref config_file) = std::env::var("FONTCONFIG_FILE") {
-    //         let _ = fontconfig.merge_config(Path::new(config_file));
-    //     } else {
-    //         let xdg_config_home = if let Ok(val) = std::env::var("XDG_CONFIG_HOME") {
-    //             Some(val.into())
-    //         } else if let Ok(ref home) = home {
-    //             // according to https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
-    //             // $XDG_CONFIG_HOME should default to $HOME/.config if not set
-    //             Some(Path::new(home).join(".config"))
-    //         } else {
-    //             None
-    //         };
-
-    //         let read_global = match xdg_config_home {
-    //             Some(p) => fontconfig
-    //                 .merge_config(&p.join("fontconfig/fonts.conf"))
-    //                 .is_err(),
-    //             None => true,
-    //         };
-
-    //         if read_global {
-    //             let _ = fontconfig.merge_config(Path::new("/etc/fonts/local.conf"));
-    //         }
-    //         let _ = fontconfig.merge_config(Path::new("/etc/fonts/fonts.conf"));
-    //     }
-
-    //     for fontconfig_parser::Alias {
-    //         alias,
-    //         default,
-    //         prefer,
-    //         accept,
-    //     } in fontconfig.aliases
-    //     {
-    //         let name = prefer
-    //             .get(0)
-    //             .or_else(|| accept.get(0))
-    //             .or_else(|| default.get(0));
-
-    //         if let Some(name) = name {
-    //             match alias.to_lowercase().as_str() {
-    //                 "serif" => self.set_serif_family(name),
-    //                 "sans-serif" => self.set_sans_serif_family(name),
-    //                 "sans serif" => self.set_sans_serif_family(name),
-    //                 "monospace" => self.set_monospace_family(name),
-    //                 "cursive" => self.set_cursive_family(name),
-    //                 "fantasy" => self.set_fantasy_family(name),
-    //                 _ => {}
-    //             }
-    //         }
-    //     }
-
-    //     for dir in fontconfig.dirs {
-    //         let path = if dir.path.starts_with("~") {
-    //             if let Ok(ref home) = home {
-    //                 Path::new(home).join(dir.path.strip_prefix("~").unwrap())
-    //             } else {
-    //                 continue;
-    //             }
-    //         } else {
-    //             dir.path
-    //         };
-    //         self.load_fonts_dir(path);
-    //     }
-    // }
 
     /// Pushes a user-provided `FaceInfo` to the database.
     ///
@@ -489,7 +396,11 @@ impl Database {
             let candidates: Vec<_> = self
                 .faces
                 .iter()
-                .filter(|(_, face)| face.families.iter().any(|family| family.0 == name))
+                .filter(|(_, face)| {
+                    face.families
+                        .iter()
+                        .any(|family| family.0.to_lowercase() == name.to_lowercase())
+                })
                 .map(|(_, info)| info)
                 .collect();
 
@@ -563,10 +474,7 @@ impl Database {
     /// If the underlying font provides multiple faces, then all faces are updated to participate in
     /// the data sharing. If the face was previously marked for data sharing, then this function will
     /// return a clone of the existing reference.
-    pub unsafe fn make_shared_face_data(
-        &mut self,
-        id: ID,
-    ) -> Option<(std::sync::Arc<dyn AsRef<[u8]> + Send + Sync>, u32)> {
+    pub unsafe fn make_shared_face_data(&mut self, id: ID) -> SharedFaceDataResult {
         let face_info = self.faces.get(id.0)?;
         let face_index = face_info.index;
 
@@ -578,8 +486,9 @@ impl Database {
             }
             Source::File(ref path) => {
                 let file = std::fs::File::open(path).ok()?;
-                let shared_data = std::sync::Arc::new(memmap2::MmapOptions::new().map(&file).ok()?)
-                    as std::sync::Arc<dyn AsRef<[u8]> + Send + Sync>;
+                let shared_data =
+                    std::sync::Arc::new(memmap2::MmapOptions::new().map(&file).ok()?)
+                        as std::sync::Arc<dyn AsRef<[u8]> + Send + Sync>;
                 (path.clone(), shared_data)
             }
             Source::SharedFile(_, data) => {
@@ -830,9 +739,10 @@ impl Weight {
 }
 
 /// Allows italic or oblique faces to be selected.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Default, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Style {
     /// A face that is neither italic not obliqued.
+    #[default]
     Normal,
     /// A form that is generally cursive in nature.
     Italic,
@@ -840,16 +750,15 @@ pub enum Style {
     Oblique,
 }
 
-impl Default for Style {
-    #[inline]
-    fn default() -> Style {
-        Style::Normal
-    }
-}
-
-fn parse_face_info(source: Source, data: &[u8], index: u32) -> Result<FaceInfo, LoadError> {
-    let raw_face = ttf_parser::RawFace::parse(data, index).map_err(|_| LoadError::MalformedFont)?;
-    let (families, post_script_name) = parse_names(&raw_face).ok_or(LoadError::UnnamedFont)?;
+fn parse_face_info(
+    source: Source,
+    data: &[u8],
+    index: u32,
+) -> Result<FaceInfo, LoadError> {
+    let raw_face =
+        ttf_parser::RawFace::parse(data, index).map_err(|_| LoadError::MalformedFont)?;
+    let (families, post_script_name) =
+        parse_names(&raw_face).ok_or(LoadError::UnnamedFont)?;
     let (style, weight, stretch) = parse_os2(&raw_face);
     let monospaced = parse_post(&raw_face);
 
@@ -866,12 +775,15 @@ fn parse_face_info(source: Source, data: &[u8], index: u32) -> Result<FaceInfo, 
     })
 }
 
-fn parse_names(raw_face: &ttf_parser::RawFace) -> Option<(Vec<(String, Language)>, String)> {
+fn parse_names(
+    raw_face: &ttf_parser::RawFace,
+) -> Option<(Vec<(String, Language)>, String)> {
     const NAME_TAG: ttf_parser::Tag = ttf_parser::Tag::from_bytes(b"name");
     let name_data = raw_face.table(NAME_TAG)?;
     let name_table = ttf_parser::name::Table::parse(name_data)?;
 
-    let mut families = collect_families(ttf_parser::name_id::TYPOGRAPHIC_FAMILY, &name_table.names);
+    let mut families =
+        collect_families(ttf_parser::name_id::TYPOGRAPHIC_FAMILY, &name_table.names);
 
     // We have to fallback to Family Name when no Typographic Family Name was set.
     if families.is_empty() {
@@ -898,14 +810,18 @@ fn parse_names(raw_face: &ttf_parser::RawFace) -> Option<(Vec<(String, Language)
         .names
         .into_iter()
         .find(|name| {
-            name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME && name.is_supported_encoding()
+            name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME
+                && name.is_supported_encoding()
         })
         .and_then(|name| name_to_unicode(&name))?;
 
     Some((families, post_script_name))
 }
 
-fn collect_families(name_id: u16, names: &ttf_parser::name::Names) -> Vec<(String, Language)> {
+fn collect_families(
+    name_id: u16,
+    names: &ttf_parser::name::Names,
+) -> Vec<(String, Language)> {
     let mut families = Vec::new();
     for name in names.into_iter() {
         if name.name_id == name_id && name.is_unicode() {

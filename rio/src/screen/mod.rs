@@ -228,7 +228,8 @@ impl Screen {
             ((layout.sugarheight) * self.sugarloaf.layout.scale_factor) as usize;
 
         let mouse_x = self.mouse.x + layout.margin.x as usize;
-        let col = mouse_x / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
+        let col = mouse_x
+            / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
         // TODO: Refactor
         let col = col.saturating_sub(1);
         let col = col.saturating_sub(1);
