@@ -38,7 +38,10 @@ serde = { workspace = true }
 unicode-width = "0.1.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-fontdb = "0.14.1"
+memmap2 = { version = "0.6" }
+slotmap = { version = "1.0.6", default-features = false }
+tinyvec = { version = "1.6.0", features = ["alloc"] }
+ttf-parser = { version = "0.19", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }

@@ -897,19 +897,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
-name = "fontdb"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8d8cbea8f21307d7e84bca254772981296f058a1d36b461bf4d83a7499fc9e"
-dependencies = [
- "log 0.4.19",
- "memmap2 0.6.2",
- "slotmap",
- "tinyvec",
- "ttf-parser 0.19.1",
-]
-
-[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2654,15 +2641,18 @@ dependencies = [
  "console_log",
  "criterion",
  "deflate",
- "fontdb",
  "futures",
  "glyph_brush",
  "image",
  "js-sys",
  "log 0.4.19",
+ "memmap2 0.6.2",
  "png",
  "serde",
+ "slotmap",
+ "tinyvec",
  "tokio",
+ "ttf-parser 0.19.1",
  "unicode-width",
  "wasm-bindgen",
  "wasm-bindgen-futures",

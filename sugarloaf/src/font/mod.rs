@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod loader;
 pub mod fonts;
 // pub mod ligatures;
 
@@ -42,7 +43,7 @@ pub struct Font {
 #[cfg(not(target_arch = "wasm32"))]
 #[inline]
 fn find_font(
-    db: &fontdb::Database,
+    db: &crate::font::loader::Database,
     font_spec: SugarloafFont,
 ) -> (FontArc, bool, Option<SugarloafFont>) {
     let weight = font_spec.weight.unwrap_or(400);
@@ -61,20 +62,20 @@ fn find_font(
         );
 
         let query_style = match style.as_str() {
-            "italic" => fontdb::Style::Italic,
-            _ => fontdb::Style::Normal,
+            "italic" => crate::font::loader::Style::Italic,
+            _ => crate::font::loader::Style::Normal,
         };
 
-        let query = fontdb::Query {
-            families: &[fontdb::Family::Name(&family)],
-            weight: fontdb::Weight(weight),
+        let query = crate::font::loader::Query {
+            families: &[crate::font::loader::Family::Name(&family)],
+            weight: crate::font::loader::Weight(weight),
             style: query_style,
-            ..fontdb::Query::default()
+            ..crate::font::loader::Query::default()
         };
 
         match db.query(&query) {
             Some(id) => {
-                if let Some((fontdb::Source::File(ref path), _index)) = db.face_source(id)
+                if let Some((crate::font::loader::Source::File(ref path), _index)) = db.face_source(id)
                 {
                     if let Ok(bytes) = std::fs::read(path) {
                         match FontArc::try_from_vec(bytes.to_vec()) {
@@ -148,7 +149,7 @@ impl Font {
         let font_arc_unicode;
         let font_arc_symbol;
 
-        let mut db = fontdb::Database::new();
+        let mut db = crate::font::loader::Database::new();
         db.load_system_fonts();
         db.set_serif_family("Times New Roman");
         db.set_sans_serif_family("Arial");
