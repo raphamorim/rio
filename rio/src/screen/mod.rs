@@ -227,10 +227,16 @@ impl Screen {
         let line_fac =
             ((layout.sugarheight) * self.sugarloaf.layout.scale_factor) as usize;
 
-        let col = self.mouse.x.saturating_sub(
-            (layout.margin.x * self.sugarloaf.layout.scale_factor) as usize,
-        ) / layout.font_size as usize;
+        let mouse_x = self.mouse.x + layout.margin.x as usize;
+        let col = mouse_x / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
+        // TODO: Refactor
+        let col = col.saturating_sub(1);
+        let col = col.saturating_sub(1);
         let col = std::cmp::min(Column(col), Column(layout.columns));
+
+        // println!("{:?}", self.mouse.x);
+        // println!("{:?}", layout.sugarwidth);
+        // println!("{:?}", col);
 
         let line = self.mouse.y.saturating_sub(
             (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
