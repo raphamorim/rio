@@ -1,6 +1,6 @@
 pub mod constants;
-pub mod loader;
 pub mod fonts;
+pub mod loader;
 // pub mod ligatures;
 
 pub const FONT_ID_REGULAR: usize = 0;
@@ -75,7 +75,8 @@ fn find_font(
 
         match db.query(&query) {
             Some(id) => {
-                if let Some((crate::font::loader::Source::File(ref path), _index)) = db.face_source(id)
+                if let Some((crate::font::loader::Source::File(ref path), _index)) =
+                    db.face_source(id)
                 {
                     if let Ok(bytes) = std::fs::read(path) {
                         match FontArc::try_from_vec(bytes.to_vec()) {
