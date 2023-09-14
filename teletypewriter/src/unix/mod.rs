@@ -509,9 +509,7 @@ pub fn create_pty_with_spawn(
             }
 
             if is_controling_terminal {
-                if let Err(err_message) = set_controlling_terminal(child) {
-                    return Err(err_message);
-                }
+                set_controlling_terminal(child)?;
             }
 
             // No longer need child/main fds.
@@ -617,10 +615,10 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
     } {
         0 => {
             default_shell_command(shell_program);
-            return Err(Error::new(
+            Err(Error::new(
                 ErrorKind::Other,
                 format!("forkpty has reach unreachable with {}", shell_program),
-            ));
+            ))
         }
         id if id > 0 => {
             // TODO: Currently we fork the process and don't wait to know if led to failure
@@ -648,12 +646,10 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
                 signals_token: corcovado::Token(0),
             })
         }
-        _ => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("forkpty failed using {}", shell_program),
-            ));
-        }
+        _ => Err(Error::new(
+            ErrorKind::Other,
+            format!("forkpty failed using {}", shell_program),
+        )),
     }
 }
 
@@ -672,7 +668,7 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
         return Err(Error::last_os_error());
     }
 
-    return Ok(());
+    Ok(())
 }
 
 // https://man7.org/linux/man-pages/man2/fcntl.2.html

@@ -10,7 +10,7 @@ fn main() -> std::io::Result<()> {
     use teletypewriter::{create_pty_with_fork, ProcessReadWrite, Pty};
 
     let shell = Cow::Borrowed("bash");
-    let mut process: Pty = create_pty_with_fork(&shell, 80, 25);
+    let mut process: Pty = create_pty_with_fork(&shell, 80, 25)?;
 
     process.writer().write_all(b"1").unwrap();
     process.writer().write_all(b"2").unwrap();
