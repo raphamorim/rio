@@ -123,11 +123,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         {
             if config.use_fork {
                 log::info!("rio -> teletypewriter: create_pty_with_fork");
-                pty = create_pty_with_fork(
+                pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
                     cols_rows.0 as u16,
                     cols_rows.1 as u16,
-                )
+                ) {
+                    Ok(created_pty) => created_pty,
+                    Err(err) => {
+                        log::error!("{err:?}");
+                        return Err(Box::new(err));
+                    }
+                }
             } else {
                 log::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(

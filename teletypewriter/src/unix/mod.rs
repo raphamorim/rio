@@ -427,7 +427,7 @@ pub fn create_pty_with_spawn(
     };
 
     if res < 0 {
-        panic!("openpty failed");
+        return Err(Error::new(ErrorKind::Other, "openpty failed"));
     }
 
     let mut shell_program = shell;
@@ -509,7 +509,9 @@ pub fn create_pty_with_spawn(
             }
 
             if is_controling_terminal {
-                set_controlling_terminal(child);
+                if let Err(err_message) = set_controlling_terminal(child) {
+                    return Err(err_message);
+                }
             }
 
             // No longer need child/main fds.
@@ -578,7 +580,7 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
+pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty, Error> {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -615,9 +617,15 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
     } {
         0 => {
             default_shell_command(shell_program);
-            unreachable!();
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("forkpty has reach unreachable with {}", shell_program),
+            ));
         }
         id if id > 0 => {
+            // TODO: Currently we fork the process and don't wait to know if led to failure
+            // Whenever it happens it will just simply shut down the teletyperwriter
+            // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let child = Child {
                 id: Arc::new(main),
@@ -632,20 +640,25 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Pty {
 
             let signals = Signals::new([sigconsts::SIGCHLD])
                 .expect("error preparing signal handling");
-            Pty {
+            Ok(Pty {
                 child,
                 signals,
                 file: unsafe { File::from_raw_fd(main) },
                 token: corcovado::Token(0),
                 signals_token: corcovado::Token(0),
-            }
+            })
         }
-        _ => panic!("forkpty failed."),
+        _ => {
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("forkpty failed using {}", shell_program),
+            ));
+        }
     }
 }
 
 /// Really only needed on BSD, but should be fine elsewhere.
-fn set_controlling_terminal(fd: libc::c_int) {
+fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
     let res = unsafe {
         // TIOSCTTY changes based on platform and the `ioctl` call is different
         // based on architecture (32/64). So a generic cast is used to make sure
@@ -656,8 +669,10 @@ fn set_controlling_terminal(fd: libc::c_int) {
     };
 
     if res < 0 {
-        panic!("ioctl TIOCSCTTY failed: {}", Error::last_os_error());
+        return Err(Error::last_os_error());
     }
+
+    return Ok(());
 }
 
 // https://man7.org/linux/man-pages/man2/fcntl.2.html
