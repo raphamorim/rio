@@ -54,7 +54,9 @@ impl Sequencer {
         );
         let mut scheduler = Scheduler::new(proxy);
 
-        let window = RouteWindow::new(&event_loop, &self.config).await?;
+        let window =
+            RouteWindow::new(&event_loop, &self.config, &self.router.font_database)
+                .await?;
         self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
@@ -105,7 +107,10 @@ impl Sequencer {
 
                                 self.config = config.into();
                                 for (_id, route) in self.router.routes.iter_mut() {
-                                    route.update_config(&self.config);
+                                    route.update_config(
+                                        &self.config,
+                                        &self.router.font_database,
+                                    );
 
                                     if let Some(error) = &config_error {
                                         route.report_error(&error.to_owned().into());
@@ -836,10 +841,11 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
-                            route
-                                .window
-                                .screen
-                                .update_config(&self.config, Some(new_theme));
+                            route.window.screen.update_config(
+                                &self.config,
+                                Some(new_theme),
+                                &self.router.font_database,
+                            );
                         }
                     }
 

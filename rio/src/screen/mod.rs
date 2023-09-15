@@ -88,6 +88,7 @@ impl Screen {
         winit_window: &winit::window::Window,
         config: &Rc<rio_config::Config>,
         event_proxy: EventProxy,
+        font_database: &sugarloaf::font::loader::Database,
         native_tab_id: Option<String>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
@@ -138,6 +139,7 @@ impl Screen {
             winit_window,
             power_preference,
             config.fonts.to_owned(),
+            Some(font_database),
             sugarloaf_layout,
         )
         .await
@@ -294,8 +296,12 @@ impl Screen {
         &mut self,
         config: &Rc<rio_config::Config>,
         current_theme: Option<winit::window::Theme>,
+        db: &sugarloaf::font::loader::Database,
     ) {
-        if let Some(err) = self.sugarloaf.update_font(config.fonts.to_owned()) {
+        if let Some(err) = self
+            .sugarloaf
+            .update_font(config.fonts.to_owned(), Some(db))
+        {
             self.context_manager
                 .report_error_fonts_not_found(err.fonts_not_found);
             return;

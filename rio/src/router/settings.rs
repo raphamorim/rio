@@ -1,10 +1,11 @@
 use rio_config::colors::Colors;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use sugarloaf::components::rect::Rect;
-use sugarloaf::font::FONT_ID_BUILTIN;
+use sugarloaf::font::{loader::Database, FONT_ID_BUILTIN};
 use sugarloaf::Sugarloaf;
 
 pub struct SettingsState {
@@ -19,22 +20,38 @@ pub struct Settings {
     pub config: rio_config::Config,
     pub items: Vec<ScreenSetting>,
     pub state: SettingsState,
+    pub font_families: Vec<String>,
     last_update: Instant,
 }
 
 impl Settings {
-    pub fn new() -> Self {
+    pub fn new(db: &Database) -> Self {
+        let mut font_families_hash = HashMap::new();
+
+        for i in db.faces() {
+            if !i.families.is_empty() && i.monospaced {
+                font_families_hash.insert(i.families[0].0.to_owned(), true);
+            }
+        }
+
+        let mut font_families = Vec::from_iter(font_families_hash.keys().cloned());
+        font_families.push(String::from("Cascadia Mono (built-in)"));
+
         Settings {
             default_file_path: rio_config::config_file_path(),
             default_dir_path: rio_config::config_dir_path(),
             config: rio_config::Config::default(),
-            items: config_to_settings_screen(rio_config::Config::default()),
+            items: config_to_settings_screen(
+                rio_config::Config::default(),
+                font_families.to_owned(),
+            ),
             state: SettingsState {
                 current: 0,
                 current_item: 0,
                 config: rio_config::Config::default(),
             },
             last_update: Instant::now(),
+            font_families,
         }
     }
 
@@ -46,7 +63,7 @@ impl Settings {
             } else {
                 self.state.current -= 1;
             }
-            self.state.current_item = 0;
+            self.state.current_item = self.items[self.state.current].current;
             self.last_update = Instant::now();
         }
     }
@@ -59,7 +76,7 @@ impl Settings {
             } else {
                 self.state.current += 1;
             }
-            self.state.current_item = 0;
+            self.state.current_item = self.items[self.state.current].current;
             self.last_update = Instant::now();
         }
     }
@@ -74,8 +91,7 @@ impl Settings {
                 self.state.current_item += 1;
             }
         }
-        self.items[self.state.current].current =
-            self.items[self.state.current].options[self.state.current_item].to_owned();
+        self.items[self.state.current].current = self.state.current_item;
         self.last_update = Instant::now();
     }
 
@@ -89,8 +105,7 @@ impl Settings {
                 self.state.current_item -= 1;
             }
         }
-        self.items[self.state.current].current =
-            self.items[self.state.current].options[self.state.current_item].to_owned();
+        self.items[self.state.current].current = self.state.current_item;
         self.last_update = Instant::now();
     }
 
@@ -209,7 +224,8 @@ pub fn screen(
         (10., sugarloaf.layout.margin.top_y + 150.),
         format!(
             "{} | \"{}\"",
-            settings.items[previous_item].title, settings.items[previous_item].current,
+            settings.items[previous_item].title,
+            settings.items[previous_item].options[settings.items[previous_item].current],
         ),
         FONT_ID_BUILTIN,
         16.,
@@ -292,7 +308,8 @@ pub fn screen(
             (10., sugarloaf.layout.margin.top_y + spacing_between),
             format!(
                 "{} | \"{}\"",
-                settings.items[i].title, settings.items[i].current,
+                settings.items[i].title,
+                settings.items[i].options[settings.items[i].current],
             ),
             FONT_ID_BUILTIN,
             16.,
@@ -369,52 +386,229 @@ pub fn screen(
 
 pub struct ScreenSetting {
     title: String,
-    #[allow(unused)]
     options: Vec<String>,
-    current: String,
+    current: usize,
     requires_restart: bool,
 }
 
+// Falta
+
 #[inline]
-fn config_to_settings_screen(_current_config: rio_config::Config) -> Vec<ScreenSetting> {
-    let settings: Vec<ScreenSetting> = vec![
-        ScreenSetting {
+fn config_to_settings_screen(
+    config: rio_config::Config,
+    font_families: Vec<String>,
+) -> Vec<ScreenSetting> {
+    let mut settings: Vec<ScreenSetting> = vec![];
+    let default_font_family = font_families.len() - 1;
+
+    {
+        let options = vec![String::from("▇"), String::from("_"), String::from("|")];
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.cursor.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
             title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+            options,
+            current,
             requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+        });
+    }
+
+    {
+        let options = vec![String::from("High"), String::from("Low")];
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.performance.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Performance"),
+            options,
+            current,
+            requires_restart: true,
+        });
+    }
+
+    {
+        let options = rio_config::navigation::modes_as_vec_string();
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.navigation.mode.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Navigation"),
+            options,
+            current,
+            requires_restart: true,
+        });
+    }
+
+    {
+        let options = vec![String::from("Enabled"), String::from("Disabled")];
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.cursor.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Blinking Cursor"),
+            options,
+            current,
             requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+        });
+    }
+
+    {
+        let options: Vec<u8> = (0..20).collect();
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        if let Some(current) = options
+            .iter()
+            .position(|r| r == &config.padding_x.to_string())
+        {
+            settings.push(ScreenSetting {
+                title: String::from("Padding X"),
+                options,
+                current,
+                requires_restart: false,
+            });
+        }
+    }
+
+    {
+        let options: Vec<u8> = (5..40).collect();
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.fonts.size.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Option as alt"),
+            options,
+            current,
             requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+        });
+    }
+
+    {
+        let options: Vec<u8> = (5..40).collect();
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.fonts.size.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("New tabs using current path"),
+            options,
+            current,
             requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let options: Vec<u8> = (5..40).collect();
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.fonts.size.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Hide window buttons (MacOs)"),
+            options,
+            current,
+            requires_restart: true,
+        });
+    }
+
+    {
+        let options: Vec<u8> = (5..40).collect();
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let current: usize = options
+            .iter()
+            .position(|r| r == &config.fonts.size.to_string())
+            .unwrap_or(0);
+        settings.push(ScreenSetting {
+            title: String::from("Font size"),
+            options,
+            current,
             requires_restart: false,
-        },
-        ScreenSetting {
-            title: String::from("Cursor"),
-            options: vec![String::from("▇"), String::from("_"), String::from("|")],
-            current: String::from("▇"),
+        });
+    }
+
+    {
+        let current: usize = font_families
+            .iter()
+            .position(|r| {
+                r.to_lowercase() == config.fonts.regular.family.to_string().to_lowercase()
+            })
+            .unwrap_or(default_font_family);
+        settings.push(ScreenSetting {
+            title: String::from("Font family regular"),
+            options: font_families.to_owned(),
+            current,
             requires_restart: false,
-        },
-    ];
+        });
+    }
+
+    {
+        let current: usize = font_families
+            .iter()
+            .position(|r| {
+                r.to_lowercase() == config.fonts.bold.family.to_string().to_lowercase()
+            })
+            .unwrap_or(default_font_family);
+        settings.push(ScreenSetting {
+            title: String::from("Font family bold"),
+            options: font_families.to_owned(),
+            current,
+            requires_restart: false,
+        });
+    }
+
+    {
+        let current: usize = font_families
+            .iter()
+            .position(|r| {
+                r.to_lowercase() == config.fonts.italic.family.to_string().to_lowercase()
+            })
+            .unwrap_or(default_font_family);
+        settings.push(ScreenSetting {
+            title: String::from("Font family italic"),
+            options: font_families.to_owned(),
+            current,
+            requires_restart: false,
+        });
+    }
+
+    {
+        let current: usize = font_families
+            .iter()
+            .position(|r| {
+                r.to_lowercase()
+                    == config.fonts.bold_italic.family.to_string().to_lowercase()
+            })
+            .unwrap_or(default_font_family);
+        settings.push(ScreenSetting {
+            title: String::from("Font family bold-italic"),
+            options: font_families.to_owned(),
+            current,
+            requires_restart: false,
+        });
+    }
 
     // ScreenSetting {
     // title: String::from("Regular font size"),

@@ -145,19 +145,14 @@ impl Font {
     // TODO: Refactor multiple unwraps in this code
     // TODO: Use FontAttributes bold and italic
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(mut font_spec: SugarloafFonts) -> (Font, Vec<SugarloafFont>) {
+    pub fn new(
+        mut font_spec: SugarloafFonts,
+        db_opt: Option<&loader::Database>,
+    ) -> (Font, Vec<SugarloafFont>) {
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
         let font_arc_unicode;
         let font_arc_symbol;
-
-        let mut db = crate::font::loader::Database::new();
-        db.load_system_fonts();
-        db.set_serif_family("Times New Roman");
-        db.set_sans_serif_family("Arial");
-        db.set_cursive_family("Comic Sans MS");
-        db.set_fantasy_family("Impact");
-        db.set_monospace_family("Courier New");
 
         // If fonts.family does exist it will overwrite all families
         if let Some(font_family_overwrite) = font_spec.family {
@@ -167,10 +162,21 @@ impl Font {
             font_spec.italic.family = font_family_overwrite.to_owned();
         }
 
+        let mut font_database;
+        let db: &loader::Database;
+
+        if let Some(db_ref) = db_opt {
+            db = db_ref;
+        } else {
+            font_database = loader::Database::new();
+            font_database.load_system_fonts();
+            db = &font_database;
+        }
+
         #[cfg(target_os = "macos")]
         {
             font_arc_symbol = find_font(
-                &db,
+                db,
                 SugarloafFont {
                     family: String::from("Apple Symbols"),
                     style: None,
@@ -180,7 +186,7 @@ impl Font {
             .0;
 
             font_arc_unicode = find_font(
-                &db,
+                db,
                 SugarloafFont {
                     family: String::from("Arial Unicode MS"),
                     style: None,
@@ -196,22 +202,22 @@ impl Font {
             font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
         }
 
-        let regular = find_font(&db, font_spec.regular);
+        let regular = find_font(db, font_spec.regular);
         if let Some(err) = regular.2 {
             fonts_not_fount.push(err);
         }
 
-        let bold = find_font(&db, font_spec.bold);
+        let bold = find_font(db, font_spec.bold);
         if let Some(err) = bold.2 {
             fonts_not_fount.push(err);
         }
 
-        let bold_italic = find_font(&db, font_spec.bold_italic);
+        let bold_italic = find_font(db, font_spec.bold_italic);
         if let Some(err) = bold_italic.2 {
             fonts_not_fount.push(err);
         }
 
-        let italic = find_font(&db, font_spec.italic);
+        let italic = find_font(db, font_spec.italic);
         if let Some(err) = italic.2 {
             fonts_not_fount.push(err);
         }
