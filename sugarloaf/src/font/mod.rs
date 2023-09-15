@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod fonts;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 // pub mod ligatures;
 
