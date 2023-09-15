@@ -403,10 +403,6 @@ pub fn default_key_bindings(
         "l", ModifiersState::CONTROL; Action::ReceiveChar;
         Tab,  ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[Z".into());
-        Backspace, ModifiersState::ALT,   ~BindingMode::VI;
-            Action::Esc("\x1b\x7f".into());
-        Backspace, ModifiersState::SHIFT, ~BindingMode::VI;
-            Action::Esc("\x7f".into());
         Home,     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         End,      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
         PageUp,   ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollPageUp;
