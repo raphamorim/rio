@@ -1,7 +1,7 @@
 use crate::defaults::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Clone, Deserialize, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
 pub enum WindowMode {
     Maximized,
     Fullscreen,
@@ -10,7 +10,7 @@ pub enum WindowMode {
     Windowed,
 }
 
-#[derive(PartialEq, Deserialize, Clone, Copy, Debug)]
+#[derive(PartialEq, Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Window {
     #[serde(default = "default_window_opacity")]
     pub opacity: f32,

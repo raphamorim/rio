@@ -1,7 +1,7 @@
 use crate::colors::{deserialize_to_arr, ColorArray};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     Plain,
     #[default]
@@ -55,7 +55,7 @@ impl std::fmt::Display for NavigationMode {
     }
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
     pub program: String,
     #[serde(
@@ -65,7 +65,7 @@ pub struct ColorAutomation {
     pub color: ColorArray,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Navigation {
     #[serde(default = "NavigationMode::default")]
     pub mode: NavigationMode,

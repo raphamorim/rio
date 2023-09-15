@@ -1,11 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // Examples:
 // { key = "w", mods: "super", action = "quit" }
 // Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 // { key = "Home", mods: "super | shift", bytes = [27, 91, 53, 126] }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct KeyBinding {
     pub key: String,
     #[serde(default = "String::default")]
@@ -22,7 +22,7 @@ pub struct KeyBinding {
 
 pub type KeyBindings = Vec<KeyBinding>;
 
-#[derive(Default, Debug, PartialEq, Clone, Deserialize)]
+#[derive(Default, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Bindings {
     pub keys: KeyBindings,
 }
@@ -31,9 +31,9 @@ pub struct Bindings {
 mod tests {
 
     use crate::bindings::Bindings;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Deserialize, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     struct Root {
         #[serde(default = "Bindings::default")]
         bindings: Bindings,

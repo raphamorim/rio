@@ -432,7 +432,7 @@ impl State {
         sugarloaf: &mut Sugarloaf,
         settings: &crate::router::settings::Settings,
     ) {
-        crate::router::settings::screen(sugarloaf, &self.named_colors, settings);
+        crate::router::settings::screen::render(sugarloaf, &self.named_colors, settings);
     }
 
     #[inline]

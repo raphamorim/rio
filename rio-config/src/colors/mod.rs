@@ -3,6 +3,7 @@ pub mod defaults;
 pub mod term;
 
 use regex::Regex;
+use serde::Serialize;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
 
@@ -382,7 +383,7 @@ impl NamedColor {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
 pub struct ColorBuilder {
     pub red: f64,
     pub green: f64,
@@ -390,7 +391,7 @@ pub struct ColorBuilder {
     pub alpha: f64,
 }
 
-#[derive(Debug, PartialEq, Eq, Deserialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 pub struct ColorBuilder8Bits {
     pub red: u8,
     pub green: u8,
