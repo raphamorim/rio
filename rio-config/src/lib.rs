@@ -1,6 +1,6 @@
 pub mod bindings;
 pub mod colors;
-mod defaults;
+pub mod defaults;
 pub mod navigation;
 pub mod theme;
 pub mod window;
