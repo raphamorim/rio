@@ -14,6 +14,20 @@ pub enum NavigationMode {
     Breadcrumb,
 }
 
+#[inline]
+pub fn modes_as_vec_string() -> Vec<String> {
+    vec![
+        String::from("Plain"),
+        String::from("CollapsedTab"),
+        String::from("TopTab"),
+        String::from("BottomTab"),
+        #[cfg(target_os = "macos")]
+        String::from("NativeTab"),
+        #[cfg(not(windows))]
+        String::from("Breadcrumb"),
+    ]
+}
+
 impl std::fmt::Display for NavigationMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {

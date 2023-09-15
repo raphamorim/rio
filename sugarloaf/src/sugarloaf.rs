@@ -3,6 +3,7 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
+use crate::font::loader::Database;
 use crate::font::Font;
 use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
@@ -75,12 +76,13 @@ impl Sugarloaf {
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
         fonts: SugarloafFonts,
+        db: Option<&Database>,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
         let ctx = Context::new(winit_window, power_preference).await;
         let mut sugarloaf_errors = None;
 
-        let loaded_fonts = Font::new(fonts.to_owned());
+        let loaded_fonts = Font::new(fonts.to_owned(), db);
         let fonts_not_found = loaded_fonts.1;
         let loaded_fonts = loaded_fonts.0;
 
@@ -162,11 +164,15 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn update_font(&mut self, fonts: SugarloafFonts) -> Option<SugarloafErrors> {
+    pub fn update_font(
+        &mut self,
+        fonts: SugarloafFonts,
+        db: Option<&Database>,
+    ) -> Option<SugarloafErrors> {
         if self.fonts != fonts {
             log::info!("requested a font change");
 
-            let loaded_fonts = Font::new(fonts.to_owned());
+            let loaded_fonts = Font::new(fonts.to_owned(), db);
 
             let fonts_not_found = loaded_fonts.1;
             if !fonts_not_found.is_empty() {

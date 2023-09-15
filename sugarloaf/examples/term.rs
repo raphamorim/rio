@@ -49,6 +49,7 @@ async fn main() {
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
+        None,
         // "Fira Code".to_string(),
         // "Monaco".to_string(),
         // "Space Mono".to_string(),

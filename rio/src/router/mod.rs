@@ -11,6 +11,7 @@ use settings::Settings;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
+use sugarloaf::font::loader;
 use winit::event_loop::EventLoop;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::window::Window;
@@ -37,10 +38,14 @@ impl Route {
     }
 
     #[inline]
-    pub fn update_config(&mut self, config: &Rc<rio_config::Config>) {
+    pub fn update_config(
+        &mut self,
+        config: &Rc<rio_config::Config>,
+        db: &loader::Database,
+    ) {
         self.window
             .screen
-            .update_config(config, self.window.winit_window.theme());
+            .update_config(config, self.window.winit_window.theme(), db);
     }
 
     #[inline]
@@ -134,16 +139,22 @@ pub enum RoutePath {
 pub struct Router {
     pub routes: HashMap<WindowId, Route>,
     propagated_report: Option<ErrorReport>,
+    pub font_database: loader::Database,
 }
 
 impl Router {
     pub fn new() -> Self {
+        let mut font_database = loader::Database::new();
+        font_database.load_system_fonts();
+
         Router {
             routes: HashMap::new(),
             propagated_report: None,
+            font_database,
         }
     }
 
+    #[inline]
     pub fn propagate_error_to_next_route(&mut self, error: ErrorReport) {
         self.propagated_report = Some(error);
     }
@@ -153,9 +164,9 @@ impl Router {
         let id = route_window.winit_window.id();
         let mut route = Route {
             window: route_window,
-            // path: RoutePath::Settings,
-            path: RoutePath::Terminal,
-            settings: Settings::new(),
+            path: RoutePath::Settings,
+            // path: RoutePath::Terminal,
+            settings: Settings::new(&self.font_database),
             assistant: Assistant::new(),
         };
 
@@ -174,13 +185,19 @@ impl Router {
         event_proxy: EventProxy,
         config: &Rc<rio_config::Config>,
     ) {
-        let window =
-            RouteWindow::from_target(event_loop, event_proxy, config, "Rio", None);
+        let window = RouteWindow::from_target(
+            event_loop,
+            event_proxy,
+            config,
+            &self.font_database,
+            "Rio",
+            None,
+        );
         self.routes.insert(
             window.winit_window.id(),
             Route {
                 window,
-                settings: Settings::new(),
+                settings: Settings::new(&self.font_database),
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
             },
@@ -196,13 +213,19 @@ impl Router {
         config: &Rc<rio_config::Config>,
         tab_id: Option<String>,
     ) {
-        let window =
-            RouteWindow::from_target(event_loop, event_proxy, config, "Rio", tab_id);
+        let window = RouteWindow::from_target(
+            event_loop,
+            event_proxy,
+            config,
+            &self.font_database,
+            "Rio",
+            tab_id,
+        );
         self.routes.insert(
             window.winit_window.id(),
             Route {
                 window,
-                settings: Settings::new(),
+                settings: Settings::new(&self.font_database),
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
             },
@@ -223,6 +246,7 @@ impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventP>,
         config: &Rc<rio_config::Config>,
+        font_database: &loader::Database,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -230,7 +254,8 @@ impl RouteWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let mut screen = Screen::new(&winit_window, config, event_proxy, None).await?;
+        let mut screen =
+            Screen::new(&winit_window, config, event_proxy, font_database, None).await?;
 
         screen.init(screen.state.named_colors.background.1);
 
@@ -248,6 +273,7 @@ impl RouteWindow {
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
         config: &Rc<rio_config::Config>,
+        font_database: &loader::Database,
         window_name: &str,
         tab_id: Option<String>,
     ) -> Self {
@@ -259,6 +285,7 @@ impl RouteWindow {
             &winit_window,
             config,
             event_proxy,
+            font_database,
             tab_id,
         ))
         .expect("Screen not created");

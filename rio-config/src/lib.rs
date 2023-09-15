@@ -30,6 +30,19 @@ pub enum Performance {
     Low,
 }
 
+impl std::fmt::Display for Performance {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Performance::High => {
+                write!(f, "High")
+            }
+            Performance::Low => {
+                write!(f, "Low")
+            }
+        }
+    }
+}
+
 #[derive(Default, Debug, Deserialize, PartialEq, Clone)]
 pub struct Shell {
     pub program: String,
