@@ -63,8 +63,8 @@ async fn run() {
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
-        None,
         sugarloaf_layout,
+        None,
     )
     .await
     {

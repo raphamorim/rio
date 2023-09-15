@@ -3,6 +3,7 @@ use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
 use crate::font::Font;
 use crate::font::{
@@ -15,6 +16,9 @@ use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
+
+#[cfg(target_arch = "wasm32")]
+pub struct Database;
 
 pub trait Renderable: 'static + Sized {
     fn init(context: &Context) -> Self;
@@ -76,13 +80,17 @@ impl Sugarloaf {
         winit_window: &winit::window::Window,
         power_preference: wgpu::PowerPreference,
         fonts: SugarloafFonts,
-        db: Option<&Database>,
         layout: SugarloafLayout,
+        #[allow(unused)] db: Option<&Database>,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
         let ctx = Context::new(winit_window, power_preference).await;
         let mut sugarloaf_errors = None;
 
+        #[cfg(not(target_arch = "wasm32"))]
         let loaded_fonts = Font::new(fonts.to_owned(), db);
+        #[cfg(target_arch = "wasm32")]
+        let loaded_fonts = Font::new(fonts.to_owned());
+
         let fonts_not_found = loaded_fonts.1;
         let loaded_fonts = loaded_fonts.0;
 
@@ -167,12 +175,15 @@ impl Sugarloaf {
     pub fn update_font(
         &mut self,
         fonts: SugarloafFonts,
-        db: Option<&Database>,
+        #[allow(unused)] db: Option<&Database>,
     ) -> Option<SugarloafErrors> {
         if self.fonts != fonts {
             log::info!("requested a font change");
 
+            #[cfg(not(target_arch = "wasm32"))]
             let loaded_fonts = Font::new(fonts.to_owned(), db);
+            #[cfg(target_arch = "wasm32")]
+            let loaded_fonts = Font::new(fonts.to_owned());
 
             let fonts_not_found = loaded_fonts.1;
             if !fonts_not_found.is_empty() {

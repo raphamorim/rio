@@ -167,8 +167,8 @@ impl Router {
         let id = route_window.winit_window.id();
         let mut route = Route {
             window: route_window,
-            path: RoutePath::Settings,
-            // path: RoutePath::Terminal,
+            // path: RoutePath::Settings,
+            path: RoutePath::Terminal,
             settings: Settings::new(&self.font_database),
             assistant: Assistant::new(),
         };
