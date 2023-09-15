@@ -55,6 +55,27 @@ impl std::fmt::Display for NavigationMode {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseNavigationModeError;
+
+impl std::str::FromStr for NavigationMode {
+    type Err = ParseNavigationModeError;
+
+    fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
+        match s {
+            "CollapsedTab" => Ok(NavigationMode::CollapsedTab),
+            "TopTab" => Ok(NavigationMode::TopTab),
+            "BottomTab" => Ok(NavigationMode::BottomTab),
+            #[cfg(target_os = "macos")]
+            "NativeTab" => Ok(NavigationMode::NativeTab),
+            #[cfg(not(windows))]
+            "Breadcrumb" => Ok(NavigationMode::Breadcrumb),
+            "Plain" => Ok(NavigationMode::Plain),
+            _ => Ok(NavigationMode::default()),
+        }
+    }
+}
+
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
     pub program: String,
