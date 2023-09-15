@@ -1,5 +1,5 @@
 use crate::font::{DEFAULT_FONT_FAMILY, DEFAULT_FONT_FAMILY_VARIANT};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /* Example:
 
@@ -29,7 +29,7 @@ style = "italic"
 weight = 800
 */
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
@@ -88,7 +88,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,

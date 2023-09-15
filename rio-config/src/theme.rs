@@ -1,15 +1,15 @@
 use crate::colors::Colors;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct AdaptiveColors {
-    #[serde(default = "Option::default")]
+    #[serde(default = "Option::default", skip_serializing)]
     pub dark: Option<Colors>,
-    #[serde(default = "Option::default")]
+    #[serde(default = "Option::default", skip_serializing)]
     pub light: Option<Colors>,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct AdaptiveTheme {
     pub dark: String,
     pub light: String,

@@ -11,7 +11,7 @@ use crate::navigation::Navigation;
 use crate::window::Window;
 use colors::Colors;
 use log::warn;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::default::Default;
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
@@ -23,7 +23,7 @@ pub enum ConfigError {
     PathNotFound,
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
     #[default]
     High,
@@ -43,13 +43,13 @@ impl std::fmt::Display for Performance {
     }
 }
 
-#[derive(Default, Debug, Deserialize, PartialEq, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {
     pub program: String,
     pub args: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Developer {
     #[serde(default = "bool::default", rename = "enable-fps-counter")]
     pub enable_fps_counter: bool,
@@ -66,7 +66,7 @@ impl Default for Developer {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default = "bool::default")]
     pub blinking_cursor: bool,
@@ -88,7 +88,11 @@ pub struct Config {
     pub line_height: f32,
     #[serde(default = "default_theme")]
     pub theme: String,
-    #[serde(default = "Option::default", rename = "adaptive-theme")]
+    #[serde(
+        default = "Option::default",
+        skip_serializing,
+        rename = "adaptive-theme"
+    )]
     pub adaptive_theme: Option<AdaptiveTheme>,
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
@@ -100,7 +104,7 @@ pub struct Config {
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
     pub option_as_alt: String,
-    #[serde(default = "Colors::default")]
+    #[serde(default = "Colors::default", skip_serializing)]
     pub colors: Colors,
     #[serde(default = "Option::default", skip_serializing)]
     pub adaptive_colors: Option<AdaptiveColors>,
@@ -221,6 +225,10 @@ impl Config {
         } else {
             Err(String::from("filepath does not exists"))
         }
+    }
+
+    pub fn to_string(&self) -> Result<String, toml::ser::Error> {
+        toml::to_string(self)
     }
 
     pub fn load() -> Self {

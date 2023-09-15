@@ -85,44 +85,47 @@ impl Route {
             match key_event.logical_key {
                 winit::keyboard::Key::ArrowDown => {
                     self.settings.move_down();
-                    return true;
                 }
                 winit::keyboard::Key::ArrowUp => {
                     self.settings.move_up();
-                    return true;
                 }
                 winit::keyboard::Key::ArrowLeft => {
                     self.settings.move_left();
-                    return true;
                 }
                 winit::keyboard::Key::ArrowRight => {
                     self.settings.move_right();
-                    return true;
                 }
                 winit::keyboard::Key::Enter => {
-                    // self.settings.create_file();
+                    self.settings.write_current_config_into_file();
                     self.path = RoutePath::Terminal;
-                    return true;
+                }
+                winit::keyboard::Key::Escape => {
+                    self.settings.reset();
+                    self.path = RoutePath::Terminal;
                 }
                 _ => {}
             }
+
+            return true;
         }
 
-        if key_event.logical_key == winit::keyboard::Key::Enter {
-            match self.path {
-                RoutePath::Assistant => {
-                    if self.assistant.is_warning() {
-                        self.assistant.clear();
-                        self.path = RoutePath::Terminal;
-                    }
-                }
-                RoutePath::Welcome => {
-                    self.settings.create_file();
-                    self.path = RoutePath::Terminal;
-                }
-                _ => {}
+        let is_enter = key_event.logical_key == winit::keyboard::Key::Enter;
+        if self.path == RoutePath::Assistant && is_enter {
+            if self.assistant.is_warning() {
+                self.assistant.clear();
+                self.path = RoutePath::Terminal;
             }
+
+            return true;
         }
+
+        if self.path == RoutePath::Welcome && is_enter {
+            self.settings.create_file();
+            self.path = RoutePath::Terminal;
+
+            return true;
+        }
+
         true
     }
 }
