@@ -27,7 +27,8 @@ pub struct Settings {
     pub inner: HashMap<usize, Setting>,
     pub state: SettingsState,
     pub font_families: Vec<String>,
-    last_update: Instant,
+    last_update_y: Instant,
+    last_update_x: Instant,
 }
 
 impl Settings {
@@ -55,7 +56,8 @@ impl Settings {
                 current: 0,
                 current_item: 0,
             },
-            last_update: Instant::now(),
+            last_update_x: Instant::now(),
+            last_update_y: Instant::now(),
             font_families,
         }
     }
@@ -74,8 +76,8 @@ impl Settings {
 
     #[inline]
     pub fn move_up(&mut self) {
-        if self.last_update.elapsed() > Duration::from_millis(150) {
-            self.last_update = Instant::now();
+        if self.last_update_y.elapsed() > Duration::from_millis(150) {
+            self.last_update_y = Instant::now();
             if self.state.current == 0 {
                 self.state.current = self.inner.len() - 1;
             } else {
@@ -90,8 +92,8 @@ impl Settings {
 
     #[inline]
     pub fn move_down(&mut self) {
-        if self.last_update.elapsed() > Duration::from_millis(150) {
-            self.last_update = Instant::now();
+        if self.last_update_y.elapsed() > Duration::from_millis(150) {
+            self.last_update_y = Instant::now();
             if self.state.current >= self.inner.len() - 1 {
                 self.state.current = 0;
             } else {
@@ -105,7 +107,8 @@ impl Settings {
 
     #[inline]
     pub fn move_right(&mut self) {
-        if self.last_update.elapsed() > Duration::from_millis(150) {
+        if self.last_update_x.elapsed() > Duration::from_millis(200) {
+            self.last_update_x = Instant::now();
             if let Some(current_setting) = self.inner.get_mut(&self.state.current) {
                 if self.state.current_item >= current_setting.options.len() - 1 {
                     self.state.current_item = 0;
@@ -116,12 +119,12 @@ impl Settings {
                 current_setting.current_option = self.state.current_item;
             }
         }
-        self.last_update = Instant::now();
     }
 
     #[inline]
     pub fn move_left(&mut self) {
-        if self.last_update.elapsed() > Duration::from_millis(150) {
+        if self.last_update_x.elapsed() > Duration::from_millis(200) {
+            self.last_update_x = Instant::now();
             if let Some(current_setting) = self.inner.get_mut(&self.state.current) {
                 if self.state.current_item == 0 {
                     self.state.current_item = current_setting.options.len() - 1;
@@ -132,7 +135,6 @@ impl Settings {
                 current_setting.current_option = self.state.current_item;
             }
         }
-        self.last_update = Instant::now();
     }
 
     #[inline]
