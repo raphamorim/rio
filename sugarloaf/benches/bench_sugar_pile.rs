@@ -41,8 +41,8 @@ fn bench_sugar_pile(c: &mut Criterion) {
         &window,
         wgpu::PowerPreference::LowPower,
         sugarloaf::font::fonts::SugarloafFonts::default(),
-        None,
         sugarloaf_layout,
+        None,
     ))
     .expect("Sugarloaf instance should be created");
 

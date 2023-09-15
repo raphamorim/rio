@@ -139,8 +139,8 @@ impl Screen {
             winit_window,
             power_preference,
             config.fonts.to_owned(),
-            Some(font_database),
             sugarloaf_layout,
+            Some(font_database),
         )
         .await
         {

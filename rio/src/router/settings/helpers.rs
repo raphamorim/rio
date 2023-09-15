@@ -346,7 +346,7 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
     }
 
     {
-        if let Some(setting) = settings.get(&IDX_FONT_FAMILY_BOLD_ITALIC) {
+        if let Some(setting) = settings.get(&IDX_FONT_FAMILY_BOLD) {
             // In case is the last, then is the default font
             if setting.current_option == setting.options.len() - 1 {
                 current_config.fonts.bold.family = DEFAULT_FONT_FAMILY.to_string();

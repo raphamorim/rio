@@ -42,8 +42,8 @@ async fn main() {
         &window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
-        None,
         sugarloaf_layout,
+        None,
     )
     .await
     .expect("Sugarloaf instance should be created");
