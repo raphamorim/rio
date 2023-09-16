@@ -1095,6 +1095,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
+        // println!("{:?}", mode);
         let active_mode = self.mode & Mode::KEYBOARD_PROTOCOL;
         self.mode &= !Mode::KEYBOARD_PROTOCOL;
         let new_mode = match apply {

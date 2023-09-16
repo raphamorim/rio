@@ -35,7 +35,10 @@ winit = { workspace = true }
 glyph_brush = "0.7.7"
 log = { workspace = true }
 serde = { workspace = true }
+twox-hash = { version = "1.0", default-features = false }
+image = "0.24"
 unicode-width = "0.1.5"
+guillotiere = "0.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 memmap2 = { version = "0.6" }

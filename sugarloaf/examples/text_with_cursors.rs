@@ -21,7 +21,7 @@ async fn main() {
     let height = 800.0;
 
     let window = WindowBuilder::new()
-        .with_title("Text example")
+        .with_title("Text with cursors example")
         .with_inner_size(LogicalSize::new(width, height))
         .with_resizable(true)
         .build(&event_loop)
