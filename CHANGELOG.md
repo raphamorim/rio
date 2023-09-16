@@ -23,10 +23,13 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
+# • background - (optional) Set an image as background
+#   Default: Empty
 [window]
 width = 600
 height = 400
 opacity = 1.0
+background = "/Users/rapha/Desktop/eastward.jpg"
 mode = "Windowed"
 ```
 

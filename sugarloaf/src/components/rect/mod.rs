@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::Renderable;
+use crate::components::core::orthographic_projection;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
@@ -333,6 +334,7 @@ impl Renderable for RectBrush {
                 // rpass.pop_debug_group();
                 // rpass.insert_debug_marker("Draw!");
                 rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
+                drop(rpass);
             }
 
             i += MAX_INSTANCES;
@@ -340,27 +342,6 @@ impl Renderable for RectBrush {
 
         // queue.submit(Some(encoder.finish()));
     }
-}
-
-pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
-    [
-        2.0 / width as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        -2.0 / height as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        -1.0,
-        1.0,
-        0.0,
-        1.0,
-    ]
 }
 
 // fn main() {

@@ -142,7 +142,7 @@ impl State {
 
         let mut background_color = match square.bg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
-            AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
+            AnsiColor::Named(NamedColor::Background) => [0.0, 0.0, 0.0, 0.0,],
             AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
             AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
             AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
@@ -510,9 +510,9 @@ impl State {
         }
 
         // This is a fake row created only for visual purposes
-        let empty_last_line =
-            self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
-        sugarloaf.stack(empty_last_line);
+        // let empty_last_line =
+            // self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
+        // sugarloaf.stack(empty_last_line);
 
         self.navigation.content(
             (sugarloaf.layout.width, sugarloaf.layout.height),

@@ -1,4 +1,6 @@
+use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::rect::{Rect, RectBrush};
+use crate::components::layer::{self, LayerBrush};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::{RepeatedSugar, Sugar, SugarStack};
@@ -52,6 +54,7 @@ pub struct Sugarloaf {
     pub layout: SugarloafLayout,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
+    layer_brush: LayerBrush,
     rects: Vec<Rect>,
     text_y: f32,
     font_bound: (f32, f32),
@@ -113,9 +116,11 @@ impl Sugarloaf {
         ])
         .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
+        let layer_brush = LayerBrush::new(&ctx);
 
         let instance = Sugarloaf {
             sugar_cache: HashMap::new(),
+            layer_brush,
             fonts,
             ctx,
             rect_brush,
@@ -791,6 +796,22 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
+                self.layer_brush.prepare(
+                    &mut encoder,
+                    &mut self.ctx,
+                    &[layer::types::Image::Raster {
+                        handle: Handle::from_path("/Users/hugoamor/Desktop/eastward.jpg"),
+                        bounds: Rectangle {
+                            width: 400.0,
+                            height: 400.0,
+                            x: 0.0,
+                            y: 0.0,
+                        }
+                    }]
+                );
+
+                self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
+
                 self.rect_brush.render(
                     &mut encoder,
                     view,
@@ -800,6 +821,22 @@ impl Sugarloaf {
                 );
 
                 self.rects = vec![];
+
+                // self.layer_brush.prepare(
+                //     &mut encoder,
+                //     &mut self.ctx,
+                //     &[layer::types::Image::Raster {
+                //         handle: Handle::from_path("/Users/hugoamor/Desktop/eastward.jpg"),
+                //         bounds: Rectangle {
+                //             width: 400.0,
+                //             height: 400.0,
+                //             x: 0.0,
+                //             y: 0.0,
+                //         }
+                //     }]
+                // );
+
+                // self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
 
                 let _ = self.text_brush.draw_queued(
                     &self.ctx.device,
