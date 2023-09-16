@@ -13,6 +13,7 @@ mod messenger;
 mod mouse;
 mod navigation;
 mod state;
+pub mod touch;
 
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::{
@@ -33,6 +34,7 @@ use crate::screen::{
     bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
     context::ContextManager,
     mouse::{calculate_mouse_position, Mouse},
+    touch::TouchPurpose
 };
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
@@ -100,6 +102,7 @@ pub struct Screen {
     clipboard: Clipboard,
     pub modifiers: Modifiers,
     pub mouse: Mouse,
+    pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
     pub sugarloaf: Sugarloaf,
@@ -229,6 +232,7 @@ impl Screen {
             ime,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
+            touchpurpose: TouchPurpose::default(),
             state,
             bindings,
             clipboard,
@@ -269,6 +273,10 @@ impl Screen {
                 self.sugarloaf.layout.scaled_sugarheight,
             ),
         )
+    }
+
+    pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
+        &mut self.touchpurpose
     }
 
     #[inline]
