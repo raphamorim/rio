@@ -317,6 +317,7 @@ impl State {
         stack
     }
 
+    #[inline]
     fn fg_square_to_color_array(&self, square: &Square) -> ColorArray {
         match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
