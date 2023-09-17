@@ -138,45 +138,8 @@ impl State {
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
-        let mut foreground_color = self.fg_square_to_color_array(square);
-
-        let mut background_color = match square.bg {
-            AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
-            AnsiColor::Named(NamedColor::Background) => [0.0, 0.0, 0.0, 0.0,],
-            AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
-            AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
-            AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
-            AnsiColor::Named(NamedColor::LightCyan) => self.named_colors.light_cyan,
-            AnsiColor::Named(NamedColor::LightForeground) => {
-                self.named_colors.light_foreground
-            }
-            AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
-            AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
-            AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
-            AnsiColor::Named(NamedColor::LightWhite) => self.named_colors.light_white,
-            AnsiColor::Named(NamedColor::LightYellow) => self.named_colors.light_yellow,
-            AnsiColor::Named(NamedColor::Cursor) => self.named_colors.cursor,
-            AnsiColor::Named(NamedColor::Cyan) => self.named_colors.cyan,
-            AnsiColor::Named(NamedColor::DimBlack) => self.named_colors.dim_black,
-            AnsiColor::Named(NamedColor::DimBlue) => self.named_colors.dim_blue,
-            AnsiColor::Named(NamedColor::DimCyan) => self.named_colors.dim_cyan,
-            AnsiColor::Named(NamedColor::DimForeground) => {
-                self.named_colors.dim_foreground
-            }
-            AnsiColor::Named(NamedColor::DimGreen) => self.named_colors.dim_green,
-            AnsiColor::Named(NamedColor::DimMagenta) => self.named_colors.dim_magenta,
-            AnsiColor::Named(NamedColor::DimRed) => self.named_colors.dim_red,
-            AnsiColor::Named(NamedColor::DimWhite) => self.named_colors.dim_white,
-            AnsiColor::Named(NamedColor::DimYellow) => self.named_colors.dim_yellow,
-            AnsiColor::Named(NamedColor::Foreground) => self.named_colors.foreground,
-            AnsiColor::Named(NamedColor::Green) => self.named_colors.green,
-            AnsiColor::Named(NamedColor::Magenta) => self.named_colors.magenta,
-            AnsiColor::Named(NamedColor::Red) => self.named_colors.red,
-            AnsiColor::Named(NamedColor::White) => self.named_colors.white,
-            AnsiColor::Named(NamedColor::Yellow) => self.named_colors.yellow,
-            AnsiColor::Spec(rgb) => rgb.to_arr(),
-            AnsiColor::Indexed(idx) => self.colors[idx as usize],
-        };
+        let mut foreground_color = self.compute_fg_color(square);
+        let mut background_color = self.compute_bg_color(square);
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
             ' '
@@ -295,7 +258,7 @@ impl State {
                 let selected_sugar = Sugar {
                     content,
                     foreground_color: if self.ignore_theme_selection_fg_color {
-                        self.fg_square_to_color_array(square)
+                        self.compute_fg_color(square)
                     } else {
                         self.named_colors.selection_foreground
                     },
@@ -318,7 +281,7 @@ impl State {
     }
 
     #[inline]
-    fn fg_square_to_color_array(&self, square: &Square) -> ColorArray {
+    fn compute_fg_color(&self, square: &Square) -> ColorArray {
         match square.fg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
             AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
@@ -369,6 +332,47 @@ impl State {
 
                 self.colors[index]
             }
+        }
+    }
+
+    #[inline]
+    fn compute_bg_color(&self, square: &Square) -> ColorArray {
+        match square.bg {
+            AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
+            AnsiColor::Named(NamedColor::Background) => [0.0, 0.0, 0.0, 0.0,],
+            AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
+            AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
+            AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
+            AnsiColor::Named(NamedColor::LightCyan) => self.named_colors.light_cyan,
+            AnsiColor::Named(NamedColor::LightForeground) => {
+                self.named_colors.light_foreground
+            }
+            AnsiColor::Named(NamedColor::LightGreen) => self.named_colors.light_green,
+            AnsiColor::Named(NamedColor::LightMagenta) => self.named_colors.light_magenta,
+            AnsiColor::Named(NamedColor::LightRed) => self.named_colors.light_red,
+            AnsiColor::Named(NamedColor::LightWhite) => self.named_colors.light_white,
+            AnsiColor::Named(NamedColor::LightYellow) => self.named_colors.light_yellow,
+            AnsiColor::Named(NamedColor::Cursor) => self.named_colors.cursor,
+            AnsiColor::Named(NamedColor::Cyan) => self.named_colors.cyan,
+            AnsiColor::Named(NamedColor::DimBlack) => self.named_colors.dim_black,
+            AnsiColor::Named(NamedColor::DimBlue) => self.named_colors.dim_blue,
+            AnsiColor::Named(NamedColor::DimCyan) => self.named_colors.dim_cyan,
+            AnsiColor::Named(NamedColor::DimForeground) => {
+                self.named_colors.dim_foreground
+            }
+            AnsiColor::Named(NamedColor::DimGreen) => self.named_colors.dim_green,
+            AnsiColor::Named(NamedColor::DimMagenta) => self.named_colors.dim_magenta,
+            AnsiColor::Named(NamedColor::DimRed) => self.named_colors.dim_red,
+            AnsiColor::Named(NamedColor::DimWhite) => self.named_colors.dim_white,
+            AnsiColor::Named(NamedColor::DimYellow) => self.named_colors.dim_yellow,
+            AnsiColor::Named(NamedColor::Foreground) => self.named_colors.foreground,
+            AnsiColor::Named(NamedColor::Green) => self.named_colors.green,
+            AnsiColor::Named(NamedColor::Magenta) => self.named_colors.magenta,
+            AnsiColor::Named(NamedColor::Red) => self.named_colors.red,
+            AnsiColor::Named(NamedColor::White) => self.named_colors.white,
+            AnsiColor::Named(NamedColor::Yellow) => self.named_colors.yellow,
+            AnsiColor::Spec(rgb) => rgb.to_arr(),
+            AnsiColor::Indexed(idx) => self.colors[idx as usize],
         }
     }
 
