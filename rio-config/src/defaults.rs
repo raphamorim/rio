@@ -95,6 +95,12 @@ cursor = '▇'
 #
 blinking_cursor = true
 
+# Ignore theme selection foreground color
+#
+# Default is false
+#
+ignore_theme_selection_fg_color = false
+
 # Performance
 #
 # Set WGPU rendering performance
