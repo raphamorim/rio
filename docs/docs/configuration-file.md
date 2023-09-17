@@ -49,6 +49,12 @@ performance = "High"
 #
 theme = "dracula"
 
+# Ignore theme selection foreground color
+#
+# Default is false
+#
+ignore_theme_selection_fg_color = false
+
 # Adaptive Theme
 #
 # Changes theme based on the system theme (light and dark)
