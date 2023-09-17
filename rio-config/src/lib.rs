@@ -357,7 +357,7 @@ impl Default for Config {
             use_fork: default_use_fork(),
             window: Window::default(),
             working_dir: default_working_dir(),
-            ignore_theme_selection_fg_color: true,
+            ignore_theme_selection_fg_color: false,
         }
     }
 }
