@@ -10,7 +10,7 @@ pub enum WindowMode {
     Windowed,
 }
 
-#[derive(PartialEq, Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
     #[serde(default = "default_window_opacity")]
     pub opacity: f32,
@@ -20,6 +20,10 @@ pub struct Window {
     pub height: i32,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
+    #[serde(default = "Option::default", rename = "background-image")]
+    pub background_image: Option<String>,
+    #[serde(default = "default_window_background_opacity", rename = "background-opacity")]
+    pub background_opacity: f32,
 }
 
 impl Default for Window {
@@ -29,6 +33,8 @@ impl Default for Window {
             height: default_window_height(),
             opacity: default_window_opacity(),
             mode: WindowMode::default(),
+            background_opacity: default_window_background_opacity(),
+            background_image: None,
         }
     }
 }

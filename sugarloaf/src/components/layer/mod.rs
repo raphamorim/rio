@@ -435,6 +435,112 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
+    pub fn prepare_ref(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        ctx: &mut Context,
+        images: &[&types::Image],
+        // transformation: [f32; 16],
+        // _scale: f32,
+    ) {
+        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let device = &ctx.device;
+        let queue = &ctx.queue;
+
+        let instances: &mut Vec<Instance> = &mut Vec::new();
+        let mut raster_cache = self.raster_cache.borrow_mut();
+
+        // #[cfg(feature = "svg")]
+        // let mut vector_cache = self.vector_cache.borrow_mut();
+
+        for image in images {
+            match &image {
+                types::Image::Raster { handle, bounds } => {
+                    if let Some(atlas_entry) = raster_cache.upload(
+                        &device,
+                        encoder,
+                        handle,
+                        &mut self.texture_atlas,
+                    ) {
+                        add_instances(
+                            [bounds.x, bounds.y],
+                            [bounds.width, bounds.height],
+                            atlas_entry,
+                            instances,
+                        );
+                    }
+                }
+                // #[cfg(not(feature = "image"))]
+                // types::Image::Raster { .. } => {}
+
+                // #[cfg(feature = "svg")]
+                // types::Image::Vector {
+                //     handle,
+                //     color,
+                //     bounds,
+                // } => {
+                //     let size = [bounds.width, bounds.height];
+
+                //     if let Some(atlas_entry) = vector_cache.upload(
+                //         device,
+                //         encoder,
+                //         handle,
+                //         *color,
+                //         size,
+                //         _scale,
+                //         &mut self.texture_atlas,
+                //     ) {
+                //         add_instances(
+                //             [bounds.x, bounds.y],
+                //             size,
+                //             atlas_entry,
+                //             instances,
+                //         );
+                //     }
+                // }
+                // #[cfg(not(feature = "svg"))]
+                // types::Image::Vector { .. } => {}
+            }
+        }
+
+        if instances.is_empty() {
+            return;
+        }
+
+        let texture_version = self.texture_atlas.layer_count();
+
+        if self.texture_version != texture_version {
+            log::info!("Atlas has grown. Recreating bind group...");
+
+            self.texture =
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("iced_wgpu::image texture atlas bind group"),
+                    layout: &self.texture_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(
+                            self.texture_atlas.view(),
+                        ),
+                    }],
+                });
+
+            self.texture_version = texture_version;
+        }
+
+        if self.layers.len() <= self.prepare_layer {
+            self.layers.push(Layer::new(
+                &device,
+                &self.constant_layout,
+                &self.sampler,
+            ));
+        }
+
+        let layer = &mut self.layers[self.prepare_layer];
+        layer.prepare(&device, &queue, instances, transformation);
+
+        self.prepare_layer += 1;
+    }
+
     pub fn render<'a>(
         &'a self,
         layer: usize,

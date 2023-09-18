@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::layer::{self, LayerBrush};
@@ -591,6 +592,21 @@ impl Sugarloaf {
         self
     }
 
+    #[inline]
+    pub fn set_background_image(&mut self, image_path: PathBuf) -> &mut Self {
+        println!("deu set");
+        self.layout.background_image = Some(layer::types::Image::Raster {
+            handle: Handle::from_path(image_path),
+            bounds: Rectangle {
+                width: self.layout.width,
+                height: self.layout.height,
+                x: 0.0,
+                y: 0.0,
+            }
+        });
+        self
+    }
+
     /// calculate_bounds is a fake render operation that defines font bounds
     /// is an important function to figure out the cursor dimensions and background color
     /// but should be used as minimal as possible.
@@ -796,32 +812,6 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                self.layer_brush.prepare(
-                    &mut encoder,
-                    &mut self.ctx,
-                    &[layer::types::Image::Raster {
-                        handle: Handle::from_path("/Users/hugoamor/Desktop/eastward.jpg"),
-                        bounds: Rectangle {
-                            width: 400.0,
-                            height: 400.0,
-                            x: 0.0,
-                            y: 0.0,
-                        }
-                    }]
-                );
-
-                self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
-
-                self.rect_brush.render(
-                    &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                    &self.rects,
-                    &mut self.ctx,
-                );
-
-                self.rects = vec![];
-
                 // self.layer_brush.prepare(
                 //     &mut encoder,
                 //     &mut self.ctx,
@@ -837,6 +827,26 @@ impl Sugarloaf {
                 // );
 
                 // self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
+
+                self.rect_brush.render(
+                    &mut encoder,
+                    view,
+                    (self.ctx.size.width, self.ctx.size.height),
+                    &self.rects,
+                    &mut self.ctx,
+                );
+
+                self.rects = vec![];
+
+                if let Some(bg_image) = &self.layout.background_image {
+                    self.layer_brush.prepare_ref(
+                        &mut encoder,
+                        &mut self.ctx,
+                        &[bg_image]
+                    );
+
+                    self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
+                }
 
                 let _ = self.text_brush.draw_queued(
                     &self.ctx.device,

@@ -1,3 +1,4 @@
+use crate::components::layer::types;
 use crate::core::SugarloafStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -23,6 +24,7 @@ pub struct SugarloafLayout {
     pub margin: Delta<f32>,
     pub style: SugarloafStyle,
     pub background_color: wgpu::Color,
+    pub background_image: Option<types::Image>,
     pub min_cols_lines: (usize, usize),
     pub sugarwidth: f32,
     pub sugarheight: f32,
@@ -97,6 +99,7 @@ impl SugarloafLayout {
             font_size,
             sugarwidth: font_size,
             sugarheight: font_size,
+            background_image: None,
             font_bound,
             line_height,
             style,

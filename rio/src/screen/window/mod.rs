@@ -96,7 +96,7 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     winit_window.set_ime_purpose(ImePurpose::Terminal);
     winit_window.set_ime_allowed(true);
 
-    winit_window.set_transparent(config.window.opacity < 1.);
+    // winit_window.set_transparent(config.window.opacity < 1.);
 
     // TODO: Update ime position based on cursor
     // winit_window.set_ime_cursor_area(winit::dpi::PhysicalPosition::new(500.0, 500.0), winit::dpi::LogicalSize::new(400, 400));
