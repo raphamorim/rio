@@ -88,15 +88,13 @@ pub fn create_window_builder(
     window_builder
 }
 
-pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
+pub fn configure_window(winit_window: Window, _config: &Rc<Config>) -> Window {
     let current_mouse_cursor = CursorIcon::Text;
     winit_window.set_cursor_icon(current_mouse_cursor);
 
     // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
     winit_window.set_ime_purpose(ImePurpose::Terminal);
     winit_window.set_ime_allowed(true);
-
-    // winit_window.set_transparent(config.window.opacity < 1.);
 
     // TODO: Update ime position based on cursor
     // winit_window.set_ime_cursor_area(winit::dpi::PhysicalPosition::new(500.0, 500.0), winit::dpi::LogicalSize::new(400, 400));
@@ -113,7 +111,7 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
         // None - No special handling is applied for `Option` key.
         use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
 
-        match config.option_as_alt.to_lowercase().as_str() {
+        match _config.option_as_alt.to_lowercase().as_str() {
             "both" => winit_window.set_option_as_alt(OptionAsAlt::Both),
             "left" => winit_window.set_option_as_alt(OptionAsAlt::OnlyLeft),
             "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
