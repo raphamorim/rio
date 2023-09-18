@@ -1,7 +1,7 @@
 pub mod image;
 // pub mod svg;
-pub mod shapes;
 pub mod buffer;
+pub mod shapes;
 
 #[inline]
 pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {

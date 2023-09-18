@@ -8,7 +8,7 @@ pub mod window;
 use crate::bindings::Bindings;
 use crate::defaults::*;
 use crate::navigation::Navigation;
-use crate::window::Window;
+use crate::window::{Background, Window};
 use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,8 @@ pub struct Config {
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
     pub window: Window,
+    #[serde(default = "Background::default")]
+    pub background: Background,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_shell")]
@@ -340,6 +342,7 @@ impl Default for Config {
             blinking_cursor: false,
             adaptive_theme: None,
             adaptive_colors: None,
+            background: Background::default(),
             bindings: Bindings::default(),
             colors: Colors::default(),
             cursor: default_cursor(),
@@ -441,7 +444,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
-        assert_eq!(result.window.opacity, default_window_opacity());
+        assert_eq!(result.background.opacity, default_background_opacity());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
@@ -624,8 +627,9 @@ mod tests {
             line-height = 2.0
             padding-x = 0.0
 
-            [window]
+            [background]
             opacity = 0.5
+            image = "my-image-path.png"
 
             [fonts]
             size = 14.0
@@ -636,7 +640,11 @@ mod tests {
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
-        assert_eq!(result.window.opacity, 0.5);
+        assert_eq!(result.background.opacity, 0.5);
+        assert_eq!(
+            result.background.image,
+            Some(String::from("my-image-path.png"))
+        );
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());

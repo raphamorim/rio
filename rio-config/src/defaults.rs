@@ -52,11 +52,7 @@ pub fn default_working_dir() -> Option<String> {
     None
 }
 
-pub fn default_window_opacity() -> f32 {
-    1.0
-}
-
-pub fn default_window_background_opacity() -> f32 {
+pub fn default_background_opacity() -> f32 {
     1.0
 }
 
@@ -145,9 +141,6 @@ performance = "High"
 # • height - define the inital window height.
 #   Default: 400
 #
-# • opacity - define the window opacity (only for MacOS and Wayland)
-#   Default: 1.0
-#
 # • mode - define how the window will be created
 #     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
@@ -157,8 +150,29 @@ performance = "High"
 #   [window]
 #   width = 600
 #   height = 400
-#   opacity = 1.0
 #   mode = "Windowed"
+
+# Background configuration
+#
+# • opacity - changes the background transparency state
+#   Default: 1.0
+#
+# • mode - defines background mode bewteen "Color" and "Image"
+#
+# • image - Set an image as background
+#   Default: None
+#
+# Example
+# [background]
+# mode = "Image"
+# opacity = 1.0
+#
+# [background.image]
+# path = "/Users/rapha/Desktop/eastward.jpg"
+# width = 200.0
+# height = 200.0
+# x = 0.0
+# y = 0.0
 
 # Window Height
 #

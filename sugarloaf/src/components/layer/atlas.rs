@@ -301,12 +301,11 @@ impl Atlas {
             depth_or_array_layers: 1,
         };
 
-        let buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("image upload buffer"),
-                contents: data,
-                usage: wgpu::BufferUsages::COPY_SRC,
-            });
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("image upload buffer"),
+            contents: data,
+            usage: wgpu::BufferUsages::COPY_SRC,
+        });
 
         encoder.copy_buffer_to_texture(
             wgpu::ImageCopyBuffer {
@@ -353,9 +352,9 @@ impl Atlas {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             // if color::GAMMA_CORRECTION {
-                // wgpu::TextureFormat::Rgba8UnormSrgb
+            // wgpu::TextureFormat::Rgba8UnormSrgb
             // } else {
-                // wgpu::TextureFormat::Rgba8Unorm
+            // wgpu::TextureFormat::Rgba8Unorm
             // },
             usage: wgpu::TextureUsages::COPY_DST
                 | wgpu::TextureUsages::COPY_SRC
@@ -365,9 +364,7 @@ impl Atlas {
 
         let amount_to_copy = self.layers.len() - amount;
 
-        for (i, layer) in
-            self.layers.iter_mut().take(amount_to_copy).enumerate()
-        {
+        for (i, layer) in self.layers.iter_mut().take(amount_to_copy).enumerate() {
             if layer.is_empty() {
                 continue;
             }
@@ -402,10 +399,9 @@ impl Atlas {
         }
 
         self.texture = new_texture;
-        self.texture_view =
-            self.texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            });
+        self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
     }
 }

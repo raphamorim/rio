@@ -1,5 +1,6 @@
 use crate::defaults::*;
 use serde::{Deserialize, Serialize};
+use sugarloaf::core::ImageProperties;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
 pub enum WindowMode {
@@ -12,18 +13,12 @@ pub enum WindowMode {
 
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
-    #[serde(default = "default_window_opacity")]
-    pub opacity: f32,
     #[serde(default = "default_window_width")]
     pub width: i32,
     #[serde(default = "default_window_height")]
     pub height: i32,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
-    #[serde(default = "Option::default", rename = "background-image")]
-    pub background_image: Option<String>,
-    #[serde(default = "default_window_background_opacity", rename = "background-opacity")]
-    pub background_opacity: f32,
 }
 
 impl Default for Window {
@@ -31,10 +26,40 @@ impl Default for Window {
         Window {
             width: default_window_width(),
             height: default_window_height(),
-            opacity: default_window_opacity(),
             mode: WindowMode::default(),
-            background_opacity: default_window_background_opacity(),
-            background_image: None,
+        }
+    }
+}
+
+#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum BackgroundMode {
+    #[default]
+    Color,
+    Image,
+}
+
+impl BackgroundMode {
+    pub fn is_image(self) -> bool {
+        self == BackgroundMode::Image
+    }
+}
+
+#[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
+pub struct Background {
+    #[serde(default = "default_background_opacity", skip_serializing)]
+    pub opacity: f32,
+    #[serde(default = "BackgroundMode::default", skip_serializing)]
+    pub mode: BackgroundMode,
+    #[serde(default = "Option::default", skip_serializing)]
+    pub image: Option<ImageProperties>,
+}
+
+impl Default for Background {
+    fn default() -> Background {
+        Background {
+            opacity: default_background_opacity(),
+            image: None,
+            mode: BackgroundMode::Color,
         }
     }
 }

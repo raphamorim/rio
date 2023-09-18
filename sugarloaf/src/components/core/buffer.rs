@@ -59,12 +59,7 @@ impl<T: bytemuck::Pod> Buffer<T> {
     }
 
     /// Returns the size of the written bytes.
-    pub fn write(
-        &mut self,
-        queue: &wgpu::Queue,
-        offset: usize,
-        contents: &[T],
-    ) -> usize {
+    pub fn write(&mut self, queue: &wgpu::Queue, offset: usize, contents: &[T]) -> usize {
         let bytes: &[u8] = bytemuck::cast_slice(contents);
         queue.write_buffer(&self.raw, offset as u64, bytes);
 
@@ -99,8 +94,7 @@ impl<T: bytemuck::Pod> Buffer<T> {
 fn next_copy_size<T>(amount: usize) -> u64 {
     let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
 
-    (((std::mem::size_of::<T>() * amount).next_power_of_two() as u64
-        + align_mask)
+    (((std::mem::size_of::<T>() * amount).next_power_of_two() as u64 + align_mask)
         & !align_mask)
         .max(wgpu::COPY_BUFFER_ALIGNMENT)
 }

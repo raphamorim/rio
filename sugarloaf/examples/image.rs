@@ -1,10 +1,6 @@
 extern crate tokio;
 
-use sugarloaf::{
-    core::Sugar,
-    layout::SugarloafLayout,
-    Sugarloaf,
-};
+use sugarloaf::{core::Sugar, layout::SugarloafLayout, Sugarloaf};
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::{
     dpi::LogicalSize,

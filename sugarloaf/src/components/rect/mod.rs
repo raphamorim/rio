@@ -1,6 +1,6 @@
+use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::Renderable;
-use crate::components::core::orthographic_projection;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;

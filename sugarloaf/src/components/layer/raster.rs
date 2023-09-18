@@ -1,7 +1,7 @@
-use image as image_rs;
-use crate::components::layer::image::{Data, Handle};
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
+use crate::components::layer::image::{Data, Handle};
+use image as image_rs;
 
 use std::collections::{HashMap, HashSet};
 
@@ -28,8 +28,14 @@ impl Memory {
                 Size { width, height }
             }
             Memory::Device(entry) => entry.size(),
-            Memory::NotFound => Size { width: 1, height: 1 },
-            Memory::Invalid => Size { width: 1, height: 1 },
+            Memory::NotFound => Size {
+                width: 1,
+                height: 1,
+            },
+            Memory::Invalid => Size {
+                width: 1,
+                height: 1,
+            },
         }
     }
 }
@@ -57,11 +63,9 @@ pub fn load_image(handle: &Handle) -> image_rs::ImageResult<image_rs::DynamicIma
             height,
             pixels,
         } => {
-            if let Some(image) = image_rs::ImageBuffer::from_vec(
-                *width,
-                *height,
-                pixels.to_vec(),
-            ) {
+            if let Some(image) =
+                image_rs::ImageBuffer::from_vec(*width, *height, pixels.to_vec())
+            {
                 Ok(image_rs::DynamicImage::ImageRgba8(image))
             } else {
                 Err(image_rs::error::ImageError::Limits(
@@ -76,7 +80,10 @@ pub fn load_image(handle: &Handle) -> image_rs::ImageResult<image_rs::DynamicIma
 
 impl Cache {
     /// Load image
-    pub fn load(&mut self, handle: &crate::components::layer::image::Handle) -> &mut Memory {
+    pub fn load(
+        &mut self,
+        handle: &crate::components::layer::image::Handle,
+    ) -> &mut Memory {
         if self.contains(handle) {
             return self.get(handle).unwrap();
         }
@@ -135,13 +142,20 @@ impl Cache {
         self.hits.clear();
     }
 
-    fn get(&mut self, handle: &crate::components::layer::image::Handle) -> Option<&mut Memory> {
+    fn get(
+        &mut self,
+        handle: &crate::components::layer::image::Handle,
+    ) -> Option<&mut Memory> {
         let _ = self.hits.insert(handle.id());
 
         self.map.get_mut(&handle.id())
     }
 
-    fn insert(&mut self, handle: &crate::components::layer::image::Handle, memory: Memory) {
+    fn insert(
+        &mut self,
+        handle: &crate::components::layer::image::Handle,
+        memory: Memory,
+    ) {
         let _ = self.map.insert(handle.id(), memory);
     }
 
