@@ -56,6 +56,10 @@ pub fn default_window_opacity() -> f32 {
     1.0
 }
 
+pub fn default_window_background_opacity() -> f32 {
+    1.0
+}
+
 pub fn default_option_as_alt() -> String {
     String::from("None")
 }
