@@ -334,7 +334,11 @@ impl Screen {
         let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
-        self.init(self.state.named_colors.background.1, &config.window.background_image);
+        self.init(
+            self.state.named_colors.background.1,
+            config.background.mode.is_image(),
+            &config.background.image,
+        );
     }
 
     #[inline]
@@ -1308,12 +1312,19 @@ impl Screen {
     }
 
     #[inline]
-    pub fn init(&mut self, color: ColorWGPU, background_image_opt: &Option<String>) {
+    pub fn init(
+        &mut self,
+        color: ColorWGPU,
+        use_image_as_background: bool,
+        background_image_opt: &Option<sugarloaf::core::ImageProperties>,
+    ) {
         let initial_columns = self.sugarloaf.layout.columns;
-        
+
         self.sugarloaf.set_background_color(color);
-        if let Some(background_image) = background_image_opt {
-            self.sugarloaf.set_background_image(background_image.into());
+        if use_image_as_background {
+            if let Some(background_image) = background_image_opt {
+                self.sugarloaf.set_background_image(background_image);
+            }
         }
 
         self.sugarloaf.calculate_bounds();

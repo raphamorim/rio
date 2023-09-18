@@ -16,8 +16,7 @@ impl Allocator {
     }
 
     pub fn allocate(&mut self, width: u32, height: u32) -> Option<Region> {
-        let allocation =
-            self.raw.allocate(Size::new(width as i32, height as i32))?;
+        let allocation = self.raw.allocate(Size::new(width as i32, height as i32))?;
 
         self.allocations += 1;
 
@@ -49,7 +48,10 @@ impl Region {
     pub fn size(&self) -> crate::components::core::shapes::Size<u32> {
         let size = self.allocation.rectangle.size();
 
-        crate::components::core::shapes::Size { width: size.width as u32, height: size.height as u32 }
+        crate::components::core::shapes::Size {
+            width: size.width as u32,
+            height: size.height as u32,
+        }
     }
 }
 

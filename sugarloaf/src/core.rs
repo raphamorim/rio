@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 #[derive(Debug)]
 pub struct Sugar {
     pub content: char,
@@ -123,4 +125,22 @@ pub struct SugarloafStyle {
 
 pub fn empty_sugar_pile() -> SugarPile {
     vec![vec![]]
+}
+
+pub fn default_rect() -> f32 {
+    100.
+}
+
+#[derive(Default, Clone, Deserialize, Debug, PartialEq)]
+pub struct ImageProperties {
+    #[serde(default = "String::default")]
+    pub path: String,
+    #[serde(default = "default_rect")]
+    pub width: f32,
+    #[serde(default = "default_rect")]
+    pub height: f32,
+    #[serde(default = "f32::default")]
+    pub x: f32,
+    #[serde(default = "f32::default")]
+    pub y: f32,
 }

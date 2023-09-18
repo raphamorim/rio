@@ -4,7 +4,7 @@
 
 **Breaking change**
 
-Configuration properties: `window_height`, `window_width` and `window_opacity` has been moved to a new window API:
+Configuration properties: `window_height`, `window_width` and `window_opacity` has been moved to a new window/background API:
 
 ```toml
 # Window configuration
@@ -15,22 +15,35 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 # • height - define the inital window height.
 #   Default: 400
 #
-# • opacity - changes the window transparency state (only Windows / X11)
-#   Default: 1.0
-#
 # • mode - define how the window will be created
 #     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
-# • background - (optional) Set an image as background
-#   Default: Empty
 [window]
 width = 600
 height = 400
-opacity = 1.0
-background = "/Users/rapha/Desktop/eastward.jpg"
 mode = "Windowed"
+
+# Background configuration
+#
+# • opacity - changes the background transparency state
+#   Default: 1.0
+#
+# • mode - defines background mode bewteen "Color" and "Image"
+#   Default: Color
+#
+# • image - Set an image as background
+#   Default: None
+#
+[background]
+mode = "Image"
+opacity = 1.0
+[background.image]
+path = "/Users/rapha/Desktop/eastward.jpg"
+width = 200.0
+height = 200.0
+x = 0.0
 ```
 
 - Rio terminal is now also available in crates.io: https://crates.io/crates/rioterm .

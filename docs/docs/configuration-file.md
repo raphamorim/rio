@@ -86,9 +86,6 @@ option-as-alt = 'both'
 # • height - define the inital window height.
 #   Default: 400
 #
-# • opacity - changes the window transparency state (only Windows / X11)
-#   Default: 1.0
-#
 # • mode - define how the window will be created
 #     - "Windowed" (default) is based on width and height
 #     - "Maximized" window is created with maximized
@@ -97,8 +94,28 @@ option-as-alt = 'both'
 [window]
 width = 600
 height = 400
-opacity = 1.0
 mode = "Windowed"
+
+# Background configuration
+#
+# • opacity - changes the background transparency state
+#   Default: 1.0
+#
+# • mode - defines background mode bewteen "Color" and "Image"
+#   Default: Color
+#
+# • image - Set an image as background
+#   Default: None
+#
+[background]
+mode = "Image"
+opacity = 1.0
+[background.image]
+path = "/Users/rapha/Desktop/eastward.jpg"
+width = 200.0
+height = 200.0
+x = 0.0
+y = 0.0
 
 # Fonts
 #

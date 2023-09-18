@@ -1,7 +1,6 @@
 [alias]
-test-colors = "test --release -p colors --"
-test-config = "test --release -p config --"
-test-rio = "test --release -p rio --"
+test-config = "test --release -p rio-config --"
+test-rio = "test --release -p rioterm --"
 
 [target.wasm32-unknown-unknown]
 rustflags = [

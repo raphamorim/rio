@@ -1,10 +1,9 @@
-use std::path::PathBuf;
 use crate::components::core::{image::Handle, shapes::Rectangle};
-use crate::components::rect::{Rect, RectBrush};
 use crate::components::layer::{self, LayerBrush};
+use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{RepeatedSugar, Sugar, SugarStack};
+use crate::core::{ImageProperties, RepeatedSugar, Sugar, SugarStack};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
@@ -18,6 +17,7 @@ use core::fmt::{Debug, Formatter};
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 #[cfg(target_arch = "wasm32")]
@@ -593,16 +593,16 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn set_background_image(&mut self, image_path: PathBuf) -> &mut Self {
-        println!("deu set");
+    pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
+        let handle = Handle::from_path(image.path.to_owned());
         self.layout.background_image = Some(layer::types::Image::Raster {
-            handle: Handle::from_path(image_path),
+            handle,
             bounds: Rectangle {
-                width: self.layout.width,
-                height: self.layout.height,
-                x: 0.0,
-                y: 0.0,
-            }
+                width: image.width,
+                height: image.height,
+                x: image.x,
+                y: image.y,
+            },
         });
         self
     }
@@ -828,6 +828,17 @@ impl Sugarloaf {
 
                 // self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
 
+                if let Some(bg_image) = &self.layout.background_image {
+                    self.layer_brush.prepare_ref(
+                        &mut encoder,
+                        &mut self.ctx,
+                        &[bg_image],
+                    );
+
+                    self.layer_brush
+                        .render_with_encoder(0, view, &mut encoder, None);
+                }
+
                 self.rect_brush.render(
                     &mut encoder,
                     view,
@@ -837,16 +848,6 @@ impl Sugarloaf {
                 );
 
                 self.rects = vec![];
-
-                if let Some(bg_image) = &self.layout.background_image {
-                    self.layer_brush.prepare_ref(
-                        &mut encoder,
-                        &mut self.ctx,
-                        &[bg_image]
-                    );
-
-                    self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
-                }
 
                 let _ = self.text_brush.draw_queued(
                     &self.ctx.device,

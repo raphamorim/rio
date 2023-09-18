@@ -1,5 +1,5 @@
 // use crate::{Hasher, Rectangle, Size};
-use crate::components::core::shapes::{Hasher};
+use crate::components::core::shapes::Hasher;
 
 use std::hash::{Hash, Hasher as _};
 use std::path::PathBuf;
@@ -43,9 +43,7 @@ impl Handle {
     ///
     /// This is useful if you already have your image loaded in-memory, maybe
     /// because you downloaded or generated it procedurally.
-    pub fn from_memory(
-        bytes: impl AsRef<[u8]> + Send + Sync + 'static,
-    ) -> Handle {
+    pub fn from_memory(bytes: impl AsRef<[u8]> + Send + Sync + 'static) -> Handle {
         Self::from_data(Data::Bytes(Bytes::new(bytes)))
     }
 
