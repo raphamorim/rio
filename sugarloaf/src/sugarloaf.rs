@@ -17,7 +17,6 @@ use core::fmt::{Debug, Formatter};
 use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 #[cfg(target_arch = "wasm32")]
