@@ -39,7 +39,7 @@ pub struct State {
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_theme_selection_fg_color: bool,
-    dynamic_background: ([f32;4], wgpu::Color),
+    dynamic_background: ([f32; 4], wgpu::Color),
 }
 
 // TODO: Finish from
