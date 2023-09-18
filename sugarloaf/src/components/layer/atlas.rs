@@ -30,7 +30,7 @@ impl Atlas {
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("iced_wgpu::image texture atlas"),
+            label: Some("image texture atlas"),
             size: extent,
             mip_level_count: 1,
             sample_count: 1,
@@ -338,7 +338,7 @@ impl Atlas {
         }
 
         let new_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("iced_wgpu::image texture atlas"),
+            label: Some("image texture atlas"),
             size: wgpu::Extent3d {
                 width: SIZE,
                 height: SIZE,

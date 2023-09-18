@@ -52,14 +52,14 @@ impl Layer {
         sampler: &wgpu::Sampler,
     ) -> Self {
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("iced_wgpu::image uniforms buffer"),
+            label: Some("image uniforms buffer"),
             size: mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let constants = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("iced_wgpu::image constants bind group"),
+            label: Some("image constants bind group"),
             layout: constant_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -79,7 +79,7 @@ impl Layer {
 
         let instances = Buffer::new(
             device,
-            "iced_wgpu::image instance buffer",
+            "image instance buffer",
             Instance::INITIAL,
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
@@ -142,7 +142,7 @@ impl LayerBrush {
 
         let constant_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("iced_wgpu::image constants layout"),
+                label: Some("image constants layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -169,7 +169,7 @@ impl LayerBrush {
 
         let texture_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("iced_wgpu::image texture atlas layout"),
+                label: Some("image texture atlas layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -183,7 +183,7 @@ impl LayerBrush {
             });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("iced_wgpu::image pipeline layout"),
+            label: Some("image pipeline layout"),
             push_constant_ranges: &[],
             bind_group_layouts: &[&constant_layout, &texture_layout],
         });
@@ -196,7 +196,7 @@ impl LayerBrush {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("iced_wgpu::image pipeline"),
+            label: Some("image pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -259,13 +259,13 @@ impl LayerBrush {
         });
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("iced_wgpu::image vertex buffer"),
+            label: Some("image vertex buffer"),
             contents: bytemuck::cast_slice(&QUAD_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("iced_wgpu::image index buffer"),
+            label: Some("image index buffer"),
             contents: bytemuck::cast_slice(&QUAD_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
@@ -273,7 +273,7 @@ impl LayerBrush {
         let texture_atlas = Atlas::new(device);
 
         let texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("iced_wgpu::image texture atlas bind group"),
+            label: Some("image texture atlas bind group"),
             layout: &texture_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -393,7 +393,7 @@ impl LayerBrush {
             log::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("iced_wgpu::image texture atlas bind group"),
+                label: Some("image texture atlas bind group"),
                 layout: &self.texture_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
@@ -494,7 +494,7 @@ impl LayerBrush {
             log::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("iced_wgpu::image texture atlas bind group"),
+                label: Some("image texture atlas bind group"),
                 layout: &self.texture_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
