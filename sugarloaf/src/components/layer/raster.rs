@@ -111,7 +111,7 @@ impl Cache {
         if let Memory::Host(image) = memory {
             let (width, height) = image.dimensions();
 
-            let entry = atlas.upload(device, encoder, width, height, &image)?;
+            let entry = atlas.upload(device, encoder, width, height, image)?;
 
             *memory = Memory::Device(entry);
         }

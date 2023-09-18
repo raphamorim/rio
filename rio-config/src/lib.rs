@@ -629,7 +629,8 @@ mod tests {
 
             [background]
             opacity = 0.5
-            image = "my-image-path.png"
+            [background.image]
+            path = "my-image-path.png"
 
             [fonts]
             size = 14.0
@@ -643,7 +644,10 @@ mod tests {
         assert_eq!(result.background.opacity, 0.5);
         assert_eq!(
             result.background.image,
-            Some(String::from("my-image-path.png"))
+            Some(sugarloaf::core::ImageProperties {
+                path: String::from("my-image-path.png"),
+                ..sugarloaf::core::ImageProperties::default()
+            })
         );
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());

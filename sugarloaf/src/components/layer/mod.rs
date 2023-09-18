@@ -338,7 +338,7 @@ impl LayerBrush {
             match &image {
                 types::Image::Raster { handle, bounds } => {
                     if let Some(atlas_entry) = raster_cache.upload(
-                        &device,
+                        device,
                         encoder,
                         handle,
                         &mut self.texture_atlas,
@@ -408,11 +408,11 @@ impl LayerBrush {
 
         if self.layers.len() <= self.prepare_layer {
             self.layers
-                .push(Layer::new(&device, &self.constant_layout, &self.sampler));
+                .push(Layer::new(device, &self.constant_layout, &self.sampler));
         }
 
         let layer = &mut self.layers[self.prepare_layer];
-        layer.prepare(&device, &queue, instances, transformation);
+        layer.prepare(device, queue, instances, transformation);
 
         self.prepare_layer += 1;
     }
@@ -439,7 +439,7 @@ impl LayerBrush {
             match &image {
                 types::Image::Raster { handle, bounds } => {
                     if let Some(atlas_entry) = raster_cache.upload(
-                        &device,
+                        device,
                         encoder,
                         handle,
                         &mut self.texture_atlas,
@@ -509,11 +509,11 @@ impl LayerBrush {
 
         if self.layers.len() <= self.prepare_layer {
             self.layers
-                .push(Layer::new(&device, &self.constant_layout, &self.sampler));
+                .push(Layer::new(device, &self.constant_layout, &self.sampler));
         }
 
         let layer = &mut self.layers[self.prepare_layer];
-        layer.prepare(&device, &queue, instances, transformation);
+        layer.prepare(device, queue, instances, transformation);
 
         self.prepare_layer += 1;
     }
@@ -538,8 +538,8 @@ impl LayerBrush {
         }
     }
 
-    pub fn render_with_encoder<'a>(
-        &'a self,
+    pub fn render_with_encoder(
+        &self,
         layer: usize,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,

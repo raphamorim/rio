@@ -111,13 +111,11 @@ impl Atlas {
             Entry::Contiguous(allocation) => {
                 self.upload_allocation(
                     &padded_data,
-                    width,
-                    height,
+                    (width, height),
                     padding,
                     0,
                     allocation,
-                    device,
-                    encoder,
+                    (device, encoder),
                 );
             }
             Entry::Fragmented { fragments, .. } => {
@@ -127,13 +125,11 @@ impl Atlas {
 
                     self.upload_allocation(
                         &padded_data,
-                        width,
-                        height,
+                        (width, height),
                         padding,
                         offset,
                         &fragment.allocation,
-                        device,
-                        encoder,
+                        (device, encoder),
                     );
                 }
             }
@@ -281,15 +277,16 @@ impl Atlas {
     fn upload_allocation(
         &mut self,
         data: &[u8],
-        image_width: u32,
-        image_height: u32,
+        image_dimensions: (u32, u32),
         padding: u32,
         offset: usize,
         allocation: &Allocation,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
+        context: (&wgpu::Device, &mut wgpu::CommandEncoder),
     ) {
         use wgpu::util::DeviceExt;
+
+        let device = context.0;
+        let encoder = context.1;
 
         let (x, y) = allocation.position();
         let Size { width, height } = allocation.size();
@@ -312,8 +309,8 @@ impl Atlas {
                 buffer: &buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: offset as u64,
-                    bytes_per_row: Some(4 * image_width + padding),
-                    rows_per_image: Some(image_height),
+                    bytes_per_row: Some(4 * image_dimensions.0 + padding),
+                    rows_per_image: Some(image_dimensions.1),
                 },
             },
             wgpu::ImageCopyTexture {
