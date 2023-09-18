@@ -811,22 +811,6 @@ impl Sugarloaf {
                     depth_stencil_attachment: None,
                 });
 
-                // self.layer_brush.prepare(
-                //     &mut encoder,
-                //     &mut self.ctx,
-                //     &[layer::types::Image::Raster {
-                //         handle: Handle::from_path("/Users/hugoamor/Desktop/eastward.jpg"),
-                //         bounds: Rectangle {
-                //             width: 400.0,
-                //             height: 400.0,
-                //             x: 0.0,
-                //             y: 0.0,
-                //         }
-                //     }]
-                // );
-
-                // self.layer_brush.render_with_encoder(0, view, &mut encoder, None);
-
                 if let Some(bg_image) = &self.layout.background_image {
                     self.layer_brush.prepare_ref(
                         &mut encoder,
