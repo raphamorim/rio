@@ -39,6 +39,7 @@ pub struct State {
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_theme_selection_fg_color: bool,
+    dynamic_background: ([f32;4], wgpu::Color),
 }
 
 // TODO: Finish from
@@ -74,10 +75,6 @@ impl State {
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        if config.background.mode.is_image() {
-            named_colors.background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
-        }
-
         if let Some(theme) = current_theme {
             if let Some(adaptive_colors) = &config.adaptive_colors {
                 match theme {
@@ -90,6 +87,12 @@ impl State {
                 }
             }
         }
+
+        let dynamic_background = if config.background.mode.is_image() {
+            ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
+        } else {
+            named_colors.background
+        };
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
@@ -119,6 +122,7 @@ impl State {
             font_size: config.fonts.size,
             selection_range: None,
             named_colors,
+            dynamic_background,
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,
@@ -343,7 +347,7 @@ impl State {
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
         match square.bg {
             AnsiColor::Named(NamedColor::Black) => self.named_colors.black,
-            AnsiColor::Named(NamedColor::Background) => self.named_colors.background.0,
+            AnsiColor::Named(NamedColor::Background) => self.dynamic_background.0,
             AnsiColor::Named(NamedColor::Blue) => self.named_colors.blue,
             AnsiColor::Named(NamedColor::LightBlack) => self.named_colors.light_black,
             AnsiColor::Named(NamedColor::LightBlue) => self.named_colors.light_blue,
