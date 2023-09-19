@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
@@ -2347,7 +2347,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
 name = "rio-config"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "dirs",
  "log 0.4.19",
@@ -2360,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2653,7 +2653,7 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "sugarloaf"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "bytemuck",
  "console_error_panic_hook",
@@ -2685,7 +2685,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf-styled-text"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "corcovado",
  "dirs",
