@@ -2,6 +2,10 @@
 
 ## In progress
 
+- Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane`.
+
+## 0.0.19
+
 **Breaking change**
 
 Configuration properties: `window_height`, `window_width` and `window_opacity` has been moved to a new window/background API:
