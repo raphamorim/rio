@@ -107,6 +107,7 @@ impl NSMenuItem {
         unimplemented!()
     }
 
+    #[allow(dead_code)]
     pub fn set_enabled(&mut self, state: bool) {
         unsafe { msg_send![self, setEnabled: Bool::new(state)] }
     }
