@@ -432,13 +432,13 @@ section.features .container.footer p {
   font-style: normal;
   letter-spacing: -0.004em;
   font-size: 24px;
+  font-weight: bold;
   text-decoration: underline;
   line-height: 1.3em;
   margin: 45px 0 20px 0;
 }
 
 .container.post .post-content p {
-  font-weight: lighter;
   font-style: normal;
   letter-spacing: -0.004em;
   font-size: 20px;

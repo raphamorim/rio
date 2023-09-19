@@ -35,14 +35,14 @@ pub fn create_toolbar() {
         // let oi = NonNull::new(print as *mut std::ffi::c_void);
 
         // menubar.add("Shell", |menu| {
-            // let mut item = NSMenuItem::new("Will be above the window data", "a", oi);
-            // item.set_enabled(true);
-            // item.set_target(1)
-            // menu.add(item);
+        // let mut item = NSMenuItem::new("Will be above the window data", "a", oi);
+        // item.set_enabled(true);
+        // item.set_target(1)
+        // menu.add(item);
         // });
 
         // menubar.add("Edit", |menu| {
-            // menu.add(NSMenuItem::new("Will be above the window data", "", None));
+        // menu.add(NSMenuItem::new("Will be above the window data", "", None));
         // });
 
         menubar.add("View", |_menu| {

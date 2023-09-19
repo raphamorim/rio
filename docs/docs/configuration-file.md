@@ -28,7 +28,7 @@ cursor = '_'
 #
 # Default is false
 #
-blinking_cursor = true
+blinking-cursor = true
 
 # Performance
 #
