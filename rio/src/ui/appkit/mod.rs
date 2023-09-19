@@ -3,7 +3,7 @@ pub mod menu;
 pub mod menubar;
 pub mod menuitem;
 
-use core::ptr::NonNull;
+// use core::ptr::NonNull;
 use objc2::rc::autoreleasepool;
 
 pub use self::menubar::MenuBar;
@@ -16,10 +16,6 @@ pub use menuitem::{MenuItemState, NSMenuItem};
 extern "C" {}
 #[link(name = "Foundation", kind = "framework")]
 extern "C" {}
-
-fn print() {
-    println!("oi");
-}
 
 pub fn create_toolbar() {
     autoreleasepool(|_pool| {
@@ -36,34 +32,34 @@ pub fn create_toolbar() {
             menu.add(NSMenuItem::new("Quit Rio", "q", None));
         });
 
-        let oi = NonNull::new(print as *mut std::ffi::c_void);
+        // let oi = NonNull::new(print as *mut std::ffi::c_void);
 
-        menubar.add("Shell", |menu| {
-            let mut item = NSMenuItem::new("Will be above the window data", "a", oi);
-            item.set_enabled(true);
+        // menubar.add("Shell", |menu| {
+            // let mut item = NSMenuItem::new("Will be above the window data", "a", oi);
+            // item.set_enabled(true);
             // item.set_target(1)
-            menu.add(item);
+            // menu.add(item);
+        // });
+
+        // menubar.add("Edit", |menu| {
+            // menu.add(NSMenuItem::new("Will be above the window data", "", None));
+        // });
+
+        menubar.add("View", |_menu| {
+            // menu.add(NSMenuItem::new("Will be above the window data", "", None));
         });
 
-        menubar.add("Edit", |menu| {
-            menu.add(NSMenuItem::new("Will be above the window data", "", None));
+        let window_menu = menubar.add("Window", |_menu| {
+            // menu.add(NSMenuItem::new("Will be above the window data", "", None));
         });
 
-        menubar.add("View", |menu| {
-            menu.add(NSMenuItem::new("Will be above the window data", "", None));
-        });
-
-        let window_menu = menubar.add("Window", |menu| {
-            menu.add(NSMenuItem::new("Will be above the window data", "", None));
-        });
-
-        let help_menu = menubar.add("Help", |menu| {
-            menu.add(NSMenuItem::new("Item 2 : 1", "", None));
-            menu.add(NSMenuItem::new(
-                "Search or report issue on Github",
-                "",
-                None,
-            ));
+        let help_menu = menubar.add("Help", |_menu| {
+            // menu.add(NSMenuItem::new("Item 2 : 1", "", None));
+            // menu.add(NSMenuItem::new(
+            //     "Search or report issue on Github",
+            //     "",
+            //     None,
+            // ));
         });
 
         app.set_window_menu(&window_menu);
