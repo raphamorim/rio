@@ -68,7 +68,7 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
-    #[serde(default = "bool::default")]
+    #[serde(default = "bool::default", rename = "blinking-cursor")]
     pub blinking_cursor: bool,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
