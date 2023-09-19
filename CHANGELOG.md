@@ -50,6 +50,7 @@ height = 200.0
 x = 0.0
 ```
 
+- Fix for retrieving shell environment variable when running inside of Flatpak sandbox (Ref: https://github.com/raphamorim/rio/issues/198).
 - Rio terminal is now also available in crates.io: https://crates.io/crates/rioterm .
 - Added `navigation.mode = "Plain"`, it basically disables all platform key bindings for tabs, windows and panels creation (Ref https://github.com/raphamorim/rio/issues/213).
 - Support for blinking cursor (Ref: https://github.com/raphamorim/rio/issues/137) (this option is not enabled by default).
