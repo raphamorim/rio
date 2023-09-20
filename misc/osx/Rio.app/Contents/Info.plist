@@ -99,8 +99,7 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <!-- <string>Rio-canary.icns</string> -->
-  <string>Rio-stable.icns</string>
+  <string>rio.icns</string>
   <key>CFBundleShortVersionString</key>
   <string>0.0.19</string>
   <key>CFBundleVersion</key>

@@ -32,18 +32,6 @@ While stable versions are thoroughly tested and takes longer to release, canary 
 
 To check if you are using a stable or canary version, you can check the version: stable follows the semantic versioning so you would often see stable releases similar to <span class="keyword">v0.0.0</span> pattern, while canary appends the "-canary" suffix to the version (eg. <span class="keyword">v0.0.0-canary</span>).
 
-Another difference (only available for MacOS) is the application icon:
-
-#### Stable icon
-
-<img alt="Rio terminal stable icon" src="/rio/assets/rio-stable.png" width="240" />
-
-#### Canary icon
-
-<img alt="Rio terminal canary icon" src="/rio/assets/rio-canary.png" width="240" />
-
-<br/>
-
 ## Platforms
 
 Rio is avaible for [MacOS](#macos), [Linux](#linux), [Windows](#windows) and browsers by [WebAssembly](#webassembly).
@@ -97,9 +85,10 @@ Prebuilt binaries for Windows:
 - • [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-installer.msi)
 - • [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-portable.exe)
 - • [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
-  ```
-  choco install rio-terminal
-  ```
+
+{% highlight bash %}
+choco install rio-terminal
+{% endhighlight %}
 
 There's a few things to note about the installer and the portable version:
 
