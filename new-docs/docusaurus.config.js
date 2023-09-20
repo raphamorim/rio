@@ -8,7 +8,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 const config = {
   title: 'Meet Rio | Rio Terminal',
   tagline: 'A modern terminal for the 21th century.',
-  favicon: './static/img/logo.ico',
+  favicon: '/static/img/logo.ico',
 
   // Set the production url of your site here
   url: 'https://raphamorim.io/',
