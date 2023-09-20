@@ -1,35 +1,32 @@
 // @ts-check
-// `@type` JSDoc annotations allow editor autocompletion and type checking
-// (when paired with `@ts-check`).
-// There are various equivalent ways to declare your Docusaurus config.
-// See: https://docusaurus.io/docs/api/docusaurus-config
+// Note: type annotations allow type checking and IDEs autocompletion
 
 const lightCodeTheme = require('prism-react-renderer/themes/github');
 const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'My Site',
-  tagline: 'Dinosaurs are cool',
-  favicon: 'img/favicon.ico',
+  title: 'Meet Rio | Rio Terminal',
+  tagline: 'A modern terminal for the 21th century.',
+  favicon: './static/img/logo.ico',
 
   // Set the production url of your site here
-  url: 'https://your-docusaurus-site.example.com',
+  url: 'https://raphamorim.io/',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/',
+  baseUrl: '/rio',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
-  projectName: 'docusaurus', // Usually your repo name.
+  organizationName: 'raphamorim', // Usually your GitHub org/user name.
+  projectName: 'rio', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
 
-  // Even if you don't use internationalization, you can use this field to set
-  // useful metadata like html lang. For example, if your site is Chinese, you
-  // may want to replace "en" with "zh-Hans".
+  // Even if you don't use internalization, you can use this field to set useful
+  // metadata like html lang. For example, if your site is Chinese, you may want
+  // to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
@@ -55,7 +52,7 @@ const config = {
             'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: require.resolve('./src/css/styles.css'),
         },
       }),
     ],
@@ -65,25 +62,27 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       // Replace with your project's social card
-      image: 'img/docusaurus-social-card.jpg',
+      image: 'static/img/logo.ico',
       navbar: {
-        title: 'My Site',
+        title: 'Rio',
         logo: {
-          alt: 'My Site Logo',
-          src: 'img/logo.svg',
+          src: 'static/img/logo.ico',
         },
         items: [
-          {
-            type: 'docSidebar',
-            sidebarId: 'tutorialSidebar',
-            position: 'left',
-            label: 'Tutorial',
-          },
+		  {to: '/docs/install', label: 'Install', position: 'left'},
+		  {to: '/docs/', label: 'Docs', position: 'left'},
+		  {to: '/docs/features', label: 'Features', position: 'left'},
           {to: '/blog', label: 'Blog', position: 'left'},
           {
-            href: 'https://github.com/facebook/docusaurus',
+            href: 'https://github.com/raphamorim/rio',
             label: 'GitHub',
             position: 'right',
+            image: '/static/img/github-mark-white.png',
+          },
+          {
+            href: 'https://discord.gg/zRvJjmKGwS',
+            label: 'Discord',
+            position: 'left',
           },
         ],
       },
@@ -91,11 +90,19 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Docs',
+			title: 'Docs',
             items: [
               {
-                label: 'Tutorial',
-                to: '/docs/intro',
+                label: 'Install',
+                to: '/docs/install',
+              },
+              {
+                label: 'Docs',
+                to: '/docs/',
+              },
+              {
+                label: 'Features',
+                to: '/docs/features',
               },
             ],
           },
@@ -103,16 +110,12 @@ const config = {
             title: 'Community',
             items: [
               {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-              },
-              {
                 label: 'Discord',
-                href: 'https://discordapp.com/invite/docusaurus',
+                href: 'https://discord.gg/zRvJjmKGwS',
               },
               {
                 label: 'Twitter',
-                href: 'https://twitter.com/docusaurus',
+                href: 'https://twitter.com/raphamorims',
               },
             ],
           },
@@ -125,12 +128,12 @@ const config = {
               },
               {
                 label: 'GitHub',
-                href: 'https://github.com/facebook/docusaurus',
+                href: 'https://github.com/raphamorim/rio',
               },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Rio Built with Docusaurus.`,
       },
       prism: {
         theme: lightCodeTheme,
