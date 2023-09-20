@@ -17,7 +17,7 @@ pub fn render(
         },
         Rect {
             position: [0., 96.0],
-            color: named_colors.blue,
+            color: named_colors.cyan,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
@@ -32,7 +32,7 @@ pub fn render(
         },
         Rect {
             position: [0., 180.0],
-            color: named_colors.foreground,
+            color: [1.,1.,1.,1.],
             size: [sugarloaf.layout.width * 2., 50.],
         },
     ];
@@ -44,7 +44,7 @@ pub fn render(
         "Settings".to_string(),
         FONT_ID_BUILTIN,
         28.,
-        named_colors.blue,
+        named_colors.cyan,
         true,
     );
 
@@ -57,7 +57,7 @@ pub fn render(
         ),
         FONT_ID_BUILTIN,
         15.,
-        named_colors.blue,
+        named_colors.cyan,
         false,
     );
 
@@ -114,7 +114,7 @@ pub fn render(
                 "* restart is needed".to_string(),
                 FONT_ID_BUILTIN,
                 14.,
-                named_colors.foreground,
+                [1.,1.,1.,1.],
                 true,
             );
         }
@@ -197,7 +197,7 @@ pub fn render(
         "󰌑".to_string(),
         FONT_ID_ICONS,
         26.,
-        named_colors.foreground,
+        [1.,1.,1.,1.],
         true,
     );
 
@@ -209,7 +209,7 @@ pub fn render(
         "save".to_string(),
         FONT_ID_BUILTIN,
         14.,
-        named_colors.foreground,
+        [1.,1.,1.,1.],
         true,
     );
 
@@ -221,7 +221,7 @@ pub fn render(
         "󱊷".to_string(),
         FONT_ID_ICONS,
         26.,
-        named_colors.foreground,
+        [1.,1.,1.,1.],
         true,
     );
 
@@ -233,7 +233,7 @@ pub fn render(
         "exit".to_string(),
         FONT_ID_BUILTIN,
         14.,
-        named_colors.foreground,
+        [1.,1.,1.,1.],
         true,
     );
 }
