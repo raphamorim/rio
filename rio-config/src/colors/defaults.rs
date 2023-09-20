@@ -3,12 +3,17 @@ use crate::colors::{ColorArray, ColorBuilder, ColorComposition, Format};
 // These functions are expected to panic if cannot convert the hex string
 
 pub fn background() -> ColorComposition {
-    let color = ColorBuilder::from_hex(String::from("#0F0D0E"), Format::SRGB0_1).unwrap();
-    (color.to_arr(), color.to_wgpu())
+    ([0.,0.,0.,1.], wgpu::Color {
+        r: 0.,
+        g: 0.,
+        b: 0.,
+        a: 1.,
+    })
+
 }
 
 pub fn cursor() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F38BA3"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#f712ff"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
@@ -20,31 +25,29 @@ pub fn tabs() -> ColorArray {
 }
 
 pub fn tabs_active() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F38BA3"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#f712ff"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn foreground() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F9F4DA"), Format::SRGB0_1)
-        .unwrap()
-        .to_arr()
+    [1.,1.,1.,1.]
 }
 
 pub fn green() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#0BA95B"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#2AD947"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn red() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#ED203D"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#FF1261"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn blue() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#12B5E5"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#121AFF"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
@@ -56,25 +59,25 @@ pub fn yellow() -> ColorArray {
 }
 
 pub fn black() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#4C4345"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#393A3D"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn cyan() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#88DAF2"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#17d5df"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn magenta() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#7B5EA7"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#DD30FF"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
 
 pub fn white() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#F1F1F1"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#E7E7E7"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
