@@ -32,7 +32,7 @@ pub fn render(
         },
         Rect {
             position: [0., 180.0],
-            color: [1.,1.,1.,1.],
+            color: [1., 1., 1., 1.],
             size: [sugarloaf.layout.width * 2., 50.],
         },
     ];
@@ -114,7 +114,7 @@ pub fn render(
                 "* restart is needed".to_string(),
                 FONT_ID_BUILTIN,
                 14.,
-                [1.,1.,1.,1.],
+                [1., 1., 1., 1.],
                 true,
             );
         }
@@ -197,7 +197,7 @@ pub fn render(
         "󰌑".to_string(),
         FONT_ID_ICONS,
         26.,
-        [1.,1.,1.,1.],
+        [1., 1., 1., 1.],
         true,
     );
 
@@ -209,7 +209,7 @@ pub fn render(
         "save".to_string(),
         FONT_ID_BUILTIN,
         14.,
-        [1.,1.,1.,1.],
+        [1., 1., 1., 1.],
         true,
     );
 
@@ -221,7 +221,7 @@ pub fn render(
         "󱊷".to_string(),
         FONT_ID_ICONS,
         26.,
-        [1.,1.,1.,1.],
+        [1., 1., 1., 1.],
         true,
     );
 
@@ -233,7 +233,7 @@ pub fn render(
         "exit".to_string(),
         FONT_ID_BUILTIN,
         14.,
-        [1.,1.,1.,1.],
+        [1., 1., 1., 1.],
         true,
     );
 }

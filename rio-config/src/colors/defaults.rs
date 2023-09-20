@@ -3,13 +3,15 @@ use crate::colors::{ColorArray, ColorBuilder, ColorComposition, Format};
 // These functions are expected to panic if cannot convert the hex string
 
 pub fn background() -> ColorComposition {
-    ([0.,0.,0.,1.], wgpu::Color {
-        r: 0.,
-        g: 0.,
-        b: 0.,
-        a: 1.,
-    })
-
+    (
+        [0., 0., 0., 1.],
+        wgpu::Color {
+            r: 0.,
+            g: 0.,
+            b: 0.,
+            a: 1.,
+        },
+    )
 }
 
 pub fn cursor() -> ColorArray {
@@ -31,7 +33,7 @@ pub fn tabs_active() -> ColorArray {
 }
 
 pub fn foreground() -> ColorArray {
-    [1.,1.,1.,1.]
+    [1., 1., 1., 1.]
 }
 
 pub fn green() -> ColorArray {
