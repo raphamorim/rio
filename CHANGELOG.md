@@ -2,6 +2,10 @@
 
 ## In progress
 
+- Update Rust to 1.72.1 (Ref: https://github.com/raphamorim/rio/pull/238).
+- Enable CPU-specific optimizations on aarch64-apple-darwin (Ref: https://github.com/raphamorim/rio/pull/235).
+- Use release profile with optimization level as 3 (Ref: https://github.com/raphamorim/rio/pull/236).
+- Use fixed dependency versions in sugarloaf
 - Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane`.
 
 ## 0.0.19
