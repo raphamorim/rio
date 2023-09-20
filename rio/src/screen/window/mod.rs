@@ -2,8 +2,7 @@ use rio_config::Config;
 use std::rc::Rc;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
-pub const LOGO_ICON: &[u8; 115483] =
-    include_bytes!("./resources/images/rio-logo.ico");
+pub const LOGO_ICON: &[u8; 115483] = include_bytes!("./resources/images/rio-logo.ico");
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
