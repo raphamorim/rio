@@ -96,6 +96,10 @@ Prebuilt binaries for Windows:
 
 - • [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-installer.msi)
 - • [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v{{ site.version }}/Rio-portable.exe)
+- • [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
+  ```
+  choco install rio-terminal
+  ```
 
 There's a few things to note about the installer and the portable version:
 
