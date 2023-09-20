@@ -1,0 +1,619 @@
+/*background = '#0F0D0E'
+foreground = '#F9F4DA'
+cursor = '#F38BA3'
+green = '#0BA95B'
+red = '#ED203D'
+blue = '#12B5E5'
+yellow = '#FCBA28'
+magenta = '#7B5EA7'*/
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 100%;
+  font: inherit;
+  vertical-align: baseline;
+}
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure, 
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+body {
+  line-height: 1;
+}
+ol, ul {
+  list-style: none;
+}
+blockquote, q {
+  quotes: none;
+}
+blockquote:before, blockquote:after,
+q:before, q:after {
+  content: '';
+  content: none;
+}
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+:root {
+  --fonts-regular:-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  line-height: 1.8em;
+  background: #F38BA3;
+  background-image: url("/rio/assets/images/noise-light.png");
+  color: #F9F4DA;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: Helvetica;
+  font-size: 20px;
+  overflow-x: hidden;
+  font-family: var(--fonts-regular);
+}
+
+.container {
+  position: relative;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.container.post {
+  padding: 40px;
+  background: #0F0D0E;
+}
+
+.container.content {
+  padding: 40px;
+  background: #0F0D0E;
+  margin-top: 30px;
+  padding-top: 80px;
+  border-radius: 20px;
+  z-index: 1;
+  position: relative;
+}
+
+.container.content h2 {
+  margin: 12px 0;
+}
+
+.container.content p {
+  line-height: 1.4em;
+  padding: 12px;
+}
+
+.container.content ul {
+  margin: 10px;
+}
+
+.container.content a, .testimonial a {
+  text-decoration: none;
+  color: #12B5E5;
+}
+
+.container.content a:hover {
+  text-decoration: underline;
+  color: #FCBA28;
+}
+
+.container.content::before {
+  border-top: 20px solid #12B5E5;
+  border-bottom: 20px solid #12B5E5;
+  position: absolute;
+  /* TODO: Refactor it */
+  width: 400em;
+  left: -200em;
+  z-index: -1;
+  height: 100%;
+  top: 0;
+  background: #0F0D0E;
+  content: '';
+}
+
+section.highlight {
+  background: #F38BA3;
+  padding-bottom: 60px;
+  background-image: url("/rio/assets/images/noise-light.png");
+}
+
+section.features {
+  border-top: 20px solid #12B5E5;
+  background: #0F0D0E;
+  padding: 40px 0;
+}
+
+section.usage {
+  border-top: 20px solid #ED203D;
+  background: #12B5E5;
+}
+
+section.usage .twitter {
+  display: flex;
+  overflow: hidden;
+  overflow-x: scroll;
+}
+
+section.usage h2 {
+  color: white;
+  background: #000;
+  text-align: center;
+}
+
+section.usage .twitter .twitter-tweet {
+  margin-left: 20px;
+}
+
+section.features a {
+  color: #12B5E5;
+  font-weight: 500;
+}
+
+section h2 {
+  font-family: helvetica;
+  font-size: 25px;
+  color: #0F0D0E;
+  padding-left: 15px;
+  background: #FCBA28;
+}
+
+section h3 {
+  font-family: helvetica;
+  font-size: 20px;
+  padding-left: 12px;
+  color: #0F0D0E;
+  font-weight: bold;
+  background-color: #12B5E5;
+  margin: 60px 0 10px 0;
+}
+
+section h2 a, section h3 a {
+  /* TODO: rewrite inheritance */
+  color: #0F0D0E !important;
+  text-decoration: none !important;
+}
+
+section h2 a:hover, section h3 a:hover {
+  /* TODO: rewrite inheritance */
+  text-decoration: underline !important;
+}
+
+section h4 {
+  font-family: helvetica;
+  font-size: 18px;
+  padding-left: 12px;
+  color: #12B5E5;
+  font-weight: bold;
+  margin: 25px 0 0 0;
+}
+
+.container span.keyword {
+  background: #FCBA28;
+  color: #0F0D0E;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+
+section.features .container p {
+  background: #0F0D0E;
+  padding: 20px 45px;
+  font-size: 16px;
+  font-family: monospace;
+  color: #F9F4DA;
+}
+
+section.features .container.footer p {
+  padding: 0 20px;
+}
+
+.info {
+  max-width: 520px;
+  text-align: center;
+  /*display: flex;
+  align-items: center;
+  justify-content: center;*/
+  position: relative;
+  margin: 0 auto;
+  margin-top: 20px;
+}
+
+.info .logo {
+  margin-bottom: 30px;
+}
+
+.info .button a {
+  background: rgb(255, 51, 51);
+  color: #FFF;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 18px;
+  text-align: center;
+  width: 90vw;
+  max-width: 200px;
+  border-radius: 12px;
+  display: block;
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 5px 5px;
+  transition: transform 0.125s ease-out 0s, box-shadow 0.15s ease-out 0s;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.info .theater img {
+  width: 100%;
+}
+
+.info h1 {
+  font-size: 60px;
+  color: #F9F4DA;
+  font-family: helvetica;
+}
+
+.list {
+  /*position: relative;*/
+  height: 300px;
+}
+
+#nav {
+  position: relative;
+  height: 80px;
+  background: #F38BA3;
+  background-image: url("/rio/assets/images/noise-light.png");
+  max-width: 1020px;
+  margin: 0 auto;
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+#nav #external-links, #nav #links {
+  display: flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+#nav #external-links, #nav #external-links img {
+  width: 38px;
+  height: 38px;
+}
+
+#nav #external-links:hover, #nav #nav-logo:hover {
+  opacity: 0.8;
+}
+
+#nav ul a {
+  text-decoration: none;
+  font-family: Helvetica;
+  color: #0F0D0E;
+  margin: 0 12px 0 0;
+  font-weight: bold;
+}
+
+#nav ul a:hover {
+  text-decoration: underline;
+  color: #F9F4DA;
+}
+
+.community {
+  margin-top: 2em;
+  background: #F9F4DA;
+  background-image: url("/rio/assets/images/noise-light.png");
+}
+
+.testimonials {
+  display: flex;
+  padding: 1.2em;
+  margin-top: 2em;
+  margin-bottom: 0em;
+  justify-content: center;
+  flex-wrap: wrap;
+  align-content: space-between;
+}
+
+.testimonial {
+  transform: translatey(0px);
+  animation: float 5s ease-in-out infinite;
+  animation-iteration-count: 2;
+  text-align: center;
+  line-height: 1.2em;
+  font-size: 14px;
+  color: #F9F4DA;
+  background-color: #0F0D0E;
+  padding: 25px;
+  border-radius: 11px;
+  position: relative;
+  box-shadow: 20px 20px #ED203D;
+  width: 220px;
+  margin: 0 30px;
+  margin-bottom: 8em;
+  margin-top: 50px;
+}
+
+.testimonial:after {
+  transform: translatey(0px);
+  animation: float2 5s ease-in-out infinite;
+  content: ".";
+  font-weight: bold;
+  -webkit-text-fill-color: #FCBA28;
+  text-shadow: 22px 22px #F9F4DA;
+  text-align: left;
+  font-size: 55px;
+  width: 55px;
+  height: 11px;
+  line-height: 1.2em;
+  border-radius: 11px;
+  background-color: #FCBA28;
+  position: absolute;
+  display: block;
+  bottom: -30px;
+  left: 0;
+  box-shadow: 22px 22px #F9F4DA;
+  z-index: -2;
+}
+
+.testimonial .text {
+  font-size: 14px;
+  margin-top: 14px;
+}
+
+.testimonial .source {
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 2px;
+  font-size: 9px;
+  margin-top: 14px;
+  color: #FCBA28;
+}
+
+.container.post {
+  padding: 50px;
+  background: #F9F4DA;
+  color: #0F0D0E;
+}
+
+.container.post div.post-title {
+  background: #0F0D0E;
+  width: 100%;
+}
+
+.container.post h1.post-title {
+  font-size: 36px;
+  color: #0F0D0E;
+  width: fit-content;
+  margin-left: 0.4em;
+  padding: 0.4em;
+  background: #F9F4DA;  
+  font-family: monospace;
+  line-height: 1.2em;
+}
+
+.container.post span.post-date {
+  font-size: 14px;
+}
+
+.container.post span.post-categories {
+  font-size: 12px;
+  font-family: helvetica;
+}
+
+.container.post .post-content {
+  margin-top: 20px;
+}
+
+.container.post .post-content h1 {
+  font-weight: bold;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 32px;
+  line-height: 1.3em;
+  margin-bottom: 18px;
+}
+
+.container.post .post-content h2 {
+  font-weight: lighter;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 24px;
+  text-decoration: underline;
+  line-height: 1.3em;
+  margin: 45px 0 20px 0;
+}
+
+.container.post .post-content p {
+  font-weight: lighter;
+  font-style: normal;
+  letter-spacing: -0.004em;
+  font-size: 20px;
+  line-height: 1.3em;
+  margin: 0.8em 0;
+}
+
+.container.post .post-content img {
+  width: 100%;
+}
+.container.post .post-content img.mid {
+  width: 45%;
+}
+
+.container.post a {
+  background: #ED203D;
+  text-decoration: none;
+  color: #F9F4DA;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+
+#go-to-top {
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  border: none;
+  outline: none;
+  background-color: red;
+  color: white;
+  cursor: pointer;
+  padding: 15px;
+  border-radius: 10px;
+  font-size: 18px;
+}
+
+#go-to-top:hover {
+  background-color: #555;
+}
+
+@keyframes float {
+  0% {
+    transform: translatey(0px);
+  }
+  50% {
+    transform: translatey(-20px);
+  }
+  100% {
+    transform: translatey(0px);
+  }
+}
+
+@keyframes float2 {
+  0% {
+    line-height: 30px;
+    transform: translatey(0px);
+  }
+  55% {
+    transform: translatey(-20px);
+  }
+  60% {
+    line-height: 10px;
+  }
+  100% {
+    line-height: 30px;
+    transform: translatey(0px);
+  }
+}
+
+@media (max-width: 620px) {
+
+  #nav {
+    display: block;
+    width: 185px;
+    margin-bottom: 140px;
+    text-align: center;
+  }
+
+  #nav #links {
+    width: 200px;
+  }
+
+  #nav #nav-logo {
+    margin: 0 10px;
+  }
+
+  #nav #external-links {
+    display: none;
+  }
+
+  .container.content::before {
+    width: auto;
+    left: 0;
+  }
+
+  .container.content, .container.post {
+    border-radius: 0px;
+    padding: 20px;
+  }
+}
+
+::-moz-selection { /* Code for Firefox */
+  background: #F38BA3;
+  color: #F9F4DA;
+}
+
+::selection {
+  background: #F38BA3;
+  color: #F9F4DA;
+}
+
+.highlight pre { font-size: 15px; font-family: "Console", monospace; padding: 30px; overflow-x: scroll; background-color: #000; border-left: 4px solid #F38BA3; }
+.highlight .hll { background-color: #000; }
+.highlight .c { color: #75715e } /* Comment */
+.highlight .err { color: #960050; background-color: #1e0010 } /* Error */
+.highlight .k { color: #12B5E5 } /* Keyword */
+.highlight .l { color: #7B5EA7 } /* Literal */
+.highlight .n { color: #F9F4DA } /* Name */
+.highlight .o { color: #f92672 } /* Operator */
+.highlight .p { color: #F9F4DA } /* Punctuation */
+.highlight .cm { color: #75715e } /* Comment.Multiline */
+.highlight .cp { color: #75715e } /* Comment.Preproc */
+.highlight .c1 { color: #75715e } /* Comment.Single */
+.highlight .cs { color: #75715e } /* Comment.Special */
+.highlight .ge { font-style: italic } /* Generic.Emph */
+.highlight .gs { font-weight: bold } /* Generic.Strong */
+.highlight .kc { color: #12B5E5 } /* Keyword.Constant */
+.highlight .kd { color: #12B5E5 } /* Keyword.Declaration */
+.highlight .kn { color: #f92672 } /* Keyword.Namespace */
+.highlight .kp { color: #12B5E5 } /* Keyword.Pseudo */
+.highlight .kr { color: #12B5E5 } /* Keyword.Reserved */
+.highlight .kt { color: #12B5E5 } /* Keyword.Type */
+.highlight .ld { color: #FCBA28 } /* Literal.Date */
+.highlight .m { color: #7B5EA7 } /* Literal.Number */
+.highlight .s { color: #FCBA28 } /* Literal.String */
+.highlight .na { color: #a6e22e } /* Name.Attribute */
+.highlight .nb { color: #F9F4DA } /* Name.Builtin */
+.highlight .nc { color: #a6e22e } /* Name.Class */
+.highlight .no { color: #12B5E5 } /* Name.Constant */
+.highlight .nd { color: #a6e22e } /* Name.Decorator */
+.highlight .ni { color: #F9F4DA } /* Name.Entity */
+.highlight .ne { color: #a6e22e } /* Name.Exception */
+.highlight .nf { color: #a6e22e } /* Name.Function */
+.highlight .nl { color: #F9F4DA } /* Name.Label */
+.highlight .nn { color: #F9F4DA } /* Name.Namespace */
+.highlight .nx { color: #a6e22e } /* Name.Other */
+.highlight .py { color: #F9F4DA } /* Name.Property */
+.highlight .nt { color: #f92672 } /* Name.Tag */
+.highlight .nv { color: #F9F4DA } /* Name.Variable */
+.highlight .ow { color: #f92672 } /* Operator.Word */
+.highlight .w { color: #F9F4DA } /* Text.Whitespace */
+.highlight .mf { color: #7B5EA7 } /* Literal.Number.Float */
+.highlight .mh { color: #7B5EA7 } /* Literal.Number.Hex */
+.highlight .mi { color: #7B5EA7 } /* Literal.Number.Integer */
+.highlight .mo { color: #7B5EA7 } /* Literal.Number.Oct */
+.highlight .sb { color: #FCBA28 } /* Literal.String.Backtick */
+.highlight .sc { color: #FCBA28 } /* Literal.String.Char */
+.highlight .sd { color: #FCBA28 } /* Literal.String.Doc */
+.highlight .s2 { color: #FCBA28 } /* Literal.String.Double */
+.highlight .se { color: #7B5EA7 } /* Literal.String.Escape */
+.highlight .sh { color: #FCBA28 } /* Literal.String.Heredoc */
+.highlight .si { color: #FCBA28 } /* Literal.String.Interpol */
+.highlight .sx { color: #FCBA28 } /* Literal.String.Other */
+.highlight .sr { color: #FCBA28 } /* Literal.String.Regex */
+.highlight .s1 { color: #FCBA28 } /* Literal.String.Single */
+.highlight .ss { color: #FCBA28 } /* Literal.String.Symbol */
+.highlight .bp { color: #F9F4DA } /* Name.Builtin.Pseudo */
+.highlight .vc { color: #F9F4DA } /* Name.Variable.Class */
+.highlight .vg { color: #F9F4DA } /* Name.Variable.Global */
+.highlight .vi { color: #F9F4DA } /* Name.Variable.Instance */
+.highlight .il { color: #7B5EA7 } /* Literal.Number.Integer.Long */
+.highlight .gh { } /* Generic Heading & Diff Header */
+.highlight .gu { color: #75715e; } /* Generic.Subheading & Diff Unified/Comment? */
+.highlight .gd { color: #f92672; } /* Generic.Deleted & Diff Deleted */
+.highlight .gi { color: #a6e22e; } /* Generic.Inserted & Diff Inserted */
