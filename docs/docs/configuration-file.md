@@ -255,4 +255,4 @@ If you have any suggestion of configuration ideas to Rio, please feel free to [o
 
 --
 
-[Move to default colors ->](/rio/docs/default-colors#default-colors)
+[Move to default colors and themes ->](/rio/docs/default-colors-and-themes#default-colors-and-themes)
