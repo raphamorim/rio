@@ -677,6 +677,9 @@ impl Screen {
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }
+                    Act::Hide => {
+                        self.context_manager.hide();
+                    }
                     Act::SelectTab1 => {
                         self.context_manager.select_tab(0);
                     }

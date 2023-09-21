@@ -15,6 +15,8 @@ use winit::event::{
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
+use winit::platform::macos::EventLoopWindowTargetExtMacOS;
+#[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
 use winit::window::CursorIcon;
@@ -330,6 +332,10 @@ impl Sequencer {
                                 {
                                     route.window.winit_window.select_previous_tab();
                                 }
+                            }
+                            #[cfg(target_os = "macos")]
+                            RioEventType::Rio(RioEvent::Hide) => {
+                                event_loop_window_target.hide_application();
                             }
                             RioEventType::Rio(RioEvent::Minimize(set_minimize)) => {
                                 if let Some(route) =
