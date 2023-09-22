@@ -49,6 +49,9 @@ ttf-parser = { version = "0.19", default-features = false, features = ["opentype
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true }
 
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
+fontconfig-parser = { version = "0.5", optional = true, default-features = false }
+
 [dev-dependencies]
 image = "0.24.6"
 png = "0.17.8"
