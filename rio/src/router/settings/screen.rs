@@ -1,33 +1,36 @@
-use rio_config::colors::Colors;
 use sugarloaf::components::rect::Rect;
 use sugarloaf::font::{FONT_ID_BUILTIN, FONT_ID_ICONS};
 use sugarloaf::Sugarloaf;
 
 #[inline]
-pub fn render(
-    sugarloaf: &mut Sugarloaf,
-    named_colors: &Colors,
-    settings: &crate::router::settings::Settings,
-) {
+pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Settings) {
+    // TODO: Refactor color management per screen
+    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
+    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
+    let red = [1.0, 0.07058824, 0.38039216, 1.0];
+    let dim_black = [0.10980392, 0.09803922, 0.101960786, 1.0];
+    let background = [0., 0., 0., 1.];
+    let cursor = [0.96862745, 0.07058824, 1.0, 1.0];
+
     let settings_background = vec![
         Rect {
             position: [0., 100.0],
-            color: named_colors.dim_black,
+            color: dim_black,
             size: [sugarloaf.layout.width * 2., sugarloaf.layout.height],
         },
         Rect {
             position: [0., 96.0],
-            color: named_colors.cyan,
+            color: blue,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
             position: [0., 104.0],
-            color: named_colors.yellow,
+            color: yellow,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
             position: [0., 112.0],
-            color: named_colors.red,
+            color: red,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
@@ -44,7 +47,7 @@ pub fn render(
         "Settings".to_string(),
         FONT_ID_BUILTIN,
         28.,
-        named_colors.cyan,
+        blue,
         true,
     );
 
@@ -57,7 +60,7 @@ pub fn render(
         ),
         FONT_ID_BUILTIN,
         15.,
-        named_colors.cyan,
+        blue,
         false,
     );
 
@@ -67,7 +70,7 @@ pub fn render(
         String::from(""),
         FONT_ID_ICONS,
         16.,
-        named_colors.cursor,
+        cursor,
         true,
     );
 
@@ -86,7 +89,7 @@ pub fn render(
             ),
             FONT_ID_BUILTIN,
             16.,
-            named_colors.dim_white,
+            [1., 1., 1., 1.],
             true,
         );
     }
@@ -101,7 +104,7 @@ pub fn render(
             ),
             FONT_ID_BUILTIN,
             18.,
-            named_colors.background.0,
+            background,
             true,
         );
 
@@ -127,7 +130,7 @@ pub fn render(
             "󰁔".to_string(),
             FONT_ID_ICONS,
             28.,
-            named_colors.background.0,
+            background,
             true,
         );
 
@@ -136,7 +139,7 @@ pub fn render(
             "󰁍".to_string(),
             FONT_ID_ICONS,
             28.,
-            named_colors.background.0,
+            background,
             true,
         );
     }
@@ -172,7 +175,7 @@ pub fn render(
                 ),
                 FONT_ID_BUILTIN,
                 16.,
-                named_colors.dim_white,
+                [1., 1., 1., 1.],
                 true,
             );
 
@@ -185,7 +188,7 @@ pub fn render(
         String::from(""),
         FONT_ID_ICONS,
         16.,
-        named_colors.cursor,
+        cursor,
         true,
     );
 
