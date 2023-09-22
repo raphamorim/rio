@@ -1,3 +1,7 @@
+// grid/storage.rs was originally taken from Alacritty
+// https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/storage.rs
+// which is licensed under Apache 2.0 license.
+
 use std::cmp::{max, PartialEq};
 use std::mem;
 use std::mem::MaybeUninit;

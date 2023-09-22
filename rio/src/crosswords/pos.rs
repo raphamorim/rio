@@ -1,3 +1,7 @@
+// Direction, Side, Cursor, CursorState, Charsets, CharsetIndex, StandardCharset and Column
+// were taken originally from Alacritty https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/index.rs#L19
+// which is licensed under Apache 2.0 license.
+
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::Dimensions;
 use std::cmp::{max, min, Ord, Ordering};
