@@ -1,4 +1,4 @@
-use rio_config::{colors::Colors, ConfigError};
+use rio_config::ConfigError;
 use std::fmt;
 use std::fmt::Display;
 use sugarloaf::components::rect::Rect;
@@ -142,7 +142,11 @@ impl Assistant {
 }
 
 #[inline]
-pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assistant) {
+pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
+    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
+    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
+    let red = [1.0, 0.07058824, 0.38039216, 1.0];
+
     let assistant_background = vec![
         // Rect {
         //     position: [30., 0.0],
@@ -151,17 +155,17 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assi
         // },
         Rect {
             position: [0., 30.0],
-            color: named_colors.blue,
+            color: blue,
             size: [30., sugarloaf.layout.height],
         },
         Rect {
             position: [15., sugarloaf.layout.margin.top_y + 40.],
-            color: named_colors.yellow,
+            color: yellow,
             size: [30., sugarloaf.layout.height],
         },
         Rect {
             position: [30., sugarloaf.layout.margin.top_y + 120.],
-            color: named_colors.red,
+            color: red,
             size: [30., sugarloaf.layout.height],
         },
     ];
@@ -173,7 +177,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assi
         "Woops! Rio got errors".to_string(),
         FONT_ID_BUILTIN,
         28.,
-        named_colors.foreground,
+        [1., 1., 1., 1.],
         true,
     );
 
@@ -184,7 +188,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assi
                 "after fix it, restart the terminal".to_string(),
                 FONT_ID_BUILTIN,
                 18.,
-                named_colors.foreground,
+                [1., 1., 1., 1.],
                 true,
             );
         }
@@ -195,7 +199,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assi
                 "(press enter to continue)".to_string(),
                 FONT_ID_BUILTIN,
                 18.,
-                named_colors.foreground,
+                [1., 1., 1., 1.],
                 true,
             );
         }
@@ -205,7 +209,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors, assistant: &Assi
             report.report.to_string(),
             FONT_ID_BUILTIN,
             14.,
-            named_colors.foreground,
+            [1., 1., 1., 1.],
             false,
         );
     }

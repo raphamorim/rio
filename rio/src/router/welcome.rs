@@ -1,25 +1,28 @@
-use rio_config::colors::Colors;
 use sugarloaf::components::rect::Rect;
 use sugarloaf::Sugarloaf;
 
 #[inline]
-pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
+pub fn screen(sugarloaf: &mut Sugarloaf) {
+    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
+    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
+    let red = [1.0, 0.07058824, 0.38039216, 1.0];
+
     let width = sugarloaf.layout.width / sugarloaf.layout.scale_factor;
 
     let assistant_background = vec![
         Rect {
             position: [0., 30.0],
-            color: named_colors.blue,
+            color: blue,
             size: [30., sugarloaf.layout.height],
         },
         Rect {
             position: [15., sugarloaf.layout.margin.top_y + 40.],
-            color: named_colors.yellow,
+            color: yellow,
             size: [30., sugarloaf.layout.height],
         },
         Rect {
             position: [30., sugarloaf.layout.margin.top_y + 120.],
-            color: named_colors.red,
+            color: red,
             size: [30., sugarloaf.layout.height],
         },
     ];
@@ -32,7 +35,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
             "Welcome to\nRio Terminal".to_string(),
             8,
             28.,
-            named_colors.foreground,
+            [1., 1., 1., 1.],
             false,
         );
 
@@ -41,7 +44,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
             String::from("(enter to continue)"),
             8,
             18.,
-            named_colors.yellow,
+            yellow,
             false,
         );
 
@@ -50,7 +53,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
             "󰌑".to_string(),
             7,
             26.,
-            named_colors.yellow,
+            yellow,
             true,
         );
 
@@ -59,7 +62,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
             "nice".to_string(),
             8,
             14.,
-            named_colors.yellow,
+            yellow,
             true,
         );
 
@@ -71,7 +74,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
         "Welcome to Rio Terminal".to_string(),
         8,
         28.,
-        named_colors.foreground,
+        [1., 1., 1., 1.],
         true,
     );
 
@@ -80,7 +83,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
         String::from("(press enter to continue)"),
         8,
         18.,
-        named_colors.yellow,
+        yellow,
         true,
     );
 
@@ -89,7 +92,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
         welcome_content(),
         8,
         18.,
-        named_colors.foreground,
+        [1., 1., 1., 1.],
         false,
     );
 
@@ -98,7 +101,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
         "󰌑".to_string(),
         7,
         26.,
-        named_colors.yellow,
+        yellow,
         true,
     );
 
@@ -107,7 +110,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, named_colors: &Colors) {
         "nice".to_string(),
         8,
         14.,
-        named_colors.yellow,
+        yellow,
         true,
     );
 }

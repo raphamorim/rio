@@ -450,29 +450,6 @@ impl State {
     }
 
     #[inline]
-    pub fn prepare_settings(
-        &self,
-        sugarloaf: &mut Sugarloaf,
-        settings: &crate::router::settings::Settings,
-    ) {
-        crate::router::settings::screen::render(sugarloaf, &self.named_colors, settings);
-    }
-
-    #[inline]
-    pub fn prepare_assistant(
-        &self,
-        sugarloaf: &mut Sugarloaf,
-        assistant: &crate::router::assistant::Assistant,
-    ) {
-        crate::router::assistant::screen(sugarloaf, &self.named_colors, assistant);
-    }
-
-    #[inline]
-    pub fn prepare_welcome(&self, sugarloaf: &mut Sugarloaf) {
-        crate::router::welcome::screen(sugarloaf, &self.named_colors);
-    }
-
-    #[inline]
     pub fn prepare_term(
         &mut self,
         rows: Vec<Row<Square>>,
