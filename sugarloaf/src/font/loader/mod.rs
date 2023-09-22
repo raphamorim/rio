@@ -3,12 +3,6 @@
 
 extern crate alloc;
 
-#[cfg(not(feature = "std"))]
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
-
 pub use ttf_parser::Language;
 pub use ttf_parser::Width as Stretch;
 
