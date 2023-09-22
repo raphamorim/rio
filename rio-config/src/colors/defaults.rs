@@ -49,7 +49,7 @@ pub fn red() -> ColorArray {
 }
 
 pub fn blue() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#121AFF"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#2D9AFF"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
