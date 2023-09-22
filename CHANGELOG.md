@@ -2,6 +2,9 @@
 
 ## In progress
 
+- Add ToggleFullscreen Action #229 (Ref: https://github.com/raphamorim/rio/pull/249)
+- fix: Command + H can't hide rio on macOS (Ref: https://github.com/raphamorim/rio/pull/244).
+- Added fontconfig to font loader.
 - New Rio terminal logo.
 - Update Rust to 1.72.1 (Ref: https://github.com/raphamorim/rio/pull/238).
 - Enable CPU-specific optimizations on aarch64-apple-darwin (Ref: https://github.com/raphamorim/rio/pull/235).

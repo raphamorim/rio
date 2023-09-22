@@ -287,7 +287,7 @@ impl Database {
         #[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
         {
             self.load_fontconfig();
-        
+
             self.load_fonts_dir("/usr/share/fonts/");
             self.load_fonts_dir("/usr/local/share/fonts/");
 
@@ -299,10 +299,7 @@ impl Database {
         }
     }
 
-    #[cfg(all(
-        unix,
-        not(any(target_os = "macos", target_os = "android"))
-    ))]
+    #[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
     fn load_fontconfig(&mut self) {
         use std::path::Path;
 
