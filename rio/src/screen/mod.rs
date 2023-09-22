@@ -674,6 +674,7 @@ impl Screen {
 
                         self.render();
                     }
+                    Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }

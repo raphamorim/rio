@@ -19,7 +19,7 @@ use winit::platform::macos::EventLoopWindowTargetExtMacOS;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
-use winit::window::CursorIcon;
+use winit::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
     config: Rc<rio_config::Config>,
@@ -342,6 +342,20 @@ impl Sequencer {
                                     self.router.routes.get_mut(&window_id)
                                 {
                                     route.window.winit_window.set_minimized(set_minimize);
+                                }
+                            }
+                            RioEventType::Rio(RioEvent::ToggleFullScreen) => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    match route.window.winit_window.fullscreen() {
+                                        None => route.window.winit_window.set_fullscreen(
+                                            Some(Fullscreen::Borderless(None)),
+                                        ),
+                                        _ => {
+                                            route.window.winit_window.set_fullscreen(None)
+                                        }
+                                    }
                                 }
                             }
                             _ => {}
