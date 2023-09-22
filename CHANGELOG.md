@@ -2,6 +2,8 @@
 
 ## In progress
 
+- New docs.
+- Removal of RIO_CONFIG environment variable.
 - Add ToggleFullscreen Action #229 (Ref: https://github.com/raphamorim/rio/pull/249)
 - fix: Command + H can't hide rio on macOS (Ref: https://github.com/raphamorim/rio/pull/244).
 - Added fontconfig to font loader.
