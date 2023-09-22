@@ -1,33 +1,41 @@
-## How to run
+# Website
 
-Docs use [Jekyll](http://jekyllrb.com/), a static generator in Ruby, to create this blog.
+This website is built using [Docusaurus 2](https://docusaurus.io/), a modern static website generator.
 
-## First steps
+### Installation
 
-1. Install [Git](http://git-scm.com/downloads) and [Ruby](http://www.ruby-lang.org/pt/downloads/), in case you don't have them yet.
-
-2. Once installed these dependencies, open up the terminal and install [Jekyll](http://jekyllrb.com/) with the following command:
-
-```sh
-$ gem install jekyll jekyll-paginate jekyll-gist jekyll-feed jekyll-minifier --user-install
+```
+$ yarn
 ```
 
-3. Now clone the project:
+### Local Development
 
-```sh
-$ git clone git@github.com:raphamorim/rio.git
+```
+$ yarn start
 ```
 
-4. Navigate to the project folder:
+This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
 
-```sh
-$ cd docs
+### Build
+
+```
+$ yarn build
 ```
 
-5. And finally run:
+This command generates static content into the `build` directory and can be served using any static contents hosting service.
 
-```sh
-$ JEKYLL_ENV="production" jekyll serve
+### Deployment
+
+Using SSH:
+
+```
+$ USE_SSH=true yarn deploy
 ```
 
-You'll have access to the website at `http://0.0.0.0:4000/rio` :D
+Not using SSH:
+
+```
+$ GIT_USER=<Your GitHub username> yarn deploy
+```
+
+If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.

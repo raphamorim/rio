@@ -18,10 +18,7 @@ TERMINFO = $(BUILD_MISC_DIR)/rio.terminfo
 all: install run
 
 docs:
-	cd $(DOCS_DIR) && make dev
-
-docs-prod:
-	cd $(DOCS_DIR) && make prod
+	cd $(DOCS_DIR) && npm start
 
 run:
 	cargo run --release
