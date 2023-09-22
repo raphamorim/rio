@@ -36,6 +36,7 @@ pub enum RioEvent {
     PrepareRender(u64),
     Render,
     Scroll(Scroll),
+    ToggleFullScreen,
     Minimize(bool),
     Hide,
     UpdateConfig,
@@ -135,6 +136,7 @@ impl Debug for RioEvent {
             RioEvent::ReportToAssistant(error_report) => {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
+            RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
         }
     }
 }
