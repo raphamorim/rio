@@ -1,5 +1,5 @@
 // Retired from: https://github.com/alacritty/alacritty/blob/6e7f466c68b387f41726757eed4f3e70d05479d2/alacritty_terminal/src/selection.rs
-
+// which is licensed under Apache 2.0 license.
 //! State management for a selection in the grid.
 //!
 //! A selection should start when the mouse is clicked, and it should be
