@@ -1,3 +1,6 @@
+// vi_mode.rs was originally from Alacritty https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/vi_mode.rs
+// which is licensed under Apache 2.0 license.
+
 use std::cmp::min;
 
 use crate::crosswords::grid::{Dimensions, GridSquare};

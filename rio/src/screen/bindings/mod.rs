@@ -1,4 +1,6 @@
-// https://github.com/alacritty/alacritty/blob/828fdab7470c8d16d2edbe2cec919169524cb2bb/alacritty/src/config/bindings.rs#L43
+// Binding<T>, MouseAction, BindingMode, Action, default_key_bindings and including their comments
+// was originally taken from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/config/bindings.rs
+// which is licensed under Apache 2.0 license.
 
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;

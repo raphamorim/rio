@@ -1,4 +1,5 @@
 // Retired from https://github.com/alacritty/alacritty/blob/6e7f466c68b387f41726757eed4f3e70d05479d2/alacritty/src/macos/locale.rs
+// which is licensed under Apache 2.0 license.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
