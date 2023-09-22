@@ -15,7 +15,7 @@ You can write your plugin in any programming language that you want.
 
 Rio provides hooks and controlling functions to WASM modules that are loaded in initialization time. Let's take a look in a plugin written with JavaScript or Rust.
 
-{% highlight rust %}
+```rust
 #[link(wasm_import_module = "Rio")]
 extern "C" {
     fn render() -> bool;
@@ -25,4 +25,4 @@ extern "C" {
 pub fn render() {
     
 }
-{% endhighlight %}
+```

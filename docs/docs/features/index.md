@@ -77,7 +77,7 @@ In POSIX-based systems, Rio spawn processes instead of fork processes due to som
 
 However you can also switch from spawn to fork, forking a process is faster than spawning a process.
 
-See how to configure it in the advanced section [here](/rio/docs).
+See how to configure it in the advanced section [here](/rio/docs/documentation).
 
 ### Navigation
 
@@ -95,7 +95,7 @@ Rio support 5 types of navigation modes:
 
 And native tabs for MacOS.
 
-See more about it [here](/rio/docs/navigation).
+See more about it [here](/rio/docs/documentation/navigation).
 
 ### Color automation for navigation
 
