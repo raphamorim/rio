@@ -9,7 +9,7 @@ language: 'en'
 
 Default Rio terminal colors.
 
-{% highlight toml %}
+```toml
 [colors]
 # Regular colors
 background = '#0F0D0E'
@@ -51,8 +51,4 @@ light-magenta = '#9E88BE'
 light-red = '#F25E73'
 light-white = '#FFFFFF'
 light-yellow = '#FDF170'
-{% endhighlight %}
-
---
-
-[Move to navigation ->](/rio/docs/navigation#navigation)
+```

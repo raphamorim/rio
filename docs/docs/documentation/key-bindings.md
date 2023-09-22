@@ -122,14 +122,14 @@ Rio also allow you to add key bindings per configuration or ovewritte any defaul
 
 To achieve it you will need to change your configuration file with the key binding rules.
 
-{% highlight toml %}
+```toml
 [bindings]
 keys = [
 	{ key = "q", with = "super", action = "Quit" }
 	# Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 	{ key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 ]
-{% endhighlight %}
+```
 
 ### [Key](#key)
 
@@ -227,9 +227,9 @@ Key modifiers to filter binding actions
 
 Multiple modifiers can be combined using <span class="keyword">|</span> like this:
 
-{% highlight rust %}
+```bash
 with = "control | shift"
-{% endhighlight %}
+```
 
 <!-- 
  - `mode`: Indicate a binding for only specific terminal reported modes
@@ -247,28 +247,22 @@ Bindings are always filled by default, but will be replaced when a new binding w
 
 The example below will disable window creation binding in the macos:
 
-{% highlight toml %}
+```toml
 [bindings]
 keys = [
    { key = "n", with = "super", action = "ReceiveChar" }
 }
-{% endhighlight %}
+```
 
 <span class="keyword">ReceiveChar</span> will treat the binding as non existent and simply receive the input and put the character into the terminal.
 
 Optionally you can ignore/disable completely a binding using <span class="keyword">None</span>. In the example below, whenever you use key "n" along with "super" key nothing will happen.
 
-{% highlight toml %}
+```toml
 [bindings]
 keys = [
    { key = "n", with = "super", action = "None" }
 }
-{% endhighlight %}
-
---
-
---
+```
 
 If you are missing a key binding that you believe that should be a default in the platform that you are using, feel free to [open an issue](https://github.com/raphamorim/rio).
-
-[Move to command-line interface ->](/rio/docs/command-line-interface#command-line-interface)

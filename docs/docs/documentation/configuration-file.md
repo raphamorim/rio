@@ -17,7 +17,7 @@ Windows	configuration file path is <span class="keyword">C:\Users\USER\AppData\L
 
 Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
 
-{% highlight toml %}
+```toml
 # Cursor
 #
 # Default cursor is Block
@@ -249,10 +249,6 @@ keys = [
 # This property enables log level filter. Default is "OFF".
 #
 log-level = "INFO"
-{% endhighlight %}
+```
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
-
---
-
-[Move to default colors ->](/rio/docs/default-colors#default-colors)

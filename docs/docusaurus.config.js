@@ -85,7 +85,7 @@ const config = {
               },
               {
                 label: 'Docs',
-                to: '/docs/',
+                to: '/docs/documentation',
               },
               {
                 label: 'Features',

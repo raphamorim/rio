@@ -26,10 +26,10 @@ Note: The example below is using Dracula color scheme instead of Rio default col
 
 Usage:
 
-{% highlight toml %}
+```toml
 [navigation]
 mode = "CollapsedTab"
-{% endhighlight %}
+```
 
 ### NativeTab
 
@@ -41,10 +41,10 @@ Note: NativeTab only works for MacOS.
 
 Usage:
 
-{% highlight toml %}
+```toml
 [navigation]
 mode = "NativeTab"
-{% endhighlight %}
+```
 
 ### BottomTab
 
@@ -54,13 +54,13 @@ Note: <span class="keyword">BottomTab</span> does not support click mode yet.
 
 Usage:
 
-{% highlight toml %}
+```toml
 [colors]
 tabs = "#000000"
 
 [navigation]
 mode = "BottomTab"
-{% endhighlight %}
+```
 
 ### TopTab
 
@@ -70,13 +70,13 @@ Note: <span class="keyword">TopTab</span> does not support click mode yet.
 
 Usage:
 
-{% highlight toml %}
+```toml
 [colors]
 tabs = "#000000"
 
 [navigation]
 mode = "TopTab"
-{% endhighlight %}
+```
 
 ### Breadcrumb
 
@@ -86,10 +86,10 @@ Note: <span class="keyword">Breadcrumb</span> does not support click mode yet an
 
 Usage:
 
-{% highlight toml %}
+```toml
 [navigation]
 mode = "Breadcrumb"
-{% endhighlight %}
+```
 
 ### Plain
 
@@ -99,10 +99,10 @@ This mode is perfect if you want set yourself how Rio key binding rules will wor
 
 Usage:
 
-{% highlight toml %}
+```toml
 [navigation]
 mode = "Plain"
-{% endhighlight %}
+```
 
 ### Color automation for navigation
 
@@ -118,13 +118,9 @@ The example below sets <span class="keyword">#FFFF00</span> as color background 
 
 The configuration would be like:
 
-{% highlight toml %}
+```toml
 [navigation]
 color-automation = [
   { program = "nvim", color = "#FFFF00" }
 ]
-{% endhighlight %}
-
---
-
-[Move to key bindings ->](/rio/docs/key-bindings#key-bindings)
+```

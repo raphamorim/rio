@@ -28,7 +28,3 @@ $ rio -e sleep 10
 You can also <span class="keyword">RIO_LOG_LEVEL</span> environment variable for filter logs on-demand, for example:
 
 $ RIO_LOG_LEVEL=debug rio -e echo 85
-
---
-
-<!-- [Move to plugins ->](/rio/docs/plugins#plugins) -->
