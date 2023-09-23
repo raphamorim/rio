@@ -1,19 +1,13 @@
 ---
-layout: docs
-class: docs
 title: 'Configuration file'
 language: 'en'
 ---
 
-## Configuration File
-
-Note: Configuration file is not created in the installation process. Rio always assume the file doesn't exist and proceed with default configuration.
-
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-MacOS and Linux configuration file path is <span class="keyword">~/.config/rio/config.toml</span>.
+MacOS and Linux configuration file path is `~/.config/rio/config.toml`.
 
-Windows	configuration file path is <span class="keyword">C:\Users\USER\AppData\Local\rio\config.toml</span> (replace "USER" with your user name).
+Windows	configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
 
 Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
 
@@ -22,13 +16,21 @@ Any file update in the configuration file will trigger a render operation in Rio
 #
 # Default cursor is Block
 # Other available options are: '_' and '|'
-cursor = '_'
+#
+cursor = '▇'
 
 # Blinking Cursor
 #
 # Default is false
 #
-blinking-cursor = true
+blinking-cursor = false
+
+# Ignore theme selection foreground color
+#
+# Default is false
+#
+# Example
+# ignore_theme_selection_fg_color = false
 
 # Performance
 #
@@ -44,39 +46,23 @@ performance = "High"
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
-# Dracula theme code is available in:
-# https://github.com/dracula/rio-terminal
-#
-theme = "dracula"
-
-# Ignore theme selection foreground color
-#
-# Default is false
-#
-ignore_theme_selection_fg_color = false
-
-# Adaptive Theme
-#
-# Changes theme based on the system theme (light and dark)
-# Only works for Web, MacOS and Windows
-# This configuration is disabled by default
-#
-[adaptive-theme]
-light = "belafonte-day"
-dark = "belafonte-night"
+# Example
+#   theme = "dracula"
 
 # Padding-x
 #
 # define x axis padding (default is 10)
 #
-padding-x = 0
+# Example
+#   padding-x = 10
 
 # Option as Alt
 #
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
 #
-option-as-alt = 'both'
+# Example
+# option-as-alt = 'left'
 
 # Window configuration
 #
@@ -91,10 +77,11 @@ option-as-alt = 'both'
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
-[window]
-width = 600
-height = 400
-mode = "Windowed"
+# Example
+#   [window]
+#   width = 600
+#   height = 400
+#   mode = "Windowed"
 
 # Background configuration
 #
@@ -102,20 +89,29 @@ mode = "Windowed"
 #   Default: 1.0
 #
 # • mode - defines background mode bewteen "Color" and "Image"
-#   Default: Color
 #
 # • image - Set an image as background
 #   Default: None
 #
-[background]
-mode = "Image"
-opacity = 1.0
-[background.image]
-path = "/Users/rapha/Desktop/eastward.jpg"
-width = 200.0
-height = 200.0
-x = 0.0
-y = 0.0
+# Example
+# [background]
+# mode = "Image"
+# opacity = 1.0
+#
+# [background.image]
+# path = "/Users/rapha/Desktop/eastward.jpg"
+# width = 200.0
+# height = 200.0
+# x = 0.0
+# y = 0.0
+
+# Window Height
+#
+# window-height changes the inital window height.
+#   Default: 400
+#
+# Example
+#   window-height = 400
 
 # Fonts
 #
@@ -124,57 +120,56 @@ y = 0.0
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# Another Note: "cascadiamono" font is built-in.
+# You can also set family on root to overwritte all fonts
+# [fonts]
+#   family = "cascadiamono"
 #
-[fonts]
-size = 18
-
-# # You can also set family on root to overwritte all fonts
-# family = "cascadiamono"
-
-[fonts.regular]
-family = "cascadiamono"
-style = "normal"
-weight = 400
-
-[fonts.bold]
-family = "cascadiamono"
-style = "normal"
-weight = 800
-
-[fonts.italic]
-family = "cascadiamono"
-style = "italic"
-weight = 400
-
-[fonts.bold-italic]
-family = "cascadiamono"
-style = "italic"
-weight = 800
+# Example
+#   [fonts]
+#   size = 18
+#
+#   [fonts.regular]
+#   family = "cascadiamono"
+#   style = "normal"
+#   weight = 400
+#
+#   [fonts.bold]
+#   family = "cascadiamono"
+#   style = "normal"
+#   weight = 800
+#
+#   [fonts.italic]
+#   family = "cascadiamono"
+#   style = "italic"
+#   weight = 400
+#
+#   [fonts.bold-italic]
+#   family = "cascadiamono"
+#   style = "italic"
+#   weight = 800
 
 # Navigation
 #
 # "mode" - Define navigation mode
-#   - NativeTab (MacOs only)
-#   - CollapsedTab
-#   - BottomTab
-#   - TopTab
-#   - Breadcrumb
-#   - Plain
+#   • NativeTab (MacOs only)
+#   • CollapsedTab
+#   • BottomTab
+#   • TopTab
+#   • Breadcrumb
+#   • Plain
 #
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
 # "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
-[navigation]
-mode = "BottomTab"
-clickable = false
-use-current-path = true
-color-automation = [
-  { program = "nvim", color = "#FFFF00" }
-]
-macos-hide-window-buttons = false
+# Example
+#   [navigation]
+#   mode = "CollapsedTab"
+#   clickable = false
+#   use-current-path = false
+#   color-automation = []
+#   macos-hide-window-buttons = false
 
 # Shell
 #
@@ -186,7 +181,8 @@ macos-hide-window-buttons = false
 #   - (Linux/BSD) user login shell
 #   - (Windows) powershell
 #
-shell = { program = "/bin/zsh", args = ["--login"] }
+# Example:
+#   shell = { program = "/bin/fish", args = ["--login"] }
 
 # Startup directory
 #
@@ -195,20 +191,23 @@ shell = { program = "/bin/zsh", args = ["--login"] }
 #
 # This configuration only has effect if use-fork is disabled
 #
-working-dir = "/Users/raphael/Documents/"
+# Example
+#  working-dir = "/Users/raphael/Documents/"
 
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars
 # please do not copy this if you do not need
 #
-env-vars = ['SHELL=/opt/homebrew/bin/fish']
+# Example
+#   env-vars = []
 
 # Disable render when unfocused
 #
 # This property disable renderer processes while Rio is unfocused.
 #
-disable-renderer-when-unfocused = false
+# Example
+#   disable-renderer-when-unfocused = false
 
 # Use fork
 #
@@ -216,39 +215,47 @@ disable-renderer-when-unfocused = false
 # MacOS: spawn processes
 # Linux/BSD: fork processes
 #
-use-fork = false
+# Example
+#   use-fork = false
 
 # Colors
 #
 # Colors definition will overwrite any property in theme
 # (considering if theme folder does exists and is being used)
 #
-[colors]
-background = "#BBBD64"
-foreground = "#040400"
-cursor = "#242805"
-tabs-active = "#F8A145"
-blue = "#454A12"
-
+# Example:
+#
+#   [colors]
+#   background = '#0F0D0E'
+#   foreground = '#F9F4DA'
+#   cursor = '#F38BA3'
+#   tabs = '#443d40'
+#   tabs-active = '#F38BA3'
+#   green = '#0BA95B'
+#   red = '#ED203D'
+#   blue = '#12B5E5'
+#   yellow = '#FCBA28'
 
 # Bindings
 #
 # Create custom Key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 #
-[bindings]
-keys = [
-  { key = "q", with = "super", action = "Quit" },
-  # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
-]
+# Example
+#   [bindings]
+#   keys = [
+#     { key = "q", with = "super", action = "Quit" },
+#     # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+#     { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+#   ]
 
-[developer]
 # Log level
 #
 # This property enables log level filter. Default is "OFF".
 #
-log-level = "INFO"
+# Example
+#   [developer]
+#   log-level = "OFF"
 ```
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).

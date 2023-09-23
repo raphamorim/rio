@@ -5,114 +5,105 @@ title: 'Key Bindings'
 language: 'en'
 ---
 
-## Key bindings
-
-Summary
-
-- [• MacOS](#macos)
-- [• Windows](#windows)
-- [• Linux / BSD](#linux-and-bsd)
-- [• Custom key bindings](#custom-key-bindings)
-
 ### MacOS
 
-Open configuration: <span class="keyword">Command + Comma (,)</span> 
+Open configuration: `Command + Comma (,)` 
 
-Copy: <span class="keyword">Command + C</span>
+Copy: `Command + C`
 
-Paste: <span class="keyword">Command + V</span>
+Paste: `Command + V`
 
-Create new window: <span class="keyword">Command + N</span>
+Create new window: `Command + N`
 
-Create new tab: <span class="keyword">Command + T</span>
+Create new tab: `Command + T`
 
-Move to next tab: <span class="keyword">Command + Shift + RightBracket (])</span>
+Move to next tab: `Command + Shift + RightBracket (])`
 
-Move to previous tab: <span class="keyword">Command + Shift + LeftBracket ([)</span> or <span class="keyword">Control + Shift + Tab</span>
+Move to previous tab: `Command + Shift + LeftBracket ([)` or `Control + Shift + Tab`
 
-Switch tabs by created order: <span class="keyword">Control + Tab</span>
+Switch tabs by created order: `Control + Tab`
 
-Increase font size: <span class="keyword">Command + Plus (+)</span>
+Increase font size: `Command + Plus (+)`
 
-Decrease font size: <span class="keyword">Command + Minus (-)</span>
+Decrease font size: `Command + Minus (-)`
 
-Reset font size: <span class="keyword">Command + 0</span>
+Reset font size: `Command + 0`
 
-Minimize window: <span class="keyword">Command + M</span>
+Minimize window: `Command + M`
 
-Quit: <span class="keyword">Command + Q</span>
+Quit: `Command + Q`
 
-Close tab: <span class="keyword">Command + W</span>
+Close tab: `Command + W`
 
-Select the first tab: <span class="keyword">Command + 1</span>
+Select the first tab: `Command + 1`
 
-Select the second tab: <span class="keyword">Command + 2</span>
+Select the second tab: `Command + 2`
 
-Select the third tab: <span class="keyword">Command + 3</span>
+Select the third tab: `Command + 3`
 
-Select the fourth tab: <span class="keyword">Command + 4</span>
+Select the fourth tab: `Command + 4`
 
-Select the fifth tab: <span class="keyword">Command + 5</span>
+Select the fifth tab: `Command + 5`
 
-Select the sixth tab: <span class="keyword">Command + 6</span>
+Select the sixth tab: `Command + 6`
 
-Select the seventh tab: <span class="keyword">Command + 7</span>
+Select the seventh tab: `Command + 7`
 
-Select the eighth tab: <span class="keyword">Command + 8</span>
+Select the eighth tab: `Command + 8`
 
-Select the last tab: <span class="keyword">Command + 9</span>
+Select the last tab: `Command + 9`
 
 ### Windows
 
-Open configuration: <span class="keyword">Control + Shift + Comma (,)</span>
+Open configuration: `Control + Shift + Comma (,)`
 
-Copy: <span class="keyword">Control + Shift + C</span>
+Copy: `Control + Shift + C`
 
-Paste: <span class="keyword">Control + Shift + V</span>
+Paste: `Control + Shift + V`
 
-Create new window: <span class="keyword">Control + Shift + N</span>
+Create new window: `Control + Shift + N`
 
-Create new tab: <span class="keyword">Control + Shift + T</span>
+Create new tab: `Control + Shift + T`
 
-Move to next tab: <span class="keyword">Control + Shift + RightBracket (])</span>
+Move to next tab: `Control + Shift + RightBracket (])`
 
-Move to previous tab: <span class="keyword">Control + Shift + LeftBracket ([)</span>
+Move to previous tab: `Control + Shift + LeftBracket ([)`
 
-Switch tabs by created order: <span class="keyword">Control + Tab</span>
+Switch tabs by created order: `Control + Tab`
 
-Increase font size: <span class="keyword">Control + Plus (+)</span>
+Increase font size: `Control + Plus (+)`
 
-Decrease font size: <span class="keyword">Control + Minus (-)</span>
+Decrease font size: `Control + Minus (-)`
 
-Reset font size: <span class="keyword">Control + 0</span>
+Reset font size: `Control + 0`
 
-Close tab or quit: <span class="keyword">Control + Shift + W</span>
+Close tab or quit: `Control + Shift + W`
 
 ### Linux and BSD
 
-Open configuration: <span class="keyword">Control + Shift + Comma (,)</span>
+Open configuration: `Control + Shift + Comma (,)`
 
-Copy: <span class="keyword">Control + Shift + C</span>
+Copy: `Control + Shift + C`
 
-Paste: <span class="keyword">Control + Shift + V</span>
+Paste: `Control + Shift + V`
 
-Create new window: <span class="keyword">Control + Shift + N</span>
+Create new window: `Control + Shift + N`
 
-Create new tab: <span class="keyword">Control + Shift + T</span>
+Create new tab: `Control + Shift + T`
 
-Move to next tab: <span class="keyword">Control + Shift + RightBracket (])</span>
+Move to next tab: `Control + Shift + RightBracket (])`
 
-Move to previous tab: <span class="keyword">Control + Shift + LeftBracket ([)</span>
+Move to previous tab: `Control + Shift + LeftBracket ([)`
 
-Switch tabs by created order: <span class="keyword">Control + Tab</span>
+Switch tabs by created order: `Control + Tab`
 
-Increase font size: <span class="keyword">Control + Plus (+)</span>
+Increase font size: `Control + Plus (+)`
 
-Decrease font size: <span class="keyword">Control + Minus (-)</span>
+Decrease font size: `Control + Minus (-)`
 
-Reset font size: <span class="keyword">Control + 0</span>
+Reset font size: `Control + 0`
 
-Close tab or quit: <span class="keyword">Control + Shift + W</span>
+Close tab or quit: `Control + Shift + W`
 
 <br/>
 
@@ -135,15 +126,15 @@ keys = [
 
 Each value in key binding will specify an identifier of the key pressed:
 
-- <span class="keyword">a-z</span>
-- <span class="keyword">0-9</span>
-- <span class="keyword">F1-F24</span>
-- <span class="keyword">tab</span> <span class="keyword">esc</span>
-- <span class="keyword">home</span> <span class="keyword">space</span> <span class="keyword">delete</span> <span class="keyword">insert</span> <span class="keyword">pageup</span> <span class="keyword">pagedown</span> <span class="keyword">end</span>  <span class="keyword">back</span> 
-- <span class="keyword">up</span> <span class="keyword">down</span> <span class="keyword">left</span> <span class="keyword">right</span>
-- <span class="keyword">@</span> <span class="keyword">colon</span> <span class="keyword">.</span> <span class="keyword">return</span> <span class="keyword">[</span> <span class="keyword">]</span> <span class="keyword">;</span> <span class="keyword">\\</span> <span class="keyword">+</span> <span class="keyword">,</span> <span class="keyword">/</span> <span class="keyword">=</span> <span class="keyword">-</span> <span class="keyword">*</span>
-- <span class="keyword">numpadenter</span> <span class="keyword">numpadadd</span> <span class="keyword">numpadcomma</span> <span class="keyword">numpaddivide</span> <span class="keyword">numpadequals</span> <span class="keyword">numpadsubtract</span> <span class="keyword">numpadmultiply</span>
-- <span class="keyword">numpad1</span> <span class="keyword">numpad2</span> <span class="keyword">numpad3</span> <span class="keyword">numpad4</span> <span class="keyword">numpad5</span> <span class="keyword">numpad6</span> <span class="keyword">numpad7</span> <span class="keyword">numpad8</span> <span class="keyword">numpad9</span> <span class="keyword">numpad0</span>
+- `a-z`
+- `0-9`
+- `F1-F24`
+- `tab` `esc`
+- `home` `space` `delete` `insert` `pageup` `pagedown` `end`  `back` 
+- `up` `down` `left` `right`
+- `@` `colon` `.` `return` `[` `]` `;` `\\` `+` `,` `/` `=` `-` `*`
+- `numpadenter` `numpadadd` `numpadcomma` `numpaddivide` `numpadequals` `numpadsubtract` `numpadmultiply`
+- `numpad1` `numpad2` `numpad3` `numpad4` `numpad5` `numpad6` `numpad7` `numpad8` `numpad9` `numpad0`
 
 ### [Action](#action)
 
@@ -210,22 +201,22 @@ Execute a predefined action in Rio terminal.
 
 Send a byte sequence to the running application.
 
-The <span class="keyword">bytes</span> field writes the specified string to the terminal. This makes
-it possible to pass escape sequences, like <span class="keyword">PageUp</span> ("\x1b[5~"). Note that applications use terminfo to map escape sequences back
+The `bytes` field writes the specified string to the terminal. This makes
+it possible to pass escape sequences, like `PageUp` ("\x1b[5~"). Note that applications use terminfo to map escape sequences back
 to keys. It is therefore required to update the terminfo when changing an escape sequence.
 
 ### [With](#with)
 
 Key modifiers to filter binding actions
 
-- <span class="keyword">none</span>
-- <span class="keyword">control</span>
-- <span class="keyword">option</span>
-- <span class="keyword">super</span>
-- <span class="keyword">shift</span>
-- <span class="keyword">alt</span>
+- `none`
+- `control`
+- `option`
+- `super`
+- `shift`
+- `alt`
 
-Multiple modifiers can be combined using <span class="keyword">|</span> like this:
+Multiple modifiers can be combined using `|` like this:
 
 ```bash
 with = "control | shift"
@@ -243,7 +234,7 @@ with = "control | shift"
 
 ### [Overwriting](#overwriting)
 
-Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the <span class="keyword">ReceiveChar</span> action. Alternatively, you can use <span class="keyword">None</span> for a no-op if you do not wish to receive input characters for that binding.
+Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the `ReceiveChar` action. Alternatively, you can use `None` for a no-op if you do not wish to receive input characters for that binding.
 
 The example below will disable window creation binding in the macos:
 
@@ -254,9 +245,9 @@ keys = [
 }
 ```
 
-<span class="keyword">ReceiveChar</span> will treat the binding as non existent and simply receive the input and put the character into the terminal.
+`ReceiveChar` will treat the binding as non existent and simply receive the input and put the character into the terminal.
 
-Optionally you can ignore/disable completely a binding using <span class="keyword">None</span>. In the example below, whenever you use key "n" along with "super" key nothing will happen.
+Optionally you can ignore/disable completely a binding using `None`. In the example below, whenever you use key "n" along with "super" key nothing will happen.
 
 ```toml
 [bindings]

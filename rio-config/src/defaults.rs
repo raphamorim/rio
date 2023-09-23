@@ -93,7 +93,7 @@ cursor = '▇'
 #
 # Default is false
 #
-blinking_cursor = true
+blinking-cursor = false
 
 # Ignore theme selection foreground color
 #

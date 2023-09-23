@@ -114,8 +114,8 @@ pub struct Config {
     pub developer: Developer,
     #[serde(default = "Bindings::default")]
     pub bindings: bindings::Bindings,
-    #[serde(default = "bool::default")]
-    pub ignore_theme_selection_fg_color: bool,
+    #[serde(default = "bool::default", rename = "ignore-selection-fg-color")]
+    pub ignore_selection_fg_color: bool,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -360,7 +360,7 @@ impl Default for Config {
             use_fork: default_use_fork(),
             window: Window::default(),
             working_dir: default_working_dir(),
-            ignore_theme_selection_fg_color: false,
+            ignore_selection_fg_color: false,
         }
     }
 }
