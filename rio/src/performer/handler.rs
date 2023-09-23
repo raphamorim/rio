@@ -6,7 +6,7 @@ use cursor_icon::CursorIcon;
 use log::{debug, warn};
 use rio_config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 use crate::crosswords::attr::Attr;
 
@@ -18,18 +18,18 @@ use std::fmt::Write;
 use copa::{Params, ParamsIter};
 
 /// Maximum time before a synchronized update is aborted.
-const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+// const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
 
 /// Number of bytes in the synchronized update DCS sequence before the passthrough parameters.
-const SYNC_ESCAPE_START_LEN: usize = 5;
+// const SYNC_ESCAPE_START_LEN: usize = 5;
 
-/// Start of the DCS sequence for beginning synchronized updates.
-const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-    [b'\x1b', b'P', b'=', b'1', b's'];
+// /// Start of the DCS sequence for beginning synchronized updates.
+// const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+//     [b'\x1b', b'P', b'=', b'1', b's'];
 
-/// Start of the DCS sequence for terminating synchronized updates.
-const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-    [b'\x1b', b'P', b'=', b'2', b's'];
+// /// Start of the DCS sequence for terminating synchronized updates.
+// const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+//     [b'\x1b', b'P', b'=', b'2', b's'];
 
 fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {
@@ -350,9 +350,6 @@ struct ProcessorState {
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
-    /// DCS sequence waiting for termination.
-    dcs: Option<Dcs>,
-
     /// State for synchronized terminal updates.
     sync_state: SyncState,
 }
@@ -360,13 +357,19 @@ struct ProcessorState {
 /// Maximum number of bytes read in one synchronized update (2MiB).
 const SYNC_BUFFER_SIZE: usize = 0x20_0000;
 
+/// Number of bytes in the BSU/ESU CSI sequences.
+const SYNC_ESCAPE_LEN: usize = 8;
+
+/// BSU CSI sequence for beginning or extending synchronized updates.
+const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
+
+/// ESU CSI sequence for terminating synchronized updates.
+const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
+
 #[derive(Debug)]
 struct SyncState {
     /// Expiration time of the synchronized update.
     timeout: Option<Instant>,
-
-    /// Sync DCS waiting for termination sequence.
-    pending_dcs: Option<Dcs>,
 
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
@@ -374,23 +377,10 @@ struct SyncState {
 
 impl Default for SyncState {
     fn default() -> Self {
-        Self {
-            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
-            pending_dcs: None,
-            timeout: None,
-        }
+        Self { buffer: Vec::with_capacity(SYNC_BUFFER_SIZE), timeout: None }
     }
 }
 
-/// Pending DCS sequence.
-#[derive(Debug)]
-enum Dcs {
-    /// Begin of the synchronized update.
-    SyncStart,
-
-    /// End of the synchronized update.
-    SyncEnd,
-}
 
 #[derive(Default)]
 pub struct ParserProcessor {
@@ -456,47 +446,25 @@ impl ParserProcessor {
     {
         self.state.sync_state.buffer.push(byte);
 
-        // Handle sync DCS escape sequences.
-        match self.state.sync_state.pending_dcs {
-            Some(_) => self.advance_sync_dcs_end(handler, byte),
-            None => self.advance_sync_dcs_start(),
-        }
+        // Handle sync CSI escape sequences.
+        self.advance_sync_csi(handler);
     }
 
-    /// Find the start of sync DCS sequences.
-    fn advance_sync_dcs_start(&mut self) {
-        // Get the last few bytes for comparison.
-        let len = self.state.sync_state.buffer.len();
-        let offset = len.saturating_sub(SYNC_ESCAPE_START_LEN);
-        let end = &self.state.sync_state.buffer[offset..];
-
-        // Check for extension/termination of the synchronized update.
-        if end == SYNC_START_ESCAPE_START {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncStart);
-        } else if end == SYNC_END_ESCAPE_START || len >= SYNC_BUFFER_SIZE - 1 {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncEnd);
-        }
-    }
-
-    /// Parse the DCS termination sequence for synchronized updates.
-    fn advance_sync_dcs_end<H>(&mut self, handler: &mut H, byte: u8)
+    /// Handle BSU/ESU CSI sequences during synchronized update.
+    fn advance_sync_csi<H>(&mut self, handler: &mut H)
     where
         H: Handler,
     {
-        match byte {
-            // Ignore DCS passthrough characters.
-            0x00..=0x17 | 0x19 | 0x1c..=0x7f | 0xa0..=0xff => (),
-            // Cancel the DCS sequence.
-            0x18 | 0x1a | 0x80..=0x9f => self.state.sync_state.pending_dcs = None,
-            // Dispatch on ESC.
-            0x1b => match self.state.sync_state.pending_dcs.take() {
-                Some(Dcs::SyncStart) => {
-                    self.state.sync_state.timeout =
-                        Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
-                }
-                Some(Dcs::SyncEnd) => self.stop_sync(handler),
-                None => (),
-            },
+        // Get the last few bytes for comparison.
+        let len = self.state.sync_state.buffer.len();
+        let offset = len.saturating_sub(SYNC_ESCAPE_LEN);
+        let end = &self.state.sync_state.buffer[offset..];
+
+        // Check for extension/termination of the synchronized update.
+        if end == BSU_CSI {
+            // self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+        } else if end == ESU_CSI || len >= SYNC_BUFFER_SIZE - 1 {
+            self.stop_sync(handler);
         }
     }
 }
@@ -546,23 +514,10 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
         ignore: bool,
         action: char,
     ) {
-        if ignore || intermediates.len() > 1 {
-            warn!("unhandled");
-            return;
-        }
-
-        match (action, intermediates) {
-            ('s', [b'=']) => {
-                // Start a synchronized update. The end is handled with a separate parser.
-                if params.iter().next().map_or(false, |param| param[0] == 1) {
-                    self.state.dcs = Some(Dcs::SyncStart);
-                }
-            }
-            _ => warn!(
-                "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
-                params, intermediates, ignore, action
-            ),
-        }
+        debug!(
+            "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
+            params, intermediates, ignore, action
+        );
     }
 
     fn put(&mut self, _byte: u8) {
@@ -571,14 +526,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
 
     #[inline]
     fn unhook(&mut self) {
-        match self.state.dcs {
-            Some(Dcs::SyncStart) => {
-                self.state.sync_state.timeout =
-                    Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
-            }
-            Some(Dcs::SyncEnd) => (),
-            _ => warn!("[unhandled unhook]"),
-        }
+        debug!("[unhandled unhook]");
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
@@ -854,7 +802,14 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
             }
             ('h', intermediates) => {
                 for param in params_iter.map(|param| param[0]) {
-                    match Mode::from_primitive(intermediates.first(), param) {
+                    let intermediate = intermediates.first();
+
+                    // Handle sync updates opaquely.
+                    if intermediate == Some(&b'?') && param == 2026 {
+                        // self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+                    }
+
+                    match Mode::from_primitive(intermediate, param) {
                         Some(mode) => handler.set_mode(mode),
                         None => csi_unhandled!(),
                     }
