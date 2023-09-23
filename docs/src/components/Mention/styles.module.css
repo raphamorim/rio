@@ -1,0 +1,11 @@
+.mention {
+  font-size: 15px;
+}
+
+.mentionMeta {
+  color: var(--ifm-color-emphasis-700);
+}
+
+.mentionMeta strong {
+  color: var(--ifm-font-color-base);
+}

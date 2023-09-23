@@ -40,7 +40,7 @@ const config = {
             'https://github.com/raphamorim/rio/tree/main/docs/',
         },
         theme: {
-          customCss: require.resolve('./src/css/styles.css'),
+          customCss: require.resolve('./src/css/custom.css'),
         },
       }),
     ],
@@ -137,9 +137,9 @@ const config = {
         id: 'support_us',
         content:
           'If you use Rio terminal please consider support via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
-        backgroundColor: '#fafbfc',
-        textColor: '#091E42',
-        isCloseable: false,
+        backgroundColor: '#f712ff',
+        textColor: '#FFFFFF',
+        isCloseable: true,
       },
     }),
 };
