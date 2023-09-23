@@ -47,6 +47,8 @@ fn find_font(
     db: &crate::font::loader::Database,
     font_spec: SugarloafFont,
 ) -> (FontArc, bool, Option<SugarloafFont>) {
+    use std::io::Read;
+
     let weight = font_spec.weight.unwrap_or(400);
     let style = font_spec
         .style
@@ -79,22 +81,29 @@ fn find_font(
                 if let Some((crate::font::loader::Source::File(ref path), _index)) =
                     db.face_source(id)
                 {
-                    if let Ok(bytes) = std::fs::read(path) {
-                        match FontArc::try_from_vec(bytes.to_vec()) {
-                            Ok(arc) => {
-                                warn!("Font '{}' found in {}", family, path.display());
-                                return (arc, false, None);
-                            }
-                            Err(_) => {
-                                warn!("Failed to load font '{family}' with style '{style}' and weight '{weight}'");
-                                return (
-                                    FontArc::try_from_slice(
-                                        constants::FONT_CASCADIAMONO_REGULAR,
-                                    )
-                                    .unwrap(),
-                                    true,
-                                    Some(font_spec),
-                                );
+                    if let Ok(mut file) = std::fs::File::open(path) {
+                        let mut font_data = vec![];
+                        if file.read_to_end(&mut font_data).is_ok() {
+                            match FontArc::try_from_vec(font_data) {
+                                Ok(arc) => {
+                                    warn!(
+                                        "Font '{}' found in {}",
+                                        family,
+                                        path.display()
+                                    );
+                                    return (arc, false, None);
+                                }
+                                Err(err_message) => {
+                                    warn!("Failed to load font '{family}' with style '{style}' and weight '{weight}', {err_message}");
+                                    return (
+                                        FontArc::try_from_slice(
+                                            constants::FONT_CASCADIAMONO_REGULAR,
+                                        )
+                                        .unwrap(),
+                                        true,
+                                        Some(font_spec),
+                                    );
+                                }
                             }
                         }
                     }
