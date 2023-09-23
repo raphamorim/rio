@@ -21,3 +21,31 @@
   align-items: center;
   justify-content: center;
 }
+
+.section {
+  padding: 72px 0;
+}
+
+.sectionAlt {
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+.sectionInner {
+  margin: 0 auto;
+}
+
+.mentionsSection > :global(.col) > * {
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 996px) {
+  .mentionsSection > :global(.col:last-child) > *:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@media (min-width: 997px) {
+  .mentionsSection > :global(.col) > *:last-child {
+    margin-bottom: 0;
+  }
+}

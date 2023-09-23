@@ -15,9 +15,10 @@ Options:
 <p>  -e, --command <COMMAND>...  Command and args to execute (must be last argument)
 <p>  -h, --help                  Print help
 <p>  -V, --version               Print version
+```
 
 The options "-e" and "--command" executes the command and closes the terminal right way after the execution.
-```
+
 ```
 $ rio -e sleep 10
 ```
