@@ -1,11 +1,7 @@
 ---
-layout: docs
-class: docs
-title: 'Default colors and themes'
+title: 'Default colors'
 language: 'en'
 ---
-
-## Default colors and themes
 
 Default Rio terminal colors.
 

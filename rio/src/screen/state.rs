@@ -38,7 +38,7 @@ pub struct State {
     pub selection_range: Option<SelectionRange>,
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
-    ignore_theme_selection_fg_color: bool,
+    ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
 }
 
@@ -105,7 +105,7 @@ impl State {
             is_blinking: false,
             last_typing: None,
             has_blinking_enabled: config.blinking_cursor,
-            ignore_theme_selection_fg_color: config.ignore_theme_selection_fg_color,
+            ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: ScreenNavigation::new(
                 config.navigation.mode,
@@ -265,7 +265,7 @@ impl State {
 
                 let selected_sugar = Sugar {
                     content,
-                    foreground_color: if self.ignore_theme_selection_fg_color {
+                    foreground_color: if self.ignore_selection_fg_color {
                         self.compute_fg_color(square)
                     } else {
                         self.named_colors.selection_foreground

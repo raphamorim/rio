@@ -1,11 +1,9 @@
 ---
-layout: docs
-class: docs
 title: 'Plugins'
 language: 'en'
 ---
 
-## Plugins
+## Note: Plugins are not ready yet
 
 Plugins in Rio terminal are powered by WebAssembly.
 

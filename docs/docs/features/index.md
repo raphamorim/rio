@@ -3,20 +3,7 @@ title: 'Features'
 language: 'en'
 ---
 
-## Features
-
 Short introduction of Rio terminal features. Many other features are in development.
-
-- [• Cross Platform](#cross-platform)
-- [• Fast](#Fast)
-- [• Multi windows architecture](#multi-windows)
-- [• Minimal tabs](#minimal-tabs)
-- [• Native tabs](#native-tabs)
-- [• Adaptive Theme](#adaptive-theme)
-- [• Spawn or Fork processes](#spawn-or-fork)
-- [• Collapsed tabs, breadcrumb, expanded tabs on top or bottom](#navigation)
-- [• Colorize tabs based on programs](#color-automation-for-navigation)
-- [• Kitty's keyboard protocol](#kitty-keyboard-protocol)
 
 ### Cross-platform
 
@@ -52,20 +39,20 @@ Besides other navigation styles, Rio terminal does support native tabs as well.
 
 To enable native tabs:
 
-{% highlight toml %}
+```toml
 [navigation]
 mode = "NativeTab"
-{% endhighlight %}
+```
 
 ### Adaptive theme
 
 Rio support theme based on the system theme (light and dark). This configuration only works for Web, MacOS and Windows.
 
-{% highlight toml %}
+```toml
 [adaptive-theme]
 light = "belafonte-day"
 dark = "belafonte-night"
-{% endhighlight %}
+```
 
 Example of usage with MacOS:
 
@@ -111,12 +98,12 @@ The example below sets <span class="keyword">#FFFF00</span> as color background 
 
 The configuration would be like:
 
-{% highlight toml %}
+```toml
 [navigation]
 color-automation = [
 	{ program = "nvim", color = "#FFFF00" }
 ]
-{% endhighlight %}
+```
 
 ### Kitty keyboard protocol
 

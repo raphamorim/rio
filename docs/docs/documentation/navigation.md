@@ -1,20 +1,9 @@
 ---
-layout: docs
-class: docs
 title: 'Navigation'
 language: 'en'
 ---
 
-## Navigation
-
 Rio allows to choose navigation between the following options:
-
-- • <span class="keyword">CollapsedTab</span>
-- • <span class="keyword">NativeTab</span> (Available only for MacOs)
-- • <span class="keyword">BottomTab</span>
-- • <span class="keyword">TopTab</span>
-- • <span class="keyword">Breadcrumb</span> (Available only for MacOs, BSD and Linux)
-- • <span class="keyword">Plain</span>
 
 ### CollapsedTab
 
