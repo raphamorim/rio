@@ -6,7 +6,7 @@ use cursor_icon::CursorIcon;
 use log::{debug, warn};
 use rio_config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::str::FromStr;
-use std::time::{Instant};
+use std::time::Instant;
 
 use crate::crosswords::attr::Attr;
 
@@ -377,10 +377,12 @@ struct SyncState {
 
 impl Default for SyncState {
     fn default() -> Self {
-        Self { buffer: Vec::with_capacity(SYNC_BUFFER_SIZE), timeout: None }
+        Self {
+            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
+            timeout: None,
+        }
     }
 }
-
 
 #[derive(Default)]
 pub struct ParserProcessor {
