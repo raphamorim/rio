@@ -23,7 +23,7 @@
         <string>tool</string>
       </array>
       <key>CFBundleTypeIconFile</key>
-      <string>Rio-stable.icns</string>
+      <string>rio.icns</string>
       <key>CFBundleTypeName</key>
       <string>Terminal scripts</string>
       <key>CFBundleTypeRole</key>
