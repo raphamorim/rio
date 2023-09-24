@@ -941,10 +941,20 @@ impl Sequencer {
 
                             #[cfg(target_os = "macos")]
                             {
-                                if route.window.screen.context_manager.config.is_native {
-                                    route.window.screen.update_top_y_for_native_tabs(
-                                        route.window.winit_window.num_tabs(),
+                                if route.window.screen.context_manager.config.is_native
+                                    && route
+                                        .window
+                                        .screen
+                                        .should_reload_with_updated_margin_top_y(
+                                            route.window.winit_window.num_tabs(),
+                                        )
+                                {
+                                    route.update_config(
+                                        &self.config,
+                                        &self.router.font_database,
                                     );
+                                    *control_flow = ControlFlow::Wait;
+                                    return;
                                 }
                             }
 

@@ -257,7 +257,7 @@ impl RouteWindow {
         let winit_window = configure_window(winit_window, config);
 
         let mut screen =
-            Screen::new(&winit_window, config, event_proxy, font_database, None).await?;
+            Screen::new(&winit_window, config, event_proxy, font_database).await?;
 
         screen.init(
             screen.state.named_colors.background.1,
@@ -292,7 +292,6 @@ impl RouteWindow {
             config,
             event_proxy,
             font_database,
-            tab_id,
         ))
         .expect("Screen not created");
 
