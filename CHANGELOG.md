@@ -6,6 +6,7 @@
 
 ## 0.0.20
 
+- Fix retrieve foreground process name to tabs.
 - Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.
 - Fix settings for NativeTabs.
 - New docs.
