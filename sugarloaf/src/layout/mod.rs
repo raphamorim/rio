@@ -116,11 +116,13 @@ impl SugarloafLayout {
         layout
     }
 
+    #[inline]
     pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
         self.scale_factor = scale_factor;
         self
     }
 
+    #[inline]
     pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
         self.width_u32 = width;
         self.height_u32 = height;
@@ -153,6 +155,7 @@ impl SugarloafLayout {
         false
     }
 
+    #[inline]
     pub fn update(&mut self) -> &mut Self {
         update_styles(self);
         let (columns, lines) = compute(
@@ -169,6 +172,7 @@ impl SugarloafLayout {
         self
     }
 
+    #[inline]
     pub fn update_columns_lines_per_font_bound(&mut self, font_bound: f32) {
         self.font_bound = font_bound / self.scale_factor;
 
@@ -192,9 +196,9 @@ impl SugarloafLayout {
         }
     }
 
-    pub fn set_top_y_for_native_tabs(&mut self, top_y: f32) {
+    #[inline]
+    pub fn set_margin_top_y(&mut self, top_y: f32) {
         self.margin.top_y = top_y;
-        update_styles(self);
     }
 
     // This method will run over the new font and font_size

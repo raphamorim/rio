@@ -14,27 +14,27 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
 
     let settings_background = vec![
         Rect {
-            position: [0., 100.0],
+            position: [0., sugarloaf.layout.margin.top_y + 100.0],
             color: dim_black,
             size: [sugarloaf.layout.width * 2., sugarloaf.layout.height],
         },
         Rect {
-            position: [0., 96.0],
+            position: [0., sugarloaf.layout.margin.top_y + 96.0],
             color: blue,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
-            position: [0., 104.0],
+            position: [0., sugarloaf.layout.margin.top_y + 104.0],
             color: yellow,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
-            position: [0., 112.0],
+            position: [0., sugarloaf.layout.margin.top_y + 112.0],
             color: red,
             size: [sugarloaf.layout.width * 2., 8.],
         },
         Rect {
-            position: [0., 180.0],
+            position: [0., sugarloaf.layout.margin.top_y + 175.0],
             color: [1., 1., 1., 1.],
             size: [sugarloaf.layout.width * 2., 50.],
         },
@@ -43,7 +43,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
     sugarloaf.pile_rects(settings_background);
 
     sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 30.),
+        (10., sugarloaf.layout.margin.top_y + 50.),
         "Settings".to_string(),
         FONT_ID_BUILTIN,
         28.,
@@ -52,7 +52,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
     );
 
     sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 60.),
+        (10., sugarloaf.layout.margin.top_y + 80.),
         format!(
             "{} • v{}",
             settings.default_file_path,
@@ -66,7 +66,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
 
     let items_len = settings.inner.len();
     sugarloaf.text(
-        (10., sugarloaf.layout.margin.top_y + 130.),
+        (10., sugarloaf.layout.margin.top_y + 140.),
         String::from(""),
         FONT_ID_ICONS,
         16.,
@@ -82,7 +82,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
 
     if let Some(prev_setting) = settings.inner.get(&previous_item) {
         sugarloaf.text(
-            (10., sugarloaf.layout.margin.top_y + 150.),
+            (10., sugarloaf.layout.margin.top_y + 160.),
             format!(
                 "{} | \"{}\"",
                 prev_setting.title, prev_setting.options[prev_setting.current_option],
@@ -96,7 +96,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
 
     if let Some(active_setting) = settings.inner.get(&settings.state.current) {
         sugarloaf.text(
-            (60., sugarloaf.layout.margin.top_y + 190.),
+            (60., sugarloaf.layout.margin.top_y + 200.),
             format!(
                 "{} | {:?}",
                 active_setting.title,
@@ -112,7 +112,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
             sugarloaf.text(
                 (
                     sugarloaf.layout.width / sugarloaf.layout.scale_factor - 160.,
-                    sugarloaf.layout.margin.top_y + 225.,
+                    sugarloaf.layout.margin.top_y + 235.,
                 ),
                 "* restart is needed".to_string(),
                 FONT_ID_BUILTIN,
@@ -125,7 +125,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
         sugarloaf.text(
             (
                 sugarloaf.layout.width / sugarloaf.layout.scale_factor - 40.,
-                sugarloaf.layout.margin.top_y + 190.,
+                sugarloaf.layout.margin.top_y + 200.,
             ),
             "󰁔".to_string(),
             FONT_ID_ICONS,
@@ -135,7 +135,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
         );
 
         sugarloaf.text(
-            (10., sugarloaf.layout.margin.top_y + 190.),
+            (10., sugarloaf.layout.margin.top_y + 200.),
             "󰁍".to_string(),
             FONT_ID_ICONS,
             28.,
@@ -160,7 +160,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
     }
 
     let settings_iterator = Vec::from_iter(iter);
-    let mut spacing_between = 230.;
+    let mut spacing_between = 240.;
     for i in settings_iterator {
         if i == settings.state.current {
             continue;

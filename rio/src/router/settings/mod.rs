@@ -34,10 +34,19 @@ pub struct Settings {
 impl Settings {
     pub fn new(db: &Database) -> Self {
         let mut font_families_hash = HashMap::new();
+        // TODO: Ignore families that cannot be loaded instead of manually
+        // add it to a hashmap of strings
+        let mut ignored_families = HashMap::new();
+        ignored_families.insert(String::from("GB18030 Bitmap"), true);
 
         for i in db.faces() {
             if !i.families.is_empty() && i.monospaced {
-                font_families_hash.insert(i.families[0].0.to_owned(), true);
+                let name = i.families[0].0.to_owned();
+                if ignored_families.get(&name).is_some() {
+                    continue;
+                }
+
+                font_families_hash.insert(name, true);
             }
         }
 

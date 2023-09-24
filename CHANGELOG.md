@@ -2,6 +2,8 @@
 
 ## In progress
 
+- Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.
+- Fix settings for NativeTabs.
 - New docs.
 - Removal of RIO_CONFIG environment variable.
 - Add ToggleFullscreen Action #229 (Ref: https://github.com/raphamorim/rio/pull/249)
