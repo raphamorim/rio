@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.20
+
 - Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.
 - Fix settings for NativeTabs.
 - New docs.
@@ -14,7 +18,7 @@
 - Enable CPU-specific optimizations on aarch64-apple-darwin (Ref: https://github.com/raphamorim/rio/pull/235).
 - Use release profile with optimization level as 3 (Ref: https://github.com/raphamorim/rio/pull/236).
 - Use fixed dependency versions in sugarloaf
-- Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane`.
+- Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane` (support to split is still not available).
 
 ## 0.0.19
 
