@@ -2,7 +2,7 @@
 
 ## In progress
 
-- TBD
+- Implemented `working-dir` parameter to cli https://github.com/raphamorim/rio/issues/258
 
 ## 0.0.20
 

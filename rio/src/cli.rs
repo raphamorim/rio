@@ -1,7 +1,7 @@
 // cli.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/cli.rs
 // which is licensed under Apache 2.0 license.
 
-use clap::{Args, Parser};
+use clap::{Args, Parser, ValueHint};
 use rio_config::Shell;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,10 @@ pub struct TerminalOptions {
     /// Command and args to execute (must be last argument).
     #[clap(short = 'e', long, allow_hyphen_values = true, num_args = 1..)]
     pub command: Vec<String>,
+
+    /// Start the shell in the specified working directory.
+    #[clap(long, value_hint = ValueHint::FilePath)]
+    pub working_dir: Option<String>,
 }
 
 impl TerminalOptions {

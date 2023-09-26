@@ -122,6 +122,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.use_fork = false;
     }
 
+    if let Some(working_dir_cli) = options.window_options.terminal_options.working_dir {
+        config.working_dir = Some(working_dir_cli);
+    }
+
     #[cfg(target_os = "linux")]
     {
         // If running inside a flatpak sandbox.
