@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "ahash 0.8.3",
  "base64",

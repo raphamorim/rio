@@ -90,15 +90,27 @@ pub struct ColorAutomation {
 pub struct Navigation {
     #[serde(default = "NavigationMode::default")]
     pub mode: NavigationMode,
-    #[serde(default = "Vec::default", rename = "color-automation")]
+    #[serde(
+        default = "Vec::default",
+        rename = "color-automation",
+        skip_serializing
+    )]
     pub color_automation: Vec<ColorAutomation>,
-    #[serde(default = "bool::default")]
+    #[serde(default = "bool::default", skip_serializing)]
     pub clickable: bool,
     #[serde(default = "bool::default", rename = "use-current-path")]
     pub use_current_path: bool,
-    #[serde(default = "bool::default", rename = "use-terminal-title")]
+    #[serde(
+        default = "bool::default",
+        rename = "use-terminal-title",
+        skip_serializing
+    )]
     pub use_terminal_title: bool,
-    #[serde(default = "bool::default", rename = "macos-hide-window-buttons")]
+    #[serde(
+        default = "bool::default",
+        rename = "macos-hide-window-buttons",
+        skip_serializing
+    )]
     pub macos_hide_window_buttons: bool,
 }
 
