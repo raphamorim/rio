@@ -7,14 +7,15 @@ A command-line interface (CLI) is a means of interacting with a device or comput
 
 ```
 $ rio --help
-Rio terminal app
+A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers
 
 Usage: rio [OPTIONS]
 
 Options:
-<p>  -e, --command <COMMAND>...  Command and args to execute (must be last argument)
-<p>  -h, --help                  Print help
-<p>  -V, --version               Print version
+  -e, --command <COMMAND>...  Command and args to execute (must be last argument)
+  --working-dir <WORKING_DIR>  Start the shell in the specified working directory
+  -h, --help                  Print help
+  -V, --version               Print version
 ```
 
 The options "-e" and "--command" executes the command and closes the terminal right way after the execution.
