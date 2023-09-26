@@ -7,7 +7,7 @@ language: 'en'
 
 ### MacOS
 
-Open configuration: `Command + Comma (,)` 
+Open configuration: `Command + Comma (,)`
 
 Copy: `Command + C`
 
@@ -130,7 +130,7 @@ Each value in key binding will specify an identifier of the key pressed:
 - `0-9`
 - `F1-F24`
 - `tab` `esc`
-- `home` `space` `delete` `insert` `pageup` `pagedown` `end`  `back` 
+- `home` `space` `delete` `insert` `pageup` `pagedown` `end`  `back`
 - `up` `down` `left` `right`
 - `@` `colon` `.` `return` `[` `]` `;` `\\` `+` `,` `/` `=` `-` `*`
 - `numpadenter` `numpadadd` `numpadcomma` `numpaddivide` `numpadequals` `numpadsubtract` `numpadmultiply`
@@ -156,6 +156,7 @@ Execute a predefined action in Rio terminal.
 #### [Window Actions](#window-actions)
 
 | Action | Description |
+| :-- | :-- |
 | CreateWindow | |
 | Quit | |
 
@@ -170,6 +171,7 @@ Execute a predefined action in Rio terminal.
 #### [Tab Actions](#tab-actions)
 
 | Action | Description |
+| :-- | :-- |
 | CreateTab | |
 | CloseTab | |
 | SelectPrevTab | |
@@ -188,6 +190,7 @@ Execute a predefined action in Rio terminal.
 #### [Scroll Actions](#scroll-actions)
 
 | Action | Description |
+| :-- | :-- |
 | ScrollPageUp | |
 | ScrollPageDown | |
 | ScrollHalfPageUp | |
@@ -222,7 +225,7 @@ Multiple modifiers can be combined using `|` like this:
 with = "control | shift"
 ```
 
-<!-- 
+<!--
  - `mode`: Indicate a binding for only specific terminal reported modes
     This is mainly used to send applications the correct escape sequences
     when in different modes.
