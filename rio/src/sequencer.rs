@@ -337,6 +337,10 @@ impl Sequencer {
                             RioEventType::Rio(RioEvent::Hide) => {
                                 event_loop_window_target.hide_application();
                             }
+                            #[cfg(target_os = "macos")]
+                            RioEventType::Rio(RioEvent::HideOtherApplications) => {
+                                event_loop_window_target.hide_other_applications();
+                            }
                             RioEventType::Rio(RioEvent::Minimize(set_minimize)) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
