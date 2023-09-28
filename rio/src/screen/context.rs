@@ -362,6 +362,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.event_proxy.send_event(RioEvent::Hide, self.window_id);
     }
 
+    #[cfg(target_os = "macos")]
+    #[inline]
+    pub fn hide_other_apps(&mut self) {
+        self.event_proxy
+            .send_event(RioEvent::HideOtherApplications, self.window_id);
+    }
+
     #[inline]
     pub fn select_last_tab(&mut self) {
         if self.config.is_native {
