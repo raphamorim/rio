@@ -668,6 +668,10 @@ impl Screen {
                     Act::Hide => {
                         self.context_manager.hide();
                     }
+                    #[cfg(target_os = "macos")]
+                    Act::HideOtherApplications => {
+                        self.context_manager.hide_other_apps();
+                    }
                     Act::SelectTab1 => {
                         self.context_manager.select_tab(0);
                     }
