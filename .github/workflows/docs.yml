@@ -38,11 +38,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ./docs/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+      - name: Install dependencies and build
+        run: make docs-build
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
