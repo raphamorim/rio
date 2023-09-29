@@ -20,6 +20,9 @@ all: install run
 docs:
 	cd $(DOCS_DIR) && npm start
 
+docs-build:
+	cd $(DOCS_DIR) && npm install && npm run build
+
 run:
 	cargo run --release
 
