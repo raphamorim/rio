@@ -23,6 +23,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # defaults:
+    #   run:
+    #     working-directory: docs
 
     steps:
       - name: Checkout
