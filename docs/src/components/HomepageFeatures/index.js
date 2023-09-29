@@ -49,17 +49,17 @@ const FeatureList = [
       </>
     ),
   },
-  {
-    // SVG Retired from https://www.svgrepo.com/svg/267831/typography-font
-    // Under CC0 License
-    title: 'Font ligatures',
-    Svg: require('@site/static/assets/homepage-svg/ligatures.svg').default,
-    description: (
-      <>
-        Ligatures are special characters in a font that combine two or more characters into one. They were originally invented by scribes as a way to increase handwriting speed by combining commonly used characters. Often code editors provide font ligatures support as a way to improve readability of common expressions or operators. For example, <code>!=</code> would be replaced with <code>≠</code> in a ligatured font.
-      </>
-    ),
-  },
+  // {
+  //   // SVG Retired from https://www.svgrepo.com/svg/267831/typography-font
+  //   // Under CC0 License
+  //   title: 'Font ligatures',
+  //   Svg: require('@site/static/assets/homepage-svg/ligatures.svg').default,
+  //   description: (
+  //     <>
+  //       Ligatures are special characters in a font that combine two or more characters into one. They were originally invented by scribes as a way to increase handwriting speed by combining commonly used characters. Often code editors provide font ligatures support as a way to improve readability of common expressions or operators. For example, <code>!=</code> would be replaced with <code>≠</code> in a ligatured font.
+  //     </>
+  //   ),
+  // },
   {
     // SVG Retired from https://www.svgrepo.com/svg/454420/browser-chrome-google
     // Under CC0 License
