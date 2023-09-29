@@ -21,7 +21,7 @@ docs:
 	cd $(DOCS_DIR) && npm start
 
 docs-build:
-	cd $(DOCS_DIR) && npm install && npm run build
+	cd $(DOCS_DIR) && npm ci && npm run build
 
 run:
 	cargo run --release
