@@ -89,7 +89,7 @@ impl Context {
             .copied()
             .filter(|&x| {
                 !unsupported_formats.contains(&x)
-                    && wgpu::TextureFormat::has_color_aspect(&x)
+                    && wgpu::TextureFormat::is_srgb(&x)
             })
             .collect();
 
