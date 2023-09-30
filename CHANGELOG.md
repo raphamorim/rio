@@ -2,7 +2,6 @@
 
 ## In progress
 
-- Updated wgpu to 0.17.0
 - Hide other applications in MacOS #262 by @sonbui00.
 - Implemented `working-dir` parameter to cli https://github.com/raphamorim/rio/issues/258.
 

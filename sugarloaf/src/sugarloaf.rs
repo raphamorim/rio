@@ -109,7 +109,7 @@ impl Sugarloaf {
             loaded_fonts.text.bold,
             loaded_fonts.text.bold_italic,
             loaded_fonts.symbol,
-            // loaded_fonts.emojis,
+            loaded_fonts.emojis,
             loaded_fonts.unicode,
             loaded_fonts.icons,
             loaded_fonts.breadcrumbs,
