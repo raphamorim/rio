@@ -578,7 +578,7 @@ impl LayerBrush {
 
             layer.render(&mut render_pass);
 
-            drop(render_pass);
+            // drop(render_pass);
         }
     }
 

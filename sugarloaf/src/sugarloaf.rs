@@ -462,7 +462,7 @@ impl Sugarloaf {
                 bounds: (width_bound * quantity as f32, text_bound),
                 text: vec![text],
                 layout: glyph_brush::Layout::default_single_line()
-                    .v_align(glyph_brush::VerticalAlign::Center)
+                    // .v_align(glyph_brush::VerticalAlign::Bottom)
                     .h_align(glyph_brush::HorizontalAlign::Left),
             };
 
@@ -477,38 +477,8 @@ impl Sugarloaf {
             });
 
             if let Some(decoration) = &stack[i].decoration {
-                // TODO:
-                //  let dec_position_y = match decoration.position.1 {
-                //     SugarDecorationPositionY::Bottom(pos_decoration_y) => {
-                //         scaled_rect_pos_y + ((pos_decoration_y) * self.ctx.scale)
-                //     }
-                //     SugarDecorationPositionY::Top(pos_decoration_y) => {
-                //         scaled_rect_pos_y + pos_decoration_y
-                //     }
-                //     SugarDecorationPositionY::Middle(pos_decoration_y) => {
-                //         scaled_rect_pos_y + (self.layout.sugarheight / 2.0) + pos_decoration_y
-                //     }
-                // };
-
                 let dec_pos_y = (scaled_rect_pos_y)
                     + (decoration.relative_position.1 * self.layout.line_height);
-                // A decoration with is_content_positioned has the width and height based on font_size
-                // and in this way is not affected by line_height (useful for decorations like Block and Beam)
-                // if decoration.is_content_positioned {
-                //     self.rects.push(Rect {
-                //         position: [
-                //             (scaled_rect_pos_x
-                //                 + (add_pos_x * decoration.relative_position.0)
-                //                     / self.ctx.scale),
-                //             scaled_rect_pos_y,
-                //         ],
-                //         color: decoration.color,
-                //         size: [
-                //             (width_bound * decoration.size.0),
-                //             (self.layout.font_size) + decoration.size.1,
-                //         ],
-                //     });
-                // } else {
                 self.rects.push(Rect {
                     position: [
                         (scaled_rect_pos_x
@@ -522,7 +492,6 @@ impl Sugarloaf {
                         (self.layout.sugarheight) * decoration.size.1,
                     ],
                 });
-                // }
             }
 
             if repeated.reset_on_next() {
@@ -678,65 +647,6 @@ impl Sugarloaf {
     fn reset_state(&mut self) {
         self.text_y = 0.0;
     }
-
-    // pub fn bytes(&self, width: u32, height: u32) -> Vec<u8> {
-    //     let dst_texture = self.ctx.device.create_texture(&wgpu::TextureDescriptor {
-    //         label: Some("destination"),
-    //         size: wgpu::Extent3d {
-    //             width,
-    //             height,
-    //             depth_or_array_layers: 1,
-    //         },
-    //         mip_level_count: 1,
-    //         sample_count: 1,
-    //         dimension: wgpu::TextureDimension::D2,
-    //         format: wgpu::TextureFormat::Rgba8UnormSrgb,
-    //         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-    //         view_formats: &[],
-    //     });
-
-    //     let dst_buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
-    //         label: Some("image map buffer"),
-    //         size: width as u64 * height as u64 * 4,
-    //         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-    //         mapped_at_creation: false,
-    //     });
-
-    //     let mut cmd_buf = self
-    //         .ctx
-    //         .device
-    //         .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-    //     cmd_buf.copy_texture_to_buffer(
-    //         wgpu::ImageCopyTexture {
-    //             texture: &dst_texture,
-    //             mip_level: 0,
-    //             origin: wgpu::Origin3d::ZERO,
-    //             aspect: wgpu::TextureAspect::All,
-    //         },
-    //         wgpu::ImageCopyBuffer {
-    //             buffer: &dst_buffer,
-    //             layout: wgpu::ImageDataLayout {
-    //                 offset: 0,
-    //                 bytes_per_row: Some(width * 4),
-    //                 rows_per_image: None,
-    //             },
-    //         },
-    //         wgpu::Extent3d {
-    //             width,
-    //             height,
-    //             depth_or_array_layers: 1,
-    //         },
-    //     );
-
-    //     self.ctx.queue.submit(Some(cmd_buf.finish()));
-
-    //     let dst_buffer_slice = dst_buffer.slice(..);
-    //     dst_buffer_slice.map_async(wgpu::MapMode::Read, |_| ());
-    //     self.ctx.device.poll(wgpu::Maintain::Wait);
-    //     let bytes = dst_buffer_slice.get_mapped_range().to_vec();
-    //     bytes
-    // }
 
     #[inline]
     pub fn pile_rects(&mut self, mut instances: Vec<Rect>) -> &mut Self {

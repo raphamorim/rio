@@ -1,7 +1,7 @@
 extern crate tokio;
 
 use sugarloaf::{
-    core::{Sugar, SugarDecoration},
+    core::{Sugar, SugarStyle, SugarDecoration},
     layout::SugarloafLayout,
     Sugarloaf,
 };
@@ -71,10 +71,32 @@ async fn main() {
                 decoration: None,
             },
             Sugar {
-                content: 'u',
+                content: '',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                decoration: None,
+            },
+            Sugar {
+                content: 'g',
+                foreground_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: [0.0, 0.0, 0.0, 1.0],
+                style: Some(SugarStyle {
+                    is_italic: false,
+                    is_bold_italic: false,
+                    is_bold: true,
+                }),
+                decoration: None,
+            },
+            Sugar {
+                content: 'a',
+                foreground_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [1.0, 1.0, 1.0, 1.0],
+                style: Some(SugarStyle {
+                    is_italic: false,
+                    is_bold_italic: false,
+                    is_bold: true,
+                }),
                 decoration: None,
             },
             Sugar {
@@ -87,36 +109,30 @@ async fn main() {
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
-            Sugar {
-                content: 'r',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-            },
-            Sugar {
-                content: '|',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
+                style: Some(SugarStyle {
+                    is_italic: true,
+                    is_bold_italic: false,
+                    is_bold: false,
+                }),
                 decoration: None,
             },
             Sugar {
-                content: 'S',
+                content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
+                style: Some(SugarStyle {
+                    is_italic: true,
+                    is_bold_italic: false,
+                    is_bold: false,
+                }),
                 decoration: None,
             },
             Sugar {
