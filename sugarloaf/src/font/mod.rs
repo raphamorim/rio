@@ -2,7 +2,6 @@ pub mod constants;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
-// pub mod ligatures;
 
 pub const FONT_ID_REGULAR: usize = 0;
 pub const FONT_ID_ITALIC: usize = 1;
@@ -216,12 +215,20 @@ impl Font {
             fonts_not_fount.push(err);
         }
 
-        let bold = find_font(db, font_spec.bold);
+        let bold = find_font(db, SugarloafFont {
+                    family: String::from("Fira Code"),
+                    style: None,
+                    weight: None,
+                });
         if let Some(err) = bold.2 {
             fonts_not_fount.push(err);
         }
 
-        let bold_italic = find_font(db, font_spec.bold_italic);
+        let bold_italic = find_font(db, SugarloafFont {
+                    family: String::from("Victor Mono"),
+                    style: None,
+                    weight: None,
+                });
         if let Some(err) = bold_italic.2 {
             fonts_not_fount.push(err);
         }
