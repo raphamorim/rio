@@ -2,8 +2,13 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.21
+
 - Hide other applications in MacOS #262 by @sonbui00.
 - Implemented `working-dir` parameter to cli https://github.com/raphamorim/rio/issues/258.
+- Remove legacy icns icons from bundle.
 
 ## 0.0.20
 

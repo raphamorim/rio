@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.20"
+version = "0.0.21"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -26,12 +26,12 @@ documentation = "https://github.com/raphamorim/rio#readme"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-sugarloaf = { path = "sugarloaf", version = "0.0.20" }
-corcovado = { path = "corcovado", version = "0.0.20" }
-rio-config = { path = "rio-config", version = "0.0.20" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.0.20" }
-copa = { path = "copa", default-features = true, version = "0.0.20" }
-teletypewriter = { path = "teletypewriter", version = "0.0.20" }
+sugarloaf = { path = "sugarloaf", version = "0.0.21" }
+corcovado = { path = "corcovado", version = "0.0.21" }
+rio-config = { path = "rio-config", version = "0.0.21" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.0.21" }
+copa = { path = "copa", default-features = true, version = "0.0.21" }
+teletypewriter = { path = "teletypewriter", version = "0.0.21" }
 
 bytemuck = { version = "1.13.1", features = [ "derive" ] }
 log = "0.4.19"
