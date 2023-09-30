@@ -168,5 +168,13 @@ test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
 
+publish-crates:
+	cargo publish -p rio-proc-macros
+	cargo publish -p copa
+	cargo publish -p teletypewriter
+	cargo publish -p sugarloaf
+	cargo publish -p rio-config
+	cargo publish -p rioterm
+
 test-renderer:
 	cd ./sugarloaf && make test
