@@ -53,8 +53,7 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 ## Acknowledgments
 
 - Alacritty 🥇
-- Since version 0.0.22, Sugarloaf ported glyph-brush code which was originally written by @alexheretic and licensed under Apache-2.0 license.
-- The lecagy Rio logo was made using _Adobe Sketchbook_ on iPad (between versions 0.0.1 between 0.0.18).
-- The default color palette is based on the colors of [ui.dev](https://ui.dev/).
+- Since version 0.0.22, Sugarloaf ported glyph-brush code which was originally written by @alexheretic and licensed under Apache-2.0 license 🥇
 - Components text render was originally from https://github.com/hecrj/wgpu_glyph
+- The legacy Rio logo was made using _Adobe Sketchbook_ on iPad (between versions 0.0.1 between 0.0.18).
 - https://github.com/madsmtm/menubar/
