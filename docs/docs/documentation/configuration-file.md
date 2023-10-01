@@ -181,8 +181,17 @@ performance = "High"
 #   - (Linux/BSD) user login shell
 #   - (Windows) powershell
 #
-# Example:
+# Example 1 using fish shell from bin path:
+#
 #   shell = { program = "/bin/fish", args = ["--login"] }
+#
+# Example 2 for Windows using powershell
+#
+#   shell = { program = "pwsh", args = [] }
+#
+# Example 3 for Windows using powershell with login
+#
+#   shell = { program = "pwsh", args = ["-l"] }
 
 # Startup directory
 #
