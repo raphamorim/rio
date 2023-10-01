@@ -7,7 +7,7 @@ mod builder;
 
 pub use self::builder::*;
 use crate::glyph::cache::{CachedBy, DrawCache};
-use crate::glyph::glyph_calculator::{GlyphCruncher, GlyphedSection};
+use crate::glyph::calculator::{GlyphCruncher, GlyphedSection};
 use crate::glyph::{
     DefaultSectionHasher, FontId, GlyphChange, GlyphPositioner, Rectangle, Section,
     SectionGeometry, SectionGlyph, SectionGlyphIter,

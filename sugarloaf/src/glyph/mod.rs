@@ -5,14 +5,14 @@
 
 mod cache;
 mod extra;
-mod glyph_brush;
-mod glyph_calculator;
+mod brush;
+mod calculator;
 mod layout;
 mod section;
 
 pub mod legacy;
 
-pub use crate::glyph::{extra::*, glyph_brush::*, glyph_calculator::*, section::*};
+pub use crate::glyph::{extra::*, brush::*, calculator::*, section::*};
 pub use cache::Rectangle;
 pub use layout::*;
 
