@@ -658,7 +658,6 @@ impl Screen {
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-
                         self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),

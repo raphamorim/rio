@@ -690,6 +690,12 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         "selecttab9" => Action::SelectTab9,
         "selectlasttab" => Action::SelectLastTab,
         "receivechar" => Action::ReceiveChar,
+        "scrolllineup" => Action::ScrollLineUp,
+        "scrolllinedown" => Action::ScrollLineDown,
+        "scrollhalfpageup" => Action::ScrollHalfPageUp,
+        "scrollhalfpagedown" => Action::ScrollHalfPageDown,
+        "scrolltotop" => Action::ScrollToTop,
+        "scrolltobottom" => Action::ScrollToBottom,
         "none" => Action::None,
         _ => Action::None,
     };
