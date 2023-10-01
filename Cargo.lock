@@ -1145,7 +1145,7 @@ checksum = "4edefd123f28a0b1d41ec4a489c2b43020b369180800977801611084f342978d"
 dependencies = [
  "glyph_brush_draw_cache",
  "glyph_brush_layout",
- "ordered-float",
+ "ordered-float 3.3.0",
  "rustc-hash",
  "twox-hash",
 ]
@@ -2043,6 +2043,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a540f3e3b3d7929c884e46d093d344e4e5bdeed54d08bf007df50c93cc85d5"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2707,20 +2716,28 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 name = "sugarloaf"
 version = "0.0.21"
 dependencies = [
+ "ab_glyph",
+ "approx",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
  "criterion",
+ "crossbeam-channel",
+ "crossbeam-deque",
  "deflate",
  "fontconfig-parser",
  "futures",
- "glyph_brush",
  "guillotiere",
  "image",
  "js-sys",
+ "linked-hash-map",
  "log 0.4.19",
  "memmap2 0.7.1",
+ "once_cell",
+ "ordered-float 4.1.0",
  "png",
+ "rayon",
+ "rustc-hash",
  "serde",
  "slotmap",
  "tinyvec",
@@ -2734,6 +2751,7 @@ dependencies = [
  "web-sys",
  "wgpu",
  "winit",
+ "xi-unicode",
 ]
 
 [[package]]

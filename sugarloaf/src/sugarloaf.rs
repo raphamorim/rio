@@ -12,10 +12,10 @@ use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
+use crate::glyph::{FontId, GlyphCruncher};
 use crate::layout::SugarloafLayout;
+use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
-use glyph_brush::ab_glyph::{self, Font as GFont, FontArc, PxScale};
-use glyph_brush::{FontId, GlyphCruncher};
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -461,9 +461,9 @@ impl Sugarloaf {
                 screen_position: (section_pos_x, section_pos_y),
                 bounds: (width_bound * quantity as f32, text_bound),
                 text: vec![text],
-                layout: glyph_brush::Layout::default_single_line()
-                    // .v_align(glyph_brush::VerticalAlign::Bottom)
-                    .h_align(glyph_brush::HorizontalAlign::Left),
+                layout: crate::glyph::Layout::default_single_line()
+                    .v_align(crate::glyph::VerticalAlign::Center)
+                    .h_align(crate::glyph::HorizontalAlign::Left),
             };
 
             sections.push(section);
@@ -538,9 +538,9 @@ impl Sugarloaf {
             screen_position: (0., 0.),
             bounds: (scale, scale),
             text: vec![text],
-            layout: glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Center)
-                .h_align(glyph_brush::HorizontalAlign::Left),
+            layout: crate::glyph::Layout::default_single_line()
+                .v_align(crate::glyph::VerticalAlign::Center)
+                .h_align(crate::glyph::HorizontalAlign::Left),
         };
 
         self.text_brush.queue(section);
@@ -674,13 +674,13 @@ impl Sugarloaf {
         };
 
         let layout = if single_line {
-            glyph_brush::Layout::default_single_line()
-                .v_align(glyph_brush::VerticalAlign::Center)
-                .h_align(glyph_brush::HorizontalAlign::Left)
+            crate::glyph::Layout::default_single_line()
+                .v_align(crate::glyph::VerticalAlign::Center)
+                .h_align(crate::glyph::HorizontalAlign::Left)
         } else {
-            glyph_brush::Layout::default()
-                .v_align(glyph_brush::VerticalAlign::Center)
-                .h_align(glyph_brush::HorizontalAlign::Left)
+            crate::glyph::Layout::default()
+                .v_align(crate::glyph::VerticalAlign::Center)
+                .h_align(crate::glyph::HorizontalAlign::Left)
         };
 
         let section = &crate::components::text::Section {
