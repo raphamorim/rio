@@ -1,7 +1,7 @@
 extern crate tokio;
 
 use sugarloaf::{
-    core::{Sugar, SugarStyle, SugarDecoration},
+    core::{Sugar, SugarDecoration, SugarStyle},
     layout::SugarloafLayout,
     Sugarloaf,
 };

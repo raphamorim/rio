@@ -14,7 +14,7 @@ pub const FONT_ID_ICONS: usize = 7;
 pub const FONT_ID_BUILTIN: usize = 8;
 
 use crate::font::constants::*;
-use glyph_brush::ab_glyph::FontArc;
+use ab_glyph::FontArc;
 
 pub type SugarloafFont = fonts::SugarloafFont;
 pub type SugarloafFonts = fonts::SugarloafFonts;
@@ -215,20 +215,26 @@ impl Font {
             fonts_not_fount.push(err);
         }
 
-        let bold = find_font(db, SugarloafFont {
-                    family: String::from("Fira Code"),
-                    style: None,
-                    weight: None,
-                });
+        let bold = find_font(
+            db,
+            SugarloafFont {
+                family: String::from("Fira Code"),
+                style: None,
+                weight: None,
+            },
+        );
         if let Some(err) = bold.2 {
             fonts_not_fount.push(err);
         }
 
-        let bold_italic = find_font(db, SugarloafFont {
-                    family: String::from("Victor Mono"),
-                    style: None,
-                    weight: None,
-                });
+        let bold_italic = find_font(
+            db,
+            SugarloafFont {
+                family: String::from("Victor Mono"),
+                style: None,
+                weight: None,
+            },
+        );
         if let Some(err) = bold_italic.2 {
             fonts_not_fount.push(err);
         }

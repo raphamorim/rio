@@ -14,19 +14,19 @@ pub struct Region {
 
 use pipeline::{Instance, Pipeline};
 
-pub use builder::GlyphBrushBuilder;
-pub use glyph_brush::ab_glyph;
-pub use glyph_brush::{
+pub use crate::glyph::ab_glyph;
+pub use crate::glyph::{
     BuiltInLineBreaker, Extra, FontId, GlyphCruncher, GlyphPositioner, HorizontalAlign,
     Layout, LineBreak, LineBreaker, OwnedSection, OwnedText, Section, SectionGeometry,
     SectionGlyph, SectionGlyphIter, SectionText, Text, VerticalAlign,
 };
+pub use builder::GlyphBrushBuilder;
 
 use ab_glyph::{Font, Rect};
 use core::hash::BuildHasher;
 use std::borrow::Cow;
 
-use glyph_brush::{BrushAction, BrushError, DefaultSectionHasher};
+use crate::glyph::{BrushAction, BrushError, DefaultSectionHasher};
 
 /// Object allowing glyph drawing, containing cache state. Manages glyph positioning cacheing,
 /// glyph draw caching & efficient GPU texture cache updating and re-sizing on demand.
@@ -34,7 +34,7 @@ use glyph_brush::{BrushAction, BrushError, DefaultSectionHasher};
 /// Build using a [`GlyphBrushBuilder`](struct.GlyphBrushBuilder.html).
 pub struct GlyphBrush<Depth, F = ab_glyph::FontArc, H = DefaultSectionHasher> {
     pipeline: Pipeline<Depth>,
-    glyph_brush: glyph_brush::GlyphBrush<Instance, Extra, F, H>,
+    glyph_brush: crate::glyph::GlyphBrush<Instance, Extra, F, H>,
 }
 
 impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
@@ -199,7 +199,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        raw_builder: glyph_brush::GlyphBrushBuilder<F, H>,
+        raw_builder: crate::glyph::GlyphBrushBuilder<F, H>,
     ) -> Self {
         let glyph_brush = raw_builder.build();
         let (cache_width, cache_height) = glyph_brush.texture_dimensions();
@@ -313,7 +313,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
         depth_stencil_state: wgpu::DepthStencilState,
-        raw_builder: glyph_brush::GlyphBrushBuilder<F, H>,
+        raw_builder: crate::glyph::GlyphBrushBuilder<F, H>,
     ) -> Self {
         let glyph_brush = raw_builder.build();
         let (cache_width, cache_height) = glyph_brush.texture_dimensions();

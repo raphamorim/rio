@@ -1,21 +1,21 @@
 use core::hash::BuildHasher;
 
-use glyph_brush::ab_glyph::Font;
-use glyph_brush::delegate_glyph_brush_builder_fns;
-use glyph_brush::DefaultSectionHasher;
+use crate::glyph::ab_glyph::Font;
+// use crate::glyph::delegate_glyph_brush_builder_fns;
+use crate::glyph::DefaultSectionHasher;
 
 use super::GlyphBrush;
 
 /// Builder for a [`GlyphBrush`](struct.GlyphBrush.html).
 pub struct GlyphBrushBuilder<D, F, H = DefaultSectionHasher> {
-    inner: glyph_brush::GlyphBrushBuilder<F, H>,
+    inner: crate::glyph::GlyphBrushBuilder<F, H>,
     texture_filter_method: wgpu::FilterMode,
     multisample_state: wgpu::MultisampleState,
     depth: D,
 }
 
-impl<F, H> From<glyph_brush::GlyphBrushBuilder<F, H>> for GlyphBrushBuilder<(), F, H> {
-    fn from(inner: glyph_brush::GlyphBrushBuilder<F, H>) -> Self {
+impl<F, H> From<crate::glyph::GlyphBrushBuilder<F, H>> for GlyphBrushBuilder<(), F, H> {
+    fn from(inner: crate::glyph::GlyphBrushBuilder<F, H>) -> Self {
         GlyphBrushBuilder {
             inner,
             texture_filter_method: wgpu::FilterMode::Linear,
@@ -35,7 +35,7 @@ impl GlyphBrushBuilder<(), ()> {
 
     pub fn using_fonts<F: Font>(fonts: Vec<F>) -> GlyphBrushBuilder<(), F> {
         GlyphBrushBuilder {
-            inner: glyph_brush::GlyphBrushBuilder::using_fonts(fonts),
+            inner: crate::glyph::GlyphBrushBuilder::using_fonts(fonts),
             texture_filter_method: wgpu::FilterMode::Linear,
             multisample_state: wgpu::MultisampleState::default(),
             depth: (),
@@ -44,7 +44,7 @@ impl GlyphBrushBuilder<(), ()> {
 
     // pub fn using_scaled_fonts<F: Font>(fonts: Vec<PxScaleFont<FontArc>>) -> GlyphBrushBuilder<(), F> {
     //     GlyphBrushBuilder {
-    //         inner: glyph_brush::GlyphBrushBuilder::using_fonts(fonts),
+    //         inner: crate::glyph::GlyphBrushBuilder::using_fonts(fonts),
     //         texture_filter_method: wgpu::FilterMode::Linear,
     //         multisample_state: wgpu::MultisampleState::default(),
     //         depth: (),
@@ -53,7 +53,7 @@ impl GlyphBrushBuilder<(), ()> {
 }
 
 impl<F: Font, D, H: BuildHasher> GlyphBrushBuilder<D, F, H> {
-    delegate_glyph_brush_builder_fns!(inner);
+    // delegate_glyph_brush_builder_fns!(inner);
 
     /// When multiple CPU cores are available spread rasterization work across
     /// all cores.

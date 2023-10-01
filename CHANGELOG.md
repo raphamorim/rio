@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Forked and embedded glyph-brush project to sugarloaf. Glyph-brush was originally created @alexheretic and is licensed under Apache-2.0 license.
 - Upgrate wgpu to 0.17.1.
 
 ## 0.0.21
