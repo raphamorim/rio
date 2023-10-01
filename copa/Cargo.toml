@@ -12,7 +12,7 @@ rust-version = "1.72.1"
 
 [dependencies]
 rio-proc-macros = { workspace = true }
-arrayvec = { version = "0.7.2", default-features = false, optional = true }
+arrayvec = { version = "0.7.4", default-features = false, optional = true }
 
 [dev-dependencies]
 unicode-normalization = "0.1"
