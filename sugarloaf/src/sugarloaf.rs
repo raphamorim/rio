@@ -12,10 +12,10 @@ use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
-use crate::glyph::{FontId, GlyphCruncher};
 use crate::layout::SugarloafLayout;
-use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
+use ab_glyph::{self, Font as GFont, FontArc, PxScale};
+use crate::glyph::{FontId, GlyphCruncher};
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
