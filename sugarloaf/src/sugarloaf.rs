@@ -12,10 +12,10 @@ use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
-use crate::layout::SugarloafLayout;
-use core::fmt::{Debug, Formatter};
-use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use crate::glyph::{FontId, GlyphCruncher};
+use crate::layout::SugarloafLayout;
+use ab_glyph::{self, Font as GFont, FontArc, PxScale};
+use core::fmt::{Debug, Formatter};
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -163,10 +163,8 @@ impl Sugarloaf {
                     })],
                     depth_stencil_attachment: None,
                 });
-                self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
-                self.ctx.staging_belt.recall();
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {
@@ -742,18 +740,12 @@ impl Sugarloaf {
 
                 self.rects = vec![];
 
-                let _ = self.text_brush.draw_queued(
-                    &self.ctx.device,
-                    &mut self.ctx.staging_belt,
-                    &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                );
+                let _ = self
+                    .text_brush
+                    .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                self.ctx.staging_belt.finish();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
-                self.ctx.staging_belt.recall();
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {

@@ -3,7 +3,6 @@ pub struct Context {
     pub device: wgpu::Device,
     pub surface: wgpu::Surface,
     pub queue: wgpu::Queue,
-    pub staging_belt: wgpu::util::StagingBelt,
     pub format: wgpu::TextureFormat,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub scale: f32,
@@ -126,8 +125,6 @@ impl Context {
         })
         .await;
 
-        let staging_belt = wgpu::util::StagingBelt::new(2 * 1024);
-
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -145,7 +142,6 @@ impl Context {
             device,
             queue,
             surface,
-            staging_belt,
             format,
             size,
             scale: scale as f32,

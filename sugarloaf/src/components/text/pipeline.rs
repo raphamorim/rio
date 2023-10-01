@@ -6,9 +6,9 @@ use std::borrow::Cow;
 
 use crate::glyph::ab_glyph::{point, Rect};
 use bytemuck::{Pod, Zeroable};
-use core::num::NonZeroU64;
 use std::marker::PhantomData;
 use std::mem;
+use wgpu::util::DeviceExt;
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -59,20 +59,13 @@ impl Pipeline<()> {
 
     pub fn draw(
         &mut self,
-        device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        draw(
-            self,
-            (device, staging_belt, encoder, target),
-            None,
-            transform,
-            region,
-        );
+        draw(self, (queue, encoder, target), None, transform, region);
     }
 }
 
@@ -101,8 +94,7 @@ impl Pipeline<wgpu::DepthStencilState> {
     pub fn draw(
         &mut self,
         config: (
-            &wgpu::Device,
-            &mut wgpu::util::StagingBelt,
+            &mut wgpu::Queue,
             &mut wgpu::CommandEncoder,
             &wgpu::TextureView,
         ),
@@ -110,10 +102,10 @@ impl Pipeline<wgpu::DepthStencilState> {
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        let (device, staging_belt, encoder, target) = config;
+        let (queue, encoder, target) = config;
         draw(
             self,
-            (device, staging_belt, encoder, target),
+            (queue, encoder, target),
             Some(depth_stencil_attachment),
             transform,
             region,
@@ -124,15 +116,12 @@ impl Pipeline<wgpu::DepthStencilState> {
 impl<Depth> Pipeline<Depth> {
     pub fn update_cache(
         &mut self,
-        device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
-        encoder: &mut wgpu::CommandEncoder,
+        queue: &mut wgpu::Queue,
         offset: [u16; 2],
         size: [u16; 2],
         data: &[u8],
     ) {
-        self.cache
-            .update(device, staging_belt, encoder, offset, size, data);
+        self.cache.update(queue, offset, size, data);
     }
 
     pub fn increase_cache_size(
@@ -155,9 +144,8 @@ impl<Depth> Pipeline<Depth> {
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
-        instances: &[Instance],
+        instances: &mut [Instance],
     ) {
         if instances.is_empty() {
             self.current_instances = 0;
@@ -166,7 +154,7 @@ impl<Depth> Pipeline<Depth> {
 
         if instances.len() > self.supported_instances {
             self.instances = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("text::Pipeline instances"),
+                label: Some("sugarloaf::text::Pipeline instances"),
                 size: mem::size_of::<Instance>() as u64 * instances.len() as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -177,11 +165,22 @@ impl<Depth> Pipeline<Depth> {
 
         let instances_bytes = bytemuck::cast_slice(instances);
 
-        if let Some(size) = NonZeroU64::new(instances_bytes.len() as u64) {
-            let mut instances_view =
-                staging_belt.write_buffer(encoder, &self.instances, 0, size, device);
+        if !instances_bytes.is_empty() {
+            let instances_buffer =
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("sugarloaf::text::Pipeline instances"),
+                    contents: instances_bytes,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+                });
 
-            instances_view.copy_from_slice(instances_bytes);
+            encoder.copy_buffer_to_buffer(
+                &instances_buffer,
+                0,
+                &self.instances,
+                0,
+                mem::size_of::<Instance>() as u64 * instances.len() as u64,
+            );
+            // queue.write_buffer(&self.instances, 0, instances_bytes);
         }
 
         self.current_instances = instances.len();
@@ -201,8 +200,6 @@ fn build<D>(
     cache_width: u32,
     cache_height: u32,
 ) -> Pipeline<D> {
-    use wgpu::util::DeviceExt;
-
     let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
@@ -333,8 +330,7 @@ fn build<D>(
 fn draw<D>(
     pipeline: &mut Pipeline<D>,
     config: (
-        &wgpu::Device,
-        &mut wgpu::util::StagingBelt,
+        &mut wgpu::Queue,
         &mut wgpu::CommandEncoder,
         &wgpu::TextureView,
     ),
@@ -342,17 +338,9 @@ fn draw<D>(
     transform: [f32; 16],
     region: Option<Region>,
 ) {
-    let (device, staging_belt, encoder, target) = config;
+    let (queue, encoder, target) = config;
     if transform != pipeline.current_transform {
-        let mut transform_view = staging_belt.write_buffer(
-            encoder,
-            &pipeline.transform,
-            0,
-            unsafe { NonZeroU64::new_unchecked(16 * 4) },
-            device,
-        );
-
-        transform_view.copy_from_slice(bytemuck::cast_slice(&transform));
+        queue.write_buffer(&pipeline.transform, 0, bytemuck::cast_slice(&transform));
 
         pipeline.current_transform = transform;
     }

@@ -268,21 +268,23 @@ impl Renderable for RectBrush {
         let transform: [f32; 16] = orthographic_projection(dimensions.0, dimensions.1);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
-        let device = &ctx.device;
-        let staging_belt = &mut ctx.staging_belt;
+        // let device = &ctx.device;
+        let queue = &mut ctx.queue;
 
         if transform != self.current_transform || scale != self.scale {
             let uniforms = Uniforms::new(transform, scale);
 
-            let mut transform_view = staging_belt.write_buffer(
-                encoder,
-                &self.transform,
-                0,
-                wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64).unwrap(),
-                device,
-            );
+            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
 
-            transform_view.copy_from_slice(bytemuck::bytes_of(&uniforms));
+            // let mut transform_view = staging_belt.write_buffer(
+            //     encoder,
+            //     &self.transform,
+            //     0,
+            //     wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64).unwrap(),
+            //     device,
+            // );
+
+            // transform_view.copy_from_slice(bytemuck::bytes_of(&uniforms));
 
             self.current_transform = transform;
             self.scale = scale;
@@ -297,16 +299,7 @@ impl Renderable for RectBrush {
 
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
-            // queue.write_buffer(&self.instances, 0, instance_bytes);
-            let mut instance_buffer = staging_belt.write_buffer(
-                encoder,
-                &self.instances,
-                0,
-                wgpu::BufferSize::new(instance_bytes.len() as u64).unwrap(),
-                device,
-            );
-
-            instance_buffer.copy_from_slice(instance_bytes);
+            queue.write_buffer(&self.instances, 0, instance_bytes);
 
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
