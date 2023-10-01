@@ -215,26 +215,12 @@ impl Font {
             fonts_not_fount.push(err);
         }
 
-        let bold = find_font(
-            db,
-            SugarloafFont {
-                family: String::from("Fira Code"),
-                style: None,
-                weight: None,
-            },
-        );
+        let bold = find_font(db, font_spec.bold);
         if let Some(err) = bold.2 {
             fonts_not_fount.push(err);
         }
 
-        let bold_italic = find_font(
-            db,
-            SugarloafFont {
-                family: String::from("Victor Mono"),
-                style: None,
-                weight: None,
-            },
-        );
+        let bold_italic = find_font(db, font_spec.bold_italic);
         if let Some(err) = bold_italic.2 {
             fonts_not_fount.push(err);
         }
