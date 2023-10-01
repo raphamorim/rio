@@ -3,16 +3,16 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-mod cache;
-mod extra;
 mod brush;
+mod cache;
 mod calculator;
+mod extra;
 mod layout;
 mod section;
 
 pub mod legacy;
 
-pub use crate::glyph::{extra::*, brush::*, calculator::*, section::*};
+pub use crate::glyph::{brush::*, calculator::*, extra::*, section::*};
 pub use cache::Rectangle;
 pub use layout::*;
 
