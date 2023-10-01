@@ -2,6 +2,9 @@
 
 ## In progress
 
+- Proper select adapter with `is_srgb` filter check.
+- Switched to queue rendering instead of use staging_belt.
+- Fixed leaks whenever buffer dropped map callbacks.
 - Forked and embedded glyph-brush project to sugarloaf. Glyph-brush was originally created @alexheretic and is licensed under Apache-2.0 license.
 - Upgrate wgpu to 0.17.1.
 

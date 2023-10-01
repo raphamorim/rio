@@ -93,7 +93,7 @@ impl Context {
 
         let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
         if !filtered_formats.is_empty() {
-            format = filtered_formats.last().unwrap().to_owned();
+            format = filtered_formats.first().unwrap().to_owned();
         }
 
         log::info!(
