@@ -2,6 +2,7 @@
 
 ## In progress
 
+- Added `ScrollLineUp`, `ScrollLineDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`and `ScrollToBottom` to bindings.
 - Proper select adapter with `is_srgb` filter check.
 - Switched to queue rendering instead of use staging_belt.
 - Fixed leaks whenever buffer dropped map callbacks.
