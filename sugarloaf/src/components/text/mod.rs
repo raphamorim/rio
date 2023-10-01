@@ -134,7 +134,7 @@ where
     fn process_queued(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let pipeline = &mut self.pipeline;
@@ -147,14 +147,7 @@ where
                     let offset = [rect.min[0] as u16, rect.min[1] as u16];
                     let size = [rect.width() as u16, rect.height() as u16];
 
-                    pipeline.update_cache(
-                        device,
-                        staging_belt,
-                        encoder,
-                        offset,
-                        size,
-                        tex_data,
-                    );
+                    pipeline.update_cache(queue, offset, size, tex_data);
                 },
                 Instance::from_vertex,
             );
@@ -185,8 +178,8 @@ where
         }
 
         match brush_action.unwrap() {
-            BrushAction::Draw(verts) => {
-                self.pipeline.upload(device, staging_belt, encoder, &verts);
+            BrushAction::Draw(mut verts) => {
+                self.pipeline.upload(device, encoder, &mut verts);
             }
             BrushAction::ReDraw => {}
         };
@@ -229,18 +222,18 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     #[inline]
     pub fn draw_queued(
         &mut self,
-        device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        context: &mut crate::context::Context,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
-        w_h: (u32, u32),
     ) -> Result<(), String> {
+        let device = &context.device;
+        let queue = &mut context.queue;
         self.draw_queued_with_transform(
             device,
-            staging_belt,
+            queue,
             encoder,
             target,
-            orthographic_projection(w_h.0, w_h.1),
+            orthographic_projection(context.size.width, context.size.height),
         )
     }
 
@@ -259,14 +252,13 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     pub fn draw_queued_with_transform(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         transform: [f32; 16],
     ) -> Result<(), String> {
-        self.process_queued(device, staging_belt, encoder);
-        self.pipeline
-            .draw(device, staging_belt, encoder, target, transform, None);
+        self.process_queued(device, queue, encoder);
+        self.pipeline.draw(queue, encoder, target, transform, None);
 
         Ok(())
     }
@@ -286,21 +278,15 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     pub fn _draw_queued_with_transform_and_scissoring(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        self.process_queued(device, staging_belt, encoder);
-        self.pipeline.draw(
-            device,
-            staging_belt,
-            encoder,
-            target,
-            transform,
-            Some(region),
-        );
+        self.process_queued(device, queue, encoder);
+        self.pipeline
+            .draw(queue, encoder, target, transform, Some(region));
 
         Ok(())
     }
@@ -345,7 +331,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     pub fn _draw_queued(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
@@ -353,7 +339,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
-            staging_belt,
+            queue,
             encoder,
             target,
             depth_stencil_attachment,
@@ -377,15 +363,15 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     pub fn draw_queued_with_transform(
         &mut self,
         device: &wgpu::Device,
-        staging_belt: &mut wgpu::util::StagingBelt,
+        queue: &mut wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
     ) -> Result<(), String> {
-        self.process_queued(device, staging_belt, encoder);
+        self.process_queued(device, queue, encoder);
         self.pipeline.draw(
-            (device, staging_belt, encoder, target),
+            (queue, encoder, target),
             depth_stencil_attachment,
             transform,
             None,
@@ -411,7 +397,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         // config: (device, staging_belt, encoder, target),
         config: (
             &wgpu::Device,
-            &mut wgpu::util::StagingBelt,
+            &mut wgpu::Queue,
             &mut wgpu::CommandEncoder,
             &wgpu::TextureView,
         ),
@@ -419,12 +405,12 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        let (device, staging_belt, encoder, target) = config;
+        let (device, queue, encoder, target) = config;
 
-        self.process_queued(device, staging_belt, encoder);
+        self.process_queued(device, queue, encoder);
 
         self.pipeline.draw(
-            (device, staging_belt, encoder, target),
+            (queue, encoder, target),
             depth_stencil_attachment,
             transform,
             Some(region),
