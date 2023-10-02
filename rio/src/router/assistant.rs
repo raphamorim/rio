@@ -74,11 +74,9 @@ impl std::fmt::Display for AssistantReport {
                         format!("{} style", font.style.as_ref().unwrap())
                     };
 
-                    font_str += format!(
-                        "\n• \"{}\" using {:?} {:?}",
-                        font.family, weight, style
-                    )
-                    .as_str();
+                    font_str +=
+                        format!("\n• \"{}\" using {:?} {:?}", font.family, weight, style)
+                            .as_str();
                 }
 
                 write!(f, "Font(s) not found:\n{font_str}")

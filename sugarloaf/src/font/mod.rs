@@ -318,7 +318,7 @@ impl Font {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load(_font_spec: SugarloafFonts) -> (FontArc, bool, Option<SugarloafFont>) {
+    pub fn load(_font_spec: SugarloafFonts) -> (bool, FontArc, Option<SugarloafFont>) {
         (
             true,
             vec![
