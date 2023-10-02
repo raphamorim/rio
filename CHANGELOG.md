@@ -14,6 +14,7 @@ extras = [{ family = "Microsoft JhengHei" }]
 ```
 
 - Added `ScrollLineUp`, `ScrollLineDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`and `ScrollToBottom` to bindings.
+- Fix japanese characters on Microsoft Windows (Ref: https://github.com/raphamorim/rio/issues/266).
 - Navigation fonts now use the CascadiaCode built-in font and cannot be changed.
 - Proper select adapter with `is_srgb` filter check.
 - Switched to queue rendering instead of use staging_belt.
