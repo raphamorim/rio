@@ -318,7 +318,7 @@ impl Font {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load(_font_spec: SugarloafFonts) -> (bool, FontArc, Option<SugarloafFont>) {
+    pub fn load(_font_spec: SugarloafFonts) -> (bool, Vec<FontArc>, Vec<SugarloafFont>) {
         (
             true,
             vec![
@@ -328,7 +328,7 @@ impl Font {
                 FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
                         .unwrap(),
                 FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap(),
-                FontArc::try_from_slice(FONT_EMOJI).unwrap()
+                FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
                 FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap(),
