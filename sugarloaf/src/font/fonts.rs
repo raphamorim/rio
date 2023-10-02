@@ -5,8 +5,15 @@ use serde::{Deserialize, Serialize};
 
 [fonts]
 size = 18
+
+
 # You can also set family on root to overwritte all fonts
 # family = "cascadiamono"
+
+# You can also specify extra fonts to load
+# extras = [
+#   { family = "Microsoft JhengHei" },
+# ]
 
 [fonts.regular]
 family = "cascadiamono"
@@ -27,6 +34,7 @@ weight = 400
 family = "cascadiamono"
 style = "italic"
 weight = 800
+
 */
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -102,6 +110,8 @@ pub struct SugarloafFonts {
     pub bold_italic: SugarloafFont,
     #[serde(default = "default_font_italic")]
     pub italic: SugarloafFont,
+    #[serde(default = "Vec::default")]
+    pub extras: Vec<SugarloafFont>,
 }
 
 impl Default for SugarloafFonts {
@@ -113,6 +123,7 @@ impl Default for SugarloafFonts {
             bold: default_font_bold(),
             bold_italic: default_font_bold_italic(),
             italic: default_font_italic(),
+            extras: vec![],
         }
     }
 }

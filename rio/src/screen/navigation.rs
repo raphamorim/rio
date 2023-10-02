@@ -2,6 +2,7 @@ use crate::screen::constants::*;
 use rio_config::navigation::NavigationMode;
 use std::collections::HashMap;
 use sugarloaf::components::rect::Rect;
+use sugarloaf::font::FONT_ID_BUILTIN;
 
 pub struct Text {
     pub position: (f32, f32),
@@ -207,7 +208,7 @@ impl ScreenNavigation {
         self.texts.push(Text::new(
             (initial_position - 12., 14.5),
             "".to_string(),
-            8,
+            FONT_ID_BUILTIN,
             23.,
             self.colors.active,
         ));
@@ -286,7 +287,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position - 12., 15.0),
                     "".to_string(),
-                    8,
+                    FONT_ID_BUILTIN,
                     22.,
                     self.colors.inactive,
                 ));

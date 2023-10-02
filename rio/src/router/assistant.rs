@@ -62,9 +62,21 @@ impl std::fmt::Display for AssistantReport {
             AssistantReport::FontsNotFound(fonts) => {
                 let mut font_str = String::from("");
                 for font in fonts.iter() {
+                    let weight = if font.weight.is_none() {
+                        String::from("any weight")
+                    } else {
+                        format!("{} weight", font.weight.unwrap())
+                    };
+
+                    let style = if font.style.is_none() {
+                        String::from("any style")
+                    } else {
+                        format!("{} style", font.style.as_ref().unwrap())
+                    };
+
                     font_str += format!(
                         "\n• \"{}\" using {:?} {:?}",
-                        font.family, font.weight, font.style
+                        font.family, weight, style
                     )
                     .as_str();
                 }
