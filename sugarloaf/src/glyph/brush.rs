@@ -833,11 +833,11 @@ mod test {
     #[test]
     fn is_draw_cached() {
         let font_a = FontRef::try_from_slice(include_bytes!(
-            "../resources/test-fonts/DejaVuSans.ttf"
+            "../../resources/test-fonts/DejaVuSans.ttf"
         ))
         .unwrap();
         let font_b = FontRef::try_from_slice(include_bytes!(
-            "../resources/test-fonts/Exo2-Light.otf"
+            "../../resources/test-fonts/Exo2-Light.otf"
         ))
         .unwrap();
         let unqueued_glyph = font_a.glyph_id('c').with_scale(50.0);

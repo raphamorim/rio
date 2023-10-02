@@ -390,13 +390,13 @@ mod layout_test {
 
     static A_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
         FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/DejaVuSansMono.ttf"
+            "../../../resources/test-fonts/DejaVuSansMono.ttf"
         ))
         .unwrap()
     });
     static CJK_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
         FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/WenQuanYiMicroHei.ttf"
+            "../../../resources/test-fonts/WenQuanYiMicroHei.ttf"
         ))
         .unwrap()
     });

@@ -1030,7 +1030,7 @@ mod test {
     use approx::*;
 
     const FONT: &[u8] =
-        include_bytes!("../../resources/test-fonts/WenQuanYiMicroHei.ttf");
+        include_bytes!("../../../resources/test-fonts/WenQuanYiMicroHei.ttf");
 
     #[test]
     fn cache_test() {

@@ -361,13 +361,13 @@ mod test {
 
     static MONO_FONT: Lazy<FontArc> = Lazy::new(|| {
         FontArc::try_from_slice(include_bytes!(
-            "../resources/test-fonts/DejaVuSansMono.ttf"
+            "../../resources/test-fonts/DejaVuSansMono.ttf"
         ) as &[u8])
         .unwrap()
     });
     static OPEN_SANS_LIGHT: Lazy<FontArc> = Lazy::new(|| {
         FontArc::try_from_slice(include_bytes!(
-            "../resources/test-fonts/OpenSans-Light.ttf"
+            "../../resources/test-fonts/OpenSans-Light.ttf"
         ) as &[u8])
         .unwrap()
     });
