@@ -124,6 +124,11 @@ performance = "High"
 # [fonts]
 #   family = "cascadiamono"
 #
+# You can also specify extra fonts to load
+# [fonts]
+# 	extras = [{ family = "Microsoft JhengHei" }]
+#
+#
 # Example
 #   [fonts]
 #   size = 18

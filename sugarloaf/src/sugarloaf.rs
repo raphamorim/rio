@@ -90,31 +90,18 @@ impl Sugarloaf {
         let mut sugarloaf_errors = None;
 
         #[cfg(not(target_arch = "wasm32"))]
-        let loaded_fonts = Font::new(fonts.to_owned(), db);
+        let loader = Font::load(fonts.to_owned(), db);
         #[cfg(target_arch = "wasm32")]
-        let loaded_fonts = Font::new(fonts.to_owned());
+        let loader = Font::load(fonts.to_owned());
 
-        let fonts_not_found = loaded_fonts.1;
-        let loaded_fonts = loaded_fonts.0;
+        let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
 
         if !fonts_not_found.is_empty() {
             sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
         }
 
-        let is_monospace = loaded_fonts.text.is_monospace;
-
-        let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
-            loaded_fonts.text.regular,
-            loaded_fonts.text.italic,
-            loaded_fonts.text.bold,
-            loaded_fonts.text.bold_italic,
-            loaded_fonts.symbol,
-            loaded_fonts.emojis,
-            loaded_fonts.unicode,
-            loaded_fonts.icons,
-            loaded_fonts.breadcrumbs,
-        ])
-        .build(&ctx.device, ctx.format);
+        let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
+            .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
 
@@ -129,7 +116,7 @@ impl Sugarloaf {
             text_y: 0.0,
             font_bound: (0.0, 0.0),
             layout,
-            is_text_monospaced: is_monospace,
+            is_text_monospaced,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -184,36 +171,23 @@ impl Sugarloaf {
             log::info!("requested a font change");
 
             #[cfg(not(target_arch = "wasm32"))]
-            let loaded_fonts = Font::new(fonts.to_owned(), db);
+            let loader = Font::load(fonts.to_owned(), db);
             #[cfg(target_arch = "wasm32")]
-            let loaded_fonts = Font::new(fonts.to_owned());
+            let loader = Font::load(fonts.to_owned());
 
-            let fonts_not_found = loaded_fonts.1;
+            let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
             if !fonts_not_found.is_empty() {
                 return Some(SugarloafErrors { fonts_not_found });
             }
 
-            let font = loaded_fonts.0;
-            let is_monospace = font.text.is_monospace;
-
             // Clean font cache per instance
             self.sugar_cache = HashMap::new();
 
-            let text_brush = text::GlyphBrushBuilder::using_fonts(vec![
-                font.text.regular,
-                font.text.italic,
-                font.text.bold,
-                font.text.bold_italic,
-                font.symbol,
-                font.emojis,
-                font.unicode,
-                font.icons,
-                font.breadcrumbs,
-            ])
-            .build(&self.ctx.device, self.ctx.format);
+            let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
+                .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;
             self.fonts = fonts;
-            self.is_text_monospaced = is_monospace;
+            self.is_text_monospaced = is_text_monospaced;
         }
 
         None
