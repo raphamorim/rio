@@ -325,8 +325,7 @@ impl Font {
                 FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC)
-                        .unwrap(),
+                FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
                 FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap(),
                 FontArc::try_from_slice(FONT_EMOJI).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
