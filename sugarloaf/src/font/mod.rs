@@ -206,20 +206,13 @@ impl Font {
 
         #[cfg(target_os = "windows")]
         {
-            font_arc_symbol = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Symbol"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
+            font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
 
+            // Lucida Sans Unicode
             font_arc_unicode = find_font(
                 db,
                 SugarloafFont {
-                    family: String::from("Lucida Sans Unicode"),
+                    family: String::from("Microsoft JhengHei"),
                     style: None,
                     weight: None,
                 },
