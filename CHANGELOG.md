@@ -2,7 +2,15 @@
 
 ## In progress
 
+- Now you can add extra fonts to load:
+
+```toml
+[fonts]
+extras = [{ family = "Microsoft JhengHei" }]
+```
+
 - Added `ScrollLineUp`, `ScrollLineDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`and `ScrollToBottom` to bindings.
+- Navigation fonts now use the CascadiaCode built-in font and cannot be changed.
 - Proper select adapter with `is_srgb` filter check.
 - Switched to queue rendering instead of use staging_belt.
 - Fixed leaks whenever buffer dropped map callbacks.
