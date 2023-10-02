@@ -2,6 +2,10 @@
 
 ## In progress
 
+- TBD
+
+## 0.0.22
+
 - Now you can add extra fonts to load:
 
 ```toml
