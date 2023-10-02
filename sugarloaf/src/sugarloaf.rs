@@ -242,18 +242,10 @@ impl Sugarloaf {
         let fonts: &[FontArc] = &self.text_brush.fonts().to_owned();
         let mut font_id = FontId(FONT_ID_REGULAR);
 
-        let font_ids = [
-            FONT_ID_REGULAR,
-            FONT_ID_SYMBOL,
-            FONT_ID_UNICODE,
-            FONT_ID_ICONS,
-            FONT_ID_EMOJIS,
-        ];
-
-        for id in font_ids {
-            let found_glyph_id = fonts[id].glyph_id(sugar.content);
+        for (idx, _font_arc) in fonts.iter().enumerate() {
+            let found_glyph_id = fonts[idx].glyph_id(sugar.content);
             if found_glyph_id != ab_glyph::GlyphId(0) {
-                font_id = FontId(id);
+                font_id = FontId(idx);
                 break;
             }
         }
