@@ -204,7 +204,22 @@ impl Font {
             .0;
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
+        {
+            font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
+
+            font_arc_unicode = find_font(
+                db,
+                SugarloafFont {
+                    family: String::from("Arial Unicode MS"),
+                    style: None,
+                    weight: None,
+                },
+            )
+            .0;
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             font_arc_unicode = FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap();
             font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
