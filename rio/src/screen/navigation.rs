@@ -216,7 +216,7 @@ impl ScreenNavigation {
         self.texts.push(Text::new(
             (initial_position + 4., 13.0),
             format!("{}.{}", current_index + 1, main_name),
-            0,
+            FONT_ID_BUILTIN,
             14.,
             foreground_color,
         ));
@@ -240,7 +240,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position + 36., 13.0),
                     format!("+ {}", len - 1),
-                    0,
+                    FONT_ID_BUILTIN,
                     13.,
                     self.colors.foreground,
                 ));
@@ -256,7 +256,7 @@ impl ScreenNavigation {
                     self.texts.push(Text::new(
                         (initial_position + 36., 13.0),
                         format!("+ {}", rendered),
-                        0,
+                        FONT_ID_BUILTIN,
                         13.,
                         self.colors.foreground,
                     ));
@@ -296,7 +296,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position + 4., 13.0),
                     format!("{}.{}", iterator + 1, name),
-                    0,
+                    FONT_ID_BUILTIN,
                     14.,
                     foreground_color,
                 ));
@@ -387,7 +387,7 @@ impl ScreenNavigation {
             self.texts.push(Text::new(
                 (initial_position_x + 4., position_y + text_pos_mod),
                 format!("{}.{}", i + 1, name),
-                0,
+                FONT_ID_BUILTIN,
                 14.,
                 foreground_color,
             ));
