@@ -138,13 +138,37 @@ impl BindingMode {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[allow(unused)]
+pub enum Program {
+    Just(String),
+    WithArgs { program: String, args: Vec<String> },
+}
+
+impl Program {
+    pub fn program(&self) -> &str {
+        match self {
+            Program::Just(program) => program,
+            Program::WithArgs { program, .. } => program,
+        }
+    }
+
+    pub fn args(&self) -> &[String] {
+        match self {
+            Program::Just(_) => &[],
+            Program::WithArgs { args, .. } => args,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Write an escape sequence.
     Esc(String),
 
     /// Run given command.
-    // Command(Program),
+    #[allow(unused)]
+    Command(Program),
 
     /// Regex keyboard hints.
     // Hint(Hint),

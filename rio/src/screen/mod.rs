@@ -17,7 +17,9 @@ pub mod window;
 
 use crate::crosswords::vi_mode::ViMotion;
 use crate::screen::bindings::MouseBinding;
+use core::fmt::Debug;
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use winit::event::KeyEvent;
 use winit::event::Modifiers;
 use winit::event::MouseButton;
@@ -222,20 +224,13 @@ impl Screen {
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
-        let line_fac =
-            ((layout.sugarheight) * self.sugarloaf.layout.scale_factor) as usize;
+        let line_fac = layout.scaled_sugarheight as usize;
 
         let mouse_x = self.mouse.x + layout.margin.x as usize;
-        let col = mouse_x
-            / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
+        let col = mouse_x / (layout.scaled_sugarwidth) as usize;
         // TODO: Refactor
         let col = col.saturating_sub(1);
-        let col = col.saturating_sub(1);
         let col = std::cmp::min(Column(col), Column(layout.columns));
-
-        // println!("{:?}", self.mouse.x);
-        // println!("{:?}", layout.sugarwidth);
-        // println!("{:?}", col);
 
         let line = self.mouse.y.saturating_sub(
             (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
@@ -498,6 +493,7 @@ impl Screen {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
+                    Act::Command(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
                         self.state.set_selection(None);
@@ -1140,32 +1136,29 @@ impl Screen {
 
     // TODO: Exec
     // #[allow(unused)]
-    // pub fn exec<I, S>(&self, program: &str, args: I)
-    // where
-    //     I: IntoIterator<Item = S> + Debug + Copy,
-    //     S: AsRef<OsStr>,
-    // {
-    // Example:
-    // #[cfg(not(any(target_os = "macos", windows)))]
-    // let action = HintAction::Command(Program::Just(String::from("xdg-open")));
-    // #[cfg(target_os = "macos")]
-    // let action = HintAction::Command(Program::Just(String::from("open")));
-    // #[cfg(windows)]
-    // let action = HintAction::Command(Program::WithArgs {
-    //     program: String::from("cmd"),
-    //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
-    // });
+    pub fn exec<I, S>(&self, program: &str, args: I)
+    where
+        I: IntoIterator<Item = S> + Debug + Copy,
+        S: AsRef<OsStr>,
+    {
+        // Example:
+        // #[cfg(not(any(target_os = "macos", windows)))]
+        // let action = HintAction::Command(Program::Just(String::from("xdg-open")));
+        // #[cfg(target_os = "macos")]
+        // let action = HintAction::Command(Program::Just(String::from("open")));
+        // #[cfg(windows)]
+        // let action = HintAction::Command(Program::WithArgs {
+        //     program: String::from("cmd"),
+        //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
+        // });
 
-    // Early implementation
-    // let main_fd = *self.ctx().current().main_fd;
-    // let shell_pid = &self.ctx().current().shell_pid;
-    // match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
-    //     Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
-    //     Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
-    // }
-    // std::process::exit(10);
-    // echo $?
-    // }
+        let main_fd = *self.ctx().current().main_fd;
+        let shell_pid = &self.ctx().current().shell_pid;
+        match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
+            Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
+            Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+        }
+    }
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {

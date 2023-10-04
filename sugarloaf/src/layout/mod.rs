@@ -26,8 +26,11 @@ pub struct SugarloafLayout {
     pub background_color: wgpu::Color,
     pub background_image: Option<types::Image>,
     pub min_cols_lines: (usize, usize),
+    // sugar properties
     pub sugarwidth: f32,
     pub sugarheight: f32,
+    pub scaled_sugarwidth: f32,
+    pub scaled_sugarheight: f32,
 }
 
 #[inline]
@@ -97,8 +100,6 @@ impl SugarloafLayout {
             scale_factor,
             original_font_size: font_size,
             font_size,
-            sugarwidth: font_size,
-            sugarheight: font_size,
             background_image: None,
             font_bound,
             line_height,
@@ -110,6 +111,11 @@ impl SugarloafLayout {
             },
             background_color: wgpu::Color::BLACK,
             min_cols_lines,
+            // Sugarproperties
+            scaled_sugarwidth: font_size / 2. * scale_factor,
+            scaled_sugarheight: font_size * scale_factor,
+            sugarwidth: font_size / 2.,
+            sugarheight: font_size,
         };
 
         update_styles(&mut layout);
