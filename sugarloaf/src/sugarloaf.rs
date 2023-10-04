@@ -468,7 +468,7 @@ impl Sugarloaf {
         for section in sections {
             self.text_brush.queue(&section);
         }
-        self.text_y += self.layout.scaled_sugarheight;
+        self.text_y += self.font_bound.1;
     }
 
     #[inline]
@@ -578,7 +578,7 @@ impl Sugarloaf {
                 self.sugar_cache = HashMap::new();
 
                 let text_scale = self.layout.style.text_scale;
-                // // Bounds are defined in runtime
+                // Bounds are defined in runtime
                 if self.is_text_monospaced {
                     self.font_bound =
                         self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
@@ -587,14 +587,14 @@ impl Sugarloaf {
                         self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
                 }
 
-                self.layout.sugarheight = text_scale / self.ctx.scale;
-                self.layout.sugarwidth = self.layout.sugarheight / 2.;
+                self.layout.sugarwidth = self.font_bound.0;
+                self.layout.sugarheight = self.font_bound.1;
 
-                self.layout.scaled_sugarheight = text_scale;
-                self.layout.scaled_sugarwidth = self.layout.scaled_sugarheight / 2.;
+                self.layout.sugarwidth /= self.ctx.scale;
+                self.layout.sugarheight /= self.ctx.scale;
 
                 self.layout
-                    .update_columns_lines_per_font_bound(self.layout.scaled_sugarwidth);
+                    .update_columns_lines_per_font_bound(self.font_bound.0);
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

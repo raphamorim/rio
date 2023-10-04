@@ -224,13 +224,20 @@ impl Screen {
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
-        let line_fac = layout.scaled_sugarheight as usize;
+        let line_fac =
+            ((layout.sugarheight) * self.sugarloaf.layout.scale_factor) as usize;
 
         let mouse_x = self.mouse.x + layout.margin.x as usize;
-        let col = mouse_x / (layout.scaled_sugarwidth) as usize;
+        let col = mouse_x
+            / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
         // TODO: Refactor
         let col = col.saturating_sub(1);
+        let col = col.saturating_sub(1);
         let col = std::cmp::min(Column(col), Column(layout.columns));
+
+        // println!("{:?}", self.mouse.x);
+        // println!("{:?}", layout.sugarwidth);
+        // println!("{:?}", col);
 
         let line = self.mouse.y.saturating_sub(
             (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
@@ -1136,7 +1143,6 @@ impl Screen {
     }
 
     // TODO: Exec
-    // #[allow(unused)]
     #[cfg(unix)]
     pub fn exec<I, S>(&self, program: &str, args: I)
     where
