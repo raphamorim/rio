@@ -99,7 +99,7 @@ blinking-cursor = false
 #
 # Default is false
 #
-ignore_theme_selection_fg_color = false
+ignore-selection-fg-color = false
 
 # Performance
 #
