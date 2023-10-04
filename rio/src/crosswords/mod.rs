@@ -2000,6 +2000,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+        println!("{:?}", hyperlink);
         self.grid.cursor.template.set_hyperlink(hyperlink);
     }
 

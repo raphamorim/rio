@@ -124,7 +124,6 @@ impl Default for Square {
 }
 
 impl Square {
-    #[allow(dead_code)]
     #[inline]
     pub fn zerowidth(&self) -> Option<&[char]> {
         self.extra.as_ref().map(|extra| extra.zerowidth.as_slice())

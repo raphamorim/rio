@@ -2,7 +2,15 @@
 
 ## In progress
 
-- TBD
+- Support to Run/execute programs as actions for keybindings:
+
+```toml
+[bindings]
+keys = [
+	{ key = "p", with = "super", action = "Run(code)" },
+	{ key = "o", with = "super", action = "Run(sublime ~/Documents/project)" }
+]
+```
 
 ## 0.0.22
 
