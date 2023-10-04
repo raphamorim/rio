@@ -493,6 +493,7 @@ impl Screen {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
+                    #[cfg(unix)]
                     Act::Command(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
@@ -1136,6 +1137,7 @@ impl Screen {
 
     // TODO: Exec
     // #[allow(unused)]
+    #[cfg(unix)]
     pub fn exec<I, S>(&self, program: &str, args: I)
     where
         I: IntoIterator<Item = S> + Debug + Copy,
