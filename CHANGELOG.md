@@ -1,6 +1,6 @@
 # Changelog
 
-## In progress
+## Unreleased
 
 - Support to new scroll action key binding
 
