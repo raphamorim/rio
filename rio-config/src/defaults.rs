@@ -99,7 +99,7 @@ blinking-cursor = false
 #
 # Default is false
 #
-ignore-selection-fg-color = false
+# ignore-selection-fg-color = false
 
 # Performance
 #

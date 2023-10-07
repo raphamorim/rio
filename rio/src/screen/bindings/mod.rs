@@ -161,6 +161,85 @@ impl Program {
     }
 }
 
+impl From<String> for Action {
+    fn from(action: String) -> Action {
+        let action = action.to_lowercase();
+
+        let action_from_string = match action.as_str() {
+            "paste" => Some(Action::Paste),
+            "quit" => Some(Action::Quit),
+            "copy" => Some(Action::Copy),
+            "resetfontsize" => Some(Action::ResetFontSize),
+            "increasefontsize" => Some(Action::IncreaseFontSize),
+            "decreasefontsize" => Some(Action::DecreaseFontSize),
+            "createwindow" => Some(Action::WindowCreateNew),
+            "createtab" => Some(Action::TabCreateNew),
+            "closetab" => Some(Action::TabCloseCurrent),
+            "openconfigeditor" => Some(Action::ConfigEditor),
+            "selectprevtab" => Some(Action::SelectPrevTab),
+            "selectnexttab" => Some(Action::SelectNextTab),
+            "selecttab1" => Some(Action::SelectTab1),
+            "selecttab2" => Some(Action::SelectTab2),
+            "selecttab3" => Some(Action::SelectTab3),
+            "selecttab4" => Some(Action::SelectTab4),
+            "selecttab5" => Some(Action::SelectTab5),
+            "selecttab6" => Some(Action::SelectTab6),
+            "selecttab7" => Some(Action::SelectTab7),
+            "selecttab8" => Some(Action::SelectTab8),
+            "selecttab9" => Some(Action::SelectTab9),
+            "selectlasttab" => Some(Action::SelectLastTab),
+            "receivechar" => Some(Action::ReceiveChar),
+            "scrolllineup" => Some(Action::ScrollLineUp),
+            "scrolllinedown" => Some(Action::ScrollLineDown),
+            "scrollhalfpageup" => Some(Action::ScrollHalfPageUp),
+            "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
+            "scrolltotop" => Some(Action::ScrollToTop),
+            "scrolltobottom" => Some(Action::ScrollToBottom),
+            "none" => Some(Action::None),
+            _ => None,
+        };
+
+        if action_from_string.is_some() {
+            return action_from_string.unwrap_or(Action::None);
+        }
+
+        let re = regex::Regex::new(r"run\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                if matched_string.contains(' ') {
+                    let mut vec_program_with_args: Vec<String> =
+                        matched_string.split(' ').map(|s| s.to_string()).collect();
+                    if vec_program_with_args.is_empty() {
+                        continue;
+                    }
+
+                    let program = vec_program_with_args[0].to_string();
+                    vec_program_with_args.remove(0);
+
+                    return Action::Run(Program::WithArgs {
+                        program,
+                        args: vec_program_with_args,
+                    });
+                } else {
+                    return Action::Run(Program::Just(matched_string));
+                }
+            }
+        }
+
+        let re = regex::Regex::new(r"scroll\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: i32 = matched_string.parse().unwrap_or(1);
+                return Action::Scroll(parsed_matched_string);
+            }
+        }
+
+        Action::None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Write an escape sequence.
@@ -168,7 +247,11 @@ pub enum Action {
 
     /// Run given command.
     #[allow(unused)]
-    Command(Program),
+    Run(Program),
+
+    /// Scroll
+    #[allow(unused)]
+    Scroll(i32),
 
     /// Regex keyboard hints.
     // Hint(Hint),
@@ -690,40 +773,7 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         }
     }
 
-    let mut action: Action = match config_key_binding.action.to_lowercase().as_str() {
-        "paste" => Action::Paste,
-        "quit" => Action::Quit,
-        "copy" => Action::Copy,
-        "resetfontsize" => Action::ResetFontSize,
-        "increasefontsize" => Action::IncreaseFontSize,
-        "decreasefontsize" => Action::DecreaseFontSize,
-        "createwindow" => Action::WindowCreateNew,
-        "createtab" => Action::TabCreateNew,
-        "closetab" => Action::TabCloseCurrent,
-        "openconfigeditor" => Action::ConfigEditor,
-        "selectprevtab" => Action::SelectPrevTab,
-        "selectnexttab" => Action::SelectNextTab,
-        "selecttab1" => Action::SelectTab1,
-        "selecttab2" => Action::SelectTab2,
-        "selecttab3" => Action::SelectTab3,
-        "selecttab4" => Action::SelectTab4,
-        "selecttab5" => Action::SelectTab5,
-        "selecttab6" => Action::SelectTab6,
-        "selecttab7" => Action::SelectTab7,
-        "selecttab8" => Action::SelectTab8,
-        "selecttab9" => Action::SelectTab9,
-        "selectlasttab" => Action::SelectLastTab,
-        "receivechar" => Action::ReceiveChar,
-        "scrolllineup" => Action::ScrollLineUp,
-        "scrolllinedown" => Action::ScrollLineDown,
-        "scrollhalfpageup" => Action::ScrollHalfPageUp,
-        "scrollhalfpagedown" => Action::ScrollHalfPageDown,
-        "scrolltotop" => Action::ScrollToTop,
-        "scrolltobottom" => Action::ScrollToBottom,
-        "none" => Action::None,
-        _ => Action::None,
-    };
-
+    let mut action: Action = config_key_binding.action.into();
     if !config_key_binding.text.is_empty() {
         action = Action::Esc(config_key_binding.text);
     }

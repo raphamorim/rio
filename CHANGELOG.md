@@ -2,13 +2,25 @@
 
 ## In progress
 
-- Support to Run/execute programs as actions for keybindings:
+- Support to new scroll action key binding
+
+```toml
+[bindings]
+keys = [
+	# Scroll up 8 lines
+	{ key = "up", with = "super", action = "Scroll(8)" },
+	# Scroll down 5 lines
+	{ key = "down", with = "super", action = "Scroll(-5)" }
+]
+```
+
+- Support to execute programs as actions for key bindings:
 
 ```toml
 [bindings]
 keys = [
 	{ key = "p", with = "super", action = "Run(code)" },
-	{ key = "o", with = "super", action = "Run(sublime ~/Documents/project)" }
+	{ key = "o", with = "super", action = "Run(sublime ~/.config/rio/config.toml)" }
 ]
 ```
 
