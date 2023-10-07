@@ -86,7 +86,7 @@ release-macos-app-signed:
 update-version:
 	@echo "Switching from $(old-version) to $(new-version)"
 	find Cargo.toml -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
-	find CHANGELOG.md -type f -exec sed -i '' 's/In progress/In progress\n\n- TBD\n\n## $(new-version)/g' {} \;
+	find CHANGELOG.md -type f -exec sed -i '' 's/Unreleased/Unreleased\n\n- TBD\n\n## $(new-version)/g' {} \;
 	find $(BUILD_MISC_DIR)/windows/rio.wxs -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
 	find $(APP_TEMPLATE)/Contents/Info.plist -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
 
