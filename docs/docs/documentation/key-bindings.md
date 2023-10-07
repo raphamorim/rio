@@ -152,6 +152,7 @@ Execute a predefined action in Rio terminal.
 | ResetFontSize | |
 | IncreaseFontSize | |
 | DecreaseFontSize | |
+| Run(string) | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
 
 #### [Window Actions](#window-actions)
 
@@ -191,6 +192,7 @@ Execute a predefined action in Rio terminal.
 
 | Action | Description |
 | :-- | :-- |
+| Scroll(int) | Example: Scroll up 8 lines `Scroll(8)` or scroll down 5 lines `Scroll(-5)` |
 | ScrollPageUp | |
 | ScrollPageDown | |
 | ScrollHalfPageUp | |

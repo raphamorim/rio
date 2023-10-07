@@ -501,7 +501,7 @@ impl Screen {
 
                 match &binding.action {
                     #[cfg(unix)]
-                    Act::Command(program) => self.exec(program.program(), program.args()),
+                    Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
                         self.state.set_selection(None);
@@ -643,6 +643,12 @@ impl Screen {
                         // Move to beginning twice, to always jump across linewraps.
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
+                        drop(terminal);
+                    }
+                    Act::Scroll(delta) => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
                     }
                     Act::ScrollLineUp => {

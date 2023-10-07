@@ -21,6 +21,7 @@ raw-window-handle = { version = "0.5", default-features = false }
 bytemuck = { workspace = true }
 rio-config = { workspace = true }
 corcovado = { workspace = true }
+regex = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
 copypasta = { version = "0.8.1", default-features = false }
 dirs = "5.0"
