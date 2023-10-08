@@ -593,8 +593,10 @@ impl Sugarloaf {
                 self.layout.sugarwidth /= self.ctx.scale;
                 self.layout.sugarheight /= self.ctx.scale;
 
-                self.layout
-                    .update_columns_per_font_width(self.layout.sugarwidth, self.layout.sugarheight);
+                self.layout.update_columns_per_font_width(
+                    self.layout.sugarwidth,
+                    self.layout.sugarheight,
+                );
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

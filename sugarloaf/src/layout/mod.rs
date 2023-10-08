@@ -171,7 +171,11 @@ impl SugarloafLayout {
     }
 
     #[inline]
-    pub fn update_columns_per_font_width(&mut self, font_bound_width: f32, font_bound_height: f32) {
+    pub fn update_columns_per_font_width(
+        &mut self,
+        font_bound_width: f32,
+        font_bound_height: f32,
+    ) {
         self.font_bounds = (font_bound_width, font_bound_height);
 
         // SugarStack is a primitive representation of columns data
@@ -180,15 +184,15 @@ impl SugarloafLayout {
 
         log::info!("expected columns {}", self.columns);
         if current_stack_bound < expected_stack_bound {
-            let stack_difference =
-                ((expected_stack_bound - current_stack_bound) / font_bound_width) as usize;
+            let stack_difference = ((expected_stack_bound - current_stack_bound)
+                / font_bound_width) as usize;
             log::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
             self.columns += stack_difference;
         }
 
         if current_stack_bound > expected_stack_bound {
-            let stack_difference =
-                ((current_stack_bound - expected_stack_bound) / font_bound_width) as usize;
+            let stack_difference = ((current_stack_bound - expected_stack_bound)
+                / font_bound_width) as usize;
             log::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
             self.columns -= stack_difference;
         }
