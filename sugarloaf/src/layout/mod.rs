@@ -147,7 +147,7 @@ impl SugarloafLayout {
     }
 
     pub fn decrease_font_size(&mut self) -> bool {
-        if self.font_size > 8.0 {
+        if self.font_size > 6.0 {
             self.font_size -= 1.0;
             return true;
         }
