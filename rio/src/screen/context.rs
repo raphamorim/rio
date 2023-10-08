@@ -513,6 +513,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         {
             let pid = self.contexts[index_to_remove].shell_pid;
             if pid > 0 {
+                self.titles.titles.remove(&index_to_remove);
                 teletypewriter::kill_pid(pid as i32);
             }
         }
