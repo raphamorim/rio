@@ -341,8 +341,14 @@ impl Screen {
         if !should_update {
             return;
         }
+
+        // This is a hacky solution, sugarloaf compute bounds in runtime
+        // so basically it updates with the new font-size, then compute the bounds
+        // and then updates again with correct bounds
+        // TODO: Refactor this logic
         self.sugarloaf.layout.update();
         self.sugarloaf.calculate_bounds();
+        self.sugarloaf.layout.update();
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
