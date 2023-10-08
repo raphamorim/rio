@@ -55,13 +55,21 @@ fn compute(
     margin: Delta<f32>,
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
+    println!("{:?}", margin);
     let margin_x = ((margin.x) * scale_factor).floor();
     // let margin_y = ((margin.y) * scale_factor).floor();
-    let margin_y = (margin.top_y * 2.).floor() + margin.bottom_y;
+    // TODO: Figure out margin calculations
+    // topy: 15. and bottomy: 5.
+    let margin_spaces = (margin.top_y * 2.).round() + (margin.bottom_y * 2.).round();
 
-    let mut lines = (dimensions.1 / scale_factor) - margin_y;
+    let mut lines = (dimensions.1 / scale_factor) - margin_spaces;
+    println!("available space {:?}", lines);
+    println!("fonts now {:?}", font_bounds.1 * line_height);
     lines /= font_bounds.1 * line_height;
-    let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
+    println!("result {:?}", lines);
+    // lines = lines - ((font_bounds.1 * line_height) / margin.top_y);
+
+    let visible_lines = std::cmp::max(lines.floor() as usize, min_cols_lines.1);
 
     let mut visible_columns = (dimensions.0 / scale_factor) - margin_x;
     visible_columns /= font_bounds.0;
