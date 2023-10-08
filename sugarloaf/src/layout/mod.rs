@@ -18,7 +18,7 @@ pub struct SugarloafLayout {
     pub height_u32: u32,
     pub font_size: f32,
     pub original_font_size: f32,
-    pub font_bound: f32,
+    pub font_bounds: (f32, f32),
     pub columns: usize,
     pub lines: usize,
     pub margin: Delta<f32>,
@@ -50,9 +50,8 @@ fn update_styles(layout: &mut SugarloafLayout) {
 fn compute(
     dimensions: (f32, f32),
     scale_factor: f32,
-    font_size: f32,
     line_height: f32,
-    font_bound: f32,
+    font_bounds: (f32, f32),
     margin: Delta<f32>,
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
@@ -61,11 +60,11 @@ fn compute(
     let margin_y = (margin.top_y * 2.).floor() + margin.bottom_y;
 
     let mut lines = (dimensions.1 / scale_factor) - margin_y;
-    lines /= font_size * line_height;
+    lines /= font_bounds.1 * line_height;
     let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
 
     let mut visible_columns = (dimensions.0 / scale_factor) - margin_x;
-    visible_columns /= font_bound;
+    visible_columns /= font_bounds.0;
     let visible_columns = std::cmp::max(visible_columns as usize, min_cols_lines.0);
 
     (visible_columns, visible_lines)
@@ -85,7 +84,7 @@ impl SugarloafLayout {
 
         // This is an estimation of the font_size however cannot be
         // relied entirely. We this value it until sugarloaf process the font bounds.
-        let font_bound = font_size / 2.0;
+        let font_bounds = (font_size / 2.0, font_size);
 
         let mut layout = SugarloafLayout {
             width,
@@ -100,7 +99,7 @@ impl SugarloafLayout {
             sugarwidth: font_size,
             sugarheight: font_size,
             background_image: None,
-            font_bound,
+            font_bounds,
             line_height,
             style,
             margin: Delta {
@@ -161,9 +160,8 @@ impl SugarloafLayout {
         let (columns, lines) = compute(
             (self.width, self.height),
             self.scale_factor,
-            self.font_size,
             self.line_height,
-            self.font_bound,
+            self.font_bounds,
             self.margin,
             self.min_cols_lines,
         );
@@ -173,24 +171,24 @@ impl SugarloafLayout {
     }
 
     #[inline]
-    pub fn update_columns_lines_per_font_bound(&mut self, font_bound: f32) {
-        self.font_bound = font_bound / self.scale_factor;
+    pub fn update_columns_per_font_width(&mut self, font_bound_width: f32, font_bound_height: f32) {
+        self.font_bounds = (font_bound_width, font_bound_height);
 
         // SugarStack is a primitive representation of columns data
-        let current_stack_bound = self.font_bound * self.columns as f32;
-        let expected_stack_bound = self.width / self.scale_factor - self.font_bound;
+        let current_stack_bound = font_bound_width * self.columns as f32;
+        let expected_stack_bound = (self.width / self.scale_factor) - font_bound_width;
 
         log::info!("expected columns {}", self.columns);
         if current_stack_bound < expected_stack_bound {
             let stack_difference =
-                ((expected_stack_bound - current_stack_bound) / self.font_bound) as usize;
+                ((expected_stack_bound - current_stack_bound) / font_bound_width) as usize;
             log::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
             self.columns += stack_difference;
         }
 
         if current_stack_bound > expected_stack_bound {
             let stack_difference =
-                ((current_stack_bound - expected_stack_bound) / self.font_bound) as usize;
+                ((current_stack_bound - expected_stack_bound) / font_bound_width) as usize;
             log::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
             self.columns -= stack_difference;
         }
