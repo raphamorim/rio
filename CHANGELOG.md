@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix bug whenever is not closing terminal for non native tabs (ref #255)
 - Support to new scroll action key binding
 
 ```toml
