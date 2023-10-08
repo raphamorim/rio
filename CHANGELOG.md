@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Fix bug whenever is not closing terminal for non native tabs (ref #255)
+- Fix lines calculation for different fonts.
+- Fix bug whenever is not closing terminal for non native tabs (Ref https://github.com/raphamorim/rio/issues/255)
 - Support to new scroll action key binding
 
 ```toml
