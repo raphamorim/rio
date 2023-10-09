@@ -216,6 +216,21 @@ impl Sequencer {
                                     }
                                 }
                             }
+                            RioEventType::Rio(RioEvent::ClipboardStore(
+                                clipboard_type,
+                                content,
+                            )) => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    if route.window.is_focused {
+                                        route
+                                            .window
+                                            .screen
+                                            .clipboard_store(clipboard_type, content);
+                                    }
+                                }
+                            }
                             RioEventType::Rio(RioEvent::PtyWrite(text)) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)

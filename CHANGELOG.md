@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
 - Fix lines calculation for different fonts.
 - Fix bug whenever is not closing terminal for non native tabs (Ref https://github.com/raphamorim/rio/issues/255)
 - Support to new scroll action key binding
