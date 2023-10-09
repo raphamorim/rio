@@ -1,14 +1,29 @@
 # Changelog
 
-## In progress
+## Unreleased
 
-- Support to Run/execute programs as actions for keybindings:
+- Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
+- Fix lines calculation for different fonts.
+- Fix bug whenever is not closing terminal for non native tabs (Ref https://github.com/raphamorim/rio/issues/255)
+- Support to new scroll action key binding
+
+```toml
+[bindings]
+keys = [
+	# Scroll up 8 lines
+	{ key = "up", with = "super", action = "Scroll(8)" },
+	# Scroll down 5 lines
+	{ key = "down", with = "super", action = "Scroll(-5)" }
+]
+```
+
+- Support to execute programs as actions for key bindings:
 
 ```toml
 [bindings]
 keys = [
 	{ key = "p", with = "super", action = "Run(code)" },
-	{ key = "o", with = "super", action = "Run(sublime ~/Documents/project)" }
+	{ key = "o", with = "super", action = "Run(sublime ~/.config/rio/config.toml)" }
 ]
 ```
 

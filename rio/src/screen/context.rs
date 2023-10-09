@@ -511,8 +511,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(target_os = "windows"))]
         {
+            // The reason why we don't use close context here is because it is unix is handled by
+            // by Rio event lifecycle as well, so calling close_context on unix could trigger
+            // two close tabs events since we listen for SIGHUP in teletypewriter to close a tab as well
             let pid = self.contexts[index_to_remove].shell_pid;
             if pid > 0 {
+                self.titles.titles.remove(&index_to_remove);
                 teletypewriter::kill_pid(pid as i32);
             }
         }

@@ -341,8 +341,14 @@ impl Screen {
         if !should_update {
             return;
         }
+
+        // This is a hacky solution, sugarloaf compute bounds in runtime
+        // so basically it updates with the new font-size, then compute the bounds
+        // and then updates again with correct bounds
+        // TODO: Refactor this logic
         self.sugarloaf.layout.update();
         self.sugarloaf.calculate_bounds();
+        self.sugarloaf.layout.update();
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
@@ -402,6 +408,11 @@ impl Screen {
     #[inline]
     pub fn clipboard_get(&mut self, clipboard_type: ClipboardType) -> String {
         self.clipboard.get(clipboard_type)
+    }
+
+    #[inline]
+    pub fn clipboard_store(&mut self, clipboard_type: ClipboardType, content: String) {
+        self.clipboard.set(clipboard_type, content);
     }
 
     #[inline]
@@ -501,7 +512,7 @@ impl Screen {
 
                 match &binding.action {
                     #[cfg(unix)]
-                    Act::Command(program) => self.exec(program.program(), program.args()),
+                    Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
                         self.state.set_selection(None);
@@ -643,6 +654,12 @@ impl Screen {
                         // Move to beginning twice, to always jump across linewraps.
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
+                        drop(terminal);
+                    }
+                    Act::Scroll(delta) => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
                     }
                     Act::ScrollLineUp => {
