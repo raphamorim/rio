@@ -316,9 +316,9 @@ impl Sugarloaf {
         let mut x = 0.;
         let mut sections = vec![];
         let mod_pos_y = self.layout.style.screen_position.1;
-        let mod_text_y = self.layout.sugarheight * self.ctx.scale / 2.;
+        let mod_text_y = self.layout.scaled_sugarheight / 2.;
 
-        let sugar_x = self.layout.sugarwidth * self.ctx.scale;
+        let sugar_x = self.layout.scaled_sugarwidth;
         let sugar_width = self.layout.sugarwidth * 2.;
 
         let mut repeated = RepeatedSugar::new(0);
@@ -468,7 +468,7 @@ impl Sugarloaf {
         for section in sections {
             self.text_brush.queue(&section);
         }
-        self.text_y += self.font_bound.1;
+        self.text_y += self.layout.scaled_sugarheight;
     }
 
     #[inline]
@@ -587,16 +587,13 @@ impl Sugarloaf {
                         self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
                 }
 
-                self.layout.sugarwidth = self.font_bound.0;
-                self.layout.sugarheight = self.font_bound.1;
+                self.layout.scaled_sugarwidth = self.font_bound.0;
+                self.layout.scaled_sugarheight = self.font_bound.1;
 
-                self.layout.sugarwidth /= self.ctx.scale;
-                self.layout.sugarheight /= self.ctx.scale;
+                self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
+                self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
 
-                self.layout.update_columns_per_font_width(
-                    self.layout.sugarwidth,
-                    self.layout.sugarheight,
-                );
+                self.layout.update_columns_per_font_width();
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

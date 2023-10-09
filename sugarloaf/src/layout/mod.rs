@@ -18,7 +18,6 @@ pub struct SugarloafLayout {
     pub height_u32: u32,
     pub font_size: f32,
     pub original_font_size: f32,
-    pub font_bounds: (f32, f32),
     pub columns: usize,
     pub lines: usize,
     pub margin: Delta<f32>,
@@ -28,6 +27,8 @@ pub struct SugarloafLayout {
     pub min_cols_lines: (usize, usize),
     pub sugarwidth: f32,
     pub sugarheight: f32,
+    pub scaled_sugarwidth: f32,
+    pub scaled_sugarheight: f32,
 }
 
 #[inline]
@@ -51,7 +52,8 @@ fn compute(
     dimensions: (f32, f32),
     scale_factor: f32,
     line_height: f32,
-    font_bounds: (f32, f32),
+    sugarwidth: f32,
+    sugarheight: f32,
     margin: Delta<f32>,
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
@@ -59,11 +61,11 @@ fn compute(
     let margin_spaces = (margin.top_y * 2.) + margin.bottom_y;
 
     let mut lines = (dimensions.1 / scale_factor) - margin_spaces;
-    lines /= font_bounds.1 * line_height;
+    lines /= sugarheight * line_height;
     let visible_lines = std::cmp::max(lines.floor() as usize, min_cols_lines.1);
 
     let mut visible_columns = (dimensions.0 / scale_factor) - margin_x;
-    visible_columns /= font_bounds.0;
+    visible_columns /= sugarwidth;
     let visible_columns = std::cmp::max(visible_columns as usize, min_cols_lines.0);
 
     (visible_columns, visible_lines)
@@ -81,10 +83,6 @@ impl SugarloafLayout {
     ) -> SugarloafLayout {
         let style = SugarloafStyle::default();
 
-        // This is an estimation of the font_size however cannot be
-        // relied entirely. We this value it until sugarloaf process the font bounds.
-        let font_bounds = (font_size / 2.0, font_size);
-
         let mut layout = SugarloafLayout {
             width,
             width_u32: width as u32,
@@ -97,8 +95,9 @@ impl SugarloafLayout {
             font_size,
             sugarwidth: font_size,
             sugarheight: font_size,
+            scaled_sugarwidth: font_size,
+            scaled_sugarheight: font_size,
             background_image: None,
-            font_bounds,
             line_height,
             style,
             margin: Delta {
@@ -160,7 +159,8 @@ impl SugarloafLayout {
             (self.width, self.height),
             self.scale_factor,
             self.line_height,
-            self.font_bounds,
+            self.sugarwidth,
+            self.sugarheight,
             self.margin,
             self.min_cols_lines,
         );
@@ -170,28 +170,22 @@ impl SugarloafLayout {
     }
 
     #[inline]
-    pub fn update_columns_per_font_width(
-        &mut self,
-        font_bound_width: f32,
-        font_bound_height: f32,
-    ) {
-        self.font_bounds = (font_bound_width, font_bound_height);
-
+    pub fn update_columns_per_font_width(&mut self) {
         // SugarStack is a primitive representation of columns data
-        let current_stack_bound = font_bound_width * self.columns as f32;
-        let expected_stack_bound = (self.width / self.scale_factor) - font_bound_width;
+        let current_stack_bound = self.sugarwidth * self.columns as f32;
+        let expected_stack_bound = (self.width / self.scale_factor) - self.sugarwidth;
 
         log::info!("expected columns {}", self.columns);
         if current_stack_bound < expected_stack_bound {
-            let stack_difference = ((expected_stack_bound - current_stack_bound)
-                / font_bound_width) as usize;
+            let stack_difference =
+                ((expected_stack_bound - current_stack_bound) / self.sugarwidth) as usize;
             log::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
             self.columns += stack_difference;
         }
 
         if current_stack_bound > expected_stack_bound {
-            let stack_difference = ((current_stack_bound - expected_stack_bound)
-                / font_bound_width) as usize;
+            let stack_difference =
+                ((current_stack_bound - expected_stack_bound) / self.sugarwidth) as usize;
             log::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
             self.columns -= stack_difference;
         }
