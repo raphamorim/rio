@@ -224,28 +224,23 @@ impl Screen {
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
-        let line_fac =
-            ((layout.sugarheight) * self.sugarloaf.layout.scale_factor) as usize;
 
         let mouse_x = self.mouse.x + layout.margin.x as usize;
-        let col = mouse_x
-            / (layout.sugarwidth.floor() * self.sugarloaf.layout.scale_factor) as usize;
+        let col = mouse_x / (layout.scaled_sugarwidth) as usize;
         // TODO: Refactor
-        let col = col.saturating_sub(1);
-        let col = col.saturating_sub(1);
         let col = std::cmp::min(Column(col), Column(layout.columns));
 
         // println!("{:?}", self.mouse.x);
         // println!("{:?}", layout.sugarwidth);
         // println!("{:?}", col);
 
-        let line = self.mouse.y.saturating_sub(
+        let row = self.mouse.y.saturating_sub(
             (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
-        ) / line_fac;
-        let calc_line = std::cmp::min(line, layout.lines - 1);
-        let line = Line(calc_line as i32) - (display_offset);
+        ) / layout.scaled_sugarheight as usize;
+        let calc_row = std::cmp::min(row, layout.lines - 1);
+        let row = Line(calc_row as i32) - (display_offset);
 
-        Pos::new(line, col)
+        Pos::new(row, col)
     }
 
     #[inline]
