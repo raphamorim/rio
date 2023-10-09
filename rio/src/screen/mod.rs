@@ -411,6 +411,11 @@ impl Screen {
     }
 
     #[inline]
+    pub fn clipboard_store(&mut self, clipboard_type: ClipboardType, content: String) {
+        self.clipboard.set(clipboard_type, content);
+    }
+
+    #[inline]
     pub fn scroll_bottom_when_cursor_not_visible(&mut self) {
         let mut terminal = self.ctx_mut().current().terminal.lock();
         if terminal.display_offset() != 0 {
