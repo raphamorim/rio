@@ -56,7 +56,7 @@ fn compute(
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
     let margin_x = ((margin.x) * scale_factor).floor();
-    let margin_spaces = (margin.top_y * 2.) + (margin.bottom_y * 2.);
+    let margin_spaces = (margin.top_y * 2.) + margin.bottom_y;
 
     let mut lines = (dimensions.1 / scale_factor) - margin_spaces;
     lines /= font_bounds.1 * line_height;
