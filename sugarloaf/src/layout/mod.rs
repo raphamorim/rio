@@ -56,12 +56,11 @@ fn compute(
     min_cols_lines: (usize, usize),
 ) -> (usize, usize) {
     let margin_x = ((margin.x) * scale_factor).floor();
-    // let margin_y = ((margin.y) * scale_factor).floor();
-    let margin_y = (margin.top_y * 2.).floor() + margin.bottom_y;
+    let margin_spaces = (margin.top_y * 2.) + margin.bottom_y;
 
-    let mut lines = (dimensions.1 / scale_factor) - margin_y;
+    let mut lines = (dimensions.1 / scale_factor) - margin_spaces;
     lines /= font_bounds.1 * line_height;
-    let visible_lines = std::cmp::max(lines as usize, min_cols_lines.1);
+    let visible_lines = std::cmp::max(lines.floor() as usize, min_cols_lines.1);
 
     let mut visible_columns = (dimensions.0 / scale_factor) - margin_x;
     visible_columns /= font_bounds.0;
@@ -139,7 +138,7 @@ impl SugarloafLayout {
     }
 
     pub fn decrease_font_size(&mut self) -> bool {
-        if self.font_size > 8.0 {
+        if self.font_size > 6.0 {
             self.font_size -= 1.0;
             return true;
         }
