@@ -14,6 +14,7 @@ include = [
 ]
 description = "Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it."
 documentation = "https://docs.rs/crate/sugarloaf/latest"
+repository = "https://github.com/raphamorim/rio/tree/main/sugarloaf"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
