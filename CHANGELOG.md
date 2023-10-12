@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix Cursor shape isn't restored (Ref https://github.com/raphamorim/rio/issues/279).
 - Fix color automation for breadcrumb mode (Ref https://github.com/raphamorim/rio/issues/251).
 - Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
 - Fix lines calculation for different fonts.
@@ -27,6 +28,8 @@ keys = [
 	{ key = "o", with = "super", action = "Run(sublime ~/.config/rio/config.toml)" }
 ]
 ```
+
+- Upgrade rust to 1.73.0 by @igorvieira.
 
 ## 0.0.22
 

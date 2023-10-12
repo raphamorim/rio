@@ -19,7 +19,6 @@ use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
 use winit::window::Theme;
 
-#[derive(Default)]
 struct Cursor {
     state: CursorState,
     content: char,

@@ -372,6 +372,7 @@ impl<U: EventListener> Crosswords<U> {
     pub fn new(
         cols: usize,
         rows: usize,
+        cursor_shape: CursorShape,
         event_proxy: U,
         window_id: WindowId,
     ) -> Crosswords<U> {
@@ -400,8 +401,8 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
-            cursor_shape: CursorShape::Block,
-            default_cursor_shape: CursorShape::Block,
+            default_cursor_shape: cursor_shape,
+            cursor_shape,
             blinking_cursor: false,
             window_id,
             title_stack: Default::default(),
@@ -928,9 +929,15 @@ impl<U: EventListener> Crosswords<U> {
         {
             pos.col -= 1;
         }
-        // Cursor shape.
+
+        // If the cursor is hidden then set content as hidden
         if !vi_mode && !self.mode.contains(Mode::SHOW_CURSOR) {
             content = CursorShape::Hidden;
+        }
+
+        // If is not using app cursor then use default
+        if content != CursorShape::Hidden && !self.mode.contains(Mode::APP_CURSOR) {
+            content = self.default_cursor_shape;
         }
 
         CursorState { pos, content }
@@ -2002,7 +2009,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
-        println!("{:?}", hyperlink);
         self.grid.cursor.template.set_hyperlink(hyperlink);
     }
 
@@ -2234,7 +2240,13 @@ mod tests {
 
     #[test]
     fn scroll_up() {
-        let mut cw = Crosswords::new(1, 10, VoidListener {}, WindowId::from(0));
+        let mut cw = Crosswords::new(
+            1,
+            10,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+        );
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -2266,7 +2278,7 @@ mod tests {
     #[test]
     fn test_linefeed() {
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 1, VoidListener {}, WindowId::from(0));
+            Crosswords::new(1, 1, CursorShape::Block, VoidListener {}, WindowId::from(0));
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -2276,7 +2288,7 @@ mod tests {
     #[test]
     fn test_linefeed_moving_cursor() {
         let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 3, VoidListener {}, WindowId::from(0));
+            Crosswords::new(1, 3, CursorShape::Block, VoidListener {}, WindowId::from(0));
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -2300,8 +2312,13 @@ mod tests {
     fn test_input() {
         let columns: usize = 5;
         let rows: usize = 10;
-        let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(columns, rows, VoidListener {}, WindowId::from(0));
+        let mut cw: Crosswords<VoidListener> = Crosswords::new(
+            columns,
+            rows,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+        );
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -2323,6 +2340,7 @@ mod tests {
         let mut term = Crosswords::new(
             size.columns,
             size.screen_lines,
+            CursorShape::Block,
             VoidListener {},
             WindowId::from(0),
         );
@@ -2400,6 +2418,7 @@ mod tests {
         let mut term = Crosswords::new(
             size.columns,
             size.screen_lines,
+            CursorShape::Block,
             VoidListener {},
             WindowId::from(0),
         );
@@ -2429,6 +2448,7 @@ mod tests {
         let mut term = Crosswords::new(
             size.columns,
             size.screen_lines,
+            CursorShape::Block,
             VoidListener {},
             WindowId::from(0),
         );

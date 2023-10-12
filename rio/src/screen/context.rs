@@ -1,3 +1,4 @@
+use crate::ansi::CursorShape;
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::{EventListener, RioEvent};
@@ -88,7 +89,7 @@ pub struct ContextManager<T: EventListener> {
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
-        let terminal = Crosswords::new(1, 1, event_proxy, window_id);
+        let terminal = Crosswords::new(1, 1, CursorShape::Block, event_proxy, window_id);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
         let (sender, _receiver) = corcovado::channel::channel();
 
@@ -112,10 +113,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
         let event_proxy_clone = event_proxy.clone();
-        let mut terminal =
-            Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
-        terminal.cursor_shape = cursor_state.0.content;
-        terminal.default_cursor_shape = cursor_state.0.content;
+        let mut terminal = Crosswords::new(
+            cols_rows.0,
+            cols_rows.1,
+            cursor_state.0.content,
+            event_proxy,
+            window_id,
+        );
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -276,7 +280,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let initial_context = ContextManager::create_context(
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
             event_proxy.clone(),
             window_id,
             &config,
@@ -684,7 +688,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
@@ -694,7 +698,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
@@ -712,14 +716,14 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -728,7 +732,7 @@ pub mod test {
                 should_redirect,
                 (100, 100),
                 (1, 1),
-                (&CursorState::default(), false),
+                (&CursorState::new('_'), false),
             );
         }
 
@@ -747,7 +751,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
@@ -760,13 +764,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.set_current(3);
         assert_eq!(context_manager.current_index, 3);
@@ -786,13 +790,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
 
@@ -818,25 +822,25 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
 
         context_manager.close_context();
@@ -851,7 +855,7 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
 
         assert_eq!(context_manager.len(), 2);
@@ -873,13 +877,13 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
@@ -903,31 +907,31 @@ pub mod test {
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
             (100, 100),
             (1, 1),
-            (&CursorState::default(), false),
+            (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 5);
         assert_eq!(context_manager.current_index, 0);
