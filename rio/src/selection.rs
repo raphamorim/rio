@@ -452,6 +452,7 @@ mod tests {
         Crosswords::new(
             size.columns,
             size.screen_lines,
+            CursorShape::Block,
             VoidListener {},
             WindowId::from(0),
         )

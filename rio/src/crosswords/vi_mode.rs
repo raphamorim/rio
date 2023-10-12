@@ -411,13 +411,19 @@ mod tests {
     use super::*;
 
     use crate::crosswords::pos::{Column, Line};
-    use crate::crosswords::Crosswords;
+    use crate::crosswords::{Crosswords, CursorShape};
     use crate::event::VoidListener;
     use crate::performer::handler::Handler;
     use winit::window::WindowId;
 
     fn term() -> Crosswords<VoidListener> {
-        Crosswords::new(20, 20, VoidListener, WindowId::from(0))
+        Crosswords::new(
+            20,
+            20,
+            CursorShape::Underline,
+            VoidListener,
+            WindowId::from(0),
+        )
     }
 
     #[test]

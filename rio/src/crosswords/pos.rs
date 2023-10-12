@@ -40,7 +40,7 @@ pub struct Cursor<T> {
     pub should_wrap: bool,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
     pub pos: Pos,
     pub content: CursorShape,
