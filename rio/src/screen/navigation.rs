@@ -187,12 +187,19 @@ impl ScreenNavigation {
         }
 
         let current_index = self.current;
-        let bg_color = self.colors.active;
-        let foreground_color = self.colors.inactive;
+        let mut bg_color = self.colors.active;
+        let mut fg_color = self.colors.inactive;
+        let mut icon_color = self.colors.active;
 
-        let mut main_name = String::from("~");
+        let mut main_name = String::from("tab");
         if let Some(main_name_idx) = titles.get(&current_index) {
             main_name = main_name_idx[0].to_string();
+
+            if let Some(color_overwrite) = self.color_automation.get(&main_name_idx[0]) {
+                fg_color = self.colors.inactive;
+                bg_color = *color_overwrite;
+                icon_color = bg_color;
+            }
         }
 
         if main_name.len() > 12 {
@@ -210,7 +217,7 @@ impl ScreenNavigation {
             "".to_string(),
             FONT_ID_BUILTIN,
             23.,
-            self.colors.active,
+            icon_color,
         ));
 
         self.texts.push(Text::new(
@@ -218,7 +225,7 @@ impl ScreenNavigation {
             format!("{}.{}", current_index + 1, main_name),
             FONT_ID_BUILTIN,
             14.,
-            foreground_color,
+            fg_color,
         ));
 
         initial_position -= position_modifier;
@@ -263,12 +270,20 @@ impl ScreenNavigation {
                     break;
                 }
 
-                let bg_color = self.colors.inactive;
-                let foreground_color = self.colors.active;
+                let mut bg_color = self.colors.inactive;
+                let mut fg_color = self.colors.active;
+                let mut icon_color = self.colors.inactive;
 
-                let mut name = String::from("~");
+                let mut name = String::from("tab");
                 if let Some(name_idx) = titles.get(&iterator) {
                     name = name_idx[0].to_string();
+
+                    if let Some(color_overwrite) = self.color_automation.get(&name_idx[0])
+                    {
+                        fg_color = self.colors.inactive;
+                        bg_color = *color_overwrite;
+                        icon_color = bg_color;
+                    }
                 }
 
                 if name.len() > 7 {
@@ -281,24 +296,20 @@ impl ScreenNavigation {
                     size: [160., 26.],
                 };
 
-                // 
-                // 
-                // if i == context_manager.len() - 1 {
                 self.texts.push(Text::new(
                     (initial_position - 12., 15.0),
                     "".to_string(),
                     FONT_ID_BUILTIN,
                     22.,
-                    self.colors.inactive,
+                    icon_color,
                 ));
-                // }
 
                 self.texts.push(Text::new(
                     (initial_position + 4., 13.0),
                     format!("{}.{}", iterator + 1, name),
                     FONT_ID_BUILTIN,
                     14.,
-                    foreground_color,
+                    fg_color,
                 ));
 
                 initial_position -= position_modifier;
@@ -351,7 +362,7 @@ impl ScreenNavigation {
                 background_color = self.colors.active;
             }
 
-            let mut name = String::from("new tab");
+            let mut name = String::from("tab");
             if let Some(name_idx) = titles.get(&i) {
                 if !name_idx[1].is_empty() {
                     name = name_idx[1].to_string();

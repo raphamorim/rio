@@ -308,7 +308,9 @@ impl Screen {
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.cursor_shape = self.state.get_cursor_state_from_ref().content;
+            let cursor = self.state.get_cursor_state_from_ref().content;
+            terminal.cursor_shape = cursor;
+            terminal.default_cursor_shape = cursor;
             terminal.blinking_cursor = config.blinking_cursor;
         }
 
