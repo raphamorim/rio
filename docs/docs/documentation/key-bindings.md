@@ -153,6 +153,8 @@ Execute a predefined action in Rio terminal.
 | IncreaseFontSize | |
 | DecreaseFontSize | |
 | Run(string) | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
+| PasteSelection | |
+| ClearSelection | |
 
 #### [Window Actions](#window-actions)
 

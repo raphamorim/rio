@@ -547,11 +547,7 @@ pub fn default_key_bindings(
         Escape,                        +BindingMode::VI;
             Action::ClearSelection;
         "i",                             +BindingMode::VI;
-            Action::ToggleViMode;
-        "i",                             +BindingMode::VI;
             Action::ScrollToBottom;
-        "c",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ToggleViMode;
         "g",                             +BindingMode::VI;
             Action::ScrollToTop;
         "g",      ModifiersState::SHIFT, +BindingMode::VI;

@@ -532,6 +532,9 @@ impl Screen {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
+                    Act::ClearSelection => {
+                        self.clear_selection();
+                    }
                     Act::PasteSelection => {
                         let content = self.clipboard.get(ClipboardType::Selection);
                         self.paste(&content, true);

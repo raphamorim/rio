@@ -518,7 +518,6 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Toggle the vi mode.
     #[inline]
-    #[allow(unused)]
     pub fn toggle_vi_mode(&mut self)
     where
         U: EventListener,
