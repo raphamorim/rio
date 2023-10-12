@@ -115,6 +115,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let mut terminal =
             Crosswords::new(cols_rows.0, cols_rows.1, event_proxy, window_id);
         terminal.cursor_shape = cursor_state.0.content;
+        terminal.default_cursor_shape = cursor_state.0.content;
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -225,8 +226,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         };
 
-        let titles =
-            ContextManagerTitles::new(0, String::from("new tab"), String::from(""));
+        let titles = ContextManagerTitles::new(0, String::from("tab"), String::from(""));
 
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {

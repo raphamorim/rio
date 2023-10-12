@@ -356,6 +356,7 @@ where
     pub title: String,
     damage: TermDamageState,
     pub cursor_shape: CursorShape,
+    pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
     window_id: WindowId,
     title_stack: Vec<String>,
@@ -400,6 +401,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
             cursor_shape: CursorShape::Block,
+            default_cursor_shape: CursorShape::Block,
             blinking_cursor: false,
             window_id,
             title_stack: Default::default(),
@@ -1526,7 +1528,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::mem::swap(&mut self.grid, &mut self.inactive_grid);
         }
         self.active_charset = Default::default();
-        // self.cursor_style = None;
+        self.cursor_shape = self.default_cursor_shape;
         self.grid.reset();
         self.inactive_grid.reset();
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -1627,7 +1629,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(cursor_shape) = style {
             self.cursor_shape = cursor_shape;
         } else {
-            self.cursor_shape = CursorShape::default();
+            self.cursor_shape = self.default_cursor_shape;
         }
 
         // self.blinking_cursor = blinking;
