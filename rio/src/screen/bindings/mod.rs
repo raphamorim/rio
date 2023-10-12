@@ -178,29 +178,28 @@ impl From<String> for Action {
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
             "selectnexttab" => Some(Action::SelectNextTab),
-            "selecttab1" => Some(Action::SelectTab1),
-            "selecttab2" => Some(Action::SelectTab2),
-            "selecttab3" => Some(Action::SelectTab3),
-            "selecttab4" => Some(Action::SelectTab4),
-            "selecttab5" => Some(Action::SelectTab5),
-            "selecttab6" => Some(Action::SelectTab6),
-            "selecttab7" => Some(Action::SelectTab7),
-            "selecttab8" => Some(Action::SelectTab8),
-            "selecttab9" => Some(Action::SelectTab9),
             "selectlasttab" => Some(Action::SelectLastTab),
             "receivechar" => Some(Action::ReceiveChar),
-            "scrolllineup" => Some(Action::ScrollLineUp),
-            "scrolllinedown" => Some(Action::ScrollLineDown),
             "scrollhalfpageup" => Some(Action::ScrollHalfPageUp),
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
+            "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
         };
 
         if action_from_string.is_some() {
             return action_from_string.unwrap_or(Action::None);
+        }
+
+        let re = regex::Regex::new(r"selecttab\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
+                return Action::SelectTab(parsed_matched_string);
+            }
         }
 
         let re = regex::Regex::new(r"run\(([^()]+)\)").unwrap();
@@ -303,12 +302,6 @@ pub enum Action {
     /// Scroll half a page down.
     ScrollHalfPageDown,
 
-    /// Scroll one line up.
-    ScrollLineUp,
-
-    /// Scroll one line down.
-    ScrollLineDown,
-
     /// Scroll all the way to the top.
     ScrollToTop,
 
@@ -393,15 +386,7 @@ pub enum Action {
     None,
 
     // Tab selections
-    SelectTab1,
-    SelectTab2,
-    SelectTab3,
-    SelectTab4,
-    SelectTab5,
-    SelectTab6,
-    SelectTab7,
-    SelectTab8,
-    SelectTab9,
+    SelectTab(usize),
     SelectLastTab,
 }
 
@@ -567,10 +552,6 @@ pub fn default_key_bindings(
             Action::ScrollToBottom;
         "c",      ModifiersState::CONTROL,  +BindingMode::VI;
             Action::ToggleViMode;
-        "y",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollLineUp;
-        "e",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollLineDown;
         "g",                             +BindingMode::VI;
             Action::ScrollToTop;
         "g",      ModifiersState::SHIFT, +BindingMode::VI;
@@ -895,14 +876,14 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
-        "1", ModifiersState::SUPER; Action::SelectTab1;
-        "2", ModifiersState::SUPER; Action::SelectTab2;
-        "3", ModifiersState::SUPER; Action::SelectTab3;
-        "4", ModifiersState::SUPER; Action::SelectTab4;
-        "5", ModifiersState::SUPER; Action::SelectTab5;
-        "6", ModifiersState::SUPER; Action::SelectTab6;
-        "7", ModifiersState::SUPER; Action::SelectTab7;
-        "8", ModifiersState::SUPER; Action::SelectTab8;
+        "1", ModifiersState::SUPER; Action::SelectTab(0);
+        "2", ModifiersState::SUPER; Action::SelectTab(1);
+        "3", ModifiersState::SUPER; Action::SelectTab(2);
+        "4", ModifiersState::SUPER; Action::SelectTab(3);
+        "5", ModifiersState::SUPER; Action::SelectTab(4);
+        "6", ModifiersState::SUPER; Action::SelectTab(5);
+        "7", ModifiersState::SUPER; Action::SelectTab(6);
+        "8", ModifiersState::SUPER; Action::SelectTab(7);
         "9", ModifiersState::SUPER; Action::SelectLastTab;
     )
 }

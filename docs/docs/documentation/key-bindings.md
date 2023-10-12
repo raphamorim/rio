@@ -177,16 +177,8 @@ Execute a predefined action in Rio terminal.
 | CloseTab | |
 | SelectPrevTab | |
 | SelectNextTab | |
-| SelectTab1 | |
-| SelectTab2 | |
-| SelectTab3 | |
-| SelectTab4 | |
-| SelectTab5 | |
-| SelectTab6 | |
-| SelectTab7 | |
-| SelectTab8 | |
-| SelectTab9 | |
 | SelectLastTab | |
+| SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)` |
 
 #### [Scroll Actions](#scroll-actions)
 
@@ -199,8 +191,6 @@ Execute a predefined action in Rio terminal.
 | ScrollHalfPageDown | |
 | ScrollToTop | |
 | ScrollToBottom | |
-| ScrollLineUp | |
-| ScrollLineDown | |
 
 ### [Bytes](#bytes)
 

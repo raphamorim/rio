@@ -2,12 +2,17 @@
 
 ## Unreleased
 
-- Fix Cursor shape isn't restored (Ref https://github.com/raphamorim/rio/issues/279).
-- Fix color automation for breadcrumb mode (Ref https://github.com/raphamorim/rio/issues/251).
-- Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
-- Fix lines calculation for different fonts.
-- Fix bug whenever is not closing terminal for non native tabs (Ref https://github.com/raphamorim/rio/issues/255)
-- Support to new scroll action key binding
+#### Breaking changes
+
+- Actions `SelectTab1` until `SelectTab9` has been removed in favor of the new API:
+
+```toml
+{ key = "1", with = "super", action = "SelectTab(0)" },
+{ key = "2", with = "super", action = "SelectTab(1)" },
+{ key = "3", with = "super", action = "SelectTab(2)" },
+```
+
+- Actions `ScrollLineUp` and `ScrollLineDown` has been removed in favor of the new Scroll API:
 
 ```toml
 [bindings]
@@ -19,6 +24,15 @@ keys = [
 ]
 ```
 
+#### Other changes
+
+- Fix Cursor shape isn't restored (Ref https://github.com/raphamorim/rio/issues/279).
+- Fix color automation for breadcrumb mode (Ref https://github.com/raphamorim/rio/issues/251).
+- Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
+- Fix lines calculation for different fonts.
+- Fix bug whenever is not closing terminal for non native tabs (Ref https://github.com/raphamorim/rio/issues/255)
+- Support to new scroll action API key binding.
+- Support to new select tab action API key binding.
 - Support to execute programs as actions for key bindings:
 
 ```toml

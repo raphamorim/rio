@@ -519,6 +519,15 @@ impl Screen {
                         drop(terminal);
                         current_context.messenger.send_bytes(s.clone().into_bytes());
                     }
+                    Act::ToggleViMode => {
+                        let current_context = self.context_manager.current_mut();
+                        self.state.set_selection(None);
+                        let mut terminal = current_context.terminal.lock();
+                        terminal.selection.take();
+                        terminal.scroll_display(Scroll::Bottom);
+                        terminal.toggle_vi_mode();
+                        drop(terminal);
+                    }
                     Act::Paste => {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
@@ -659,18 +668,6 @@ impl Screen {
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
                     }
-                    Act::ScrollLineUp => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
-                        terminal.scroll_display(Scroll::Delta(1));
-                        drop(terminal);
-                    }
-                    Act::ScrollLineDown => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
-                        terminal.scroll_display(Scroll::Delta(-1));
-                        drop(terminal);
-                    }
                     Act::ClearHistory => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
@@ -689,32 +686,8 @@ impl Screen {
                     Act::HideOtherApplications => {
                         self.context_manager.hide_other_apps();
                     }
-                    Act::SelectTab1 => {
-                        self.context_manager.select_tab(0);
-                    }
-                    Act::SelectTab2 => {
-                        self.context_manager.select_tab(1);
-                    }
-                    Act::SelectTab3 => {
-                        self.context_manager.select_tab(2);
-                    }
-                    Act::SelectTab4 => {
-                        self.context_manager.select_tab(3);
-                    }
-                    Act::SelectTab5 => {
-                        self.context_manager.select_tab(4);
-                    }
-                    Act::SelectTab6 => {
-                        self.context_manager.select_tab(5);
-                    }
-                    Act::SelectTab7 => {
-                        self.context_manager.select_tab(6);
-                    }
-                    Act::SelectTab8 => {
-                        self.context_manager.select_tab(7);
-                    }
-                    Act::SelectTab9 => {
-                        self.context_manager.select_tab(8);
+                    Act::SelectTab(tab_index) => {
+                        self.context_manager.select_tab(*tab_index);
                     }
                     Act::SelectLastTab => {
                         self.context_manager.select_last_tab();
