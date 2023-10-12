@@ -26,6 +26,8 @@ keys = [
 
 #### Other changes
 
+- Introduce Alacritty's VI Mode (Ref https://github.com/raphamorim/rio/issues/186).
+- Implement `ClearSelection` key binding action.
 - Fix Cursor shape isn't restored (Ref https://github.com/raphamorim/rio/issues/279).
 - Fix color automation for breadcrumb mode (Ref https://github.com/raphamorim/rio/issues/251).
 - Fix text copy (OSC 52) is broken (tmux, zellij) (Ref https://github.com/raphamorim/rio/issues/276).
