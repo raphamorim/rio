@@ -259,7 +259,7 @@ pub enum Action {
     ViMotion(ViMotion),
 
     // Perform vi mode action.
-    // Vi(ViAction),
+    Vi(ViAction),
     /// Perform mouse binding exclusive action.
     Mouse(MouseAction),
 
@@ -402,6 +402,27 @@ impl From<ViMotion> for Action {
     }
 }
 
+impl From<ViAction> for Action {
+    fn from(action: ViAction) -> Self {
+        Self::Vi(action)
+    }
+}
+
+/// Vi mode specific actions.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ViAction {
+    /// Toggle normal vi selection.
+    ToggleNormalSelection,
+    /// Toggle line vi selection.
+    ToggleLineSelection,
+    /// Toggle block vi selection.
+    ToggleBlockSelection,
+    /// Toggle semantic vi selection.
+    ToggleSemanticSelection,
+    /// Centers the screen around the vi mode cursor.
+    CenterAroundViCursor,
+}
+
 macro_rules! bindings {
     (
         $ty:ident;
@@ -540,45 +561,32 @@ pub fn default_key_bindings(
         Backspace,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
         Backspace, ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x1b\x7f".into());
         Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
-        Space, ModifiersState::SHIFT | ModifiersState::CONTROL;
-            Action::ToggleViMode;
-        Space, ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI;
-            Action::ScrollToBottom;
-        Escape,                        +BindingMode::VI;
-            Action::ClearSelection;
-        "i",                             +BindingMode::VI;
-            Action::ScrollToBottom;
-        "g",                             +BindingMode::VI;
-            Action::ScrollToTop;
-        "g",      ModifiersState::SHIFT, +BindingMode::VI;
-            Action::ScrollToBottom;
-        "b",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollPageUp;
-        "f",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollPageDown;
-        "u",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollHalfPageUp;
-        "d",      ModifiersState::CONTROL,  +BindingMode::VI;
-            Action::ScrollHalfPageDown;
-        "y",                             +BindingMode::VI; Action::Copy;
-        "y",                             +BindingMode::VI;
-            Action::ClearSelection;
-        "k",                             +BindingMode::VI;
-            ViMotion::Up;
-        "j",                             +BindingMode::VI;
-            ViMotion::Down;
-        "h",                             +BindingMode::VI;
-            ViMotion::Left;
-        "l",                             +BindingMode::VI;
-            ViMotion::Right;
-        ArrowUp,                            +BindingMode::VI;
-            ViMotion::Up;
-        ArrowDown,                          +BindingMode::VI;
-            ViMotion::Down;
-        ArrowLeft,                          +BindingMode::VI;
-            ViMotion::Left;
-        ArrowRight,                         +BindingMode::VI;
-            ViMotion::Right;
+
+        // VI Mode
+        "j", ModifiersState::SUPER; Action::ToggleViMode;
+        Escape, +BindingMode::VI; Action::ClearSelection;
+        "i", +BindingMode::VI; Action::ScrollToBottom;
+        "g", +BindingMode::VI; Action::ScrollToTop;
+        "g", ModifiersState::SHIFT, +BindingMode::VI; Action::ScrollToBottom;
+        "b", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollPageUp;
+        "f", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollPageDown;
+        "u", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollHalfPageUp;
+        "d", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollHalfPageDown;
+        "y", +BindingMode::VI; Action::Copy;
+        "y", +BindingMode::VI; Action::ClearSelection;
+        "v", +BindingMode::VI; ViAction::ToggleNormalSelection;
+        "v", ModifiersState::SHIFT, +BindingMode::VI; ViAction::ToggleLineSelection;
+        "v", ModifiersState::CONTROL, +BindingMode::VI; ViAction::ToggleBlockSelection;
+        "v", ModifiersState::ALT, +BindingMode::VI; ViAction::ToggleSemanticSelection;
+        "z", +BindingMode::VI; ViAction::CenterAroundViCursor;
+        "k", +BindingMode::VI; ViMotion::Up;
+        "j", +BindingMode::VI; ViMotion::Down;
+        "h", +BindingMode::VI; ViMotion::Left;
+        "l", +BindingMode::VI; ViMotion::Right;
+        ArrowUp, +BindingMode::VI; ViMotion::Up;
+        ArrowDown, +BindingMode::VI; ViMotion::Down;
+        ArrowLeft, +BindingMode::VI; ViMotion::Left;
+        ArrowRight, +BindingMode::VI; ViMotion::Right;
         "0",                          +BindingMode::VI;
             ViMotion::First;
         "4",   ModifiersState::SHIFT, +BindingMode::VI;
