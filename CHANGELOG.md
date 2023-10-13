@@ -7,9 +7,12 @@
 - Actions `SelectTab1`, `SelectTab2`, ..., `SelectTab9` have been removed in favor of the new select tab API:
 
 ```toml
-{ key = "1", with = "super", action = "SelectTab(0)" },
-{ key = "2", with = "super", action = "SelectTab(1)" },
-{ key = "3", with = "super", action = "SelectTab(2)" },
+[bindings]
+keys = [
+	{ key = "1", with = "super", action = "SelectTab(0)" },
+	{ key = "2", with = "super", action = "SelectTab(1)" },
+	{ key = "3", with = "super", action = "SelectTab(2)" }
+]
 ```
 
 - Actions `ScrollLineUp` and `ScrollLineDown` has been removed in favor of the new Scroll API:
