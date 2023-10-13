@@ -4,7 +4,7 @@
 
 #### Breaking changes
 
-- `CollapsedTabs` is not based on reverse order anymore.
+- `CollapsedTab` is not based on reverse order anymore.
 - Actions `SelectTab1`, `SelectTab2`, ..., `SelectTab9` have been removed in favor of the new select tab API:
 
 ```toml
@@ -30,6 +30,7 @@ keys = [
 
 #### Other changes
 
+- `ClearHistory` key binding is available to use per configuration file.
 - Introduce Alacritty's VI Mode (Ref https://github.com/raphamorim/rio/issues/186).
 - Implement `ClearSelection` key binding action.
 - Fix Cursor shape isn't restored (Ref https://github.com/raphamorim/rio/issues/279).
