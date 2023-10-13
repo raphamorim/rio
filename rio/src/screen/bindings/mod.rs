@@ -918,6 +918,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
+        Backspace, ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\u{0017}".into());
         "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
         "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
