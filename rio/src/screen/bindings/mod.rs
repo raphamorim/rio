@@ -918,7 +918,6 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        Backspace, ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\u{0017}".into());
         "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
         "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
@@ -934,6 +933,10 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
         "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
+        // This is actually a Windows Powershell shortcut
+        // https://github.com/alacritty/alacritty/issues/2930
+        // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
+        Backspace, ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\u{0017}".into());
     )
 }
 
