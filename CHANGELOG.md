@@ -4,7 +4,7 @@
 
 #### Breaking changes
 
-- Actions `SelectTab1` until `SelectTab9` has been removed in favor of the new API:
+- Actions `SelectTab1`, `SelectTab2`, ..., `SelectTab9` have been removed in favor of the new select tab API:
 
 ```toml
 { key = "1", with = "super", action = "SelectTab(0)" },

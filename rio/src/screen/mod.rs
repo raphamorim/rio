@@ -17,6 +17,7 @@ pub mod window;
 
 use crate::crosswords::vi_mode::ViMotion;
 use crate::screen::bindings::MouseBinding;
+use crate::screen::bindings::ViAction;
 use core::fmt::Debug;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -519,15 +520,6 @@ impl Screen {
                         drop(terminal);
                         current_context.messenger.send_bytes(s.clone().into_bytes());
                     }
-                    Act::ToggleViMode => {
-                        let current_context = self.context_manager.current_mut();
-                        self.state.set_selection(None);
-                        let mut terminal = current_context.terminal.lock();
-                        terminal.selection.take();
-                        terminal.scroll_display(Scroll::Bottom);
-                        terminal.toggle_vi_mode();
-                        drop(terminal);
-                    }
                     Act::Paste => {
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
@@ -542,11 +534,48 @@ impl Screen {
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
+                    Act::ToggleViMode => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        terminal.toggle_vi_mode();
+                        drop(terminal);
+                    }
                     Act::ViMotion(motion) => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
-                        terminal.vi_motion(*motion);
+                        if terminal.mode().contains(Mode::VI) {
+                            terminal.vi_motion(*motion);
+                        }
                         drop(terminal);
+                        self.render();
+                    }
+                    Act::Vi(ViAction::CenterAroundViCursor) => {
+                        let mut terminal =
+                            self.context_manager.current_mut().terminal.lock();
+                        let display_offset = terminal.display_offset() as i32;
+                        let target =
+                            -display_offset + terminal.grid.screen_lines() as i32 / 2 - 1;
+                        let line = terminal.vi_mode_cursor.pos.row;
+                        let scroll_lines = target - line.0;
+
+                        terminal.scroll_display(Scroll::Delta(scroll_lines));
+                        drop(terminal);
+                    }
+                    Act::Vi(ViAction::ToggleNormalSelection) => {
+                        self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.render();
+                    }
+                    Act::Vi(ViAction::ToggleLineSelection) => {
+                        self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.render();
+                    }
+                    Act::Vi(ViAction::ToggleBlockSelection) => {
+                        self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.render();
+                    }
+                    Act::Vi(ViAction::ToggleSemanticSelection) => {
+                        self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.render();
                     }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
@@ -1104,6 +1133,34 @@ impl Screen {
         let selection = Selection::new(ty, point, side);
         self.state.set_selection(selection.to_range(&terminal));
         terminal.selection = Some(selection);
+        drop(terminal);
+    }
+
+    fn toggle_selection(&mut self, ty: SelectionType, side: Side) {
+        let mut terminal = self.context_manager.current().terminal.lock();
+        match &mut terminal.selection {
+            Some(selection) if selection.ty == ty && !selection.is_empty() => {
+                drop(terminal);
+                self.clear_selection();
+            }
+            Some(selection) if !selection.is_empty() => {
+                selection.ty = ty;
+                drop(terminal);
+                self.copy_selection(ClipboardType::Selection);
+                // self.render();
+            }
+            _ => {
+                let pos = terminal.vi_mode_cursor.pos;
+                drop(terminal);
+                self.start_selection(ty, pos, side)
+            }
+        }
+
+        let mut terminal = self.context_manager.current().terminal.lock();
+        // Make sure initial selection is not empty.
+        if let Some(selection) = &mut terminal.selection {
+            selection.include_all();
+        }
         drop(terminal);
     }
 
