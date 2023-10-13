@@ -553,24 +553,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 .send_event(RioEvent::SelectNativeTabNext, self.window_id);
             return;
         }
-        self.move_back();
-    }
 
-    #[inline]
-    fn move_back(&mut self) {
         if self.contexts.len() - 1 == self.current_index {
             self.current_index = 0;
         } else {
             self.current_index += 1;
-        }
-    }
-
-    #[inline]
-    fn move_next(&mut self) {
-        if self.current_index == 0 {
-            self.current_index = self.contexts.len() - 1;
-        } else {
-            self.current_index -= 1;
         }
     }
 
@@ -581,7 +568,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
             return;
         }
-        self.move_next();
+
+        if self.current_index == 0 {
+            self.current_index = self.contexts.len() - 1;
+        } else {
+            self.current_index -= 1;
+        }
     }
 
     #[inline]

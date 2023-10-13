@@ -249,7 +249,6 @@ pub enum Action {
     Run(Program),
 
     /// Scroll
-    #[allow(unused)]
     Scroll(i32),
 
     /// Regex keyboard hints.
@@ -275,19 +274,15 @@ pub enum Action {
     CopySelection,
 
     /// Paste contents of selection buffer.
-    #[allow(dead_code)]
     PasteSelection,
 
     /// Increase font size.
-    #[allow(dead_code)]
     IncreaseFontSize,
 
     /// Decrease font size.
-    #[allow(dead_code)]
     DecreaseFontSize,
 
     /// Reset font size to the config value.
-    #[allow(dead_code)]
     ResetFontSize,
 
     /// Scroll exactly one page up.
@@ -309,7 +304,6 @@ pub enum Action {
     ScrollToBottom,
 
     /// Clear the display buffer(s) to remove history.
-    #[allow(dead_code)]
     ClearHistory,
 
     /// Hide the Rio window.
@@ -326,7 +320,6 @@ pub enum Action {
     Minimize,
 
     /// Quit Rio.
-    #[allow(dead_code)]
     Quit,
 
     /// Clear warning and error notices.
@@ -341,23 +334,18 @@ pub enum Action {
     WindowCreateNew,
 
     /// Create config editor.
-    #[allow(dead_code)]
     ConfigEditor,
 
     /// Create a new Rio tab.
-    #[allow(dead_code)]
     TabCreateNew,
 
     /// Switch to next tab.
-    #[allow(dead_code)]
     SelectNextTab,
 
     /// Switch to prev tab.
-    #[allow(dead_code)]
     SelectPrevTab,
 
     /// Close tab.
-    #[allow(dead_code)]
     TabCloseCurrent,
 
     /// Toggle fullscreen.
@@ -876,8 +864,8 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "t", ModifiersState::SUPER; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::SelectNextTab;
         Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
-        "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
-        "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
         "w", ModifiersState::SUPER; Action::TabCloseCurrent;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
         "1", ModifiersState::SUPER; Action::SelectTab(0);
@@ -911,8 +899,9 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::SelectNextTab;
-        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
-        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
     )
@@ -937,10 +926,11 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
         "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::SelectNextTab;
+        Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
         "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
-        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
-        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+        "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
     )
 }

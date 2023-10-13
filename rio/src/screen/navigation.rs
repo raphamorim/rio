@@ -152,7 +152,7 @@ impl ScreenNavigation {
 
         let mut initial_position = (self.width / self.scale) - PADDING_X_COLLAPSED_TABS;
         let position_modifier = 20.;
-        for i in 0..len {
+        for i in (0..len).rev() {
             let mut color = self.colors.inactive;
             let mut size = INACTIVE_TAB_WIDTH_SIZE;
             if i == self.current {
