@@ -169,6 +169,7 @@ impl From<String> for Action {
             "paste" => Some(Action::Paste),
             "quit" => Some(Action::Quit),
             "copy" => Some(Action::Copy),
+            "clearhistory" => Some(Action::ClearHistory),
             "resetfontsize" => Some(Action::ResetFontSize),
             "increasefontsize" => Some(Action::IncreaseFontSize),
             "decreasefontsize" => Some(Action::DecreaseFontSize),
