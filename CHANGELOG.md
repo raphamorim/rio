@@ -16,7 +16,7 @@ keys = [
 ]
 ```
 
-- Actions `ScrollLineUp` and `ScrollLineDown` has been removed in favor of the new Scroll API:
+- Actions `ScrollLineUp` and `ScrollLineDown` have been removed in favor of the new Scroll API:
 
 ```toml
 [bindings]
@@ -30,6 +30,7 @@ keys = [
 
 #### Other changes
 
+- Fix Backspace behaviour misplace on Windows (Ref https://github.com/raphamorim/rio/issues/220).
 - `ClearHistory` key binding is available to use per configuration file.
 - Introduce Alacritty's VI Mode (Ref https://github.com/raphamorim/rio/issues/186).
 - Implement `ClearSelection` key binding action.
