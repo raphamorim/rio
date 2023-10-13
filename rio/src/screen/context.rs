@@ -553,13 +553,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 .send_event(RioEvent::SelectNativeTabNext, self.window_id);
             return;
         }
-
-        if !self.config.is_collapsed {
-            self.move_next();
-        } else {
-            // Collapsed tabs are rendered in backwards
-            self.move_back();
-        }
+        self.move_back();
     }
 
     #[inline]
@@ -587,13 +581,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
             return;
         }
-
-        if !self.config.is_collapsed {
-            self.move_back();
-        } else {
-            // Collapsed tabs are rendered in backwards
-            self.move_next();
-        }
+        self.move_next();
     }
 
     #[inline]
