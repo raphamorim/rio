@@ -4,6 +4,7 @@
 
 #### Breaking changes
 
+- `CollapsedTabs` is not based on reverse order anymore.
 - Actions `SelectTab1`, `SelectTab2`, ..., `SelectTab9` have been removed in favor of the new select tab API:
 
 ```toml
