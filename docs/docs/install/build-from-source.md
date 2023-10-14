@@ -3,7 +3,7 @@ title: 'Build from source'
 language: 'en'
 ---
 
-## Build from the source
+## Build `rio` from source code
 
 Before compiling Rio terminal, you'll have to first clone the source code:
 
@@ -13,7 +13,7 @@ git clone https://github.com/raphamorim/rio.git
 
 Then install the Rust compiler with <span class="keyword">rustup</span> ([rustup.rs](https://rustup.rs/)).
 
-After install, make sure you have the right Rust compiler installed by running:
+After installation of Rust, ensure you have the correct Rust compiler installed by running:
 
 ```bash
 rustup override set stable
