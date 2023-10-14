@@ -20,7 +20,7 @@ impl NavigationMode {
     const TOP_TAB_STR: &str = "TopTab";
     const BOTTOM_TAB_STR: &str = "BottomTab";
     #[cfg(target_os = "macos")]
-    const NATIVETAB_STR: &str = "NativeTab";
+    const NATIVE_TAB_STR: &str = "NativeTab";
     #[cfg(not(windows))]
     const BREADCRUMB_STR: &str = "Breadcrumb";
 
