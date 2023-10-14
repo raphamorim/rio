@@ -225,14 +225,20 @@ impl Screen {
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
+        let mouse_x_f32 = self.mouse.x as f32;
+        // println!("mouse_x_f32 {:?}", mouse_x_f32);
+        // println!("layout.margin.x {:?}", layout.margin.x);
 
-        let mouse_x = self.mouse.x + layout.margin.x as usize;
-        let col = mouse_x / (layout.scaled_sugarwidth) as usize;
-        // TODO: Refactor
-        let col = std::cmp::min(Column(col), Column(layout.columns));
+        let col: Column = if layout.margin.x >= mouse_x_f32
+            || mouse_x_f32 <= layout.scaled_sugarwidth
+        {
+            Column(0)
+        } else {
+            let col = ((mouse_x_f32 - layout.margin.x) / layout.scaled_sugarwidth).floor()
+                as usize;
+            std::cmp::min(Column(col), Column(layout.columns))
+        };
 
-        // println!("{:?}", self.mouse.x);
-        // println!("{:?}", layout.sugarwidth);
         // println!("{:?}", col);
 
         let row = self.mouse.y.saturating_sub(
@@ -1421,7 +1427,7 @@ impl Screen {
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         if self.state.has_blinking_enabled && terminal_has_blinking_enabled {
-            self.context_manager.schedule_cursor_blinking_render();
+            self.context_manager.schedule_render(800);
         }
     }
 

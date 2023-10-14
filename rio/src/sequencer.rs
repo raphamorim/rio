@@ -422,6 +422,7 @@ impl Sequencer {
                                 return;
                             }
 
+                            #[cfg(target_os = "macos")]
                             route.window.winit_window.set_cursor_visible(true);
 
                             match button {
@@ -575,6 +576,7 @@ impl Sequencer {
                                 return;
                             }
 
+                            #[cfg(target_os = "macos")]
                             route.window.winit_window.set_cursor_visible(true);
 
                             let x = position.x;
@@ -683,7 +685,7 @@ impl Sequencer {
                                     || !route.window.screen.mouse_mode())
                             {
                                 route.window.screen.update_selection(point, square_side);
-                                route.redraw();
+                                route.window.screen.context_manager.schedule_render(60);
                             } else if square_changed
                                 && route.window.screen.has_mouse_motion_and_drag()
                             {
@@ -726,6 +728,7 @@ impl Sequencer {
                                 return;
                             }
 
+                            #[cfg(target_os = "macos")]
                             route.window.winit_window.set_cursor_visible(true);
                             match delta {
                                 MouseScrollDelta::LineDelta(columns, lines) => {
@@ -793,6 +796,7 @@ impl Sequencer {
 
                             match key_event.state {
                                 ElementState::Pressed => {
+                                    #[cfg(target_os = "macos")]
                                     route.window.winit_window.set_cursor_visible(false);
                                 }
 
@@ -854,7 +858,9 @@ impl Sequencer {
                         ..
                     } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
+                            #[cfg(target_os = "macos")]
                             route.window.winit_window.set_cursor_visible(true);
+
                             let has_regained_focus = !route.window.is_focused && focused;
                             route.window.is_focused = focused;
 

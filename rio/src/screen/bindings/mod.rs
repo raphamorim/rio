@@ -913,17 +913,16 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
-            +BindingMode::VI; Action::ClearSelection;
-        Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
-        "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
-        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "v", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI; Action::ClearSelection;
+        Insert, ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
+        "0", ModifiersState::CONTROL; Action::ResetFontSize;
+        "=", ModifiersState::CONTROL; Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
+        "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
+        "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
         Enter, ModifiersState::ALT; Action::ToggleFullscreen;
         "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
         Tab, ModifiersState::CONTROL; Action::SelectNextTab;
