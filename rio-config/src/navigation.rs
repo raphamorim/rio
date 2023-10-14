@@ -14,44 +14,50 @@ pub enum NavigationMode {
     Breadcrumb,
 }
 
+impl NavigationMode {
+    const PLAIN_STR: &str = "Plain";
+    const COLLAPSED_TAB_STR: &str = "CollapsedTab";
+    const TOP_TAB_STR: &str = "TopTab";
+    const BOTTOM_TAB_STR: &str = "BottomTab";
+    #[cfg(target_os = "macos")]
+    const NATIVE_TAB_STR: &str = "NativeTab";
+    #[cfg(not(windows))]
+    const BREADCRUMB_STR: &str = "Breadcrumb";
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Plain => Self::PLAIN_STR,
+            Self::CollapsedTab => Self::COLLAPSED_TAB_STR,
+            Self::TopTab => Self::TOP_TAB_STR,
+            Self::BottomTab => Self::BOTTOM_TAB_STR,
+            #[cfg(target_os = "macos")]
+            Self::NativeTab => Self::NATIVE_TAB_STR,
+            #[cfg(not(windows))]
+            Self::Breadcrumb => Self::BREADCRUMB_STR,
+        }
+    }
+}
+
 #[inline]
 pub fn modes_as_vec_string() -> Vec<String> {
-    vec![
-        String::from("Plain"),
-        String::from("CollapsedTab"),
-        String::from("TopTab"),
-        String::from("BottomTab"),
+    [
+        NavigationMode::Plain,
+        NavigationMode::CollapsedTab,
+        NavigationMode::TopTab,
+        NavigationMode::BottomTab,
         #[cfg(target_os = "macos")]
-        String::from("NativeTab"),
+        NavigationMode::NativeTab,
         #[cfg(not(windows))]
-        String::from("Breadcrumb"),
+        NavigationMode::Breadcrumb,
     ]
+    .iter()
+    .map(|navigation_mode| navigation_mode.to_string())
+    .collect()
 }
 
 impl std::fmt::Display for NavigationMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            NavigationMode::CollapsedTab => {
-                write!(f, "CollapsedTab")
-            }
-            NavigationMode::TopTab => {
-                write!(f, "TopTab")
-            }
-            NavigationMode::BottomTab => {
-                write!(f, "BottomTab")
-            }
-            #[cfg(target_os = "macos")]
-            NavigationMode::NativeTab => {
-                write!(f, "NativeTab")
-            }
-            #[cfg(not(windows))]
-            NavigationMode::Breadcrumb => {
-                write!(f, "Breadcrumb")
-            }
-            NavigationMode::Plain => {
-                write!(f, "Plain")
-            }
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -63,14 +69,14 @@ impl std::str::FromStr for NavigationMode {
 
     fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
         match s {
-            "CollapsedTab" => Ok(NavigationMode::CollapsedTab),
-            "TopTab" => Ok(NavigationMode::TopTab),
-            "BottomTab" => Ok(NavigationMode::BottomTab),
+            Self::COLLAPSED_TAB_STR => Ok(NavigationMode::CollapsedTab),
+            Self::TOP_TAB_STR => Ok(NavigationMode::TopTab),
+            Self::BOTTOM_TAB_STR => Ok(NavigationMode::BottomTab),
             #[cfg(target_os = "macos")]
-            "NativeTab" => Ok(NavigationMode::NativeTab),
+            Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
             #[cfg(not(windows))]
-            "Breadcrumb" => Ok(NavigationMode::Breadcrumb),
-            "Plain" => Ok(NavigationMode::Plain),
+            Self::BREADCRUMB_STR => Ok(NavigationMode::Breadcrumb),
+            Self::PLAIN_STR => Ok(NavigationMode::Plain),
             _ => Ok(NavigationMode::default()),
         }
     }
