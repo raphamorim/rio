@@ -226,15 +226,16 @@ impl Screen {
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
         let layout = &self.sugarloaf.layout;
         let mouse_x_f32 = self.mouse.x as f32;
+        let scaled_margin_x = layout.margin.x * self.sugarloaf.layout.scale_factor;
         // println!("mouse_x_f32 {:?}", mouse_x_f32);
         // println!("layout.margin.x {:?}", layout.margin.x);
 
-        let col: Column = if layout.margin.x >= mouse_x_f32
+        let col: Column = if scaled_margin_x >= mouse_x_f32
             || mouse_x_f32 <= layout.scaled_sugarwidth
         {
             Column(0)
         } else {
-            let col = ((mouse_x_f32 - layout.margin.x) / layout.scaled_sugarwidth).floor()
+            let col = ((mouse_x_f32 - scaled_margin_x) / layout.scaled_sugarwidth).floor()
                 as usize;
             std::cmp::min(Column(col), Column(layout.columns))
         };
