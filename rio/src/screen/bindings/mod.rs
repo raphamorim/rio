@@ -840,11 +840,11 @@ pub fn config_key_bindings(
 pub fn platform_key_bindings() -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        "0",           ModifiersState::SUPER; Action::ResetFontSize;
-        "=",         ModifiersState::SUPER; Action::IncreaseFontSize;
-        "+",           ModifiersState::SUPER; Action::IncreaseFontSize;
-        "+",      ModifiersState::SUPER; Action::IncreaseFontSize;
-        "-",          ModifiersState::SUPER; Action::DecreaseFontSize;
+        "0", ModifiersState::SUPER; Action::ResetFontSize;
+        "=", ModifiersState::SUPER; Action::IncreaseFontSize;
+        "+", ModifiersState::SUPER; Action::IncreaseFontSize;
+        "+", ModifiersState::SUPER; Action::IncreaseFontSize;
+        "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS;
             Action::Esc("\x1bb".into());
