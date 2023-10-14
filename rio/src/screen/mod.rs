@@ -230,9 +230,7 @@ impl Screen {
         // println!("mouse_x_f32 {:?}", mouse_x_f32);
         // println!("layout.margin.x {:?}", layout.margin.x);
 
-        let col: Column = if scaled_margin_x >= mouse_x_f32
-            || mouse_x_f32 <= layout.scaled_sugarwidth
-        {
+        let col: Column = if scaled_margin_x >= mouse_x_f32 {
             Column(0)
         } else {
             let col = ((mouse_x_f32 - scaled_margin_x) / layout.scaled_sugarwidth).floor()
