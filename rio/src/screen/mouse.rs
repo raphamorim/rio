@@ -3,6 +3,7 @@ use crate::crosswords::pos::Line;
 use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use crate::screen::Pos;
+use std::rc::Rc;
 use std::time::Instant;
 use winit::event::ElementState;
 use winit::event::MouseButton;
@@ -36,7 +37,7 @@ pub struct Mouse {
 impl Default for Mouse {
     fn default() -> Mouse {
         Mouse {
-            multiplier: 3.0,
+            multiplier: 2.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
             left_button_state: ElementState::Released,
@@ -50,6 +51,18 @@ impl Default for Mouse {
             x: Default::default(),
             y: Default::default(),
         }
+    }
+}
+
+impl Mouse {
+    pub fn new(config: &Rc<rio_config::Config>) -> Self {
+        Self {
+            multiplier: config.scroll_multiplier,
+            ..Default::default()
+        }
+    }
+    pub fn update_multiplier(&mut self, config: &Rc<rio_config::Config>) {
+        self.multiplier = config.scroll_multiplier;
     }
 }
 

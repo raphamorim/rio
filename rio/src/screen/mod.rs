@@ -195,7 +195,7 @@ impl Screen {
             context_manager,
             ime,
             sugarloaf,
-            mouse: Mouse::default(),
+            mouse: Mouse::new(config),
             state,
             bindings,
             clipboard,
@@ -308,6 +308,8 @@ impl Screen {
             terminal.default_cursor_shape = cursor;
             terminal.blinking_cursor = config.blinking_cursor;
         }
+
+        self.mouse.update_multiplier(config);
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
