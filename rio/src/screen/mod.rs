@@ -224,18 +224,7 @@ impl Screen {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        calculate_mouse_position(
-            &self.mouse,
-            display_offset,
-            self.sugarloaf.layout.scale_factor,
-            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-            self.sugarloaf.layout.margin.x,
-            self.sugarloaf.layout.margin.top_y,
-            (
-                self.sugarloaf.layout.scaled_sugarwidth,
-                self.sugarloaf.layout.scaled_sugarheight,
-            ),
-        )
+        calculate_mouse_position(&self.mouse, display_offset, &self.sugarloaf.layout)
     }
 
     #[inline]
