@@ -28,7 +28,7 @@ use winit::window::raw_window_handle::HasRawDisplayHandle;
 // use winit::window::raw_window_handle::HasRawWindowHandle;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Dimensions;
-use crate::crosswords::pos::{Column, Line};
+use crate::crosswords::pos::Column;
 use crate::crosswords::{
     grid::Scroll,
     pos::{Pos, Side},
@@ -42,7 +42,7 @@ use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_
 use crate::screen::{
     bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
     context::ContextManager,
-    mouse::Mouse,
+    mouse::{calculate_mouse_position, Mouse},
 };
 use crate::selection::{Selection, SelectionType};
 use messenger::Messenger;
@@ -224,29 +224,21 @@ impl Screen {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let layout = &self.sugarloaf.layout;
-        let mouse_x_f32 = self.mouse.x as f32;
-        let scaled_margin_x = layout.margin.x * self.sugarloaf.layout.scale_factor;
-        // println!("mouse_x_f32 {:?}", mouse_x_f32);
-        // println!("layout.margin.x {:?}", layout.margin.x);
-
-        let col: Column = if scaled_margin_x >= mouse_x_f32 {
-            Column(0)
-        } else {
-            let col = ((mouse_x_f32 - scaled_margin_x) / layout.scaled_sugarwidth).floor()
-                as usize;
-            std::cmp::min(Column(col), Column(layout.columns))
-        };
-
-        // println!("{:?}", col);
-
-        let row = self.mouse.y.saturating_sub(
-            (layout.margin.top_y * 2. * self.sugarloaf.layout.scale_factor) as usize,
-        ) / layout.scaled_sugarheight as usize;
-        let calc_row = std::cmp::min(row, layout.lines - 1);
-        let row = Line(calc_row as i32) - (display_offset);
-
-        Pos::new(row, col)
+        calculate_mouse_position(
+            &self.mouse,
+            display_offset,
+            self.sugarloaf.layout.scale_factor,
+            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
+            self.sugarloaf.layout.margin.x,
+            (
+                self.sugarloaf.layout.margin.top_y,
+                self.sugarloaf.layout.margin.bottom_y,
+            ),
+            (
+                self.sugarloaf.layout.scaled_sugarwidth,
+                self.sugarloaf.layout.scaled_sugarheight,
+            ),
+        )
     }
 
     #[inline]
