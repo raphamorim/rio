@@ -230,10 +230,7 @@ impl Screen {
             self.sugarloaf.layout.scale_factor,
             (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
             self.sugarloaf.layout.margin.x,
-            (
-                self.sugarloaf.layout.margin.top_y,
-                self.sugarloaf.layout.margin.bottom_y,
-            ),
+            self.sugarloaf.layout.margin.top_y,
             (
                 self.sugarloaf.layout.scaled_sugarwidth,
                 self.sugarloaf.layout.scaled_sugarheight,
