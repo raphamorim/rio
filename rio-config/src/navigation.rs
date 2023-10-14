@@ -40,7 +40,7 @@ impl NavigationMode {
 
 #[inline]
 pub fn modes_as_vec_string() -> Vec<String> {
-    vec![
+    [
         NavigationMode::Plain,
         NavigationMode::CollapsedTab,
         NavigationMode::TopTab,
