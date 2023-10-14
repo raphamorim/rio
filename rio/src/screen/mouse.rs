@@ -71,7 +71,7 @@ pub fn calculate_mouse_position(
     let col: Column = if scaled_margin_x >= mouse_x_f32 {
         Column(0)
     } else {
-        let col = ((mouse_x_f32 - margin_x) / cell_dimension.0).floor() as usize;
+        let col = ((mouse_x_f32 - margin_x) / cell_dimension.0.floor()).floor() as usize;
         std::cmp::min(Column(col), Column(config_columns_rows.0))
     };
 
