@@ -3,7 +3,6 @@ use crate::crosswords::pos::Line;
 use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use crate::screen::Pos;
-use std::rc::Rc;
 use std::time::Instant;
 use winit::event::ElementState;
 use winit::event::MouseButton;
@@ -61,6 +60,8 @@ impl Mouse {
             ..Default::default()
         }
     }
+
+    #[inline]
     pub fn set_multiplier(&mut self, multiplier: f64) {
         self.multiplier = multiplier;
     }
