@@ -81,7 +81,7 @@ pub fn default_window_height() -> i32 {
 }
 
 pub fn default_scroll_multiplier() -> f64 {
-    2.0
+    3.0
 }
 
 pub fn default_config_file_content() -> String {

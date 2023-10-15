@@ -37,7 +37,7 @@ pub struct Mouse {
 impl Default for Mouse {
     fn default() -> Mouse {
         Mouse {
-            multiplier: 2.0,
+            multiplier: 3.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
             left_button_state: ElementState::Released,
@@ -55,14 +55,14 @@ impl Default for Mouse {
 }
 
 impl Mouse {
-    pub fn new(config: &Rc<rio_config::Config>) -> Self {
+    pub fn new(multiplier: f64) -> Self {
         Self {
-            multiplier: config.scroll_multiplier,
+            multiplier,
             ..Default::default()
         }
     }
-    pub fn update_multiplier(&mut self, config: &Rc<rio_config::Config>) {
-        self.multiplier = config.scroll_multiplier;
+    pub fn set_multiplier(&mut self, multiplier: f64) {
+        self.multiplier = multiplier;
     }
 }
 
