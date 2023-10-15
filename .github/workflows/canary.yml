@@ -44,11 +44,11 @@ jobs:
           echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
           echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
 
-      - uses: dev-drprasad/delete-tag-and-release@v1.0
-        with:
-          tag_name: canary
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          delete_release: true
+      # - uses: dev-drprasad/delete-tag-and-release@v1.0
+      #   with:
+      #     tag_name: canary
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     delete_release: true
 
       - name: Bump version and push tag
         id: tag_version
