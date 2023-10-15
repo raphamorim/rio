@@ -11,7 +11,7 @@ env:
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
   RUSTFLAGS: '-C link-arg=-s'
-  CANARY_TAG: canary-${{ github.sha }}
+  CANARY_TAG: canary
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
@@ -44,12 +44,18 @@ jobs:
           echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
           echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
 
+      - uses: dev-drprasad/delete-tag-and-release@v1.0
+        with:
+          tag_name: canary
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_release: true
+
       - name: Bump version and push tag
         id: tag_version
         if: steps.changed-files-excluded.outputs.any_changed == 'true'
         uses: mathieudutour/github-tag-action@v6.1
         with:
-          custom_tag: 'canary-${{ github.sha }}'
+          custom_tag: 'canary'
           tag_prefix: ''
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
