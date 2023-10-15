@@ -102,6 +102,8 @@ pub struct Config {
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
     pub cursor: char,
+    #[serde(default = "default_scroll_multiplier", rename = "scroll-multiplier")]
+    pub scroll_multiplier: f64,
     #[serde(default = "default_env_vars", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -346,6 +348,7 @@ impl Default for Config {
             bindings: Bindings::default(),
             colors: Colors::default(),
             cursor: default_cursor(),
+            scroll_multiplier: default_scroll_multiplier(),
             developer: Developer::default(),
             disable_unfocused_render: false,
             env_vars: default_env_vars(),

@@ -53,6 +53,20 @@ impl Default for Mouse {
     }
 }
 
+impl Mouse {
+    pub fn new(multiplier: f64) -> Self {
+        Self {
+            multiplier,
+            ..Default::default()
+        }
+    }
+
+    #[inline]
+    pub fn set_multiplier(&mut self, multiplier: f64) {
+        self.multiplier = multiplier;
+    }
+}
+
 #[inline]
 pub fn calculate_mouse_position(
     mouse: &Mouse,
