@@ -184,7 +184,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
 
     sugarloaf.text(
         (70., sugarloaf.layout.margin.top_y + 50.),
-        "Woops! Rio got errors".to_string(),
+        String::from("Woops! Rio got errors"),
         FONT_ID_BUILTIN,
         28.,
         [1., 1., 1., 1.],
@@ -195,7 +195,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
         if report.level == AssistantReportLevel::Error {
             sugarloaf.text(
                 (70., sugarloaf.layout.margin.top_y + 80.),
-                "after fix it, restart the terminal".to_string(),
+                String::from("after fix it, restart the terminal"),
                 FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
@@ -206,7 +206,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
         if report.level == AssistantReportLevel::Warning {
             sugarloaf.text(
                 (70., sugarloaf.layout.margin.top_y + 80.),
-                "(press enter to continue)".to_string(),
+                String::from("(press enter to continue)"),
                 FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
