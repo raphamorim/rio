@@ -962,7 +962,7 @@ impl Sequencer {
 
                     Event::RedrawRequested(window_id) => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
-                            // let start = std::time::Instant::now();
+                            let start = std::time::Instant::now();
 
                             #[cfg(target_os = "macos")]
                             {
@@ -1002,8 +1002,8 @@ impl Sequencer {
                             }
 
                             // route.window.screen.render();
-                            // let duration = start.elapsed();
-                            // println!("Time elapsed in render() is: {:?}", duration);
+                            let duration = start.elapsed();
+                            println!("Time elapsed in render() is: {:?}", duration);
                         }
                         // }
                         *control_flow = ControlFlow::Wait;

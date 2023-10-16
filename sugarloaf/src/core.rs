@@ -1,4 +1,5 @@
 use crate::components::rect::Rect;
+use crate::glyph::FontId;
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -8,6 +9,47 @@ pub struct Sugar {
     pub background_color: [f32; 4],
     pub style: Option<SugarStyle>,
     pub decoration: Option<SugarDecoration>,
+}
+
+#[derive(Debug)]
+pub struct TextBuilder {
+    pub content: String,
+    pub font_id: FontId,
+    pub scale: f32,
+    pub color: [f32; 4],
+    has_initialized: bool
+}
+
+impl TextBuilder {
+    pub fn new(font_id: FontId) -> TextBuilder {
+        TextBuilder {
+            content: String::from(""),
+            font_id,
+            color: [0., 0., 0., 0.],
+            scale: 0.0,
+            has_initialized: false,
+        }
+    }
+
+    #[inline]
+    pub fn add(&mut self, content: &str, scale: f32, font_id: FontId, color: [f32; 4]) {
+        // has not initialized yet
+        if self.has_initialized == false {
+            self.scale = scale;
+            self.font_id = font_id;
+            self.color = color;
+            self.content = content.to_string();
+            self.has_initialized = true;
+        } else {
+            self.content += &content;
+        }
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        // has not initialized yet
+        self.has_initialized = false;
+    }
 }
 
 #[derive(Debug)]
@@ -31,12 +73,6 @@ impl RectBuilder {
             height: 0.,
         }
     }
-
-    // scaled_rect_pos_x,
-    //             scaled_rect_pos_y,
-    //             bg_color,
-    //             width_bound,
-    //             self.layout.sugarheight,
 
     #[inline]
     pub fn add(
