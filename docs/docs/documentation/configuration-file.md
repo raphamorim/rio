@@ -126,7 +126,7 @@ performance = "High"
 #
 # You can also specify extra fonts to load
 # [fonts]
-# 	extras = [{ family = "Microsoft JhengHei" }]
+# extras = [{ family = "Microsoft JhengHei" }]
 #
 #
 # Example:
@@ -188,15 +188,15 @@ performance = "High"
 #
 # Example 1 using fish shell from bin path:
 #
-#  shell = { program = "/bin/fish", args = ["--login"] }
+# shell = { program = "/bin/fish", args = ["--login"] }
 #
 # Example 2 for Windows using powershell
 #
-#   shell = { program = "pwsh", args = [] }
+# shell = { program = "pwsh", args = [] }
 #
 # Example 3 for Windows using powershell with login
 #
-#   shell = { program = "pwsh", args = ["-l"] }
+# shell = { program = "pwsh", args = ["-l"] }
 
 # Startup directory
 #

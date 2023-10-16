@@ -103,6 +103,7 @@ blinking-cursor = false
 #
 # Default is false
 #
+# Example:
 # ignore-selection-fg-color = false
 
 # Performance
@@ -119,22 +120,22 @@ performance = "High"
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
-# Example
-#   theme = "dracula"
+# Example:
+# theme = "dracula"
 
 # Padding-x
 #
 # define x axis padding (default is 10)
 #
-# Example
-#   padding-x = 10
+# Example:
+# padding-x = 10
 
 # Option as Alt
 #
 # This config only works on MacOs.
 # Possible choices: 'both', 'left' and 'right'.
 #
-# Example
+# Example:
 # option-as-alt = 'left'
 
 # Window configuration
@@ -150,11 +151,11 @@ performance = "High"
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
-# Example
-#   [window]
-#   width = 600
-#   height = 400
-#   mode = "Windowed"
+# Example:
+# [window]
+# width = 600
+# height = 400
+# mode = "Windowed"
 
 # Background configuration
 #
@@ -166,7 +167,7 @@ performance = "High"
 # • image - Set an image as background
 #   Default: None
 #
-# Example
+# Example:
 # [background]
 # mode = "Image"
 # opacity = 1.0
@@ -183,8 +184,8 @@ performance = "High"
 # window-height changes the inital window height.
 #   Default: 400
 #
-# Example
-#   window-height = 400
+# Example:
+# window-height = 400
 
 # Fonts
 #
@@ -197,29 +198,34 @@ performance = "High"
 # [fonts]
 #   family = "cascadiamono"
 #
-# Example
-#   [fonts]
-#   size = 18
+# You can also specify extra fonts to load
+# [fonts]
+# extras = [{ family = "Microsoft JhengHei" }]
 #
-#   [fonts.regular]
-#   family = "cascadiamono"
-#   style = "normal"
-#   weight = 400
 #
-#   [fonts.bold]
-#   family = "cascadiamono"
-#   style = "normal"
-#   weight = 800
+# Example:
+# [fonts]
+# size = 18
 #
-#   [fonts.italic]
-#   family = "cascadiamono"
-#   style = "italic"
-#   weight = 400
+# [fonts.regular]
+# family = "cascadiamono"
+# style = "normal"
+# weight = 400
 #
-#   [fonts.bold-italic]
-#   family = "cascadiamono"
-#   style = "italic"
-#   weight = 800
+# [fonts.bold]
+# family = "cascadiamono"
+# style = "normal"
+# weight = 800
+#
+# [fonts.italic]
+# family = "cascadiamono"
+# style = "italic"
+# weight = 400
+#
+# [fonts.bold-italic]
+# family = "cascadiamono"
+# style = "italic"
+# weight = 800
 
 # Navigation
 #
@@ -236,13 +242,13 @@ performance = "High"
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
 # "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
-# Example
-#   [navigation]
-#   mode = "CollapsedTab"
-#   clickable = false
-#   use-current-path = false
-#   color-automation = []
-#   macos-hide-window-buttons = false
+# Example:
+# [navigation]
+# mode = "CollapsedTab"
+# clickable = false
+# use-current-path = false
+# color-automation = []
+# macos-hide-window-buttons = false
 
 # Shell
 #
@@ -256,15 +262,15 @@ performance = "High"
 #
 # Example 1 using fish shell from bin path:
 #
-#   shell = { program = "/bin/fish", args = ["--login"] }
+# shell = { program = "/bin/fish", args = ["--login"] }
 #
 # Example 2 for Windows using powershell
 #
-#   shell = { program = "pwsh", args = [] }
+# shell = { program = "pwsh", args = [] }
 #
 # Example 3 for Windows using powershell with login
 #
-#   shell = { program = "pwsh", args = ["-l"] }
+# shell = { program = "pwsh", args = ["-l"] }
 
 # Startup directory
 #
@@ -273,23 +279,23 @@ performance = "High"
 #
 # This configuration only has effect if use-fork is disabled
 #
-# Example
-#  working-dir = "/Users/raphael/Documents/"
+# Example:
+# working-dir = "/Users/raphael/Documents/"
 
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars
 # please do not copy this if you do not need
 #
-# Example
-#   env-vars = []
+# Example:
+# env-vars = []
 
 # Disable render when unfocused
 #
 # This property disable renderer processes while Rio is unfocused.
 #
-# Example
-#   disable-renderer-when-unfocused = false
+# Example:
+# disable-renderer-when-unfocused = false
 
 # Use fork
 #
@@ -297,8 +303,8 @@ performance = "High"
 # MacOS: spawn processes
 # Linux/BSD: fork processes
 #
-# Example
-#   use-fork = false
+# Example:
+# use-fork = false
 
 # Colors
 #
@@ -306,37 +312,36 @@ performance = "High"
 # (considering if theme folder does exists and is being used)
 #
 # Example:
-#
-#   [colors]
-#   background = '#0F0D0E'
-#   foreground = '#F9F4DA'
-#   cursor = '#F38BA3'
-#   tabs = '#443d40'
-#   tabs-active = '#F38BA3'
-#   green = '#0BA95B'
-#   red = '#ED203D'
-#   blue = '#12B5E5'
-#   yellow = '#FCBA28'
+# [colors]
+# background = '#0F0D0E'
+# foreground = '#F9F4DA'
+# cursor = '#F38BA3'
+# tabs = '#443d40'
+# tabs-active = '#F38BA3'
+# green = '#0BA95B'
+# red = '#ED203D'
+# blue = '#12B5E5'
+# yellow = '#FCBA28'
 
 # Bindings
 #
 # Create custom Key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 #
-# Example
-#   [bindings]
-#   keys = [
-#     { key = "q", with = "super", action = "Quit" },
-#     # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-#     { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
-#   ]
+# Example:
+# [bindings]
+# keys = [
+#   { key = "q", with = "super", action = "Quit" },
+#   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+#   { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+# ]
 
 # Log level
 #
 # This property enables log level filter. Default is "OFF".
 #
-# Example
-#   [developer]
-#   log-level = "OFF"
+# Example:
+# [developer]
+# log-level = "OFF"
 "#.to_string()
 }
