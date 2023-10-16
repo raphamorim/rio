@@ -1,5 +1,5 @@
 ---
-title: 'Build from source'
+title: 'Build Rio from source'
 language: 'en'
 ---
 
