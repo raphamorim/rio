@@ -39,7 +39,14 @@ impl RectBuilder {
     //             self.layout.sugarheight,
 
     #[inline]
-    pub fn add(&mut self, pos_x: f32, pos_y: f32, color: [f32; 4], width: f32, height: f32) {
+    pub fn add(
+        &mut self,
+        pos_x: f32,
+        pos_y: f32,
+        color: [f32; 4],
+        width: f32,
+        height: f32,
+    ) {
         // RectBuilder is empty
         if self.quantity == 0 {
             self.pos_x = pos_x;
