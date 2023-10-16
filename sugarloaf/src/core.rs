@@ -1,3 +1,4 @@
+use crate::components::rect::Rect;
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -7,6 +8,81 @@ pub struct Sugar {
     pub background_color: [f32; 4],
     pub style: Option<SugarStyle>,
     pub decoration: Option<SugarDecoration>,
+}
+
+#[derive(Debug)]
+pub struct RectBuilder {
+    pub color: [f32; 4],
+    pub quantity: usize,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl RectBuilder {
+    pub fn new(quantity: usize) -> RectBuilder {
+        RectBuilder {
+            quantity,
+            color: [0., 0., 0., 0.],
+            pos_x: 0.,
+            pos_y: 0.,
+            width: 0.,
+            height: 0.,
+        }
+    }
+
+    // scaled_rect_pos_x,
+    //             scaled_rect_pos_y,
+    //             bg_color,
+    //             width_bound,
+    //             self.layout.sugarheight,
+
+    #[inline]
+    pub fn add(
+        &mut self,
+        pos_x: f32,
+        pos_y: f32,
+        color: [f32; 4],
+        width: f32,
+        height: f32,
+    ) {
+        // RectBuilder is empty
+        if self.quantity == 0 {
+            self.pos_x = pos_x;
+            self.pos_y = pos_y;
+            self.color = color;
+            self.width = width;
+            self.height = height;
+        } else {
+            self.width += width;
+        }
+
+        self.quantity += 1;
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        self.color = [0., 0., 0., 0.];
+        self.pos_x = 0.;
+        self.pos_y = 0.;
+        self.width = 0.;
+        self.height = 0.;
+        self.quantity = 0;
+    }
+
+    #[inline]
+    pub fn build(&mut self) -> Rect {
+        let position = [self.pos_x, self.pos_y];
+        let color = self.color;
+        let size = [self.width, self.height];
+        self.reset();
+        Rect {
+            position,
+            color,
+            size,
+        }
+    }
 }
 
 #[derive(Debug)]

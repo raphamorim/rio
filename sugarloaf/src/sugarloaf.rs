@@ -3,7 +3,7 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{ImageProperties, RepeatedSugar, Sugar, SugarStack};
+use crate::core::{ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
@@ -314,13 +314,13 @@ impl Sugarloaf {
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
         let mut x = 0.;
-        let mut sections = vec![];
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.scaled_sugarheight / 2.;
 
         let sugar_x = self.layout.scaled_sugarwidth;
         let sugar_width = self.layout.sugarwidth * 2.;
 
+        let mut rect_builder = RectBuilder::new(0);
         let mut repeated = RepeatedSugar::new(0);
 
         let text_bound = self.layout.sugarheight * self.ctx.scale;
@@ -376,10 +376,11 @@ impl Sugarloaf {
             let rect_pos_y = self.text_y + mod_pos_y;
             let width_bound = sugar_width * sugar_char_width;
 
-            let mut quantity = 1;
-            if repeated.count() > 0 {
-                quantity += repeated.count();
-            }
+            let quantity = if repeated.count() > 0 {
+                1 + repeated.count()
+            } else {
+                1
+            };
 
             let sugar_str = if quantity > 1 {
                 repeated.content_str.to_owned()
@@ -430,17 +431,24 @@ impl Sugarloaf {
                     .h_align(crate::glyph::HorizontalAlign::Left),
             };
 
-            sections.push(section);
+            self.text_brush.queue(&section);
 
             let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
             let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
-            self.rects.push(Rect {
-                position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                color: bg_color,
-                size: [width_bound * quantity as f32, self.layout.sugarheight],
-            });
 
+            // The decoration cannot be added before the rect otherwise can lead
+            // to issues in the renderer, therefore we need check if decoration does exists
             if let Some(decoration) = &stack[i].decoration {
+                if rect_builder.quantity >= 1 {
+                    self.rects.push(rect_builder.build());
+                }
+
+                self.rects.push(Rect {
+                    position: [scaled_rect_pos_x, scaled_rect_pos_y],
+                    color: bg_color,
+                    size: [width_bound * quantity as f32, self.layout.sugarheight],
+                });
+
                 let dec_pos_y = (scaled_rect_pos_y)
                     + (decoration.relative_position.1 * self.layout.line_height);
                 self.rects.push(Rect {
@@ -456,6 +464,20 @@ impl Sugarloaf {
                         (self.layout.sugarheight) * decoration.size.1,
                     ],
                 });
+            } else {
+                rect_builder.add(
+                    scaled_rect_pos_x,
+                    scaled_rect_pos_y,
+                    bg_color,
+                    width_bound * quantity as f32,
+                    self.layout.sugarheight,
+                );
+
+                let is_last = i == size - 1;
+                // If the next rect background color is different the push rect
+                if is_last || rect_builder.color != stack[i + 1].background_color {
+                    self.rects.push(rect_builder.build());
+                }
             }
 
             if repeated.reset_on_next() {
@@ -465,9 +487,6 @@ impl Sugarloaf {
             x += add_pos_x;
         }
 
-        for section in sections {
-            self.text_brush.queue(&section);
-        }
         self.text_y += self.layout.scaled_sugarheight;
     }
 

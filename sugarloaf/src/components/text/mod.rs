@@ -60,14 +60,14 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     /// [`queue`](struct.GlyphBrush.html#method.queue)
     ///
     /// Benefits from caching, see [caching behaviour](#caching-behaviour).
-    // #[inline]
-    // pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    // where
-    //     G: GlyphPositioner,
-    //     S: Into<Cow<'a, Section<'a>>>,
-    // {
-    //     self.glyph_brush.queue_custom_layout(section, custom_layout)
-    // }
+    #[inline]
+    pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
+    where
+        G: GlyphPositioner,
+        S: Into<Cow<'a, Section<'a>>>,
+    {
+        self.glyph_brush.queue_custom_layout(section, custom_layout)
+    }
 
     /// Queues pre-positioned glyphs to be processed by the next call of
     /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be

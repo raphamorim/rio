@@ -149,7 +149,7 @@ pub fn config_to_settings(
                 title: String::from("New tabs using current path"),
                 options,
                 current_option,
-                requires_restart: false,
+                requires_restart: true,
             },
         );
     }
@@ -311,6 +311,15 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
     }
 
     {
+        if let Some(setting) = settings.get(&IDX_PADDING_X) {
+            let val = setting.options[setting.current_option]
+                .parse::<f32>()
+                .unwrap_or_else(|_| rio_config::defaults::default_padding_x());
+            current_config.padding_x = val;
+        }
+    }
+
+    {
         if let Some(setting) = settings.get(&IDX_OPTION_AS_ALT) {
             current_config.option_as_alt =
                 setting.options[setting.current_option].to_owned();
@@ -320,7 +329,7 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
     {
         if let Some(setting) = settings.get(&IDX_USE_CURRENT_PATH) {
             current_config.navigation.use_current_path =
-                setting.options[setting.current_option] == *"true";
+                setting.options[setting.current_option].to_lowercase() == *"true";
         }
     }
 
