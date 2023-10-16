@@ -314,7 +314,6 @@ impl Sugarloaf {
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
         let mut x = 0.;
-        let mut sections = vec![];
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.scaled_sugarheight / 2.;
 
@@ -336,8 +335,7 @@ impl Sugarloaf {
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
             let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-            let is_not_last = i < size - 1;            
-            if is_not_last
+            if i < size - 1
                 && cached_sugar.char_width <= 1.
                 && stack[i].content == stack[i + 1].content
                 && stack[i].foreground_color == stack[i + 1].foreground_color
@@ -433,37 +431,24 @@ impl Sugarloaf {
                     .h_align(crate::glyph::HorizontalAlign::Left),
             };
 
-            sections.push(section);
+            self.text_brush.queue(&section);
 
             let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
             let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
 
-            // If there's any repetition then just use straight from RepeatedSugar
-            if quantity > 1 || stack[i].decoration.is_some() || !is_not_last {
+            // The decoration cannot be added before the rect otherwise can lead
+            // to issues in the renderer, therefore we need check if decoration does exists
+            if let Some(decoration) = &stack[i].decoration {
+                if rect_builder.quantity >= 1 {
+                    self.rects.push(rect_builder.build());
+                }
+
                 self.rects.push(Rect {
                     position: [scaled_rect_pos_x, scaled_rect_pos_y],
                     color: bg_color,
                     size: [width_bound * quantity as f32, self.layout.sugarheight],
                 });
-            } else {
-                // Whenever the quantity is only 1
-                if rect_builder.quantity == 0 {
-                    rect_builder.add(
-                        scaled_rect_pos_x,
-                        scaled_rect_pos_y,
-                        bg_color,
-                        width_bound,
-                        self.layout.sugarheight,
-                    );
-                }
 
-                // If the next rect is different
-                if rect_builder.color != stack[i + 1].background_color || stack[i + 1].decoration.is_some() {
-                    self.rects.push(rect_builder.build());
-                }
-            }
-
-            if let Some(decoration) = &stack[i].decoration {
                 let dec_pos_y = (scaled_rect_pos_y)
                     + (decoration.relative_position.1 * self.layout.line_height);
                 self.rects.push(Rect {
@@ -479,6 +464,20 @@ impl Sugarloaf {
                         (self.layout.sugarheight) * decoration.size.1,
                     ],
                 });
+            } else {
+                rect_builder.add(
+                    scaled_rect_pos_x,
+                    scaled_rect_pos_y,
+                    bg_color,
+                    width_bound * quantity as f32,
+                    self.layout.sugarheight,
+                );
+
+                let is_last = i == size - 1;
+                // If the next rect background color is different the push rect
+                if is_last || rect_builder.color != stack[i + 1].background_color {
+                    self.rects.push(rect_builder.build());
+                }
             }
 
             if repeated.reset_on_next() {
@@ -488,9 +487,6 @@ impl Sugarloaf {
             x += add_pos_x;
         }
 
-        for section in sections {
-            self.text_brush.queue(&section);
-        }
         self.text_y += self.layout.scaled_sugarheight;
     }
 
@@ -717,8 +713,6 @@ impl Sugarloaf {
                     self.layer_brush
                         .render_with_encoder(0, view, &mut encoder, None);
                 }
-
-                println!("rects {:?}", self.rects.len());
 
                 self.rect_brush.render(
                     &mut encoder,
