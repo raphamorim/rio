@@ -3,7 +3,7 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack};
+use crate::core::{ImageProperties, RectBuilder, TextBuilder, RepeatedSugar, Sugar, SugarStack};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
@@ -321,6 +321,7 @@ impl Sugarloaf {
         let sugar_width = self.layout.sugarwidth * 2.;
 
         let mut rect_builder = RectBuilder::new(0);
+        let mut text_builder = TextBuilder::new(FontId(FONT_ID_REGULAR));
         let mut repeated = RepeatedSugar::new(0);
 
         let text_bound = self.layout.sugarheight * self.ctx.scale;
@@ -382,32 +383,10 @@ impl Sugarloaf {
                 1
             };
 
-            let sugar_str = if quantity > 1 {
+            let sugar_str: String = if quantity > 1 {
                 repeated.content_str.to_owned()
             } else {
                 stack[i].content.to_string()
-            };
-
-            let fg_color = if quantity > 1 {
-                repeated.foreground_color
-            } else {
-                stack[i].foreground_color
-            };
-
-            let bg_color = if quantity > 1 {
-                repeated.background_color
-            } else {
-                stack[i].background_color
-            };
-
-            let text = crate::components::text::OwnedText {
-                text: sugar_str,
-                scale: PxScale::from(scale),
-                font_id,
-                extra: crate::components::text::Extra {
-                    color: fg_color,
-                    z: 0.0,
-                },
             };
 
             let section_pos_x = if quantity > 1 {
@@ -422,16 +401,35 @@ impl Sugarloaf {
                 mod_text_y + self.text_y + mod_pos_y
             };
 
-            let section = crate::components::text::OwnedSection {
-                screen_position: (section_pos_x, section_pos_y),
-                bounds: (width_bound * quantity as f32, text_bound),
-                text: vec![text],
-                layout: crate::glyph::Layout::default_single_line()
-                    .v_align(crate::glyph::VerticalAlign::Center)
-                    .h_align(crate::glyph::HorizontalAlign::Left),
-            };
+            // TODO: Accept diferent colors
+            // TODO: Section should also be saved in text builder
+            if text_builder.font_id != font_id {
+                let text = crate::components::text::OwnedText {
+                    text: text_builder.content.to_owned(),
+                    scale: PxScale::from(text_builder.scale),
+                    font_id: text_builder.font_id,
+                    extra: crate::components::text::Extra {
+                        color: text_builder.color,
+                        z: 0.0,
+                    },
+                };
 
-            self.text_brush.queue(&section);
+                let section = crate::components::text::OwnedSection {
+                    screen_position: (section_pos_x, section_pos_y),
+                    bounds: (width_bound * quantity as f32, text_bound),
+                    text: vec![text],
+                    layout: crate::glyph::Layout::default_single_line()
+                        .v_align(crate::glyph::VerticalAlign::Center)
+                        .h_align(crate::glyph::HorizontalAlign::Left),
+                };
+
+                text_builder.reset();
+
+                self.text_brush.queue(&section);
+            } else {
+                // content: &str, scale: f32, font_id: FontId, color: [f32; 4]
+                text_builder.add(&sugar_str, scale, font_id, stack[i].foreground_color);
+            }
 
             let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
             let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
@@ -445,7 +443,7 @@ impl Sugarloaf {
 
                 self.rects.push(Rect {
                     position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                    color: bg_color,
+                    color: stack[i].background_color,
                     size: [width_bound * quantity as f32, self.layout.sugarheight],
                 });
 
@@ -468,7 +466,7 @@ impl Sugarloaf {
                 rect_builder.add(
                     scaled_rect_pos_x,
                     scaled_rect_pos_y,
-                    bg_color,
+                    stack[i].background_color,
                     width_bound * quantity as f32,
                     self.layout.sugarheight,
                 );
