@@ -30,6 +30,7 @@ keys = [
 
 #### Other changes
 
+- Rendering performance small improvements towards to Sugar text for regular font, dropped in redudancy processing.
 - Rendering performance small improvements towards to Sugar rect calculation, dropped in redudancy processing. Now Sugarloaf computes better Rects duplication in a line. It gains significant performance for large screens (avg ~12ms).
 - Fix Backspace behaviour misplace on Windows (Ref https://github.com/raphamorim/rio/issues/220).
 - `ClearHistory` key binding is available to use per configuration file.

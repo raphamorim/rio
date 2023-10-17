@@ -17,7 +17,9 @@ pub struct TextBuilder {
     pub font_id: FontId,
     pub scale: f32,
     pub color: [f32; 4],
-    has_initialized: bool
+    pub pos_x: f32,
+    pub width_bound: f32,
+    pub has_initialized: bool,
 }
 
 impl TextBuilder {
@@ -27,21 +29,32 @@ impl TextBuilder {
             font_id,
             color: [0., 0., 0., 0.],
             scale: 0.0,
+            width_bound: 0.0,
+            pos_x: 0.0,
             has_initialized: false,
         }
     }
 
     #[inline]
-    pub fn add(&mut self, content: &str, scale: f32, font_id: FontId, color: [f32; 4]) {
+    pub fn add(
+        &mut self,
+        content: &str,
+        scale: f32,
+        color: [f32; 4],
+        pos_x: f32,
+        width_bound: f32,
+    ) {
         // has not initialized yet
-        if self.has_initialized == false {
+        if !self.has_initialized {
             self.scale = scale;
-            self.font_id = font_id;
             self.color = color;
+            self.pos_x = pos_x;
+            self.width_bound = width_bound;
             self.content = content.to_string();
             self.has_initialized = true;
         } else {
             self.content += &content;
+            self.width_bound += width_bound;
         }
     }
 
