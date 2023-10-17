@@ -114,8 +114,8 @@ bitflags! {
         const APP_KEYPAD          = 0b0000_0010;
         const ALT_SCREEN          = 0b0000_0100;
         const VI                  = 0b0000_1000;
-        const DISAMBIGUATE_KEYS   = 0b0010_0000;
-        const ALL_KEYS_AS_ESC     = 0b0100_0000;
+        // const DISAMBIGUATE_KEYS   = 0b0010_0000;
+        // const ALL_KEYS_AS_ESC     = 0b0100_0000;
     }
 }
 
@@ -125,14 +125,14 @@ impl BindingMode {
         binding_mode.set(BindingMode::APP_CURSOR, mode.contains(Mode::APP_CURSOR));
         binding_mode.set(BindingMode::APP_KEYPAD, mode.contains(Mode::APP_KEYPAD));
         binding_mode.set(BindingMode::ALT_SCREEN, mode.contains(Mode::ALT_SCREEN));
-        binding_mode.set(
-            BindingMode::DISAMBIGUATE_KEYS,
-            mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES),
-        );
-        binding_mode.set(
-            BindingMode::ALL_KEYS_AS_ESC,
-            mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC),
-        );
+        // binding_mode.set(
+        //     BindingMode::DISAMBIGUATE_KEYS,
+        //     mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES),
+        // );
+        // binding_mode.set(
+        //     BindingMode::ALL_KEYS_AS_ESC,
+        //     mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC),
+        // );
         binding_mode.set(BindingMode::VI, mode.contains(Mode::VI));
         binding_mode
     }
@@ -504,9 +504,8 @@ pub fn default_key_bindings(
         Copy,  +BindingMode::VI; Action::ClearSelection;
         Paste, ~BindingMode::VI; Action::Paste;
         "l", ModifiersState::CONTROL; Action::ClearLogNotice;
-        "l", ModifiersState::CONTROL; Action::ReceiveChar;
-        Tab,  ModifiersState::SHIFT, ~BindingMode::VI;
-            Action::Esc("\x1b[Z".into());
+        "l",  ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\x0c".into());
+        Tab,  ModifiersState::SHIFT, ~BindingMode::VI; Action::Esc("\x1b[Z".into());
         Home,     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         End,      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
         PageUp,   ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollPageUp;
@@ -529,27 +528,45 @@ pub fn default_key_bindings(
             Action::Esc("\x1b[F".into());
         ArrowUp,    +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOA".into());
-        ArrowUp,    ~BindingMode::APP_CURSOR, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC;
+        ArrowUp,    ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[A".into());
         ArrowDown,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOB".into());
-        ArrowDown,  ~BindingMode::APP_CURSOR, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC;
+        ArrowDown,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[B".into());
         ArrowRight, +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOC".into());
-        ArrowRight, ~BindingMode::APP_CURSOR, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC;
+        ArrowRight, ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[C".into());
         ArrowLeft,  +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOD".into());
-        ArrowLeft,  ~BindingMode::APP_CURSOR, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC;
+        ArrowLeft,  ~BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1b[D".into());
-        Insert,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[2~".into());
-        Delete,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[3~".into());
-        PageUp,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[5~".into());
-        PageDown,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[6~".into());
-        Backspace,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
-        Backspace, ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x1b\x7f".into());
-        Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
+        Backspace,   ~BindingMode::VI; Action::Esc("\x7f".into());
+        Insert,      ~BindingMode::VI; Action::Esc("\x1b[2~".into());
+        Delete,      ~BindingMode::VI; Action::Esc("\x1b[3~".into());
+        PageUp,      ~BindingMode::VI; Action::Esc("\x1b[5~".into());
+        PageDown,    ~BindingMode::VI; Action::Esc("\x1b[6~".into());
+        F1,          ~BindingMode::VI; Action::Esc("\x1bOP".into());
+        F2,          ~BindingMode::VI; Action::Esc("\x1bOQ".into());
+        F3,          ~BindingMode::VI; Action::Esc("\x1bOR".into());
+        F4,          ~BindingMode::VI; Action::Esc("\x1bOS".into());
+        F5,          ~BindingMode::VI; Action::Esc("\x1b[15~".into());
+        F6,          ~BindingMode::VI; Action::Esc("\x1b[17~".into());
+        F7,          ~BindingMode::VI; Action::Esc("\x1b[18~".into());
+        F8,          ~BindingMode::VI; Action::Esc("\x1b[19~".into());
+        F9,          ~BindingMode::VI; Action::Esc("\x1b[20~".into());
+        F10,         ~BindingMode::VI; Action::Esc("\x1b[21~".into());
+        F11,         ~BindingMode::VI; Action::Esc("\x1b[23~".into());
+        F12,         ~BindingMode::VI; Action::Esc("\x1b[24~".into());
+        F13,         ~BindingMode::VI; Action::Esc("\x1b[25~".into());
+        F14,         ~BindingMode::VI; Action::Esc("\x1b[26~".into());
+        F15,         ~BindingMode::VI; Action::Esc("\x1b[28~".into());
+        F16,         ~BindingMode::VI; Action::Esc("\x1b[29~".into());
+        F17,         ~BindingMode::VI; Action::Esc("\x1b[31~".into());
+        F18,         ~BindingMode::VI; Action::Esc("\x1b[32~".into());
+        F19,         ~BindingMode::VI; Action::Esc("\x1b[33~".into());
+        F20,         ~BindingMode::VI; Action::Esc("\x1b[34~".into());
 
         // VI Mode
         "j", ModifiersState::SUPER; Action::ToggleViMode;
@@ -618,7 +635,6 @@ pub fn default_key_bindings(
     // from: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
     let mut modifiers = vec![
         ModifiersState::SHIFT,
-        ModifiersState::ALT,
         ModifiersState::SHIFT | ModifiersState::ALT,
         ModifiersState::CONTROL,
         ModifiersState::SHIFT | ModifiersState::CONTROL,
@@ -626,27 +642,86 @@ pub fn default_key_bindings(
         ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
     ];
 
-    for (index, mods) in modifiers.drain(..).enumerate() {
-        if index == 1 {
-            continue;
-        }
+    // In MacOs we target the same behaviour that Terminal.app has
+    // Terminal.app does not deal with ctlseqs with ALT keys
+    #[cfg(not(target_os = "macos"))]
+    {
+        modifiers.push(ModifiersState::ALT);
+    }
 
+    for (index, mods) in modifiers.drain(..).enumerate() {
         let modifiers_code = index + 2;
         bindings.extend(bindings!(
             KeyBinding;
-            Delete,      mods, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc(format!("\x1b[3;{}~", modifiers_code));
-            ArrowUp,     mods, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc(format!("\x1b[1;{}A", modifiers_code));
-            ArrowDown,   mods, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc(format!("\x1b[1;{}B", modifiers_code));
-            ArrowRight,  mods, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc(format!("\x1b[1;{}C", modifiers_code));
-            ArrowLeft,   mods, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc(format!("\x1b[1;{}D", modifiers_code));
+            Delete, mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[3;{}~", modifiers_code));
+            ArrowUp,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}A", modifiers_code));
+            ArrowDown,   mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}B", modifiers_code));
+            ArrowRight,  mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}C", modifiers_code));
+            ArrowLeft,   mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}D", modifiers_code));
+            F1,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}P", modifiers_code));
+            F2,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}Q", modifiers_code));
+            F3,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}R", modifiers_code));
+            F4,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[1;{}S", modifiers_code));
+            F5,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[15;{}~", modifiers_code));
+            F6,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[17;{}~", modifiers_code));
+            F7,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[18;{}~", modifiers_code));
+            F8,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[19;{}~", modifiers_code));
+            F9,     mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[20;{}~", modifiers_code));
+            F10,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[21;{}~", modifiers_code));
+            F11,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[23;{}~", modifiers_code));
+            F12,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[24;{}~", modifiers_code));
+            F13,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[25;{}~", modifiers_code));
+            F14,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[26;{}~", modifiers_code));
+            F15,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[28;{}~", modifiers_code));
+            F16,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[29;{}~", modifiers_code));
+            F17,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[31;{}~", modifiers_code));
+            F18,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[32;{}~", modifiers_code));
+            F19,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[33;{}~", modifiers_code));
+            F20,    mods, ~BindingMode::VI;
+                Action::Esc(format!("\x1b[34;{}~", modifiers_code));
         ));
-    }
 
-    bindings.extend(bindings!(
-        KeyBinding;
-        ArrowUp,     ModifiersState::ALT, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[1;3A".into());
-        ArrowDown,   ModifiersState::ALT, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[1;3B".into());
-    ));
+        // We're adding the following bindings with `Shift` manually above, so skipping them here.
+        if modifiers_code != 2 {
+            bindings.extend(bindings!(
+                KeyBinding;
+                Insert,   mods, ~BindingMode::VI;
+                    Action::Esc(format!("\x1b[2;{}~", modifiers_code));
+                PageUp,   mods, ~BindingMode::VI;
+                    Action::Esc(format!("\x1b[5;{}~", modifiers_code));
+                PageDown, mods, ~BindingMode::VI;
+                    Action::Esc(format!("\x1b[6;{}~", modifiers_code));
+                End,      mods, ~BindingMode::VI;
+                    Action::Esc(format!("\x1b[1;{}F", modifiers_code));
+                Home,     mods, ~BindingMode::VI;
+                    Action::Esc(format!("\x1b[1;{}H", modifiers_code));
+            ));
+        }
+    }
 
     if !ignore_platform_key_bindings {
         bindings.extend(platform_key_bindings());
@@ -846,9 +921,11 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         "+", ModifiersState::SUPER; Action::IncreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
-        ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS;
+        Insert, ModifiersState::SHIFT, ~BindingMode::VI;
+            Action::Esc("\x1b[2;2~".into());
+        ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bb".into());
-        ArrowRight, ModifiersState::ALT,  ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS;
+        ArrowRight, ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bf".into());
         "k", ModifiersState::SUPER, ~BindingMode::VI;
             Action::Esc("\x0c".into());
@@ -935,7 +1012,7 @@ pub fn platform_key_bindings() -> Vec<KeyBinding> {
         // This is actually a Windows Powershell shortcut
         // https://github.com/alacritty/alacritty/issues/2930
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
-        Backspace, ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\u{0017}".into());
+        Backspace, ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
     )
 }
 
