@@ -67,7 +67,7 @@ fn default_font_family_variant() -> String {
 pub fn default_font_regular() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: None,
+        weight: Some(400),
         style: Some(String::from("normal")),
     }
 }
@@ -75,7 +75,7 @@ pub fn default_font_regular() -> SugarloafFont {
 pub fn default_font_bold() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: None,
+        weight: Some(800),
         style: Some(String::from("normal")),
     }
 }
@@ -83,7 +83,7 @@ pub fn default_font_bold() -> SugarloafFont {
 pub fn default_font_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: None,
+        weight: Some(400),
         style: Some(String::from("italic")),
     }
 }
@@ -91,7 +91,7 @@ pub fn default_font_italic() -> SugarloafFont {
 pub fn default_font_bold_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: None,
+        weight: Some(800),
         style: Some(String::from("italic")),
     }
 }
