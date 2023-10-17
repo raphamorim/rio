@@ -3,7 +3,9 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::text;
 use crate::context::Context;
-use crate::core::{ImageProperties, RectBuilder, TextBuilder, RepeatedSugar, Sugar, SugarStack};
+use crate::core::{
+    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack, TextBuilder,
+};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
@@ -401,15 +403,46 @@ impl Sugarloaf {
                 mod_text_y + self.text_y + mod_pos_y
             };
 
+            let is_last = i == size - 1;
+            let has_different_color = text_builder.has_initialized
+                && text_builder.color != stack[i].foreground_color;
+
+            // If the font_id is different from TextBuilder, OR is the last item of the stack,
+            // OR does the text builder color is different than current sugar needs to wrap up
+            // the text builder and also queue the current stack item.
+            //
             // TODO: Accept diferent colors
-            // TODO: Section should also be saved in text builder
-            if text_builder.font_id != font_id {
+            if text_builder.font_id != font_id || is_last || has_different_color {
+                if text_builder.has_initialized {
+                    let text = crate::components::text::OwnedText {
+                        text: text_builder.content.to_owned(),
+                        scale: PxScale::from(text_builder.scale),
+                        font_id: text_builder.font_id,
+                        extra: crate::components::text::Extra {
+                            color: text_builder.color,
+                            z: 0.0,
+                        },
+                    };
+
+                    let section = crate::components::text::OwnedSection {
+                        screen_position: (text_builder.pos_x, section_pos_y),
+                        bounds: (text_builder.width_bound, text_bound),
+                        text: vec![text],
+                        layout: crate::glyph::Layout::default_single_line()
+                            .v_align(crate::glyph::VerticalAlign::Center)
+                            .h_align(crate::glyph::HorizontalAlign::Left),
+                    };
+
+                    self.text_brush.queue(&section);
+                    text_builder.reset();
+                }
+
                 let text = crate::components::text::OwnedText {
-                    text: text_builder.content.to_owned(),
-                    scale: PxScale::from(text_builder.scale),
-                    font_id: text_builder.font_id,
+                    text: sugar_str,
+                    scale: PxScale::from(scale),
+                    font_id,
                     extra: crate::components::text::Extra {
-                        color: text_builder.color,
+                        color: stack[i].foreground_color,
                         z: 0.0,
                     },
                 };
@@ -423,12 +456,15 @@ impl Sugarloaf {
                         .h_align(crate::glyph::HorizontalAlign::Left),
                 };
 
-                text_builder.reset();
-
                 self.text_brush.queue(&section);
             } else {
-                // content: &str, scale: f32, font_id: FontId, color: [f32; 4]
-                text_builder.add(&sugar_str, scale, font_id, stack[i].foreground_color);
+                text_builder.add(
+                    &sugar_str,
+                    scale,
+                    stack[i].foreground_color,
+                    section_pos_x,
+                    width_bound * quantity as f32,
+                );
             }
 
             let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
@@ -471,7 +507,6 @@ impl Sugarloaf {
                     self.layout.sugarheight,
                 );
 
-                let is_last = i == size - 1;
                 // If the next rect background color is different the push rect
                 if is_last || rect_builder.color != stack[i + 1].background_color {
                     self.rects.push(rect_builder.build());
