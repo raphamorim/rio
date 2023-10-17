@@ -33,7 +33,7 @@ rio-proc-macros = { path = "rio-proc-macros", version = "0.0.22" }
 copa = { path = "copa", default-features = true, version = "0.0.22" }
 teletypewriter = { path = "teletypewriter", version = "0.0.22" }
 
-regex = "1.9.6"
+regex = "1.10.2"
 bytemuck = { version = "1.14.0", features = [ "derive" ] }
 log = "0.4.20"
 serde = { version = "1.0.188", features = ["derive"] }
