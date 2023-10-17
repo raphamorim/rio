@@ -37,7 +37,7 @@ blinking-cursor = false
 # Default is false
 #
 # Example:
-# ignore-selection-fg-color = false
+# ignore-selection-foreground-color = false
 
 # Performance
 #
