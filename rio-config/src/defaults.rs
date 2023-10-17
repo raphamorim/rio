@@ -1,7 +1,9 @@
+#[inline]
 pub fn default_env_vars() -> Vec<String> {
     vec![]
 }
 
+#[inline]
 pub fn default_padding_x() -> f32 {
     #[cfg(not(target_os = "macos"))]
     {
@@ -14,10 +16,17 @@ pub fn default_padding_x() -> f32 {
     }
 }
 
+#[inline]
+pub fn default_use_kitty_keyboard_protocol() -> bool {
+    false
+}
+
+#[inline]
 pub fn default_line_height() -> f32 {
     1.0
 }
 
+#[inline]
 pub fn default_shell() -> crate::Shell {
     #[cfg(not(target_os = "windows"))]
     {
@@ -36,6 +45,7 @@ pub fn default_shell() -> crate::Shell {
     }
 }
 
+#[inline]
 pub fn default_use_fork() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -48,38 +58,47 @@ pub fn default_use_fork() -> bool {
     }
 }
 
+#[inline]
 pub fn default_working_dir() -> Option<String> {
     None
 }
 
+#[inline]
 pub fn default_background_opacity() -> f32 {
     1.0
 }
 
+#[inline]
 pub fn default_option_as_alt() -> String {
     String::from("None")
 }
 
+#[inline]
 pub fn default_log_level() -> String {
     String::from("OFF")
 }
 
+#[inline]
 pub fn default_cursor() -> char {
     '▇'
 }
 
+#[inline]
 pub fn default_theme() -> String {
     String::from("")
 }
 
+#[inline]
 pub fn default_window_width() -> i32 {
     600
 }
 
+#[inline]
 pub fn default_window_height() -> i32 {
     400
 }
 
+#[inline]
 pub fn default_scroll_multiplier() -> f64 {
     3.0
 }
@@ -111,7 +130,7 @@ blinking-cursor = false
 # Default is false
 #
 # Example:
-# ignore-selection-fg-color = false
+# ignore-selection-foreground-color = false
 
 # Performance
 #
