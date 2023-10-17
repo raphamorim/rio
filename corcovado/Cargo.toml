@@ -45,7 +45,7 @@ windows = { version = "0.42.0", features = [
 
 [dev-dependencies]
 env_logger = { version = "0.4.0", default-features = false }
-tempdir = "0.3.4"
+tempdir = "0.3.7"
 bytes = "0.3.0"
 criterion = "0.5.1"
 
