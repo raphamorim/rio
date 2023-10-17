@@ -7,7 +7,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Meet Rio | Rio Terminal',
-  tagline: 'A modern terminal for the 21th century.',
+  tagline: 'A modern terminal for the 21st century.',
   favicon: '/assets/rio-logo.ico',
   url: 'https://raphamorim.io',
   baseUrl: '/rio',
