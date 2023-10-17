@@ -43,24 +43,27 @@ impl TextBuilder {
         color: [f32; 4],
         pos_x: f32,
         width_bound: f32,
+        font_id: FontId,
     ) {
         // has not initialized yet
         if !self.has_initialized {
             self.scale = scale;
             self.color = color;
             self.pos_x = pos_x;
-            self.width_bound = width_bound;
-            self.content = content.to_string();
             self.has_initialized = true;
-        } else {
-            self.content += &content;
+            self.font_id = font_id;
             self.width_bound += width_bound;
         }
+
+        self.width_bound += width_bound;
+        self.content += content;
     }
 
     #[inline]
     pub fn reset(&mut self) {
         // has not initialized yet
+        self.width_bound = 0.0;
+        self.content = String::from("");
         self.has_initialized = false;
     }
 }
