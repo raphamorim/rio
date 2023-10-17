@@ -792,10 +792,11 @@ impl Sequencer {
                             }
 
                             route.window.screen.state.last_typing = Some(Instant::now());
-                            route.window.screen.process_key_event(&key_event);
 
                             match key_event.state {
                                 ElementState::Pressed => {
+                                    route.window.screen.process_key_event(&key_event);
+
                                     #[cfg(target_os = "macos")]
                                     route.window.winit_window.set_cursor_visible(false);
                                 }

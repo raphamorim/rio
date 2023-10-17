@@ -4,6 +4,7 @@
 
 #### Breaking changes
 
+- Kitty keyboard protocol has been disabled in this version, the support will return for the upcoming versions after fix few bugs.
 - `CollapsedTab` is not based on reverse order anymore.
 - Actions `SelectTab1`, `SelectTab2`, ..., `SelectTab9` have been removed in favor of the new select tab API:
 
