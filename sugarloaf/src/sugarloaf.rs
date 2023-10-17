@@ -230,7 +230,6 @@ impl Sugarloaf {
         }
 
         log::info!("find_scale: {:?} {:?} {}", content, font_id, scale);
-
         Some(scale)
     }
 
@@ -354,6 +353,7 @@ impl Sugarloaf {
             repeated.set_reset_on_next();
 
             let mut font_id = cached_sugar.font_id;
+            let mut is_text_font = false;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
                 if let Some(style) = &stack[i].style {
                     if style.is_bold_italic {
@@ -364,6 +364,7 @@ impl Sugarloaf {
                         font_id = FontId(FONT_ID_ITALIC);
                     }
                 }
+                is_text_font = true;
             }
 
             if cached_sugar.char_width > 1. {
@@ -404,15 +405,16 @@ impl Sugarloaf {
             };
 
             let is_last = i == size - 1;
-            let has_different_color = text_builder.has_initialized
-                && text_builder.color != stack[i].foreground_color;
+            let has_different_color_font = text_builder.has_initialized
+                && (text_builder.font_id != font_id
+                    || text_builder.color != stack[i].foreground_color);
 
             // If the font_id is different from TextBuilder, OR is the last item of the stack,
             // OR does the text builder color is different than current sugar needs to wrap up
             // the text builder and also queue the current stack item.
             //
             // TODO: Accept diferent colors
-            if text_builder.font_id != font_id || is_last || has_different_color {
+            if !is_text_font || is_last || has_different_color_font {
                 if text_builder.has_initialized {
                     let text = crate::components::text::OwnedText {
                         text: text_builder.content.to_owned(),
@@ -464,6 +466,7 @@ impl Sugarloaf {
                     stack[i].foreground_color,
                     section_pos_x,
                     width_bound * quantity as f32,
+                    font_id,
                 );
             }
 
