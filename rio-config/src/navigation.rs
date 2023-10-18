@@ -145,8 +145,8 @@ impl Navigation {
     }
 
     #[inline]
-    pub fn is_plain(&self) -> bool {
-        self.mode == NavigationMode::Plain
+    pub fn has_navigation_key_bindings(&self) -> bool {
+        self.mode != NavigationMode::Plain
     }
 
     #[inline]

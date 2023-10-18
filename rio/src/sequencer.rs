@@ -792,19 +792,25 @@ impl Sequencer {
                             }
 
                             route.window.screen.state.last_typing = Some(Instant::now());
+                            route.window.screen.process_key_event(&key_event);
 
-                            match key_event.state {
-                                ElementState::Pressed => {
-                                    route.window.screen.process_key_event(&key_event);
-
-                                    #[cfg(target_os = "macos")]
+                            #[cfg(target_os = "macos")]
+                            {
+                                if key_event.state == ElementState::Pressed {
                                     route.window.winit_window.set_cursor_visible(false);
                                 }
-
-                                ElementState::Released => {
-                                    route.redraw();
-                                }
                             }
+
+                            // match key_event.state {
+                            //     ElementState::Pressed => {
+                            //         #[cfg(target_os = "macos")]
+                            //         route.window.winit_window.set_cursor_visible(false);
+                            //     }
+
+                            //     ElementState::Released => {
+                            //         // route.redraw();
+                            //     }
+                            // }
                         }
                     }
 

@@ -28,6 +28,7 @@ struct Cursor {
 pub struct State {
     pub option_as_alt: String,
     is_ime_enabled: bool,
+    pub is_kitty_keyboard_enabled: bool,
     pub last_typing: Option<Instant>,
     pub named_colors: Colors,
     font_size: f32,
@@ -100,6 +101,7 @@ impl State {
 
         State {
             option_as_alt: config.option_as_alt.to_lowercase(),
+            is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
             is_blinking: false,
             last_typing: None,

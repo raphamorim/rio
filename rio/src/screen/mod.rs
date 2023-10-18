@@ -19,6 +19,7 @@ use crate::crosswords::vi_mode::ViMotion;
 use crate::screen::bindings::MouseBinding;
 use crate::screen::bindings::ViAction;
 use core::fmt::Debug;
+use std::borrow::Cow;
 //use std::borrow::Cow;
 use std::ffi::OsStr;
 //use winit::event::KeyEvent;
@@ -56,8 +57,7 @@ use sugarloaf::{layout::SugarloafLayout, Sugarloaf, SugarloafErrors};
 use winit::event::ElementState;
 #[cfg(target_os = "macos")]
 use winit::keyboard::ModifiersKeyState;
-use winit::keyboard::{Key, ModifiersState};
-// use winit::keyboard::KeyLocation;
+use winit::keyboard::{Key, KeyLocation, ModifiersState};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
@@ -161,7 +161,8 @@ impl Screen {
 
         let bindings = bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
-            config.navigation.is_plain(),
+            config.navigation.has_navigation_key_bindings(),
+            config.use_kitty_keyboard_protocol,
         );
         let ime = Ime::new();
 
@@ -452,12 +453,43 @@ impl Screen {
 
     #[inline]
     pub fn process_key_event(&mut self, key: &winit::event::KeyEvent) {
-        if self.ime.preedit().is_some() {
+        // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
+        // then should return drop the key processing
+        // 2. In case IME has preedit then also should drop the key processing
+        if !self.state.is_kitty_keyboard_enabled && key.state == ElementState::Released
+            || self.ime.preedit().is_some()
+        {
             return;
         }
 
         let mode = self.get_mode();
         let mods = self.modifiers.state();
+
+        if self.state.is_kitty_keyboard_enabled && key.state == ElementState::Released {
+            if mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+                && !mode.contains(Mode::VI)
+            {
+                // NOTE: echoing the key back on release is how it's done in kitty/foot and
+                // it's how it should be done according to the kitty author
+                // https://github.com/kovidgoyal/kitty/issues/6516#issuecomment-1659454350
+                let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
+                    Key::Tab => [b'\t'].as_slice().into(),
+                    Key::Enter => [b'\r'].as_slice().into(),
+                    Key::Delete => [b'\x7f'].as_slice().into(),
+                    Key::Escape => [b'\x1b'].as_slice().into(),
+                    _ => bindings::kitty_keyboard_protocol::build_key_sequence(
+                        key.to_owned(),
+                        mods,
+                        mode,
+                    )
+                    .into(),
+                };
+
+                self.ctx_mut().current_mut().messenger.send_write(bytes);
+            }
+
+            return;
+        }
 
         let binding_mode = BindingMode::new(&mode);
         let mut ignore_chars = None;
@@ -716,21 +748,63 @@ impl Screen {
             }
         }
 
+        // VI mode doesn't have inputs
         if ignore_chars.unwrap_or(false) || mode.contains(Mode::VI) {
             return;
         }
 
         let text = key.text_with_all_modifiers().unwrap_or_default();
 
-        if !text.is_empty() {
-            self.scroll_bottom_when_cursor_not_visible();
-            self.clear_selection();
+        let bytes = if !self.state.is_kitty_keyboard_enabled {
+            // If text is empty then leave without input bytes
+            if text.is_empty() {
+                return;
+            }
 
             let mut bytes = Vec::with_capacity(text.len() + 1);
             if self.alt_send_esc() && text.len() == 1 {
                 bytes.push(b'\x1b');
             }
             bytes.extend_from_slice(text.as_bytes());
+            bytes
+        } else {
+            // We use legacy input when we have associated text with
+            // the given key and we have one of the following situations:
+            //
+            // 1. No keyboard input protocol is enabled.
+            // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
+            //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
+            let write_legacy = !mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC)
+                && !text.is_empty()
+                && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                    || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                        && (mods.is_empty() || mods == ModifiersState::SHIFT)
+                        && key.location != KeyLocation::Numpad
+                        // Special case escape here.
+                        && key.logical_key != Key::Escape));
+
+            // Handle legacy char writing.
+            if write_legacy {
+                let mut bytes = Vec::with_capacity(text.len() + 1);
+                if self.alt_send_esc() && text.len() == 1 {
+                    bytes.push(b'\x1b');
+                }
+
+                bytes.extend_from_slice(text.as_bytes());
+                bytes
+            } else {
+                // Otherwise we should build the key sequence for the given input.
+                bindings::kitty_keyboard_protocol::build_key_sequence(
+                    key.to_owned(),
+                    mods,
+                    mode,
+                )
+            }
+        };
+
+        if !bytes.is_empty() {
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
 
             self.ctx_mut().current_mut().messenger.send_bytes(bytes);
         }
