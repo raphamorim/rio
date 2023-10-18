@@ -4,6 +4,7 @@
 
 #### Breaking changes
 
+- `navigation.mode = "Plain"` now only shutdowns the key bindings related to tab creation/manipulation.
 - `ignore-selection-fg-color` has been renamed to `ignore-selection-foreground-color`.
 - Kitty keyboard protocol has been disabled by default in this version, for enable it you need to use `use-kitty-keyboard-protocol = true`.
 - `CollapsedTab` is not based on reverse order anymore.

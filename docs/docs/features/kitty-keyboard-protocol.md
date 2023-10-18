@@ -11,6 +11,8 @@ use-kitty-keyboard-protocol = true
 
 ### How it works?
 
+> Note: All the information of this page was retired from: [sw.kovidgoyal.net/kitty/keyboard-protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
+
 There are various problems with the current state of keyboard handling in terminals. They include:
 
 - No way to use modifiers other than ctrl and alt
@@ -25,3 +27,22 @@ There are various problems with the current state of keyboard handling in termin
 
 To solve these issues and others, kitty has created a new keyboard protocol, that is backward compatible but allows applications to opt-in to support more advanced usages.
 
+You can see this protocol with all enhancements in action by running:
+
+```bash
+kitten show_key -m kitty
+```
+
+You can also run:
+
+```bash
+kitty +kitten show_key -m kitty
+```
+
+Below an example of Rio terminal with Kitty keyboard protocol by the following instructions (MacOS keyboard example).
+
+- Press left shift, release shift
+- Press right shift, release shift
+- Press left command
+
+![Demo kitty keyboard protocol](../../static/assets/features/demo-kitty-keyboard-protocol.png)

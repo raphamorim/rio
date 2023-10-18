@@ -132,6 +132,13 @@ blinking-cursor = false
 # Example:
 # ignore-selection-foreground-color = false
 
+# Enable Kitty Keyboard protocol
+#
+# Default is false
+#
+# Example:
+# use-kitty-keyboard-protocol = false
+
 # Performance
 #
 # Set WGPU rendering performance
