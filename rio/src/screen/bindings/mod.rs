@@ -1009,6 +1009,7 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
 
     if use_navigation_key_bindings {
         key_bindings.extend(bindings!(
+            KeyBinding;
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
             Tab, ModifiersState::CONTROL; Action::SelectNextTab;
             Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
