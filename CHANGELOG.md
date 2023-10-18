@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.23
+
 #### Breaking changes
 
 - `navigation.mode = "Plain"` now only shutdowns the key bindings related to tab creation/manipulation.
