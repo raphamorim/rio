@@ -187,7 +187,7 @@ impl From<String> for Action {
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
-            "togglevimode" => Some(Action::ToggleViMode),
+            // "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -368,6 +368,7 @@ pub enum Action {
     ClearSelection,
 
     /// Toggle vi mode.
+    #[allow(dead_code)]
     ToggleViMode,
 
     /// Allow receiving char input.
@@ -527,7 +528,7 @@ pub fn default_key_bindings(
             Action::Esc("\x1bOD".into());
 
         // VI Mode
-        "j", ModifiersState::SUPER; Action::ToggleViMode;
+        // "j", ModifiersState::SUPER; Action::ToggleViMode;
         Escape, +BindingMode::VI; Action::ClearSelection;
         "i", +BindingMode::VI; Action::ScrollToBottom;
         "g", +BindingMode::VI; Action::ScrollToTop;
