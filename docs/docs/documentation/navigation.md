@@ -20,7 +20,7 @@ Usage:
 mode = "CollapsedTab"
 ```
 
-### NativeTab
+### NativeTab (MacOS only)
 
 The <span class="keyword">NativeTab</span> is Rio terminal default navigation mode for MacOs.
 
@@ -82,9 +82,9 @@ mode = "Breadcrumb"
 
 ### Plain
 
-Plain navigation mode will simply turn off any platform key binding, will not add any key binding (like creation of tabs, windows, panels and other platform key bindings).
+Plain navigation mode will simply turn off any tab key binding.
 
-This mode is perfect if you want set yourself how Rio key binding rules will work.
+This mode is perfect if you use Rio terminal with tmux or zellij.
 
 Usage:
 
