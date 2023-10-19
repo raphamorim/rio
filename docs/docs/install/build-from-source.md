@@ -13,7 +13,7 @@ git clone https://github.com/raphamorim/rio.git
 
 Then install the Rust compiler with <span class="keyword">rustup</span> ([rustup.rs](https://rustup.rs/)).
 
-After install, make sure you have the right Rust compiler installed by running:
+After installation of Rust, ensure you have the correct Rust compiler installed by running:
 
 ```bash
 rustup override set stable
@@ -28,7 +28,7 @@ If you're running Wayland with an Nvidia GPU, you'll likely want the _EGL_ drive
 
 #### Debian/Ubuntu
 
-If you'd like to build a local version manually, you need a few extra libraries to build Rio. Here's an apt command that should install all of them. If something is still found to be missing, please open an issue.
+If you'd like to build a local version manually, you need a few extra libraries to build Rio. Here's an apt command that should install all of them. If something is still found to be missing, please open an issue. This has been tested on Debian Bookworm.
 
 ```bash
 apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev libxcb-xfixes0-dev libxkbcommon-dev python3
