@@ -800,6 +800,10 @@ impl Sequencer {
                                     route.window.winit_window.set_cursor_visible(false);
                                 }
                             }
+
+                            if key_event.state == ElementState::Released {
+                                route.redraw();
+                            }
                         }
                     }
 
