@@ -800,17 +800,6 @@ impl Sequencer {
                                     route.window.winit_window.set_cursor_visible(false);
                                 }
                             }
-
-                            // match key_event.state {
-                            //     ElementState::Pressed => {
-                            //         #[cfg(target_os = "macos")]
-                            //         route.window.winit_window.set_cursor_visible(false);
-                            //     }
-
-                            //     ElementState::Released => {
-                            //         // route.redraw();
-                            //     }
-                            // }
                         }
                     }
 

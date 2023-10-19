@@ -459,6 +459,7 @@ impl Screen {
         if !self.state.is_kitty_keyboard_enabled && key.state == ElementState::Released
             || self.ime.preedit().is_some()
         {
+            self.render();
             return;
         }
 
@@ -1153,7 +1154,7 @@ impl Screen {
         self.sugarloaf.render();
     }
 
-    #[inline]
+    #[inline(never)]
     pub fn render(&mut self) {
         let mut terminal = self.ctx().current().terminal.lock();
         let visible_rows = terminal.visible_rows();
