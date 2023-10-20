@@ -890,6 +890,7 @@ impl Screen {
         self.copy_selection(ClipboardType::Selection);
         let mut terminal = self.context_manager.current().terminal.lock();
         let selection = Selection::new(ty, point, side);
+        self.state.set_selection(selection.to_range(&terminal));
         terminal.selection = Some(selection);
         drop(terminal);
     }
