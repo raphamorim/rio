@@ -262,7 +262,6 @@ impl Selection {
     }
 
     /// Expand selection sides to include all square.
-    #[allow(unused)]
     pub fn include_all(&mut self) {
         let (start, end) = (self.region.start.point, self.region.end.point);
         let (start_side, end_side) = match self.ty {

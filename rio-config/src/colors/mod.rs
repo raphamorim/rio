@@ -84,7 +84,8 @@ pub struct Colors {
     pub tabs_active: ColorArray,
     #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub cursor: ColorArray,
-
+    #[serde(default = "defaults::vi_cursor", rename = "vi-cursor", deserialize_with = "deserialize_to_arr")]
+    pub vi_cursor: ColorArray,
     #[serde(default = "defaults::black", deserialize_with = "deserialize_to_arr")]
     pub black: ColorArray,
     #[serde(default = "defaults::cyan", deserialize_with = "deserialize_to_arr")]
@@ -228,6 +229,7 @@ impl Default for Colors {
             yellow: defaults::yellow(),
             tabs_active: defaults::tabs_active(),
             cursor: defaults::cursor(),
+            vi_cursor: defaults::vi_cursor(),
             black: defaults::black(),
             cyan: defaults::cyan(),
             magenta: defaults::magenta(),
