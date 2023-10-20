@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.24
+
 - Improvements on selection text for scale factor >= 2.0.
 - Improvements on cursor sugar creation, dropped unnecessary usage of clone.
 - Colors/Themes got a new property called `vi-cursor`, you can specify any color you wish for VI Cursor.
