@@ -28,6 +28,7 @@ struct Cursor {
 pub struct State {
     pub option_as_alt: String,
     is_ime_enabled: bool,
+    is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
     pub last_typing: Option<Instant>,
     pub named_colors: Colors,
@@ -103,6 +104,7 @@ impl State {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
+            is_vi_mode_enabled: false,
             is_blinking: false,
             last_typing: None,
             has_blinking_enabled: config.blinking_cursor,
@@ -199,21 +201,27 @@ impl State {
 
     #[inline]
     fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
+        let color = if !self.is_vi_mode_enabled {
+            self.named_colors.cursor
+        } else {
+            self.named_colors.vi_cursor
+        };
+
         match self.cursor.state.content {
             CursorShape::Block => Some(SugarDecoration {
                 relative_position: (0.0, 0.0),
                 size: (1.0, 1.0),
-                color: self.named_colors.cursor,
+                color,
             }),
             CursorShape::Underline => Some(SugarDecoration {
                 relative_position: (0.0, self.font_size - 2.5),
                 size: (1.0, 0.08),
-                color: self.named_colors.cursor,
+                color,
             }),
             CursorShape::Beam => Some(SugarDecoration {
                 relative_position: (0.0, 0.0),
                 size: (0.1, 1.0),
-                color: self.named_colors.cursor,
+                color,
             }),
             CursorShape::Hidden => None,
         }
@@ -413,20 +421,25 @@ impl State {
 
     #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
-        let mut cloned_square = square.clone();
+        let mut sugar = Sugar {
+            content: square.c,
+            foreground_color: [0., 0., 0., 0.],
+            background_color: [0., 0., 0., 0.],
+            style: None,
+            decoration: None,
+        };
 
         // If IME is enabled we get the current content to cursor
         if self.is_ime_enabled {
-            cloned_square.c = self.cursor.content;
+            sugar.content = self.cursor.content;
         }
 
         // If IME is enabled or is a block cursor, put background color
         // when cursor is over the character
         if self.is_ime_enabled || self.cursor.state.content == CursorShape::Block {
-            cloned_square.fg = AnsiColor::Named(NamedColor::Background);
+            sugar.foreground_color = self.named_colors.background.0;
         }
 
-        let mut sugar = self.create_sugar(&cloned_square);
         sugar.decoration = self.cursor_to_decoration();
         sugar
     }
@@ -451,6 +464,11 @@ impl State {
     }
 
     #[inline]
+    pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
+        self.is_vi_mode_enabled = is_vi_mode_enabled;
+    }
+
+    #[inline]
     pub fn prepare_term(
         &mut self,
         rows: Vec<Row<Square>>,
@@ -458,7 +476,7 @@ impl State {
         sugarloaf: &mut Sugarloaf,
         context_manager: &context::ContextManager<EventProxy>,
         display_offset: i32,
-        terminal_has_blinking_enabled: bool,
+        has_blinking_enabled: bool,
     ) {
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
@@ -478,7 +496,7 @@ impl State {
             }
         } else {
             // Only blink cursor if does not contain selection
-            if self.has_blinking_enabled && terminal_has_blinking_enabled {
+            if self.has_blinking_enabled && has_blinking_enabled {
                 let mut should_blink = true;
                 if let Some(last_typing_time) = self.last_typing {
                     if last_typing_time.elapsed() < Duration::from_secs(1) {
@@ -513,7 +531,7 @@ impl State {
             context_manager.len(),
         );
 
-        sugarloaf.pile_rects(self.navigation.rects.clone());
+        sugarloaf.pile_rects(self.navigation.rects.to_owned());
 
         for text in self.navigation.texts.iter() {
             sugarloaf.text(

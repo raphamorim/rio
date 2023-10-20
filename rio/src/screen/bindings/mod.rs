@@ -187,7 +187,7 @@ impl From<String> for Action {
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
-            // "togglevimode" => Some(Action::ToggleViMode),
+            "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -368,7 +368,6 @@ pub enum Action {
     ClearSelection,
 
     /// Toggle vi mode.
-    #[allow(dead_code)]
     ToggleViMode,
 
     /// Allow receiving char input.
@@ -528,7 +527,9 @@ pub fn default_key_bindings(
             Action::Esc("\x1bOD".into());
 
         // VI Mode
-        // "j", ModifiersState::SUPER; Action::ToggleViMode;
+        Space, ModifiersState::ALT | ModifiersState::SHIFT; Action::ToggleViMode;
+        "i", +BindingMode::VI; Action::ToggleViMode;
+        "c", ModifiersState::CONTROL, +BindingMode::VI; Action::ToggleViMode;
         Escape, +BindingMode::VI; Action::ClearSelection;
         "i", +BindingMode::VI; Action::ScrollToBottom;
         "g", +BindingMode::VI; Action::ScrollToTop;
@@ -537,6 +538,8 @@ pub fn default_key_bindings(
         "f", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollPageDown;
         "u", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollHalfPageUp;
         "d", ModifiersState::CONTROL, +BindingMode::VI; Action::ScrollHalfPageDown;
+        "y", ModifiersState::CONTROL,  +BindingMode::VI; Action::Scroll(1);
+        "e", ModifiersState::CONTROL,  +BindingMode::VI; Action::Scroll(-1);
         "y", +BindingMode::VI; Action::Copy;
         "y", +BindingMode::VI; Action::ClearSelection;
         "v", +BindingMode::VI; ViAction::ToggleNormalSelection;

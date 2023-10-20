@@ -520,8 +520,7 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn toggle_vi_mode(&mut self)
     where
-        U: EventListener,
-    {
+        U: EventListener {
         self.mode ^= Mode::VI;
 
         if self.mode.contains(Mode::VI) {

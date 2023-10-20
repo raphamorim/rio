@@ -20,9 +20,7 @@ use crate::screen::bindings::MouseBinding;
 use crate::screen::bindings::ViAction;
 use core::fmt::Debug;
 use std::borrow::Cow;
-//use std::borrow::Cow;
 use std::ffi::OsStr;
-//use winit::event::KeyEvent;
 use winit::event::Modifiers;
 use winit::event::MouseButton;
 use winit::window::raw_window_handle::HasRawDisplayHandle;
@@ -546,7 +544,9 @@ impl Screen {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.toggle_vi_mode();
+                        let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
+                        self.state.set_vi_mode(has_vi_mode_enabled);
                     }
                     Act::ViMotion(motion) => {
                         let mut terminal =
@@ -554,6 +554,10 @@ impl Screen {
                         if terminal.mode().contains(Mode::VI) {
                             terminal.vi_motion(*motion);
                         }
+
+                        if let Some(selection) = &terminal.selection {
+                            self.state.set_selection(selection.to_range(&terminal));
+                        };
                         drop(terminal);
                         self.render();
                     }
@@ -571,19 +575,15 @@ impl Screen {
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
-                        self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
-                        self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
-                        self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
-                        self.render();
                     }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
@@ -885,15 +885,16 @@ impl Screen {
         self.state.set_selection(None);
     }
 
+    #[inline]
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         self.copy_selection(ClipboardType::Selection);
         let mut terminal = self.context_manager.current().terminal.lock();
         let selection = Selection::new(ty, point, side);
-        self.state.set_selection(selection.to_range(&terminal));
         terminal.selection = Some(selection);
         drop(terminal);
     }
 
+    #[inline]
     fn toggle_selection(&mut self, ty: SelectionType, side: Side) {
         let mut terminal = self.context_manager.current().terminal.lock();
         match &mut terminal.selection {
@@ -905,7 +906,6 @@ impl Screen {
                 selection.ty = ty;
                 drop(terminal);
                 self.copy_selection(ClipboardType::Selection);
-                // self.render();
             }
             _ => {
                 let pos = terminal.vi_mode_cursor.pos;
@@ -915,10 +915,17 @@ impl Screen {
         }
 
         let mut terminal = self.context_manager.current().terminal.lock();
-        // Make sure initial selection is not empty.
-        if let Some(selection) = &mut terminal.selection {
-            selection.include_all();
-        }
+        let mut selection = match terminal.selection.take() {
+            Some(selection) => {
+                // Make sure initial selection is not empty.
+                selection
+            }
+            None => return,
+        };
+
+        selection.include_all();
+        self.state.set_selection(selection.to_range(&terminal));
+        terminal.selection = Some(selection);
         drop(terminal);
     }
 
@@ -1159,7 +1166,7 @@ impl Screen {
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
-        let terminal_has_blinking_enabled = terminal.blinking_cursor;
+        let has_blinking_enabled = terminal.blinking_cursor;
         drop(terminal);
         self.context_manager.update_titles();
 
@@ -1171,14 +1178,14 @@ impl Screen {
             &mut self.sugarloaf,
             &self.context_manager,
             display_offset as i32,
-            terminal_has_blinking_enabled,
+            has_blinking_enabled,
         );
 
         self.sugarloaf.render();
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
-        if self.state.has_blinking_enabled && terminal_has_blinking_enabled {
+        if self.state.has_blinking_enabled && has_blinking_enabled {
             self.context_manager.schedule_render(800);
         }
     }

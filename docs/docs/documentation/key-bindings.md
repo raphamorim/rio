@@ -9,6 +9,8 @@ language: 'en'
 
 Open configuration: `Command + Comma (,)`
 
+Toggle VI Mode: `Alt + Shift + Space`
+
 Copy: `Command + C`
 
 Paste: `Command + V`
@@ -57,6 +59,8 @@ Select the last tab: `Command + 9`
 
 Open configuration: `Control + Shift + Comma (,)`
 
+Toggle VI Mode: `Alt + Shift + Space`
+
 Copy: `Control + Shift + C`
 
 Paste: `Control + Shift + V`
@@ -82,6 +86,8 @@ Close tab or quit: `Control + Shift + W`
 ### Linux and BSD
 
 Open configuration: `Control + Shift + Comma (,)`
+
+Toggle VI Mode: `Alt + Shift + Space`
 
 Copy: `Control + Shift + C`
 
@@ -146,6 +152,7 @@ Execute a predefined action in Rio terminal.
 | :-- | :-- |
 | None | |
 | ReceiveChar | |
+| ToggleVIMode | |
 | Paste | Paste command |
 | Copy | |
 | OpenConfigEditor | |
