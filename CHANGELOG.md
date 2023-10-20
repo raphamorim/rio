@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- TBD
+- Improvements on cursor sugar creation, dropped unnecessary usage of clone.
+- Colors/Themes got a new property called `vi-cursor`, you can specify any color you wish for VI Cursor.
+- Alacritty's VI Mode.
 
 ## 0.0.23
 
