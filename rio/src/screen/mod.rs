@@ -1012,29 +1012,30 @@ impl Screen {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let width = self.sugarloaf.layout.style.text_scale / 2.0;
+        let width = self.sugarloaf.layout.scaled_sugarwidth;
         x <= (self.sugarloaf.layout.margin.x
             + self.sugarloaf.layout.columns as f32 * width) as usize
-            && x > self.sugarloaf.layout.margin.x as usize
+            && x > (self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor)
+                as usize
             && y <= (self.sugarloaf.layout.margin.top_y
-                + self.sugarloaf.layout.lines as f32 * self.sugarloaf.layout.font_size)
+                * self.sugarloaf.layout.scale_factor
+                + self.sugarloaf.layout.lines as f32
+                    * self.sugarloaf.layout.scaled_sugarheight)
                 as usize
             && y > self.sugarloaf.layout.margin.top_y as usize
     }
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
-        let width = (self.sugarloaf.layout.style.text_scale / 2.0) as usize;
+        let width = (self.sugarloaf.layout.scaled_sugarwidth) as usize;
+        let margin_x =
+            self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor;
 
-        let cell_x = x.saturating_sub(self.sugarloaf.layout.margin.x as usize) % width;
+        let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
 
-        let additional_padding = (self.sugarloaf.layout.width
-            - self.sugarloaf.layout.margin.x * 2.)
-            % width as f32;
-        let end_of_grid = self.sugarloaf.layout.width
-            - self.sugarloaf.layout.margin.x
-            - additional_padding;
+        let additional_padding = (self.sugarloaf.layout.width - margin_x) % width as f32;
+        let end_of_grid = self.sugarloaf.layout.width - margin_x - additional_padding;
 
         if cell_x > half_cell_width
             // Edge case when mouse leaves the window.
