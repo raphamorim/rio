@@ -1,5 +1,7 @@
 # Rio term
 
+<img src="misc/osx/rio-logo.png" alt="Rio terminal logo" width="380px" />
+
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
