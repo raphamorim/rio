@@ -423,11 +423,27 @@ impl State {
     fn create_cursor(&self, square: &Square) -> Sugar {
         let mut sugar = Sugar {
             content: square.c,
-            foreground_color: [0., 0., 0., 0.],
-            background_color: [0., 0., 0., 0.],
+            foreground_color: self.compute_fg_color(square),
+            background_color: self.compute_bg_color(square),
             style: None,
             decoration: None,
         };
+
+        let is_italic = square.flags.contains(Flags::ITALIC);
+        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
+        let is_bold = square.flags.contains(Flags::BOLD);
+
+        if is_bold || is_bold_italic || is_italic {
+            sugar.style = Some(SugarStyle {
+                is_italic,
+                is_bold_italic,
+                is_bold,
+            });
+        }
+
+        if square.flags.contains(Flags::INVERSE) {
+            std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
+        }
 
         // If IME is enabled we get the current content to cursor
         if self.is_ime_enabled {
