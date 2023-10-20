@@ -651,11 +651,13 @@ impl Sequencer {
 
                             let x = x.clamp(
                                 0.0,
-                                route.window.screen.sugarloaf.layout.width.into(),
+                                (route.window.screen.sugarloaf.layout.width as i32 - 1)
+                                    .into(),
                             ) as usize;
                             let y = y.clamp(
                                 0.0,
-                                route.window.screen.sugarloaf.layout.height.into(),
+                                (route.window.screen.sugarloaf.layout.height as i32 - 1)
+                                    .into(),
                             ) as usize;
                             route.window.screen.mouse.x = x;
                             route.window.screen.mouse.y = y;
