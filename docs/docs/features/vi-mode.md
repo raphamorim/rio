@@ -7,7 +7,7 @@ Rio implements the Vi mode feature originally from [Alacritty](https://github.co
 
 By default you can launch Vi mode by using `alt` + `shift` + `space`.
 
-![Demo Vi mode](../../static/assets/features/demo-alacritty-vi-mode.gif)
+![Demo Vi mode](../../static/assets/features/demo-vi-mode.gif)
 
 Below you can see the list of all default key bindings related to Vi mode. If you don't like of any specified key binding you can always turn off or modify (check [key bindings documentation section](/rio/docs/documentation/key-bindings) for more information).
 
