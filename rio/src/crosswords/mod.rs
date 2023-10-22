@@ -837,7 +837,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn search_for_nearest_hyperlink_from_pos(&self, mut pos: Pos) -> Option<bool> {
+    pub fn search_for_nearest_hyperlink_from_pos(&mut self, pos: Pos) -> Option<bool> {
         // Limit the starting pos to the last line in the history
         // pos.row = std::cmp::max(pos.row, self.grid.topmost_line());
 
@@ -849,50 +849,58 @@ impl<U: EventListener> Crosswords<U> {
 
         let mut content: std::collections::VecDeque<char> =
             std::collections::VecDeque::from([]);
-        // let starting_pos = pos;
+        let mut content_pos: Vec<Pos> = vec![];
 
         // Next
-        for cell in self.grid.iter_from(pos) {
-            if cell.flags.intersects(wide) || cell.c == ' ' {
+        for square in self.grid.iter_from(pos) {
+            if square.flags.intersects(wide) || square.c == ' ' {
                 break;
             }
 
-            content.push_back(cell.c);
-            // pos = cell.pos;
+            content.push_back(square.c);
+            content_pos.push(square.pos);
 
-            if pos.col == last_column && !cell.flags.contains(square::Flags::WRAPLINE) {
+            if pos.col == last_column {
+            // && !square.flags.contains(square::Flags::WRAPLINE) {
                 break; // cut off if on new line or hit escape char
             }
         }
 
         let mut iter = self.grid.iter_from(pos);
-        while let Some(cell) = iter.prev() {
-            if cell.flags.intersects(wide) || cell.c == ' ' {
+        while let Some(square) = iter.prev() {
+            if square.flags.intersects(wide) || square.c == ' ' {
                 break;
             }
 
-            content.push_front(cell.c);
+            content.push_front(square.c);
+            content_pos.push(square.pos);
 
-            if cell.pos.col == last_column
-                && !cell.flags.contains(square::Flags::WRAPLINE)
+            if square.pos.col == last_column
+                // && !square.flags.contains(square::Flags::WRAPLINE)
             {
                 break; // cut off if on new line or hit escape char
             }
         }
 
-        if content.is_empty() {
+        if content.len() <= 6 {
             return None;
         }
 
         let a = content.iter().collect::<String>();
-        if let Some(link) = self.hyperlink_re.find(&a) {
-            println!("has link");
+        if let Some(uri) = self.hyperlink_re.find(&a) {
+            let uri = uri.as_str().to_string();
+            let hyperlink = Some(
+                Hyperlink::new(None, uri)
+            );
+
+            for link_pos in content_pos.iter() {
+                self.grid[link_pos.row][link_pos.col].set_hyperlink(hyperlink.to_owned());
+            }
+
             return Some(true);
         }
 
         None
-
-        // pos
     }
 
     #[inline(always)]

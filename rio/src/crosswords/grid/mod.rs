@@ -321,7 +321,6 @@ impl<T> Grid<T> {
 
     /// This is used only for initializing after loading ref-tests.
     #[inline]
-    #[allow(dead_code)]
     pub fn initialize_all(&mut self)
     where
         T: GridSquare + Clone + Default,
