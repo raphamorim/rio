@@ -360,6 +360,7 @@ where
     pub blinking_cursor: bool,
     window_id: WindowId,
     title_stack: Vec<String>,
+    hyperlink_re: regex::Regex,
 
     // The stack for the keyboard modes.
     keyboard_mode_stack: Vec<KeyboardModes>,
@@ -383,6 +384,9 @@ impl<U: EventListener> Crosswords<U> {
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
+        // Regex used for the default URL hint.
+        let url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
+                         [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`]+";
 
         Crosswords {
             vi_mode_cursor: ViModeCursor::new(grid.cursor.pos),
@@ -394,6 +398,7 @@ impl<U: EventListener> Crosswords<U> {
             scroll_region,
             event_proxy,
             colors,
+            hyperlink_re: regex::Regex::new(url_regex).unwrap(),
             title: String::from(""),
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
@@ -829,6 +834,65 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         point
+    }
+
+    #[inline]
+    pub fn search_for_nearest_hyperlink_from_pos(&self, mut pos: Pos) -> Option<bool> {
+        // Limit the starting pos to the last line in the history
+        // pos.row = std::cmp::max(pos.row, self.grid.topmost_line());
+
+        let wide = square::Flags::WIDE_CHAR
+            | square::Flags::WIDE_CHAR_SPACER
+            | square::Flags::LEADING_WIDE_CHAR_SPACER;
+
+        let last_column = self.grid.columns() - 1;
+
+        let mut content: std::collections::VecDeque<char> =
+            std::collections::VecDeque::from([]);
+        // let starting_pos = pos;
+
+        // Next
+        for cell in self.grid.iter_from(pos) {
+            if cell.flags.intersects(wide) || cell.c == ' ' {
+                break;
+            }
+
+            content.push_back(cell.c);
+            // pos = cell.pos;
+
+            if pos.col == last_column && !cell.flags.contains(square::Flags::WRAPLINE) {
+                break; // cut off if on new line or hit escape char
+            }
+        }
+
+        let mut iter = self.grid.iter_from(pos);
+        while let Some(cell) = iter.prev() {
+            if cell.flags.intersects(wide) || cell.c == ' ' {
+                break;
+            }
+
+            content.push_front(cell.c);
+
+            if cell.pos.col == last_column
+                && !cell.flags.contains(square::Flags::WRAPLINE)
+            {
+                break; // cut off if on new line or hit escape char
+            }
+        }
+
+        if content.is_empty() {
+            return None;
+        }
+
+        let a = content.iter().collect::<String>();
+        if let Some(link) = self.hyperlink_re.find(&a) {
+            println!("has link");
+            return Some(true);
+        }
+
+        None
+
+        // pos
     }
 
     #[inline(always)]
