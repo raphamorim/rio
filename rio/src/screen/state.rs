@@ -176,7 +176,7 @@ impl State {
         }
 
         let mut decoration = None;
-        if flags.contains(Flags::UNDERLINE) {
+        if flags.contains(Flags::UNDERLINE) || square.hyperlink().is_some() {
             decoration = Some(SugarDecoration {
                 relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
