@@ -304,6 +304,22 @@ impl Screen {
         should_reload
     }
 
+    #[inline]
+    pub fn process_hyperlink(&mut self, pos: Pos) -> bool {
+        let mut terminal = self.ctx_mut().current().terminal.lock();
+        let search_result = terminal.search_for_nearest_hyperlink_from_pos(pos);
+        drop(terminal);
+
+        match search_result {
+            Some(link) => true,
+            None => false,
+        }
+        // let mut regex = RegexSearch::new(URL_REGEX).unwrap();
+        // let matches = visible_regex_match_iter(&term, &mut regex).collect::<Vec<_>>();
+        // if matches.is_empty() {
+        // }
+    }
+
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(

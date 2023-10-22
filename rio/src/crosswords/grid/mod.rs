@@ -336,7 +336,6 @@ impl<T> Grid<T> {
 
     /// This is used only for truncating before saving ref-tests.
     #[inline]
-    #[allow(unused)]
     pub fn truncate(&mut self) {
         self.raw.truncate();
     }
@@ -372,7 +371,6 @@ impl<T> Grid<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn display_offset(&self) -> usize {
         self.display_offset
     }

@@ -543,8 +543,8 @@ impl Sequencer {
                                         .set_cursor_icon(CursorIcon::Default);
                                 }
 
-                                route.window.is_macos_deadzone = true;
-                                return;
+                            if has_selection && (lmb_pressed || rmb_pressed) {
+                                route.window.screen.update_selection_scrolling(y);
                             }
 
                             route.window.is_macos_deadzone = false;
@@ -559,9 +559,53 @@ impl Sequencer {
                                 CursorIcon::Text
                             };
 
-                        route.window.winit_window.set_cursor_icon(cursor_icon);
-                        if has_selection && (lmb_pressed || rmb_pressed) {
-                            route.window.screen.update_selection_scrolling(y);
+                            if route.window.screen.process_hyperlink(point) {
+                                route
+                                    .window
+                                    .winit_window
+                                    .set_cursor_icon(CursorIcon::Pointer);
+                            } else {
+                                route.window.winit_window.set_cursor_icon(cursor_icon);
+                            }
+
+                            route.window.screen.mouse.inside_text_area = inside_text_area;
+                            route.window.screen.mouse.square_side = square_side;
+
+                            if (lmb_pressed || rmb_pressed)
+                                && (route.window.screen.modifiers.state().shift_key()
+                                    || !route.window.screen.mouse_mode())
+                            {
+                                route.window.screen.update_selection(point, square_side);
+                                route.window.screen.context_manager.schedule_render(60);
+                            } else if square_changed
+                                && route.window.screen.has_mouse_motion_and_drag()
+                            {
+                                if lmb_pressed {
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(32, ElementState::Pressed);
+                                } else if route.window.screen.mouse.middle_button_state
+                                    == ElementState::Pressed
+                                {
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(33, ElementState::Pressed);
+                                } else if route.window.screen.mouse.right_button_state
+                                    == ElementState::Pressed
+                                {
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(34, ElementState::Pressed);
+                                } else if route.window.screen.has_mouse_motion() {
+                                    route
+                                        .window
+                                        .screen
+                                        .mouse_report(35, ElementState::Pressed);
+                                }
+                            }
                         }
 
                         let display_offset = route.window.screen.display_offset();
