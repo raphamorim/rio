@@ -1,6 +1,5 @@
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use crate::Renderable;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
@@ -108,8 +107,8 @@ pub struct RectBrush {
     scale: f32,
 }
 
-impl Renderable for RectBrush {
-    fn init(context: &Context) -> Self {
+impl RectBrush {
+    pub fn init(context: &Context) -> Self {
         let device = &context.device;
         let vertex_data = create_vertices_rect();
 
@@ -244,20 +243,20 @@ impl Renderable for RectBrush {
         }
     }
 
-    fn update(&mut self, _event: winit::event::WindowEvent) {
-        //empty
-    }
+    // fn update(&mut self, _event: winit::event::WindowEvent) {
+    //empty
+    // }
 
-    fn resize(
-        &mut self,
-        _config: &wgpu::SurfaceConfiguration,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) {
-        // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
-    }
+    // fn resize(
+    //     &mut self,
+    //     _config: &wgpu::SurfaceConfiguration,
+    //     _device: &wgpu::Device,
+    //     _queue: &wgpu::Queue,
+    // ) {
+    //     // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
+    // }
 
-    fn render(
+    pub fn render(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,

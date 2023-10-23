@@ -4,9 +4,10 @@ use sugarloaf::core::SugarStyle;
 use sugarloaf::{
     core::{Sugar, SugarDecoration},
     layout::SugarloafLayout,
-    Sugarloaf,
 };
 
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -40,8 +41,19 @@ async fn main() {
         (2, 1),
     );
 
+    let size = window.inner_size();
+    let sugarloaf_window = SugarloafWindow {
+        handle: window.raw_window_handle(),
+        display: window.raw_display_handle(),
+        scale: scale_factor as f32,
+        size: SugarloafWindowSize {
+            width: size.width,
+            height: size.height,
+        },
+    };
+
     let mut sugarloaf = Sugarloaf::new(
-        &window,
+        &sugarloaf_window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
@@ -52,8 +64,8 @@ async fn main() {
 
     sugarloaf.calculate_bounds();
 
-    let _ = event_loop.run(move |event, _, control_flow| {
-        control_flow.set_wait();
+    let _ = event_loop.run(move |event, event_loop_window_target| {
+        event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
         let sugar = vec![
             Sugar {
@@ -506,7 +518,7 @@ async fn main() {
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
+                WindowEvent::CloseRequested => event_loop_window_target.exit(),
                 WindowEvent::ScaleFactorChanged {
                     // mut inner_size_writer,
                     scale_factor,
@@ -526,18 +538,18 @@ async fn main() {
                         .calculate_bounds();
                     window.request_redraw();
                 }
+                winit::event::WindowEvent::RedrawRequested { .. } => {
+                    sugarloaf.stack(sugar);
+                    sugarloaf.stack(italic_and_bold);
+                    sugarloaf.stack(rio);
+                    sugarloaf.stack(strike);
+                    sugarloaf.stack(cursors);
+                    sugarloaf.render();
+                }
                 _ => (),
             },
-            Event::RedrawRequested { .. } => {
-                sugarloaf.stack(sugar);
-                sugarloaf.stack(italic_and_bold);
-                sugarloaf.stack(rio);
-                sugarloaf.stack(strike);
-                sugarloaf.stack(cursors);
-                sugarloaf.render();
-            }
             _ => {
-                *control_flow = ControlFlow::Wait;
+                event_loop_window_target.set_control_flow(ControlFlow::Wait);
             }
         }
     });

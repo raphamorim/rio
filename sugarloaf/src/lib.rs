@@ -7,6 +7,5 @@ pub mod layout;
 mod sugarloaf;
 pub mod tools;
 pub use crate::sugarloaf::{
-    Renderable, Sugarloaf, SugarloafErrors, SugarloafWindow, SugarloafWindowSize,
-    SugarloafWithErrors,
+    Sugarloaf, SugarloafErrors, SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };

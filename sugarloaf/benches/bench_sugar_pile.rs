@@ -3,6 +3,7 @@ extern crate sugarloaf;
 
 use crate::layout::SugarloafLayout;
 use criterion::{criterion_group, criterion_main, Criterion};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::core::Sugar;
 use sugarloaf::*;
 use winit::dpi::LogicalSize;
@@ -27,6 +28,17 @@ fn bench_sugar_pile(c: &mut Criterion) {
     let font_size = 60.;
     let line_height = 1.0;
 
+    let size = window.inner_size();
+    let sugarloaf_window = SugarloafWindow {
+        handle: window.raw_window_handle(),
+        display: window.raw_display_handle(),
+        scale: scale_factor as f32,
+        size: SugarloafWindowSize {
+            width: size.width,
+            height: size.height,
+        },
+    };
+
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
         height as f32,
@@ -38,7 +50,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
     );
 
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
-        &window,
+        &sugarloaf_window,
         wgpu::PowerPreference::LowPower,
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
