@@ -80,15 +80,39 @@ impl Debug for SugarloafWithErrors {
     }
 }
 
+pub struct SugarloafWindowSize {
+    pub width: u32,
+    pub height: u32
+}
+
+pub struct SugarloafWindow {
+    pub handle: raw_window_handle::RawWindowHandle,
+    pub display: raw_window_handle::RawDisplayHandle,
+    pub size: SugarloafWindowSize,
+    pub scale: f32
+}
+
+unsafe impl raw_window_handle::HasRawWindowHandle for SugarloafWindow {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.handle
+    }
+}
+
+unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        self.display
+    }
+}
+
 impl Sugarloaf {
     pub async fn new(
-        winit_window: &winit::window::Window,
+        raw_window_handle: &SugarloafWindow,
         power_preference: wgpu::PowerPreference,
         fonts: SugarloafFonts,
         layout: SugarloafLayout,
         #[allow(unused)] db: Option<&Database>,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
-        let ctx = Context::new(winit_window, power_preference).await;
+        let ctx = Context::new(raw_window_handle, power_preference).await;
         let mut sugarloaf_errors = None;
 
         #[cfg(not(target_arch = "wasm32"))]

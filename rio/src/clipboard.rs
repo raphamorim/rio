@@ -3,7 +3,7 @@
 
 use log::warn;
 
-use winit::window::raw_window_handle::RawDisplayHandle;
+use raw_window_handle::RawDisplayHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardType {

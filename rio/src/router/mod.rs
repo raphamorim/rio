@@ -2,6 +2,7 @@ pub mod assistant;
 pub mod settings;
 pub mod welcome;
 
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use crate::event::EventProxy;
 use crate::screen::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
@@ -83,23 +84,23 @@ impl Route {
 
         if self.path == RoutePath::Settings {
             match key_event.logical_key {
-                winit::keyboard::Key::ArrowDown => {
+                winit::keyboard::Key::Named(ArrowDown) => {
                     self.settings.move_down();
                 }
-                winit::keyboard::Key::ArrowUp => {
+                winit::keyboard::Key::Named(ArrowUp) => {
                     self.settings.move_up();
                 }
-                winit::keyboard::Key::ArrowLeft => {
+                winit::keyboard::Key::Named(ArrowLeft) => {
                     self.settings.move_left();
                 }
-                winit::keyboard::Key::ArrowRight => {
+                winit::keyboard::Key::Named(ArrowRight) => {
                     self.settings.move_right();
                 }
-                winit::keyboard::Key::Enter => {
+                winit::keyboard::Key::Named(Enter) => {
                     self.settings.write_current_config_into_file();
                     self.path = RoutePath::Terminal;
                 }
-                winit::keyboard::Key::Escape => {
+                winit::keyboard::Key::Named(Escape) => {
                     self.settings.reset();
                     self.path = RoutePath::Terminal;
                 }
@@ -109,7 +110,7 @@ impl Route {
             return true;
         }
 
-        let is_enter = key_event.logical_key == winit::keyboard::Key::Enter;
+        let is_enter = key_event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter);
         if self.path == RoutePath::Assistant && is_enter {
             if self.assistant.is_warning() {
                 self.assistant.clear();
@@ -286,6 +287,7 @@ impl RouteWindow {
         let window_builder = create_window_builder(window_name, config, tab_id.clone());
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
+        let window_raw_handler = winit_window.raw_window_handle();
 
         let mut screen = futures::executor::block_on(Screen::new(
             &winit_window,

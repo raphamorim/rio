@@ -23,8 +23,6 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use winit::event::Modifiers;
 use winit::event::MouseButton;
-use winit::window::raw_window_handle::HasRawDisplayHandle;
-// use winit::window::raw_window_handle::HasRawWindowHandle;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::Column;
@@ -102,8 +100,6 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
-        // let raw_window_handle = winit_window.raw_window_handle();
-        let raw_display_handle = winit_window.raw_display_handle();
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
@@ -138,7 +134,7 @@ impl Screen {
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
-            winit_window,
+            raw_window_handle,
             power_preference,
             config.fonts.to_owned(),
             sugarloaf_layout,

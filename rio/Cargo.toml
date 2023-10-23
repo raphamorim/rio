@@ -17,13 +17,13 @@ path = "src/main.rs"
 base64 = "0.21.0"
 bitflags = "2.0.2"
 futures = "0.3"
-raw-window-handle = { version = "0.5", default-features = false }
 bytemuck = { workspace = true }
 rio-config = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
+raw-window-handle = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
-copypasta = { version = "0.8.1", default-features = false }
+copypasta = { version = "0.10.0", default-features = false }
 dirs = "5.0"
 notify = "6.0.0"
 glyph_brush = "0.7.7"
