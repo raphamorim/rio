@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use winit::event::KeyEvent;
 use winit::keyboard::Key;
 use winit::keyboard::KeyLocation;
+use winit::keyboard::NamedKey::*;
 
 #[inline(never)]
 pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
@@ -56,141 +57,141 @@ pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Ve
         Key::Character("*") if csi_u_numpad => ("57411".into(), 'u'),
         Key::Character("-") if csi_u_numpad => ("57412".into(), 'u'),
         Key::Character("+") if csi_u_numpad => ("57413".into(), 'u'),
-        Key::Enter if csi_u_numpad => ("57414".into(), 'u'),
+        Key::Named(Enter) if csi_u_numpad => ("57414".into(), 'u'),
         Key::Character("=") if csi_u_numpad => ("57415".into(), 'u'),
         // KP_SEPARATOR if csi_u_numpad => ("57415".into(), 'u'),
-        Key::ArrowLeft if csi_u_numpad => ("57417".into(), 'u'),
-        Key::ArrowRight if csi_u_numpad => ("57418".into(), 'u'),
-        Key::ArrowUp if csi_u_numpad => ("57419".into(), 'u'),
-        Key::ArrowDown if csi_u_numpad => ("57420".into(), 'u'),
-        Key::PageUp if csi_u_numpad => ("57421".into(), 'u'),
-        Key::PageDown if csi_u_numpad => ("57422".into(), 'u'),
-        Key::Home if csi_u_numpad => ("57423".into(), 'u'),
-        Key::End if csi_u_numpad => ("57424".into(), 'u'),
-        Key::Insert if csi_u_numpad => ("57425".into(), 'u'),
-        Key::Delete if csi_u_numpad => ("57426".into(), 'u'),
+        Key::Named(ArrowLeft) if csi_u_numpad => ("57417".into(), 'u'),
+        Key::Named(ArrowRight) if csi_u_numpad => ("57418".into(), 'u'),
+        Key::Named(ArrowUp) if csi_u_numpad => ("57419".into(), 'u'),
+        Key::Named(ArrowDown) if csi_u_numpad => ("57420".into(), 'u'),
+        Key::Named(PageUp) if csi_u_numpad => ("57421".into(), 'u'),
+        Key::Named(PageDown) if csi_u_numpad => ("57422".into(), 'u'),
+        Key::Named(Home) if csi_u_numpad => ("57423".into(), 'u'),
+        Key::Named(End) if csi_u_numpad => ("57424".into(), 'u'),
+        Key::Named(Insert) if csi_u_numpad => ("57425".into(), 'u'),
+        Key::Named(Delete) if csi_u_numpad => ("57426".into(), 'u'),
         // KP_BEGIN if csi_u_numpad => ("57427".into(), 'u'),
         // Handle common keys.
-        Key::ArrowLeft if mods.is_empty() && !send_event_type => ("".into(), 'D'),
-        Key::ArrowLeft => ("1".into(), 'D'),
-        Key::ArrowRight if mods.is_empty() && !send_event_type => ("".into(), 'C'),
-        Key::ArrowRight => ("1".into(), 'C'),
-        Key::ArrowUp if mods.is_empty() && !send_event_type => ("".into(), 'A'),
-        Key::ArrowUp => ("1".into(), 'A'),
-        Key::ArrowDown if mods.is_empty() && !send_event_type => ("".into(), 'B'),
-        Key::ArrowDown => ("1".into(), 'B'),
-        Key::Home if mods.is_empty() && !send_event_type => ("".into(), 'H'),
-        Key::Home => ("1".into(), 'H'),
-        Key::End if mods.is_empty() && !send_event_type => ("".into(), 'F'),
-        Key::End => ("1".into(), 'F'),
-        Key::PageUp => ("5".into(), '~'),
-        Key::PageDown => ("6".into(), '~'),
-        Key::Insert => ("2".into(), '~'),
-        Key::Delete => ("3".into(), '~'),
-        Key::F1 if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'P'),
-        Key::F1 if !mods.is_empty() || send_event_type => ("1".into(), 'P'),
-        Key::F2 if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'Q'),
-        Key::F2 if !mods.is_empty() || send_event_type => ("1".into(), 'Q'),
+        Key::Named(ArrowLeft) if mods.is_empty() && !send_event_type => ("".into(), 'D'),
+        Key::Named(ArrowLeft) => ("1".into(), 'D'),
+        Key::Named(ArrowRight) if mods.is_empty() && !send_event_type => ("".into(), 'C'),
+        Key::Named(ArrowRight) => ("1".into(), 'C'),
+        Key::Named(ArrowUp) if mods.is_empty() && !send_event_type => ("".into(), 'A'),
+        Key::Named(ArrowUp) => ("1".into(), 'A'),
+        Key::Named(ArrowDown) if mods.is_empty() && !send_event_type => ("".into(), 'B'),
+        Key::Named(ArrowDown) => ("1".into(), 'B'),
+        Key::Named(Home) if mods.is_empty() && !send_event_type => ("".into(), 'H'),
+        Key::Named(Home) => ("1".into(), 'H'),
+        Key::Named(End) if mods.is_empty() && !send_event_type => ("".into(), 'F'),
+        Key::Named(End) => ("1".into(), 'F'),
+        Key::Named(PageUp) => ("5".into(), '~'),
+        Key::Named(PageDown) => ("6".into(), '~'),
+        Key::Named(Insert) => ("2".into(), '~'),
+        Key::Named(Delete) => ("3".into(), '~'),
+        Key::Named(F1) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'P'),
+        Key::Named(F1) if !mods.is_empty() || send_event_type => ("1".into(), 'P'),
+        Key::Named(F2) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'Q'),
+        Key::Named(F2) if !mods.is_empty() || send_event_type => ("1".into(), 'Q'),
         // F3 diverges from alacritty's terminfo for CSI u modes.
-        Key::F3 if named_csi_u => ("13".into(), '~'),
-        Key::F3 if !mods.is_empty() => ("1".into(), 'R'),
-        Key::F4 if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'S'),
-        Key::F4 if !mods.is_empty() || send_event_type => ("1".into(), 'S'),
-        Key::F5 => ("15".into(), '~'),
-        Key::F6 => ("17".into(), '~'),
-        Key::F7 => ("18".into(), '~'),
-        Key::F8 => ("19".into(), '~'),
-        Key::F9 => ("20".into(), '~'),
-        Key::F10 => ("21".into(), '~'),
-        Key::F11 => ("23".into(), '~'),
-        Key::F12 => ("24".into(), '~'),
+        Key::Named(F3) if named_csi_u => ("13".into(), '~'),
+        Key::Named(F3) if !mods.is_empty() => ("1".into(), 'R'),
+        Key::Named(F4) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'S'),
+        Key::Named(F4) if !mods.is_empty() || send_event_type => ("1".into(), 'S'),
+        Key::Named(F5) => ("15".into(), '~'),
+        Key::Named(F6) => ("17".into(), '~'),
+        Key::Named(F7) => ("18".into(), '~'),
+        Key::Named(F8) => ("19".into(), '~'),
+        Key::Named(F9) => ("20".into(), '~'),
+        Key::Named(F10) => ("21".into(), '~'),
+        Key::Named(F11) => ("23".into(), '~'),
+        Key::Named(F12) => ("24".into(), '~'),
         // These keys are enabled regardless of mode and reported with the CSI u.
-        Key::F13 => ("57376".into(), 'u'),
-        Key::F14 => ("57377".into(), 'u'),
-        Key::F15 => ("57378".into(), 'u'),
-        Key::F16 => ("57379".into(), 'u'),
-        Key::F17 => ("57380".into(), 'u'),
-        Key::F18 => ("57381".into(), 'u'),
-        Key::F19 => ("57382".into(), 'u'),
-        Key::F20 => ("57383".into(), 'u'),
-        Key::F21 => ("57384".into(), 'u'),
-        Key::F22 => ("57385".into(), 'u'),
-        Key::F23 => ("57386".into(), 'u'),
-        Key::F24 => ("57387".into(), 'u'),
-        Key::F25 => ("57388".into(), 'u'),
-        Key::F26 => ("57389".into(), 'u'),
-        Key::F27 => ("57390".into(), 'u'),
-        Key::F28 => ("57391".into(), 'u'),
-        Key::F29 => ("57392".into(), 'u'),
-        Key::F30 => ("57393".into(), 'u'),
-        Key::F31 => ("57394".into(), 'u'),
-        Key::F32 => ("57395".into(), 'u'),
-        Key::F33 => ("57396".into(), 'u'),
-        Key::F34 => ("57397".into(), 'u'),
-        Key::F35 => ("57398".into(), 'u'),
-        Key::ScrollLock => ("57359".into(), 'u'),
-        Key::PrintScreen => ("57361".into(), 'u'),
-        Key::Pause => ("57362".into(), 'u'),
-        Key::ContextMenu => ("57363".into(), 'u'),
-        Key::MediaPlay => ("57428".into(), 'u'),
-        Key::MediaPause => ("57429".into(), 'u'),
-        Key::MediaPlayPause => ("57430".into(), 'u'),
-        // Key::MediaReverse => ("57431".into(), 'u'),
-        Key::MediaStop => ("57432".into(), 'u'),
-        Key::MediaFastForward => ("57433".into(), 'u'),
-        Key::MediaRewind => ("57434".into(), 'u'),
-        Key::MediaTrackNext => ("57435".into(), 'u'),
-        Key::MediaTrackPrevious => ("57436".into(), 'u'),
-        Key::MediaRecord => ("57437".into(), 'u'),
-        Key::AudioVolumeDown => ("57438".into(), 'u'),
-        Key::AudioVolumeUp => ("57439".into(), 'u'),
-        Key::AudioVolumeMute => ("57440".into(), 'u'),
-        Key::Escape if named_csi_u => ("27".into(), 'u'),
+        Key::Named(F13) => ("57376".into(), 'u'),
+        Key::Named(F14) => ("57377".into(), 'u'),
+        Key::Named(F15) => ("57378".into(), 'u'),
+        Key::Named(F16) => ("57379".into(), 'u'),
+        Key::Named(F17) => ("57380".into(), 'u'),
+        Key::Named(F18) => ("57381".into(), 'u'),
+        Key::Named(F19) => ("57382".into(), 'u'),
+        Key::Named(F20) => ("57383".into(), 'u'),
+        Key::Named(F21) => ("57384".into(), 'u'),
+        Key::Named(F22) => ("57385".into(), 'u'),
+        Key::Named(F23) => ("57386".into(), 'u'),
+        Key::Named(F24) => ("57387".into(), 'u'),
+        Key::Named(F25) => ("57388".into(), 'u'),
+        Key::Named(F26) => ("57389".into(), 'u'),
+        Key::Named(F27) => ("57390".into(), 'u'),
+        Key::Named(F28) => ("57391".into(), 'u'),
+        Key::Named(F29) => ("57392".into(), 'u'),
+        Key::Named(F30) => ("57393".into(), 'u'),
+        Key::Named(F31) => ("57394".into(), 'u'),
+        Key::Named(F32) => ("57395".into(), 'u'),
+        Key::Named(F33) => ("57396".into(), 'u'),
+        Key::Named(F34) => ("57397".into(), 'u'),
+        Key::Named(F35) => ("57398".into(), 'u'),
+        Key::Named(ScrollLock) => ("57359".into(), 'u'),
+        Key::Named(PrintScreen) => ("57361".into(), 'u'),
+        Key::Named(Pause) => ("57362".into(), 'u'),
+        Key::Named(ContextMenu) => ("57363".into(), 'u'),
+        Key::Named(MediaPlay) => ("57428".into(), 'u'),
+        Key::Named(MediaPause) => ("57429".into(), 'u'),
+        Key::Named(MediaPlayPause) => ("57430".into(), 'u'),
+        // Key::Named(MediaReverse) => ("57431".into(), 'u'),
+        Key::Named(MediaStop) => ("57432".into(), 'u'),
+        Key::Named(MediaFastForward) => ("57433".into(), 'u'),
+        Key::Named(MediaRewind) => ("57434".into(), 'u'),
+        Key::Named(MediaTrackNext) => ("57435".into(), 'u'),
+        Key::Named(MediaTrackPrevious) => ("57436".into(), 'u'),
+        Key::Named(MediaRecord) => ("57437".into(), 'u'),
+        Key::Named(AudioVolumeDown) => ("57438".into(), 'u'),
+        Key::Named(AudioVolumeUp) => ("57439".into(), 'u'),
+        Key::Named(AudioVolumeMute) => ("57440".into(), 'u'),
+        Key::Named(Escape) if named_csi_u => ("27".into(), 'u'),
         // Keys which are reported only when all key must be reported
-        Key::CapsLock if encode_all => ("57358".into(), 'u'),
-        Key::NumLock if encode_all => ("57360".into(), 'u'),
+        Key::Named(CapsLock) if encode_all => ("57358".into(), 'u'),
+        Key::Named(NumLock) if encode_all => ("57360".into(), 'u'),
         // Left mods.
-        Key::Shift if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Shift) if key.location == KeyLocation::Left && encode_all => {
             ("57441".into(), 'u')
         }
-        Key::Control if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Control) if key.location == KeyLocation::Left && encode_all => {
             ("57442".into(), 'u')
         }
-        Key::Alt if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Alt) if key.location == KeyLocation::Left && encode_all => {
             ("57443".into(), 'u')
         }
-        Key::Super if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Super) if key.location == KeyLocation::Left && encode_all => {
             ("57444".into(), 'u')
         }
-        Key::Hyper if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Hyper) if key.location == KeyLocation::Left && encode_all => {
             ("57445".into(), 'u')
         }
-        Key::Meta if key.location == KeyLocation::Left && encode_all => {
+        Key::Named(Meta) if key.location == KeyLocation::Left && encode_all => {
             ("57446".into(), 'u')
         }
         // Right mods.
-        Key::Shift if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Shift) if key.location == KeyLocation::Right && encode_all => {
             ("57447".into(), 'u')
         }
-        Key::Control if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Control) if key.location == KeyLocation::Right && encode_all => {
             ("57448".into(), 'u')
         }
-        Key::Alt if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Alt) if key.location == KeyLocation::Right && encode_all => {
             ("57449".into(), 'u')
         }
-        Key::Super if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Super) if key.location == KeyLocation::Right && encode_all => {
             ("57450".into(), 'u')
         }
-        Key::Hyper if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Hyper) if key.location == KeyLocation::Right && encode_all => {
             ("57451".into(), 'u')
         }
-        Key::Meta if key.location == KeyLocation::Right && encode_all => {
+        Key::Named(Meta) if key.location == KeyLocation::Right && encode_all => {
             ("57452".into(), 'u')
         }
 
-        Key::Enter if encode_all => ("13".into(), 'u'),
-        Key::Tab if encode_all => ("9".into(), 'u'),
-        Key::Backspace if encode_all => ("127".into(), 'u'),
+        Key::Named(Enter) if encode_all => ("13".into(), 'u'),
+        Key::Named(Tab) if encode_all => ("9".into(), 'u'),
+        Key::Named(Backspace) if encode_all => ("127".into(), 'u'),
         // When the character key ended up being a text, like when compose was done.
         Key::Character(c) if encode_all && c.chars().count() > 1 => ("0".into(), 'u'),
         Key::Character(c) => {

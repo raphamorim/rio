@@ -12,8 +12,8 @@ use std::fmt::Debug;
 use winit::event::MouseButton;
 use winit::keyboard::Key::*;
 use winit::keyboard::NamedKey::*;
-use winit::keyboard::{Key, KeyCode, KeyLocation, ModifiersState};
-// use winit::platform::scancode::KeyCodeExtScancode;
+use winit::keyboard::{Key, PhysicalKey, KeyLocation, ModifiersState};
+// use winit::platform::scancode::PhysicalKeyExtScancode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontSizeAction {
@@ -96,7 +96,7 @@ impl<T: Eq> Binding<T> {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BindingKey {
     #[allow(dead_code)]
-    Scancode(KeyCode),
+    Scancode(PhysicalKey),
     Keycode {
         key: Key,
         location: KeyLocation,
@@ -947,11 +947,11 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         "+", ModifiersState::SUPER; Action::IncreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
-        Insert, ModifiersState::SHIFT, ~BindingMode::VI;
+        Key::Named(Insert), ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[2;2~".into());
-        ArrowLeft, ModifiersState::ALT,  ~BindingMode::VI;
+        Key::Named(ArrowLeft), ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bb".into());
-        ArrowRight, ModifiersState::ALT,  ~BindingMode::VI;
+        Key::Named(ArrowRight), ModifiersState::ALT,  ~BindingMode::VI;
             Action::Esc("\x1bf".into());
         "k", ModifiersState::SUPER, ~BindingMode::VI;
             Action::Esc("\x0c".into());
@@ -972,8 +972,8 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::SUPER; Action::TabCreateNew;
-            Tab, ModifiersState::CONTROL; Action::SelectNextTab;
-            Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+            Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
+            Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "w", ModifiersState::SUPER; Action::TabCloseCurrent;
             "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
