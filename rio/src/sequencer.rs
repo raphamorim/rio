@@ -891,7 +891,7 @@ impl Sequencer {
                                     .screen
                                     .should_reload_with_updated_margin_top_y(
                                         route.window.winit_window.num_tabs(),
-                                        route.window.winit_window.fullscreen().is_some()
+                                        route.window.winit_window.fullscreen().is_some(),
                                     )
                             {
                                 route.update_config(
