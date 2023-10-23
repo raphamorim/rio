@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix MacOS fullscreen empty space on margin top.
 - Upgrade winit to 0.29.2.
 
 ## 0.0.24
