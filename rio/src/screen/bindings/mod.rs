@@ -12,7 +12,7 @@ use std::fmt::Debug;
 use winit::event::MouseButton;
 use winit::keyboard::Key::*;
 use winit::keyboard::NamedKey::*;
-use winit::keyboard::{Key, PhysicalKey, KeyLocation, ModifiersState};
+use winit::keyboard::{Key, KeyLocation, ModifiersState, PhysicalKey};
 // use winit::platform::scancode::PhysicalKeyExtScancode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

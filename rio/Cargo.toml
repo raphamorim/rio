@@ -50,10 +50,6 @@ cursor-icon = { version = "1.0.0", default-features = false }
 objc2 = { version = "=0.3.0-beta.0" }
 objc2-foundation = { version = "=0.2.0-alpha.5" }
 
-[target.'cfg(not(any(target_os="windows", target_os="macos")))'.dependencies]
-x11-dl = { version = "2", optional = true }
-wayland-client = { version = "0.29.0", features = ["dlopen"], optional = true }
-
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }
 tinyvec = { version = "1.6.0", features = ["alloc"] }
@@ -80,7 +76,8 @@ wayland = [
     "copypasta/wayland",
     "winit/wayland",
     "winit/wayland-dlopen",
-    "wayland-client"
+    "winit/wayland-dlopen",
+    "winit/wayland-csd-adwaita-crossfont",
 ]
 
 [package.metadata.deb]

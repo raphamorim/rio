@@ -2,7 +2,6 @@ pub mod assistant;
 pub mod settings;
 pub mod welcome;
 
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use crate::event::EventProxy;
 use crate::screen::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
@@ -15,8 +14,8 @@ use std::rc::Rc;
 use sugarloaf::font::loader;
 use winit::event_loop::EventLoop;
 use winit::event_loop::EventLoopWindowTarget;
-use winit::window::Window;
-use winit::window::WindowId;
+use winit::keyboard::{Key, NamedKey};
+use winit::window::{Window, WindowId};
 
 pub type ErrorReport = assistant::ErrorReport;
 
@@ -84,23 +83,23 @@ impl Route {
 
         if self.path == RoutePath::Settings {
             match key_event.logical_key {
-                winit::keyboard::Key::Named(ArrowDown) => {
+                Key::Named(NamedKey::ArrowDown) => {
                     self.settings.move_down();
                 }
-                winit::keyboard::Key::Named(ArrowUp) => {
+                Key::Named(NamedKey::ArrowUp) => {
                     self.settings.move_up();
                 }
-                winit::keyboard::Key::Named(ArrowLeft) => {
+                Key::Named(NamedKey::ArrowLeft) => {
                     self.settings.move_left();
                 }
-                winit::keyboard::Key::Named(ArrowRight) => {
+                Key::Named(NamedKey::ArrowRight) => {
                     self.settings.move_right();
                 }
-                winit::keyboard::Key::Named(Enter) => {
+                Key::Named(NamedKey::Enter) => {
                     self.settings.write_current_config_into_file();
                     self.path = RoutePath::Terminal;
                 }
-                winit::keyboard::Key::Named(Escape) => {
+                Key::Named(NamedKey::Escape) => {
                     self.settings.reset();
                     self.path = RoutePath::Terminal;
                 }
@@ -110,7 +109,7 @@ impl Route {
             return true;
         }
 
-        let is_enter = key_event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter);
+        let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
         if self.path == RoutePath::Assistant && is_enter {
             if self.assistant.is_warning() {
                 self.assistant.clear();
@@ -287,7 +286,6 @@ impl RouteWindow {
         let window_builder = create_window_builder(window_name, config, tab_id.clone());
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
-        let window_raw_handler = winit_window.raw_window_handle();
 
         let mut screen = futures::executor::block_on(Screen::new(
             &winit_window,

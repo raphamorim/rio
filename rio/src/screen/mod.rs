@@ -15,18 +15,10 @@ mod navigation;
 mod state;
 pub mod window;
 
-use winit::keyboard::NamedKey;
-use crate::crosswords::vi_mode::ViMotion;
-use crate::screen::bindings::MouseBinding;
-use crate::screen::bindings::ViAction;
-use core::fmt::Debug;
-use std::borrow::Cow;
-use std::ffi::OsStr;
-use winit::event::Modifiers;
-use winit::event::MouseButton;
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::Column;
+use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::{
     grid::Scroll,
     pos::{Pos, Side},
@@ -35,6 +27,8 @@ use crate::crosswords::{
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::router;
+use crate::screen::bindings::MouseBinding;
+use crate::screen::bindings::ViAction;
 #[cfg(target_os = "macos")]
 use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::screen::{
@@ -43,18 +37,27 @@ use crate::screen::{
     mouse::{calculate_mouse_position, Mouse},
 };
 use crate::selection::{Selection, SelectionType};
+use core::fmt::Debug;
 use messenger::Messenger;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_config::colors::{term::List, ColorWGPU};
 use state::State;
+use std::borrow::Cow;
 use std::cmp::max;
 use std::cmp::min;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::rc::Rc;
-use sugarloaf::{layout::SugarloafLayout, Sugarloaf, SugarloafErrors};
+use sugarloaf::{
+    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
+    SugarloafWindowSize,
+};
 use winit::event::ElementState;
+use winit::event::Modifiers;
+use winit::event::MouseButton;
 #[cfg(target_os = "macos")]
 use winit::keyboard::ModifiersKeyState;
-use winit::keyboard::{Key, KeyLocation, ModifiersState};
+use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
@@ -101,6 +104,8 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
+        let raw_window_handle = winit_window.raw_window_handle();
+        let raw_display_handle = winit_window.raw_display_handle();
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
@@ -134,8 +139,19 @@ impl Screen {
         );
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
+
+        let sugarloaf_window = SugarloafWindow {
+            handle: raw_window_handle,
+            display: raw_display_handle,
+            scale: scale as f32,
+            size: SugarloafWindowSize {
+                width: size.width,
+                height: size.height,
+            },
+        };
+
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
-            raw_window_handle,
+            &sugarloaf_window,
             power_preference,
             config.fonts.to_owned(),
             sugarloaf_layout,
@@ -468,9 +484,9 @@ impl Screen {
                 // it's how it should be done according to the kitty author
                 // https://github.com/kovidgoyal/kitty/issues/6516#issuecomment-1659454350
                 let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
-                    Key::Named(Tab) => [b'\t'].as_slice().into(),
-                    Key::Named(Enter) => [b'\r'].as_slice().into(),
-                    Key::Named(Delete) => [b'\x7f'].as_slice().into(),
+                    Key::Named(NamedKey::Tab) => [b'\t'].as_slice().into(),
+                    Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
+                    Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
                     Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
                         key.to_owned(),

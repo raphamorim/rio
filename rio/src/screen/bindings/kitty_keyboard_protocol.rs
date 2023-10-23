@@ -88,14 +88,20 @@ pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Ve
         Key::Named(PageDown) => ("6".into(), '~'),
         Key::Named(Insert) => ("2".into(), '~'),
         Key::Named(Delete) => ("3".into(), '~'),
-        Key::Named(F1) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'P'),
+        Key::Named(F1) if mods.is_empty() && named_csi_u && !send_event_type => {
+            ("".into(), 'P')
+        }
         Key::Named(F1) if !mods.is_empty() || send_event_type => ("1".into(), 'P'),
-        Key::Named(F2) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'Q'),
+        Key::Named(F2) if mods.is_empty() && named_csi_u && !send_event_type => {
+            ("".into(), 'Q')
+        }
         Key::Named(F2) if !mods.is_empty() || send_event_type => ("1".into(), 'Q'),
         // F3 diverges from alacritty's terminfo for CSI u modes.
         Key::Named(F3) if named_csi_u => ("13".into(), '~'),
         Key::Named(F3) if !mods.is_empty() => ("1".into(), 'R'),
-        Key::Named(F4) if mods.is_empty() && named_csi_u && !send_event_type => ("".into(), 'S'),
+        Key::Named(F4) if mods.is_empty() && named_csi_u && !send_event_type => {
+            ("".into(), 'S')
+        }
         Key::Named(F4) if !mods.is_empty() || send_event_type => ("1".into(), 'S'),
         Key::Named(F5) => ("15".into(), '~'),
         Key::Named(F6) => ("17".into(), '~'),

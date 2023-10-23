@@ -6,4 +6,7 @@ pub mod glyph;
 pub mod layout;
 mod sugarloaf;
 pub mod tools;
-pub use crate::sugarloaf::{Renderable, Sugarloaf, SugarloafErrors, SugarloafWithErrors};
+pub use crate::sugarloaf::{
+    Renderable, Sugarloaf, SugarloafErrors, SugarloafWindow, SugarloafWindowSize,
+    SugarloafWithErrors,
+};

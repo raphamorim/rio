@@ -82,14 +82,14 @@ impl Debug for SugarloafWithErrors {
 
 pub struct SugarloafWindowSize {
     pub width: u32,
-    pub height: u32
+    pub height: u32,
 }
 
 pub struct SugarloafWindow {
     pub handle: raw_window_handle::RawWindowHandle,
     pub display: raw_window_handle::RawDisplayHandle,
     pub size: SugarloafWindowSize,
-    pub scale: f32
+    pub scale: f32,
 }
 
 unsafe impl raw_window_handle::HasRawWindowHandle for SugarloafWindow {

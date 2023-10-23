@@ -51,9 +51,7 @@ impl Context {
         let size = &sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface = unsafe {
-            instance.create_surface(sugarloaf_window).unwrap()
-        };
+        let surface = unsafe { instance.create_surface(sugarloaf_window).unwrap() };
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
