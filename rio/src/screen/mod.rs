@@ -15,6 +15,7 @@ mod navigation;
 mod state;
 pub mod window;
 
+use winit::keyboard::NamedKey;
 use crate::crosswords::vi_mode::ViMotion;
 use crate::screen::bindings::MouseBinding;
 use crate::screen::bindings::ViAction;
@@ -467,10 +468,10 @@ impl Screen {
                 // it's how it should be done according to the kitty author
                 // https://github.com/kovidgoyal/kitty/issues/6516#issuecomment-1659454350
                 let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
-                    Key::Tab => [b'\t'].as_slice().into(),
-                    Key::Enter => [b'\r'].as_slice().into(),
-                    Key::Delete => [b'\x7f'].as_slice().into(),
-                    Key::Escape => [b'\x1b'].as_slice().into(),
+                    Key::Named(Tab) => [b'\t'].as_slice().into(),
+                    Key::Named(Enter) => [b'\r'].as_slice().into(),
+                    Key::Named(Delete) => [b'\x7f'].as_slice().into(),
+                    Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
                         key.to_owned(),
                         mods,
@@ -777,7 +778,7 @@ impl Screen {
                         && (mods.is_empty() || mods == ModifiersState::SHIFT)
                         && key.location != KeyLocation::Numpad
                         // Special case escape here.
-                        && key.logical_key != Key::Escape));
+                        && key.logical_key != Key::Named(NamedKey::Escape)));
 
             // Handle legacy char writing.
             if write_legacy {

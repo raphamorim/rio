@@ -18,7 +18,7 @@ use winit::event_loop::{DeviceEvents, EventLoop};
 use winit::platform::macos::EventLoopWindowTargetExtMacOS;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
-use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
@@ -62,8 +62,8 @@ impl Sequencer {
         self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
-        let _ = event_loop.run_ondemand(
-            move |event, event_loop_window_target, control_flow| {
+        let _ = event_loop.run_on_demand(
+            move |event, event_loop_window_target| {
                 match event {
                     Event::UserEvent(EventP {
                         payload, window_id, ..
@@ -131,8 +131,7 @@ impl Sequencer {
                                         self.router.routes.remove(&window_id);
 
                                         if self.router.routes.is_empty() {
-                                            *control_flow =
-                                                winit::event_loop::ControlFlow::Exit;
+                                            event_loop_window_target.exit();
                                         }
                                     }
                                 }
@@ -398,7 +397,7 @@ impl Sequencer {
                         self.router.routes.remove(&window_id);
 
                         if self.router.routes.is_empty() {
-                            *control_flow = winit::event_loop::ControlFlow::Exit;
+                            event_loop_window_target.exit();
                         }
                     }
 
@@ -956,13 +955,18 @@ impl Sequencer {
                     Event::AboutToWait => {
                         // Update the scheduler after event processing to ensure
                         // the event loop deadline is as accurate as possible.
-                        *control_flow = match scheduler.update() {
+                        let control_flow = match scheduler.update() {
                             Some(instant) => ControlFlow::WaitUntil(instant),
                             None => ControlFlow::Wait,
                         };
+                        event_loop_window_target.set_control_flow(control_flow);
                     }
 
-                    Event::RedrawRequested(window_id) => {
+                    Event::WindowEvent {
+                        event: winit::event::WindowEvent::RedrawRequested,
+                        window_id,
+                        ..
+                    } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
 
@@ -980,7 +984,7 @@ impl Sequencer {
                                         &self.config,
                                         &self.router.font_database,
                                     );
-                                    *control_flow = ControlFlow::Wait;
+                                    event_loop_window_target.set_control_flow(ControlFlow::Wait);
                                     return;
                                 }
                             }
@@ -1008,7 +1012,7 @@ impl Sequencer {
                             // println!("Time elapsed in render() is: {:?}", duration);
                         }
                         // }
-                        *control_flow = ControlFlow::Wait;
+                        event_loop_window_target.set_control_flow(ControlFlow::Wait);
                     }
                     _ => {}
                 }
