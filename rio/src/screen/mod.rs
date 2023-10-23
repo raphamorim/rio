@@ -267,14 +267,23 @@ impl Screen {
 
     #[inline]
     #[cfg(target_os = "macos")]
-    pub fn should_reload_with_updated_margin_top_y(&mut self, tab_num: usize, is_fullscreen: bool) -> bool {
+    pub fn should_reload_with_updated_margin_top_y(
+        &mut self,
+        tab_num: usize,
+        is_fullscreen: bool,
+    ) -> bool {
         let mut should_reload = false;
         if is_fullscreen {
             if tab_num <= 1 && self.sugarloaf.layout.margin.top_y != 0.0 {
                 self.sugarloaf.layout.set_margin_top_y(0.0);
                 should_reload = true;
-            } else if tab_num > 1 && self.sugarloaf.layout.margin.top_y != constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB {
-                self.sugarloaf.layout.set_margin_top_y(constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB);
+            } else if tab_num > 1
+                && self.sugarloaf.layout.margin.top_y
+                    != constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
+            {
+                self.sugarloaf
+                    .layout
+                    .set_margin_top_y(constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB);
                 should_reload = true;
             }
 
