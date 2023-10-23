@@ -11,8 +11,15 @@ If the following command returns without any errors, the rio terminfo is already
 infocmp rio
 ```
 
-If it is not present already, you can install it globally with the following command:
+If it is not present already, you can install it globally with the following command :
 
 ```bash
+# when cloned locally, from the root of the repository:
 sudo tic -xe rio misc/rio.terminfo
+
+# when not cloned locally
+curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
+sudo tic -xe rio rio.terminfo
+rm rio.terminfo
 ```
+
