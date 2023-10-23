@@ -2940,6 +2940,7 @@ dependencies = [
  "console_log",
  "env_logger 0.10.0",
  "log 0.4.20",
+ "raw-window-handle 0.5.2",
  "sugarloaf",
  "wasm-bindgen",
  "wasm-bindgen-futures",

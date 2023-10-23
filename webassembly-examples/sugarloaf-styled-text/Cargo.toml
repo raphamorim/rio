@@ -1,19 +1,20 @@
 [package]
 name = "sugarloaf-styled-text"
-authors.workspace = true
-version.workspace = true
-edition.workspace = true
-keywords.workspace = true
+authors = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+keywords = { workspace = true }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 sugarloaf = { path ="../../sugarloaf" }
-winit.workspace = true
-env_logger.workspace = true
-log.workspace = true
-wgpu.workspace = true
+raw-window-handle = { workspace = true }
+winit = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+wgpu = { workspace = true }
 web-sys = { version = "0.3.61", features = [
     "Location",
     "Document",
@@ -145,10 +146,10 @@ web-sys = { version = "0.3.61", features = [
     "WorkerGlobalScope",
     "WorkerNavigator"
 ] }
-console_log.workspace = true
-wasm-bindgen.workspace = true
-console_error_panic_hook.workspace = true
-wasm-bindgen-futures.workspace = true
+console_log = { workspace = true }
+wasm-bindgen = { workspace = true }
+console_error_panic_hook = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 
 [dev-dependencies]
-wasm-bindgen-test.workspace = true
+wasm-bindgen-test = { workspace = true }

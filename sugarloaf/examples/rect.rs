@@ -1,7 +1,9 @@
 extern crate png;
 extern crate tokio;
 
-use winit::platform::run_ondemand::EventLoopExtRunOnDemand;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use winit::event_loop::ControlFlow;
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -11,7 +13,7 @@ use winit::{
 
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::Sugarloaf;
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 #[tokio::main]
 async fn main() {
@@ -40,8 +42,19 @@ async fn main() {
         (2, 1),
     );
 
+    let size = window.inner_size();
+    let sugarloaf_window = SugarloafWindow {
+        handle: window.raw_window_handle(),
+        display: window.raw_display_handle(),
+        scale: scale_factor as f32,
+        size: SugarloafWindowSize {
+            width: size.width,
+            height: size.height,
+        },
+    };
+
     let mut sugarloaf = Sugarloaf::new(
-        &window,
+        &sugarloaf_window,
         wgpu::PowerPreference::HighPerformance,
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
@@ -50,15 +63,15 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    let _ = event_loop.run_ondemand(move |event, _, control_flow| {
-        control_flow.set_wait();
+    let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
+        event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
         match event {
             Event::Resumed => {
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
+                WindowEvent::CloseRequested => event_loop_window_target.exit(),
                 WindowEvent::ScaleFactorChanged {
                     inner_size_writer: _,
                     scale_factor,
@@ -97,41 +110,41 @@ async fn main() {
                         ])
                         .render();
                 }
+                WindowEvent::RedrawRequested { .. } => {
+                    sugarloaf
+                        .pile_rects(vec![
+                            Rect {
+                                position: [10.0, 10.0],
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                size: [1.0, 1.0],
+                            },
+                            Rect {
+                                position: [15.0, 10.0],
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                size: [10.0, 10.0],
+                            },
+                            Rect {
+                                position: [30.0, 20.0],
+                                color: [1.0, 1.0, 0.0, 1.0],
+                                size: [50.0, 50.0],
+                            },
+                            Rect {
+                                position: [200., 200.0],
+                                color: [0.0, 1.0, 0.0, 1.0],
+                                size: [100.0, 100.0],
+                            },
+                            Rect {
+                                position: [500.0, 200.0],
+                                color: [1.0, 1.0, 0.0, 1.0],
+                                size: [200.0, 200.0],
+                            },
+                        ])
+                        .render();
+                }
                 _ => (),
             },
-            Event::RedrawRequested { .. } => {
-                sugarloaf
-                    .pile_rects(vec![
-                        Rect {
-                            position: [10.0, 10.0],
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            size: [1.0, 1.0],
-                        },
-                        Rect {
-                            position: [15.0, 10.0],
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            size: [10.0, 10.0],
-                        },
-                        Rect {
-                            position: [30.0, 20.0],
-                            color: [1.0, 1.0, 0.0, 1.0],
-                            size: [50.0, 50.0],
-                        },
-                        Rect {
-                            position: [200., 200.0],
-                            color: [0.0, 1.0, 0.0, 1.0],
-                            size: [100.0, 100.0],
-                        },
-                        Rect {
-                            position: [500.0, 200.0],
-                            color: [1.0, 1.0, 0.0, 1.0],
-                            size: [200.0, 200.0],
-                        },
-                    ])
-                    .render();
-            }
             _ => {
-                *control_flow = winit::event_loop::ControlFlow::Wait;
+                event_loop_window_target.set_control_flow(ControlFlow::Wait);
             }
         }
     });

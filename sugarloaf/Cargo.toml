@@ -32,7 +32,6 @@ targets = [
 [dependencies]
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
-winit = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 twox-hash = { version = "1.6.3", default-features = false }
@@ -64,6 +63,7 @@ tokio = { workspace = true }
 fontconfig-parser = { version = "0.5.3", default-features = false }
 
 [dev-dependencies]
+winit = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"

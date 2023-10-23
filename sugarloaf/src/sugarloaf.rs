@@ -24,25 +24,6 @@ use unicode_width::UnicodeWidthChar;
 #[cfg(target_arch = "wasm32")]
 pub struct Database;
 
-pub trait Renderable: 'static + Sized {
-    fn init(context: &Context) -> Self;
-    fn resize(
-        &mut self,
-        config: &wgpu::SurfaceConfiguration,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    );
-    fn update(&mut self, event: winit::event::WindowEvent);
-    fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        dimensions: (u32, u32),
-        instances: &[Rect],
-        context: &mut Context,
-    );
-}
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct CachedSugar {
     font_id: FontId,
