@@ -1,17 +1,18 @@
-#[derive(Debug)]
+use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
+
 pub struct Context {
     pub device: wgpu::Device,
     pub surface: wgpu::Surface,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
-    pub size: winit::dpi::PhysicalSize<u32>,
+    pub size: SugarloafWindowSize,
     pub scale: f32,
     pub adapter_info: wgpu::AdapterInfo,
 }
 
 impl Context {
     pub async fn new(
-        winit_window: &winit::window::Window,
+        sugarloaf_window: &SugarloafWindow,
         power_preference: wgpu::PowerPreference,
     ) -> Context {
         #[cfg(target_arch = "wasm32")]
@@ -47,10 +48,12 @@ impl Context {
 
         log::info!("initializing the surface");
 
-        let size = winit_window.inner_size();
-        let scale = winit_window.scale_factor();
+        let size = &sugarloaf_window.size;
+        let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(&winit_window).unwrap() };
+        let surface = unsafe {
+            instance.create_surface(sugarloaf_window).unwrap()
+        };
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -143,8 +146,11 @@ impl Context {
             queue,
             surface,
             format,
-            size,
-            scale: scale as f32,
+            size: SugarloafWindowSize {
+                width: size.width,
+                height: size.height,
+            },
+            scale,
             adapter_info: adapter.get_info(),
         }
     }
