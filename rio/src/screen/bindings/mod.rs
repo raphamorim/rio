@@ -1001,7 +1001,7 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
         "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
-        Insert,   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
+        Key::Named(Insert),   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
         "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
         "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
         "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
@@ -1016,8 +1016,8 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
-            Tab, ModifiersState::CONTROL; Action::SelectNextTab;
-            Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+            Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
+            Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
             "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
@@ -1035,28 +1035,28 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         "v", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
         "c", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
         "c", ModifiersState::CONTROL | ModifiersState::SHIFT, +BindingMode::VI; Action::ClearSelection;
-        Insert, ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
+        Key::Named(Insert), ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
         "0", ModifiersState::CONTROL; Action::ResetFontSize;
         "=", ModifiersState::CONTROL; Action::IncreaseFontSize;
         "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
         "+", ModifiersState::CONTROL; Action::IncreaseFontSize;
         "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL; Action::DecreaseFontSize;
-        Enter, ModifiersState::ALT; Action::ToggleFullscreen;
+        Key::Named(Enter), ModifiersState::ALT; Action::ToggleFullscreen;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
         // This is actually a Windows Powershell shortcut
         // https://github.com/alacritty/alacritty/issues/2930
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
-        Backspace, ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
+        Key::Named(Backspace), ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
     );
 
     if use_navigation_key_bindings {
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
-            Tab, ModifiersState::CONTROL; Action::SelectNextTab;
-            Tab, ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
+            Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
+            Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
