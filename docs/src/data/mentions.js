@@ -2,6 +2,19 @@ import React from 'react';
 
 const MENTIONS = [
   {
+    url: 'https://twitter.com/jaijams/status/1716815864975270005',
+    handle: 'jaijams',
+    name: 'Jai Padmanabhan',
+    date: 'Oct 24, 2023',
+    content: (
+      <>
+        I have been using the Rio terminal (https://raphamorim.io/rio/) for 6 months.  OMG! Rio is my No.1 terminal ♥️ and is super fast 🚀 . Love using it daily 🎉
+      </>
+    ),
+    showOnHomepage: true,
+    githubUsername: 'jaypadma',
+  },
+  {
     url: 'https://twitter.com/mcsmonte/status/1660949303089586177',
     handle: 'mcsmonte',
     name: 'Matheus Monte',
