@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix flagged dimmed colors (cases where it does not comes from rgb index).
 - Fix MacOS fullscreen empty space on margin top.
 - Upgrade winit to 0.29.2.
 

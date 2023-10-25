@@ -148,7 +148,7 @@ pub fn dim_magenta() -> ColorArray {
 
 #[inline]
 pub fn dim_red() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#C7102A"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#F56495"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
