@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Display the shell name on the tab title for MacOS Native Tab (Ref [#311](https://github.com/raphamorim/rio/issues/311) by [@eduronqui](https://github.com/eduronqui)).
 - Fix VI cursor disappearing whenever perform a scroll..
 - Fix flagged dimmed colors (cases where it does not comes from rgb index).
 - Fix MacOS fullscreen empty space on margin top.
