@@ -436,7 +436,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         let window_title = if terminal_title.is_empty() {
                             program.to_owned()
                         } else {
-                            terminal_title.to_owned()
+                            format!("{} ({})", terminal_title, program).to_owned()
                         };
 
                         self.event_proxy
