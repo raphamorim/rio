@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Upgrade wgpu to 0.18.0.
+- Desktop OpenGL 3.3+ Support on Windows through WebGPU.
 - Display the shell name on the tab title for MacOS Native Tab (Ref [#311](https://github.com/raphamorim/rio/issues/311) by [@eduronqui](https://github.com/eduronqui)).
 - Fix VI cursor disappearing whenever perform a scroll..
 - Fix flagged dimmed colors (cases where it does not comes from rgb index).

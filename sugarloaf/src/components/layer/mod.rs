@@ -549,12 +549,14 @@ impl LayerBrush {
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
