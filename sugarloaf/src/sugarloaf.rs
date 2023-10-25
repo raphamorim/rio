@@ -146,13 +146,15 @@ impl Sugarloaf {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                     label: Some("sugarloaf::init -> Clear frame"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
@@ -623,12 +625,14 @@ impl Sugarloaf {
 
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("sugarloaf::init -> Clear frame"),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
@@ -732,13 +736,15 @@ impl Sugarloaf {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                     label: Some("sugarloaf::render -> Clear frame"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
