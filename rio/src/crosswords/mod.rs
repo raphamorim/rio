@@ -917,7 +917,7 @@ impl<U: EventListener> Crosswords<U> {
         let mut pos = if vi_mode {
             let mut vi_cursor_pos = self.vi_mode_cursor.pos;
             if scroll > 0 {
-                vi_cursor_pos.row = vi_cursor_pos.row + scroll;
+                vi_cursor_pos.row += scroll;
             }
             vi_cursor_pos
         } else {
