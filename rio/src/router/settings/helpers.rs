@@ -88,7 +88,7 @@ pub fn config_to_settings(
                 title: String::from("Blinking Cursor"),
                 options,
                 current_option,
-                requires_restart: false,
+                requires_restart: true,
             },
         );
     }

@@ -913,10 +913,14 @@ impl<U: EventListener> Crosswords<U> {
     pub fn cursor(&mut self) -> CursorState {
         let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
+        let scroll = self.display_offset() as i32;
         let mut pos = if vi_mode {
-            self.vi_mode_cursor.pos
+            let mut vi_cursor_pos = self.vi_mode_cursor.pos;
+            if scroll > 0 {
+                vi_cursor_pos.row = vi_cursor_pos.row + scroll;
+            }
+            vi_cursor_pos
         } else {
-            let scroll = self.display_offset() as i32;
             if scroll != 0 {
                 content = CursorShape::Hidden;
             }
