@@ -53,6 +53,19 @@ const MENTIONS = [
     showOnHomepage: true,
     githubUsername: 'peterlazar1993',
   },
+  {
+    url: 'https://twitter.com/EduRonqui/status/1717288090820055297',
+    handle: 'EduRonqui',
+    name: 'Edu Ronqui',
+    date: 'Oct 26, 2023',
+    content: (
+      <>
+        It’s a tiny one but this release features my first ever contribution to an open source project and it feels so nice to give back to this amazing project that has become my main terminal.
+      </>
+    ),
+    showOnHomepage: true,
+    githubUsername: 'EduRonqui',
+  },
 ];
 
 export default MENTIONS;
