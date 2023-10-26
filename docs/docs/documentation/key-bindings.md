@@ -246,7 +246,7 @@ The example below will disable window creation binding in the macos:
 [bindings]
 keys = [
    { key = "n", with = "super", action = "ReceiveChar" }
-}
+]
 ```
 
 `ReceiveChar` will treat the binding as non existent and simply receive the input and put the character into the terminal.
@@ -257,7 +257,7 @@ Optionally you can ignore/disable completely a binding using `None`. In the exam
 [bindings]
 keys = [
    { key = "n", with = "super", action = "None" }
-}
+]
 ```
 
 If you are missing a key binding that you believe that should be a default in the platform that you are using, feel free to [open an issue](https://github.com/raphamorim/rio).
