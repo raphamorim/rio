@@ -560,13 +560,16 @@ impl Sequencer {
                                         .winit_window
                                         .set_cursor_icon(CursorIcon::Default);
                                 }
-                            }
 
-                            if has_selection && (lmb_pressed || rmb_pressed) {
-                                route.window.screen.update_selection_scrolling(y);
+                                route.window.is_macos_deadzone = true;
+                                return;
                             }
 
                             route.window.is_macos_deadzone = false;
+                        }
+
+                        if has_selection && (lmb_pressed || rmb_pressed) {
+                            route.window.screen.update_selection_scrolling(y);
                         }
 
                         let display_offset = route.window.screen.display_offset();
