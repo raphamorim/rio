@@ -321,6 +321,7 @@ impl<T> Grid<T> {
 
     /// This is used only for initializing after loading ref-tests.
     #[inline]
+    #[allow(unused)]
     pub fn initialize_all(&mut self)
     where
         T: GridSquare + Clone + Default,
@@ -335,6 +336,7 @@ impl<T> Grid<T> {
 
     /// This is used only for truncating before saving ref-tests.
     #[inline]
+    #[allow(unused)]
     pub fn truncate(&mut self) {
         self.raw.truncate();
     }
@@ -355,7 +357,7 @@ impl<T> Grid<T> {
     /// This is slightly more optimized than calling `Grid::iter_from` in combination with
     /// `Iterator::take_while`.
     #[inline]
-    #[allow(dead_code)]
+    #[allow(unused)]
     pub fn display_iter(&self) -> GridIterator<'_, T> {
         let last_column = self.last_column();
         let start = Pos::new(Line(-(self.display_offset() as i32) - 1), last_column);
