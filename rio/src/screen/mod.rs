@@ -1009,10 +1009,13 @@ impl Screen {
         let pos_hyperlink = terminal.grid[pos].hyperlink();
         drop(terminal);
 
-        if let Some(hyperlink) = pos_hyperlink {
-            self.open_hyperlink(hyperlink);
+        #[cfg(unix)]
+        {
+            if let Some(hyperlink) = pos_hyperlink {
+                self.open_hyperlink(hyperlink);
 
-            return true;
+                return true;
+            }
         }
 
         false
