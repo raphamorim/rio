@@ -152,7 +152,7 @@ impl State {
     }
 
     #[inline]
-    pub fn has_hyperlink(&self) -> bool {
+    pub fn has_hyperlink_range(&self) -> bool {
         self.hyperlink_range.is_some()
     }
 
