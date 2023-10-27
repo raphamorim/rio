@@ -16,12 +16,11 @@ mod state;
 pub mod window;
 
 use crate::clipboard::{Clipboard, ClipboardType};
-use crate::crosswords::grid::Dimensions;
-use crate::crosswords::pos::Column;
-use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::{
-    grid::Scroll,
-    pos::{Pos, Side},
+    grid::{Dimensions, Scroll},
+    pos::{Column, Pos, Side},
+    square::Hyperlink,
+    vi_mode::ViMotion,
     Crosswords, Mode, MIN_COLUMNS, MIN_LINES,
 };
 use crate::event::{ClickState, EventProxy};
@@ -43,8 +42,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_config::colors::{term::List, ColorWGPU};
 use state::State;
 use std::borrow::Cow;
-use std::cmp::max;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::rc::Rc;
@@ -307,17 +305,16 @@ impl Screen {
     #[inline]
     pub fn process_hyperlink(&mut self, pos: Pos) -> bool {
         let mut terminal = self.ctx_mut().current().terminal.lock();
-        let search_result = terminal.search_for_nearest_hyperlink_from_pos(pos);
+        let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
         drop(terminal);
 
-        match search_result {
-            Some(_link) => true,
-            None => false,
+        if let Some(hyperlink_range) = search_result {
+            self.state.set_hyperlink_range(Some(hyperlink_range));
+            return true;
         }
-        // let mut regex = RegexSearch::new(URL_REGEX).unwrap();
-        // let matches = visible_regex_match_iter(&term, &mut regex).collect::<Vec<_>>();
-        // if matches.is_empty() {
-        // }
+
+        self.state.set_hyperlink_range(None);
+        false
     }
 
     /// update_config is triggered in any configuration file update
@@ -1006,24 +1003,43 @@ impl Screen {
         drop(terminal);
     }
 
-    // TODO: Exec
+    #[inline]
+    pub fn trigger_hyperlink_from_position(&self, pos: Pos) -> bool {
+        let terminal = self.context_manager.current().terminal.lock();
+        let pos_hyperlink = terminal.grid[pos].hyperlink();
+        drop(terminal);
+
+        if let Some(hyperlink) = pos_hyperlink {
+            self.open_hyperlink(hyperlink);
+
+            return true;
+        }
+
+        false
+    }
+
+    #[cfg(unix)]
+    fn open_hyperlink(&self, hyperlink: Hyperlink) {
+        // Example:
+        #[cfg(not(any(target_os = "macos", windows)))]
+        self.exec("xdg-open", [hyperlink.uri()]);
+
+        #[cfg(target_os = "macos")]
+        self.exec("open", [hyperlink.uri()]);
+
+        // #[cfg(windows)]
+        // let action = HintAction::Command(Program::WithArgs {
+        //     program: String::from("cmd"),
+        //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
+        // });
+    }
+
     #[cfg(unix)]
     pub fn exec<I, S>(&self, program: &str, args: I)
     where
         I: IntoIterator<Item = S> + Debug + Copy,
         S: AsRef<OsStr>,
     {
-        // Example:
-        // #[cfg(not(any(target_os = "macos", windows)))]
-        // let action = HintAction::Command(Program::Just(String::from("xdg-open")));
-        // #[cfg(target_os = "macos")]
-        // let action = HintAction::Command(Program::Just(String::from("open")));
-        // #[cfg(windows)]
-        // let action = HintAction::Command(Program::WithArgs {
-        //     program: String::from("cmd"),
-        //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
-        // });
-
         let main_fd = *self.ctx().current().main_fd;
         let shell_pid = &self.ctx().current().shell_pid;
         match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
@@ -1130,8 +1146,7 @@ impl Screen {
 
         // Move vi mode cursor to mouse click position.
         let mut terminal = self.ctx().current().terminal.lock();
-        let mode = terminal.mode();
-        if mode.contains(Mode::VI) {
+        if terminal.mode().contains(Mode::VI) {
             terminal.vi_mode_cursor.pos = point;
         }
         drop(terminal);

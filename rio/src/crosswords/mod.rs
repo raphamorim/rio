@@ -837,67 +837,108 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn search_for_nearest_hyperlink_from_pos(&mut self, pos: Pos) -> Option<bool> {
+    pub fn search_nearest_hyperlink_from_pos(
+        &mut self,
+        pos: Pos,
+    ) -> Option<SelectionRange> {
         // Limit the starting pos to the last line in the history
-        // pos.row = std::cmp::max(pos.row, self.grid.topmost_line());
-
         let wide = square::Flags::WIDE_CHAR
             | square::Flags::WIDE_CHAR_SPACER
             | square::Flags::LEADING_WIDE_CHAR_SPACER;
 
         let last_column = self.grid.columns() - 1;
+        let first_column = 0;
+        let starting_square: &Square = &self.grid[pos];
+
+        if starting_square.c == ' ' {
+            return None;
+        }
 
         let mut content: std::collections::VecDeque<char> =
-            std::collections::VecDeque::from([]);
-        let mut content_pos: Vec<Pos> = vec![];
+            std::collections::VecDeque::from([starting_square.c]);
+        let mut positions_to_update: Vec<Pos> = vec![pos];
+        let mut selection_start: Pos = pos;
+        let mut selection_end: Pos = pos;
 
-        // Next
+        // Next adjacents squares
         for square in self.grid.iter_from(pos) {
+            if square.hyperlink().is_some() {
+                content.push_back(square.c);
+                selection_end = square.pos;
+                positions_to_update.push(square.pos);
+                continue;
+            }
+
             if square.flags.intersects(wide) || square.c == ' ' {
                 break;
             }
 
             content.push_back(square.c);
-            content_pos.push(square.pos);
+            selection_end = square.pos;
+            positions_to_update.push(square.pos);
 
-            if pos.col == last_column {
-            // && !square.flags.contains(square::Flags::WRAPLINE) {
+            if pos.col == last_column || square.flags.contains(square::Flags::WRAPLINE) {
                 break; // cut off if on new line or hit escape char
             }
         }
 
+        // Previous adjacents squares
         let mut iter = self.grid.iter_from(pos);
         while let Some(square) = iter.prev() {
+            if square.hyperlink().is_some() {
+                content.push_front(square.c);
+                selection_start = square.pos;
+                positions_to_update.push(square.pos);
+                continue;
+            }
+
             if square.flags.intersects(wide) || square.c == ' ' {
                 break;
             }
 
             content.push_front(square.c);
-            content_pos.push(square.pos);
+            selection_start = square.pos;
+            positions_to_update.push(square.pos);
 
-            if square.pos.col == last_column
-                // && !square.flags.contains(square::Flags::WRAPLINE)
+            if square.pos.col == first_column
+                || square.flags.contains(square::Flags::WRAPLINE)
             {
                 break; // cut off if on new line or hit escape char
             }
         }
 
-        if content.len() <= 6 {
+        if content.len() <= 4 {
             return None;
         }
 
-        let a = content.iter().collect::<String>();
-        if let Some(uri) = self.hyperlink_re.find(&a) {
-            let uri = uri.as_str().to_string();
-            let hyperlink = Some(
-                Hyperlink::new(None, uri)
-            );
+        let value = content.iter().collect::<String>();
+        if let Some(existent_hyperlink) = starting_square.hyperlink() {
+            if value == existent_hyperlink.uri() {
+                // SelectionRange starts by the end
+                let range = SelectionRange {
+                    start: selection_start,
+                    end: selection_end,
+                    is_block: false,
+                };
+                return Some(range);
+            }
+        }
 
-            for link_pos in content_pos.iter() {
+        if let Some(uri) = self.hyperlink_re.find(&value) {
+            let uri = uri.as_str().to_string();
+            let hyperlink = Some(Hyperlink::new(None, uri));
+
+            for link_pos in positions_to_update.iter() {
                 self.grid[link_pos.row][link_pos.col].set_hyperlink(hyperlink.to_owned());
             }
 
-            return Some(true);
+            // SelectionRange starts by the end
+            let range = SelectionRange {
+                start: selection_start,
+                end: selection_end,
+                is_block: false,
+            };
+            return Some(range);
         }
 
         None
@@ -2593,6 +2634,143 @@ mod tests {
             term.selection_to_string(),
             Some(String::from("\na\"\na\"\na"))
         );
+    }
+
+    #[test]
+    fn test_search_nearest_hyperlink_from_pos_on_single_lines() {
+        let size = CrosswordsSize::new(20, 3);
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+        );
+        let grid = &mut term.grid;
+        for i in 0..19 {
+            grid[Line(0)][Column(i)].c = ' ';
+        }
+
+        // First line does not contain any hyperlink (it is empty as well)
+        let result = term
+            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(2)));
+        assert_eq!(result, None);
+
+        let grid = &mut term.grid;
+        for i in 0..19 {
+            grid[Line(0)][Column(i)].c = 'a';
+        }
+
+        // First line does not contain any hyperlink (does not contain any link)
+        let result = term
+            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(0)));
+        assert_eq!(result, None);
+
+        // Cleanup line
+        let grid = &mut term.grid;
+        for i in 0..19 {
+            grid[Line(0)][Column(i)].c = ' ';
+        }
+
+        let grid = &mut term.grid;
+        let link: [char; 14] = [
+            'h', 't', 't', 'p', 's', ':', '/', '/', 'r', 'i', 'o', '.', 'i', 'o',
+        ];
+        for (i, val) in link.iter().enumerate() {
+            grid[Line(0)][Column(i)].c = *val;
+        }
+
+        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(1)].c, 't');
+        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(2)].c, 't');
+        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(3)].c, 'p');
+        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(12)].c, 'i');
+        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
+        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
+
+        // First line does not a hyperlink from (0 to 13) position
+        let result = term
+            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(14)));
+        assert_eq!(result, None);
+
+        // From 'h'
+        let result = term
+            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(0)));
+        assert_eq!(
+            result,
+            Some(SelectionRange {
+                start: Pos {
+                    row: Line(0),
+                    col: Column(0)
+                },
+                end: Pos {
+                    row: Line(0),
+                    col: Column(13)
+                },
+                is_block: false
+            })
+        );
+
+        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert_eq!(term.grid[Line(0)][Column(1)].c, 't');
+        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(2)].c, 't');
+        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(3)].c, 'p');
+        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(12)].c, 'i');
+        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_some());
+        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
+        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(0)][Column(13)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
+        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_some());
+
+        // From 'r' (this case should hit square hyperlink info)
+        let result = term
+            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(8)));
+        assert_eq!(
+            result,
+            Some(SelectionRange {
+                start: Pos {
+                    row: Line(0),
+                    col: Column(0)
+                },
+                end: Pos {
+                    row: Line(0),
+                    col: Column(13)
+                },
+                is_block: false
+            })
+        );
+
+        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
+        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(0)][Column(13)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
+        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_some());
     }
 
     #[test]
