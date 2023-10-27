@@ -2681,17 +2681,17 @@ mod tests {
         }
 
         assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
         assert_eq!(term.grid[Line(0)][Column(1)].c, 't');
-        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_none());
         assert_eq!(term.grid[Line(0)][Column(2)].c, 't');
-        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_none());
         assert_eq!(term.grid[Line(0)][Column(3)].c, 'p');
-        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_none());
         assert_eq!(term.grid[Line(0)][Column(12)].c, 'i');
-        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_none());
         assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
-        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_none());
 
         // First line does not a hyperlink from (0 to 13) position
         let result = term
@@ -2737,7 +2737,7 @@ mod tests {
             "https://rio.io"
         );
         assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
-        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_none());
 
         // From 'r' (this case should hit square hyperlink info)
         let result = term
@@ -2770,7 +2770,7 @@ mod tests {
             "https://rio.io"
         );
         assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
-        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_none());
     }
 
     #[test]
