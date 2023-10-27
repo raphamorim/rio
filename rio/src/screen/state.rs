@@ -41,6 +41,7 @@ pub struct State {
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
+    hyperlink_range: Option<SelectionRange>,
 }
 
 // TODO: Finish from
@@ -124,6 +125,7 @@ impl State {
             ),
             font_size: config.fonts.size,
             selection_range: None,
+            hyperlink_range: None,
             named_colors,
             dynamic_background,
             cursor: Cursor {
@@ -142,6 +144,16 @@ impl State {
     #[inline]
     pub fn get_cursor_state(&self) -> CursorState {
         self.cursor.state.clone()
+    }
+
+    #[inline]
+    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
+        self.hyperlink_range = hyperlink_range;
+    }
+
+    #[inline]
+    pub fn has_hyperlink(&self) -> bool {
+        self.hyperlink_range.is_some()
     }
 
     // TODO: Square.into()
@@ -176,7 +188,7 @@ impl State {
         }
 
         let mut decoration = None;
-        if flags.contains(Flags::UNDERLINE) || square.hyperlink().is_some() {
+        if flags.contains(Flags::UNDERLINE) {
             decoration = Some(SugarDecoration {
                 relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
@@ -197,6 +209,17 @@ impl State {
             style,
             decoration,
         }
+    }
+
+    #[inline]
+    fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
+        sugar.decoration = Some(SugarDecoration {
+            relative_position: (0.0, self.font_size - 1.),
+            size: (1.0, 0.005),
+            color: self.named_colors.foreground,
+        });
+
+        sugar
     }
 
     #[inline]
@@ -242,20 +265,19 @@ impl State {
         stack
     }
 
+    // create_rich_sugar_stack is different than create_sugar_stack
+    // it activates features like hyperlinks and text selection
+    // this function is only called if state has either selection or hyperlink is some
     #[inline]
-    fn create_sugar_stack_with_selection(
+    fn create_rich_sugar_stack(
         &mut self,
         row: &Row<Square>,
         has_cursor: bool,
-        range: &SelectionRange,
         line: pos::Line,
-        display_offset: i32,
     ) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
-            let line = line - display_offset;
-            let is_selected = range.contains(pos::Pos::new(line, pos::Column(column)));
             let square = &row.inner[column];
 
             if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
@@ -264,7 +286,21 @@ impl State {
 
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
-            } else if is_selected {
+            } else if self.hyperlink_range.is_some()
+                && square.hyperlink().is_some()
+                && self
+                    .hyperlink_range
+                    .unwrap()
+                    .contains(pos::Pos::new(line, pos::Column(column)))
+            {
+                let sugar = self.create_sugar(square);
+                stack.push(self.set_hyperlink_in_sugar(sugar));
+            } else if self.selection_range.is_some()
+                && self
+                    .selection_range
+                    .unwrap()
+                    .contains(pos::Pos::new(line, pos::Column(column)))
+            {
                 let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN)
                 {
                     ' '
@@ -427,6 +463,7 @@ impl State {
     fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
+
         for column in 0..columns {
             let square = &row.inner[column];
 
@@ -528,38 +565,36 @@ impl State {
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
         self.font_size = sugarloaf.layout.font_size;
-        if let Some(active_selection) = self.selection_range {
+
+        // Only blink cursor if does not contain selection
+        let has_selection = self.selection_range.is_some();
+        if !has_selection && self.has_blinking_enabled && has_blinking_enabled {
+            let mut should_blink = true;
+            if let Some(last_typing_time) = self.last_typing {
+                if last_typing_time.elapsed() < Duration::from_secs(1) {
+                    should_blink = false;
+                }
+            }
+
+            if should_blink {
+                self.is_blinking = !self.is_blinking;
+                is_cursor_visible = self.is_blinking;
+            }
+        }
+
+        if has_selection || self.hyperlink_range.is_some() {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                let sugar_stack = self.create_sugar_stack_with_selection(
+                sugarloaf.stack(self.create_rich_sugar_stack(
                     row,
                     has_cursor,
-                    &active_selection,
-                    pos::Line(i as i32),
-                    display_offset,
-                );
-                sugarloaf.stack(sugar_stack);
+                    pos::Line((i as i32) - display_offset),
+                ));
             }
         } else {
-            // Only blink cursor if does not contain selection
-            if self.has_blinking_enabled && has_blinking_enabled {
-                let mut should_blink = true;
-                if let Some(last_typing_time) = self.last_typing {
-                    if last_typing_time.elapsed() < Duration::from_secs(1) {
-                        should_blink = false;
-                    }
-                }
-
-                if should_blink {
-                    self.is_blinking = !self.is_blinking;
-                    is_cursor_visible = self.is_blinking;
-                }
-            }
-
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                let sugar_stack = self.create_sugar_stack(row, has_cursor);
-                sugarloaf.stack(sugar_stack);
+                sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
             }
         }
 

@@ -388,6 +388,24 @@ impl Sequencer {
 
                         match state {
                             ElementState::Pressed => {
+                                if route.window.screen.modifiers.state().super_key()
+                                    && route.window.screen.state.has_hyperlink()
+                                {
+                                    let display_offset =
+                                        route.window.screen.display_offset();
+                                    let point = route
+                                        .window
+                                        .screen
+                                        .mouse_position(display_offset);
+                                    if route
+                                        .window
+                                        .screen
+                                        .trigger_hyperlink_from_position(point)
+                                    {
+                                        return;
+                                    }
+                                }
+
                                 // Process mouse press before bindings to update the `click_state`.
                                 if !route.window.screen.modifiers.state().shift_key()
                                     && route.window.screen.mouse_mode()
@@ -454,7 +472,7 @@ impl Sequencer {
 
                                     route.window.winit_window.request_redraw();
                                 }
-                                // route.screen.process_mouse_bindings(button);
+                                route.window.screen.process_mouse_bindings(button);
                             }
                             ElementState::Released => {
                                 if !route.window.screen.modifiers.state().shift_key()
@@ -570,23 +588,6 @@ impl Sequencer {
 
                         let point = route.window.screen.mouse_position(display_offset);
 
-                        let cursor_icon = if !route.window.screen.modifiers.state().shift_key()
-                            && route.window.screen.mouse_mode()
-                        {
-                            CursorIcon::Default
-                        } else {
-                            CursorIcon::Text
-                        };
-
-                        if route.window.screen.process_hyperlink(point) {
-                            route
-                                .window
-                                .winit_window
-                                .set_cursor_icon(CursorIcon::Pointer);
-                        } else {
-                            route.window.winit_window.set_cursor_icon(cursor_icon);
-                        }
-
                         let square_changed = old_point != point;
 
                         let inside_text_area = route.window.screen.contains_point(x, y);
@@ -599,6 +600,28 @@ impl Sequencer {
                                 == inside_text_area
                         {
                             return;
+                        }
+
+                        if route.window.screen.modifiers.state().super_key()
+                            && route.window.screen.process_hyperlink(point)
+                        {
+                            route
+                                .window
+                                .winit_window
+                                .set_cursor_icon(CursorIcon::Pointer);
+                            route.window.screen.context_manager.schedule_render(60);
+                        } else {
+                            let cursor_icon =
+                                if !route.window.screen.modifiers.state().shift_key()
+                                    && route.window.screen.mouse_mode()
+                                {
+                                    CursorIcon::Default
+                                } else {
+                                    CursorIcon::Text
+                                };
+
+                            route.window.winit_window.set_cursor_icon(cursor_icon);
+                            route.window.screen.state.set_hyperlink_range(None);
                         }
 
                         route.window.screen.mouse.inside_text_area = inside_text_area;
