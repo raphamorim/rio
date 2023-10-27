@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Hyperlink support (Ref [#60](https://github.com/raphamorim/rio/issues/60)).
+- Hyperlink support for MacOS and Linux (by holding super key) (Ref [#60](https://github.com/raphamorim/rio/issues/60)). Microsoft Windows work in progress.
 
 ## 0.0.25
 
