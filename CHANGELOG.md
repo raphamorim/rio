@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- TBD
+- Hyperlink support (Ref [#60](https://github.com/raphamorim/rio/issues/60)).
 
 ## 0.0.25
 
