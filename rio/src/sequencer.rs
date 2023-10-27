@@ -389,7 +389,7 @@ impl Sequencer {
                         match state {
                             ElementState::Pressed => {
                                 if route.window.screen.modifiers.state().super_key()
-                                    && route.window.screen.state.has_hyperlink()
+                                    && route.window.screen.state.has_hyperlink_range()
                                 {
                                     let display_offset =
                                         route.window.screen.display_offset();
@@ -621,7 +621,10 @@ impl Sequencer {
                                 };
 
                             route.window.winit_window.set_cursor_icon(cursor_icon);
-                            route.window.screen.state.set_hyperlink_range(None);
+                            if route.window.screen.state.has_hyperlink_range() {
+                                route.window.screen.state.set_hyperlink_range(None);
+                                route.window.screen.context_manager.schedule_render(60);
+                            }
                         }
 
                         route.window.screen.mouse.inside_text_area = inside_text_area;
