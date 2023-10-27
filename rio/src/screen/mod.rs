@@ -311,7 +311,7 @@ impl Screen {
         drop(terminal);
 
         match search_result {
-            Some(link) => true,
+            Some(_link) => true,
             None => false,
         }
         // let mut regex = RegexSearch::new(URL_REGEX).unwrap();
