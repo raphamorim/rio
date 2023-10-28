@@ -1049,12 +1049,7 @@ impl Screen {
         #[cfg(windows)]
         self.exec(
             "cmd",
-            vec![
-                "/c".to_string(),
-                "start".to_string(),
-                "".to_string(),
-                hyperlink.uri(),
-            ],
+            vec!["/c", "start", "", hyperlink.uri()],
         );
     }
 
