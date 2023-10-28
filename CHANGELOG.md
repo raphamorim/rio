@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Upgrade winit to 0.29.3.
 - Support for `Run` actions key bindings for Microsoft Windows.
 - Hyperlink support (Ref [#60](https://github.com/raphamorim/rio/issues/60))
 
