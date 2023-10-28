@@ -302,21 +302,6 @@ impl Screen {
         should_reload
     }
 
-    #[inline]
-    pub fn process_hyperlink(&mut self, pos: Pos) -> bool {
-        let mut terminal = self.ctx_mut().current().terminal.lock();
-        let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
-        drop(terminal);
-
-        if let Some(hyperlink_range) = search_result {
-            self.state.set_hyperlink_range(Some(hyperlink_range));
-            return true;
-        }
-
-        self.state.set_hyperlink_range(None);
-        false
-    }
-
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(
@@ -1004,24 +989,57 @@ impl Screen {
     }
 
     #[inline]
-    pub fn trigger_hyperlink_from_position(&self, pos: Pos) -> bool {
-        let terminal = self.context_manager.current().terminal.lock();
+    pub fn search_nearest_hyperlink_from_pos(&mut self, pos: Pos) -> bool {
+        #[cfg(target_os = "macos")]
+        let is_hyperlink_key_active = self.modifiers.state().super_key();
+
+        #[cfg(not(target_os = "macos"))]
+        let is_hyperlink_key_active = self.modifiers.state().alt_key();
+
+        if !is_hyperlink_key_active {
+            return false;
+        }
+
+        let mut terminal = self.ctx_mut().current().terminal.lock();
+        let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
+        drop(terminal);
+
+        if let Some(hyperlink_range) = search_result {
+            self.state.set_hyperlink_range(Some(hyperlink_range));
+            return true;
+        }
+
+        self.state.set_hyperlink_range(None);
+        false
+    }
+
+    #[inline]
+    pub fn trigger_hyperlink(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        let is_hyperlink_key_active = self.modifiers.state().super_key();
+
+        #[cfg(not(target_os = "macos"))]
+        let is_hyperlink_key_active = self.modifiers.state().alt_key();
+
+        if !is_hyperlink_key_active || !self.state.has_hyperlink_range() {
+            return false;
+        }
+
+        let mut terminal = self.context_manager.current().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let pos = self.mouse_position(display_offset);
         let pos_hyperlink = terminal.grid[pos].hyperlink();
         drop(terminal);
 
-        #[cfg(unix)]
-        {
-            if let Some(hyperlink) = pos_hyperlink {
-                self.open_hyperlink(hyperlink);
+        if let Some(hyperlink) = pos_hyperlink {
+            self.open_hyperlink(hyperlink);
 
-                return true;
-            }
+            return true;
         }
 
         false
     }
 
-    #[cfg(unix)]
     fn open_hyperlink(&self, hyperlink: Hyperlink) {
         // Example:
         #[cfg(not(any(target_os = "macos", windows)))]
@@ -1037,18 +1055,23 @@ impl Screen {
         // });
     }
 
-    #[cfg(unix)]
     pub fn exec<I, S>(&self, program: &str, args: I)
     where
         I: IntoIterator<Item = S> + Debug + Copy,
         S: AsRef<OsStr>,
     {
-        let main_fd = *self.ctx().current().main_fd;
-        let shell_pid = &self.ctx().current().shell_pid;
-        match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
-            Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
-            Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+        #[cfg(unix)]
+        {
+            let main_fd = *self.ctx().current().main_fd;
+            let shell_pid = &self.ctx().current().shell_pid;
+            match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
+                Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
+                Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+            }
         }
+
+        #[cfg(windows)]
+        {}
     }
 
     #[inline]
