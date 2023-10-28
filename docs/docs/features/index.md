@@ -8,6 +8,7 @@ Rio is available for Microsoft Windows, Linux distros, FreeBSD and Apple MacOS.
 Short introduction of Rio terminal features.
 
 - [Vi mode](/rio/docs/features/vi-mode)
+- [Hyperlinks](/rio/docs/features/hyperlinks)
 - [Kitty keyboard protocol](/rio/docs/features/kitty-keyboard-protocol)
 - [Rio is fast](/rio/docs/features/rio-is-fast)
 - [Adaptive theme](/rio/docs/features/adaptive-theme)
