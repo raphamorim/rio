@@ -388,22 +388,8 @@ impl Sequencer {
 
                         match state {
                             ElementState::Pressed => {
-                                if route.window.screen.modifiers.state().super_key()
-                                    && route.window.screen.state.has_hyperlink_range()
-                                {
-                                    let display_offset =
-                                        route.window.screen.display_offset();
-                                    let point = route
-                                        .window
-                                        .screen
-                                        .mouse_position(display_offset);
-                                    if route
-                                        .window
-                                        .screen
-                                        .trigger_hyperlink_from_position(point)
-                                    {
-                                        return;
-                                    }
+                                if route.window.screen.trigger_hyperlink() {
+                                    return;
                                 }
 
                                 // Process mouse press before bindings to update the `click_state`.
@@ -605,9 +591,7 @@ impl Sequencer {
                             return;
                         }
 
-                        if route.window.screen.modifiers.state().super_key()
-                            && route.window.screen.process_hyperlink(point)
-                        {
+                        if route.window.screen.search_nearest_hyperlink_from_pos(point) {
                             route
                                 .window
                                 .winit_window
@@ -624,6 +608,8 @@ impl Sequencer {
                                 };
 
                             route.window.winit_window.set_cursor_icon(cursor_icon);
+
+                            // In case hyperlink range has cleaned trigger one more render
                             if route.window.screen.state.has_hyperlink_range() {
                                 route.window.screen.state.set_hyperlink_range(None);
                                 route.window.screen.context_manager.schedule_render(60);
