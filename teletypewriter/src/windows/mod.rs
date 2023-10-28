@@ -7,8 +7,8 @@ use std::ffi::OsStr;
 use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
-use std::sync::mpsc::TryRecvError;
 use std::process::{Command, Stdio};
+use std::sync::mpsc::TryRecvError;
 
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
