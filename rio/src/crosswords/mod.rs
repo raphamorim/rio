@@ -847,7 +847,12 @@ impl<U: EventListener> Crosswords<U> {
             | square::Flags::LEADING_WIDE_CHAR_SPACER;
 
         let last_column = self.grid.columns() - 1;
+        if pos.col > last_column {
+            return None;
+        }
+
         let first_column = 0;
+        let last_row = self.grid.screen_lines();
         let starting_square: &Square = &self.grid[pos];
 
         if starting_square.c == ' ' {
@@ -877,7 +882,7 @@ impl<U: EventListener> Crosswords<U> {
             selection_end = square.pos;
             positions_to_update.push(square.pos);
 
-            if pos.col == last_column || square.flags.contains(square::Flags::WRAPLINE) {
+            if pos.col == last_column && pos.row == last_row {
                 break; // cut off if on new line or hit escape char
             }
         }
@@ -900,9 +905,7 @@ impl<U: EventListener> Crosswords<U> {
             selection_start = square.pos;
             positions_to_update.push(square.pos);
 
-            if square.pos.col == first_column
-                || square.flags.contains(square::Flags::WRAPLINE)
-            {
+            if square.pos.col == first_column && square.pos.row == 0 {
                 break; // cut off if on new line or hit escape char
             }
         }
@@ -2637,7 +2640,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_nearest_hyperlink_from_pos_on_single_lines() {
+    fn test_search_nearest_hyperlink_from_pos_on_single_line() {
         let size = CrosswordsSize::new(20, 3);
         let mut term = Crosswords::new(
             size.columns,
@@ -2771,6 +2774,90 @@ mod tests {
         );
         assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
         assert!(term.grid[Line(0)][Column(14)].hyperlink().is_none());
+    }
+
+    #[test]
+    fn test_search_nearest_hyperlink_from_pos_on_multiple_lines() {
+        let size = CrosswordsSize::new(4, 4);
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+        );
+
+        let grid = &mut term.grid;
+        grid[Line(0)][Column(0)].c = 'h';
+        grid[Line(0)][Column(1)].c = 't';
+        grid[Line(0)][Column(2)].c = 't';
+        grid[Line(0)][Column(3)].c = 'p';
+        grid[Line(1)][Column(0)].c = 's';
+        grid[Line(1)][Column(1)].c = ':';
+        grid[Line(1)][Column(2)].c = '/';
+        grid[Line(1)][Column(3)].c = '/';
+        grid[Line(2)][Column(0)].c = 'r';
+        grid[Line(2)][Column(1)].c = 'i';
+        grid[Line(2)][Column(2)].c = 'o';
+        grid[Line(2)][Column(3)].c = '.';
+        grid[Line(3)][Column(0)].c = 'i';
+        grid[Line(3)][Column(1)].c = 'o';
+
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
+        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_none());
+        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_none());
+        assert!(term.grid[Line(3)][Column(0)].hyperlink().is_none());
+
+        // From ' ' after '.io'
+        let result = term.search_nearest_hyperlink_from_pos(Pos {
+            row: pos::Line(3),
+            col: pos::Column(2),
+        });
+        assert_eq!(result, None);
+
+        // From 'r'
+        let result = term.search_nearest_hyperlink_from_pos(Pos {
+            row: pos::Line(2),
+            col: pos::Column(1),
+        });
+        assert_eq!(
+            result,
+            Some(SelectionRange {
+                start: Pos {
+                    row: Line(0),
+                    col: Column(0)
+                },
+                end: Pos {
+                    row: Line(3),
+                    col: Column(1)
+                },
+                is_block: false
+            })
+        );
+
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
+        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
+        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_some());
+        assert!(term.grid[Line(1)][Column(1)].hyperlink().is_some());
+        assert!(term.grid[Line(1)][Column(2)].hyperlink().is_some());
+        assert!(term.grid[Line(1)][Column(3)].hyperlink().is_some());
+        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_some());
+        assert!(term.grid[Line(2)][Column(1)].hyperlink().is_some());
+        assert!(term.grid[Line(2)][Column(2)].hyperlink().is_some());
+        assert!(term.grid[Line(2)][Column(3)].hyperlink().is_some());
+        assert!(term.grid[Line(3)][Column(0)].hyperlink().is_some());
+        assert_eq!(
+            term.grid[Line(3)][Column(1)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+        assert!(term.grid[Line(3)][Column(2)].hyperlink().is_none());
     }
 
     #[test]
