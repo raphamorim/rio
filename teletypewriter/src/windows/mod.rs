@@ -8,9 +8,11 @@ use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 use std::sync::mpsc::TryRecvError;
+use std::process::{Command, Stdio};
 
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
+use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 use conpty::Conpty as Backend;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
