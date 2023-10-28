@@ -15,16 +15,9 @@ If it is not present already, you can install it globally with the following com
 
 When cloned locally, from the root of the repository run `sudo tic -xe rio misc/rio.terminfo`
 
-If has not cloned Rio locally:
+If the source code has not been cloned locally:
 
 ```bash
-curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
-sudo tic -xe rio rio.terminfo
-rm rio.terminfo
-# when cloned locally, from the root of the repository:
-sudo tic -xe rio misc/rio.terminfo
-
-# when not cloned locally
 curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
 sudo tic -xe rio rio.terminfo
 rm rio.terminfo
