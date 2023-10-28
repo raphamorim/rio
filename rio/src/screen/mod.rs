@@ -548,7 +548,6 @@ impl Screen {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
-                    #[cfg(unix)]
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
@@ -1041,18 +1040,22 @@ impl Screen {
     }
 
     fn open_hyperlink(&self, hyperlink: Hyperlink) {
-        // Example:
         #[cfg(not(any(target_os = "macos", windows)))]
         self.exec("xdg-open", [hyperlink.uri()]);
 
         #[cfg(target_os = "macos")]
         self.exec("open", [hyperlink.uri()]);
 
-        // #[cfg(windows)]
-        // let action = HintAction::Command(Program::WithArgs {
-        //     program: String::from("cmd"),
-        //     args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
-        // });
+        #[cfg(windows)]
+        self.exec(
+            "cmd",
+            vec![
+                "/c".to_string(),
+                "start".to_string(),
+                "".to_string(),
+                hyperlink.uri(),
+            ],
+        );
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
@@ -1071,7 +1074,12 @@ impl Screen {
         }
 
         #[cfg(windows)]
-        {}
+        {
+            match teletypewriter::spawn_daemon(program, args) {
+                Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
+                Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+            }
+        }
     }
 
     #[inline]

@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Hyperlink support for MacOS and Linux (by holding super key) (Ref [#60](https://github.com/raphamorim/rio/issues/60)). Microsoft Windows work in progress.
+- Support for `Run` actions key bindings for Microsoft Windows.
+- Hyperlink support (Ref [#60](https://github.com/raphamorim/rio/issues/60))
 
 ## 0.0.25
 
