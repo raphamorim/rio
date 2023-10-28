@@ -1047,9 +1047,7 @@ impl Screen {
         self.exec("open", [hyperlink.uri()]);
 
         #[cfg(windows)]
-        self.exec(
-            "cmd", ["/c", "start", "", hyperlink.uri()],
-        );
+        self.exec("cmd", ["/c", "start", "", hyperlink.uri()]);
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
