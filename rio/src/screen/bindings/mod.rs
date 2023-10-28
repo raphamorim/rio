@@ -249,7 +249,6 @@ pub enum Action {
     Esc(String),
 
     /// Run given command.
-    #[allow(unused)]
     Run(Program),
 
     /// Scroll

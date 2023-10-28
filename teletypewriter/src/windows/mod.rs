@@ -234,3 +234,18 @@ fn cmdline(shell: &str) -> String {
 pub fn win32_string<S: AsRef<OsStr> + ?Sized>(value: &S) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
 }
+
+pub fn spawn_daemon<I, S>(program: &str, args: I) -> io::Result<()>
+where
+    I: IntoIterator<Item = S> + Copy,
+    S: AsRef<OsStr>,
+{
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
+}
