@@ -1048,8 +1048,7 @@ impl Screen {
 
         #[cfg(windows)]
         self.exec(
-            "cmd",
-            vec!["/c", "start", "", hyperlink.uri()],
+            "cmd", ["/c", "start", "", hyperlink.uri()],
         );
     }
 
