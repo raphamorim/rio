@@ -225,7 +225,7 @@ impl Config {
                 Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
         } else {
-            Err(String::from("filepath does not exists"))
+            Err(String::from("filepath does not exist"))
         }
     }
 
@@ -237,7 +237,7 @@ impl Config {
                 Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
         } else {
-            Err(String::from("filepath does not exists"))
+            Err(String::from("filepath does not exist"))
         }
     }
 
