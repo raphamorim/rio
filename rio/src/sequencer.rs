@@ -449,11 +449,11 @@ impl Sequencer {
                                         route.window.screen.display_offset();
 
                                     if let MouseButton::Left = button {
-                                        let point = route
+                                        let pos = route
                                             .window
                                             .screen
                                             .mouse_position(display_offset);
-                                        route.window.screen.on_left_click(point);
+                                        route.window.screen.on_left_click(pos);
                                     }
 
                                     route.window.winit_window.request_redraw();
