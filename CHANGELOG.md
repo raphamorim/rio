@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- TBD
+- Fix Error when Double click on terminal side (Ref [#316](https://github.com/raphamorim/rio/issues/316)).
 
 ## 0.0.26
 
