@@ -861,6 +861,8 @@ impl<U: EventListener> Crosswords<U> {
 
         let mut content: std::collections::VecDeque<char> =
             std::collections::VecDeque::from([starting_square.c]);
+        // TODO: Remove positions_to_update and fully rely on
+        // selection_end and selection_start
         let mut positions_to_update: Vec<Pos> = vec![pos];
         let mut selection_start: Pos = pos;
         let mut selection_end: Pos = pos;
@@ -935,7 +937,6 @@ impl<U: EventListener> Crosswords<U> {
                 self.grid[link_pos.row][link_pos.col].set_hyperlink(hyperlink.to_owned());
             }
 
-            // SelectionRange starts by the end
             let range = SelectionRange {
                 start: selection_start,
                 end: selection_end,
