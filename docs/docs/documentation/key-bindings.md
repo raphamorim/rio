@@ -122,9 +122,9 @@ To achieve it you will need to change your configuration file with the key bindi
 ```toml
 [bindings]
 keys = [
-	{ key = "q", with = "super", action = "Quit" }
-	# Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-	{ key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+  { key = "q", with = "super", action = "Quit" }
+  # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 ]
 ```
 
@@ -148,58 +148,58 @@ Execute a predefined action in Rio terminal.
 
 #### [Basic Actions](#basic-actions)
 
-| Action | Description |
-| :-- | :-- |
-| None | |
-| ReceiveChar | |
-| ToggleVIMode | |
-| Paste | Paste command |
-| Copy | |
-| OpenConfigEditor | |
-| ResetFontSize | |
-| IncreaseFontSize | |
-| DecreaseFontSize | |
-| Run(string) | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
-| PasteSelection | |
-| ClearSelection | |
+| Action           | Description                                                                   |
+| :--------------- | :---------------------------------------------------------------------------- |
+| None             |                                                                               |
+| ReceiveChar      |                                                                               |
+| ToggleVIMode     |                                                                               |
+| Paste            | Paste command                                                                 |
+| Copy             |                                                                               |
+| OpenConfigEditor |                                                                               |
+| ResetFontSize    |                                                                               |
+| IncreaseFontSize |                                                                               |
+| DecreaseFontSize |                                                                               |
+| Run(string)      | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
+| PasteSelection   |                                                                               |
+| ClearSelection   |                                                                               |
 
 #### [Window Actions](#window-actions)
 
-| Action | Description |
-| :-- | :-- |
-| CreateWindow | |
-| Quit | |
+| Action       | Description |
+| :----------- | :---------- |
+| CreateWindow |             |
+| Quit         |             |
 
 #### [Pane Actions](#pane-actions)
 
-| Action | Description |
-| :-- | :-- |
-| SplitHorizontally | |
-| SplitVertically | |
-| ClosePane | |
+| Action            | Description |
+| :---------------- | :---------- |
+| SplitHorizontally |             |
+| SplitVertically   |             |
+| ClosePane         |             |
 
 #### [Tab Actions](#tab-actions)
 
-| Action | Description |
-| :-- | :-- |
-| CreateTab | |
-| CloseTab | |
-| SelectPrevTab | |
-| SelectNextTab | |
-| SelectLastTab | |
+| Action               | Description                                                         |
+| :------------------- | :------------------------------------------------------------------ |
+| CreateTab            |                                                                     |
+| CloseTab             |                                                                     |
+| SelectPrevTab        |                                                                     |
+| SelectNextTab        |                                                                     |
+| SelectLastTab        |                                                                     |
 | SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)` |
 
 #### [Scroll Actions](#scroll-actions)
 
-| Action | Description |
-| :-- | :-- |
-| Scroll(int) | Example: Scroll up 8 lines `Scroll(8)` or scroll down 5 lines `Scroll(-5)` |
-| ScrollPageUp | |
-| ScrollPageDown | |
-| ScrollHalfPageUp | |
-| ScrollHalfPageDown | |
-| ScrollToTop | |
-| ScrollToBottom | |
+| Action             | Description                                                                |
+| :----------------- | :------------------------------------------------------------------------- |
+| Scroll(int)        | Example: Scroll up 8 lines `Scroll(8)` or scroll down 5 lines `Scroll(-5)` |
+| ScrollPageUp       |                                                                            |
+| ScrollPageDown     |                                                                            |
+| ScrollHalfPageUp   |                                                                            |
+| ScrollHalfPageDown |                                                                            |
+| ScrollToTop        |                                                                            |
+| ScrollToBottom     |                                                                            |
 
 ### [Bytes](#bytes)
 
@@ -245,7 +245,7 @@ The example below will disable window creation binding in the macos:
 ```toml
 [bindings]
 keys = [
-   { key = "n", with = "super", action = "ReceiveChar" }
+  { key = "n", with = "super", action = "ReceiveChar" }
 ]
 ```
 
@@ -256,7 +256,7 @@ Optionally you can ignore/disable completely a binding using `None`. In the exam
 ```toml
 [bindings]
 keys = [
-   { key = "n", with = "super", action = "None" }
+  { key = "n", with = "super", action = "None" }
 ]
 ```
 
