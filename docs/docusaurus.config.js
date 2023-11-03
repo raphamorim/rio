@@ -41,7 +41,10 @@ const config = {
             'https://github.com/raphamorim/rio/tree/main/docs/',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: [
+            require.resolve('react-tweet/theme.css'),
+            require.resolve('./src/css/custom.css'),
+          ],
         },
       }),
     ],
