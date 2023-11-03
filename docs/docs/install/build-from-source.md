@@ -7,7 +7,7 @@ language: 'en'
 
 Before compiling Rio terminal, you'll have to first clone the source code:
 
-```bash
+```sh
 git clone https://github.com/raphamorim/rio.git
 ```
 
@@ -15,7 +15,7 @@ Then install the Rust compiler with <span class="keyword">rustup</span> ([rustup
 
 After installation of Rust, ensure you have the correct Rust compiler installed by running:
 
-```bash
+```sh
 rustup override set stable
 rustup update stable
 ```
@@ -30,7 +30,7 @@ If you're running Wayland with an Nvidia GPU, you'll likely want the _EGL_ drive
 
 If you'd like to build a local version manually, you need a few extra libraries to build Rio. Here's an apt command that should install all of them. If something is still found to be missing, please open an issue. This has been tested on Debian Bookworm.
 
-```bash
+```sh
 apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev libxcb-xfixes0-dev libxkbcommon-dev python3
 ```
 
@@ -38,7 +38,7 @@ apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev libxcb-xfixes0-
 
 On Arch Linux, you need a few extra libraries to build Rio. Here's a <span class="keyword">pacman</span> command that should install all of them. If something is still found to be missing, please open an issue.
 
-```bash
+```sh
 pacman -S cmake freetype2 fontconfig pkg-config make libxcb libxkbcommon python
 ```
 
@@ -46,7 +46,7 @@ pacman -S cmake freetype2 fontconfig pkg-config make libxcb libxkbcommon python
 
 On Fedora, you need a few extra libraries to build Rio. Here's a <span class="keyword">dnf</span> command that should install all of them. If something is still found to be missing, please open an issue.
 
-```bash
+```sh
 dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-devel g++
 ```
 
@@ -54,7 +54,7 @@ dnf install cmake freetype-devel fontconfig-devel libxcb-devel libxkbcommon-deve
 
 On Void Linux, install following packages before compiling Rio:
 
-```bash
+```sh
 xbps-install cmake freetype-devel expat-devel fontconfig-devel libxcb-devel pkg-config python3
 ```
 
@@ -62,7 +62,7 @@ xbps-install cmake freetype-devel expat-devel fontconfig-devel libxcb-devel pkg-
 
 On FreeBSD, you need a few extra libraries to build Rio. Here's a <span class="keyword">pkg</span> command that should install all of them. If something is still found to be missing, please open an issue.
 
-```bash
+```sh
 pkg install cmake freetype2 fontconfig pkgconf python3
 ```
 
@@ -70,7 +70,7 @@ pkg install cmake freetype2 fontconfig pkgconf python3
 
 Linux with X11:
 
-```bash
+```sh
 # Build for X11
 cargo build --release --no-default-features --features=x11
 
@@ -80,7 +80,7 @@ target/release/rio
 
 Linux with Wayland:
 
-```bash
+```sh
 # Build for Wayland
 cargo build --release --no-default-features --features=wayland
 
@@ -90,7 +90,7 @@ target/release/rio
 
 MacOS:
 
-```bash
+```sh
 make release-macos
 ```
 
@@ -98,7 +98,7 @@ After the command execution an application called "Rio.app" will be created insi
 
 Windows:
 
-```bash
+```sh
 cargo build --release
 ```
 

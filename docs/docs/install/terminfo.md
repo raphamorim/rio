@@ -7,7 +7,7 @@ To make sure Rio works correctly, the "rio" terminfo must be used. The rio termi
 
 If the following command returns without any errors, the rio terminfo is already installed:
 
-```bash
+```sh
 infocmp rio
 ```
 
@@ -17,9 +17,8 @@ When cloned locally, from the root of the repository run `sudo tic -xe rio misc/
 
 If the source code has not been cloned locally:
 
-```bash
+```sh
 curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
 sudo tic -xe rio rio.terminfo
 rm rio.terminfo
 ```
-

@@ -222,7 +222,7 @@ Key modifiers to filter binding actions
 
 Multiple modifiers can be combined using `|` like this:
 
-```bash
+```toml
 with = "control | shift"
 ```
 

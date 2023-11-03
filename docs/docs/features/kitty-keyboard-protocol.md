@@ -29,13 +29,13 @@ To solve these issues and others, kitty has created a new keyboard protocol, tha
 
 You can see this protocol with all enhancements in action by running:
 
-```bash
+```sh
 kitten show_key -m kitty
 ```
 
 You can also run:
 
-```bash
+```sh
 kitty +kitten show_key -m kitty
 ```
 
