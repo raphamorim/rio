@@ -136,7 +136,7 @@ Each value in key binding will specify an identifier of the key pressed:
 - `0-9`
 - `F1-F24`
 - `tab` `esc`
-- `home` `space` `delete` `insert` `pageup` `pagedown` `end`  `back`
+- `home` `space` `delete` `insert` `pageup` `pagedown` `end` `back`
 - `up` `down` `left` `right`
 - `@` `colon` `.` `return` `[` `]` `;` `\\` `+` `,` `/` `=` `-` `*`
 - `numpadenter` `numpadadd` `numpadcomma` `numpaddivide` `numpadequals` `numpadsubtract` `numpadmultiply`
@@ -238,7 +238,7 @@ with = "control | shift"
 
 ### [Overwriting](#overwriting)
 
-Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined.  To unset a default binding, it can be mapped to the `ReceiveChar` action. Alternatively, you can use `None` for a no-op if you do not wish to receive input characters for that binding.
+Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined. To unset a default binding, it can be mapped to the `ReceiveChar` action. Alternatively, you can use `None` for a no-op if you do not wish to receive input characters for that binding.
 
 The example below will disable window creation binding in the macos:
 

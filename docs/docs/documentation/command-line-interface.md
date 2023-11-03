@@ -23,6 +23,7 @@ The options "-e" and "--command" executes the command and closes the terminal ri
 ```sh
 $ rio -e sleep 10
 ```
+
 You can also `RIO_LOG_LEVEL` environment variable for filter logs on-demand, for example:
 
 ```sh

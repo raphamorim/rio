@@ -10,8 +10,12 @@ const FeatureList = [
     Svg: require('@site/static/assets/homepage-svg/fast.svg').default,
     description: (
       <>
-        Rio is perceived fast, there's few reasons behind the speed. Rio is built in Rust and also built over ANSI handler and parser is built from Alacritty terminal's VTE.
-        Rio owns a renderer called Sugarloaf that contains a "sugar" architecture (inspired by React Redux state machine) created for minimal and quick interactions in render steps using performance at highest.
+        Rio is perceived fast, there's few reasons behind the speed. Rio is
+        built in Rust and also built over ANSI handler and parser is built from
+        Alacritty terminal's VTE. Rio owns a renderer called Sugarloaf that
+        contains a "sugar" architecture (inspired by React Redux state machine)
+        created for minimal and quick interactions in render steps using
+        performance at highest.
       </>
     ),
   },
@@ -22,7 +26,11 @@ const FeatureList = [
     Svg: require('@site/static/assets/homepage-svg/rust.svg').default,
     description: (
       <>
-        Rust language provides a mechanism called “ownership” that has a set of rules that are checked at compilation time, if these ownership rules are violated, the program won’t compile. This mechanism enforce memory safety without needing a garbage collector. The ownership rules don’t have a run time impact on performance either.
+        Rust language provides a mechanism called “ownership” that has a set of
+        rules that are checked at compilation time, if these ownership rules are
+        violated, the program won’t compile. This mechanism enforce memory
+        safety without needing a garbage collector. The ownership rules don’t
+        have a run time impact on performance either.
       </>
     ),
   },
@@ -34,7 +42,11 @@ const FeatureList = [
     Svg: require('@site/static/assets/homepage-svg/colors.svg').default,
     description: (
       <>
-        Regular terminals use 256-color palette, which is configured at start and is a 666-cube of colors, each of them defined as a 24-bit (888 RGB) color, which means it can only display 256 different colors in the terminal while "true color" means that you can display 16 million different colors at the same time.
+        Regular terminals use 256-color palette, which is configured at start
+        and is a 666-cube of colors, each of them defined as a 24-bit (888 RGB)
+        color, which means it can only display 256 different colors in the
+        terminal while "true color" means that you can display 16 million
+        different colors at the same time.
       </>
     ),
   },
@@ -45,7 +57,11 @@ const FeatureList = [
     Svg: require('@site/static/assets/homepage-svg/images.svg').default,
     description: (
       <>
-        Rio terminal implements iTerm2 and Kitty image protocols. Both protocols provide the ability of display images within the terminal. Using a similar mechanism, it can also facilitate file transfers over any transport (such as ssh or telnet), even in a non-8-bit-clean environment.
+        Rio terminal implements iTerm2 and Kitty image protocols. Both protocols
+        provide the ability of display images within the terminal. Using a
+        similar mechanism, it can also facilitate file transfers over any
+        transport (such as ssh or telnet), even in a non-8-bit-clean
+        environment.
       </>
     ),
   },
@@ -67,13 +83,17 @@ const FeatureList = [
     Svg: require('@site/static/assets/homepage-svg/webgpu.svg').default,
     description: (
       <>
-        Rio uses an implementation of WebGPU for use outside of a browser and as backend for firefox's WebGPU implementation. WebGPU allows for more efficient usage of modern GPU's than WebGL. Applications using WPGU run natively on Vulkan, Metal, DirectX 11/12, and OpenGL ES; and browsers via WebAssembly on WebGPU and WebGL2.
+        Rio uses an implementation of WebGPU for use outside of a browser and as
+        backend for firefox's WebGPU implementation. WebGPU allows for more
+        efficient usage of modern GPU's than WebGL. Applications using WPGU run
+        natively on Vulkan, Metal, DirectX 11/12, and OpenGL ES; and browsers
+        via WebAssembly on WebGPU and WebGL2.
       </>
     ),
   },
 ];
 
-function Feature({Svg, title, description}) {
+function Feature({ Svg, title, description }) {
   return (
     <div className={clsx('col col--4')}>
       <div className="text--center">
