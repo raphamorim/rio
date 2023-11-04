@@ -26,7 +26,7 @@ cursor = '▇'
 blinking-cursor = false
 
 # Scroll Speed Multiplier
-# 
+#
 # You can change how many lines are scrolled each time by setting this option.
 # Defaul is 3.0.
 # Example:

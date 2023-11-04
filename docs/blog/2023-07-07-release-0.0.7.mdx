@@ -1,14 +1,14 @@
 ---
 layout: post
-title:  "Rio 0.0.7"
-date:   2023-07-07 12:34
-description: "Configuration reload, x11 and wayland stabilization, sugarloaf ported to WebAssembly, addition to NIX OS packages and other updates."
+title: 'Rio 0.0.7'
+date: 2023-07-07 12:34
+description: 'Configuration reload, x11 and wayland stabilization, sugarloaf ported to WebAssembly, addition to NIX OS packages and other updates.'
 categories: release macos linux webassembly
 ---
 
-<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+import { Tweet } from 'react-tweet';
 
-# v0.0.7: Highlights
+## v0.0.7: Highlights
 
 - Support to custom fonts
 - Configuration reload
@@ -17,9 +17,7 @@ categories: release macos linux webassembly
 - Addition to NIX OS packages (kudos to [@otavio](https://github.com/otavio), PR: [NixOS/nixpkgs/pull/237664](https://github.com/NixOS/nixpkgs/pull/237664))
 - Styles properties have been moved to root level
 
-<br/>
-
-# Overview
+## Overview
 
 Rio release 0.0.7 is finally here, there's a lot of updates to cover so let's get started. I also would like to remind you that Rio is still unstable. This release adds a lot of bug fixes and feature additions in order to make Rio terminal stable.
 
@@ -34,7 +32,7 @@ cursor = '|'
 [style]
 font-size = 18
 theme = "lucario"
-{% endhighlight %}
+```
 
 After:
 
@@ -44,13 +42,11 @@ theme = "lucario"
 font-size = 18
 ```
 
-
 ## Reload automatically when the configuration file has changed.
 
 Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
-
 
 ## width and height is not longer available in the configuration file.
 
@@ -64,8 +60,7 @@ In older versions of Rio terminal it was possible to actually use Rio but it was
 
 The tweet below have a video demo that shows Rio running with X11:
 
-<blockquote class="twitter-tweet" data-lang="en" data-dnt="true" data-theme="light"><p lang="en" dir="ltr">sneak peek at Rio terminal for Linux X11 builds in the next version (0.0.7) <a href="https://t.co/5EuJJzPsB2">https://t.co/5EuJJzPsB2</a> <a href="https://twitter.com/hashtag/rustlang?src=hash&amp;ref_src=twsrc%5Etfw">#rustlang</a> <a href="https://t.co/JeWmPju9FT">pic.twitter.com/JeWmPju9FT</a></p>&mdash; Raphael Amorim 🦀 (@raphamorims) <a href="https://twitter.com/raphamorims/status/1670404595246419968?ref_src=twsrc%5Etfw">June 18, 2023</a></blockquote>
-
+<Tweet id="1670404595246419968" />
 
 ## Custom font rendering
 
@@ -79,14 +74,13 @@ font = "Fira code"
 
 A quick look of how font updates looks like in v0.0.7:
 
-<blockquote class="twitter-tweet" data-lang="en" data-dnt="true"><p lang="en" dir="ltr">stabilization of custom font rendering for upcoming version of Rio terminal<a href="https://t.co/5EuJJzPsB2">https://t.co/5EuJJzPsB2</a> <a href="https://twitter.com/hashtag/rust?src=hash&amp;ref_src=twsrc%5Etfw">#rust</a> <a href="https://t.co/HLTLG8Yovz">pic.twitter.com/HLTLG8Yovz</a></p>&mdash; Raphael Amorim 🦀 (@raphamorims) <a href="https://twitter.com/raphamorims/status/1670808836213547009?ref_src=twsrc%5Etfw">June 19, 2023</a></blockquote>
+<Tweet id="1670808836213547009" />
 
 ## Sugarloaf ported to WebAssembly
 
 The Rio support to WASM has moved one step ahead by introduction of Sugarloaf (Rio renderer) to WebAssembly.
 
 In the image below you can see it in action:
-
 
 ## Changelog of v0.0.7
 

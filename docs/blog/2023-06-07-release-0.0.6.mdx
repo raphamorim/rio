@@ -1,10 +1,12 @@
 ---
 layout: post
-title:  "Release 0.0.6"
-date:   2023-06-07 10:34:14 +0200
+title: 'Release 0.0.6'
+date: 2023-06-07 10:34:14 +0200
 categories: macos linux release
-description: "Tabs support, underline and beam cursor, text styles and many bug fixes."
+description: 'Tabs support, underline and beam cursor, text styles and many bug fixes.'
 ---
+
+import { Tweet } from 'react-tweet';
 
 # Tabs support, underline and beam cursor, text styles and many bug fixes.
 
@@ -13,7 +15,6 @@ Rio release 0.0.6 is finally here, there's a lot of updates to cover so let's ge
 ## Underline and strikethrough style
 
 Support to text styling as such "Underline" and "Strikethrough".
-
 
 ## Tabs support
 
@@ -27,7 +28,7 @@ The shortcuts:
 
 Below you can see an example of usage:
 
-<blockquote class="twitter-tweet" data-lang="en" data-dnt="true" data-theme="dark"><p lang="en" dir="ltr">Tabs 🦀⏳🌈<br/><br/>(In the future Rio will provide an external API for rendering widgets in the terminal, so people can write their own implementation of tabs or even things like telescope for terminal GUI level)<a href="https://twitter.com/hashtag/Rust?src=hash&amp;ref_src=twsrc%5Etfw">#Rust</a> <a href="https://t.co/ZnilDIEpP5">https://t.co/ZnilDIEpP5</a> <a href="https://t.co/NCYF4j8rt2">pic.twitter.com/NCYF4j8rt2</a></p>&mdash; Raphael Amorim 🦀 (@raphamorims) <a href="https://twitter.com/raphamorims/status/1664585160958922755?ref_src=twsrc%5Etfw">June 2, 2023</a></blockquote>
+<Tweet id="1664585160958922755" />
 
 Note: There's a limit of maximum of 6 tabs for now.
 
@@ -35,7 +36,7 @@ Note: There's a limit of maximum of 6 tabs for now.
 
 Beam and underline cursor support has been added to Rio terminal. Also, block cursor and IME state allow a character to be visible.
 
-<blockquote class="twitter-tweet" data-lang="en" data-dnt="true" data-theme="dark"><p lang="en" dir="ltr">Rio terminal updates: <br/><br/>- Support to Beam and Underline cursors <a href="https://t.co/UJwhFeZnTy">https://t.co/UJwhFeZnTy</a> by <a href="https://twitter.com/xiuez?ref_src=twsrc%5Etfw">@xiuez</a> ⭐️<br/>- Now block cursor and IME state allow a character to be visible. <a href="https://twitter.com/hashtag/Rust?src=hash&amp;ref_src=twsrc%5Etfw">#Rust</a> <a href="https://t.co/5EuJJzPsB2">https://t.co/5EuJJzPsB2</a> <a href="https://t.co/NxoxP69utJ">pic.twitter.com/NxoxP69utJ</a></p>&mdash; Raphael Amorim 🦀 (@raphamorims) <a href="https://twitter.com/raphamorims/status/1664146499398139906?ref_src=twsrc%5Etfw">June 1, 2023</a></blockquote>
+<Tweet id="1664146499398139906" />
 
 ## Changelog
 
@@ -49,5 +50,3 @@ Beam and underline cursor support has been added to Rio terminal. Also, block cu
 - Support to caret Beam and Underline cursor [#67](https://github.com/raphamorim/rio/issues/67) by [@niuez](https://github.com/niuez).
 - Fix panics if custom font is not found [#68](https://github.com/raphamorim/rio/issues/68).
 - MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).
-
-<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>

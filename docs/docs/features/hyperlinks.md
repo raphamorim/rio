@@ -11,7 +11,6 @@ For activate hyperlink feature hold `Command` key whenever hovering a link:
 
 ![Demo macos hyperlink](../../static/assets/features/demo-hyperlink-macos.gif)
 
-
 ## Windows / Linux / BSD
 
 For activate hyperlink feature hold `alt` key whenever hovering a link:

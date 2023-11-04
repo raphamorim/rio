@@ -11,7 +11,7 @@ Prebuilt binaries for Windows:
 - [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.0.20/Rio-portable.exe)
 - [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
 
-```bash
+```sh
 choco install rio-terminal
 ```
 
@@ -22,7 +22,7 @@ There's a few things to note about the installer and the portable version:
 
 If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Docs](https://raphamorim.io/rio/docs/) for more information):
 
-```bash
+```toml
 shell = { program = "pwsh", args = ["--login"] }
 ```
 

@@ -1,14 +1,14 @@
 ---
 layout: post
-title:  "Rio 0.0.8"
-date:   2023-07-03 12:34
-description: "Support to Microsoft Windows, Homebrew casks and formulas, migration to Corcovado, selection improvements and increase/decrease font-size in a session."
+title: 'Rio 0.0.8'
+date: 2023-07-03 12:34
+description: 'Support to Microsoft Windows, Homebrew casks and formulas, migration to Corcovado, selection improvements and increase/decrease font-size in a session.'
 categories: release windows macos linux
 ---
 
-<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+import { Tweet } from 'react-tweet';
 
-# v0.0.8: Highlights
+## v0.0.8: Highlights
 
 - Support to Microsoft Windows.
 - Support to Homebrew as cask [formulae.brew.sh/cask/rio](https://formulae.brew.sh/cask/rio).
@@ -16,7 +16,7 @@ categories: release windows macos linux
 - Selection improvements and increase/decrease font-size in a session.
 - Migration to Corcovado.
 
-<br/>
+<br />
 
 # Overview
 
@@ -38,9 +38,9 @@ Homebrew is a free and open-source software package management system that simpl
 
 Rio has been added as a cask [formulae.brew.sh/cask/rio](https://formulae.brew.sh/cask/rio) to their package source. To install Rio with homebrew you need to run the command below:
 
-{% highlight javascript %}
+```sh
 brew update && brew install --cask rio
-{% endhighlight %}
+```
 
 Github reference: [github.com/Homebrew/homebrew-cask/pull/149824](https://github.com/Homebrew/homebrew-cask/pull/149824)
 
@@ -48,20 +48,19 @@ Github reference: [github.com/Homebrew/homebrew-cask/pull/149824](https://github
 
 Rio has been added as a formula [formulae.brew.sh/formula/rio](https://formulae.brew.sh/formula/rio) to their package source. To install Rio with homebrew you need to run the command below:
 
-{% highlight javascript %}
+```sh
 brew update && brew install rio
-{% endhighlight %}
+```
 
 Github reference: [github.com/Homebrew/homebrew-cask/pull/149824](https://github.com/Homebrew/homebrew-core/pull/134295)
 
-## Selection improvements and increase/decrease font-size in a session 
+## Selection improvements and increase/decrease font-size in a session
 
 The version v0.0.8 has added the following missing functionalities: Scroll and select, Semantic and line selection and the ability to increase, decrease and reset font size using keyboard shortcut during session coming for Rio terminal.
 
 Below you can see a demo with all those functionalities:
 
-<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">Coming for next Rio terminal version (v0.0.8)<br/><br/>- Scroll and select.<br/>- Semantic and line selection.<br/>- Ability to in|decrease font size using keyboard shortcut during session coming for Rio terminal<a href="https://t.co/5EuJJzPsB2">https://t.co/5EuJJzPsB2</a> <a href="https://twitter.com/hashtag/rust?src=hash&amp;ref_src=twsrc%5Etfw">#rust</a> <a href="https://t.co/45Nt3pHtJ3">pic.twitter.com/45Nt3pHtJ3</a></p>&mdash; Raphael Amorim 🦀 (@raphamorims) <a href="https://twitter.com/raphamorims/status/1673705339336761344?ref_src=twsrc%5Etfw">June 27, 2023</a>
-</blockquote>
+<Tweet id="1673705339336761344" />
 
 ## Migration to Corcovado
 
@@ -69,7 +68,7 @@ Rio terminal migrated from Mio to Corcovado. Corcovado is a maintained fork of m
 
 Corcovado also uses Rust standard library for net and io instead of Mio 0.6.x.
 
-<br/>
+<br />
 
 ## Changelog of v0.0.8
 

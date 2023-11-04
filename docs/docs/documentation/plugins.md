@@ -21,6 +21,6 @@ extern "C" {
 
 #[export_name = "render"]
 pub fn render() {
-    
+
 }
 ```

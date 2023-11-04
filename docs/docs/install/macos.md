@@ -9,7 +9,7 @@ You can download Rio terminal application for macOS platform:
 
 Alternatively you can install Rio through [Homebrew](https://brew.sh/)
 
-```bash
+```sh
 brew install --cask rio
 ```
 

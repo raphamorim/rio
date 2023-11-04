@@ -1,8 +1,9 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const { themes } = require('prism-react-renderer');
+const lightCodeTheme = themes.github;
+const darkCodeTheme = themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -29,18 +30,19 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/raphamorim/rio/tree/main/docs/',
+          editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/raphamorim/rio/tree/main/docs/',
+          editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: [
+            require.resolve('react-tweet/theme.css'),
+            require.resolve('./src/css/custom.css'),
+          ],
         },
       }),
     ],
@@ -56,10 +58,10 @@ const config = {
           src: '/assets/rio-logo-512-512.png',
         },
         items: [
-		  {to: '/docs/install', label: 'Install', position: 'left'},
-		  {to: '/docs/documentation', label: 'Docs', position: 'left'},
-		  {to: '/docs/features', label: 'Features', position: 'left'},
-          {to: '/blog', label: 'Blog', position: 'left'},
+          { to: '/docs/install', label: 'Install', position: 'left' },
+          { to: '/docs/documentation', label: 'Docs', position: 'left' },
+          { to: '/docs/features', label: 'Features', position: 'left' },
+          { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://github.com/raphamorim/rio',
             label: 'GitHub',
@@ -77,7 +79,7 @@ const config = {
         style: 'dark',
         links: [
           {
-			      title: 'Docs',
+            title: 'Docs',
             items: [
               {
                 label: 'Install',
@@ -125,6 +127,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
+        additionalLanguages: ['bash', 'toml'],
       },
 
       colorMode: {
