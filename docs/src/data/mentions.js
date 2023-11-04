@@ -1,5 +1,3 @@
-import React from 'react';
-
 const MENTIONS = [
   {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
