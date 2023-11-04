@@ -18,6 +18,6 @@ The configuration would be like:
 ```toml
 [navigation]
 color-automation = [
-	{ program = "nvim", color = "#FFFF00" }
+  { program = "nvim", color = "#FFFF00" }
 ]
 ```
