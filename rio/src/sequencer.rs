@@ -350,6 +350,17 @@ impl Sequencer {
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         route.window.screen.set_modifiers(modifiers);
+
+                        if route.window.screen.search_nearest_hyperlink_from_pos() {
+                            #[cfg(target_os = "macos")]
+                            route.window.winit_window.set_cursor_visible(true);
+
+                            route
+                                .window
+                                .winit_window
+                                .set_cursor_icon(CursorIcon::Pointer);
+                            route.window.screen.context_manager.schedule_render(60);
+                        }
                     }
                 }
 
@@ -591,7 +602,7 @@ impl Sequencer {
                             return;
                         }
 
-                        if route.window.screen.search_nearest_hyperlink_from_pos(point) {
+                        if route.window.screen.search_nearest_hyperlink_from_pos() {
                             route
                                 .window
                                 .winit_window

@@ -988,7 +988,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn search_nearest_hyperlink_from_pos(&mut self, pos: Pos) -> bool {
+    pub fn search_nearest_hyperlink_from_pos(&mut self) -> bool {
         #[cfg(target_os = "macos")]
         let is_hyperlink_key_active = self.modifiers.state().super_key();
 
@@ -999,7 +999,9 @@ impl Screen {
             return false;
         }
 
-        let mut terminal = self.ctx_mut().current().terminal.lock();
+        let mut terminal = self.context_manager.current().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let pos = self.mouse_position(display_offset);
         let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
         drop(terminal);
 
