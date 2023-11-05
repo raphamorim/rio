@@ -1,3 +1,5 @@
+#![cfg(target_arch = "wasm32")]
+
 use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
