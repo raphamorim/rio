@@ -10,7 +10,7 @@ authors = { workspace = true }
 
 [dependencies]
 libc = { workspace = true }
-dirs = "5.0"
+dirs = "5.0.1"
 corcovado = { workspace = true }
 log = "0.4.18"
 
@@ -29,4 +29,4 @@ windows-sys = { version = "0.48", features = [
     "Win32_System_IO",
 ]}
 miow = "0.5.0"
-parking_lot = "0.12"
+parking_lot = { workspace = true }

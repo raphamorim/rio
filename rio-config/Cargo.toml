@@ -10,7 +10,7 @@ documentation = "https://docs.rs/crate/rio-config/latest"
 
 [dependencies]
 toml = "0.7.3"
-dirs = "5.0"
+dirs = "5.0.1"
 regex = { workspace = true }
 serde = { workspace = true }
 sugarloaf = { workspace = true }
