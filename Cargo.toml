@@ -2,11 +2,11 @@
 members = [
   "teletypewriter",
   "sugarloaf",
-  "webassembly-examples/*",
   "corcovado",
   "copa",
   "rio-config",
   "rio-proc-macros",
+  "rio-wasm",
   "rio"
 ]
 resolver = "2"

@@ -29,6 +29,10 @@ run:
 dev:
 	cargo run
 
+run-wasm:
+	cargo build -p rioterm --target wasm32-unknown-unknown --lib
+	cd rio-wasm && make run
+
 dev-watch:
 	#cargo install cargo-watch
 	cargo watch -- cargo run

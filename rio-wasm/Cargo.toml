@@ -1,5 +1,5 @@
 [package]
-name = "sugarloaf-styled-text"
+name = "rio-wasm"
 authors = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
@@ -9,13 +9,15 @@ keywords = { workspace = true }
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-sugarloaf = { path ="../../sugarloaf" }
+rioterm = { path = "../rio" }
 raw-window-handle = { workspace = true }
 winit = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+softbuffer = "0.3.0"
+js-sys = "0.3.64"
 wgpu = { workspace = true }
-web-sys = { version = "0.3.61", features = [
+web-sys = { version = "0.3.62", features = [
     "Location",
     "Document",
     "Navigator",

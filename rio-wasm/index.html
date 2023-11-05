@@ -2,7 +2,7 @@
 <html lang="en-US">
   <head>
     <meta charset="utf-8" />
-    <title>Sugarloaf WASM</title>
+    <title>Rio terminal wasm</title>
   </head>
   <style>
     canvas {
@@ -10,9 +10,9 @@
     }
   </style>
   <body>
-    <canvas id="sugarloaf_canvas"></canvas>
+    <!-- <canvas id="sugarloaf_canvas"></canvas> -->
     <script type="module">
-      import init from "./wasm/sugarloaf_styled_text.js";
+      import init from "./wasm/wasm_sugarloaf.js";
       init()
         .then(() => {
           console.log("sugarloaf_wasm Loaded");
