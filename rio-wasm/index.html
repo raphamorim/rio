@@ -2,17 +2,11 @@
 <html lang="en-US">
   <head>
     <meta charset="utf-8" />
-    <title>Rio terminal wasm</title>
+    <title>Rio Terminal WebAssembly</title>
   </head>
-  <style>
-    canvas {
-      background-color: black;
-    }
-  </style>
   <body>
-    <!-- <canvas id="sugarloaf_canvas"></canvas> -->
     <script type="module">
-      import init from "./wasm/wasm_sugarloaf.js";
+      import init from "./wasm/rioterm.js";
       init()
         .then(() => {
           console.log("sugarloaf_wasm Loaded");
