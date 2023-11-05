@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.27
+
 - Activate the hyperlink check whenever a modifier is changed (`alt` for windows/linux/bsd and `command` for macos).
 - Fix Error when Double click on terminal side (Ref [#316](https://github.com/raphamorim/rio/issues/316)).
 
