@@ -14,7 +14,7 @@ name = "rio"
 path = "src/main.rs"
 
 [lib]
-path = "src/lib.rs"
+path = "src/wasm.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
