@@ -17,7 +17,7 @@ function HomepageHeader() {
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
-        <RioLogo />
+        <RioLogo className="logo" />
         <h1 className="hero__title">
           {title} | {siteConfig.title}
         </h1>
