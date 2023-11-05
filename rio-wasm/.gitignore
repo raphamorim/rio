@@ -1,3 +1,2 @@
 **/*.rs.bk
-Cargo.lock
 wasm

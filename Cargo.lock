@@ -639,7 +639,7 @@ dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
  "criterion",
- "env_logger 0.4.3",
+ "env_logger",
  "fuchsia-zircon",
  "fuchsia-zircon-sys",
  "iovec",
@@ -978,19 +978,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ddf21e73e016298f5cb37d6ef8e8da8e39f91f9ec8b0df44b7deb16a9f8cd5b"
 dependencies = [
  "log 0.3.9",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
-dependencies = [
- "humantime",
- "is-terminal",
- "log 0.4.20",
- "regex",
- "termcolor",
 ]
 
 [[package]]
@@ -1477,12 +1464,6 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
-
-[[package]]
-name = "humantime"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "icrate"
@@ -2564,26 +2545,6 @@ version = "0.0.26"
 dependencies = [
  "proc-macro2",
  "quote",
-]
-
-[[package]]
-name = "rio-wasm"
-version = "0.0.26"
-dependencies = [
- "console_error_panic_hook",
- "console_log",
- "env_logger 0.10.0",
- "js-sys",
- "log 0.4.20",
- "raw-window-handle 0.5.2",
- "rioterm",
- "softbuffer",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "wgpu",
- "winit",
 ]
 
 [[package]]

@@ -6,7 +6,6 @@ members = [
   "copa",
   "rio-config",
   "rio-proc-macros",
-  "rio-wasm",
   "rio"
 ]
 resolver = "2"
