@@ -55,7 +55,7 @@ const config = {
       image: '/assets/banner.png',
       navbar: {
         logo: {
-          src: '/assets/rio-logo-512-512.png',
+          src: '/assets/rio-logo.svg',
         },
         items: [
           { to: '/docs/install', label: 'Install', position: 'left' },
