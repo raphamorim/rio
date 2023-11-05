@@ -7,7 +7,7 @@ const darkCodeTheme = themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Meet Rio | Rio Terminal',
+  title: 'Rio Terminal',
   tagline: 'A modern terminal for the 21st century.',
   favicon: '/assets/rio-logo.ico',
   url: 'https://raphamorim.io',
