@@ -14,7 +14,7 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Instant;
-use winit::window::WindowId;
+use wa::window::WindowId;
 
 /// Like `thread::spawn`, but with a `name` argument.
 pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>

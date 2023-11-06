@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use winit::{
+use wa::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
     keyboard::Key,
@@ -13,7 +13,7 @@ pub fn main() -> Result<(), impl std::error::Error> {
     let builder = WindowBuilder::new().with_title("Rio Wasm");
     #[cfg(target_arch = "wasm32")]
     let builder = {
-        use winit::platform::web::WindowBuilderExtWebSys;
+        use wa::platform::web::WindowBuilderExtWebSys;
         builder.with_append(true)
     };
     let window = builder.build(&event_loop).unwrap();
@@ -63,7 +63,7 @@ mod wasm {
 
     use softbuffer::{Surface, SurfaceExtWeb};
     use wasm_bindgen::prelude::*;
-    use winit::{
+    use wa::{
         event::{Event, WindowEvent},
         window::Window,
     };
@@ -78,7 +78,7 @@ mod wasm {
     }
 
     pub fn insert_canvas_and_create_log_list(window: &Window) -> web_sys::Element {
-        use winit::platform::web::WindowExtWebSys;
+        use wa::platform::web::WindowExtWebSys;
 
         let canvas = window.canvas().unwrap();
         let mut surface = Surface::from_canvas(canvas.clone()).unwrap();

@@ -1,0 +1,24 @@
+[package]
+name = "wa"
+description = "Window assistant for Rio terminal"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+raw-window-handle = { workspace = true }
+winit = { version = "0.29.3", default-features = false, features = ["rwh_05", "serde"] }
+
+[features]
+x11 = ["winit/x11"]
+wayland = ["winit/wayland"]
+wayland-dlopen = ["winit/wayland-dlopen"]
+wayland-csd-adwaita-crossfont = ["winit/wayland-csd-adwaita-crossfont"]

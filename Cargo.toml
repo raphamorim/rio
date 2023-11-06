@@ -4,6 +4,7 @@ members = [
   "sugarloaf",
   "corcovado",
   "copa",
+  "wa",
   "rio-config",
   "rio-proc-macros",
   "rio"
@@ -31,7 +32,9 @@ rio-config = { path = "rio-config", version = "0.0.27" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.0.27" }
 copa = { path = "copa", default-features = true, version = "0.0.27" }
 teletypewriter = { path = "teletypewriter", version = "0.0.27" }
+wa = { path = "wa", version = "0.0.27" }
 
+raw-window-handle = "0.5"
 parking_lot = "0.12.1"
 unicode-width = "0.1.11"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
@@ -41,8 +44,6 @@ log = "0.4.20"
 serde = { version = "1.0.188", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["rt", "rt-multi-thread", "macros"] }
 wgpu = "0.18.0"
-raw-window-handle = "0.5"
-winit = { version = "0.29.3", default-features = false, features = ["rwh_05", "serde"] }
 libc = "0.2.148"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.34"

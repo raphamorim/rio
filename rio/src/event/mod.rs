@@ -9,8 +9,8 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
-use winit::event_loop::EventLoopProxy;
-use winit::window::WindowId;
+use wa::event_loop::EventLoopProxy;
+use wa::window::WindowId;
 
 #[derive(Debug)]
 pub enum Msg {
@@ -170,9 +170,9 @@ impl EventP {
     }
 }
 
-impl From<EventP> for winit::event::Event<EventP> {
+impl From<EventP> for wa::event::Event<EventP> {
     fn from(event: EventP) -> Self {
-        winit::event::Event::UserEvent(event)
+        wa::event::Event::UserEvent(event)
     }
 }
 

@@ -2584,12 +2584,12 @@ dependencies = [
  "tokio",
  "unicode-normalization",
  "unicode-width",
+ "wa",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
  "wgpu",
  "windows-sys 0.48.0",
- "winit",
 ]
 
 [[package]]
@@ -2922,12 +2922,12 @@ dependencies = [
  "ttf-parser 0.19.2",
  "twox-hash",
  "unicode-width",
+ "wa",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
  "wgpu",
- "winit",
  "xi-unicode",
 ]
 
@@ -3215,6 +3215,14 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "wa"
+version = "0.0.27"
+dependencies = [
+ "raw-window-handle 0.5.2",
+ "winit",
+]
 
 [[package]]
 name = "walkdir"
