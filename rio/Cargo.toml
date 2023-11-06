@@ -18,7 +18,7 @@ path = "src/wasm.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-winit = { workspace = true }
+wa = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -215,14 +215,13 @@ wasm-bindgen-futures = { workspace = true }
 default = ["wayland", "x11"]
 x11 = [
     "copypasta/x11",
-    "winit/x11"
+    "wa/x11"
 ]
 wayland = [
     "copypasta/wayland",
-    "winit/wayland",
-    "winit/wayland-dlopen",
-    "winit/wayland-dlopen",
-    "winit/wayland-csd-adwaita-crossfont",
+    "wa/wayland",
+    "wa/wayland-dlopen",
+    "wa/wayland-csd-adwaita-crossfont",
 ]
 
 [package.metadata.deb]

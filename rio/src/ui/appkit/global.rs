@@ -31,7 +31,7 @@ impl InitializedApplication {
     /// This must not be called before `applicationDidFinishLaunching`.
     ///
     /// In `winit`, this is at or after
-    /// [`winit::event::StartCause::Init`] has been emitted.
+    /// [`wa::event::StartCause::Init`] has been emitted.
     pub unsafe fn new() -> &'static Self {
         msg_send![class!(NSApplication), sharedApplication]
     }

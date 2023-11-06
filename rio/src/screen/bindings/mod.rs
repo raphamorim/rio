@@ -9,11 +9,11 @@ use crate::crosswords::Mode;
 use bitflags::bitflags;
 use rio_config::bindings::KeyBinding as ConfigKeyBinding;
 use std::fmt::Debug;
-use winit::event::MouseButton;
-use winit::keyboard::Key::*;
-use winit::keyboard::NamedKey::*;
-use winit::keyboard::{Key, KeyLocation, ModifiersState, PhysicalKey};
-// use winit::platform::scancode::PhysicalKeyExtScancode;
+use wa::event::MouseButton;
+use wa::keyboard::Key::*;
+use wa::keyboard::NamedKey::*;
+use wa::keyboard::{Key, KeyLocation, ModifiersState, PhysicalKey};
+// use wa::platform::scancode::PhysicalKeyExtScancode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontSizeAction {
@@ -1074,7 +1074,7 @@ pub fn platform_key_bindings(_use_navigation_key_bindings: bool) -> Vec<KeyBindi
 mod tests {
     use super::*;
 
-    use winit::keyboard::ModifiersState;
+    use wa::keyboard::ModifiersState;
 
     type MockBinding = Binding<usize>;
 

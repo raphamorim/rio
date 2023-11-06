@@ -3,7 +3,7 @@
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-use winit::event_loop::EventLoopProxy;
+use wa::event_loop::EventLoopProxy;
 
 use crate::event::EventP;
 

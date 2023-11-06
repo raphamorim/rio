@@ -8,18 +8,18 @@ use rio_config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use winit::event::{
+use wa::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
     WindowEvent,
 };
-use winit::event_loop::ControlFlow;
-use winit::event_loop::{DeviceEvents, EventLoop};
+use wa::event_loop::ControlFlow;
+use wa::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::EventLoopWindowTargetExtMacOS;
+use wa::platform::macos::EventLoopWindowTargetExtMacOS;
 #[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::window::{CursorIcon, Fullscreen};
+use wa::platform::macos::WindowExtMacOS;
+use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
+use wa::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
     config: Rc<rio_config::Config>,
@@ -332,7 +332,7 @@ impl Sequencer {
                 Event::Resumed => {}
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::CloseRequested,
+                    event: wa::event::WindowEvent::CloseRequested,
                     window_id,
                     ..
                 } => {
@@ -344,7 +344,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::ModifiersChanged(modifiers),
+                    event: wa::event::WindowEvent::ModifiersChanged(modifiers),
                     window_id,
                     ..
                 } => {
@@ -718,7 +718,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        winit::event::WindowEvent::KeyboardInput {
+                        wa::event::WindowEvent::KeyboardInput {
                             is_synthetic: false,
                             event: key_event,
                             ..
@@ -798,7 +798,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Focused(focused),
+                    event: wa::event::WindowEvent::Focused(focused),
                     window_id,
                     ..
                 } => {
@@ -816,7 +816,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Occluded(occluded),
+                    event: wa::event::WindowEvent::Occluded(occluded),
                     window_id,
                     ..
                 } => {
@@ -826,7 +826,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::ThemeChanged(new_theme),
+                    event: wa::event::WindowEvent::ThemeChanged(new_theme),
                     window_id,
                     ..
                 } => {
@@ -840,7 +840,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::DroppedFile(path),
+                    event: wa::event::WindowEvent::DroppedFile(path),
                     window_id,
                     ..
                 } => {
@@ -855,7 +855,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Resized(new_size),
+                    event: wa::event::WindowEvent::Resized(new_size),
                     window_id,
                     ..
                 } => {
@@ -870,7 +870,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        winit::event::WindowEvent::ScaleFactorChanged {
+                        wa::event::WindowEvent::ScaleFactorChanged {
                             inner_size_writer: _,
                             scale_factor,
                         },
@@ -907,7 +907,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::RedrawRequested,
+                    event: wa::event::WindowEvent::RedrawRequested,
                     window_id,
                     ..
                 } => {
