@@ -1,18 +1,33 @@
 // @ts-check
 
 import FEATURES from '@site/src/data/features';
+import Heading from '@theme/Heading';
 import clsx from 'clsx';
 import styles from './styles.module.css';
 
-function Feature({ Svg, title, description }) {
+/**
+ * @typedef {import('react').ComponentPropsWithoutRef<'svg'>} SvgProps
+ *
+ * @typedef {Object} FeatureCardProps
+ * @property {import('react').ComponentType<SvgProps>} Icon
+ * @property {string} title
+ * @property {import('react').ReactNode} description
+ *
+ * @param {FeatureCardProps} props
+ */
+function FeatureCard(props) {
+  const { Icon, title, description } = props;
+
   return (
-    <div className={clsx('col col--4')}>
-      <div className="text--center">
-        <Svg className={styles.featureSvg} role="img" />
+    <div className={styles.featureCard}>
+      <div className={styles.iconWrapper}>
+        <Icon />
       </div>
-      <div className="text--center padding-horiz--md">
-        <h3>{title}</h3>
-        <p>{description}</p>
+      <div className={styles.textSection}>
+        <Heading as="h2" className={styles.title}>
+          {title}
+        </Heading>
+        <p className={styles.description}>{description}</p>
       </div>
     </div>
   );
@@ -20,14 +35,10 @@ function Feature({ Svg, title, description }) {
 
 export default function FeaturesSection() {
   return (
-    <section className={styles.features}>
-      <div className="container">
-        <div className="row">
-          {FEATURES.map((props, idx) => (
-            <Feature key={idx} {...props} />
-          ))}
-        </div>
-      </div>
+    <section className={clsx(styles.features, 'container')}>
+      {FEATURES.map((props, idx) => (
+        <FeatureCard key={idx} {...props} />
+      ))}
     </section>
   );
 }

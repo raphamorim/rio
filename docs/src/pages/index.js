@@ -1,3 +1,5 @@
+// @ts-check
+
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import FeaturesSection from '@site/src/components/FeaturesSection/index';
@@ -14,24 +16,23 @@ const title = 'Meet Rio';
 
 function HomepageHeader() {
   const { siteConfig } = useDocusaurusContext();
+
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
-      <div className="container">
-        <div className="logo">
-          <RioLogo />
-        </div>
-        <h1 className="hero__title">
-          {title} | {siteConfig.title}
-        </h1>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
-        <div className={styles.buttons}>
-          <Link
-            className="button button--secondary button--lg"
-            to="/docs/install"
-          >
+    <header className={clsx('container', styles.header)}>
+      <div className={styles.headerText}>
+        <Heading as="h1" className={styles.title}>
+          {siteConfig.title}
+        </Heading>
+        <p className={styles.tagline}>{siteConfig.tagline}</p>
+        <div className={styles.actionButtonSection}>
+          <Link to="/docs/install" className={styles.actionButton}>
             Install
           </Link>
         </div>
+      </div>
+      <div className={styles.logoContainer}>
+        <div className={styles.logoBackground} />
+        <RioLogo className={styles.logo} />
       </div>
     </header>
   );

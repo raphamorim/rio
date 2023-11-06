@@ -1,25 +1,186 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 
-.heroBanner {
-  padding: 4rem 0;
+  gap: 50px;
+
+  padding-top: 90px;
+  padding-bottom: 64px;
+
   text-align: center;
-  position: relative;
-  overflow: hidden;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
+@media (min-width: 960px) {
+  .header {
+    flex-direction: row;
+
+    gap: 0;
+
+    text-align: left;
   }
 }
 
-.buttons {
+.headerText {
+  max-width: 592px;
+
+  order: 2;
+}
+
+@media (min-width: 960px) {
+  .headerText {
+    order: 1;
+  }
+}
+
+.title {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  word-spacing: -6px;
+
+  color: transparent;
+  background: linear-gradient(-120deg, #fb43fe 30%, #00dbe5);
+  background-clip: text;
+
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .title {
+    font-size: 48px;
+    line-height: 56px;
+    word-spacing: -10px;
+  }
+}
+
+@media (min-width: 960px) {
+  .title {
+    font-size: 56px;
+    line-height: 64px;
+  }
+}
+
+.tagline {
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 400;
+  color: #5c5c5c;
+
+  margin: 12px 0 0 0;
+}
+
+[data-theme='dark'] .tagline {
+  color: #9b9b9b;
+}
+@media (min-width: 640px) {
+  .tagline {
+    font-size: 20px;
+    line-height: 32px;
+  }
+}
+
+@media (min-width: 960px) {
+  .tagline {
+    font-size: 24px;
+    line-height: 36px;
+  }
+}
+
+.logoContainer {
+  order: 1;
+
+  position: relative;
+
   display: flex;
   align-items: center;
   justify-content: center;
+
+  height: 150px;
+
+  flex-grow: 1;
+}
+
+@media (min-width: 960px) {
+  .logoContainer {
+    order: 2;
+
+    height: auto;
+  }
+}
+
+.logoBackground {
+  position: absolute;
+  z-index: -1;
+
+  width: 240px;
+  height: 240px;
+
+  background: linear-gradient(
+    170deg,
+    #fb43fe 0%,
+    #cf91f6 48.44%,
+    #73c9ea 81.25%,
+    #00dbe5 100%
+  );
+  filter: blur(68px);
+  will-change: filter;
+}
+
+@media (min-width: 960px) {
+  .logoBackground {
+    width: 320px;
+    height: 320px;
+  }
+}
+
+.logo {
+  position: absolute;
+
+  display: block;
+
+  width: 200px;
+  height: 200px;
+}
+
+@media (min-width: 960px) {
+  .logo {
+    width: 240px;
+    height: 240px;
+  }
+}
+
+.actionButtonSection {
+  margin-top: 38px;
+}
+
+.actionButton {
+  display: inline-flex;
+
+  background-color: #82f5ff;
+  background-color: oklch(90.61% 0.105 202.91);
+  color: #000;
+  border-radius: 20px;
+  padding: 0 20px;
+
+  font-size: 14px;
+  line-height: 38px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.actionButton:hover {
+  background-color: #82f5ff;
+  background-color: oklch(85.61% 0.105 202.91);
+  color: #000;
+  text-decoration: none;
+}
+
+.actionButton:active {
+  background-color: #82f5ff;
+  background-color: oklch(80.61% 0.105 202.91);
+  color: #000;
 }
 
 .section {
@@ -28,10 +189,6 @@
 
 .sectionAlt {
   background-color: var(--ifm-color-emphasis-100);
-}
-
-.sectionInner {
-  margin: 0 auto;
 }
 
 .mentionsSection > :global(.col) > * {
