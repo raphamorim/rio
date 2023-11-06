@@ -182,27 +182,3 @@
   background-color: oklch(80.61% 0.105 202.91);
   color: #000;
 }
-
-.section {
-  padding: 72px 0;
-}
-
-.sectionAlt {
-  background-color: var(--ifm-color-emphasis-100);
-}
-
-.mentionsSection > :global(.col) > * {
-  margin-bottom: 2rem;
-}
-
-@media (max-width: 996px) {
-  .mentionsSection > :global(.col:last-child) > *:last-child {
-    margin-bottom: 0;
-  }
-}
-
-@media (min-width: 997px) {
-  .mentionsSection > :global(.col) > *:last-child {
-    margin-bottom: 0;
-  }
-}
