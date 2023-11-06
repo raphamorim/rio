@@ -444,7 +444,7 @@ mod tests {
     use crate::crosswords::test::CrosswordsSize;
     use crate::crosswords::Crosswords;
     use crate::event::VoidListener;
-    use winit::window::WindowId;
+    use wa::window::WindowId;
 
     fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);

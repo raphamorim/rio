@@ -62,11 +62,11 @@ mod wasm {
     use std::num::NonZeroU32;
 
     use softbuffer::{Surface, SurfaceExtWeb};
-    use wasm_bindgen::prelude::*;
     use wa::{
         event::{Event, WindowEvent},
         window::Window,
     };
+    use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen(start)]
     pub fn run() {
