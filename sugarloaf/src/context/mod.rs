@@ -3,6 +3,8 @@ use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 pub struct Context {
     pub device: wgpu::Device,
     pub surface: wgpu::Surface,
+    pub present_mode: wgpu::PresentMode,
+    pub alpha_mode: wgpu::CompositeAlphaMode,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
@@ -65,6 +67,8 @@ impl Context {
         log::info!("Selected adapter: {:?}", adapter.get_info());
 
         let caps = surface.get_capabilities(&adapter);
+        let alpha_mode = caps.alpha_modes[0];
+        let present_mode = caps.present_modes[0];
 
         // TODO: Fix formats with signs
         // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
@@ -134,12 +138,14 @@ impl Context {
                 width: size.width,
                 height: size.height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode,
+                present_mode,
             },
         );
 
         Context {
+            alpha_mode,
+            present_mode,
             device,
             queue,
             surface,
@@ -164,8 +170,8 @@ impl Context {
                 width,
                 height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode: self.alpha_mode,
+                present_mode: self.present_mode,
             },
         );
     }
