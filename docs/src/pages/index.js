@@ -1,6 +1,6 @@
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import HomepageFeatures from '@site/src/components/HomepageFeatures';
+import FeaturesSection from '@site/src/components/FeaturesSection/index';
 import Mention from '@site/src/components/Mention';
 import Mentions from '@site/src/data/mentions';
 import RioLogo from '@site/static/assets/rio-logo.svg';
@@ -71,7 +71,7 @@ export default function Home() {
     >
       <HomepageHeader />
       <main>
-        <HomepageFeatures />
+        <FeaturesSection />
         <MentionsSection />
       </main>
     </Layout>
