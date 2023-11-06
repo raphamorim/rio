@@ -1,4 +1,3 @@
-#![cfg(not(target_arch = "wasm32"))]
 // With the default subsystem, 'console', windows creates an additional console
 // window for the program.
 // This is silently ignored on non-windows systems.
