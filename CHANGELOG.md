@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Change `POLLING_TIMEOUT` for configuration update from 1s to 2s.
 - Update `.icns` file with more format and add new icon (Ref: [#329](https://github.com/raphamorim/rio/pull/329)) by [@nix6839](https://github.com/nix6839).
 - Update `.ico` files with more resolution and add new icon (Ref: [#329](https://github.com/raphamorim/rio/pull/329)) by [@nix6839](https://github.com/nix6839).
 
