@@ -41,7 +41,7 @@ guillotiere = "0.6.2"
 ordered-float = "4.1.1"
 rustc-hash = "1.1.0"
 raw-window-handle = { workspace = true }
-ab_glyph = "0.2.2"
+ab_glyph = "0.2.23"
 linked-hash-map = "0.5.4"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
