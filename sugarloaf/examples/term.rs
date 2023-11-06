@@ -6,9 +6,9 @@ use sugarloaf::{
     layout::SugarloafLayout,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
-use winit::event_loop::ControlFlow;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::{
+use wa::event_loop::ControlFlow;
+use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
+use wa::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -413,13 +413,13 @@ async fn main() {
                         .calculate_bounds();
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::Resized(new_size) => {
+                wa::event::WindowEvent::Resized(new_size) => {
                     sugarloaf
                         .resize(new_size.width, new_size.height)
                         .calculate_bounds();
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::RedrawRequested { .. } => {
+                wa::event::WindowEvent::RedrawRequested { .. } => {
                     sugarloaf.stack(sugar);
                     sugarloaf.stack(rio);
                     sugarloaf.stack(special);

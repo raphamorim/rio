@@ -8,7 +8,7 @@ use sugarloaf::{
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
-use winit::{
+use wa::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -532,13 +532,13 @@ async fn main() {
                         .calculate_bounds();
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::Resized(new_size) => {
+                wa::event::WindowEvent::Resized(new_size) => {
                     sugarloaf
                         .resize(new_size.width, new_size.height)
                         .calculate_bounds();
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::RedrawRequested { .. } => {
+                wa::event::WindowEvent::RedrawRequested { .. } => {
                     sugarloaf.stack(sugar);
                     sugarloaf.stack(italic_and_bold);
                     sugarloaf.stack(rio);
