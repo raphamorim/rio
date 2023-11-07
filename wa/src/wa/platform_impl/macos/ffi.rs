@@ -1,3 +1,6 @@
+// WA is a fork of https://github.com/rust-windowing/winit/
+// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 // TODO: Upstream these
 
 #![allow(dead_code, non_snake_case, non_upper_case_globals)]

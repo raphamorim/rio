@@ -1,3 +1,6 @@
+// WA is a fork of https://github.com/rust-windowing/winit/
+// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 use core_graphics::display::CGDisplay;
 use icrate::Foundation::{CGFloat, NSNotFound, NSPoint, NSRange, NSRect, NSUInteger};
 use log::trace;

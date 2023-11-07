@@ -1,3 +1,6 @@
+// WA is a fork of https://github.com/rust-windowing/winit/
+// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 //! The [`Event`] enum and assorted supporting types.
 //!
 //! These are sent to the closure given to [`EventLoop::run(...)`], where they get
