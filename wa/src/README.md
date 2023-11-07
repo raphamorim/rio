@@ -1,3 +1,7 @@
 # WA
 
-WA is Rio window assistant. It mostly uses winit under the hood for all platforms besides MacOS. For MacOS, WA distributes a modified fork of winit with additional functionalities like Open Urls.
+WA is Rio window assistant.
+
+WA is a fork from Winit intended to serve solely Rio terminal with addition of features and functionalities like open urls.
+
+Considering that WA is built for Rio only, is highly recommend don't use this crate for personal usage. For personal usage it's recommended use either [Winit](https://github.com/rust-windowing/winit/) or [Tao](https://github.com/tauri-apps/tao) (another fork of winit).

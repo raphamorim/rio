@@ -1,3 +1,6 @@
+// WA is a fork of https://github.com/rust-windowing/winit/
+// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 //! The [`Window`] struct and associated types.
 use bitflags::bitflags;
 use std::fmt;

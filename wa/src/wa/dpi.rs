@@ -1,3 +1,6 @@
+// WA is a fork of https://github.com/rust-windowing/winit/
+// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 //! UI scaling is important, so read the docs for this module if you don't want to be confused.
 //!
 //! ## Why should I care about UI scaling?
