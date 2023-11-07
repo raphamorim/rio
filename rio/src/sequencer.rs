@@ -896,6 +896,11 @@ impl Sequencer {
                     std::process::exit(0);
                 }
 
+                #[cfg(target_os = "macos")]
+                Event::Opened { urls } => {
+                    println!("{:?}", urls);   
+                }
+
                 Event::AboutToWait => {
                     // Update the scheduler after event processing to ensure
                     // the event loop deadline is as accurate as possible.
