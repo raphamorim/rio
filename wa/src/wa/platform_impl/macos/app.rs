@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 #![allow(clippy::unnecessary_cast)]
 
@@ -14,16 +14,16 @@ use crate::event::{DeviceEvent, ElementState, Event};
 
 declare_class!(
     #[derive(Debug, PartialEq, Eq, Hash)]
-    pub(super) struct WinitApplication;
+    pub(super) struct waApplication;
 
-    unsafe impl ClassType for WinitApplication {
+    unsafe impl ClassType for waApplication {
         #[inherits(NSResponder, NSObject)]
         type Super = NSApplication;
         type Mutability = mutability::InteriorMutable;
-        const NAME: &'static str = "WinitApplication";
+        const NAME: &'static str = "waApplication";
     }
 
-    unsafe impl WinitApplication {
+    unsafe impl waApplication {
         // Normally, holding Cmd + any key never sends us a `keyUp` event for that key.
         // Overriding `sendEvent:` like this fixes that. (https://stackoverflow.com/a/15294196)
         // Fun fact: Firefox still has this bug! (https://bugzilla.mozilla.org/show_bug.cgi?id=1299553)

@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 //! The [`Window`] struct and associated types.
 use bitflags::bitflags;
@@ -36,7 +36,7 @@ pub use cursor_icon::{CursorIcon, ParseError as CursorIconParseError};
 /// # Example
 ///
 /// ```no_run
-/// use winit::{
+/// use wa::{
 ///     event::{Event, WindowEvent},
 ///     event_loop::{ControlFlow, EventLoop},
 ///     window::Window,
@@ -98,7 +98,7 @@ impl WindowId {
     /// it will always be equal to itself and to future values returned by this function.
     /// No other guarantees are made. This may be equal to a real [`WindowId`].
     ///
-    /// **Passing this into a winit function will result in undefined behavior.**
+    /// **Passing this into a wa function will result in undefined behavior.**
     pub const unsafe fn dummy() -> Self {
         #[allow(unused_unsafe)]
         WindowId(unsafe { platform_impl::WindowId::dummy() })
@@ -172,7 +172,7 @@ impl Default for WindowAttributes {
             position: None,
             resizable: true,
             enabled_buttons: WindowButtons::all(),
-            title: "winit window".to_owned(),
+            title: "wa window".to_owned(),
             maximized: false,
             fullscreen: SendSyncWrapper(None),
             visible: true,
@@ -305,7 +305,7 @@ impl WindowBuilder {
 
     /// Sets the initial title of the window in the title bar.
     ///
-    /// The default is `"winit window"`.
+    /// The default is `"wa window"`.
     ///
     /// See [`Window::set_title`] for details.
     #[inline]
@@ -566,7 +566,7 @@ impl Window {
     ///
     /// ## Platform-specific
     ///
-    /// - **X11:** This respects Xft.dpi, and can be overridden using the `WINIT_X11_SCALE_FACTOR` environment variable.
+    /// - **X11:** This respects Xft.dpi, and can be overridden using the `wa_X11_SCALE_FACTOR` environment variable.
     /// - **Wayland:** Uses the wp-fractional-scale protocol if available. Falls back to integer-scale factors otherwise.
     /// - **Android:** Always returns 1.0.
     /// - **iOS:** Can only be called on the main thread. Returns the underlying `UIView`'s
@@ -613,7 +613,7 @@ impl Window {
     /// Notify the windowing system before presenting to the window.
     ///
     /// You should call this event after your drawing operations, but before you submit
-    /// the buffer to the display or commit your drawings. Doing so will help winit to properly
+    /// the buffer to the display or commit your drawings. Doing so will help wa to properly
     /// schedule and make assumptions about its internal state. For example, it could properly
     /// throttle [`WindowEvent::RedrawRequested`].
     ///
@@ -623,14 +623,14 @@ impl Window {
     /// APIs and software rendering.
     ///
     /// ```no_run
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// # fn swap_buffers() {}
     /// // Do the actual drawing with OpenGL.
     ///
-    /// // Notify winit that we're about to submit buffer to the windowing system.
+    /// // Notify wa that we're about to submit buffer to the windowing system.
     /// window.pre_present_notify();
     ///
     /// // Sumbit buffer to the windowing system.
@@ -712,9 +712,9 @@ impl Window {
     /// This automatically un-maximizes the window if it's maximized.
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalPosition, PhysicalPosition};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalPosition, PhysicalPosition};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the position in logical dimensions like this:
@@ -774,9 +774,9 @@ impl Window {
     /// The request could automatically un-maximize the window if it's maximized.
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalSize, PhysicalSize};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalSize, PhysicalSize};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the size in logical dimensions like this:
@@ -822,9 +822,9 @@ impl Window {
     /// Sets a minimum dimension size for the window.
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalSize, PhysicalSize};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalSize, PhysicalSize};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the size in logical dimensions like this:
@@ -847,9 +847,9 @@ impl Window {
     /// Sets a maximum dimension size for the window.
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalSize, PhysicalSize};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalSize, PhysicalSize};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the size in logical dimensions like this:
@@ -1116,7 +1116,7 @@ impl Window {
 
     /// Turn window decorations on or off.
     ///
-    /// Enable/disable window decorations provided by the server or Winit.
+    /// Enable/disable window decorations provided by the server or wa.
     /// By default this is enabled. Note that fullscreen windows and windows on
     /// mobile and web platforms naturally do not have decorations.
     ///
@@ -1131,7 +1131,7 @@ impl Window {
 
     /// Gets the window's current decorations state.
     ///
-    /// Returns `true` when windows are decorated (server-side or by Winit).
+    /// Returns `true` when windows are decorated (server-side or by wa).
     /// Also returns `true` when no decorations are required (mobile, web).
     ///
     /// ## Platform-specific
@@ -1188,9 +1188,9 @@ impl Window {
     /// ## Example
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalPosition, PhysicalPosition, LogicalSize, PhysicalSize};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalPosition, PhysicalPosition, LogicalSize, PhysicalSize};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the position in logical dimensions like this:
@@ -1366,9 +1366,9 @@ impl Window {
     /// Changes the position of the cursor in window coordinates.
     ///
     /// ```no_run
-    /// # use winit::dpi::{LogicalPosition, PhysicalPosition};
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::Window;
+    /// # use wa::dpi::{LogicalPosition, PhysicalPosition};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::Window;
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// // Specify the position in logical dimensions like this:
@@ -1398,8 +1398,8 @@ impl Window {
     /// First try confining the cursor, and if that fails, try locking it instead.
     ///
     /// ```no_run
-    /// # use winit::event_loop::EventLoop;
-    /// # use winit::window::{CursorGrabMode, Window};
+    /// # use wa::event_loop::EventLoop;
+    /// # use wa::window::{CursorGrabMode, Window};
     /// # let mut event_loop = EventLoop::new().unwrap();
     /// # let window = Window::new(&event_loop).unwrap();
     /// window.set_cursor_grab(CursorGrabMode::Confined)
@@ -1742,7 +1742,7 @@ pub enum WindowLevel {
 /// Generic IME purposes for use in [`Window::set_ime_purpose`].
 ///
 /// The purpose may improve UX by optimizing the IME for the specific use case,
-/// if winit can express the purpose to the platform and the platform reacts accordingly.
+/// if wa can express the purpose to the platform and the platform reacts accordingly.
 ///
 /// ## Platform-specific
 ///

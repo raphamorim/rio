@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 //! Types related to the keyboard.
 
@@ -60,7 +60,7 @@
 
 // --------- BEGGINING OF W3C SHORT NOTICE ---------------------------------------------------------
 //
-// winit: https://github.com/rust-windowing/winit
+// wa: https://github.com/rust-windowing/wa
 //
 // Copyright © 2021 World Wide Web Consortium, (Massachusetts Institute of Technology, European
 // Research Consortium for Informatics and Mathematics, Keio University, Beihang). All Rights
@@ -80,7 +80,7 @@ pub use smol_str::SmolStr;
 /// The exact values vary from platform to platform (which is part of why this is a per-platform
 /// enum), but the values are primarily tied to the key's physical location on the keyboard.
 ///
-/// This enum is primarily used to store raw keycodes when Winit doesn't map a given native
+/// This enum is primarily used to store raw keycodes when wa doesn't map a given native
 /// physical key identifier to a meaningful [`KeyCode`] variant. In the presence of identifiers we
 /// haven't mapped for you yet, this lets you use use [`KeyCode`] to:
 ///
@@ -136,7 +136,7 @@ impl std::fmt::Debug for NativeKeyCode {
 /// different values on different platforms, which is one of the reasons this is a per-platform
 /// enum.
 ///
-/// This enum is primarily used to store raw keysym when Winit doesn't map a given native logical
+/// This enum is primarily used to store raw keysym when wa doesn't map a given native logical
 /// key identifier to a meaningful [`Key`] variant. This lets you use [`Key`], and let the user
 /// define keybinds which work in the presence of identifiers we haven't mapped for you yet.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1566,7 +1566,7 @@ impl NamedKey {
     /// # Examples
     ///
     /// ```
-    /// use winit::keyboard::NamedKey;
+    /// use wa::keyboard::NamedKey;
     ///
     /// assert_eq!(NamedKey::Enter.to_text(), Some("\r"));
     /// assert_eq!(NamedKey::F20.to_text(), None);
@@ -1589,7 +1589,7 @@ impl Key {
     /// # Examples
     ///
     /// ```
-    /// use winit::keyboard::{NamedKey, Key};
+    /// use wa::keyboard::{NamedKey, Key};
     ///
     /// assert_eq!(Key::Character("a".into()).to_text(), Some("a"));
     /// assert_eq!(Key::Named(NamedKey::Enter).to_text(), Some("\r"));
@@ -1623,11 +1623,11 @@ pub enum KeyLocation {
     /// For instance, the "1" key above the "Q" key on a QWERTY keyboard will use this location. This
     /// invariant is also returned when the location of the key cannot be identified.
     ///
-    /// ![Standard 1 key](https://raw.githubusercontent.com/rust-windowing/winit/master/docs/res/keyboard_standard_1_key.svg)
+    /// ![Standard 1 key](https://raw.githubusercontent.com/rust-windowing/wa/master/docs/res/keyboard_standard_1_key.svg)
     ///
     /// <sub>
     ///   For image attribution, see the
-    ///   <a href="https://github.com/rust-windowing/winit/blob/master/docs/res/ATTRIBUTION.md">
+    ///   <a href="https://github.com/rust-windowing/wa/blob/master/docs/res/ATTRIBUTION.md">
     ///     ATTRIBUTION.md
     ///   </a>
     ///   file.
@@ -1639,11 +1639,11 @@ pub enum KeyLocation {
     /// For instance, the left Shift key below the Caps Lock key on a QWERTY keyboard will use this
     /// location.
     ///
-    /// ![Left Shift key](https://raw.githubusercontent.com/rust-windowing/winit/master/docs/res/keyboard_left_shift_key.svg)
+    /// ![Left Shift key](https://raw.githubusercontent.com/rust-windowing/wa/master/docs/res/keyboard_left_shift_key.svg)
     ///
     /// <sub>
     ///   For image attribution, see the
-    ///   <a href="https://github.com/rust-windowing/winit/blob/master/docs/res/ATTRIBUTION.md">
+    ///   <a href="https://github.com/rust-windowing/wa/blob/master/docs/res/ATTRIBUTION.md">
     ///     ATTRIBUTION.md
     ///   </a>
     ///   file.
@@ -1655,11 +1655,11 @@ pub enum KeyLocation {
     /// For instance, the right Shift key below the Enter key on a QWERTY keyboard will use this
     /// location.
     ///
-    /// ![Right Shift key](https://raw.githubusercontent.com/rust-windowing/winit/master/docs/res/keyboard_right_shift_key.svg)
+    /// ![Right Shift key](https://raw.githubusercontent.com/rust-windowing/wa/master/docs/res/keyboard_right_shift_key.svg)
     ///
     /// <sub>
     ///   For image attribution, see the
-    ///   <a href="https://github.com/rust-windowing/winit/blob/master/docs/res/ATTRIBUTION.md">
+    ///   <a href="https://github.com/rust-windowing/wa/blob/master/docs/res/ATTRIBUTION.md">
     ///     ATTRIBUTION.md
     ///   </a>
     ///   file.
@@ -1670,11 +1670,11 @@ pub enum KeyLocation {
     ///
     /// For instance, the "1" key on the numpad will use this location.
     ///
-    /// ![Numpad 1 key](https://raw.githubusercontent.com/rust-windowing/winit/master/docs/res/keyboard_numpad_1_key.svg)
+    /// ![Numpad 1 key](https://raw.githubusercontent.com/rust-windowing/wa/master/docs/res/keyboard_numpad_1_key.svg)
     ///
     /// <sub>
     ///   For image attribution, see the
-    ///   <a href="https://github.com/rust-windowing/winit/blob/master/docs/res/ATTRIBUTION.md">
+    ///   <a href="https://github.com/rust-windowing/wa/blob/master/docs/res/ATTRIBUTION.md">
     ///     ATTRIBUTION.md
     ///   </a>
     ///   file.

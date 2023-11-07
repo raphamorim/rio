@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use core_graphics::display::CGDisplay;
 use icrate::Foundation::{CGFloat, NSNotFound, NSPoint, NSRange, NSRect, NSUInteger};
@@ -56,8 +56,8 @@ pub fn bottom_left_to_top_left(rect: NSRect) -> f64 {
     CGDisplay::main().pixels_high() as f64 - (rect.origin.y + rect.size.height) as f64
 }
 
-/// Converts from winit screen-coordinates to macOS screen-coordinates.
-/// Winit: top-left is (0, 0) and y increasing downwards
+/// Converts from wa screen-coordinates to macOS screen-coordinates.
+/// wa: top-left is (0, 0) and y increasing downwards
 /// macOS: bottom-left is (0, 0) and y increasing upwards
 pub fn window_position(position: LogicalPosition<f64>) -> NSPoint {
     NSPoint::new(

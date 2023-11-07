@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use crate::{
     error::EventLoopError,
@@ -24,7 +24,7 @@ pub trait EventLoopExtRunOnDemand {
     /// so the event loop can be re-run after it has exit.
     ///
     /// It's expected that each run of the loop will be for orthogonal instantiations of your
-    /// Winit application, but internally each instantiation may re-use some common window
+    /// wa application, but internally each instantiation may re-use some common window
     /// system resources, such as a display server connection.
     ///
     /// This API is not designed to run an event loop in bursts that you can exit from and return

@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ pub trait EventLoopExtPumpEvents {
 
     /// Pump the `EventLoop` to check for and dispatch pending events.
     ///
-    /// This API is designed to enable applications to integrate Winit into an
+    /// This API is designed to enable applications to integrate wa into an
     /// external event loop, for platforms that can support this.
     ///
     /// The given `timeout` limits how long it may block waiting for new events.
@@ -35,68 +35,6 @@ pub trait EventLoopExtPumpEvents {
     /// Passing a `timeout` of `None` means that it may wait indefinitely for new
     /// events before returning control back to the external loop.
     ///
-    /// ## Example
-    ///
-    /// ```rust,no_run
-    /// # // Copied from examples/window_pump_events.rs
-    /// # #[cfg(any(
-    /// #     windows_platform,
-    /// #     macos_platform,
-    /// #     x11_platform,
-    /// #     wayland_platform,
-    /// #     android_platform,
-    /// # ))]
-    /// fn main() -> std::process::ExitCode {
-    /// #     use std::{process::ExitCode, thread::sleep, time::Duration};
-    /// #
-    /// #     use simple_logger::SimpleLogger;
-    /// #     use winit::{
-    /// #         event::{Event, WindowEvent},
-    /// #         event_loop::EventLoop,
-    /// #         platform::pump_events::{EventLoopExtPumpEvents, PumpStatus},
-    /// #         window::WindowBuilder,
-    /// #     };
-    ///     let mut event_loop = EventLoop::new().unwrap();
-    /// #
-    /// #   SimpleLogger::new().init().unwrap();
-    ///     let window = WindowBuilder::new()
-    ///         .with_title("A fantastic window!")
-    ///         .build(&event_loop)
-    ///         .unwrap();
-    ///
-    ///     'main: loop {
-    ///         let timeout = Some(Duration::ZERO);
-    ///         let status = event_loop.pump_events(timeout, |event, elwt| {
-    /// #            if let Event::WindowEvent { event, .. } = &event {
-    /// #                // Print only Window events to reduce noise
-    /// #                println!("{event:?}");
-    /// #            }
-    /// #
-    ///             match event {
-    ///                 Event::WindowEvent {
-    ///                     event: WindowEvent::CloseRequested,
-    ///                     window_id,
-    ///                 } if window_id == window.id() => elwt.exit(),
-    ///                 Event::AboutToWait => {
-    ///                     window.request_redraw();
-    ///                 }
-    ///                 _ => (),
-    ///             }
-    ///         });
-    ///         if let PumpStatus::Exit(exit_code) = status {
-    ///             break 'main ExitCode::from(exit_code as u8);
-    ///         }
-    ///
-    ///         // Sleep for 1/60 second to simulate application work
-    ///         //
-    ///         // Since `pump_events` doesn't block it will be important to
-    ///         // throttle the loop in the app somehow.
-    ///         println!("Update()");
-    ///         sleep(Duration::from_millis(16));
-    ///     }
-    /// }
-    /// ```
-    ///
     /// **Note:** This is not a portable API, and its usage involves a number of
     /// caveats and trade offs that should be considered before using this API!
     ///
@@ -106,7 +44,7 @@ pub trait EventLoopExtPumpEvents {
     /// ## Synchronous events
     ///
     /// Some events _must_ only be handled synchronously via the closure that
-    /// is passed to Winit so that the handler will also be synchronized with
+    /// is passed to wa so that the handler will also be synchronized with
     /// the window system and operating system.
     ///
     /// This is because some events are driven by a window system callback
@@ -114,15 +52,15 @@ pub trait EventLoopExtPumpEvents {
     /// event before returning.
     ///
     /// **These events can not be buffered and handled outside of the closure
-    /// passed to Winit.**
+    /// passed to wa.**
     ///
     /// As a general rule it is not recommended to ever buffer events to handle
-    /// them outside of the closure passed to Winit since it's difficult to
+    /// them outside of the closure passed to wa since it's difficult to
     /// provide guarantees about which events are safe to buffer across all
     /// operating systems.
     ///
     /// Notable events that will certainly create portability problems if
-    /// buffered and handled outside of Winit include:
+    /// buffered and handled outside of wa include:
     /// - `RedrawRequested` events, used to schedule rendering.
     ///
     ///     macOS for example uses a `drawRect` callback to drive rendering
@@ -130,7 +68,7 @@ pub trait EventLoopExtPumpEvents {
     /// the `drawRect` callback returns.
     ///
     ///     For portability it's strongly recommended that applications should
-    /// keep their rendering inside the closure provided to Winit.
+    /// keep their rendering inside the closure provided to wa.
     /// - Any lifecycle events, such as `Suspended` / `Resumed`.
     ///
     ///     The handling of these events needs to be synchronized with the
@@ -168,11 +106,11 @@ pub trait EventLoopExtPumpEvents {
     ///   developers)
     ///
     ///   It's likely this will be less efficient than polling on other OSs and
-    ///   it also means the `NSApp` is stopped while outside of the Winit
+    ///   it also means the `NSApp` is stopped while outside of the wa
     ///   event loop - and that's observable (for example to crates like `rfd`)
     ///   because the `NSApp` is global state.
     ///
-    ///   If you render outside of Winit you are likely to see window resizing artifacts
+    ///   If you render outside of wa you are likely to see window resizing artifacts
     ///   since MacOS expects applications to render synchronously during any `drawRect`
     ///   callback.
     fn pump_events<F>(

@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 #![allow(clippy::unnecessary_cast)]
 
@@ -27,8 +27,8 @@ use crate::{
         ffi,
         monitor::{self, MonitorHandle, VideoMode},
         util,
-        view::WinitView,
-        window_delegate::WinitWindowDelegate,
+        view::waView,
+        window_delegate::waWindowDelegate,
         Fullscreen,
         OsError,
     },
@@ -59,9 +59,9 @@ use super::ffi::CGSMainConnectionID;
 use super::ffi::CGSSetWindowBackgroundBlurRadius;
 
 pub(crate) struct Window {
-    window: MainThreadBound<Id<WinitWindow>>,
+    window: MainThreadBound<Id<waWindow>>,
     // We keep this around so that it doesn't get dropped until the window does.
-    _delegate: MainThreadBound<Id<WinitWindowDelegate>>,
+    _delegate: MainThreadBound<Id<waWindowDelegate>>,
 }
 
 impl Drop for Window {
@@ -80,24 +80,21 @@ impl Window {
         let mtm = MainThreadMarker::new()
             .expect("windows can only be created on the main thread on macOS");
         let (window, _delegate) =
-            autoreleasepool(|_| WinitWindow::new(attributes, pl_attribs))?;
+            autoreleasepool(|_| waWindow::new(attributes, pl_attribs))?;
         Ok(Window {
             window: MainThreadBound::new(window, mtm),
             _delegate: MainThreadBound::new(_delegate, mtm),
         })
     }
 
-    pub(crate) fn maybe_queue_on_main(
-        &self,
-        f: impl FnOnce(&WinitWindow) + Send + 'static,
-    ) {
+    pub(crate) fn maybe_queue_on_main(&self, f: impl FnOnce(&waWindow) + Send + 'static) {
         // For now, don't actually do queuing, since it may be less predictable
         self.maybe_wait_on_main(f)
     }
 
     pub(crate) fn maybe_wait_on_main<R: Send>(
         &self,
-        f: impl FnOnce(&WinitWindow) -> R + Send,
+        f: impl FnOnce(&waWindow) -> R + Send,
     ) -> R {
         self.window.get_on_main(|window, _mtm| f(window))
     }
@@ -160,21 +157,21 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
 
 declare_class!(
     #[derive(Debug)]
-    pub struct WinitWindow {
+    pub struct waWindow {
         // TODO: Fix unnecessary boxing here
         shared_state: IvarDrop<Box<Mutex<SharedState>>, "_shared_state">,
     }
 
     mod ivars;
 
-    unsafe impl ClassType for WinitWindow {
+    unsafe impl ClassType for waWindow {
         #[inherits(NSResponder, NSObject)]
         type Super = NSWindow;
         type Mutability = mutability::InteriorMutable;
-        const NAME: &'static str = "WinitWindow";
+        const NAME: &'static str = "waWindow";
     }
 
-    unsafe impl WinitWindow {
+    unsafe impl waWindow {
         #[method(initWithContentRect:styleMask:state:)]
         unsafe fn init(
             this: *mut Self,
@@ -208,7 +205,7 @@ declare_class!(
         }
     }
 
-    unsafe impl WinitWindow {
+    unsafe impl waWindow {
         #[method(canBecomeMainWindow)]
         fn can_become_main_window(&self) -> bool {
             trace_scope!("canBecomeMainWindow");
@@ -302,13 +299,13 @@ impl Drop for SharedStateMutexGuard<'_> {
     }
 }
 
-impl WinitWindow {
+impl waWindow {
     #[allow(clippy::type_complexity)]
     fn new(
         attrs: WindowAttributes,
         pl_attrs: PlatformSpecificWindowBuilderAttributes,
-    ) -> Result<(Id<Self>, Id<WinitWindowDelegate>), RootOsError> {
-        trace_scope!("WinitWindow::new");
+    ) -> Result<(Id<Self>, Id<waWindowDelegate>), RootOsError> {
+        trace_scope!("waWindow::new");
 
         let this = autoreleasepool(|_| {
             let screen = match attrs.fullscreen.0.clone().map(Into::into) {
@@ -392,7 +389,7 @@ impl WinitWindow {
                 Box::into_raw(Box::new(Mutex::new(state))).cast();
             let this: Option<Id<Self>> = unsafe {
                 msg_send_id![
-                    WinitWindow::alloc(),
+                    waWindow::alloc(),
                     initWithContentRect: frame,
                     styleMask: masks,
                     state: state_ptr,
@@ -479,7 +476,7 @@ impl WinitWindow {
         //             ))
         //         })?;
 
-        //         // SAFETY: We know that there are no parent -> child -> parent cycles since the only place in `winit`
+        //         // SAFETY: We know that there are no parent -> child -> parent cycles since the only place in `wa`
         //         // where we allow making a window a child window is right here, just after it's been created.
         //         unsafe {
         //             parent.addChildWindow(&this, NSWindowOrderingMode::NSWindowAbove)
@@ -489,7 +486,7 @@ impl WinitWindow {
         //     None => (),
         // }
 
-        let view = WinitView::new(&this, pl_attrs.accepts_first_mouse);
+        let view = waView::new(&this, pl_attrs.accepts_first_mouse);
 
         // The default value of `setWantsBestResolutionOpenGLSurface:` was `false` until
         // macos 10.14 and `true` after 10.15, we should set it to `YES` or `NO` to avoid
@@ -538,16 +535,16 @@ impl WinitWindow {
         match attrs.preferred_theme {
             Some(theme) => {
                 set_ns_theme(Some(theme));
-                let mut state = this.lock_shared_state("WinitWindow::new");
+                let mut state = this.lock_shared_state("waWindow::new");
                 state.current_theme = Some(theme);
             }
             None => {
-                let mut state = this.lock_shared_state("WinitWindow::new");
+                let mut state = this.lock_shared_state("waWindow::new");
                 state.current_theme = Some(get_ns_theme());
             }
         }
 
-        let delegate = WinitWindowDelegate::new(&this, attrs.fullscreen.0.is_some());
+        let delegate = waWindowDelegate::new(&this, attrs.fullscreen.0.is_some());
 
         // XXX Send `Focused(false)` right after creating the window delegate, so we won't
         // obscure the real focused events on the startup.
@@ -575,8 +572,8 @@ impl WinitWindow {
         Ok((this, delegate))
     }
 
-    pub(super) fn view(&self) -> Id<WinitView> {
-        // SAFETY: The view inside WinitWindow is always `WinitView`
+    pub(super) fn view(&self) -> Id<waView> {
+        // SAFETY: The view inside waWindow is always `waView`
         unsafe { Id::cast(self.contentView()) }
     }
 
@@ -596,7 +593,7 @@ impl WinitWindow {
     }
 }
 
-impl WinitWindow {
+impl waWindow {
     pub fn id(&self) -> WindowId {
         WindowId(self as *const Self as usize)
     }
@@ -830,7 +827,7 @@ impl WinitWindow {
 
         // We edit the button directly instead of using `NSResizableWindowMask`,
         // since that mask also affect the resizability of the window (which is
-        // controllable by other means in `winit`).
+        // controllable by other means in `wa`).
         if let Some(button) = self.standardWindowButton(NSWindowButton::Zoom) {
             button.setEnabled(buttons.contains(WindowButtons::MAXIMIZE));
         }
@@ -1177,7 +1174,7 @@ impl WinitWindow {
 
         self.lock_shared_state("set_fullscreen").fullscreen = fullscreen.clone();
 
-        fn toggle_fullscreen(window: &WinitWindow) {
+        fn toggle_fullscreen(window: &waWindow) {
             // Window level must be restored from `CGShieldingWindowLevel()
             // + 1` back to normal in order for `toggleFullScreen` to do
             // anything
@@ -1487,7 +1484,7 @@ impl WinitWindow {
     }
 }
 
-impl WindowExtMacOS for WinitWindow {
+impl WindowExtMacOS for waWindow {
     #[inline]
     fn simple_fullscreen(&self) -> bool {
         self.lock_shared_state("simple_fullscreen")

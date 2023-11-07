@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use log::trace;
 use objc2::Encode;
@@ -40,7 +40,7 @@ declare_class!(
     unsafe impl ClassType for ApplicationDelegate {
         type Super = NSObject;
         type Mutability = mutability::InteriorMutable;
-        const NAME: &'static str = "WinitApplicationDelegate";
+        const NAME: &'static str = "waApplicationDelegate";
     }
 
     unsafe impl ApplicationDelegate {
