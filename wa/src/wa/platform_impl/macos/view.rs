@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 #![allow(clippy::unnecessary_cast)]
 use bitflags::bitflags;
@@ -39,7 +39,7 @@ use crate::{
         app_state::AppState,
         event::{create_key_event, event_mods},
         util,
-        window::WinitWindow,
+        window::waWindow,
         DEVICE_ID,
     },
     window::WindowId,
@@ -151,26 +151,26 @@ pub struct ViewState {
 declare_class!(
     #[derive(Debug)]
     #[allow(non_snake_case)]
-    pub(super) struct WinitView {
+    pub(super) struct waView {
         // Weak reference because the window keeps a strong reference to the view
-        _ns_window: IvarDrop<Box<WeakId<WinitWindow>>, "__ns_window">,
+        _ns_window: IvarDrop<Box<WeakId<waWindow>>, "__ns_window">,
         state: IvarDrop<Box<ViewState>, "_state">,
     }
 
     mod ivars;
 
-    unsafe impl ClassType for WinitView {
+    unsafe impl ClassType for waView {
         #[inherits(NSResponder, NSObject)]
         type Super = NSView;
         type Mutability = mutability::InteriorMutable;
-        const NAME: &'static str = "WinitView";
+        const NAME: &'static str = "waView";
     }
 
-    unsafe impl WinitView {
+    unsafe impl waView {
         #[method(initWithId:acceptsFirstMouse:)]
         unsafe fn init_with_id(
             this: *mut Self,
-            window: &WinitWindow,
+            window: &waWindow,
             accepts_first_mouse: bool,
         ) -> Option<NonNull<Self>> {
             let this: Option<&mut Self> = unsafe { msg_send![super(this), init] };
@@ -210,7 +210,7 @@ declare_class!(
         }
     }
 
-    unsafe impl WinitView {
+    unsafe impl waView {
         #[method(viewDidMoveToWindow)]
         fn view_did_move_to_window(&self) {
             trace_scope!("viewDidMoveToWindow");
@@ -247,7 +247,7 @@ declare_class!(
         fn draw_rect(&self, rect: NSRect) {
             trace_scope!("drawRect:");
 
-            // It's a workaround for https://github.com/rust-windowing/winit/issues/2640, don't replace with `self.window_id()`.
+            // It's a workaround for https://github.com/rust-windowing/wa/issues/2640, don't replace with `self.window_id()`.
             if let Some(window) = self._ns_window.load() {
                 AppState::handle_redraw(WindowId(window.id()));
             }
@@ -287,7 +287,7 @@ declare_class!(
         }
     }
 
-    unsafe impl NSTextInputClient for WinitView {
+    unsafe impl NSTextInputClient for waView {
         #[method(hasMarkedText)]
         fn has_marked_text(&self) -> bool {
             trace_scope!("hasMarkedText");
@@ -473,7 +473,7 @@ declare_class!(
         }
     }
 
-    unsafe impl WinitView {
+    unsafe impl waView {
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
             trace_scope!("keyDown:");
@@ -807,8 +807,8 @@ declare_class!(
     }
 );
 
-impl WinitView {
-    pub(super) fn new(window: &WinitWindow, accepts_first_mouse: bool) -> Id<Self> {
+impl waView {
+    pub(super) fn new(window: &waWindow, accepts_first_mouse: bool) -> Id<Self> {
         unsafe {
             msg_send_id![
                 Self::alloc(),
@@ -818,7 +818,7 @@ impl WinitView {
         }
     }
 
-    fn window(&self) -> Id<WinitWindow> {
+    fn window(&self) -> Id<waWindow> {
         // TODO: Simply use `window` property on `NSView`.
         // That only returns a window _after_ the view has been attached though!
         // (which is incompatible with `frameDidChange:`)

@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 #![allow(clippy::unnecessary_cast)]
 use std::cell::Cell;
@@ -18,7 +18,7 @@ use super::appkit::{
 use super::{
     app_state::AppState,
     util,
-    window::{get_ns_theme, WinitWindow},
+    window::{get_ns_theme, waWindow},
     Fullscreen,
 };
 use crate::{
@@ -42,8 +42,8 @@ pub struct State {
 
 declare_class!(
     #[derive(Debug)]
-    pub(crate) struct WinitWindowDelegate {
-        window: IvarDrop<Id<WinitWindow>, "_window">,
+    pub(crate) struct waWindowDelegate {
+        window: IvarDrop<Id<waWindow>, "_window">,
 
         // TODO: It may be possible for delegate methods to be called
         // asynchronously, causing data races panics?
@@ -53,17 +53,17 @@ declare_class!(
 
     mod ivars;
 
-    unsafe impl ClassType for WinitWindowDelegate {
+    unsafe impl ClassType for waWindowDelegate {
         type Super = NSObject;
         type Mutability = mutability::InteriorMutable;
-        const NAME: &'static str = "WinitWindowDelegate";
+        const NAME: &'static str = "waWindowDelegate";
     }
 
-    unsafe impl WinitWindowDelegate {
+    unsafe impl waWindowDelegate {
         #[method(initWithWindow:initialFullscreen:)]
-        unsafe fn init_with_winit(
+        unsafe fn init_with_wa(
             this: *mut Self,
-            window: &WinitWindow,
+            window: &waWindow,
             initial_fullscreen: bool,
         ) -> Option<NonNull<Self>> {
             let this: Option<&mut Self> = unsafe { msg_send![super(this), init] };
@@ -107,7 +107,7 @@ declare_class!(
     }
 
     // NSWindowDelegate + NSDraggingDestination protocols
-    unsafe impl WinitWindowDelegate {
+    unsafe impl waWindowDelegate {
         #[method(windowShouldClose:)]
         fn window_should_close(&self, _: Option<&AnyObject>) -> bool {
             trace_scope!("windowShouldClose:");
@@ -441,8 +441,8 @@ declare_class!(
     }
 );
 
-impl WinitWindowDelegate {
-    pub fn new(window: &WinitWindow, initial_fullscreen: bool) -> Id<Self> {
+impl waWindowDelegate {
+    pub fn new(window: &waWindow, initial_fullscreen: bool) -> Id<Self> {
         unsafe {
             msg_send_id![
                 Self::alloc(),

@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 //! The [`EventLoop`] struct and assorted supporting types, including
 //! [`ControlFlow`].
@@ -47,7 +47,7 @@ pub struct EventLoop<T: 'static> {
 
 /// Target that associates windows with an [`EventLoop`].
 ///
-/// This type exists to allow you to create new windows while Winit executes
+/// This type exists to allow you to create new windows while wa executes
 /// your callback. [`EventLoop`] will coerce into this type (`impl<T> Deref for
 /// EventLoop<T>`), so functions that take this as a parameter can also take
 /// `&EventLoop`.
@@ -337,7 +337,7 @@ impl<T> EventLoopWindowTarget<T> {
 
     /// Change if or when [`DeviceEvent`]s are captured.
     ///
-    /// Since the [`DeviceEvent`] capture can lead to high CPU usage for unfocused windows, winit
+    /// Since the [`DeviceEvent`] capture can lead to high CPU usage for unfocused windows, wa
     /// will ignore them by default for unfocused windows on Linux/BSD. This method allows changing
     /// this at runtime to explicitly capture them again.
     ///
@@ -451,7 +451,7 @@ pub enum DeviceEvents {
     Never,
 }
 
-/// A unique identifier of the winit's async request.
+/// A unique identifier of the wa's async request.
 ///
 /// This could be used to identify the async request once it's done
 /// and a specific action must be taken.

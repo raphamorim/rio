@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 //! Types useful for interacting with a user's monitors.
 //!
@@ -148,7 +148,7 @@ impl MonitorHandle {
     ///
     /// ## Platform-specific
     ///
-    /// - **X11:** Can be overridden using the `WINIT_X11_SCALE_FACTOR` environment variable.
+    /// - **X11:** Can be overridden using the `wa_X11_SCALE_FACTOR` environment variable.
     /// - **Wayland:** May differ from [`Window::scale_factor`].
     /// - **Android:** Always returns 1.0.
     ///

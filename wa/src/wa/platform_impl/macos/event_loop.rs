@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use std::{
     any::Any,
@@ -37,7 +37,7 @@ use crate::{
     },
     platform::{macos::ActivationPolicy, pump_events::PumpStatus},
     wa::platform_impl::platform::{
-        app::WinitApplication,
+        app::waApplication,
         app_delegate::ApplicationDelegate,
         app_state::{AppState, Callback},
         monitor::{self, MonitorHandle},
@@ -148,7 +148,7 @@ impl<T> EventLoopWindowTarget<T> {
 pub struct EventLoop<T: 'static> {
     /// Store a reference to the application for convenience.
     ///
-    /// We intentially don't store `WinitApplication` since we want to have
+    /// We intentially don't store `waApplication` since we want to have
     /// the possiblity of swapping that out at some point.
     app: Id<NSApplication>,
     /// The delegate is only weakly referenced by NSApplication, so we keep
@@ -196,10 +196,10 @@ impl<T> EventLoop<T> {
             .expect("on macOS, `EventLoop` must be created on the main thread!");
 
         let app: Id<NSApplication> =
-            unsafe { msg_send_id![WinitApplication::class(), sharedApplication] };
+            unsafe { msg_send_id![waApplication::class(), sharedApplication] };
 
-        if !app.is_kind_of::<WinitApplication>() {
-            panic!("`winit` requires control over the principal class. You must create the event loop before other parts of your application initialize NSApplication");
+        if !app.is_kind_of::<waApplication>() {
+            panic!("`wa` requires control over the principal class. You must create the event loop before other parts of your application initialize NSApplication");
         }
 
         use NSApplicationActivationPolicy::*;

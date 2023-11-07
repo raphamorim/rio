@@ -1,5 +1,5 @@
-// WA is a fork of https://github.com/rust-windowing/winit/
-// Winit is is licensed under Apache 2.0 license https://github.com/rust-windowing/winit/blob/master/LICENSE
+// WA is a fork of https://github.com/rust-windowing/wa/
+// wa is is licensed under Apache 2.0 license https://github.com/rust-windowing/wa/blob/master/LICENSE
 
 use log::trace;
 use std::{
@@ -22,8 +22,7 @@ use once_cell::sync::Lazy;
 
 use super::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy, NSEvent};
 use super::{
-    event_loop::PanicInfo, menu, observer::EventLoopWaker, util::Never,
-    window::WinitWindow,
+    event_loop::PanicInfo, menu, observer::EventLoopWaker, util::Never, window::waWindow,
 };
 use crate::{
     dpi::PhysicalSize,
@@ -72,7 +71,7 @@ impl<T> EventLoopHandler<T> {
         //
         // We don't want to panic or output any verbose logging if we fail to
         // upgrade the weak reference since it might be valid that the application
-        // re-starts the `NSApp` after exiting a Winit `EventLoop`
+        // re-starts the `NSApp` after exiting a wa `EventLoop`
         if let Some(callback) = self.callback.upgrade() {
             let callback = callback.borrow_mut();
             (f)(self, callback);
@@ -109,7 +108,7 @@ impl<T> EventHandler for EventLoopHandler<T> {
 enum EventWrapper {
     StaticEvent(Event<Never>),
     ScaleFactorChanged {
-        window: Id<WinitWindow>,
+        window: Id<waWindow>,
         suggested_size: PhysicalSize<u32>,
         scale_factor: f64,
     },
@@ -331,7 +330,7 @@ impl Handler {
 
     fn handle_scale_factor_changed_event(
         &self,
-        window: &WinitWindow,
+        window: &waWindow,
         suggested_size: PhysicalSize<u32>,
         scale_factor: f64,
     ) {
@@ -495,7 +494,7 @@ impl AppState {
         // If the `NSApp` is being launched via `EventLoop::pump_events()` then we'll
         // want to stop the app once it is launched (and return to the external loop)
         //
-        // In this case we still want to consider Winit's `EventLoop` to be "running",
+        // In this case we still want to consider wa's `EventLoop` to be "running",
         // so we call `start_running()` above.
         if HANDLER.should_stop_app_on_launch() {
             // Note: the original idea had been to only stop the underlying `RunLoop`
@@ -512,7 +511,7 @@ impl AppState {
             "The panic info must exist here. This failure indicates a developer error.",
         );
 
-        // Return when in callback due to https://github.com/rust-windowing/winit/issues/1779
+        // Return when in callback due to https://github.com/rust-windowing/wa/issues/1779
         if panic_info.is_panicking()
             || HANDLER.get_in_callback()
             || !HANDLER.have_callback()
@@ -589,7 +588,7 @@ impl AppState {
     }
 
     pub fn queue_static_scale_factor_changed_event(
-        window: Id<WinitWindow>,
+        window: Id<waWindow>,
         suggested_size: PhysicalSize<u32>,
         scale_factor: f64,
     ) {
@@ -617,7 +616,7 @@ impl AppState {
             "The panic info must exist here. This failure indicates a developer error.",
         );
 
-        // Return when in callback due to https://github.com/rust-windowing/winit/issues/1779
+        // Return when in callback due to https://github.com/rust-windowing/wa/issues/1779
         // XXX: how does it make sense that `get_in_callback()` can ever return `true` here if we're
         // about to return to the `CFRunLoop` to poll for new events?
         if panic_info.is_panicking()
@@ -699,7 +698,7 @@ fn min_timeout(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
 fn window_activation_hack(app: &NSApplication) {
     // TODO: Proper ordering of the windows
     app.windows().into_iter().for_each(|window| {
-        // Call `makeKeyAndOrderFront` if it was called on the window in `WinitWindow::new`
+        // Call `makeKeyAndOrderFront` if it was called on the window in `waWindow::new`
         // This way we preserve the user's desired initial visiblity status
         // TODO: Also filter on the type/"level" of the window, and maybe other things?
         if window.isVisible() {
