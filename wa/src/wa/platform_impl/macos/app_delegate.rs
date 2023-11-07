@@ -1,10 +1,7 @@
+use log::trace;
 use objc2::Encode;
 use objc2::Encoding;
-use icrate::Foundation::NSString;
-use icrate::Foundation::NSArray;
 use std::ffi::CStr;
-use objc2::runtime::Sel;
-use log::trace;
 use std::ptr::NonNull;
 
 use icrate::Foundation::NSObject;
@@ -29,7 +26,8 @@ unsafe impl Encode for Url {
 declare_class!(
     #[derive(Debug)]
     pub(super) struct ApplicationDelegate {
-        activation_policy: IvarEncode<NSApplicationActivationPolicy, "_activation_policy">,
+        activation_policy:
+            IvarEncode<NSApplicationActivationPolicy, "_activation_policy">,
         default_menu: IvarBool<"_default_menu">,
         activate_ignoring_other_apps: IvarBool<"_activate_ignoring_other_apps">,
     }
@@ -81,14 +79,11 @@ declare_class!(
             trace!("Trigger `application:openURLs:`");
 
             let urls = unsafe {
-            (0..urls.items.len())
-              .map(|i| {
-                url::Url::parse(
-                  &CStr::from_ptr(urls.items[i]).to_string_lossy(),
-                )
-              })
-              .flatten()
-              .collect::<Vec<_>>()
+                (0..urls.items.len())
+                    .flat_map(|i| {
+                        url::Url::parse(&CStr::from_ptr(urls.items[i]).to_string_lossy())
+                    })
+                    .collect::<Vec<_>>()
             };
             trace!("Get `application:openURLs:` URLs: {:?}", urls);
             AppState::open_urls(urls);

@@ -2,13 +2,13 @@ mod icon;
 #[macro_use]
 pub mod error;
 pub mod dpi;
-pub mod monitor;
-pub mod keyboard;
 pub mod event;
 pub mod event_loop;
-pub mod window;
+pub mod keyboard;
+pub mod monitor;
 pub mod platform;
 mod platform_impl;
+pub mod window;
 
 #[doc(hidden)]
 #[derive(Clone, Debug)]

@@ -898,7 +898,7 @@ impl Sequencer {
 
                 #[cfg(target_os = "macos")]
                 Event::Opened { urls } => {
-                    println!("{:?}", urls);   
+                    println!("{:?}", urls);
                 }
 
                 Event::AboutToWait => {

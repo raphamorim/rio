@@ -423,7 +423,10 @@ impl<P> PhysicalSize<P> {
 
 impl<P: Pixel> PhysicalSize<P> {
     #[inline]
-    pub fn from_logical<T: Into<LogicalSize<X>>, X: Pixel>(logical: T, scale_factor: f64) -> Self {
+    pub fn from_logical<T: Into<LogicalSize<X>>, X: Pixel>(
+        logical: T,
+        scale_factor: f64,
+    ) -> Self {
         logical.into().to_physical(scale_factor)
     }
 
@@ -782,11 +785,17 @@ mod tests {
         assert_eq!(log_pos.cast::<u32>(), dpi::LogicalPosition::new(1, 2));
         assert_eq!(
             log_pos,
-            dpi::LogicalPosition::from_physical(dpi::PhysicalPosition::new(1.0, 2.0), 1.0)
+            dpi::LogicalPosition::from_physical(
+                dpi::PhysicalPosition::new(1.0, 2.0),
+                1.0
+            )
         );
         assert_eq!(
             log_pos,
-            dpi::LogicalPosition::from_physical(dpi::PhysicalPosition::new(2.0, 4.0), 2.0)
+            dpi::LogicalPosition::from_physical(
+                dpi::PhysicalPosition::new(2.0, 4.0),
+                2.0
+            )
         );
         assert_eq!(
             dpi::LogicalPosition::from((2.0, 2.0)),
@@ -958,7 +967,8 @@ mod tests {
             dpi::LogicalPosition::new(0.5, 1.0)
         );
         assert_eq!(
-            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0)).to_logical::<f64>(1.0),
+            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0))
+                .to_logical::<f64>(1.0),
             dpi::LogicalPosition::new(1.0, 2.0)
         );
 
@@ -971,11 +981,13 @@ mod tests {
             dpi::PhysicalPosition::new(1, 2)
         );
         assert_eq!(
-            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0)).to_physical::<u32>(1.0),
+            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0))
+                .to_physical::<u32>(1.0),
             dpi::PhysicalPosition::new(1, 2)
         );
         assert_eq!(
-            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0)).to_physical::<u32>(2.0),
+            dpi::Position::new(dpi::LogicalPosition::new(1.0, 2.0))
+                .to_physical::<u32>(2.0),
             dpi::PhysicalPosition::new(2, 4)
         );
     }

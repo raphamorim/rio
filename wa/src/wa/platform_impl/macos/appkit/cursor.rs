@@ -85,10 +85,11 @@ extern_methods!(
             // You can reproduce this via ImageMagick.
             // $ convert -size 16x16 xc:none cursor.gif
             static CURSOR_BYTES: &[u8] = &[
-                0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x10, 0x00, 0x10, 0x00, 0xF0, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xF9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2C,
-                0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x02, 0x0E, 0x84, 0x8F, 0xA9,
-                0xCB, 0xED, 0x0F, 0xA3, 0x9C, 0xB4, 0xDA, 0x8B, 0xB3, 0x3E, 0x05, 0x00, 0x3B,
+                0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x10, 0x00, 0x10, 0x00, 0xF0, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xF9, 0x04, 0x01, 0x00,
+                0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+                0x00, 0x02, 0x0E, 0x84, 0x8F, 0xA9, 0xCB, 0xED, 0x0F, 0xA3, 0x9C, 0xB4,
+                0xDA, 0x8B, 0xB3, 0x3E, 0x05, 0x00, 0x3B,
             ];
 
             static CURSOR: Lazy<Id<NSCursor>> = Lazy::new(|| {
@@ -154,11 +155,13 @@ extern_methods!(
             let root = ns_string!("/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors");
             let cursor_path = root.stringByAppendingPathComponent(name);
 
-            let pdf_path = cursor_path.stringByAppendingPathComponent(ns_string!("cursor.pdf"));
+            let pdf_path =
+                cursor_path.stringByAppendingPathComponent(ns_string!("cursor.pdf"));
             let image = NSImage::new_by_referencing_file(&pdf_path);
 
             // TODO: Handle PLists better
-            let info_path = cursor_path.stringByAppendingPathComponent(ns_string!("info.plist"));
+            let info_path =
+                cursor_path.stringByAppendingPathComponent(ns_string!("info.plist"));
             let info: Id<NSDictionary<NSObject, NSObject>> = unsafe {
                 msg_send_id![
                     <NSDictionary<NSObject, NSObject>>::class(),
@@ -207,7 +210,9 @@ impl NSCursor {
             CursorIcon::VerticalText => Self::IBeamCursorForVerticalLayout(),
             CursorIcon::Copy => Self::dragCopyCursor(),
             CursorIcon::Alias => Self::dragLinkCursor(),
-            CursorIcon::NotAllowed | CursorIcon::NoDrop => Self::operationNotAllowedCursor(),
+            CursorIcon::NotAllowed | CursorIcon::NoDrop => {
+                Self::operationNotAllowedCursor()
+            }
             CursorIcon::ContextMenu => Self::contextualMenuCursor(),
             CursorIcon::Crosshair => Self::crosshairCursor(),
             CursorIcon::EResize => Self::resizeRightCursor(),

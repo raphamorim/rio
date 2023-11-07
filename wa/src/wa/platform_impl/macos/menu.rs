@@ -21,7 +21,8 @@ pub fn initialize() {
 
     // About menu item
     let about_item_title = ns_string!("About ").stringByAppendingString(&process_name);
-    let about_item = menu_item(&about_item_title, sel!(orderFrontStandardAboutPanel:), None);
+    let about_item =
+        menu_item(&about_item_title, sel!(orderFrontStandardAboutPanel:), None);
 
     // Seperator menu item
     let sep_first = NSMenuItem::separatorItem();
@@ -45,14 +46,16 @@ pub fn initialize() {
         Some(KeyEquivalent {
             key: ns_string!("h"),
             masks: Some(
-                NSEventModifierFlags::NSAlternateKeyMask | NSEventModifierFlags::NSCommandKeyMask,
+                NSEventModifierFlags::NSAlternateKeyMask
+                    | NSEventModifierFlags::NSCommandKeyMask,
             ),
         }),
     );
 
     // Show applications menu item
     let show_all_item_title = ns_string!("Show All");
-    let show_all_item = menu_item(show_all_item_title, sel!(unhideAllApplications:), None);
+    let show_all_item =
+        menu_item(show_all_item_title, sel!(unhideAllApplications:), None);
 
     // Seperator menu item
     let sep = NSMenuItem::separatorItem();

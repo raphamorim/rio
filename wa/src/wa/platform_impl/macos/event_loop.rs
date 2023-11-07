@@ -22,12 +22,15 @@ use objc2::rc::{autoreleasepool, Id};
 use objc2::runtime::NSObjectProtocol;
 use objc2::{msg_send_id, ClassType};
 
-use super::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy, NSEvent, NSWindow};
+use super::appkit::{
+    NSApp, NSApplication, NSApplicationActivationPolicy, NSEvent, NSWindow,
+};
 use crate::{
     error::EventLoopError,
     event::Event,
     event_loop::{
-        ControlFlow, DeviceEvents, EventLoopClosed, EventLoopWindowTarget as RootWindowTarget,
+        ControlFlow, DeviceEvents, EventLoopClosed,
+        EventLoopWindowTarget as RootWindowTarget,
     },
     platform::{macos::ActivationPolicy, pump_events::PumpStatus},
     wa::platform_impl::platform::{
@@ -525,8 +528,11 @@ impl<T> EventLoopProxy<T> {
                 cancel: None,
                 perform: event_loop_proxy_handler,
             };
-            let source =
-                CFRunLoopSourceCreate(ptr::null_mut(), CFIndex::max_value() - 1, &mut context);
+            let source = CFRunLoopSourceCreate(
+                ptr::null_mut(),
+                CFIndex::max_value() - 1,
+                &mut context,
+            );
             CFRunLoopAddSource(rl, source, kCFRunLoopCommonModes);
             CFRunLoopWakeUp(rl);
 

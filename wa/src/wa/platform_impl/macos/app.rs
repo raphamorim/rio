@@ -3,7 +3,9 @@
 use icrate::Foundation::NSObject;
 use objc2::{declare_class, msg_send, mutability, ClassType};
 
-use super::appkit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSResponder};
+use super::appkit::{
+    NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSResponder,
+};
 use super::{app_state::AppState, DEVICE_ID};
 use crate::event::{DeviceEvent, ElementState, Event};
 
@@ -81,7 +83,9 @@ fn maybe_dispatch_device_event(event: &NSEvent) {
                 state: ElementState::Pressed,
             });
         }
-        NSEventType::NSLeftMouseUp | NSEventType::NSRightMouseUp | NSEventType::NSOtherMouseUp => {
+        NSEventType::NSLeftMouseUp
+        | NSEventType::NSRightMouseUp
+        | NSEventType::NSOtherMouseUp => {
             queue_device_event(DeviceEvent::Button {
                 button: event.buttonNumber() as u32,
                 state: ElementState::Released,

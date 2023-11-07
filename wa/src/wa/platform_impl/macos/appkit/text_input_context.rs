@@ -24,6 +24,8 @@ extern_methods!(
         pub fn discardMarkedText(&self);
 
         #[method_id(selectedKeyboardInputSource)]
-        pub fn selectedKeyboardInputSource(&self) -> Option<Id<NSTextInputSourceIdentifier>>;
+        pub fn selectedKeyboardInputSource(
+            &self,
+        ) -> Option<Id<NSTextInputSourceIdentifier>>;
     }
 );

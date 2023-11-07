@@ -97,7 +97,9 @@ extern "C" {
         blueBlend: f32,
         synchronous: Boolean,
     ) -> CGError;
-    pub fn CGReleaseDisplayFadeReservation(token: CGDisplayFadeReservationToken) -> CGError;
+    pub fn CGReleaseDisplayFadeReservation(
+        token: CGDisplayFadeReservationToken,
+    ) -> CGError;
     pub fn CGShieldingWindowLevel() -> CGWindowLevel;
     pub fn CGDisplaySetDisplayMode(
         display: CGDirectDisplayID,

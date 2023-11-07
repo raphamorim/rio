@@ -48,7 +48,11 @@ extern_methods!(
         pub fn hasMarkedText(&self) -> bool;
 
         #[method(convertPoint:fromView:)]
-        pub fn convertPoint_fromView(&self, point: NSPoint, view: Option<&NSView>) -> NSPoint;
+        pub fn convertPoint_fromView(
+            &self,
+            point: NSPoint,
+            view: Option<&NSView>,
+        ) -> NSPoint;
 
         #[method_id(window)]
         pub fn window(&self) -> Option<Id<NSWindow>>;
@@ -76,10 +80,16 @@ extern_methods!(
             assume_inside: bool,
         ) -> Option<NSTrackingRectTag>;
 
-        pub fn add_tracking_rect(&self, rect: NSRect, assume_inside: bool) -> NSTrackingRectTag {
+        pub fn add_tracking_rect(
+            &self,
+            rect: NSRect,
+            assume_inside: bool,
+        ) -> NSTrackingRectTag {
             // SAFETY: The user data is NULL, so it is valid
-            unsafe { self.inner_addTrackingRect(rect, self, ptr::null_mut(), assume_inside) }
-                .expect("failed creating tracking rect")
+            unsafe {
+                self.inner_addTrackingRect(rect, self, ptr::null_mut(), assume_inside)
+            }
+            .expect("failed creating tracking rect")
         }
 
         #[method(addCursorRect:cursor:)]

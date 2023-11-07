@@ -7,7 +7,8 @@ use crate::{
     error::{ExternalError, NotSupportedError, OsError},
     event_loop::EventLoopWindowTarget,
     monitor::{MonitorHandle, VideoMode},
-    wa::platform_impl, SendSyncWrapper,
+    wa::platform_impl,
+    SendSyncWrapper,
 };
 
 pub use crate::wa::icon::{BadIcon, Icon};
@@ -510,8 +511,11 @@ impl WindowBuilder {
         self,
         window_target: &EventLoopWindowTarget<T>,
     ) -> Result<Window, OsError> {
-        let window =
-            platform_impl::Window::new(&window_target.p, self.window, self.platform_specific)?;
+        let window = platform_impl::Window::new(
+            &window_target.p,
+            self.window,
+            self.platform_specific,
+        )?;
         window.maybe_queue_on_main(|w| w.request_redraw());
         Ok(Window { window })
     }
@@ -533,7 +537,9 @@ impl Window {
     ///
     /// [`WindowBuilder::new().build(event_loop)`]: WindowBuilder::build
     #[inline]
-    pub fn new<T: 'static>(event_loop: &EventLoopWindowTarget<T>) -> Result<Window, OsError> {
+    pub fn new<T: 'static>(
+        event_loop: &EventLoopWindowTarget<T>,
+    ) -> Result<Window, OsError> {
         let builder = WindowBuilder::new();
         builder.build(event_loop)
     }
@@ -785,7 +791,10 @@ impl Window {
     /// [`transform`]: https://developer.mozilla.org/en-US/docs/Web/CSS/transform
     #[inline]
     #[must_use]
-    pub fn request_inner_size<S: Into<Size>>(&self, size: S) -> Option<PhysicalSize<u32>> {
+    pub fn request_inner_size<S: Into<Size>>(
+        &self,
+        size: S,
+    ) -> Option<PhysicalSize<u32>> {
         let size = size.into();
         self.window
             .maybe_wait_on_main(|w| w.request_inner_size(size))
@@ -1196,7 +1205,11 @@ impl Window {
     /// [chinese]: https://support.apple.com/guide/chinese-input-method/use-the-candidate-window-cim12992/104/mac/12.0
     /// [japanese]: https://support.apple.com/guide/japanese-input-method/use-the-candidate-window-jpim10262/6.3/mac/12.0
     #[inline]
-    pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
+    pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(
+        &self,
+        position: P,
+        size: S,
+    ) {
         let position = position.into();
         let size = size.into();
         self.window
@@ -1366,7 +1379,10 @@ impl Window {
     ///
     /// - **iOS / Android / Web / Wayland / Orbital:** Always returns an [`ExternalError::NotSupported`].
     #[inline]
-    pub fn set_cursor_position<P: Into<Position>>(&self, position: P) -> Result<(), ExternalError> {
+    pub fn set_cursor_position<P: Into<Position>>(
+        &self,
+        position: P,
+    ) -> Result<(), ExternalError> {
         let position = position.into();
         self.window
             .maybe_wait_on_main(|w| w.set_cursor_position(position))
@@ -1436,7 +1452,10 @@ impl Window {
     /// - **macOS:** Always returns an [`ExternalError::NotSupported`]
     /// - **iOS / Android / Web / Orbital:** Always returns an [`ExternalError::NotSupported`].
     #[inline]
-    pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
+    pub fn drag_resize_window(
+        &self,
+        direction: ResizeDirection,
+    ) -> Result<(), ExternalError> {
         self.window
             .maybe_wait_on_main(|w| w.drag_resize_window(direction))
     }
@@ -1482,8 +1501,9 @@ impl Window {
     /// **iOS:** Can only be called on the main thread.
     #[inline]
     pub fn current_monitor(&self) -> Option<MonitorHandle> {
-        self.window
-            .maybe_wait_on_main(|w| w.current_monitor().map(|inner| MonitorHandle { inner }))
+        self.window.maybe_wait_on_main(|w| {
+            w.current_monitor().map(|inner| MonitorHandle { inner })
+        })
     }
 
     /// Returns the list of all the monitors available on the system.
@@ -1518,8 +1538,9 @@ impl Window {
     /// [`EventLoopWindowTarget::primary_monitor`]: crate::event_loop::EventLoopWindowTarget::primary_monitor
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        self.window
-            .maybe_wait_on_main(|w| w.primary_monitor().map(|inner| MonitorHandle { inner }))
+        self.window.maybe_wait_on_main(|w| {
+            w.primary_monitor().map(|inner| MonitorHandle { inner })
+        })
     }
 }
 

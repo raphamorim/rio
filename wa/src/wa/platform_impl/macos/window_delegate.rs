@@ -9,7 +9,8 @@ use objc2::runtime::AnyObject;
 use objc2::{class, declare_class, msg_send, msg_send_id, mutability, sel, ClassType};
 
 use super::appkit::{
-    NSApplicationPresentationOptions, NSFilenamesPboardType, NSPasteboard, NSWindowOcclusionState,
+    NSApplicationPresentationOptions, NSFilenamesPboardType, NSPasteboard,
+    NSWindowOcclusionState,
 };
 use super::{
     app_state::AppState,
@@ -82,8 +83,9 @@ declare_class!(
                 this.window.setDelegate(Some(this));
 
                 // Enable theme change event
-                let notification_center: Id<AnyObject> =
-                    unsafe { msg_send_id![class!(NSDistributedNotificationCenter), defaultCenter] };
+                let notification_center: Id<AnyObject> = unsafe {
+                    msg_send_id![class!(NSDistributedNotificationCenter), defaultCenter]
+                };
                 let notification_name =
                     NSString::from_str("AppleInterfaceThemeChangedNotification");
                 let _: () = unsafe {
@@ -189,7 +191,8 @@ declare_class!(
 
             use std::path::PathBuf;
 
-            let pb: Id<NSPasteboard> = unsafe { msg_send_id![sender, draggingPasteboard] };
+            let pb: Id<NSPasteboard> =
+                unsafe { msg_send_id![sender, draggingPasteboard] };
             let filenames = pb.propertyListForType(unsafe { NSFilenamesPboardType });
             let filenames: Id<NSArray<NSString>> = unsafe { Id::cast(filenames) };
 
@@ -215,7 +218,8 @@ declare_class!(
 
             use std::path::PathBuf;
 
-            let pb: Id<NSPasteboard> = unsafe { msg_send_id![sender, draggingPasteboard] };
+            let pb: Id<NSPasteboard> =
+                unsafe { msg_send_id![sender, draggingPasteboard] };
             let filenames = pb.propertyListForType(unsafe { NSFilenamesPboardType });
             let filenames: Id<NSArray<NSString>> = unsafe { Id::cast(filenames) };
 
@@ -263,7 +267,8 @@ declare_class!(
                 // on the green fullscreen button. Update state!
                 None => {
                     let current_monitor = self.window.current_monitor_inner();
-                    shared_state.fullscreen = Some(Fullscreen::Borderless(current_monitor))
+                    shared_state.fullscreen =
+                        Some(Fullscreen::Borderless(current_monitor))
                 }
             }
             shared_state.in_fullscreen_transition = true;
@@ -274,7 +279,8 @@ declare_class!(
         fn window_will_exit_fullscreen(&self, _: Option<&AnyObject>) {
             trace_scope!("windowWillExitFullScreen:");
 
-            let mut shared_state = self.window.lock_shared_state("window_will_exit_fullscreen");
+            let mut shared_state =
+                self.window.lock_shared_state("window_will_exit_fullscreen");
             shared_state.in_fullscreen_transition = true;
         }
 
@@ -311,7 +317,8 @@ declare_class!(
         fn window_did_enter_fullscreen(&self, _: Option<&AnyObject>) {
             trace_scope!("windowDidEnterFullScreen:");
             self.state.initial_fullscreen.set(false);
-            let mut shared_state = self.window.lock_shared_state("window_did_enter_fullscreen");
+            let mut shared_state =
+                self.window.lock_shared_state("window_did_enter_fullscreen");
             shared_state.in_fullscreen_transition = false;
             let target_fullscreen = shared_state.target_fullscreen.take();
             drop(shared_state);
@@ -326,7 +333,8 @@ declare_class!(
             trace_scope!("windowDidExitFullScreen:");
 
             self.window.restore_state_from_fullscreen();
-            let mut shared_state = self.window.lock_shared_state("window_did_exit_fullscreen");
+            let mut shared_state =
+                self.window.lock_shared_state("window_did_exit_fullscreen");
             shared_state.in_fullscreen_transition = false;
             let target_fullscreen = shared_state.target_fullscreen.take();
             drop(shared_state);
@@ -471,7 +479,8 @@ impl WinitWindowDelegate {
         if self.state.previous_position.get() != Some((x, y)) {
             self.state.previous_position.set(Some((x, y)));
             let scale_factor = self.window.scale_factor();
-            let physical_pos = LogicalPosition::<f64>::from((x, y)).to_physical(scale_factor);
+            let physical_pos =
+                LogicalPosition::<f64>::from((x, y)).to_physical(scale_factor);
             self.queue_event(WindowEvent::Moved(physical_pos));
         }
     }

@@ -33,8 +33,8 @@ mod window;
 
 pub(crate) use self::appearance::NSAppearance;
 pub(crate) use self::application::{
-    NSApp, NSApplication, NSApplicationActivationPolicy, NSApplicationPresentationOptions,
-    NSRequestUserAttentionType,
+    NSApp, NSApplication, NSApplicationActivationPolicy,
+    NSApplicationPresentationOptions, NSRequestUserAttentionType,
 };
 pub(crate) use self::button::NSButton;
 pub(crate) use self::color::NSColor;
@@ -47,7 +47,9 @@ pub(crate) use self::event::{
 pub(crate) use self::image::NSImage;
 pub(crate) use self::menu::NSMenu;
 pub(crate) use self::menu_item::NSMenuItem;
-pub(crate) use self::pasteboard::{NSFilenamesPboardType, NSPasteboard, NSPasteboardType};
+pub(crate) use self::pasteboard::{
+    NSFilenamesPboardType, NSPasteboard, NSPasteboardType,
+};
 pub(crate) use self::responder::NSResponder;
 #[allow(unused_imports)]
 pub(crate) use self::screen::{NSDeviceDescriptionKey, NSScreen};
@@ -58,9 +60,9 @@ pub(crate) use self::version::NSAppKitVersion;
 pub(crate) use self::view::{NSTrackingRectTag, NSView};
 pub(crate) use self::window::{
     NSBackingStoreType, NSWindow, NSWindowButton, NSWindowLevel, NSWindowOcclusionState,
-    NSWindowOrderingMode, NSWindowSharingType, NSWindowStyleMask, NSWindowTabbingMode,
-    NSWindowTitleVisibility,
+    NSWindowSharingType, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
 };
+// pub(crate) use self::window::NSWindowOrderingMode;
 
 #[link(name = "AppKit", kind = "framework")]
 extern "C" {}

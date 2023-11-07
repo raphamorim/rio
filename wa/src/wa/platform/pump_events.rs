@@ -172,7 +172,11 @@ pub trait EventLoopExtPumpEvents {
     ///   If you render outside of Winit you are likely to see window resizing artifacts
     ///   since MacOS expects applications to render synchronously during any `drawRect`
     ///   callback.
-    fn pump_events<F>(&mut self, timeout: Option<Duration>, event_handler: F) -> PumpStatus
+    fn pump_events<F>(
+        &mut self,
+        timeout: Option<Duration>,
+        event_handler: F,
+    ) -> PumpStatus
     where
         F: FnMut(Event<Self::UserEvent>, &EventLoopWindowTarget<Self::UserEvent>);
 }
@@ -180,7 +184,11 @@ pub trait EventLoopExtPumpEvents {
 impl<T> EventLoopExtPumpEvents for EventLoop<T> {
     type UserEvent = T;
 
-    fn pump_events<F>(&mut self, timeout: Option<Duration>, event_handler: F) -> PumpStatus
+    fn pump_events<F>(
+        &mut self,
+        timeout: Option<Duration>,
+        event_handler: F,
+    ) -> PumpStatus
     where
         F: FnMut(Event<Self::UserEvent>, &EventLoopWindowTarget<Self::UserEvent>),
     {
