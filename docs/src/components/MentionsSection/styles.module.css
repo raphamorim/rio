@@ -1,35 +1,102 @@
-.mentionsSection > :global(.col) > * {
+.mentionsSection {
+  margin-top: 164px;
+  padding-bottom: 88px;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  color: #3c3c43;
+
+  margin-bottom: 60px;
+}
+
+[data-theme='dark'] .title {
+  color: #f8f8f8;
+}
+
+@media (min-width: 640px) {
+  .title {
+    font-size: 32px;
+  }
+}
+
+@media (min-width: 960px) {
+  .title {
+    font-size: 40px;
+  }
+}
+
+.mentions > :global(.col) > * {
   margin-bottom: 2rem;
 }
 
 @media (max-width: 996px) {
-  .mentionsSection > :global(.col:last-child) > *:last-child {
+  .mentions > :global(.col:last-of-type) > *:last-child {
     margin-bottom: 0;
   }
 }
 
 @media (min-width: 997px) {
-  .mentionsSection > :global(.col) > *:last-child {
+  .mentions > :global(.col) > *:last-child {
     margin-bottom: 0;
   }
 }
 
-.section {
-  padding: 72px 0;
+.mentionCard {
+  margin: 0;
+
+  padding: 24px;
+  border: 1px solid #f6f6f7;
+
+  border-radius: 12px;
+  background-color: #f6f6f7;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.sectionAlt {
-  background-color: var(--ifm-color-emphasis-100);
+[data-theme='dark'] .mentionCard {
+  border-color: #252529;
+  background-color: #252529;
 }
 
-.mention {
-  font-size: 15px;
+.mentionCardTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.mentionMeta {
-  color: var(--ifm-color-emphasis-700);
+.mentionCardAvatar {
+  border-radius: 999px;
 }
 
-.mentionMeta strong {
-  color: var(--ifm-font-color-base);
+.mentionCardUsername {
+  font-size: 16px;
+  font-style: normal;
+
+  color: #3c3c43;
+}
+
+[data-theme='dark'] .mentionCardUsername {
+  color: #e9e9e9;
+}
+
+.mentionCardQuote {
+  border: 0;
+  padding: 0;
+  margin: 0;
+
+  margin-left: 4px;
+
+  font-size: 14px;
+  font-style: italic;
+
+  color: #515151;
+}
+
+[data-theme='dark'] .mentionCardQuote {
+  color: #b0b0b0;
 }
