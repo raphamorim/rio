@@ -183,7 +183,10 @@ pub enum ActivationPolicy {
 /// - `with_fullsize_content_view`
 pub trait WindowBuilderExtMacOS {
     /// Enables click-and-drag behavior for the entire window, not just the titlebar.
-    fn with_movable_by_window_background(self, movable_by_window_background: bool) -> Self;
+    fn with_movable_by_window_background(
+        self,
+        movable_by_window_background: bool,
+    ) -> Self;
     /// Makes the titlebar transparent and allows the content to appear behind it.
     fn with_titlebar_transparent(self, titlebar_transparent: bool) -> Self;
     /// Hides the window title.
@@ -210,8 +213,12 @@ pub trait WindowBuilderExtMacOS {
 
 impl WindowBuilderExtMacOS for WindowBuilder {
     #[inline]
-    fn with_movable_by_window_background(mut self, movable_by_window_background: bool) -> Self {
-        self.platform_specific.movable_by_window_background = movable_by_window_background;
+    fn with_movable_by_window_background(
+        mut self,
+        movable_by_window_background: bool,
+    ) -> Self {
+        self.platform_specific.movable_by_window_background =
+            movable_by_window_background;
         self
     }
 
@@ -299,7 +306,10 @@ pub trait EventLoopBuilderExtMacOS {
     /// let event_loop = builder.build();
     /// # }
     /// ```
-    fn with_activation_policy(&mut self, activation_policy: ActivationPolicy) -> &mut Self;
+    fn with_activation_policy(
+        &mut self,
+        activation_policy: ActivationPolicy,
+    ) -> &mut Self;
 
     /// Used to control whether a default menubar menu is created.
     ///
@@ -332,7 +342,10 @@ pub trait EventLoopBuilderExtMacOS {
 
 impl<T> EventLoopBuilderExtMacOS for EventLoopBuilder<T> {
     #[inline]
-    fn with_activation_policy(&mut self, activation_policy: ActivationPolicy) -> &mut Self {
+    fn with_activation_policy(
+        &mut self,
+        activation_policy: ActivationPolicy,
+    ) -> &mut Self {
         self.platform_specific.activation_policy = activation_policy;
         self
     }

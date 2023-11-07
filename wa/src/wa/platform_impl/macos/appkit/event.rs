@@ -2,7 +2,8 @@ use bitflags::bitflags;
 use std::os::raw::c_ushort;
 
 use icrate::Foundation::{
-    CGFloat, NSCopying, NSInteger, NSObject, NSPoint, NSString, NSTimeInterval, NSUInteger,
+    CGFloat, NSCopying, NSInteger, NSObject, NSPoint, NSString, NSTimeInterval,
+    NSUInteger,
 };
 use objc2::encode::{Encode, Encoding};
 use objc2::rc::Id;

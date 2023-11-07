@@ -59,7 +59,11 @@ impl NotSupportedError {
 
 impl OsError {
     #[allow(dead_code)]
-    pub(crate) fn new(line: u32, file: &'static str, error: platform_impl::OsError) -> OsError {
+    pub(crate) fn new(
+        line: u32,
+        file: &'static str,
+        error: platform_impl::OsError,
+    ) -> OsError {
         OsError { line, file, error }
     }
 }
@@ -106,7 +110,9 @@ impl fmt::Display for EventLoopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             EventLoopError::AlreadyRunning => write!(f, "EventLoop is already running"),
-            EventLoopError::RecreationAttempt => write!(f, "EventLoop can't be recreated"),
+            EventLoopError::RecreationAttempt => {
+                write!(f, "EventLoop can't be recreated")
+            }
             EventLoopError::NotSupported(e) => e.fmt(f),
             EventLoopError::Os(e) => e.fmt(f),
             EventLoopError::ExitFailure(status) => write!(f, "Exit Failure: {status}"),

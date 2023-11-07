@@ -8,7 +8,8 @@ use objc2::runtime::AnyObject;
 use objc2::{extern_class, extern_methods, mutability, ClassType};
 
 use super::{
-    NSButton, NSColor, NSEvent, NSPasteboardType, NSResponder, NSScreen, NSView, NSWindowTabGroup,
+    NSButton, NSColor, NSEvent, NSPasteboardType, NSResponder, NSScreen, NSView,
+    NSWindowTabGroup,
 };
 
 extern_class!(
@@ -150,7 +151,10 @@ extern_methods!(
         pub(crate) fn firstResponder(&self) -> Option<Id<NSResponder>>;
 
         #[method_id(standardWindowButton:)]
-        pub(crate) fn standardWindowButton(&self, kind: NSWindowButton) -> Option<Id<NSButton>>;
+        pub(crate) fn standardWindowButton(
+            &self,
+            kind: NSWindowButton,
+        ) -> Option<Id<NSButton>>;
 
         #[method(setTitle:)]
         pub(crate) fn setTitle(&self, title: &NSString);
@@ -244,7 +248,11 @@ extern_methods!(
         pub(crate) unsafe fn sendEvent(&self, event: &NSEvent);
 
         #[method(addChildWindow:ordered:)]
-        pub(crate) unsafe fn addChildWindow(&self, child: &NSWindow, ordered: NSWindowOrderingMode);
+        pub(crate) unsafe fn addChildWindow(
+            &self,
+            child: &NSWindow,
+            ordered: NSWindowOrderingMode,
+        );
     }
 );
 
@@ -304,7 +312,8 @@ mod window_level {
     const kCGNumReservedBaseWindowLevels: i32 = 5;
 
     pub const kCGBaseWindowLevel: i32 = i32::MIN;
-    pub const kCGMinimumWindowLevel: i32 = kCGBaseWindowLevel + kCGNumReservedBaseWindowLevels;
+    pub const kCGMinimumWindowLevel: i32 =
+        kCGBaseWindowLevel + kCGNumReservedBaseWindowLevels;
     pub const kCGMaximumWindowLevel: i32 = i32::MAX - kCGNumReservedWindowLevels;
 
     pub const kCGDesktopWindowLevel: i32 = kCGMinimumWindowLevel + 20;

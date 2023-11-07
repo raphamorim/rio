@@ -17,7 +17,9 @@ impl From<RootFullscreen> for Fullscreen {
     fn from(f: RootFullscreen) -> Self {
         match f {
             RootFullscreen::Exclusive(mode) => Self::Exclusive(mode.video_mode),
-            RootFullscreen::Borderless(Some(handle)) => Self::Borderless(Some(handle.inner)),
+            RootFullscreen::Borderless(Some(handle)) => {
+                Self::Borderless(Some(handle.inner))
+            }
             RootFullscreen::Borderless(None) => Self::Borderless(None),
         }
     }
@@ -26,7 +28,9 @@ impl From<RootFullscreen> for Fullscreen {
 impl From<Fullscreen> for RootFullscreen {
     fn from(f: Fullscreen) -> Self {
         match f {
-            Fullscreen::Exclusive(video_mode) => Self::Exclusive(RootVideoMode { video_mode }),
+            Fullscreen::Exclusive(video_mode) => {
+                Self::Exclusive(RootVideoMode { video_mode })
+            }
             Fullscreen::Borderless(Some(inner)) => {
                 Self::Borderless(Some(RootMonitorHandle { inner }))
             }

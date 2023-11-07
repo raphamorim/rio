@@ -1,6 +1,6 @@
-use log::trace;
 use core_graphics::display::CGDisplay;
 use icrate::Foundation::{CGFloat, NSNotFound, NSPoint, NSRange, NSRect, NSUInteger};
+use log::trace;
 
 use crate::dpi::LogicalPosition;
 
@@ -15,7 +15,10 @@ pub const EMPTY_RANGE: NSRange = NSRange {
 
 macro_rules! trace_scope {
     ($s:literal) => {
-        let _crate = $crate::wa::platform_impl::platform::util::TraceGuard::new(module_path!(), $s);
+        let _crate = $crate::wa::platform_impl::platform::util::TraceGuard::new(
+            module_path!(),
+            $s,
+        );
     };
 }
 

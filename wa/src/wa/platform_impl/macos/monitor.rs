@@ -195,7 +195,10 @@ impl MonitorHandle {
         let display = CGDisplay::new(display_id);
         let height = display.pixels_high();
         let width = display.pixels_wide();
-        PhysicalSize::from_logical::<_, f64>((width as f64, height as f64), self.scale_factor())
+        PhysicalSize::from_logical::<_, f64>(
+            (width as f64, height as f64),
+            self.scale_factor(),
+        )
     }
 
     #[inline]
@@ -268,10 +271,13 @@ impl MonitorHandle {
                     refresh_rate_millihertz
                 };
 
-                let pixel_encoding =
-                    CFString::wrap_under_create_rule(ffi::CGDisplayModeCopyPixelEncoding(mode))
-                        .to_string();
-                let bit_depth = if pixel_encoding.eq_ignore_ascii_case(ffi::IO32BitDirectPixels) {
+                let pixel_encoding = CFString::wrap_under_create_rule(
+                    ffi::CGDisplayModeCopyPixelEncoding(mode),
+                )
+                .to_string();
+                let bit_depth = if pixel_encoding
+                    .eq_ignore_ascii_case(ffi::IO32BitDirectPixels)
+                {
                     32
                 } else if pixel_encoding.eq_ignore_ascii_case(ffi::IO16BitDirectPixels) {
                     16
@@ -300,7 +306,9 @@ impl MonitorHandle {
         NSScreen::screens().into_iter().find(|screen| {
             let other_native_id = screen.display_id();
             let other_uuid = unsafe {
-                ffi::CGDisplayCreateUUIDFromDisplayID(other_native_id as CGDirectDisplayID)
+                ffi::CGDisplayCreateUUIDFromDisplayID(
+                    other_native_id as CGDirectDisplayID,
+                )
             };
             uuid == other_uuid
         })

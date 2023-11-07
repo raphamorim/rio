@@ -15,11 +15,11 @@ use crate::wa::platform_impl::platform::{
 use core_foundation::base::{CFIndex, CFOptionFlags, CFRelease};
 use core_foundation::date::CFAbsoluteTimeGetCurrent;
 use core_foundation::runloop::{
-    kCFRunLoopAfterWaiting, kCFRunLoopBeforeWaiting, kCFRunLoopCommonModes, kCFRunLoopExit,
-    CFRunLoopActivity, CFRunLoopAddObserver, CFRunLoopAddTimer, CFRunLoopGetMain,
-    CFRunLoopObserverCallBack, CFRunLoopObserverContext, CFRunLoopObserverCreate,
-    CFRunLoopObserverRef, CFRunLoopRef, CFRunLoopTimerCreate, CFRunLoopTimerInvalidate,
-    CFRunLoopTimerRef, CFRunLoopTimerSetNextFireDate,
+    kCFRunLoopAfterWaiting, kCFRunLoopBeforeWaiting, kCFRunLoopCommonModes,
+    kCFRunLoopExit, CFRunLoopActivity, CFRunLoopAddObserver, CFRunLoopAddTimer,
+    CFRunLoopGetMain, CFRunLoopObserverCallBack, CFRunLoopObserverContext,
+    CFRunLoopObserverCreate, CFRunLoopObserverRef, CFRunLoopRef, CFRunLoopTimerCreate,
+    CFRunLoopTimerInvalidate, CFRunLoopTimerRef, CFRunLoopTimerSetNextFireDate,
 };
 
 unsafe fn control_flow_handler<F>(panic_info: *mut c_void, f: F)

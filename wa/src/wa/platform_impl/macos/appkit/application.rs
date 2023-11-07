@@ -29,7 +29,8 @@ extern_methods!(
         /// the application and since it's parameters may be changed by the main
         /// thread at any time (hence it is only safe to access on the main thread).
         pub fn shared(_mtm: MainThreadMarker) -> Id<Self> {
-            let app: Option<_> = unsafe { msg_send_id![Self::class(), sharedApplication] };
+            let app: Option<_> =
+                unsafe { msg_send_id![Self::class(), sharedApplication] };
             // SAFETY: `sharedApplication` always initializes the app if it isn't already
             unsafe { app.unwrap_unchecked() }
         }
@@ -73,7 +74,10 @@ extern_methods!(
         pub fn activateIgnoringOtherApps(&self, ignore: bool);
 
         #[method(requestUserAttention:)]
-        pub fn requestUserAttention(&self, type_: NSRequestUserAttentionType) -> NSInteger;
+        pub fn requestUserAttention(
+            &self,
+            type_: NSRequestUserAttentionType,
+        ) -> NSInteger;
 
         #[method(setActivationPolicy:)]
         pub fn setActivationPolicy(&self, policy: NSApplicationActivationPolicy) -> bool;

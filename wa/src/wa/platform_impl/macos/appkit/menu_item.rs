@@ -20,7 +20,11 @@ extern_methods!(
         #[method_id(new)]
         pub fn new() -> Id<Self>;
 
-        pub fn newWithTitle(title: &NSString, action: Sel, key_equivalent: &NSString) -> Id<Self> {
+        pub fn newWithTitle(
+            title: &NSString,
+            action: Sel,
+            key_equivalent: &NSString,
+        ) -> Id<Self> {
             unsafe {
                 msg_send_id![
                     Self::alloc(),

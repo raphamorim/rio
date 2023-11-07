@@ -1,5 +1,7 @@
 use icrate::ns_string;
-use icrate::Foundation::{CGFloat, NSArray, NSDictionary, NSNumber, NSObject, NSRect, NSString};
+use icrate::Foundation::{
+    CGFloat, NSArray, NSDictionary, NSNumber, NSObject, NSRect, NSString,
+};
 use objc2::rc::Id;
 use objc2::runtime::AnyObject;
 use objc2::{extern_class, extern_methods, mutability, ClassType};
@@ -33,7 +35,9 @@ extern_methods!(
         pub fn visibleFrame(&self) -> NSRect;
 
         #[method_id(deviceDescription)]
-        pub fn deviceDescription(&self) -> Id<NSDictionary<NSDeviceDescriptionKey, AnyObject>>;
+        pub fn deviceDescription(
+            &self,
+        ) -> Id<NSDictionary<NSDeviceDescriptionKey, AnyObject>>;
 
         pub fn display_id(&self) -> u32 {
             let key = ns_string!("NSScreenNumber");

@@ -1,14 +1,15 @@
 #![allow(clippy::unnecessary_cast)]
-use log::warn;
 use bitflags::bitflags;
+use log::warn;
 use std::boxed::Box;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::ptr::NonNull;
 
 use icrate::Foundation::{
-    NSArray, NSAttributedString, NSAttributedStringKey, NSCopying, NSMutableAttributedString,
-    NSObject, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSUInteger,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSCopying,
+    NSMutableAttributedString, NSObject, NSObjectProtocol, NSPoint, NSRange, NSRect,
+    NSSize, NSString, NSUInteger,
 };
 use objc2::declare::{Ivar, IvarDrop};
 use objc2::rc::{Id, WeakId};
@@ -17,8 +18,8 @@ use objc2::{class, declare_class, msg_send, msg_send_id, mutability, sel, ClassT
 
 use super::{
     appkit::{
-        NSApp, NSCursor, NSEvent, NSEventPhase, NSResponder, NSTextInputClient, NSTrackingRectTag,
-        NSView,
+        NSApp, NSCursor, NSEvent, NSEventPhase, NSResponder, NSTextInputClient,
+        NSTrackingRectTag, NSView,
     },
     event::{code_to_key, code_to_location},
 };
@@ -233,7 +234,8 @@ declare_class!(
             // Emit resize event here rather than from windowDidResize because:
             // 1. When a new window is created as a tab, the frame size may change without a window resize occurring.
             // 2. Even when a window resize does occur on a new tabbed window, it contains the wrong size (includes tab height).
-            let logical_size = LogicalSize::new(rect.size.width as f64, rect.size.height as f64);
+            let logical_size =
+                LogicalSize::new(rect.size.width as f64, rect.size.height as f64);
             let size = logical_size.to_physical::<u32>(self.scale_factor());
             self.queue_event(WindowEvent::Resized(size));
         }
@@ -316,23 +318,24 @@ declare_class!(
             trace_scope!("setMarkedText:selectedRange:replacementRange:");
 
             // SAFETY: This method is guaranteed to get either a `NSString` or a `NSAttributedString`.
-            let (marked_text, preedit_string) = if string.is_kind_of::<NSAttributedString>() {
-                let string: *const NSObject = string;
-                let string: *const NSAttributedString = string.cast();
-                let string = unsafe { &*string };
-                (
-                    NSMutableAttributedString::from_attributed_nsstring(string),
-                    string.string().to_string(),
-                )
-            } else {
-                let string: *const NSObject = string;
-                let string: *const NSString = string.cast();
-                let string = unsafe { &*string };
-                (
-                    NSMutableAttributedString::from_nsstring(string),
-                    string.to_string(),
-                )
-            };
+            let (marked_text, preedit_string) =
+                if string.is_kind_of::<NSAttributedString>() {
+                    let string: *const NSObject = string;
+                    let string: *const NSAttributedString = string.cast();
+                    let string = unsafe { &*string };
+                    (
+                        NSMutableAttributedString::from_attributed_nsstring(string),
+                        string.string().to_string(),
+                    )
+                } else {
+                    let string: *const NSObject = string;
+                    let string: *const NSString = string.cast();
+                    let string = unsafe { &*string };
+                    (
+                        NSMutableAttributedString::from_nsstring(string),
+                        string.to_string(),
+                    )
+                };
 
             // Update marked text.
             *self.state.marked_text.borrow_mut() = marked_text;
@@ -359,7 +362,10 @@ declare_class!(
             };
 
             // Send WindowEvent for updating marked text
-            self.queue_event(WindowEvent::Ime(Ime::Preedit(preedit_string, cursor_range)));
+            self.queue_event(WindowEvent::Ime(Ime::Preedit(
+                preedit_string,
+                cursor_range,
+            )));
         }
 
         #[method(unmarkText)]
@@ -497,7 +503,8 @@ declare_class!(
                 // If the text was commited we must treat the next keyboard event as IME related.
                 if self.state.ime_state.get() == ImeState::Commited {
                     // Remove any marked text, so normal input can continue.
-                    *self.state.marked_text.borrow_mut() = NSMutableAttributedString::new();
+                    *self.state.marked_text.borrow_mut() =
+                        NSMutableAttributedString::new();
                 }
             }
 
@@ -683,7 +690,8 @@ declare_class!(
             let delta = {
                 let (x, y) = (event.scrollingDeltaX(), event.scrollingDeltaY());
                 if event.hasPreciseScrollingDeltas() {
-                    let delta = LogicalPosition::new(x, y).to_physical(self.scale_factor());
+                    let delta =
+                        LogicalPosition::new(x, y).to_physical(self.scale_factor());
                     MouseScrollDelta::PixelDelta(delta)
                 } else {
                     MouseScrollDelta::LineDelta(x as f32, y as f32)
@@ -694,23 +702,20 @@ declare_class!(
             // be mutually exclusive anyhow, which is why the API is rather incoherent). If no momentum
             // phase is recorded (or rather, the started/ended cases of the momentum phase) then we
             // report the touch phase.
-            let phase = match event.momentumPhase() {
-                NSEventPhase::NSEventPhaseMayBegin | NSEventPhase::NSEventPhaseBegan => {
-                    TouchPhase::Started
-                }
-                NSEventPhase::NSEventPhaseEnded | NSEventPhase::NSEventPhaseCancelled => {
-                    TouchPhase::Ended
-                }
-                _ => match event.phase() {
-                    NSEventPhase::NSEventPhaseMayBegin | NSEventPhase::NSEventPhaseBegan => {
-                        TouchPhase::Started
-                    }
-                    NSEventPhase::NSEventPhaseEnded | NSEventPhase::NSEventPhaseCancelled => {
-                        TouchPhase::Ended
-                    }
-                    _ => TouchPhase::Moved,
-                },
-            };
+            let phase =
+                match event.momentumPhase() {
+                    NSEventPhase::NSEventPhaseMayBegin
+                    | NSEventPhase::NSEventPhaseBegan => TouchPhase::Started,
+                    NSEventPhase::NSEventPhaseEnded
+                    | NSEventPhase::NSEventPhaseCancelled => TouchPhase::Ended,
+                    _ => match event.phase() {
+                        NSEventPhase::NSEventPhaseMayBegin
+                        | NSEventPhase::NSEventPhaseBegan => TouchPhase::Started,
+                        NSEventPhase::NSEventPhaseEnded
+                        | NSEventPhase::NSEventPhaseCancelled => TouchPhase::Ended,
+                        _ => TouchPhase::Moved,
+                    },
+                };
 
             self.update_modifiers(event, false);
 
@@ -958,7 +963,8 @@ impl WinitView {
                 if phys_mod.contains(ModLocationMask::LEFT) {
                     let mut event = event.clone();
                     event.location = KeyLocation::Left;
-                    event.physical_key = get_left_modifier_code(&event.logical_key).into();
+                    event.physical_key =
+                        get_left_modifier_code(&event.logical_key).into();
                     events.push_back(WindowEvent::KeyboardInput {
                         device_id: DEVICE_ID,
                         event,
@@ -967,7 +973,8 @@ impl WinitView {
                 }
                 if phys_mod.contains(ModLocationMask::RIGHT) {
                     event.location = KeyLocation::Right;
-                    event.physical_key = get_right_modifier_code(&event.logical_key).into();
+                    event.physical_key =
+                        get_right_modifier_code(&event.logical_key).into();
                     events.push_back(WindowEvent::KeyboardInput {
                         device_id: DEVICE_ID,
                         event,

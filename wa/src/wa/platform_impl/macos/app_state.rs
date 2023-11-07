@@ -19,7 +19,8 @@ use once_cell::sync::Lazy;
 
 use super::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy, NSEvent};
 use super::{
-    event_loop::PanicInfo, menu, observer::EventLoopWaker, util::Never, window::WinitWindow,
+    event_loop::PanicInfo, menu, observer::EventLoopWaker, util::Never,
+    window::WinitWindow,
 };
 use crate::{
     dpi::PhysicalSize,
@@ -56,7 +57,10 @@ struct EventLoopHandler<T: 'static> {
 impl<T> EventLoopHandler<T> {
     fn with_callback<F>(&mut self, f: F)
     where
-        F: FnOnce(&mut EventLoopHandler<T>, RefMut<'_, dyn FnMut(Event<T>, &RootWindowTarget<T>)>),
+        F: FnOnce(
+            &mut EventLoopHandler<T>,
+            RefMut<'_, dyn FnMut(Event<T>, &RootWindowTarget<T>)>,
+        ),
     {
         // The `NSApp` and our `HANDLER` are global state and so it's possible that
         // we could get a delegate callback after the application has exit an
@@ -334,7 +338,9 @@ impl Handler {
                 window_id: WindowId(window.id()),
                 event: WindowEvent::ScaleFactorChanged {
                     scale_factor,
-                    inner_size_writer: InnerSizeWriter::new(Arc::downgrade(&new_inner_size)),
+                    inner_size_writer: InnerSizeWriter::new(Arc::downgrade(
+                        &new_inner_size,
+                    )),
                 },
             };
 
@@ -499,9 +505,9 @@ impl AppState {
 
     // Called by RunLoopObserver after finishing waiting for new events
     pub fn wakeup(panic_info: Weak<PanicInfo>) {
-        let panic_info = panic_info
-            .upgrade()
-            .expect("The panic info must exist here. This failure indicates a developer error.");
+        let panic_info = panic_info.upgrade().expect(
+            "The panic info must exist here. This failure indicates a developer error.",
+        );
 
         // Return when in callback due to https://github.com/rust-windowing/winit/issues/1779
         if panic_info.is_panicking()
@@ -604,9 +610,9 @@ impl AppState {
 
     // Called by RunLoopObserver before waiting for new events
     pub fn cleared(panic_info: Weak<PanicInfo>) {
-        let panic_info = panic_info
-            .upgrade()
-            .expect("The panic info must exist here. This failure indicates a developer error.");
+        let panic_info = panic_info.upgrade().expect(
+            "The panic info must exist here. This failure indicates a developer error.",
+        );
 
         // Return when in callback due to https://github.com/rust-windowing/winit/issues/1779
         // XXX: how does it make sense that `get_in_callback()` can ever return `true` here if we're

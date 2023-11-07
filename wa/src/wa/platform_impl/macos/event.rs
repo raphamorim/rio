@@ -15,7 +15,8 @@ use crate::{
         NativeKeyCode, PhysicalKey,
     },
     platform::{
-        modifier_supplement::KeyEventExtModifierSupplement, scancode::PhysicalKeyExtScancode,
+        modifier_supplement::KeyEventExtModifierSupplement,
+        scancode::PhysicalKeyExtScancode,
     },
     wa::platform_impl::platform::ffi,
 };
@@ -49,16 +50,20 @@ pub fn get_modifierless_char(scancode: u16) -> Key {
             log::error!("`TISCopyCurrentKeyboardLayoutInputSource` returned null ptr");
             return Key::Unidentified(NativeKey::MacOS(scancode));
         }
-        let layout_data =
-            ffi::TISGetInputSourceProperty(input_source, ffi::kTISPropertyUnicodeKeyLayoutData);
+        let layout_data = ffi::TISGetInputSourceProperty(
+            input_source,
+            ffi::kTISPropertyUnicodeKeyLayoutData,
+        );
         if layout_data.is_null() {
             CFRelease(input_source as *mut c_void);
             log::error!("`TISGetInputSourceProperty` returned null ptr");
             return Key::Unidentified(NativeKey::MacOS(scancode));
         }
-        layout = CFDataGetBytePtr(layout_data as CFDataRef) as *const ffi::UCKeyboardLayout;
+        layout =
+            CFDataGetBytePtr(layout_data as CFDataRef) as *const ffi::UCKeyboardLayout;
     }
-    let keyboard_type = MainThreadMarker::run_on_main(|_mtm| unsafe { ffi::LMGetKbdType() });
+    let keyboard_type =
+        MainThreadMarker::run_on_main(|_mtm| unsafe { ffi::LMGetKbdType() });
 
     let mut result_len = 0;
     let mut dead_keys = 0;
@@ -143,32 +148,33 @@ pub(crate) fn create_key_event(
     };
 
     let key_from_code = code_to_key(physical_key, scancode);
-    let (logical_key, key_without_modifiers) = if matches!(key_from_code, Key::Unidentified(_)) {
-        let key_without_modifiers = get_modifierless_char(scancode);
+    let (logical_key, key_without_modifiers) =
+        if matches!(key_from_code, Key::Unidentified(_)) {
+            let key_without_modifiers = get_modifierless_char(scancode);
 
-        let modifiers = NSEvent::modifierFlags(ns_event);
-        let has_ctrl = modifiers.contains(NSEventModifierFlags::NSControlKeyMask);
+            let modifiers = NSEvent::modifierFlags(ns_event);
+            let has_ctrl = modifiers.contains(NSEventModifierFlags::NSControlKeyMask);
 
-        let logical_key = match text_with_all_modifiers.as_ref() {
-            // Only checking for ctrl here, not checking for alt because we DO want to
-            // include its effect in the key. For example if -on the Germay layout- one
-            // presses alt+8, the logical key should be "{"
-            // Also not checking if this is a release event because then this issue would
-            // still affect the key release.
-            Some(text) if !has_ctrl => Key::Character(text.clone()),
-            _ => {
-                let modifierless_chars = match key_without_modifiers.as_ref() {
-                    Key::Character(ch) => ch,
-                    _ => "",
-                };
-                get_logical_key_char(ns_event, modifierless_chars)
-            }
+            let logical_key = match text_with_all_modifiers.as_ref() {
+                // Only checking for ctrl here, not checking for alt because we DO want to
+                // include its effect in the key. For example if -on the Germay layout- one
+                // presses alt+8, the logical key should be "{"
+                // Also not checking if this is a release event because then this issue would
+                // still affect the key release.
+                Some(text) if !has_ctrl => Key::Character(text.clone()),
+                _ => {
+                    let modifierless_chars = match key_without_modifiers.as_ref() {
+                        Key::Character(ch) => ch,
+                        _ => "",
+                    };
+                    get_logical_key_char(ns_event, modifierless_chars)
+                }
+            };
+
+            (logical_key, key_without_modifiers)
+        } else {
+            (key_from_code.clone(), key_from_code)
         };
-
-        (logical_key, key_without_modifiers)
-    } else {
-        (key_from_code.clone(), key_from_code)
-    };
 
     let text = if is_press {
         logical_key.to_text().map(SmolStr::new)

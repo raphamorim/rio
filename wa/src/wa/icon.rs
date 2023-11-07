@@ -71,7 +71,11 @@ mod constructors {
     use super::*;
 
     impl RgbaIcon {
-        pub fn from_rgba(rgba: Vec<u8>, width: u32, height: u32) -> Result<Self, BadIcon> {
+        pub fn from_rgba(
+            rgba: Vec<u8>,
+            width: u32,
+            height: u32,
+        ) -> Result<Self, BadIcon> {
             if rgba.len() % PIXEL_SIZE != 0 {
                 return Err(BadIcon::ByteCountNotDivisibleBy4 {
                     byte_count: rgba.len(),
@@ -96,7 +100,11 @@ mod constructors {
     }
 
     impl NoIcon {
-        pub fn from_rgba(rgba: Vec<u8>, width: u32, height: u32) -> Result<Self, BadIcon> {
+        pub fn from_rgba(
+            rgba: Vec<u8>,
+            width: u32,
+            height: u32,
+        ) -> Result<Self, BadIcon> {
             // Create the rgba icon anyway to validate the input
             let _ = RgbaIcon::from_rgba(rgba, width, height)?;
             Ok(NoIcon)
