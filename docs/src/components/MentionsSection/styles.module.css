@@ -1,15 +1,15 @@
 .mentionsSection {
-  margin-top: 164px;
-  padding-bottom: 88px;
+  margin-top: 10.25rem;
+  padding-bottom: 5.5rem;
 }
 
 .title {
-  font-size: 26px;
+  font-size: 1.625rem;
   font-weight: 700;
   text-align: center;
   color: #3c3c43;
 
-  margin-bottom: 60px;
+  margin-bottom: 3.75rem;
 }
 
 [data-theme='dark'] .title {
@@ -18,13 +18,13 @@
 
 @media (min-width: 640px) {
   .title {
-    font-size: 32px;
+    font-size: 2rem;
   }
 }
 
 @media (min-width: 960px) {
   .title {
-    font-size: 40px;
+    font-size: 2.5rem;
   }
 }
 
@@ -47,15 +47,15 @@
 .mentionCard {
   margin: 0;
 
-  padding: 24px;
+  padding: 1.5rem;
   border: 1px solid #f6f6f7;
 
-  border-radius: 12px;
+  border-radius: 0.75rem;
   background-color: #f6f6f7;
 
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 [data-theme='dark'] .mentionCard {
@@ -66,15 +66,15 @@
 .mentionCardTop {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .mentionCardAvatar {
-  border-radius: 999px;
+  border-radius: 99rem;
 }
 
 .mentionCardUsername {
-  font-size: 16px;
+  font-size: 1rem;
   font-style: normal;
 
   color: #3c3c43;
@@ -89,9 +89,9 @@
   padding: 0;
   margin: 0;
 
-  margin-left: 4px;
+  margin-left: 0.25rem;
 
-  font-size: 14px;
+  font-size: 0.875rem;
   font-style: italic;
 
   color: #515151;
