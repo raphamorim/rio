@@ -1,0 +1,14 @@
+<!--
+Original icon provided by Phosphor Icons (https://www.figma.com/community/file/903830135544202908/phosphor-icons)
+Licensed under Creative Commons Attribution 4.0 International (https://creativecommons.org/licenses/by/4.0/)
+This version has been modified from the original
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+    <path fill="#cc9138"
+        d="M15 2.813a12.102 12.102 0 0 1 8.528 3.502 12.102 12.102 0 0 1 3.66 8.582 12.24 12.24 0 0 1-.304 2.812 3.727 3.727 0 0 1-3.656 2.916h-5.416a1.875 1.875 0 0 0-1.875 1.875 3.75 3.75 0 0 1-4.996 3.536C5.927 24.265 2.812 20.039 2.812 15A12.188 12.188 0 0 1 14.876 2.813H15Z" />
+    <circle cx="20.156" cy="11.719" r="1.406" fill="#018adf" />
+    <circle cx="15" cy="8.906" r="1.406" fill="#54e360" />
+    <circle cx="9.844" cy="11.719" r="1.406" fill="#ffd400" />
+    <circle cx="9.844" cy="18.281" r="1.406" fill="#ff4949" />
+</svg>

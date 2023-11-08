@@ -1,8 +1,9 @@
+// @ts-check
+
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import HomepageFeatures from '@site/src/components/HomepageFeatures';
-import Mention from '@site/src/components/Mention';
-import Mentions from '@site/src/data/mentions';
+import FeaturesSection from '@site/src/components/FeaturesSection/index';
+import MentionsSection from '@site/src/components/MentionsSection/index';
 import RioLogo from '@site/static/assets/rio-logo.svg';
 import Heading from '@theme/Heading';
 import Layout from '@theme/Layout';
@@ -14,52 +15,25 @@ const title = 'Meet Rio';
 
 function HomepageHeader() {
   const { siteConfig } = useDocusaurusContext();
+
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
-      <div className="container">
-        <div className="logo">
-          <RioLogo />
-        </div>
-        <h1 className="hero__title">
-          {title} | {siteConfig.title}
-        </h1>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
-        <div className={styles.buttons}>
-          <Link
-            className="button button--secondary button--lg"
-            to="/docs/install"
-          >
+    <header className={clsx('container', styles.header)}>
+      <div className={styles.headerText}>
+        <Heading as="h1" className={styles.title}>
+          {siteConfig.title}
+        </Heading>
+        <p className={styles.tagline}>{siteConfig.tagline}</p>
+        <div className={styles.actionButtonSection}>
+          <Link to="/docs/install" className={styles.actionButton}>
             Install
           </Link>
         </div>
       </div>
-    </header>
-  );
-}
-
-function MentionsSection() {
-  let columns = [[], [], []];
-  Mentions.filter((mention) => mention.showOnHomepage).forEach((mention, i) =>
-    columns[i % 3].push(mention),
-  );
-
-  return (
-    <div className={clsx(styles.section, styles.sectionAlt)}>
-      <div className="container">
-        <Heading as="h2" className={clsx('margin-bottom--lg', 'text--center')}>
-          Loved by many engineers
-        </Heading>
-        <div className={clsx('row', styles.mentionsSection)}>
-          {columns.map((items, i) => (
-            <div className="col col--4" key={i}>
-              {items.map((tweet) => (
-                <Mention {...tweet} key={tweet.url} />
-              ))}
-            </div>
-          ))}
-        </div>
+      <div className={styles.logoContainer}>
+        <div className={styles.logoBackground} />
+        <RioLogo className={styles.logo} />
       </div>
-    </div>
+    </header>
   );
 }
 
@@ -71,7 +45,7 @@ export default function Home() {
     >
       <HomepageHeader />
       <main>
-        <HomepageFeatures />
+        <FeaturesSection />
         <MentionsSection />
       </main>
     </Layout>
