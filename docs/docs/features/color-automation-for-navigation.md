@@ -5,7 +5,7 @@ language: 'en'
 
 Rio allows to specify color overwrites for tabs based on program context.
 
-The example below sets <span class="keyword">#FFFF00</span> as color background whenever <span class="keyword">nvim</span> is running.
+The example below sets `#FFFF00` as color background whenever `nvim` is running.
 
 <p>
 <img alt="example navigation with color automation" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
