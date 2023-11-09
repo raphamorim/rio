@@ -241,9 +241,33 @@ impl Sequencer {
                             );
                         }
                         #[cfg(target_os = "macos")]
-                        RioEventType::Rio(RioEvent::CreateNativeTab) => {
+                        RioEventType::Rio(RioEvent::CreateNativeTab(
+                            working_dir_overwrite,
+                        )) => {
                             if let Some(route) = self.router.routes.get(&window_id) {
                                 route.redraw();
+
+                                // This case happens only for native tabs
+                                // every time that a new tab is created through context
+                                // it also reaches for the foreground process path if
+                                // config.use_current_path is true
+                                // For these case we need to make a workaround
+                                //
+                                // TODO: Reimplement this flow
+                                let mut should_revert_to_previous_config: Option<
+                                    rio_config::Config,
+                                > = None;
+                                if working_dir_overwrite.is_some() {
+                                    let current_config = (*self.config).clone();
+                                    should_revert_to_previous_config =
+                                        Some(current_config.clone());
+
+                                    let config = rio_config::Config {
+                                        working_dir: working_dir_overwrite,
+                                        ..current_config
+                                    };
+                                    self.config = config.into();
+                                }
 
                                 self.router.create_native_tab(
                                     event_loop_window_target,
@@ -251,6 +275,11 @@ impl Sequencer {
                                     &self.config,
                                     Some(route.window.winit_window.tabbing_identifier()),
                                 );
+
+                                if let Some(old_config) = should_revert_to_previous_config
+                                {
+                                    self.config = old_config.into();
+                                }
                             }
                         }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {

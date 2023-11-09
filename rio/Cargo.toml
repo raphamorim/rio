@@ -9,13 +9,14 @@ repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
 
+# For now enabling it with CLI only since Rio WASM is experimental
+# [lib]
+# path = "src/wasm.rs"
+# crate-type = ["cdylib"]
+
 [[bin]]
 name = "rio"
 path = "src/main.rs"
-
-[lib]
-path = "src/wasm.rs"
-crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wa = { workspace = true }

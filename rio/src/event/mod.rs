@@ -43,7 +43,7 @@ pub enum RioEvent {
     UpdateConfig,
     CreateWindow,
     CloseWindow,
-    CreateNativeTab,
+    CreateNativeTab(Option<String>),
     CreateConfigEditor,
     SelectNativeTabByIndex(usize),
     SelectNativeTabLast,
@@ -126,7 +126,7 @@ impl Debug for RioEvent {
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
-            RioEvent::CreateNativeTab => write!(f, "CreateNativeTab"),
+            RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),
             RioEvent::SelectNativeTabByIndex(tab_index) => {
                 write!(f, "SelectNativeTabByIndex({tab_index})")
             }
