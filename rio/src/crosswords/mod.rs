@@ -855,7 +855,8 @@ impl<U: EventListener> Crosswords<U> {
         let last_row = self.grid.screen_lines();
         let starting_square: &Square = &self.grid[pos];
 
-        if starting_square.c == ' ' {
+        let is_existent_hyperlink = starting_square.hyperlink().is_some();
+        if !is_existent_hyperlink && starting_square.c == ' ' {
             return None;
         }
 
@@ -912,23 +913,20 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
 
+        if is_existent_hyperlink {
+            let range = SelectionRange {
+                start: selection_start,
+                end: selection_end,
+                is_block: false,
+            };
+            return Some(range);
+        }
+
         if content.len() <= 4 {
             return None;
         }
 
         let value = content.iter().collect::<String>();
-        if let Some(existent_hyperlink) = starting_square.hyperlink() {
-            if value == existent_hyperlink.uri() {
-                // SelectionRange starts by the end
-                let range = SelectionRange {
-                    start: selection_start,
-                    end: selection_end,
-                    is_block: false,
-                };
-                return Some(range);
-            }
-        }
-
         if let Some(uri) = self.hyperlink_re.find(&value) {
             let uri = uri.as_str().to_string();
             let hyperlink = Some(Hyperlink::new(None, uri));
@@ -2859,6 +2857,94 @@ mod tests {
             "https://rio.io"
         );
         assert!(term.grid[Line(3)][Column(2)].hyperlink().is_none());
+    }
+
+    #[test]
+    fn test_search_nearest_hyperlink_from_pos_on_existent_hyperlink() {
+        let size = CrosswordsSize::new(4, 4);
+        let mut term = Crosswords::new(
+            size.columns,
+            size.screen_lines,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+        );
+
+        let grid = &mut term.grid;
+        let hyperlink = Hyperlink::new(None, "https://rio.io");
+        grid[Line(0)][Column(2)].c = 'r';
+        grid[Line(0)][Column(2)].set_hyperlink(Some(hyperlink.clone()));
+        grid[Line(0)][Column(3)].c = ' ';
+        grid[Line(0)][Column(3)].set_hyperlink(Some(hyperlink.clone()));
+        grid[Line(1)][Column(0)].c = '2';
+        grid[Line(1)][Column(0)].set_hyperlink(Some(hyperlink.clone()));
+        grid[Line(1)][Column(1)].c = ' ';
+        grid[Line(1)][Column(2)].c = 'i';
+        grid[Line(1)][Column(2)].set_hyperlink(Some(hyperlink.clone()));
+        grid[Line(1)][Column(3)].c = 'o';
+        grid[Line(1)][Column(3)].set_hyperlink(Some(hyperlink.clone()));
+
+        // "  r "
+        // "2 io"
+        // "    "
+        // "    "
+
+        // Hyperlink that should be highlighted is "r 2"
+
+        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
+        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_some());
+        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_none());
+
+        let result = term.search_nearest_hyperlink_from_pos(Pos {
+            row: pos::Line(0),
+            col: pos::Column(0),
+        });
+        assert_eq!(result, None);
+
+        let result = term.search_nearest_hyperlink_from_pos(Pos {
+            row: pos::Line(0),
+            col: pos::Column(3),
+        });
+        assert_eq!(
+            result,
+            Some(SelectionRange {
+                start: Pos {
+                    row: Line(0),
+                    col: Column(2)
+                },
+                end: Pos {
+                    row: Line(1),
+                    col: Column(0)
+                },
+                is_block: false
+            })
+        );
+
+        assert_eq!(
+            term.grid[Line(0)][Column(2)].hyperlink().unwrap().uri(),
+            "https://rio.io"
+        );
+
+        // Then we "promote" col 1/ row 1 to hyperlink and connecting with " io"
+        term.grid[Line(1)][Column(1)].set_hyperlink(Some(hyperlink.clone()));
+        let result = term.search_nearest_hyperlink_from_pos(Pos {
+            row: pos::Line(0),
+            col: pos::Column(3),
+        });
+        assert_eq!(
+            result,
+            Some(SelectionRange {
+                start: Pos {
+                    row: Line(0),
+                    col: Column(2)
+                },
+                end: Pos {
+                    row: Line(1),
+                    col: Column(3)
+                },
+                is_block: false
+            })
+        );
     }
 
     #[test]
