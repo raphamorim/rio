@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- OSC 8 (Hyperlinks).
 - Fix current path on new tab is not working when using Native Tab (Ref [#323](https://github.com/raphamorim/rio/issues/323)).
 - Change `POLLING_TIMEOUT` for configuration update from 1s to 2s.
 - Update `.icns` file with more format and add new icon (Ref: [#329](https://github.com/raphamorim/rio/pull/329)) by [@nix6839](https://github.com/nix6839).
