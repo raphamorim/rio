@@ -267,7 +267,7 @@ performance = "High"
 
 # Bindings
 #
-# You ca create custom key bindings for Rio terminal
+# You can create custom key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 #
 # Example:
