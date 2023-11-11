@@ -9,7 +9,7 @@ MacOS and Linux configuration file path is `~/.config/rio/config.toml`.
 
 Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
 
-Any file update in the configuration file will trigger a render operation in Rio terminal with the new configuration.
+Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
 ```toml
 # Cursor
@@ -54,9 +54,9 @@ blinking-cursor = false
 #
 performance = "High"
 
-# Theme
+# Themes
 #
-# It makes Rio look for the specified theme in the themes folder
+# Rio looks for a specified theme in the themes folder
 # (macos and linux: ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
@@ -217,7 +217,7 @@ performance = "High"
 # Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
 #
-# This configuration only has effect if use-fork is disabled
+# This configuration only works if use-fork is disabled
 #
 # Example:
 # working-dir = "/Users/raphael/Documents/"
@@ -225,14 +225,15 @@ performance = "High"
 # Environment variables
 #
 # The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need
+# please do not copy this if you do not need it.
 #
 # Example:
 # env-vars = []
 
 # Disable render when unfocused
 #
-# This property disable renderer processes while Rio is unfocused.
+# This property disables the renderer process when Rio no longer
+# has focus.
 #
 # Example:
 # disable-renderer-when-unfocused = false
@@ -248,8 +249,9 @@ performance = "High"
 
 # Colors
 #
-# Colors definition will overwrite any property in theme
-# (considering if theme folder does exists and is being used)
+# Defining colors in the configuration file will override any                                                                                                                     
+# colors set in the theme if you're using a theme. The default                                                                                                                  
+# configuration is without a theme.    
 #
 # Example:
 # [colors]
@@ -265,7 +267,7 @@ performance = "High"
 
 # Bindings
 #
-# Create custom Key bindings for Rio terminal
+# You can create custom key bindings for Rio terminal
 # More information in: raphamorim.io/rio/docs/custom-key-bindings
 #
 # Example:
