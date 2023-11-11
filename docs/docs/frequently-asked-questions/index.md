@@ -19,20 +19,20 @@ The reason it happens is because tmux is using 256 colors configuration, you nee
 
 1. In case your shell does not report this correctly, add the following to your `~/.${SHELL}rc`:
 
-```bash
+```sh
 export COLORTERM=truecolor
 ```
 
 2. Please also note you need to add true color override to your `.tmux.conf` file:
 
-```bash
+```sh
 set -g default-terminal "rio"
 set-option -ga terminal-overrides ",rio:Tc"
 ```
 
 3. Optionally you can also use `screen-256color`
 
-```bash
+```sh
 set -g default-terminal "screen-256color"
 set-option -ga terminal-overrides ",screen-256color:Tc"
 ```

@@ -29,6 +29,10 @@ run:
 dev:
 	cargo run
 
+run-wasm:
+	cargo build -p rioterm --target wasm32-unknown-unknown --lib
+	cd rio-wasm && make run
+
 dev-watch:
 	#cargo install cargo-watch
 	cargo watch -- cargo run
@@ -169,6 +173,7 @@ test:
 	RUST_BACKTRACE=full cargo test --release
 
 publish-crates:
+	cargo build --release
 	cargo publish -p rio-proc-macros
 	cargo publish -p copa
 	cargo publish -p corcovado

@@ -7,7 +7,7 @@ Rio allows to choose navigation between the following options:
 
 ### CollapsedTab
 
-The <span class="keyword">CollapsedTab</span> is Rio terminal default navigation mode for Linux, BSD and Windows.
+The `CollapsedTab` is Rio terminal default navigation mode for Linux, BSD and Windows.
 
 Note: The example below is using Dracula color scheme instead of Rio default colors.
 
@@ -22,7 +22,7 @@ mode = "CollapsedTab"
 
 ### NativeTab (MacOS only)
 
-The <span class="keyword">NativeTab</span> is Rio terminal default navigation mode for MacOs.
+The `NativeTab` is Rio terminal default navigation mode for MacOs.
 
 Note: NativeTab only works for MacOS.
 
@@ -37,7 +37,7 @@ mode = "NativeTab"
 
 ### BottomTab
 
-Note: <span class="keyword">BottomTab</span> does not support click mode yet.
+Note: `BottomTab` does not support click mode yet.
 
 <img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="58%"/>
 
@@ -53,7 +53,7 @@ mode = "BottomTab"
 
 ### TopTab
 
-Note: <span class="keyword">TopTab</span> does not support click mode yet.
+Note: `TopTab` does not support click mode yet.
 
 <img alt="Demo TopTab" src="/rio/assets/features/demo-top-tab.png" width="70%"/>
 
@@ -69,7 +69,7 @@ mode = "TopTab"
 
 ### Breadcrumb
 
-Note: <span class="keyword">Breadcrumb</span> does not support click mode yet and is only available for MacOS, BSD and Linux.
+Note: `Breadcrumb` does not support click mode yet and is only available for MacOS, BSD and Linux.
 
 <img alt="Demo Breadcrumb" src="/rio/assets/features/demo-breadcrumb.png" width="70%"/>
 
@@ -97,7 +97,7 @@ mode = "Plain"
 
 Rio allows to specify color overwrites for tabs based on program context.
 
-The example below sets <span class="keyword">#FFFF00</span> as color background whenever <span class="keyword">nvim</span> is running.
+The example below sets `#FFFF00` as color background whenever `nvim` is running.
 
 <p>
 <img alt="example navigation with color automation" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>

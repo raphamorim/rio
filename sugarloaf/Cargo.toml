@@ -35,13 +35,13 @@ bytemuck = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 twox-hash = { version = "1.6.3", default-features = false }
-image = "0.24.7"
-unicode-width = "0.1.5"
+image = { workspace = true }
+unicode-width = { workspace = true }
 guillotiere = "0.6.2"
-ordered-float = "4"
-rustc-hash = "1"
+ordered-float = "4.1.1"
+rustc-hash = "1.1.0"
 raw-window-handle = { workspace = true }
-ab_glyph = "0.2.2"
+ab_glyph = "0.2.23"
 linked-hash-map = "0.5.4"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
@@ -63,12 +63,12 @@ tokio = { workspace = true }
 fontconfig-parser = { version = "0.5.3", default-features = false }
 
 [dev-dependencies]
-winit = { workspace = true }
+wa = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"
 criterion = "0.5.1"
-futures = "0.3"
+futures = "0.3.29"
 once_cell = "1.18.0"
 
 [[bench]]

@@ -50,13 +50,13 @@ use sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
     SugarloafWindowSize,
 };
-use winit::event::ElementState;
-use winit::event::Modifiers;
-use winit::event::MouseButton;
+use wa::event::ElementState;
+use wa::event::Modifiers;
+use wa::event::MouseButton;
 #[cfg(target_os = "macos")]
-use winit::keyboard::ModifiersKeyState;
-use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use wa::keyboard::ModifiersKeyState;
+use wa::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
+use wa::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -95,7 +95,7 @@ pub struct Screen {
 
 impl Screen {
     pub async fn new(
-        winit_window: &winit::window::Window,
+        winit_window: &wa::window::Window,
         config: &Rc<rio_config::Config>,
         event_proxy: EventProxy,
         font_database: &sugarloaf::font::loader::Database,
@@ -307,7 +307,7 @@ impl Screen {
     pub fn update_config(
         &mut self,
         config: &Rc<rio_config::Config>,
-        current_theme: Option<winit::window::Theme>,
+        current_theme: Option<wa::window::Theme>,
         db: &sugarloaf::font::loader::Database,
     ) {
         if let Some(err) = self
@@ -385,7 +385,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
+    pub fn resize(&mut self, new_size: wa::dpi::PhysicalSize<u32>) -> &mut Self {
         self.sugarloaf.resize(new_size.width, new_size.height);
 
         self.resize_all_contexts(
@@ -401,7 +401,7 @@ impl Screen {
     pub fn set_scale(
         &mut self,
         new_scale: f32,
-        new_size: winit::dpi::PhysicalSize<u32>,
+        new_size: wa::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
         self.sugarloaf
             .rescale(new_scale)
@@ -483,7 +483,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn process_key_event(&mut self, key: &winit::event::KeyEvent) {
+    pub fn process_key_event(&mut self, key: &wa::event::KeyEvent) {
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
         // 2. In case IME has preedit then also should drop the key processing
@@ -988,7 +988,7 @@ impl Screen {
     }
 
     #[inline]
-    pub fn search_nearest_hyperlink_from_pos(&mut self, pos: Pos) -> bool {
+    pub fn search_nearest_hyperlink_from_pos(&mut self) -> bool {
         #[cfg(target_os = "macos")]
         let is_hyperlink_key_active = self.modifiers.state().super_key();
 
@@ -999,7 +999,9 @@ impl Screen {
             return false;
         }
 
-        let mut terminal = self.ctx_mut().current().terminal.lock();
+        let mut terminal = self.context_manager.current().terminal.lock();
+        let display_offset = terminal.display_offset();
+        let pos = self.mouse_position(display_offset);
         let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
         drop(terminal);
 

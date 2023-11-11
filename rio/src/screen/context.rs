@@ -14,7 +14,7 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use sugarloaf::{font::SugarloafFont, SugarloafErrors};
-use winit::window::WindowId;
+use wa::window::WindowId;
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
@@ -157,6 +157,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             };
         }
 
+        #[cfg(not(target_os = "windows"))]
+        let main_fd = pty.child.id.clone();
+        #[cfg(not(target_os = "windows"))]
+        let shell_pid = *pty.child.pid.clone() as u32;
+
         #[cfg(target_os = "windows")]
         {
             pty = create_pty(
@@ -167,11 +172,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cols_rows.1 as u16,
             );
         }
-
-        #[cfg(not(target_os = "windows"))]
-        let main_fd = pty.child.id.clone();
-        #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
 
         let machine =
             Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
@@ -327,12 +327,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    fn create_new_native_tab(&self) {
-        self.event_proxy
-            .send_event(RioEvent::CreateNativeTab, self.window_id);
-    }
-
-    #[inline]
     pub fn close_current_window(&self) {
         self.event_proxy
             .send_event(RioEvent::CloseWindow, self.window_id);
@@ -403,12 +397,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(target_os = "windows"))]
         {
-            let interval_time = if self.config.is_native {
-                Duration::from_secs(3)
-            } else {
-                Duration::from_secs(5)
-            };
-
+            let interval_time = Duration::from_secs(3);
             if self.titles.last_title_update.elapsed() > interval_time {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
@@ -584,10 +573,35 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         col_rows: (usize, usize),
         cursor_state: (&CursorState, bool),
     ) {
+        let mut working_dir = None;
+        if self.config.use_current_path && self.config.working_dir.is_none() {
+            let current_context = self.current();
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                if let Ok(path) = teletypewriter::foreground_process_path(
+                    *current_context.main_fd,
+                    current_context.shell_pid,
+                ) {
+                    working_dir = Some(path.to_string_lossy().to_string());
+                }
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                // if let Ok(path) = teletypewriter::foreground_process_path() {
+                //     working_dir =
+                //         Some(path.to_string_lossy().to_string());
+                // }
+                working_dir = None;
+            }
+        }
+
         // Native tabs do not use Context tabbing API, instead it will
         // ask winit to create a window with a tab id
         if self.config.is_native {
-            self.create_new_native_tab();
+            self.event_proxy
+                .send_event(RioEvent::CreateNativeTab(working_dir), self.window_id);
             return;
         }
 
@@ -595,23 +609,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if size < self.capacity {
             let last_index = self.contexts.len();
 
-            #[cfg(target_os = "windows")]
-            let cloned_config = &self.config;
-            #[cfg(not(target_os = "windows"))]
             let mut cloned_config = self.config.clone();
-
-            #[cfg(not(target_os = "windows"))]
-            {
-                if cloned_config.use_current_path && cloned_config.working_dir.is_none() {
-                    let current_context = self.current();
-                    if let Ok(path) = teletypewriter::foreground_process_path(
-                        *current_context.main_fd,
-                        current_context.shell_pid,
-                    ) {
-                        cloned_config.working_dir =
-                            Some(path.to_string_lossy().to_string());
-                    }
-                }
+            if working_dir.is_some() {
+                cloned_config.working_dir = working_dir;
             }
 
             match ContextManager::create_context(

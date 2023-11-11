@@ -19,7 +19,7 @@ use conpty::Conpty as Backend;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
 
 pub struct Pty {
-    // XXX: Backend is required to be the first field, to ensure correct drop order. Dropping
+    // Backend is required to be the first field, to ensure correct drop order. Dropping
     // `conout` before `backend` will cause a deadlock (with Conpty).
     backend: Backend,
     conout: ReadPipe,

@@ -1,6 +1,6 @@
 # Rio term
 
-<img src="misc/osx/rio-logo.png" alt="Rio terminal logo" width="320px" />
+<img src="misc/logo.svg" alt="Rio terminal logo" width="320px" />
 
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust/WebGPU or even in the browser powered by WebAssembly/WebGPU.
 

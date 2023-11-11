@@ -2,9 +2,9 @@ use crate::event::{EventListener, RioEvent};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
-use winit::window::WindowId;
+use wa::window::WindowId;
 
-const POLLING_TIMEOUT: Duration = Duration::from_secs(1);
+const POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub fn watch<
     P: AsRef<Path> + std::marker::Send + 'static,

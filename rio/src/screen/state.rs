@@ -17,7 +17,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use sugarloaf::Sugarloaf;
-use winit::window::Theme;
+use wa::window::Theme;
 
 struct Cursor {
     state: CursorState,

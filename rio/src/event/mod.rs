@@ -9,8 +9,8 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
-use winit::event_loop::EventLoopProxy;
-use winit::window::WindowId;
+use wa::event_loop::EventLoopProxy;
+use wa::window::WindowId;
 
 #[derive(Debug)]
 pub enum Msg {
@@ -43,7 +43,7 @@ pub enum RioEvent {
     UpdateConfig,
     CreateWindow,
     CloseWindow,
-    CreateNativeTab,
+    CreateNativeTab(Option<String>),
     CreateConfigEditor,
     SelectNativeTabByIndex(usize),
     SelectNativeTabLast,
@@ -126,7 +126,7 @@ impl Debug for RioEvent {
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
-            RioEvent::CreateNativeTab => write!(f, "CreateNativeTab"),
+            RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),
             RioEvent::SelectNativeTabByIndex(tab_index) => {
                 write!(f, "SelectNativeTabByIndex({tab_index})")
             }
@@ -170,9 +170,9 @@ impl EventP {
     }
 }
 
-impl From<EventP> for winit::event::Event<EventP> {
+impl From<EventP> for wa::event::Event<EventP> {
     fn from(event: EventP) -> Self {
-        winit::event::Event::UserEvent(event)
+        wa::event::Event::UserEvent(event)
     }
 }
 

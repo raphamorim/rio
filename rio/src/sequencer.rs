@@ -8,18 +8,18 @@ use rio_config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use winit::event::{
+use wa::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
     WindowEvent,
 };
-use winit::event_loop::ControlFlow;
-use winit::event_loop::{DeviceEvents, EventLoop};
+use wa::event_loop::ControlFlow;
+use wa::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::EventLoopWindowTargetExtMacOS;
+use wa::platform::macos::EventLoopWindowTargetExtMacOS;
 #[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::window::{CursorIcon, Fullscreen};
+use wa::platform::macos::WindowExtMacOS;
+use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
+use wa::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
     config: Rc<rio_config::Config>,
@@ -241,9 +241,33 @@ impl Sequencer {
                             );
                         }
                         #[cfg(target_os = "macos")]
-                        RioEventType::Rio(RioEvent::CreateNativeTab) => {
+                        RioEventType::Rio(RioEvent::CreateNativeTab(
+                            working_dir_overwrite,
+                        )) => {
                             if let Some(route) = self.router.routes.get(&window_id) {
                                 route.redraw();
+
+                                // This case happens only for native tabs
+                                // every time that a new tab is created through context
+                                // it also reaches for the foreground process path if
+                                // config.use_current_path is true
+                                // For these case we need to make a workaround
+                                //
+                                // TODO: Reimplement this flow
+                                let mut should_revert_to_previous_config: Option<
+                                    rio_config::Config,
+                                > = None;
+                                if working_dir_overwrite.is_some() {
+                                    let current_config = (*self.config).clone();
+                                    should_revert_to_previous_config =
+                                        Some(current_config.clone());
+
+                                    let config = rio_config::Config {
+                                        working_dir: working_dir_overwrite,
+                                        ..current_config
+                                    };
+                                    self.config = config.into();
+                                }
 
                                 self.router.create_native_tab(
                                     event_loop_window_target,
@@ -251,6 +275,11 @@ impl Sequencer {
                                     &self.config,
                                     Some(route.window.winit_window.tabbing_identifier()),
                                 );
+
+                                if let Some(old_config) = should_revert_to_previous_config
+                                {
+                                    self.config = old_config.into();
+                                }
                             }
                         }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {
@@ -332,7 +361,7 @@ impl Sequencer {
                 Event::Resumed => {}
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::CloseRequested,
+                    event: wa::event::WindowEvent::CloseRequested,
                     window_id,
                     ..
                 } => {
@@ -344,12 +373,23 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::ModifiersChanged(modifiers),
+                    event: wa::event::WindowEvent::ModifiersChanged(modifiers),
                     window_id,
                     ..
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         route.window.screen.set_modifiers(modifiers);
+
+                        if route.window.screen.search_nearest_hyperlink_from_pos() {
+                            #[cfg(target_os = "macos")]
+                            route.window.winit_window.set_cursor_visible(true);
+
+                            route
+                                .window
+                                .winit_window
+                                .set_cursor_icon(CursorIcon::Pointer);
+                            route.window.screen.context_manager.schedule_render(60);
+                        }
                     }
                 }
 
@@ -449,11 +489,11 @@ impl Sequencer {
                                         route.window.screen.display_offset();
 
                                     if let MouseButton::Left = button {
-                                        let point = route
+                                        let pos = route
                                             .window
                                             .screen
                                             .mouse_position(display_offset);
-                                        route.window.screen.on_left_click(point);
+                                        route.window.screen.on_left_click(pos);
                                     }
 
                                     route.window.winit_window.request_redraw();
@@ -591,7 +631,7 @@ impl Sequencer {
                             return;
                         }
 
-                        if route.window.screen.search_nearest_hyperlink_from_pos(point) {
+                        if route.window.screen.search_nearest_hyperlink_from_pos() {
                             route
                                 .window
                                 .winit_window
@@ -707,7 +747,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        winit::event::WindowEvent::KeyboardInput {
+                        wa::event::WindowEvent::KeyboardInput {
                             is_synthetic: false,
                             event: key_event,
                             ..
@@ -787,7 +827,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Focused(focused),
+                    event: wa::event::WindowEvent::Focused(focused),
                     window_id,
                     ..
                 } => {
@@ -805,7 +845,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Occluded(occluded),
+                    event: wa::event::WindowEvent::Occluded(occluded),
                     window_id,
                     ..
                 } => {
@@ -815,7 +855,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::ThemeChanged(new_theme),
+                    event: wa::event::WindowEvent::ThemeChanged(new_theme),
                     window_id,
                     ..
                 } => {
@@ -829,7 +869,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::DroppedFile(path),
+                    event: wa::event::WindowEvent::DroppedFile(path),
                     window_id,
                     ..
                 } => {
@@ -844,7 +884,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::Resized(new_size),
+                    event: wa::event::WindowEvent::Resized(new_size),
                     window_id,
                     ..
                 } => {
@@ -859,7 +899,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        winit::event::WindowEvent::ScaleFactorChanged {
+                        wa::event::WindowEvent::ScaleFactorChanged {
                             inner_size_writer: _,
                             scale_factor,
                         },
@@ -885,6 +925,11 @@ impl Sequencer {
                     std::process::exit(0);
                 }
 
+                #[cfg(target_os = "macos")]
+                Event::Opened { urls } => {
+                    println!("{:?}", urls);
+                }
+
                 Event::AboutToWait => {
                     // Update the scheduler after event processing to ensure
                     // the event loop deadline is as accurate as possible.
@@ -896,7 +941,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: winit::event::WindowEvent::RedrawRequested,
+                    event: wa::event::WindowEvent::RedrawRequested,
                     window_id,
                     ..
                 } => {

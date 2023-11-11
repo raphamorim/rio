@@ -9,37 +9,44 @@ repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
 description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
 
+# For now enabling it with CLI only since Rio WASM is experimental
+# [lib]
+# path = "src/wasm.rs"
+# crate-type = ["cdylib"]
+
 [[bin]]
 name = "rio"
 path = "src/main.rs"
 
 [dependencies]
-base64 = "0.21.0"
-bitflags = "2.0.2"
-futures = "0.3"
+wa = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+base64 = "0.21.5"
+bitflags = "2.4.1"
+futures = "0.3.29"
 bytemuck = { workspace = true }
 rio-config = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.2.7", features = ["derive"] }
+clap = { version = "4.4.7", features = ["derive"] }
 copypasta = { version = "0.10.0", default-features = false }
-dirs = "5.0"
-notify = "6.0.0"
-image = { version = "0.24.5", default-features = false, features = ["ico"] }
-lazycell = "1"
+dirs = "5.0.1"
+notify = "6.1.1"
+image = { workspace = true }
+lazycell = "1.3.0"
 libc = { workspace = true }
-log = { workspace = true }
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 serde = { workspace = true }
 sugarloaf = { workspace = true }
 teletypewriter = { workspace = true }
 tokio = { workspace = true }
-unicode-width = "0.1.5"
+unicode-width = { workspace = true }
 copa = { workspace = true }
 wgpu = { workspace = true }
-winit = { workspace = true }
-unicode-normalization = "0.1"
+unicode-normalization = "0.1.22"
 cursor-icon = { version = "1.0.0", default-features = false }
 
 #[target.'cfg(target_os = "macos")'.dependencies]
@@ -65,18 +72,157 @@ windows-sys = { version = "0.48", features = [
     "Win32_UI_WindowsAndMessaging",
 ]}
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+softbuffer = "0.3.0"
+js-sys = "0.3.64"
+wgpu = { workspace = true }
+web-sys = { version = "0.3.62", features = [
+    "Location",
+    "Document",
+    "Navigator",
+    "Node",
+    "NodeList",
+    "Gpu",
+    "GpuAdapter",
+    "GpuAddressMode",
+    "GpuAutoLayoutMode",
+    "GpuBindGroup",
+    "GpuBindGroupDescriptor",
+    "GpuBindGroupEntry",
+    "GpuBindGroupLayout",
+    "GpuBindGroupLayoutDescriptor",
+    "GpuBindGroupLayoutEntry",
+    "GpuBlendComponent",
+    "GpuBlendFactor",
+    "GpuBlendOperation",
+    "GpuBlendState",
+    "GpuBuffer",
+    "GpuBufferBinding",
+    "GpuBufferBindingLayout",
+    "GpuBufferBindingType",
+    "GpuBufferDescriptor",
+    "GpuCanvasAlphaMode",
+    "GpuCanvasContext",
+    "GpuCanvasConfiguration",
+    "GpuColorDict",
+    "GpuColorTargetState",
+    "GpuCommandBuffer",
+    "GpuCommandBufferDescriptor",
+    "GpuCommandEncoder",
+    "GpuCommandEncoderDescriptor",
+    "GpuCompareFunction",
+    "GpuCompilationInfo",
+    "GpuCompilationMessage",
+    "GpuCompilationMessageType",
+    "GpuComputePassDescriptor",
+    "GpuComputePassEncoder",
+    "GpuComputePipeline",
+    "GpuComputePipelineDescriptor",
+    "GpuCullMode",
+    "GpuDepthStencilState",
+    "GpuDevice",
+    "GpuDeviceDescriptor",
+    "GpuDeviceLostInfo",
+    "GpuDeviceLostReason",
+    "GpuError",
+    "GpuErrorFilter",
+    # "GpuExtent2dDict", Not yet implemented in web_sys
+    "GpuExtent3dDict",
+    "GpuFeatureName",
+    "GpuFilterMode",
+    "GpuFragmentState",
+    "GpuFrontFace",
+    "GpuImageCopyBuffer",
+    "GpuImageCopyExternalImage",
+    "GpuImageCopyTexture",
+    "GpuImageCopyTextureTagged",
+    "GpuImageDataLayout",
+    "GpuIndexFormat",
+    "GpuLoadOp",
+    "gpu_map_mode",
+    "GpuMipmapFilterMode",
+    "GpuMultisampleState",
+    "GpuObjectDescriptorBase",
+    "GpuOrigin2dDict",
+    "GpuOrigin3dDict",
+    "GpuOutOfMemoryError",
+    "GpuPipelineDescriptorBase",
+    "GpuPipelineLayout",
+    "GpuPipelineLayoutDescriptor",
+    "GpuPowerPreference",
+    "GpuPrimitiveState",
+    "GpuPrimitiveTopology",
+    "GpuProgrammableStage",
+    "GpuQuerySet",
+    "GpuQuerySetDescriptor",
+    "GpuQueryType",
+    "GpuQueue",
+    "GpuRenderBundle",
+    "GpuRenderBundleDescriptor",
+    "GpuRenderBundleEncoder",
+    "GpuRenderBundleEncoderDescriptor",
+    "GpuRenderPassColorAttachment",
+    "GpuRenderPassDepthStencilAttachment",
+    "GpuRenderPassDescriptor",
+    "GpuRenderPassEncoder",
+    "GpuRenderPipeline",
+    "GpuRenderPipelineDescriptor",
+    "GpuRequestAdapterOptions",
+    "GpuSampler",
+    "GpuSamplerBindingLayout",
+    "GpuSamplerBindingType",
+    "GpuSamplerDescriptor",
+    "GpuShaderModule",
+    "GpuShaderModuleDescriptor",
+    "GpuStencilFaceState",
+    "GpuStencilOperation",
+    "GpuStorageTextureAccess",
+    "GpuStorageTextureBindingLayout",
+    "GpuStoreOp",
+    "GpuSupportedFeatures",
+    "GpuSupportedLimits",
+    "GpuTexture",
+    "GpuTextureAspect",
+    "GpuTextureBindingLayout",
+    "GpuTextureDescriptor",
+    "GpuTextureDimension",
+    "GpuTextureFormat",
+    "GpuTextureSampleType",
+    "GpuTextureView",
+    "GpuTextureViewDescriptor",
+    "GpuTextureViewDimension",
+    "GpuUncapturedErrorEvent",
+    "GpuUncapturedErrorEventInit",
+    "GpuValidationError",
+    "GpuVertexAttribute",
+    "GpuVertexBufferLayout",
+    "GpuVertexFormat",
+    "GpuVertexState",
+    "GpuVertexStepMode",
+    "HtmlCanvasElement",
+    "OffscreenCanvas",
+    "ImageBitmap",
+    "ImageBitmapRenderingContext",
+    "Window",
+    "WorkerGlobalScope",
+    "WorkerNavigator"
+] }
+console_log = { workspace = true }
+wasm-bindgen = { workspace = true }
+console_error_panic_hook = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
 [features]
 default = ["wayland", "x11"]
 x11 = [
     "copypasta/x11",
-    "winit/x11"
+    "wa/x11"
 ]
 wayland = [
     "copypasta/wayland",
-    "winit/wayland",
-    "winit/wayland-dlopen",
-    "winit/wayland-dlopen",
-    "winit/wayland-csd-adwaita-crossfont",
+    "wa/wayland",
+    "wa/wayland-dlopen",
+    "wa/wayland-csd-adwaita-crossfont",
 ]
 
 [package.metadata.deb]

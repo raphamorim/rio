@@ -4,8 +4,8 @@ use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use crate::screen::Pos;
 use std::time::Instant;
-use winit::event::ElementState;
-use winit::event::MouseButton;
+use wa::event::ElementState;
+use wa::event::MouseButton;
 
 #[derive(Default, Debug)]
 pub struct AccumulatedScroll {
@@ -85,7 +85,7 @@ pub fn calculate_mouse_position(
         Column(0)
     } else {
         let col = (mouse.x - scaled_margin_x) / cell_width;
-        std::cmp::min(Column(col), Column(config_columns_rows.0))
+        std::cmp::min(Column(col), Column(config_columns_rows.0 - 1))
     };
 
     // TODO: Refactor row position

@@ -1,0 +1,17 @@
+<!--
+Original icon provided by Phosphor Icons (https://www.figma.com/community/file/903830135544202908/phosphor-icons)
+Licensed under Creative Commons Attribution 4.0 International (https://creativecommons.org/licenses/by/4.0/)
+This version has been modified from the original
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
+    <path fill="#a7772e" fill-rule="evenodd"
+        d="M4.688 4.688h20.625a1.875 1.875 0 0 1 1.875 1.875v16.875a1.875 1.875 0 0 1-1.875 1.875H4.688a1.875 1.875 0 0 1-1.875-1.875V6.563a1.875 1.875 0 0 1 1.874-1.875Zm20.625 16.567V6.563H4.688v16.875h20.625-10.941 10.94v-2.183Zm-2.505 2.183h2.505-10.941 8.436Z"
+        clip-rule="evenodd" />
+    <path fill="#d1b13c" d="M16.875 11.719a1.406 1.406 0 1 1 2.813 0 1.406 1.406 0 0 1-2.813 0Z" />
+    <path fill="#6dcbe9" fill-rule="evenodd"
+        d="M25.313 21.255V6.563H4.688v13.593l6.093-6.093 6.483 6.482 3.67-3.67 4.378 4.38Zm-8.026-10.53a1.406 1.406 0 1 0 1.989 1.988 1.406 1.406 0 0 0-1.99-1.989Z"
+        clip-rule="evenodd" />
+    <path fill="#44a43c" fill-rule="evenodd"
+        d="m4.688 20.156 6.093-6.093 6.483 6.482 3.67-3.67 4.378 4.38v2.183H4.689v-3.282Z" clip-rule="evenodd" />
+</svg>

@@ -2,9 +2,9 @@ extern crate png;
 extern crate tokio;
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use winit::event_loop::ControlFlow;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::{
+use wa::event_loop::ControlFlow;
+use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
+use wa::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
