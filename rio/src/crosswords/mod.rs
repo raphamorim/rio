@@ -50,7 +50,7 @@ use std::ptr;
 use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
-use wa::window::WindowId;
+use winit::window::WindowId;
 
 pub type NamedColor = colors::NamedColor;
 
@@ -2355,7 +2355,7 @@ mod tests {
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::test::CrosswordsSize;
     use crate::event::VoidListener;
-    use wa::window::WindowId;
+    use winit::window::WindowId;
 
     #[test]
     fn scroll_up() {

@@ -2,10 +2,10 @@ use crate::screen::ElementState;
 use crate::screen::Mode;
 use crate::screen::ModifiersState;
 use std::borrow::Cow;
-use wa::event::KeyEvent;
-use wa::keyboard::Key;
-use wa::keyboard::KeyLocation;
-use wa::keyboard::NamedKey::*;
+use winit::event::KeyEvent;
+use winit::keyboard::Key;
+use winit::keyboard::KeyLocation;
+use winit::keyboard::NamedKey::*;
 
 #[inline(never)]
 pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {

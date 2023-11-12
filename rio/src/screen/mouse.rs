@@ -4,8 +4,8 @@ use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use crate::screen::Pos;
 use std::time::Instant;
-use wa::event::ElementState;
-use wa::event::MouseButton;
+use winit::event::ElementState;
+use winit::event::MouseButton;
 
 #[derive(Default, Debug)]
 pub struct AccumulatedScroll {

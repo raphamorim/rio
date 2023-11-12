@@ -1,10 +1,10 @@
 extern crate png;
 extern crate tokio;
 
-use wa::event::WindowEvent;
-use wa::event_loop::ControlFlow;
-use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
-use wa::{dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowBuilder};
+use winit::event::WindowEvent;
+use winit::event_loop::ControlFlow;
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+use winit::{dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowBuilder};
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::components::rect::Rect;

@@ -137,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     setup_environment_variables(&config);
 
-    let window_event_loop = wa::event_loop::EventLoopBuilder::<EventP>::with_user_event()
+    let window_event_loop = winit::event_loop::EventLoopBuilder::<EventP>::with_user_event()
         .build()
         .unwrap();
 

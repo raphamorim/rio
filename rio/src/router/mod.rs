@@ -13,10 +13,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 use sugarloaf::font::loader;
-use wa::event_loop::EventLoop;
-use wa::event_loop::EventLoopWindowTarget;
-use wa::keyboard::{Key, NamedKey};
-use wa::window::{Window, WindowId};
+use winit::event_loop::EventLoop;
+use winit::event_loop::EventLoopWindowTarget;
+use winit::keyboard::{Key, NamedKey};
+use winit::window::{Window, WindowId};
 
 pub type ErrorReport = assistant::ErrorReport;
 
@@ -87,7 +87,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn has_key_wait(&mut self, key_event: &wa::event::KeyEvent) -> bool {
+    pub fn has_key_wait(&mut self, key_event: &winit::event::KeyEvent) -> bool {
         if self.path == RoutePath::Terminal {
             return false;
         }

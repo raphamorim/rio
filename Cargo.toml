@@ -4,10 +4,12 @@ members = [
   "sugarloaf",
   "corcovado",
   "copa",
-  "wa",
   "rio-config",
   "rio-proc-macros",
-  "rio"
+  "rio",
+
+  "backends/unified",
+  "backends/wasm",
 ]
 resolver = "2"
 
@@ -32,7 +34,7 @@ rio-config = { path = "rio-config", version = "0.0.27" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.0.27" }
 copa = { path = "copa", default-features = true, version = "0.0.27" }
 teletypewriter = { path = "teletypewriter", version = "0.0.27" }
-wa = { path = "wa", version = "0.0.27" }
+winit = { version = "0.29.3", default-features = false, features = ["rwh_05"] }
 
 raw-window-handle = "0.5"
 parking_lot = "0.12.1"

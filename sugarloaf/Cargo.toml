@@ -63,7 +63,7 @@ tokio = { workspace = true }
 fontconfig-parser = { version = "0.5.3", default-features = false }
 
 [dev-dependencies]
-wa = { workspace = true }
+winit = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"

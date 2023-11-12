@@ -2,7 +2,7 @@ use crate::event::{EventListener, RioEvent};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
-use wa::window::WindowId;
+use winit::window::WindowId;
 
 const POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 

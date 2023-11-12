@@ -8,18 +8,18 @@ use rio_config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use wa::event::{
+use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
     WindowEvent,
 };
-use wa::event_loop::ControlFlow;
-use wa::event_loop::{DeviceEvents, EventLoop};
+use winit::event_loop::ControlFlow;
+use winit::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
-use wa::platform::macos::EventLoopWindowTargetExtMacOS;
+use winit::platform::macos::EventLoopWindowTargetExtMacOS;
 #[cfg(target_os = "macos")]
-use wa::platform::macos::WindowExtMacOS;
-use wa::platform::run_on_demand::EventLoopExtRunOnDemand;
-use wa::window::{CursorIcon, Fullscreen};
+use winit::platform::macos::WindowExtMacOS;
+use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+use winit::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
     config: Rc<rio_config::Config>,
@@ -389,7 +389,7 @@ impl Sequencer {
                 Event::Resumed => {}
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::CloseRequested,
+                    event: winit::event::WindowEvent::CloseRequested,
                     window_id,
                     ..
                 } => {
@@ -401,7 +401,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::ModifiersChanged(modifiers),
+                    event: winit::event::WindowEvent::ModifiersChanged(modifiers),
                     window_id,
                     ..
                 } => {
@@ -775,7 +775,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        wa::event::WindowEvent::KeyboardInput {
+                        winit::event::WindowEvent::KeyboardInput {
                             is_synthetic: false,
                             event: key_event,
                             ..
@@ -855,7 +855,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::Focused(focused),
+                    event: winit::event::WindowEvent::Focused(focused),
                     window_id,
                     ..
                 } => {
@@ -873,7 +873,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::Occluded(occluded),
+                    event: winit::event::WindowEvent::Occluded(occluded),
                     window_id,
                     ..
                 } => {
@@ -883,7 +883,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::ThemeChanged(new_theme),
+                    event: winit::event::WindowEvent::ThemeChanged(new_theme),
                     window_id,
                     ..
                 } => {
@@ -897,7 +897,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::DroppedFile(path),
+                    event: winit::event::WindowEvent::DroppedFile(path),
                     window_id,
                     ..
                 } => {
@@ -912,7 +912,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::Resized(new_size),
+                    event: winit::event::WindowEvent::Resized(new_size),
                     window_id,
                     ..
                 } => {
@@ -927,7 +927,7 @@ impl Sequencer {
 
                 Event::WindowEvent {
                     event:
-                        wa::event::WindowEvent::ScaleFactorChanged {
+                        winit::event::WindowEvent::ScaleFactorChanged {
                             inner_size_writer: _,
                             scale_factor,
                         },
@@ -953,11 +953,6 @@ impl Sequencer {
                     std::process::exit(0);
                 }
 
-                #[cfg(target_os = "macos")]
-                Event::Opened { urls } => {
-                    println!("{:?}", urls);
-                }
-
                 Event::AboutToWait => {
                     // Update the scheduler after event processing to ensure
                     // the event loop deadline is as accurate as possible.
@@ -969,7 +964,7 @@ impl Sequencer {
                 }
 
                 Event::WindowEvent {
-                    event: wa::event::WindowEvent::RedrawRequested,
+                    event: winit::event::WindowEvent::RedrawRequested,
                     window_id,
                     ..
                 } => {
