@@ -14,7 +14,7 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use sugarloaf::{font::SugarloafFont, SugarloafErrors};
-use wa::window::WindowId;
+use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;

@@ -414,7 +414,7 @@ mod tests {
     use crate::crosswords::{Crosswords, CursorShape};
     use crate::event::VoidListener;
     use crate::performer::handler::Handler;
-    use wa::window::WindowId;
+    use winit::window::WindowId;
 
     fn term() -> Crosswords<VoidListener> {
         Crosswords::new(

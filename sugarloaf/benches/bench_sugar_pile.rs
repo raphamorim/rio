@@ -6,9 +6,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::core::Sugar;
 use sugarloaf::*;
-use wa::dpi::LogicalSize;
-use wa::event_loop::EventLoop;
-use wa::window::WindowBuilder;
+use winit::dpi::LogicalSize;
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
 fn bench_sugar_pile(c: &mut Criterion) {
     const NUM: usize = 100_000;

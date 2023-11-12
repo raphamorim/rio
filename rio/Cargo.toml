@@ -19,7 +19,7 @@ name = "rio"
 path = "src/main.rs"
 
 [dependencies]
-wa = { workspace = true }
+winit = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -216,13 +216,13 @@ wasm-bindgen-futures = { workspace = true }
 default = ["wayland", "x11"]
 x11 = [
     "copypasta/x11",
-    "wa/x11"
+    "winit/x11"
 ]
 wayland = [
     "copypasta/wayland",
-    "wa/wayland",
-    "wa/wayland-dlopen",
-    "wa/wayland-csd-adwaita-crossfont",
+    "winit/wayland",
+    "winit/wayland-dlopen",
+    "winit/wayland-csd-adwaita-crossfont",
 ]
 
 [package.metadata.deb]
