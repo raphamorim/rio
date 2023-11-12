@@ -22,6 +22,11 @@ pub fn default_use_kitty_keyboard_protocol() -> bool {
 }
 
 #[inline]
+pub fn default_macos_enable_close_last_tab() -> bool {
+    true
+}
+
+#[inline]
 pub fn default_line_height() -> f32 {
     1.0
 }
