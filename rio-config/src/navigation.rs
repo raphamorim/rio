@@ -1,3 +1,4 @@
+use crate::default_macos_enable_close_last_tab;
 use crate::colors::{deserialize_to_arr, ColorArray};
 use serde::{Deserialize, Serialize};
 
@@ -121,7 +122,7 @@ pub struct Navigation {
     #[serde(
         rename = "macos-enable-close-last-tab",
         skip_serializing,
-        default = "bool::default"
+        default = "default_macos_enable_close_last_tab"
     )]
     pub macos_enable_close_last_tab: bool,
 }
