@@ -298,7 +298,7 @@ impl Sequencer {
                                 } else if self
                                     .config
                                     .navigation
-                                    .macos_allow_close_last_tab
+                                    .macos_enable_close_last_tab
                                 {
                                     let routes_len = self.router.routes.len();
                                     self.router.routes.remove(&window_id);
