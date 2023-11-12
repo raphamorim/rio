@@ -1,5 +1,5 @@
-use crate::default_macos_enable_close_last_tab;
 use crate::colors::{deserialize_to_arr, ColorArray};
+use crate::default_macos_enable_close_last_tab;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
