@@ -118,6 +118,12 @@ pub struct Navigation {
         skip_serializing
     )]
     pub macos_hide_window_buttons: bool,
+    #[serde(
+        rename = "macos-allow-close-last-tab",
+        skip_serializing,
+        default = "bool::default"
+    )]
+    pub macos_allow_close_last_tab: bool,
 }
 
 impl Navigation {
