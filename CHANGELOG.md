@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Introduces `navigation.macos_allow_close_last_tab` which allows to close the last tab in MacOS. Default value is `false` and only work for native tabs for now (Ref: [#296](https://github.com/raphamorim/rio/issues/296))
 - OSC 8 (Hyperlinks).
 - Fix current path on new tab is not working when using Native Tab (Ref [#323](https://github.com/raphamorim/rio/issues/323)).
 - Change `POLLING_TIMEOUT` for configuration update from 1s to 2s.

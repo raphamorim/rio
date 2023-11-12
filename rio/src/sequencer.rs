@@ -293,6 +293,24 @@ impl Sequencer {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
                                 if route.window.winit_window.num_tabs() > 1 {
                                     self.router.routes.remove(&window_id);
+                                // In MacOS: Close last tab will work, leading to hide and
+                                // keep Rio running in background if allow_close_last_tab is true
+                                } else if self
+                                    .config
+                                    .navigation
+                                    .macos_allow_close_last_tab
+                                {
+                                    let routes_len = self.router.routes.len();
+                                    self.router.routes.remove(&window_id);
+                                    // If was the last last window opened then hide the application
+                                    if routes_len == 1 {
+                                        event_loop_window_target.hide_application();
+                                        self.router.create_window(
+                                            event_loop_window_target,
+                                            self.event_proxy.clone().unwrap(),
+                                            &self.config,
+                                        );
+                                    }
                                 }
                             }
                         }
