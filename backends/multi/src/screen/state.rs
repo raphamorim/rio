@@ -12,11 +12,11 @@ use rio_lib::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_lib::config::Config;
+use rio_lib::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_lib::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use rio_lib::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
-use rio_lib::sugarloaf::Sugarloaf;
 use winit::window::Theme;
 
 struct Cursor {

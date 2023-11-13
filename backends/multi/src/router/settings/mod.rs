@@ -1,12 +1,12 @@
 mod helpers;
 pub mod screen;
 
+use rio_lib::sugarloaf::font::loader::Database;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use rio_lib::sugarloaf::font::loader::Database;
 
 pub struct SettingsState {
     current: usize,

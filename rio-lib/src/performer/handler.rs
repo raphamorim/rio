@@ -1,10 +1,10 @@
 use crate::ansi::CursorShape;
 use crate::ansi::{mode::Mode, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use cursor_icon::CursorIcon;
 use log::{debug, warn};
-use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::str::FromStr;
 use std::time::Instant;
 

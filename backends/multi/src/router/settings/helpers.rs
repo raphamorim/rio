@@ -1,6 +1,8 @@
 use crate::router::settings::Setting;
+use rio_lib::sugarloaf::font::{
+    constants::DEFAULT_FONT_FAMILY, fonts::default_font_size,
+};
 use std::collections::HashMap;
-use rio_lib::sugarloaf::font::{constants::DEFAULT_FONT_FAMILY, fonts::default_font_size};
 
 pub const IDX_CURSOR: usize = 0;
 pub const IDX_PERFORMANCE: usize = 1;
