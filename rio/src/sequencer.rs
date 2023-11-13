@@ -117,6 +117,16 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::Exit) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                if self.config.confirm_before_quit {
+                                    route.confirm_quit();
+                                    route.redraw();
+                                } else {
+                                    route.quit();
+                                }
+                            }
+                        }
+                        RioEventType::Rio(RioEvent::CloseTerminal) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
                                 if !route.try_close_existent_tab() {
                                     self.router.routes.remove(&window_id);
 
@@ -999,6 +1009,12 @@ impl Sequencer {
                             }
                             RoutePath::Settings => {
                                 route.window.screen.render_settings(&route.settings);
+                            }
+                            RoutePath::ConfirmQuit => {
+                                route
+                                    .window
+                                    .screen
+                                    .render_dialog("Do you want to leave Rio?");
                             }
                         }
 

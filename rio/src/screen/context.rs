@@ -360,6 +360,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.event_proxy.send_event(RioEvent::Hide, self.window_id);
     }
 
+    #[inline]
+    pub fn quit(&mut self) {
+        self.event_proxy.send_event(RioEvent::Exit, self.window_id);
+    }
+
     #[cfg(target_os = "macos")]
     #[inline]
     pub fn hide_other_apps(&mut self) {

@@ -84,10 +84,7 @@ pub struct Config {
     pub disable_unfocused_render: bool,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
-    #[serde(
-        default = "default_use_kitty_keyboard_protocol",
-        rename = "use-kitty-keyboard-protocol"
-    )]
+    #[serde(default = "bool::default", rename = "use-kitty-keyboard-protocol")]
     pub use_kitty_keyboard_protocol: bool,
     #[serde(default = "default_working_dir", rename = "working-dir")]
     pub working_dir: Option<String>,
@@ -126,6 +123,8 @@ pub struct Config {
         rename = "ignore-selection-foreground-color"
     )]
     pub ignore_selection_fg_color: bool,
+    #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
+    pub confirm_before_quit: bool,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -357,7 +356,7 @@ impl Default for Config {
             colors: Colors::default(),
             cursor: default_cursor(),
             scroll_multiplier: default_scroll_multiplier(),
-            use_kitty_keyboard_protocol: default_use_kitty_keyboard_protocol(),
+            use_kitty_keyboard_protocol: false,
             developer: Developer::default(),
             disable_unfocused_render: false,
             env_vars: default_env_vars(),
@@ -373,6 +372,7 @@ impl Default for Config {
             window: Window::default(),
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
+            confirm_before_quit: true,
         }
     }
 }

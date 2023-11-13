@@ -99,6 +99,9 @@ pub enum RioEvent {
 
     /// Shutdown request.
     Exit,
+
+    /// Leave current terminal.
+    CloseTerminal,
 }
 
 impl Debug for RioEvent {
@@ -124,6 +127,7 @@ impl Debug for RioEvent {
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
+            RioEvent::CloseTerminal => write!(f, "CloseTerminal"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
             RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),

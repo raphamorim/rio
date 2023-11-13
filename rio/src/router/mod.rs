@@ -1,4 +1,5 @@
 pub mod assistant;
+pub mod dialog;
 pub mod settings;
 pub mod welcome;
 
@@ -76,6 +77,16 @@ impl Route {
     }
 
     #[inline]
+    pub fn confirm_quit(&mut self) {
+        self.path = RoutePath::ConfirmQuit;
+    }
+
+    #[inline]
+    pub fn quit(&mut self) {
+        std::process::exit(0);
+    }
+
+    #[inline]
     pub fn has_key_wait(&mut self, key_event: &wa::event::KeyEvent) -> bool {
         if self.path == RoutePath::Terminal {
             return false;
@@ -119,6 +130,15 @@ impl Route {
             return true;
         }
 
+        if self.path == RoutePath::ConfirmQuit {
+            if key_event.logical_key == Key::Named(NamedKey::Escape) {
+                self.quit();
+            } else if is_enter {
+                self.path = RoutePath::Terminal;
+                return true;
+            }
+        }
+
         if self.path == RoutePath::Welcome && is_enter {
             self.settings.create_file();
             self.path = RoutePath::Terminal;
@@ -134,9 +154,9 @@ impl Route {
 pub enum RoutePath {
     Assistant,
     Terminal,
-    #[allow(dead_code)]
     Settings,
     Welcome,
+    ConfirmQuit,
 }
 
 pub struct Router {

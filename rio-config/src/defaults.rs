@@ -17,12 +17,7 @@ pub fn default_padding_x() -> f32 {
 }
 
 #[inline]
-pub fn default_use_kitty_keyboard_protocol() -> bool {
-    false
-}
-
-#[inline]
-pub fn default_macos_enable_close_last_tab() -> bool {
+pub fn default_bool_true() -> bool {
     true
 }
 
