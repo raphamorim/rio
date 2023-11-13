@@ -84,7 +84,7 @@ const config = {
         },
         items: [
           { to: '/docs/install', label: 'Install', position: 'left' },
-          { to: '/docs/documentation', label: 'Docs', position: 'left' },
+          { to: '/docs/configuration-file', label: 'Config', position: 'left' },
           { to: '/docs/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
