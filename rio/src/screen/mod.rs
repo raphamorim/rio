@@ -653,8 +653,7 @@ impl Screen {
                         }
                     }
                     Act::Quit => {
-                        // TODO: Add it in event system
-                        std::process::exit(0);
+                        self.context_manager.quit();
                     }
                     Act::IncreaseFontSize => {
                         self.change_font_size(FontSizeAction::Increase);
@@ -1253,6 +1252,12 @@ impl Screen {
     #[inline]
     pub fn render_welcome(&mut self) {
         crate::router::welcome::screen(&mut self.sugarloaf);
+        self.sugarloaf.render();
+    }
+
+    #[inline]
+    pub fn render_dialog(&mut self, content: &str) {
+        crate::router::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
 

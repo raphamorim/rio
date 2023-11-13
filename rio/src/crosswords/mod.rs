@@ -469,7 +469,8 @@ impl<U: EventListener> Crosswords<U> {
     where
         U: EventListener,
     {
-        self.event_proxy.send_event(RioEvent::Exit, self.window_id);
+        self.event_proxy
+            .send_event(RioEvent::CloseTerminal, self.window_id);
     }
 
     pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
