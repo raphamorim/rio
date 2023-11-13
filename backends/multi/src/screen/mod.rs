@@ -40,17 +40,16 @@ use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_lib::config::colors::{term::List, ColorWGPU};
+use rio_lib::sugarloaf::{
+    self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
+    SugarloafWindowSize,
+};
 use state::State;
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::rc::Rc;
-use rio_lib::sugarloaf::{
-    self,
-    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
-    SugarloafWindowSize,
-};
 use winit::event::ElementState;
 use winit::event::Modifiers;
 use winit::event::MouseButton;

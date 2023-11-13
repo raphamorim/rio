@@ -3,16 +3,16 @@ use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
-use rio_lib::error::{RioError, RioErrorLevel, RioErrorType};
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use rio_lib::config::Shell;
+use rio_lib::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_lib::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rio_lib::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
@@ -219,7 +219,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
                 event_proxy.send_event(
                     RioEvent::ReportToAssistant(RioError {
-                        report: RioErrorType::InitializationError(err_message.to_string()),
+                        report: RioErrorType::InitializationError(
+                            err_message.to_string(),
+                        ),
                         level: RioErrorLevel::Error,
                     }),
                     window_id,

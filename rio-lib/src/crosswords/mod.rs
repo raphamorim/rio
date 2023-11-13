@@ -25,6 +25,11 @@ use crate::ansi::{
     KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
 };
 use crate::clipboard::ClipboardType;
+use crate::config::colors::{
+    self,
+    term::{List, TermColors},
+    AnsiColor, ColorRgb,
+};
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
@@ -36,11 +41,6 @@ use grid::row::Row;
 use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
-};
-use crate::config::colors::{
-    self,
-    term::{List, TermColors},
-    AnsiColor, ColorRgb,
 };
 use square::{Hyperlink, LineLength, Square};
 use std::mem;

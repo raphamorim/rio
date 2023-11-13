@@ -21,16 +21,13 @@ log = { workspace = true }
 toml = "0.7.3"
 base64 = "0.21.5"
 bitflags = "2.4.1"
-futures = "0.3.29"
 bytemuck = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.4.7", features = ["derive"] }
 copypasta = { version = "0.10.0", default-features = false }
 dirs = "5.0.1"
 image = { workspace = true }
-lazycell = "1.3.0"
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
@@ -39,5 +36,13 @@ teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 wgpu = { workspace = true }
-unicode-normalization = "0.1.22"
 cursor-icon = { version = "1.0.0", default-features = false }
+
+[features]
+default = ["wayland", "x11"]
+x11 = [
+    "copypasta/x11"
+]
+wayland = [
+    "copypasta/wayland"
+]

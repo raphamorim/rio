@@ -1,7 +1,7 @@
-use rio_lib::error::{RioErrorLevel, RioError};
+use rio_lib::error::{RioError, RioErrorLevel};
 use rio_lib::sugarloaf::components::rect::Rect;
 use rio_lib::sugarloaf::font::FONT_ID_BUILTIN;
-use rio_lib::sugarloaf::{Sugarloaf};
+use rio_lib::sugarloaf::Sugarloaf;
 
 pub struct Assistant {
     pub inner: Option<RioError>,

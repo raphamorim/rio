@@ -1,9 +1,9 @@
 pub mod sync;
 
 use crate::clipboard::ClipboardType;
+use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
 use crate::error::RioError;
-use crate::config::colors::ColorRgb;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fmt::Formatter;

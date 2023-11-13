@@ -1,11 +1,11 @@
 // square.rs was originally taken from Alacritty as cell.rs https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/term/cell.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::config::colors::{AnsiColor, NamedColor};
 use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
 use crate::crosswords::Row;
 use bitflags::bitflags;
-use crate::config::colors::{AnsiColor, NamedColor};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -145,7 +145,10 @@ impl Square {
         self.c = ' ';
     }
 
-    pub fn set_underline_color(&mut self, color: Option<crate::config::colors::AnsiColor>) {
+    pub fn set_underline_color(
+        &mut self,
+        color: Option<crate::config::colors::AnsiColor>,
+    ) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
             && self.extra.as_ref().map_or(true, |extra| {

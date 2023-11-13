@@ -1,10 +1,10 @@
 pub mod ansi;
-pub mod crosswords;
-pub mod event;
 pub mod clipboard;
-pub mod selection;
-pub mod performer;
-pub mod error;
 pub mod config;
+pub mod crosswords;
+pub mod error;
+pub mod event;
+pub mod performer;
+pub mod selection;
 
 pub use sugarloaf;

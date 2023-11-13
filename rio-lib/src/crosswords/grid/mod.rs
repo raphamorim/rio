@@ -9,7 +9,6 @@ pub mod storage;
 #[cfg(test)]
 mod tests;
 
-use sugarloaf::layout::SugarloafLayout;
 use crate::crosswords::pos::Pos;
 use crate::crosswords::square::Flags;
 use crate::crosswords::square::ResetDiscriminant;
@@ -19,6 +18,7 @@ use row::Row;
 use std::cmp::{max, min};
 use std::ops::{Bound, Deref, Index, IndexMut, Range, RangeBounds};
 use storage::Storage;
+use sugarloaf::layout::SugarloafLayout;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {

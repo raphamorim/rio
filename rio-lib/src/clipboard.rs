@@ -27,6 +27,7 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(display: RawDisplayHandle) -> Self {
         match display {
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
