@@ -1,5 +1,5 @@
 use crate::screen::constants::*;
-use rio_config::navigation::NavigationMode;
+use rio_lib::config::navigation::NavigationMode;
 use std::collections::HashMap;
 use rio_lib::sugarloaf::components::rect::Rect;
 use rio_lib::sugarloaf::font::FONT_ID_BUILTIN;

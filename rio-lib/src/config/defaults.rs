@@ -27,10 +27,10 @@ pub fn default_line_height() -> f32 {
 }
 
 #[inline]
-pub fn default_shell() -> crate::Shell {
+pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {
-        crate::Shell {
+        crate::config::Shell {
             program: String::from(""),
             args: vec![String::from("--login")],
         }
@@ -38,7 +38,7 @@ pub fn default_shell() -> crate::Shell {
 
     #[cfg(target_os = "windows")]
     {
-        crate::Shell {
+        crate::config::Shell {
             program: String::from("powershell"),
             args: vec![],
         }

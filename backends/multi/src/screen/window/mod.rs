@@ -1,4 +1,4 @@
-use rio_config::Config;
+use rio_lib::config::Config;
 use std::rc::Rc;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
@@ -69,11 +69,11 @@ pub fn create_window_builder(
     }
 
     match config.window.mode {
-        rio_config::window::WindowMode::Fullscreen => {
+        rio_lib::config::window::WindowMode::Fullscreen => {
             window_builder =
                 window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
-        rio_config::window::WindowMode::Maximized => {
+        rio_lib::config::window::WindowMode::Maximized => {
             window_builder = window_builder.with_maximized(true);
         }
         _ => {

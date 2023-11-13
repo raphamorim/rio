@@ -24,7 +24,6 @@ base64 = "0.21.5"
 bitflags = "2.4.1"
 futures = "0.3.29"
 bytemuck = { workspace = true }
-rio-config = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }

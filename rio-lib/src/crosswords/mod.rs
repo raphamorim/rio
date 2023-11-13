@@ -37,7 +37,7 @@ use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
-use rio_config::colors::{
+use crate::config::colors::{
     self,
     term::{List, TermColors},
     AnsiColor, ColorRgb,

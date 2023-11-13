@@ -23,7 +23,7 @@ pub struct Setting {
 pub struct Settings {
     pub default_file_path: String,
     pub default_dir_path: String,
-    pub config: rio_config::Config,
+    pub config: rio_lib::config::Config,
     pub inner: HashMap<usize, Setting>,
     pub state: SettingsState,
     pub font_families: Vec<String>,
@@ -54,11 +54,11 @@ impl Settings {
         font_families.push(String::from("Cascadia Mono (built-in)"));
 
         Settings {
-            default_file_path: rio_config::config_file_path(),
-            default_dir_path: rio_config::config_dir_path(),
-            config: rio_config::Config::default(),
+            default_file_path: rio_lib::config::config_file_path(),
+            default_dir_path: rio_lib::config::config_dir_path(),
+            config: rio_lib::config::Config::default(),
             inner: helpers::config_to_settings(
-                rio_config::Config::load(),
+                rio_lib::config::Config::load(),
                 font_families.to_owned(),
             ),
             state: SettingsState {
@@ -74,7 +74,7 @@ impl Settings {
     #[inline]
     pub fn reset(&mut self) {
         self.inner = helpers::config_to_settings(
-            rio_config::Config::load(),
+            rio_lib::config::Config::load(),
             self.font_families.to_owned(),
         );
         self.state = SettingsState {
@@ -192,7 +192,7 @@ impl Settings {
                 log::info!("configuration file created {}", self.default_file_path);
 
                 if let Err(err_message) =
-                    writeln!(created_file, "{}", rio_config::config_file_content())
+                    writeln!(created_file, "{}", rio_lib::config::config_file_content())
                 {
                     log::error!(
                         "could not update config file with defaults: {err_message}"

@@ -29,7 +29,7 @@ use windows_sys::Win32::System::Console::{
     AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS,
 };
 
-pub fn setup_environment_variables(config: &rio_config::Config) {
+pub fn setup_environment_variables(config: &rio_lib::config::Config) {
     #[cfg(unix)]
     let terminfo = if teletypewriter::terminfo_exists("rio") {
         "rio"
@@ -99,12 +99,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load command line options.
     let options = cli::Options::new();
 
-    let mut config_error: Option<rio_config::ConfigError> = None;
-    let mut config = match rio_config::Config::try_load() {
+    let mut config_error: Option<rio_lib::config::ConfigError> = None;
+    let mut config = match rio_lib::config::Config::try_load() {
         Ok(config) => config,
         Err(error) => {
             config_error = Some(error);
-            rio_config::Config::default()
+            rio_lib::config::Config::default()
         }
     };
 

@@ -30,7 +30,7 @@ pub struct Bindings {
 #[cfg(test)]
 mod tests {
 
-    use crate::bindings::Bindings;
+    use crate::config::bindings::Bindings;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

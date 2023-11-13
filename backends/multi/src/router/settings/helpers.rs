@@ -19,7 +19,7 @@ pub const IDX_MACOS_HIDE_BUTTONS: usize = 12;
 
 #[inline]
 pub fn config_to_settings(
-    config: rio_config::Config,
+    config: rio_lib::config::Config,
     font_families: Vec<String>,
 ) -> HashMap<usize, Setting> {
     let mut settings: HashMap<usize, Setting> = HashMap::new();
@@ -60,7 +60,7 @@ pub fn config_to_settings(
     }
 
     {
-        let options = rio_config::navigation::modes_as_vec_string();
+        let options = rio_lib::config::navigation::modes_as_vec_string();
         let current_option: usize = options
             .iter()
             .position(|r| r == &config.navigation.mode.to_string())
@@ -270,14 +270,14 @@ pub fn config_to_settings(
 }
 
 #[inline]
-pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Config {
-    let mut current_config = rio_config::Config::load();
+pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_lib::config::Config {
+    let mut current_config = rio_lib::config::Config::load();
 
     {
         if let Some(setting) = settings.get(&IDX_CURSOR) {
             let val = setting.options[setting.current_option]
                 .parse::<char>()
-                .unwrap_or_else(|_| rio_config::defaults::default_cursor());
+                .unwrap_or_else(|_| rio_lib::config::defaults::default_cursor());
             current_config.cursor = val;
         }
     }
@@ -286,9 +286,9 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
         if let Some(setting) = settings.get(&IDX_PERFORMANCE) {
             let val = if setting.options[setting.current_option].to_lowercase() == *"low"
             {
-                rio_config::Performance::Low
+                rio_lib::config::Performance::Low
             } else {
-                rio_config::Performance::High
+                rio_lib::config::Performance::High
             };
             current_config.performance = val;
         }
@@ -297,8 +297,8 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
     {
         if let Some(setting) = settings.get(&IDX_NAVIGATION) {
             let val = setting.options[setting.current_option]
-                .parse::<rio_config::navigation::NavigationMode>()
-                .unwrap_or(rio_config::navigation::NavigationMode::default());
+                .parse::<rio_lib::config::navigation::NavigationMode>()
+                .unwrap_or(rio_lib::config::navigation::NavigationMode::default());
             current_config.navigation.mode = val;
         }
     }
@@ -314,7 +314,7 @@ pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_config::Con
         if let Some(setting) = settings.get(&IDX_PADDING_X) {
             let val = setting.options[setting.current_option]
                 .parse::<f32>()
-                .unwrap_or_else(|_| rio_config::defaults::default_padding_x());
+                .unwrap_or_else(|_| rio_lib::config::defaults::default_padding_x());
             current_config.padding_x = val;
         }
     }

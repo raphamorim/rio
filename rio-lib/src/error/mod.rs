@@ -1,5 +1,5 @@
 use crate::sugarloaf::font::SugarloafFont;
-use rio_config::ConfigError;
+use crate::config::ConfigError;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RioErrorLevel {

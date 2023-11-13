@@ -1,4 +1,4 @@
-use crate::defaults::*;
+use crate::config::defaults::*;
 use serde::{Deserialize, Serialize};
 use sugarloaf::core::ImageProperties;
 
