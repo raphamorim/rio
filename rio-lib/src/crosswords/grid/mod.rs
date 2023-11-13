@@ -9,6 +9,7 @@ pub mod storage;
 #[cfg(test)]
 mod tests;
 
+use sugarloaf::layout::SugarloafLayout;
 use crate::crosswords::pos::Pos;
 use crate::crosswords::square::Flags;
 use crate::crosswords::square::ResetDiscriminant;
@@ -489,6 +490,23 @@ impl Dimensions for (usize, usize) {
 
     fn columns(&self) -> usize {
         self.1
+    }
+}
+
+impl Dimensions for SugarloafLayout {
+    #[inline]
+    fn columns(&self) -> usize {
+        self.columns
+    }
+
+    #[inline]
+    fn screen_lines(&self) -> usize {
+        self.lines
+    }
+
+    #[inline]
+    fn total_lines(&self) -> usize {
+        self.screen_lines()
     }
 }
 

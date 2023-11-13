@@ -2,7 +2,7 @@ pub mod sync;
 
 use crate::clipboard::ClipboardType;
 use crate::crosswords::grid::Scroll;
-use crate::router::ErrorReport;
+use crate::error::RioError;
 use rio_config::colors::ColorRgb;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -50,7 +50,7 @@ pub enum RioEvent {
     SelectNativeTabNext,
     SelectNativeTabPrev,
 
-    ReportToAssistant(ErrorReport),
+    ReportToAssistant(RioError),
 
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,

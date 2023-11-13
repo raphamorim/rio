@@ -1,6 +1,6 @@
-use sugarloaf::components::rect::Rect;
-use sugarloaf::font::{FONT_ID_BUILTIN, FONT_ID_ICONS};
-use sugarloaf::Sugarloaf;
+use rio_lib::sugarloaf::components::rect::Rect;
+use rio_lib::sugarloaf::font::{FONT_ID_BUILTIN, FONT_ID_ICONS};
+use rio_lib::sugarloaf::Sugarloaf;
 
 #[inline]
 pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Settings) {

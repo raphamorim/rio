@@ -46,7 +46,8 @@ use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::rc::Rc;
-use sugarloaf::{
+use rio_lib::sugarloaf::{
+    self,
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
     SugarloafWindowSize,
 };
@@ -63,23 +64,6 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
-
-impl Dimensions for SugarloafLayout {
-    #[inline]
-    fn columns(&self) -> usize {
-        self.columns
-    }
-
-    #[inline]
-    fn screen_lines(&self) -> usize {
-        self.lines
-    }
-
-    #[inline]
-    fn total_lines(&self) -> usize {
-        self.screen_lines()
-    }
-}
 
 pub struct Screen {
     bindings: bindings::KeyBindings,

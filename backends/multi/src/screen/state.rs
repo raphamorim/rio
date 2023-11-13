@@ -15,8 +15,8 @@ use rio_config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
-use sugarloaf::Sugarloaf;
+use rio_lib::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_lib::sugarloaf::Sugarloaf;
 use winit::window::Theme;
 
 struct Cursor {
@@ -42,33 +42,6 @@ pub struct State {
     ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
-}
-
-// TODO: Finish from
-impl From<Square> for Sugar {
-    #[inline]
-    fn from(square: Square) -> Sugar {
-        let mut style: Option<SugarStyle> = None;
-        let is_italic = square.flags.contains(Flags::ITALIC);
-        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = square.flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
-
-        Sugar {
-            content: square.c,
-            foreground_color: [0.0, 0.0, 0.0, 1.0],
-            background_color: [0.0, 0.0, 0.0, 1.0],
-            style,
-            decoration: None,
-        }
-    }
 }
 
 impl State {

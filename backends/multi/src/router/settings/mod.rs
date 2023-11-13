@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use sugarloaf::font::loader::Database;
+use rio_lib::sugarloaf::font::loader::Database;
 
 pub struct SettingsState {
     current: usize,

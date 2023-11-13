@@ -1,0 +1,43 @@
+[package]
+name = "rio-lib"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio#readme"
+description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+winit = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+base64 = "0.21.5"
+bitflags = "2.4.1"
+futures = "0.3.29"
+bytemuck = { workspace = true }
+rio-config = { workspace = true }
+corcovado = { workspace = true }
+regex = { workspace = true }
+raw-window-handle = { workspace = true }
+clap = { version = "4.4.7", features = ["derive"] }
+copypasta = { version = "0.10.0", default-features = false }
+dirs = "5.0.1"
+image = { workspace = true }
+lazycell = "1.3.0"
+libc = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+sugarloaf = { workspace = true }
+teletypewriter = { workspace = true }
+unicode-width = { workspace = true }
+copa = { workspace = true }
+wgpu = { workspace = true }
+unicode-normalization = "0.1.22"
+cursor-icon = { version = "1.0.0", default-features = false }

@@ -3,25 +3,24 @@ pub mod dialog;
 pub mod settings;
 pub mod welcome;
 
+use assistant::Assistant;
 use crate::event::EventProxy;
 use crate::screen::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
 use crate::EventP;
-use assistant::{Assistant, AssistantReport};
+use rio_lib::error::{RioError, RioErrorType};
 use settings::Settings;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
-use sugarloaf::font::loader;
+use rio_lib::sugarloaf::font::loader;
 use winit::event_loop::EventLoop;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
-pub type ErrorReport = assistant::ErrorReport;
-
 pub struct Route {
-    pub assistant: Assistant,
+    pub assistant: assistant::Assistant,
     pub settings: Settings,
     pub path: RoutePath,
     pub window: RouteWindow,
@@ -60,8 +59,8 @@ impl Route {
     }
 
     #[inline]
-    pub fn report_error(&mut self, error: &ErrorReport) {
-        if error.report == AssistantReport::ConfigurationNotFound {
+    pub fn report_error(&mut self, error: &RioError) {
+        if error.report == RioErrorType::ConfigurationNotFound {
             self.path = RoutePath::Welcome;
             return;
         }
@@ -161,7 +160,7 @@ pub enum RoutePath {
 
 pub struct Router {
     pub routes: HashMap<WindowId, Route>,
-    propagated_report: Option<ErrorReport>,
+    propagated_report: Option<RioError>,
     pub font_database: loader::Database,
 }
 
@@ -178,7 +177,7 @@ impl Router {
     }
 
     #[inline]
-    pub fn propagate_error_to_next_route(&mut self, error: ErrorReport) {
+    pub fn propagate_error_to_next_route(&mut self, error: RioError) {
         self.propagated_report = Some(error);
     }
 
