@@ -6,10 +6,9 @@ members = [
   "copa",
   "rio-config",
   "rio-proc-macros",
-  "rio",
+  "rio-lib",
 
-  "backends/unified",
-  "backends/wasm",
+  "backends/multi",
 ]
 resolver = "2"
 

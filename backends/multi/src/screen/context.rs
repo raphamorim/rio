@@ -3,8 +3,7 @@ use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
-use crate::router::assistant::AssistantReport::{FontsNotFound, InitializationError};
-use crate::router::assistant::{AssistantReportLevel, ErrorReport};
+use rio_lib::error::{RioError, RioErrorLevel, RioErrorType};
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use rio_config::Shell;
@@ -13,7 +12,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use sugarloaf::{font::SugarloafFont, SugarloafErrors};
+use rio_lib::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
@@ -219,9 +218,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 log::error!("{:?}", err_message);
 
                 event_proxy.send_event(
-                    RioEvent::ReportToAssistant(ErrorReport {
-                        report: InitializationError(err_message.to_string()),
-                        level: AssistantReportLevel::Error,
+                    RioEvent::ReportToAssistant(RioError {
+                        report: RioErrorType::InitializationError(err_message.to_string()),
+                        level: RioErrorLevel::Error,
                     }),
                     window_id,
                 );
@@ -237,9 +236,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if !errors.fonts_not_found.is_empty() {
                 event_proxy.send_event(
                     RioEvent::ReportToAssistant({
-                        ErrorReport {
-                            report: FontsNotFound(errors.fonts_not_found),
-                            level: AssistantReportLevel::Warning,
+                        RioError {
+                            report: RioErrorType::FontsNotFound(errors.fonts_not_found),
+                            level: RioErrorLevel::Warning,
                         }
                     }),
                     window_id,
@@ -310,9 +309,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
                 RioEvent::ReportToAssistant({
-                    ErrorReport {
-                        report: FontsNotFound(fonts_not_found),
-                        level: AssistantReportLevel::Warning,
+                    RioError {
+                        report: RioErrorType::FontsNotFound(fonts_not_found),
+                        level: RioErrorLevel::Warning,
                     }
                 }),
                 self.window_id,

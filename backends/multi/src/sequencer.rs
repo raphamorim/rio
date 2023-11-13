@@ -84,11 +84,11 @@ impl Sequencer {
                                 route.redraw();
                             }
                         }
-                        RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
-                            if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.report_error(&error);
-                            }
-                        }
+                        // RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
+                        //     if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        //         route.report_error(&error);
+                        //     }
+                        // }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
                             let mut config_error: Option<rio_config::ConfigError> = None;
                             let config = match rio_config::Config::try_load() {

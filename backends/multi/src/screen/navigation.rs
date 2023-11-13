@@ -1,8 +1,8 @@
 use crate::screen::constants::*;
 use rio_config::navigation::NavigationMode;
 use std::collections::HashMap;
-use sugarloaf::components::rect::Rect;
-use sugarloaf::font::FONT_ID_BUILTIN;
+use rio_lib::sugarloaf::components::rect::Rect;
+use rio_lib::sugarloaf::font::FONT_ID_BUILTIN;
 
 pub struct Text {
     pub position: (f32, f32),

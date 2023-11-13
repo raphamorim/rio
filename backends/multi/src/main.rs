@@ -4,21 +4,17 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
-mod ansi;
+use rio_lib::{ansi, clipboard, crosswords, event, performer, selection};
+
 mod cli;
-mod clipboard;
-mod crosswords;
-mod event;
 mod ime;
 mod logger;
 #[cfg(windows)]
 mod panic;
-mod performer;
 mod platform;
 mod router;
 mod scheduler;
 mod screen;
-mod selection;
 mod sequencer;
 mod ui;
 mod watch;
