@@ -7,7 +7,7 @@ pub mod kitty_keyboard_protocol;
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
-use rio_config::bindings::KeyBinding as ConfigKeyBinding;
+use rio_lib::config::bindings::KeyBinding as ConfigKeyBinding;
 use std::fmt::Debug;
 use winit::event::MouseButton;
 use winit::keyboard::Key::*;

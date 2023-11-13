@@ -7,11 +7,11 @@ use crate::ime::Preedit;
 use crate::screen::navigation::ScreenNavigation;
 use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
-use rio_config::colors::{
+use rio_lib::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
-use rio_config::Config;
+use rio_lib::config::Config;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};

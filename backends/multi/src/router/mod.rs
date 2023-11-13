@@ -40,7 +40,7 @@ impl Route {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         db: &loader::Database,
     ) {
         self.window
@@ -204,7 +204,7 @@ impl Router {
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -231,7 +231,7 @@ impl Router {
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         tab_id: Option<String>,
     ) {
         let window = RouteWindow::from_target(
@@ -266,7 +266,7 @@ pub struct RouteWindow {
 impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventP>,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         font_database: &loader::Database,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
@@ -297,7 +297,7 @@ impl RouteWindow {
     pub fn from_target(
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         font_database: &loader::Database,
         window_name: &str,
         tab_id: Option<String>,

@@ -5,10 +5,10 @@ pub mod navigation;
 pub mod theme;
 pub mod window;
 
-use crate::bindings::Bindings;
-use crate::defaults::*;
-use crate::navigation::Navigation;
-use crate::window::{Background, Window};
+use crate::config::bindings::Bindings;
+use crate::config::defaults::*;
+use crate::config::navigation::Navigation;
+use crate::config::window::{Background, Window};
 use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};

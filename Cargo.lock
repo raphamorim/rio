@@ -2446,19 +2446,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
-name = "rio-config"
-version = "0.0.27"
-dependencies = [
- "dirs",
- "log 0.4.20",
- "regex",
- "serde",
- "sugarloaf",
- "toml",
- "wgpu",
-]
-
-[[package]]
 name = "rio-lib"
 version = "0.0.27"
 dependencies = [
@@ -2479,10 +2466,10 @@ dependencies = [
  "parking_lot",
  "raw-window-handle 0.5.2",
  "regex",
- "rio-config",
  "serde",
  "sugarloaf",
  "teletypewriter",
+ "toml",
  "unicode-normalization",
  "unicode-width",
  "wgpu",
@@ -2522,7 +2509,6 @@ dependencies = [
  "parking_lot",
  "raw-window-handle 0.5.2",
  "regex",
- "rio-config",
  "rio-lib",
  "serde",
  "teletypewriter",

@@ -1,5 +1,5 @@
-use crate::colors::{deserialize_to_arr, ColorArray};
-use crate::default_bool_true;
+use crate::config::colors::{deserialize_to_arr, ColorArray};
+use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -88,7 +88,7 @@ pub struct ColorAutomation {
     pub program: String,
     #[serde(
         deserialize_with = "deserialize_to_arr",
-        default = "crate::colors::defaults::tabs"
+        default = "crate::config::colors::defaults::tabs"
     )]
     pub color: ColorArray,
 }
@@ -169,8 +169,8 @@ impl Navigation {
 
 #[cfg(test)]
 mod tests {
-    use crate::colors::hex_to_color_arr;
-    use crate::navigation::{Navigation, NavigationMode};
+    use crate::config::colors::hex_to_color_arr;
+    use crate::config::navigation::{Navigation, NavigationMode};
     use serde::Deserialize;
 
     #[derive(Debug, Clone, Deserialize, PartialEq)]

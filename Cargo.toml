@@ -4,7 +4,6 @@ members = [
   "sugarloaf",
   "corcovado",
   "copa",
-  "rio-config",
   "rio-proc-macros",
   "rio-lib",
 

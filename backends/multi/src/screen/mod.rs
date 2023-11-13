@@ -39,7 +39,7 @@ use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rio_config::colors::{term::List, ColorWGPU};
+use rio_lib::config::colors::{term::List, ColorWGPU};
 use state::State;
 use std::borrow::Cow;
 use std::cmp::{max, min};
@@ -80,7 +80,7 @@ pub struct Screen {
 impl Screen {
     pub async fn new(
         winit_window: &winit::window::Window,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         event_proxy: EventProxy,
         font_database: &sugarloaf::font::loader::Database,
     ) -> Result<Screen, Box<dyn Error>> {
@@ -91,8 +91,8 @@ impl Screen {
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
-            rio_config::Performance::High => wgpu::PowerPreference::HighPerformance,
-            rio_config::Performance::Low => wgpu::PowerPreference::LowPower,
+            rio_lib::config::Performance::High => wgpu::PowerPreference::HighPerformance,
+            rio_lib::config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
         let mut padding_y_bottom = 0.0;
@@ -290,7 +290,7 @@ impl Screen {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<rio_config::Config>,
+        config: &Rc<rio_lib::config::Config>,
         current_theme: Option<winit::window::Theme>,
         db: &sugarloaf::font::loader::Database,
     ) {

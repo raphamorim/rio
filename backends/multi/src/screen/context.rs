@@ -6,7 +6,7 @@ use crate::performer::Machine;
 use rio_lib::error::{RioError, RioErrorLevel, RioErrorType};
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
-use rio_config::Shell;
+use rio_lib::config::Shell;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;

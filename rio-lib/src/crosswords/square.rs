@@ -5,7 +5,7 @@ use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
 use crate::crosswords::Row;
 use bitflags::bitflags;
-use rio_config::colors::{AnsiColor, NamedColor};
+use crate::config::colors::{AnsiColor, NamedColor};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -95,7 +95,7 @@ impl HyperlinkInner {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct CellExtra {
     zerowidth: Vec<char>,
-    underline_color: Option<rio_config::colors::AnsiColor>,
+    underline_color: Option<crate::config::colors::AnsiColor>,
 
     hyperlink: Option<Hyperlink>,
 }
@@ -145,7 +145,7 @@ impl Square {
         self.c = ' ';
     }
 
-    pub fn set_underline_color(&mut self, color: Option<rio_config::colors::AnsiColor>) {
+    pub fn set_underline_color(&mut self, color: Option<crate::config::colors::AnsiColor>) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
             && self.extra.as_ref().map_or(true, |extra| {
@@ -161,7 +161,7 @@ impl Square {
 
     /// Underline color stored in this cell.
     #[inline]
-    pub fn underline_color(&self) -> Option<rio_config::colors::AnsiColor> {
+    pub fn underline_color(&self) -> Option<crate::config::colors::AnsiColor> {
         self.extra.as_ref()?.underline_color
     }
 

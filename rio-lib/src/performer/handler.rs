@@ -4,7 +4,7 @@ use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use cursor_icon::CursorIcon;
 use log::{debug, warn};
-use rio_config::colors::{AnsiColor, ColorRgb, NamedColor};
+use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::str::FromStr;
 use std::time::Instant;
 
