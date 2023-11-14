@@ -191,9 +191,11 @@ impl Settings {
             Ok(mut created_file) => {
                 log::info!("configuration file created {}", self.default_file_path);
 
-                if let Err(err_message) =
-                    writeln!(created_file, "{}", rio_backend::config::config_file_content())
-                {
+                if let Err(err_message) = writeln!(
+                    created_file,
+                    "{}",
+                    rio_backend::config::config_file_content()
+                ) {
                     log::error!(
                         "could not update config file with defaults: {err_message}"
                     )

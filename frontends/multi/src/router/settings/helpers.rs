@@ -272,7 +272,9 @@ pub fn config_to_settings(
 }
 
 #[inline]
-pub fn settings_to_config(settings: &HashMap<usize, Setting>) -> rio_backend::config::Config {
+pub fn settings_to_config(
+    settings: &HashMap<usize, Setting>,
+) -> rio_backend::config::Config {
     let mut current_config = rio_backend::config::Config::load();
 
     {

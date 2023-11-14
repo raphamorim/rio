@@ -18,7 +18,7 @@ struct PanelView: View {
 //                Text(panel.title)
 //            }
 //        }
-        Color.purple
+        Color.black
                 .overlay(
                     VStack(spacing: 20) {
                         Text("Panel").font(.largeTitle)

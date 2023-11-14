@@ -5,14 +5,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     Plain,
-    #[default]
-    CollapsedTab,
     TopTab,
     BottomTab,
-    #[cfg(target_os = "macos")]
-    NativeTab,
     #[cfg(not(windows))]
     Breadcrumb,
+    #[cfg(not(target_os = "macos"))]
+    #[default]
+    CollapsedTab,
+    #[cfg(target_os = "macos")]
+    #[default]
+    NativeTab,
+    #[cfg(target_os = "macos")]
+    CollapsedTab,
 }
 
 impl NavigationMode {
