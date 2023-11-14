@@ -9,15 +9,15 @@ Rio terminal support open hyperlinks from the terminal.
 
 For activate hyperlink feature hold `Command` key whenever hovering a link:
 
-![Demo macos hyperlink](../../static/assets/features/demo-hyperlink-macos.gif)
+![Demo macos hyperlink](/assets/features/demo-hyperlink-macos.gif)
 
 ## Windows / Linux / BSD
 
 For activate hyperlink feature hold `alt` key whenever hovering a link:
 
-![Demo windows hyperlink](../../static/assets/features/demo-hyperlink-windows.png)
+![Demo windows hyperlink](/assets/features/demo-hyperlink-windows.png)
 
-![Demo linux hyperlink](../../static/assets/features/demo-hyperlink-linux.png)
+![Demo linux hyperlink](/assets/features/demo-hyperlink-linux.png)
 
 ## OSC 8
 
@@ -43,4 +43,4 @@ Will work as default rio terminal hyperlinks, by holding command or `alt` key (d
 printf '\e]8;;https://raphamorim.io/rio/\e\\This is a link\e]8;;\e\\\n'
 ```
 
-![Demo hyperlink using OSC 8](../../static/assets/features/demo-hyperlink-osc-8.png)
+![Demo hyperlink using OSC 8](/assets/features/demo-hyperlink-osc-8.png)
