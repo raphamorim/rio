@@ -5,10 +5,18 @@ const { themes } = require('prism-react-renderer');
 const lightCodeTheme = themes.github;
 const darkCodeTheme = themes.dracula;
 
+const defaultLocale = 'en';
+const CURRENT_LOCALE = process.env.DOCUSAURUS_CURRENT_LOCALE ?? defaultLocale;
+
+const tagline = {
+  en: 'A modern terminal for the 21st century.',
+  ko: '21세기의 현대적인 터미널.',
+};
+
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Rio Terminal',
-  tagline: 'A modern terminal for the 21st century.',
+  tagline: tagline[CURRENT_LOCALE],
   favicon: '/assets/rio-logo.ico',
   url: 'https://raphamorim.io',
   baseUrl: '/rio',
@@ -17,8 +25,8 @@ const config = {
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
   i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
+    defaultLocale,
+    locales: ['en', 'ko'],
   },
 
   headTags: [
@@ -88,15 +96,19 @@ const config = {
           { to: '/docs/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
+            href: 'https://discord.gg/zRvJjmKGwS',
+            label: 'Discord',
+            position: 'left',
+          },
+          {
+            type: 'localeDropdown',
+            position: 'right',
+          },
+          {
             href: 'https://github.com/raphamorim/rio',
             label: 'GitHub',
             position: 'right',
             // image: '/assets/github-mark.svg',
-          },
-          {
-            href: 'https://discord.gg/zRvJjmKGwS',
-            label: 'Discord',
-            position: 'left',
           },
         ],
       },

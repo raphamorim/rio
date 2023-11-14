@@ -1,5 +1,6 @@
 // @ts-check
 
+import Translate from '@docusaurus/Translate';
 import MENTIONS from '@site/src/data/mentions';
 import Heading from '@theme/Heading';
 import clsx from 'clsx';
@@ -60,7 +61,7 @@ export default function MentionsSection() {
   return (
     <section className={clsx(styles.mentionsSection, 'container')}>
       <Heading as="h2" className={styles.title}>
-        Loved by many engineers
+        <Translate>Loved by many engineers</Translate>
       </Heading>
       <div className={clsx('row', styles.mentions)}>
         {COLUMNS.map((column, i) => (
