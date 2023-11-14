@@ -84,11 +84,11 @@ impl Sequencer {
                                 route.redraw();
                             }
                         }
-                        // RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
-                        //     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        //         route.report_error(&error);
-                        //     }
-                        // }
+                        RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                route.report_error(&error);
+                            }
+                        }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
                             let mut config_error: Option<
                                 rio_backend::config::ConfigError,
@@ -570,16 +570,16 @@ impl Sequencer {
                     ..
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(true);
+                        }
+
                         if route.path != RoutePath::Terminal {
                             route
                                 .window
                                 .winit_window
                                 .set_cursor_icon(CursorIcon::Default);
                             return;
-                        }
-
-                        if self.config.hide_cursor_when_typing {
-                            route.window.winit_window.set_cursor_visible(true);
                         }
 
                         let x = position.x;
@@ -805,11 +805,11 @@ impl Sequencer {
                         route.window.screen.state.last_typing = Some(Instant::now());
                         route.window.screen.process_key_event(&key_event);
 
-                        if self.config.hide_cursor_when_typing {
-                            route.window.winit_window.set_cursor_visible(false);
-                        }
-
                         if key_event.state == ElementState::Released {
+                            if self.config.hide_cursor_when_typing {
+                                route.window.winit_window.set_cursor_visible(false);
+                            }
+
                             route.redraw();
                         }
                     }
