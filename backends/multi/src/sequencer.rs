@@ -410,8 +410,9 @@ impl Sequencer {
                         route.window.screen.set_modifiers(modifiers);
 
                         if route.window.screen.search_nearest_hyperlink_from_pos() {
-                            #[cfg(target_os = "macos")]
-                            route.window.winit_window.set_cursor_visible(true);
+                            if self.config.hide_cursor_when_typing {
+                                route.window.winit_window.set_cursor_visible(true);
+                            }
 
                             route
                                 .window
@@ -432,8 +433,9 @@ impl Sequencer {
                             return;
                         }
 
-                        #[cfg(target_os = "macos")]
-                        route.window.winit_window.set_cursor_visible(true);
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(true);
+                        }
 
                         match button {
                             MouseButton::Left => {
@@ -575,8 +577,9 @@ impl Sequencer {
                             return;
                         }
 
-                        #[cfg(target_os = "macos")]
-                        route.window.winit_window.set_cursor_visible(true);
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(true);
+                        }
 
                         let x = position.x;
                         let y = position.y;
@@ -736,8 +739,10 @@ impl Sequencer {
                             return;
                         }
 
-                        #[cfg(target_os = "macos")]
-                        route.window.winit_window.set_cursor_visible(true);
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(true);
+                        }
+
                         match delta {
                             MouseScrollDelta::LineDelta(columns, lines) => {
                                 let new_scroll_px_x = columns
@@ -799,11 +804,8 @@ impl Sequencer {
                         route.window.screen.state.last_typing = Some(Instant::now());
                         route.window.screen.process_key_event(&key_event);
 
-                        #[cfg(target_os = "macos")]
-                        {
-                            if key_event.state == ElementState::Pressed {
-                                route.window.winit_window.set_cursor_visible(false);
-                            }
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(false);
                         }
 
                         if key_event.state == ElementState::Released {
@@ -861,8 +863,9 @@ impl Sequencer {
                     ..
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        #[cfg(target_os = "macos")]
-                        route.window.winit_window.set_cursor_visible(true);
+                        if self.config.hide_cursor_when_typing {
+                            route.window.winit_window.set_cursor_visible(true);
+                        }
 
                         let has_regained_focus = !route.window.is_focused && focused;
                         route.window.is_focused = focused;
