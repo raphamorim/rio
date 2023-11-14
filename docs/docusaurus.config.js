@@ -111,8 +111,8 @@ const config = {
                 to: '/docs/install',
               },
               {
-                label: 'Docs',
-                to: '/docs/documentation',
+                label: 'Config',
+                to: '/docs/configuration-file',
               },
               {
                 label: 'Features',
