@@ -2486,6 +2486,7 @@ dependencies = [
  "dirs",
  "futures",
  "image",
+ "libc",
  "log 0.4.20",
  "notify",
  "objc2 0.3.0-beta.0",
