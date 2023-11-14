@@ -2,10 +2,9 @@ use crate::config::colors::{deserialize_to_arr, ColorArray};
 use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     Plain,
-    #[default]
     CollapsedTab,
     TopTab,
     BottomTab,
@@ -13,6 +12,20 @@ pub enum NavigationMode {
     NativeTab,
     #[cfg(not(windows))]
     Breadcrumb,
+}
+
+impl Default for NavigationMode {
+    fn default() -> NavigationMode {
+        #[cfg(target_os = "macos")]
+        {
+            NavigationMode::NativeTab
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            NavigationMode::CollapsedTab
+        }
+    }
 }
 
 impl NavigationMode {

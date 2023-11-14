@@ -10,10 +10,6 @@
 		89107F722B01009500F35DED /* RioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F712B01009500F35DED /* RioApp.swift */; };
 		89107F742B01009500F35DED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F732B01009500F35DED /* ContentView.swift */; };
 		89107F762B01009600F35DED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 89107F752B01009600F35DED /* Assets.xcassets */; };
-		89107F7A2B01009600F35DED /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 89107F792B01009600F35DED /* Preview Assets.xcassets */; };
-		89107F842B01009600F35DED /* RioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F832B01009600F35DED /* RioTests.swift */; };
-		89107F8E2B01009600F35DED /* RioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F8D2B01009600F35DED /* RioUITests.swift */; };
-		89107F902B01009600F35DED /* RioUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F8F2B01009600F35DED /* RioUITestsLaunchTests.swift */; };
 		89107FA02B01026100F35DED /* Panel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107F9F2B01026100F35DED /* Panel.swift */; };
 		89107FA42B01032D00F35DED /* PanelGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107FA32B01032D00F35DED /* PanelGroup.swift */; };
 		89107FA62B01046F00F35DED /* PanelSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89107FA52B01046F00F35DED /* PanelSection.swift */; };
@@ -44,12 +40,8 @@
 		89107F732B01009500F35DED /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		89107F752B01009600F35DED /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		89107F772B01009600F35DED /* Rio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Rio.entitlements; sourceTree = "<group>"; };
-		89107F792B01009600F35DED /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		89107F7F2B01009600F35DED /* RioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		89107F832B01009600F35DED /* RioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RioTests.swift; sourceTree = "<group>"; };
 		89107F892B01009600F35DED /* RioUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		89107F8D2B01009600F35DED /* RioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RioUITests.swift; sourceTree = "<group>"; };
-		89107F8F2B01009600F35DED /* RioUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RioUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		89107F9F2B01026100F35DED /* Panel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panel.swift; sourceTree = "<group>"; };
 		89107FA32B01032D00F35DED /* PanelGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelGroup.swift; sourceTree = "<group>"; };
 		89107FA52B01046F00F35DED /* PanelSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelSection.swift; sourceTree = "<group>"; };
@@ -86,8 +78,6 @@
 			isa = PBXGroup;
 			children = (
 				89107F702B01009500F35DED /* Rio */,
-				89107F822B01009600F35DED /* RioTests */,
-				89107F8C2B01009600F35DED /* RioUITests */,
 				89107F6F2B01009500F35DED /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,34 +102,8 @@
 				89107FA72B01062B00F35DED /* SidebarView.swift */,
 				89107F752B01009600F35DED /* Assets.xcassets */,
 				89107F772B01009600F35DED /* Rio.entitlements */,
-				89107F782B01009600F35DED /* Preview Content */,
 			);
 			path = Rio;
-			sourceTree = "<group>";
-		};
-		89107F782B01009600F35DED /* Preview Content */ = {
-			isa = PBXGroup;
-			children = (
-				89107F792B01009600F35DED /* Preview Assets.xcassets */,
-			);
-			path = "Preview Content";
-			sourceTree = "<group>";
-		};
-		89107F822B01009600F35DED /* RioTests */ = {
-			isa = PBXGroup;
-			children = (
-				89107F832B01009600F35DED /* RioTests.swift */,
-			);
-			path = RioTests;
-			sourceTree = "<group>";
-		};
-		89107F8C2B01009600F35DED /* RioUITests */ = {
-			isa = PBXGroup;
-			children = (
-				89107F8D2B01009600F35DED /* RioUITests.swift */,
-				89107F8F2B01009600F35DED /* RioUITestsLaunchTests.swift */,
-			);
-			path = RioUITests;
 			sourceTree = "<group>";
 		};
 		89107F9C2B0101E500F35DED /* Model */ = {
@@ -256,7 +220,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				89107F7A2B01009600F35DED /* Preview Assets.xcassets in Resources */,
 				89107F762B01009600F35DED /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -296,7 +259,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				89107F842B01009600F35DED /* RioTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,8 +266,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				89107F8E2B01009600F35DED /* RioUITests.swift in Sources */,
-				89107F902B01009600F35DED /* RioUITestsLaunchTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -447,7 +407,7 @@
 				CODE_SIGN_ENTITLEMENTS = Rio/Rio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"Rio/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = V3V92VA6SS;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -485,7 +445,7 @@
 				CODE_SIGN_ENTITLEMENTS = Rio/Rio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"Rio/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = V3V92VA6SS;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
