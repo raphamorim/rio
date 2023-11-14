@@ -3659,8 +3659,7 @@ checksum = "ed94fce61571a4006852b7389a063ab983c02eb1bb37b47f8272ce92d06d9538"
 [[package]]
 name = "winit"
 version = "0.29.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "161598019a9da35ab6c34dc46cd13546cba9dbf9816475d4dd9a639455016563"
+source = "git+https://github.com/raphamorim/winit#14140607d120e6cd832ccb72305f18ad042bbc95"
 dependencies = [
  "ahash",
  "android-activity",
