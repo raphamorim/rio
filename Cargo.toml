@@ -5,9 +5,9 @@ members = [
   "corcovado",
   "copa",
   "rio-proc-macros",
-  "rio-lib",
+  "rio-backend",
 
-  "backends/multi",
+  "frontends/multi",
 ]
 resolver = "2"
 
