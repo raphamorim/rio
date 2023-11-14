@@ -125,7 +125,7 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
-    #[serde(default = "bool::default", rename = "hide-cursor-when-typing")]
+    #[serde(default = "default_bool_true", rename = "hide-cursor-when-typing")]
     pub hide_cursor_when_typing: bool,
 }
 
@@ -375,7 +375,7 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
-            hide_cursor_when_typing: false,
+            hide_cursor_when_typing: true,
         }
     }
 }
