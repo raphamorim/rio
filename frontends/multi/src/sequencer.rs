@@ -90,8 +90,9 @@ impl Sequencer {
                         //     }
                         // }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
-                            let mut config_error: Option<rio_backend::config::ConfigError> =
-                                None;
+                            let mut config_error: Option<
+                                rio_backend::config::ConfigError,
+                            > = None;
                             let config = match rio_backend::config::Config::try_load() {
                                 Ok(config) => config,
                                 Err(error) => {

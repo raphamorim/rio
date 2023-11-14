@@ -90,7 +90,9 @@ impl Screen {
         let window_id = winit_window.id();
 
         let power_preference: wgpu::PowerPreference = match config.performance {
-            rio_backend::config::Performance::High => wgpu::PowerPreference::HighPerformance,
+            rio_backend::config::Performance::High => {
+                wgpu::PowerPreference::HighPerformance
+            }
             rio_backend::config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 

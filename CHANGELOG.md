@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Breaking:** MacOS default navigation mode will become `NativeTab`.
 - Cursor hide feature is now behind configuration `hide-cursor-when-typing`.
 - Confirm before quite (it can be disabled through configuration `confirm-before-quit`).
 - Introduces `navigation.macos-enable-close-last-tab` which allows to close the last tab in MacOS. Default value is `true` (Ref: [#296](https://github.com/raphamorim/rio/issues/296))
