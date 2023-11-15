@@ -12,10 +12,8 @@ description = "Cross-platform window assistant made primarily for Rio terminal"
 raw-window-handle = { workspace = true }
 log = { workspace = true }
 sugarloaf = { workspace = true }
+futures = "0.3.29"
+wgpu = { workspace = true }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc = "0.2"
-
-[dev-dependencies]
-glam = {version = "0.24", features = ["scalar-math"] }
-quad-rand = "0.1"
