@@ -45,4 +45,4 @@ Below an example of Rio terminal with Kitty keyboard protocol by the following i
 - Press right shift, release shift
 - Press left command
 
-![Demo kitty keyboard protocol](../../static/assets/features/demo-kitty-keyboard-protocol.png)
+![Demo kitty keyboard protocol](/assets/features/demo-kitty-keyboard-protocol.png)

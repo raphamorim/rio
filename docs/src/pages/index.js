@@ -9,6 +9,7 @@ import Heading from '@theme/Heading';
 import Layout from '@theme/Layout';
 import clsx from 'clsx';
 
+import Translate from '@docusaurus/Translate';
 import styles from './index.module.css';
 
 const title = 'Meet Rio';
@@ -25,7 +26,7 @@ function HomepageHeader() {
         <p className={styles.tagline}>{siteConfig.tagline}</p>
         <div className={styles.actionButtonSection}>
           <Link to="/docs/install" className={styles.actionButton}>
-            Install
+            <Translate>Install</Translate>
           </Link>
         </div>
       </div>

@@ -15,4 +15,4 @@ dark = "belafonte-night"
 
 Example of usage with MacOS:
 
-![Adaptive theme](../../static/assets/features/adaptive-theme.gif)
+![Adaptive theme](/assets/features/adaptive-theme.gif)

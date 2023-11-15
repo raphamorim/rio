@@ -1,0 +1,26 @@
+{
+  "item.label.Install": {
+    "message": "설치하기",
+    "description": "Navbar item with label Install"
+  },
+  "item.label.Config": {
+    "message": "설정",
+    "description": "Navbar item with label Config"
+  },
+  "item.label.Features": {
+    "message": "기능",
+    "description": "Navbar item with label Features"
+  },
+  "item.label.Blog": {
+    "message": "블로그",
+    "description": "Navbar item with label Blog"
+  },
+  "item.label.Discord": {
+    "message": "디스코드",
+    "description": "Navbar item with label Discord"
+  },
+  "item.label.GitHub": {
+    "message": "깃허브",
+    "description": "Navbar item with label GitHub"
+  }
+}
