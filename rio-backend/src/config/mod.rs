@@ -129,20 +129,11 @@ pub struct Config {
     pub hide_cursor_when_typing: bool,
 }
 
-#[cfg(not(target_os = "windows"))]
 #[inline]
 pub fn config_dir_path() -> String {
-    let base_dir_buffer = dirs::home_dir().unwrap();
-    let home = base_dir_buffer.to_str().unwrap_or_default();
-    format!("{home}/.config/rio")
-}
-
-#[cfg(target_os = "windows")]
-#[inline]
-pub fn config_dir_path() -> String {
-    let base_dir_buffer = dirs::home_dir().unwrap();
-    let home = base_dir_buffer.to_str().unwrap_or_default();
-    format!("{home}/AppData/Local/rio")
+    let config_local_dir = dirs::config_local_dir().unwrap();
+    let rio_config_dir = config_local_dir.join("rio");
+    rio_config_dir.to_str().unwrap_or_default().to_string()
 }
 
 #[inline]
