@@ -505,16 +505,16 @@ directory of the parent process will be used.</p>
 <p>Changes were applied for macOS and Linux.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="linux-support">Linux Support<a href="https://raphamorim.io/rio/blog/2023/05/31/release-0.0.5#linux-support" class="hash-link" aria-label="Direct link to Linux Support" title="Direct link to Linux Support">​</a></h2>
 <p>Rio is now available to Linux, build information was added in the <a href="https://raphamorim.io/rio/docs/install">install</a> page.</p>
-<p><img loading="lazy" src="https://raphamorim.io/rio/assets/posts/0.0.5/linux.jpeg" alt="Linux support" class="img_ev3q"></p>
+<p><img loading="lazy" alt="Linux support" src="https://raphamorim.io/rio/assets/images/linux-edbdfd8e494118000e7984f4edd140fd.jpeg" width="2560" height="1666" class="img_ev3q"></p>
 <p>Linux builds are considered less stable than macOs, due to macOs features availability comparison.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="themes-support">Themes Support<a href="https://raphamorim.io/rio/blog/2023/05/31/release-0.0.5#themes-support" class="hash-link" aria-label="Direct link to Themes Support" title="Direct link to Themes Support">​</a></h2>
 <p>A new property was added to Rio configuration file called "theme". You can set the theme that you want to use and Rio will look in the folder "themes" in the configuration path.</p>
-<p><img loading="lazy" src="https://raphamorim.io/rio/assets/posts/0.0.5/themes.png" alt="Themes support" class="img_ev3q"></p>
+<p><img loading="lazy" alt="Themes support" src="https://raphamorim.io/rio/assets/images/themes-3d4190a60babb8dd15249ebd3ff09433.png" width="2584" height="1604" class="img_ev3q"></p>
 <p>Dracula theme example:</p>
-<p><img loading="lazy" src="https://raphamorim.io/rio/assets/posts/0.0.5/dracula-nvim.png" alt="Example dracula" class="img_ev3q"></p>
+<p><img loading="lazy" alt="Example dracula" src="https://raphamorim.io/rio/assets/images/dracula-nvim-a1d1457e2aa3780989b7e3378e473316.png" width="1824" height="1424" class="img_ev3q"></p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="bold-and-italic-style">Bold and italic style<a href="https://raphamorim.io/rio/blog/2023/05/31/release-0.0.5#bold-and-italic-style" class="hash-link" aria-label="Direct link to Bold and italic style" title="Direct link to Bold and italic style">​</a></h2>
 <p>Support to text styling as such "bold" and "italic".</p>
-<p><img loading="lazy" src="https://raphamorim.io/rio/assets/posts/0.0.5/font-macos.png" alt="Themes support" class="img_ev3q"></p>
+<p><img loading="lazy" alt="Themes support" src="https://raphamorim.io/rio/assets/images/font-macos-c4784c228d88df845c1799fd07542625.png" width="1572" height="658" class="img_ev3q"></p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="changelog">Changelog<a href="https://raphamorim.io/rio/blog/2023/05/31/release-0.0.5#changelog" class="hash-link" aria-label="Direct link to Changelog" title="Direct link to Changelog">​</a></h2>
 <ul>
 <li>Fix to render specific 24bit colors <a href="https://github.com/raphamorim/rio/issues/#66" target="_blank" rel="noopener noreferrer">#66</a> by <a href="https://github.com/niuez" target="_blank" rel="noopener noreferrer">@niuez</a>.</li>

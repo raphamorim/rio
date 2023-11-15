@@ -1,0 +1,10 @@
+<!--
+Original icon provided by Phosphor Icons (https://www.figma.com/community/file/903830135544202908/phosphor-icons)
+Licensed under Creative Commons Attribution 4.0 International (https://creativecommons.org/licenses/by/4.0/)
+This version has been modified from the original
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" fill="#ffa700" viewBox="0 0 30 30">
+    <path
+        d="M25.06 14.702 11.937 28.765a.937.937 0 0 1-1.605-.82l1.718-8.594-6.753-2.536a.937.937 0 0 1-.352-1.523L18.07 1.229a.938.938 0 0 1 1.604.82l-1.722 8.603 6.753 2.533a.937.937 0 0 1 .352 1.517h.005Z" />
+</svg>
