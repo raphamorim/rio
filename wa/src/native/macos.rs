@@ -6,12 +6,12 @@ use {
     crate::{
         conf::AppleGfxApi,
         event::{EventHandler, MouseButton},
+        graphics::create_sugarloaf_instance,
         native::{
             apple::{apple_util::*, frameworks::*},
             NativeDisplayData, Request,
         },
         native_display, CursorIcon,
-        // graphics::create_sugarloaf_instance,
     },
     std::{collections::HashMap, os::raw::c_void, sync::mpsc::Receiver},
 };
@@ -34,6 +34,22 @@ pub struct MacosDisplay {
     f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
     modifiers: Modifiers,
     native_requests: Receiver<Request>,
+}
+
+unsafe impl raw_window_handle::HasRawWindowHandle for MacosDisplay {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
+        window_handle.ns_window = self.window as *mut _;
+        window_handle.ns_view = self.view as *mut _;
+        raw_window_handle::RawWindowHandle::AppKit(window_handle)
+    }
+}
+
+unsafe impl raw_window_handle::HasRawDisplayHandle for MacosDisplay {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        let handle = raw_window_handle::AppKitDisplayHandle::empty();
+        raw_window_handle::RawDisplayHandle::AppKit(handle)
+    }
 }
 
 impl MacosDisplay {
@@ -87,7 +103,8 @@ impl MacosDisplay {
             width: new_width as f64,
             height: new_height as f64,
         };
-        let () = unsafe { msg_send![self.window, setFrame:frame display:true animate:true] };
+        let () =
+            unsafe { msg_send![self.window, setFrame:frame display:true animate:true] };
     }
     fn set_fullscreen(&mut self, fullscreen: bool) {
         if self.fullscreen != fullscreen {
@@ -100,7 +117,8 @@ impl MacosDisplay {
     fn clipboard_get(&mut self) -> Option<String> {
         unsafe {
             let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let content: ObjcId = msg_send![pasteboard, stringForType: NSStringPboardType];
+            let content: ObjcId =
+                msg_send![pasteboard, stringForType: NSStringPboardType];
             let string = nsstring_to_string(content);
             if string.is_empty() {
                 return None;
@@ -160,7 +178,8 @@ impl MacosDisplay {
         let screen_width = (bounds.size.width as f32 * d.dpi_scale) as i32;
         let screen_height = (bounds.size.height as f32 * d.dpi_scale) as i32;
 
-        let dim_changed = screen_width != d.screen_width || screen_height != d.screen_height;
+        let dim_changed =
+            screen_width != d.screen_width || screen_height != d.screen_height;
 
         d.screen_width = screen_width;
         d.screen_height = screen_height;
@@ -214,15 +233,20 @@ impl Modifiers {
 
     pub fn new(flags: u64) -> Self {
         Self {
-            left_shift: flags & Self::NS_LEFT_SHIFT_KEY_MASK == Self::NS_LEFT_SHIFT_KEY_MASK,
-            right_shift: flags & Self::NS_RIGHT_SHIFT_KEY_MASK == Self::NS_RIGHT_SHIFT_KEY_MASK,
-            left_alt: flags & Self::NS_LEFT_ALTERNATE_KEY_MASK == Self::NS_LEFT_ALTERNATE_KEY_MASK,
+            left_shift: flags & Self::NS_LEFT_SHIFT_KEY_MASK
+                == Self::NS_LEFT_SHIFT_KEY_MASK,
+            right_shift: flags & Self::NS_RIGHT_SHIFT_KEY_MASK
+                == Self::NS_RIGHT_SHIFT_KEY_MASK,
+            left_alt: flags & Self::NS_LEFT_ALTERNATE_KEY_MASK
+                == Self::NS_LEFT_ALTERNATE_KEY_MASK,
             right_alt: flags & Self::NS_RIGHT_ALTERNATE_KEY_MASK
                 == Self::NS_RIGHT_ALTERNATE_KEY_MASK,
-            left_control: flags & Self::NS_LEFT_CONTROL_KEY_MASK == Self::NS_LEFT_CONTROL_KEY_MASK,
+            left_control: flags & Self::NS_LEFT_CONTROL_KEY_MASK
+                == Self::NS_LEFT_CONTROL_KEY_MASK,
             right_control: flags & Self::NS_RIGHT_CONTROL_KEY_MASK
                 == Self::NS_RIGHT_CONTROL_KEY_MASK,
-            left_command: flags & Self::NS_LEFT_COMMAND_KEY_MASK == Self::NS_LEFT_COMMAND_KEY_MASK,
+            left_command: flags & Self::NS_LEFT_COMMAND_KEY_MASK
+                == Self::NS_LEFT_COMMAND_KEY_MASK,
             right_command: flags & Self::NS_RIGHT_COMMAND_KEY_MASK
                 == Self::NS_RIGHT_COMMAND_KEY_MASK,
         }
@@ -246,7 +270,8 @@ pub fn define_cocoa_window_delegate() -> *const Class {
         let payload = get_window_payload(this);
 
         unsafe {
-            let capture_manager = msg_send_![class![MTLCaptureManager], sharedCaptureManager];
+            let capture_manager =
+                msg_send_![class![MTLCaptureManager], sharedCaptureManager];
             msg_send_![capture_manager, stopCapture];
         }
 
@@ -772,7 +797,11 @@ unsafe fn create_metal_view(_: NSRect, sample_count: i32, _: bool) -> ObjcId {
     view
 }
 
-unsafe fn create_opengl_view(window_frame: NSRect, sample_count: i32, high_dpi: bool) -> ObjcId {
+unsafe fn create_opengl_view(
+    window_frame: NSRect,
+    sample_count: i32,
+    high_dpi: bool,
+) -> ObjcId {
     use NSOpenGLPixelFormatAttribute::*;
 
     let mut attrs: Vec<u32> = vec![];
@@ -908,9 +937,15 @@ where
     let () = msg_send![window, setAcceptsMouseMovedEvents: YES];
 
     let view = match conf.platform.apple_gfx_api {
-        AppleGfxApi::OpenGl => create_opengl_view(window_frame, conf.sample_count, conf.high_dpi),
-        AppleGfxApi::Metal => create_metal_view(window_frame, conf.sample_count, conf.high_dpi),
-        AppleGfxApi::WebGPU => create_metal_view(window_frame, conf.sample_count, conf.high_dpi),
+        AppleGfxApi::OpenGl => {
+            create_opengl_view(window_frame, conf.sample_count, conf.high_dpi)
+        }
+        AppleGfxApi::Metal => {
+            create_metal_view(window_frame, conf.sample_count, conf.high_dpi)
+        }
+        AppleGfxApi::WebGPU => {
+            create_metal_view(window_frame, conf.sample_count, conf.high_dpi)
+        }
     };
     {
         let mut d = native_display().lock().unwrap();
@@ -925,7 +960,7 @@ where
 
     let _ = display.update_dimensions();
 
-    // let sugarloaf_instance = create_sugarloaf_instance(display, 400., 400., 2.0);
+    let _sugarloaf_instance = create_sugarloaf_instance(display, 1400., 1400., 2.0);
 
     let nstimer: ObjcId = msg_send![
         class!(NSTimer),

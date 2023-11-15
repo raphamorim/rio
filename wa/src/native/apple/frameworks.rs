@@ -78,7 +78,9 @@ extern "C" {
     pub static NSProcessInfo: ObjcId;
     pub fn NSStringFromClass(class: ObjcId) -> ObjcId;
 
-    pub fn __CFStringMakeConstantString(cStr: *const ::std::os::raw::c_char) -> CFStringRef;
+    pub fn __CFStringMakeConstantString(
+        cStr: *const ::std::os::raw::c_char,
+    ) -> CFStringRef;
 
     pub fn CFStringGetLength(theString: CFStringRef) -> u64;
     pub fn CFStringGetBytes(
@@ -187,7 +189,8 @@ extern "C" {
     ) -> ObjcId;
     pub fn CGMainDisplayID() -> u32;
     pub fn CGDisplayPixelsHigh(display: u32) -> u64;
-    pub fn CGColorCreateGenericRGB(red: f64, green: f64, blue: f64, alpha: f64) -> ObjcId;
+    pub fn CGColorCreateGenericRGB(red: f64, green: f64, blue: f64, alpha: f64)
+        -> ObjcId;
     pub fn CGAssociateMouseAndMouseCursorPosition(connected: bool);
     pub fn CGWarpMouseCursorPosition(newCursorPosition: NSPoint);
 }
@@ -788,7 +791,8 @@ pub const MTLResourceStorageModeShift: u64 = 4;
 pub const MTLResourceStorageModeMask: u64 = 0xf << MTLResourceStorageModeShift;
 
 pub const MTLResourceHazardTrackingModeShift: u64 = 8;
-pub const MTLResourceHazardTrackingModeMask: u64 = 0x3 << MTLResourceHazardTrackingModeShift;
+pub const MTLResourceHazardTrackingModeMask: u64 =
+    0x3 << MTLResourceHazardTrackingModeShift;
 
 #[allow(non_upper_case_globals)]
 pub struct MTLResourceOptions;
@@ -1193,7 +1197,9 @@ impl OSError {
             x if x == Self::Uninitialized as i32 => Self::Uninitialized,
             x if x == Self::InvalidScope as i32 => Self::InvalidScope,
             x if x == Self::PropertyNotWritable as i32 => Self::PropertyNotWritable,
-            x if x == Self::CannotDoInCurrentContext as i32 => Self::CannotDoInCurrentContext,
+            x if x == Self::CannotDoInCurrentContext as i32 => {
+                Self::CannotDoInCurrentContext
+            }
             x if x == Self::InvalidPropertyValue as i32 => Self::InvalidPropertyValue,
             x if x == Self::PropertyNotInUse as i32 => Self::PropertyNotInUse,
             x if x == Self::Initialized as i32 => Self::Initialized,

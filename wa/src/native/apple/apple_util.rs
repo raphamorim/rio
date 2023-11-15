@@ -13,7 +13,8 @@ use crate::{
 pub fn nsstring_to_string(string: ObjcId) -> String {
     unsafe {
         let utf8_string: *const std::os::raw::c_uchar = msg_send![string, UTF8String];
-        let utf8_len: usize = msg_send![string, lengthOfBytesUsingEncoding: UTF8_ENCODING];
+        let utf8_len: usize =
+            msg_send![string, lengthOfBytesUsingEncoding: UTF8_ENCODING];
         let slice = std::slice::from_raw_parts(utf8_string, utf8_len);
         std::str::from_utf8_unchecked(slice).to_owned()
     }
@@ -105,7 +106,8 @@ pub fn load_webkit_cursor(cursor_name_str: &str) -> ObjcId {
 
         let cursor_path: ObjcId =
             msg_send![cursor_root, stringByAppendingPathComponent: cursor_name];
-        let pdf_path: ObjcId = msg_send![cursor_path, stringByAppendingPathComponent: cursor_pdf];
+        let pdf_path: ObjcId =
+            msg_send![cursor_path, stringByAppendingPathComponent: cursor_pdf];
         let info_path: ObjcId =
             msg_send![cursor_path, stringByAppendingPathComponent: cursor_plist];
 
