@@ -6,6 +6,7 @@ members = [
   "copa",
   "rio-proc-macros",
   "rio-backend",
+  "wa",
 
   "frontends/multi",
 ]
