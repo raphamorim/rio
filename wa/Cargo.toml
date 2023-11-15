@@ -1,0 +1,21 @@
+[package]
+name = "wa"
+version = "0.4.0-alpha.10"
+authors = ["Raphael Amorim <rapha850@gmail.com>"]
+edition = "2021"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/raphamorim/rio"
+repository = "https://github.com/raphamorim/rio"
+description = "Cross-platform window assistant made primarily for Rio terminal"
+
+[dependencies]
+raw-window-handle = { workspace = true }
+log = { workspace = true }
+sugarloaf = { workspace = true }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+objc = "0.2"
+
+[dev-dependencies]
+glam = {version = "0.24", features = ["scalar-math"] }
+quad-rand = "0.1"
