@@ -13,6 +13,7 @@ use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
+use std::path::PathBuf;
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
 
@@ -131,24 +132,21 @@ pub struct Config {
 
 #[cfg(not(target_os = "windows"))]
 #[inline]
-pub fn config_dir_path() -> String {
-    let base_dir_buffer = dirs::home_dir().unwrap();
-    let home = base_dir_buffer.to_str().unwrap_or_default();
-    format!("{home}/.config/rio")
+pub fn config_dir_path() -> PathBuf {
+    let home_dir = dirs::home_dir().unwrap();
+    home_dir.join(".config").join("rio")
 }
 
 #[cfg(target_os = "windows")]
 #[inline]
-pub fn config_dir_path() -> String {
-    let base_dir_buffer = dirs::home_dir().unwrap();
-    let home = base_dir_buffer.to_str().unwrap_or_default();
-    format!("{home}/AppData/Local/rio")
+pub fn config_dir_path() -> PathBuf {
+    let home_dir = dirs::home_dir().unwrap();
+    home_dir.join("AppData").join("Local").join("rio")
 }
 
 #[inline]
-pub fn config_file_path() -> String {
-    let config_dir_path_str = config_dir_path();
-    format!("{config_dir_path_str}/config.toml")
+pub fn config_file_path() -> PathBuf {
+    config_dir_path().join("config.toml")
 }
 
 #[inline]
@@ -179,11 +177,8 @@ impl Config {
                         return Ok(decoded);
                     }
 
-                    let tmp = std::env::temp_dir()
-                        .to_str()
-                        .unwrap_or_default()
-                        .to_string();
-                    let path = format!("{tmp}/{theme}.toml");
+                    let tmp = std::env::temp_dir();
+                    let path = tmp.join(theme).with_extension("toml");
                     if let Ok(loaded_theme) = Config::load_theme(&path) {
                         decoded.colors = loaded_theme.colors;
                     } else {
@@ -192,7 +187,7 @@ impl Config {
 
                     if let Some(adaptive_theme) = &decoded.adaptive_theme {
                         let light_theme = &adaptive_theme.light;
-                        let path = format!("{tmp}/{light_theme}.toml");
+                        let path = tmp.join(light_theme).with_extension("toml");
                         let mut adaptive_colors = AdaptiveColors {
                             dark: None,
                             light: None,
@@ -206,7 +201,7 @@ impl Config {
                         }
 
                         let dark_theme = &adaptive_theme.dark;
-                        let path = format!("{tmp}/{dark_theme}.toml");
+                        let path = tmp.join(dark_theme).with_extension("toml");
                         if let Ok(dark_loaded_theme) = Config::load_theme(&path) {
                             adaptive_colors.dark = Some(dark_loaded_theme.colors);
                             println!("carregou");
@@ -230,8 +225,8 @@ impl Config {
         }
     }
 
-    fn load_theme(path: &str) -> Result<Theme, String> {
-        if std::path::Path::new(&path).exists() {
+    fn load_theme(path: &PathBuf) -> Result<Theme, String> {
+        if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Theme>(&content) {
                 Ok(decoded) => Ok(decoded),
@@ -247,9 +242,9 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        let config_path_str = config_dir_path();
-        let path = format!("{config_path_str}/config.toml");
-        if std::path::Path::new(&path).exists() {
+        let config_path = config_dir_path();
+        let path = config_file_path();
+        if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
@@ -258,7 +253,10 @@ impl Config {
                         return decoded;
                     }
 
-                    let path = format!("{config_path_str}/themes/{theme}.toml");
+                    let path = config_path
+                        .join("themes")
+                        .join(theme)
+                        .with_extension("toml");
                     if let Ok(loaded_theme) = Config::load_theme(&path) {
                         decoded.colors = loaded_theme.colors;
                     } else {
@@ -278,16 +276,16 @@ impl Config {
     }
 
     pub fn try_load() -> Result<Self, ConfigError> {
-        let config_path_str = config_dir_path();
-        let path = format!("{config_path_str}/config.toml");
+        let config_path = config_dir_path();
+        let path = config_file_path();
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
                     let theme = &decoded.theme;
-                    let theme_path = format!("{config_path_str}/themes");
+                    let theme_path = config_path.join("themes");
                     if !theme.is_empty() {
-                        let path = format!("{theme_path}/{theme}.toml");
+                        let path = theme_path.join(theme).with_extension("toml");
                         match Config::load_theme(&path) {
                             Ok(loaded_theme) => {
                                 decoded.colors = loaded_theme.colors;
@@ -305,7 +303,7 @@ impl Config {
                         };
 
                         let light_theme = &adaptive_theme.light;
-                        let path = format!("{theme_path}/{light_theme}.toml");
+                        let path = theme_path.join(light_theme).with_extension("toml");
                         match Config::load_theme(&path) {
                             Ok(light_loaded_theme) => {
                                 adaptive_colors.light = Some(light_loaded_theme.colors)
@@ -317,7 +315,7 @@ impl Config {
                         }
 
                         let dark_theme = &adaptive_theme.dark;
-                        let path = format!("{theme_path}/{dark_theme}.toml");
+                        let path = theme_path.join(dark_theme).with_extension("toml");
                         match Config::load_theme(&path) {
                             Ok(dark_loaded_theme) => {
                                 adaptive_colors.dark = Some(dark_loaded_theme.colors)
