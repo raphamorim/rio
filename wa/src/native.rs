@@ -15,6 +15,7 @@ pub(crate) struct NativeDisplayData {
     pub native_requests: mpsc::Sender<Request>,
     pub clipboard: Box<dyn Clipboard>,
     pub dropped_files: DroppedFiles,
+    pub sugarloaf: Box<dyn sugarloaf::SugarloafFn>,
 
     #[cfg(target_vendor = "apple")]
     pub view: crate::native::apple::frameworks::ObjcId,
@@ -42,6 +43,7 @@ impl NativeDisplayData {
             quit_ordered: false,
             native_requests,
             clipboard,
+            sugarloaf: Box::new(sugarloaf::SugarloafVoid),
             dropped_files: Default::default(),
             #[cfg(target_vendor = "apple")]
             gfx_api: crate::conf::AppleGfxApi::OpenGl,

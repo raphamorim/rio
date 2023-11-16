@@ -12,8 +12,8 @@ pub fn create_sugarloaf_instance(
     width: f32,
     height: f32,
     scale_factor: f32,
-) -> Result<Sugarloaf, ()> {
-    let font_size = 60.;
+) -> Sugarloaf {
+    let font_size = 18.;
     let line_height = 1.0;
     let sugarloaf_layout = SugarloafLayout::new(
         width,
@@ -49,5 +49,5 @@ pub fn create_sugarloaf_instance(
     sugarloaf.set_background_color(wgpu::Color::RED);
     sugarloaf.calculate_bounds();
 
-    Ok(sugarloaf)
+    sugarloaf
 }
