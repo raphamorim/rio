@@ -8,8 +8,7 @@ members = [
   "rio-backend",
   "wa",
 
-  "frontends/multi",
-  "frontends/new-multi"
+  "frontends/cross-winit",
 ]
 resolver = "2"
 

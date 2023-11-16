@@ -1,11 +1,11 @@
 [package]
 name = "wa"
-version = "0.4.0-alpha.10"
+version = { workspace = true }
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
-edition = "2021"
-license = "MIT/Apache-2.0"
-homepage = "https://github.com/raphamorim/rio"
-repository = "https://github.com/raphamorim/rio"
+edition = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 description = "Cross-platform window assistant made primarily for Rio terminal"
 
 [dependencies]
