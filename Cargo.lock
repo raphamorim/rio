@@ -2506,32 +2506,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rioterm-appkit"
-version = "0.0.27"
-dependencies = [
- "bitflags 2.4.1",
- "clap",
- "copa",
- "corcovado",
- "dirs",
- "futures",
- "image",
- "libc",
- "log 0.4.20",
- "notify",
- "parking_lot",
- "raw-window-handle 0.5.2",
- "regex",
- "rio-backend",
- "serde",
- "teletypewriter",
- "tokio",
- "unicode-width",
- "wa",
- "wgpu",
-]
-
-[[package]]
 name = "roxmltree"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3114,7 +3088,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wa"
-version = "0.4.0-alpha.10"
+version = "0.0.27"
 dependencies = [
  "futures",
  "log 0.4.20",

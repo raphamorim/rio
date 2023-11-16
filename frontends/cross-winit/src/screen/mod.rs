@@ -42,7 +42,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::config::colors::{term::List, ColorWGPU};
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
-    SugarloafWindowSize,
+    SugarloafWindowSize, SugarloafFn,
 };
 use state::State;
 use std::borrow::Cow;
