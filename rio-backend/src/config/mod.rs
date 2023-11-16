@@ -239,7 +239,7 @@ impl Config {
 
     pub fn load() -> Self {
         let config_path_str = config_dir_path();
-        let path = format!("{config_path_str}/config.toml");
+        let path = config_file_path();
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
@@ -270,7 +270,7 @@ impl Config {
 
     pub fn try_load() -> Result<Self, ConfigError> {
         let config_path_str = config_dir_path();
-        let path = format!("{config_path_str}/config.toml");
+        let path = config_file_path();
         if std::path::Path::new(&path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
