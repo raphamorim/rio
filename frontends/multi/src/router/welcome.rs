@@ -124,5 +124,5 @@ fn welcome_content() -> String {
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", rio_backend::config::config_file_path().to_str().unwrap(), shortcut)
+    ", rio_backend::config::config_file_path().to_str().unwrap_or_default(), shortcut)
 }

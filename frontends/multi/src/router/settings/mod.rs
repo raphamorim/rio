@@ -56,11 +56,11 @@ impl Settings {
         Settings {
             default_file_path: rio_backend::config::config_file_path()
                 .to_str()
-                .unwrap()
+                .unwrap_or_default()
                 .to_string(),
             default_dir_path: rio_backend::config::config_dir_path()
                 .to_str()
-                .unwrap()
+                .unwrap_or_default()
                 .to_string(),
             config: rio_backend::config::Config::default(),
             inner: helpers::config_to_settings(
