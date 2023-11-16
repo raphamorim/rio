@@ -164,15 +164,16 @@ impl MacosDisplay {
         }
     }
 
-    unsafe fn update_dimensions(&mut self) -> Option<(i32, i32)> {
+    unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
         let mut d = native_display().lock().unwrap();
+        let mut current_dpi_scale = 1.0;
         if d.high_dpi {
             let screen: ObjcId = msg_send![self.window, screen];
             let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
-            d.dpi_scale = dpi_scale as f32;
-        } else {
-            d.dpi_scale = 1.0;
+            current_dpi_scale = dpi_scale as f32;
         }
+
+        d.dpi_scale = current_dpi_scale;
 
         let bounds: NSRect = msg_send![self.view, bounds];
         let screen_width = (bounds.size.width as f32 * d.dpi_scale) as i32;
@@ -185,7 +186,7 @@ impl MacosDisplay {
         d.screen_height = screen_height;
 
         if dim_changed {
-            Some((screen_width, screen_height))
+            Some((screen_width, screen_height, current_dpi_scale))
         } else {
             None
         }
@@ -193,18 +194,16 @@ impl MacosDisplay {
 
     fn process_request(&mut self, request: Request) {
         use Request::*;
-        unsafe {
-            match request {
-                SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
-                ShowMouse(show) => self.show_mouse(show),
-                SetMouseCursor(icon) => self.set_mouse_cursor(icon),
-                SetWindowSize {
-                    new_width,
-                    new_height,
-                } => self.set_window_size(new_width as _, new_height as _),
-                SetFullscreen(fullscreen) => self.set_fullscreen(fullscreen),
-                _ => {}
-            }
+        match request {
+            SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
+            ShowMouse(show) => self.show_mouse(show),
+            SetMouseCursor(icon) => self.set_mouse_cursor(icon),
+            SetWindowSize {
+                new_width,
+                new_height,
+            } => self.set_window_size(new_width as _, new_height as _),
+            SetFullscreen(fullscreen) => self.set_fullscreen(fullscreen),
+            _ => {}
         }
     }
 }
@@ -298,7 +297,7 @@ pub fn define_cocoa_window_delegate() -> *const Class {
 
     extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
         let payload = get_window_payload(this);
-        if let Some((w, h)) = unsafe { payload.update_dimensions() } {
+        if let Some((w, h, _scale_factor)) = unsafe { payload.update_dimensions() } {
             if let Some(event_handler) = payload.context() {
                 event_handler.resize_event(w as _, h as _);
             }
@@ -307,7 +306,7 @@ pub fn define_cocoa_window_delegate() -> *const Class {
 
     extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
         let payload = get_window_payload(this);
-        if let Some((w, h)) = unsafe { payload.update_dimensions() } {
+        if let Some((w, h, _scale_factor)) = unsafe { payload.update_dimensions() } {
             if let Some(event_handler) = payload.context() {
                 event_handler.resize_event(w as _, h as _);
             }
@@ -637,7 +636,7 @@ pub fn define_opengl_view_class() -> *const Class {
             let superclass = superclass(this);
             let () = msg_send![super(this, superclass), reshape];
 
-            if let Some((w, h)) = payload.update_dimensions() {
+            if let Some((w, h, scale_factor)) = payload.update_dimensions() {
                 if let Some(event_handler) = payload.context() {
                     event_handler.resize_event(w as _, h as _);
                 }
@@ -868,7 +867,8 @@ where
     let (tx, rx) = std::sync::mpsc::channel();
     let clipboard = Box::new(MacosClipboard);
     crate::set_display(NativeDisplayData {
-        high_dpi: conf.high_dpi,
+        // high_dpi: conf.high_dpi,
+        high_dpi: true,
         gfx_api: conf.platform.apple_gfx_api,
         ..NativeDisplayData::new(conf.window_width, conf.window_height, tx, clipboard)
     });
@@ -922,6 +922,7 @@ where
         backing: NSBackingStoreType::NSBackingStoreBuffered as u64
         defer: NO
     ];
+
     assert!(!window.is_null());
 
     let window_delegate_class = define_cocoa_window_delegate();
@@ -958,9 +959,20 @@ where
 
     let () = msg_send![window, setContentView: view];
 
-    let _ = display.update_dimensions();
+    let dimensions = display
+        .update_dimensions()
+        .unwrap_or_else(|| (conf.window_width, conf.window_height, 1.0));
 
-    let _sugarloaf_instance = create_sugarloaf_instance(display, 1400., 1400., 2.0);
+    let sugarloaf_instance = create_sugarloaf_instance(
+        display,
+        dimensions.0 as f32,
+        dimensions.1 as f32,
+        dimensions.2,
+    );
+    {
+        let mut d = native_display().lock().unwrap();
+        d.sugarloaf = Box::new(sugarloaf_instance);
+    }
 
     let nstimer: ObjcId = msg_send![
         class!(NSTimer),
@@ -981,6 +993,13 @@ where
     }
 
     let () = msg_send![window, makeKeyAndOrderFront: nil];
+
+    let bg_color: ObjcId =
+        msg_send![class!(NSColor), colorWithDeviceRed:0.0 green:0.0 blue:0.0 alpha:1.];
+    let () = msg_send![
+        window,
+        setBackgroundColor: bg_color
+    ];
 
     let ns_app: ObjcId = msg_send![class!(NSApplication), sharedApplication];
 

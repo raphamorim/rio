@@ -31,6 +31,10 @@ pub struct CachedSugar {
     monospaced_font_scale: Option<f32>,
 }
 
+pub trait SugarloafFn {
+    fn render(&mut self) {}
+}
+
 pub struct Sugarloaf {
     sugar_cache: HashMap<char, CachedSugar>,
     pub ctx: Context,
@@ -720,9 +724,16 @@ impl Sugarloaf {
         self.text_brush.queue(section);
         self
     }
+}
 
+pub struct SugarloafVoid;
+impl SugarloafFn for SugarloafVoid {
+    fn render(&mut self) {}
+}
+
+impl SugarloafFn for Sugarloaf {
     #[inline]
-    pub fn render(&mut self) {
+    fn render(&mut self) {
         self.reset_state();
 
         match self.ctx.surface.get_current_texture() {
