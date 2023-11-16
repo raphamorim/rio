@@ -55,7 +55,7 @@ pub fn render(sugarloaf: &mut Sugarloaf, settings: &crate::router::settings::Set
         (10., sugarloaf.layout.margin.top_y + 80.),
         format!(
             "{} • v{}",
-            settings.default_file_path,
+            settings.default_file_path.display(),
             env!("CARGO_PKG_VERSION")
         ),
         FONT_ID_BUILTIN,

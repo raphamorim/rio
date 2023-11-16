@@ -5,7 +5,7 @@ use rio_backend::sugarloaf::font::loader::Database;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 pub struct SettingsState {
@@ -21,8 +21,8 @@ pub struct Setting {
 }
 
 pub struct Settings {
-    pub default_file_path: String,
-    pub default_dir_path: String,
+    pub default_file_path: PathBuf,
+    pub default_dir_path: PathBuf,
     pub config: rio_backend::config::Config,
     pub inner: HashMap<usize, Setting>,
     pub state: SettingsState,
@@ -150,8 +150,7 @@ impl Settings {
     pub fn write_current_config_into_file(&mut self) {
         let config = helpers::settings_to_config(&self.inner);
         if let Ok(config_str) = config.to_string() {
-            let file = Path::new(&self.default_file_path);
-            match File::create(file) {
+            match File::create(&self.default_file_path) {
                 Err(err_message) => {
                     log::error!("could not open config file: {err_message}")
                 }
@@ -169,27 +168,34 @@ impl Settings {
 
     #[inline]
     pub fn create_file(&self) {
-        let file = Path::new(&self.default_file_path);
-        if file.exists() {
+        if self.default_file_path.exists() {
             return;
         }
 
         match std::fs::create_dir_all(&self.default_dir_path) {
             Ok(_) => {
-                log::info!("configuration path created {}", self.default_dir_path);
+                log::info!(
+                    "configuration path created {}",
+                    self.default_dir_path.display()
+                );
             }
             Err(err_message) => {
                 log::error!("could not create config directory: {err_message}");
             }
         }
 
-        let display = file.display();
-        match File::create(file) {
+        match File::create(&self.default_file_path) {
             Err(err_message) => {
-                log::error!("could not create config file {display}: {err_message}")
+                log::error!(
+                    "could not create config file {}: {err_message}",
+                    self.default_file_path.display()
+                )
             }
             Ok(mut created_file) => {
-                log::info!("configuration file created {}", self.default_file_path);
+                log::info!(
+                    "configuration file created {}",
+                    self.default_file_path.display()
+                );
 
                 if let Err(err_message) = writeln!(
                     created_file,
