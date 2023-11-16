@@ -150,7 +150,8 @@ performance = "High"
 # Theme
 #
 # It makes Rio look for the specified theme in the themes folder
-# (macos and linux: ~/.config/rio/themes/dracula.toml)
+# (macos: ~/Library/Application Support/rio/themes/dracula.toml)
+# (linux: $XDG_CONFIG_HOME/rio/themes/dracula.toml or ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
 # Example:

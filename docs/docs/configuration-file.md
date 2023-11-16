@@ -5,9 +5,9 @@ language: 'en'
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-MacOS and Linux configuration file path is `~/.config/rio/config.toml`.
-
-Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
+- macOS: `~/Library/Application Support/rio/config.toml`
+- Linux: `$XDG_CONFIG_HOME/rio/config.toml` or `~/.config/rio/config.toml`
+- Windows: `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name)
 
 Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
@@ -57,7 +57,8 @@ performance = "High"
 # Themes
 #
 # Rio looks for a specified theme in the themes folder
-# (macos and linux: ~/.config/rio/themes/dracula.toml)
+# (macos: ~/Library/Application Support/rio/themes/dracula.toml)
+# (linux: $XDG_CONFIG_HOME/rio/themes/dracula.toml or ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
 # Example:
@@ -249,9 +250,9 @@ performance = "High"
 
 # Colors
 #
-# Defining colors in the configuration file will override any                                                                                                                     
-# colors set in the theme if you're using a theme. The default                                                                                                                  
-# configuration is without a theme.    
+# Defining colors in the configuration file will override any
+# colors set in the theme if you're using a theme. The default
+# configuration is without a theme.
 #
 # Example:
 # [colors]
