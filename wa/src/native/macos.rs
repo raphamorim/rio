@@ -1,3 +1,4 @@
+//! Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT)
 //! MacOs implementation is basically a mix between
 //! sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
 //! platform implementation

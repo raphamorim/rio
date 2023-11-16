@@ -1,3 +1,5 @@
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
+
 use std::sync::mpsc;
 
 #[derive(Default)]
@@ -69,8 +71,6 @@ pub trait Clipboard: Send + Sync {
     fn get(&mut self) -> Option<String>;
     fn set(&mut self, string: &str);
 }
-
-pub mod module;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod apple;

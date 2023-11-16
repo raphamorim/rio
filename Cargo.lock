@@ -2506,6 +2506,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "rioterm-appkit"
+version = "0.0.27"
+dependencies = [
+ "bitflags 2.4.1",
+ "clap",
+ "copa",
+ "corcovado",
+ "dirs",
+ "futures",
+ "image",
+ "libc",
+ "log 0.4.20",
+ "notify",
+ "parking_lot",
+ "raw-window-handle 0.5.2",
+ "regex",
+ "rio-backend",
+ "serde",
+ "teletypewriter",
+ "tokio",
+ "unicode-width",
+ "wa",
+ "wgpu",
+]
+
+[[package]]
 name = "roxmltree"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

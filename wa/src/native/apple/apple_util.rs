@@ -1,3 +1,4 @@
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
 // original copyright belongs to Makepad
 // Copy-pasted from https://github.com/makepad/makepad/blob/live/platform/src/platform/apple/apple_utils.rs
 // and slightly modified

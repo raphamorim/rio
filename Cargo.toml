@@ -9,6 +9,7 @@ members = [
   "wa",
 
   "frontends/multi",
+  "frontends/new-multi"
 ]
 resolver = "2"
 

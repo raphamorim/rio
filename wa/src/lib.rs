@@ -1,3 +1,5 @@
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
+
 pub mod conf;
 mod event;
 pub mod graphics;
@@ -7,31 +9,12 @@ pub use event::*;
 
 mod default_icon;
 
-pub mod date {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn now() -> f64 {
-        use std::time::SystemTime;
-
-        let time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_else(|e| panic!("{}", e));
-        time.as_secs_f64()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn now() -> f64 {
-        use crate::native;
-
-        unsafe { native::wasm::now() }
-    }
-}
-
 use std::sync::{Mutex, OnceLock};
 
 static NATIVE_DISPLAY: OnceLock<Mutex<native::NativeDisplayData>> = OnceLock::new();
 
 fn set_display(display: native::NativeDisplayData) {
-    NATIVE_DISPLAY.set(Mutex::new(display));
+    let _ = NATIVE_DISPLAY.set(Mutex::new(display));
 }
 fn native_display() -> &'static Mutex<native::NativeDisplayData> {
     NATIVE_DISPLAY
@@ -130,35 +113,35 @@ pub mod window {
     ///         so set_cursor_grab(false) on window's focus lost is recommended.
     /// TODO: implement window focus events
     pub fn set_cursor_grab(grab: bool) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests.send(native::Request::SetCursorGrab(grab));
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
     }
 
     /// Show or hide the mouse cursor
     pub fn show_mouse(shown: bool) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests.send(native::Request::ShowMouse(shown));
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests.send(native::Request::ShowMouse(shown));
     }
 
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(cursor_icon: CursorIcon) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests
             .send(native::Request::SetMouseCursor(cursor_icon));
     }
 
     /// Set the application's window size.
     pub fn set_window_size(new_width: u32, new_height: u32) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests.send(native::Request::SetWindowSize {
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests.send(native::Request::SetWindowSize {
             new_width,
             new_height,
         });
     }
 
     pub fn set_fullscreen(fullscreen: bool) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests
             .send(native::Request::SetFullscreen(fullscreen));
     }
 
@@ -189,8 +172,8 @@ pub mod window {
     /// Show/hide onscreen keyboard.
     /// Only works on Android right now.
     pub fn show_keyboard(show: bool) {
-        let mut d = native_display().lock().unwrap();
-        d.native_requests.send(native::Request::ShowKeyboard(show));
+        let d = native_display().lock().unwrap();
+        let _ = d.native_requests.send(native::Request::ShowKeyboard(show));
     }
 
     #[cfg(target_vendor = "apple")]
@@ -226,7 +209,6 @@ pub enum CursorIcon {
     NWSEResize,
 }
 
-/// Start miniquad.
 pub fn start<F>(conf: conf::Conf, f: F)
 where
     F: 'static + FnOnce() -> Box<dyn EventHandler>,
