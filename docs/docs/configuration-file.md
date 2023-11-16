@@ -11,280 +11,312 @@ Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml`
 
 Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
+
+## Cursor
+
+Default cursor is `Block`.
+
+Other available options are: `_` and `|`
+
 ```toml
-# Cursor
-#
-# Default cursor is Block
-# Other available options are: '_' and '|'
-#
 cursor = '▇'
+```
 
-# Blinking Cursor
-#
-# Default is false
-#
+## Blinking Cursor
+
+Default is `false`
+
+```toml
 blinking-cursor = false
+```
 
-# Scroll Speed Multiplier
-#
-# You can change how many lines are scrolled each time by setting this option.
-# Defaul is 3.0.
-# Example:
-# scroll-multiplier = 3.0
+## Scroll Speed Multiplier
 
-# Ignore theme selection foreground color
-#
-# Default is false
-#
-# Example:
-# ignore-selection-foreground-color = false
+Default is `3.0`.
 
-# Enable Kitty Keyboard protocol
-#
-# Default is false
-#
-# Example:
-# use-kitty-keyboard-protocol = false
+You can change how many lines are scrolled each time by setting this option.
 
-# Performance
-#
-# Set WGPU rendering performance
-# High: Adapter that has the highest performance. This is often a discrete GPU.
-# Low: Adapter that uses the least possible power. This is often an integrated GPU.
-#
+```toml
+scroll-multiplier = 3.0
+```
+
+## Ignore theme selection foreground color
+
+Default is `false`
+
+```toml
+ignore-selection-foreground-color = false
+```
+
+## Enable Kitty Keyboard protocol
+
+Default is false
+
+```toml
+use-kitty-keyboard-protocol = false
+```
+
+## Performance
+
+Set WGPU rendering performance
+
+- `High`: Adapter that has the highest performance. This is often a discrete GPU.
+- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
+
+```toml
 performance = "High"
+```
 
-# Themes
-#
-# Rio looks for a specified theme in the themes folder
-# (macos and linux: ~/.config/rio/themes/dracula.toml)
-# (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
-#
-# Example:
-# theme = "dracula"
+## Themes
 
-# Padding-x
-#
-# define x axis padding (default is 10)
-#
-# Example:
-# padding-x = 10
+Rio looks for a specified theme in the themes folder.
 
-# Option as Alt
-#
-# This config only works on MacOs.
-# Possible choices: 'both', 'left' and 'right'.
-#
-# Example:
-# option-as-alt = 'left'
+- MacOS and Linux: `~/.config/rio/themes/dracula.toml`
+- Windows: `C:\Users\USER\AppData\Local\rio\themes\dracula.toml`
 
-# Window configuration
-#
-# • width - define the intial window width.
-#   Default: 600
-#
-# • height - define the inital window height.
-#   Default: 400
-#
-# • mode - define how the window will be created
-#     - "Windowed" (default) is based on width and height
-#     - "Maximized" window is created with maximized
-#     - "Fullscreen" window is created with fullscreen
-#
-# Example:
-# [window]
-# width = 600
-# height = 400
-# mode = "Windowed"
+```toml
+theme = "dracula"
+```
 
-# Background configuration
-#
-# • opacity - changes the background transparency state
-#   Default: 1.0
-#
-# • mode - defines background mode bewteen "Color" and "Image"
-#
-# • image - Set an image as background
-#   Default: None
-#
-# Example:
-# [background]
-# mode = "Image"
-# opacity = 1.0
-#
-# [background.image]
-# path = "/Users/rapha/Desktop/eastward.jpg"
-# width = 200.0
-# height = 200.0
-# x = 0.0
-# y = 0.0
+## Padding-x
 
-# Window Height
-#
-# window-height changes the inital window height.
-#   Default: 400
-#
-# Example:
-# window-height = 400
+Define x axis padding (default is 10)
 
-# Fonts
-#
-# Configure fonts used by the terminal
-#
-# Note: You can set different font families but Rio terminal
-# will always look for regular font bounds whene
-#
-# You can also set family on root to overwrite all fonts
-# [fonts]
-#   family = "cascadiamono"
-#
-# You can also specify extra fonts to load
-# [fonts]
-# extras = [{ family = "Microsoft JhengHei" }]
-#
-#
-# Example:
-# [fonts]
-# size = 18
-#
-# [fonts.regular]
-# family = "cascadiamono"
-# style = "normal"
-# weight = 400
-#
-# [fonts.bold]
-# family = "cascadiamono"
-# style = "normal"
-# weight = 800
-#
-# [fonts.italic]
-# family = "cascadiamono"
-# style = "italic"
-# weight = 400
-#
-# [fonts.bold-italic]
-# family = "cascadiamono"
-# style = "italic"
-# weight = 800
+```toml
+padding-x = 10
+```
 
-# Navigation
-#
-# "mode" - Define navigation mode
-#   • NativeTab (MacOs only)
-#   • CollapsedTab
-#   • BottomTab
-#   • TopTab
-#   • Breadcrumb
-#   • Plain
-#
-# "clickable" - Enable click on tabs to switch.
-# "use-current-path" - Use same path whenever a new tab is created.
-# "color-automation" - Set a specific color for the tab whenever a specific program is running.
-# "macos-hide-window-buttons" - (MacOS only) Hide window buttons
-#
-# Example:
-# [navigation]
-# mode = "CollapsedTab"
-# clickable = false
-# use-current-path = false
-# color-automation = []
-# macos-hide-window-buttons = false
+## Option as Alt
 
-# Shell
-#
-# You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
-# Entries in `shell.args` are passed unmodified as arguments to the shell.
-#
-# Default:
-#   - (macOS) user login shell
-#   - (Linux/BSD) user login shell
-#   - (Windows) powershell
-#
-# Example 1 using fish shell from bin path:
-#
-# shell = { program = "/bin/fish", args = ["--login"] }
-#
-# Example 2 for Windows using powershell
-#
-# shell = { program = "pwsh", args = [] }
-#
-# Example 3 for Windows using powershell with login
-#
-# shell = { program = "pwsh", args = ["-l"] }
+This config only works on MacOs.
 
-# Startup directory
-#
-# Directory the shell is started in. If this is unset the working
-# directory of the parent process will be used.
-#
-# This configuration only works if use-fork is disabled
-#
-# Example:
-# working-dir = "/Users/raphael/Documents/"
+Possible choices: `both`, `left` and `right`.
 
-# Environment variables
-#
-# The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need it.
-#
-# Example:
-# env-vars = []
+```toml
+option-as-alt = 'left'
+```
 
-# Disable render when unfocused
-#
-# This property disables the renderer process when Rio no longer
-# has focus.
-#
-# Example:
-# disable-renderer-when-unfocused = false
+## Window configuration
 
-# Use fork
-#
-# Defaults for POSIX-based systems (Windows is not configurable):
-# MacOS: spawn processes
-# Linux/BSD: fork processes
-#
-# Example:
-# use-fork = false
+- `width` - define the intial window width.
+	- Default: `600`
 
-# Colors
-#
-# Defining colors in the configuration file will override any                                                                                                                     
-# colors set in the theme if you're using a theme. The default                                                                                                                  
-# configuration is without a theme.    
-#
-# Example:
-# [colors]
-# background = '#0F0D0E'
-# foreground = '#F9F4DA'
-# cursor = '#F38BA3'
-# tabs = '#443d40'
-# tabs-active = '#F38BA3'
-# green = '#0BA95B'
-# red = '#ED203D'
-# blue = '#12B5E5'
-# yellow = '#FCBA28'
+- `height` - define the inital window height.
+	- Default: `400`
 
-# Bindings
-#
-# You can create custom key bindings for Rio terminal
-# More information in: raphamorim.io/rio/docs/custom-key-bindings
-#
-# Example:
-# [bindings]
-# keys = [
-#   { key = "q", with = "super", action = "Quit" },
-#   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-#   { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
-# ]
+- `mode` - define how the window will be created
+    - `Windowed` (default) is based on width and height
+    - `Maximized` window is created with maximized
+    - `Fullscreen` window is created with fullscreen
 
-# Log level
-#
-# This property enables log level filter. Default is "OFF".
-#
-# Example:
-# [developer]
-# log-level = "OFF"
+```toml
+[window]
+width = 600
+height = 400
+mode = "Windowed"
+```
+
+## Background configuration
+
+- `opacity` - changes the background transparency state
+	- Default: `1.0`
+
+- `mode` - defines background mode bewteen `Color` and `Image`
+
+- `image` - Set an image as background, default is `None`.
+
+```toml
+[background]
+mode = "Image"
+opacity = 1.0
+
+[background.image]
+path = "/Users/rapha/Desktop/eastward.jpg"
+width = 200.0
+height = 200.0
+x = 0.0
+y = 0.0
+```
+
+## Fonts
+
+Configure fonts used by the terminal
+
+Note: You can set different font families but Rio terminal
+will always look for regular font bounds whene
+
+You can also set family on root to overwrite all fonts.
+
+```toml
+[fonts]
+family = "cascadiamono"
+```
+
+You can also specify extra fonts to load:
+
+```toml
+[fonts]
+extras = [{ family = "Microsoft JhengHei" }]
+```
+
+The font configuration default:
+
+```toml
+[fonts]
+size = 18
+
+[fonts.regular]
+family = "cascadiamono"
+style = "normal"
+weight = 400
+
+[fonts.bold]
+family = "cascadiamono"
+style = "normal"
+weight = 800
+
+[fonts.italic]
+family = "cascadiamono"
+style = "italic"
+weight = 400
+
+[fonts.bold-italic]
+family = "cascadiamono"
+style = "italic"
+weight = 800
+```
+
+## Navigation
+
+`mode` - Define navigation mode
+	- `NativeTab` (MacOs only)
+	- `CollapsedTab`
+	- `BottomTab`
+	- `TopTab`
+	- `Breadcrumb`
+	- `Plain`
+
+`clickable` - Enable click on tabs to switch.
+`use-current-path` - Use same path whenever a new tab is created.
+`color-automation` - Set a specific color for the tab whenever a specific program is running.
+`macos-hide-window-buttons` - (MacOS only) Hide window buttons
+
+```toml
+[navigation]
+mode = "CollapsedTab"
+clickable = false
+use-current-path = false
+color-automation = []
+macos-hide-window-buttons = false
+```
+
+## Shell
+
+You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`.
+
+Entries in `shell.args` are passed unmodified as arguments to the shell.
+
+Default:
+	- (macOS) user login shell
+	- (Linux/BSD) user login shell
+	- (Windows) powershell
+
+### Example 1: for MacOS using fish shell from bin path:
+
+```toml
+shell = { program = "/bin/fish", args = ["--login"] }
+```
+
+### Example 2: for Windows using powershell
+
+```toml
+shell = { program = "pwsh", args = [] }
+```
+
+### Example 3: for Windows using powershell with login
+
+```toml
+shell = { program = "pwsh", args = ["-l"] }
+```
+
+## Startup directory
+
+Directory the shell is started in. If this is unset the working directory of the parent process will be used.
+
+This configuration only works if `use-fork` is disabled
+
+```toml
+working-dir = "/Users/raphael/Documents/"
+```
+
+## Environment variables
+
+The example below sets fish as the default SHELL using env vars, please do not copy this if you do not need it.
+
+```toml
+env-vars = []
+```
+
+## Disable render when unfocused
+
+This property disables the renderer process when Rio no longer has focus.
+
+```toml
+disable-renderer-when-unfocused = false
+```
+
+## Use fork
+
+Defaults for POSIX-based systems (Windows is not configurable):
+
+- MacOS: spawn processes
+- Linux/BSD: fork processes
+
+```toml
+use-fork = false
+```
+
+## Colors
+
+Defining colors in the configuration file will override any colors set in the theme if you're using a theme.
+
+The default configuration is without a theme.
+
+Example:
+
+```toml
+[colors]
+background = '#0F0D0E'
+foreground = '#F9F4DA'
+cursor = '#F38BA3'
+tabs = '#443d40'
+tabs-active = '#F38BA3'
+green = '#0BA95B'
+red = '#ED203D'
+blue = '#12B5E5'
+yellow = '#FCBA28'
+```
+
+## Bindings
+
+You can create custom key bindings for Rio terminal, [more information](raphamorim.io/rio/docs/custom-key-bindings)
+
+```toml
+[bindings]
+keys = [
+  { key = "q", with = "super", action = "Quit" },
+  # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+]
+```
+
+## Log level
+
+This property enables log level filter. Default is "OFF".
+
+```toml
+[developer]
+log-level = "OFF"
 ```
 
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).

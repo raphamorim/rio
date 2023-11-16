@@ -1,3 +1,5 @@
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
+
 #[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
 pub enum MouseButton {
     Right,
