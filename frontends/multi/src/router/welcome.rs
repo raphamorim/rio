@@ -119,12 +119,12 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
 #[cfg(target_os = "macos")]
 fn welcome_content() -> String {
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n\"Command\" + \",\" (comma)\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", rio_backend::config::config_file_path())
+    ", rio_backend::config::config_file_path().to_str().unwrap())
 }
 
 #[inline]
 #[cfg(not(target_os = "macos"))]
 fn welcome_content() -> String {
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n\"Control\" + \"Shift\" + \",\" (comma)\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", rio_backend::config::config_file_path())
+    ", rio_backend::config::config_file_path().to_str().unwrap())
 }

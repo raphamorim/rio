@@ -54,8 +54,14 @@ impl Settings {
         font_families.push(String::from("Cascadia Mono (built-in)"));
 
         Settings {
-            default_file_path: rio_backend::config::config_file_path(),
-            default_dir_path: rio_backend::config::config_dir_path(),
+            default_file_path: rio_backend::config::config_file_path()
+                .to_str()
+                .unwrap()
+                .to_string(),
+            default_dir_path: rio_backend::config::config_dir_path()
+                .to_str()
+                .unwrap()
+                .to_string(),
             config: rio_backend::config::Config::default(),
             inner: helpers::config_to_settings(
                 rio_backend::config::Config::load(),
