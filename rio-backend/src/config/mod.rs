@@ -156,8 +156,8 @@ pub fn config_file_content() -> String {
 
 impl Config {
     #[cfg(test)]
-    fn load_from_path(path: &str) -> Self {
-        if std::path::Path::new(path).exists() {
+    fn load_from_path(path: &PathBuf) -> Self {
+        if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
             let decoded: Config =
                 toml::from_str(&content).unwrap_or_else(|_| Config::default());
@@ -167,8 +167,8 @@ impl Config {
         }
     }
     #[cfg(test)]
-    fn load_from_path_without_fallback(path: &str) -> Result<Self, String> {
-        if std::path::Path::new(path).exists() {
+    fn load_from_path_without_fallback(path: &PathBuf) -> Result<Self, String> {
+        if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
@@ -276,14 +276,13 @@ impl Config {
     }
 
     pub fn try_load() -> Result<Self, ConfigError> {
-        let config_path = config_dir_path();
         let path = config_file_path();
-        if std::path::Path::new(&path).exists() {
+        if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Config>(&content) {
                 Ok(mut decoded) => {
                     let theme = &decoded.theme;
-                    let theme_path = config_path.join("themes");
+                    let theme_path = config_dir_path().join("themes");
                     if !theme.is_empty() {
                         let path = theme_path.join(theme).with_extension("toml");
                         match Config::load_theme(&path) {
@@ -384,16 +383,12 @@ mod tests {
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
 
-    fn tmp_dir() -> String {
+    fn tmp_dir() -> PathBuf {
         std::env::temp_dir()
-            .to_str()
-            .unwrap_or_default()
-            .to_string()
     }
 
     fn create_temporary_config(prefix: &str, toml_str: &str) -> Config {
-        let tmp = tmp_dir();
-        let file_name = format!("{tmp}/test-rio-{prefix}-config.toml");
+        let file_name = tmp_dir().join(format!("test-rio-{prefix}-config.toml"));
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 
@@ -404,26 +399,22 @@ mod tests {
     }
 
     fn create_temporary_theme(theme: &str, toml_str: &str) {
-        let tmp = tmp_dir();
-        let file_name = format!("{tmp}/{theme}.toml");
+        let file_name = tmp_dir().join(theme).with_extension("toml");
         let mut file = std::fs::File::create(file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
     }
 
     #[test]
     fn test_filepath_does_not_exist_without_fallback() {
-        let tmp = tmp_dir();
         let should_fail = Config::load_from_path_without_fallback(
-            format!("{tmp}/it-should-never-exist").as_str(),
+            &tmp_dir().join("it-should-never-exist"),
         );
         assert!(should_fail.is_err(), "{}", true);
     }
 
     #[test]
     fn test_filepath_does_not_exist_with_fallback() {
-        let tmp = tmp_dir();
-        let config =
-            Config::load_from_path(format!("{tmp}/it-should-never-exist").as_str());
+        let config = Config::load_from_path(&tmp_dir().join("it-should-never-exist"));
         assert_eq!(config.theme, default_theme());
         assert_eq!(config.cursor, default_cursor());
     }
@@ -482,9 +473,9 @@ mod tests {
             height = "small"
         "#;
 
-        let tmp = tmp_dir();
-        let file_name =
-            String::from(format!("{tmp}/test-rio-invalid-config.toml").as_str());
+        let file_name = tmp_dir()
+            .join("test-rio-invalid-config")
+            .with_extension("toml");
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 
