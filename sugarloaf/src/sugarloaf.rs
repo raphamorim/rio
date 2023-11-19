@@ -31,8 +31,11 @@ pub struct CachedSugar {
     monospaced_font_scale: Option<f32>,
 }
 
-pub trait SugarloafFn {
+pub trait RenderableSugarloaf {
+    fn clear(&mut self) {}
     fn render(&mut self) {}
+    fn resize(&mut self, _width: u32, _height: u32) {}
+    fn rescale(&mut self, _scale: f32) {}
 }
 
 pub struct Sugarloaf {
@@ -204,20 +207,6 @@ impl Sugarloaf {
         }
 
         None
-    }
-
-    #[inline]
-    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.ctx.resize(width, height);
-        self.layout.resize(width, height).update();
-        self
-    }
-
-    #[inline]
-    pub fn rescale(&mut self, scale: f32) -> &mut Self {
-        self.ctx.scale = scale;
-        self.layout.rescale(scale).update();
-        self
     }
 
     #[inline]
@@ -727,11 +716,23 @@ impl Sugarloaf {
 }
 
 pub struct SugarloafVoid;
-impl SugarloafFn for SugarloafVoid {
+impl RenderableSugarloaf for SugarloafVoid {
     fn render(&mut self) {}
 }
 
-impl SugarloafFn for Sugarloaf {
+impl RenderableSugarloaf for Sugarloaf {
+    #[inline]
+    fn resize(&mut self, width: u32, height: u32) {
+        self.ctx.resize(width, height);
+        self.layout.resize(width, height).update();
+    }
+
+    #[inline]
+    fn rescale(&mut self, scale: f32) {
+        self.ctx.scale = scale;
+        self.layout.rescale(scale).update();
+    }
+
     #[inline]
     fn render(&mut self) {
         self.reset_state();

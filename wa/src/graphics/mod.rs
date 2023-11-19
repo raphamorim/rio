@@ -30,7 +30,7 @@ pub fn create_sugarloaf_instance(
     let sugarloaf_window = SugarloafWindow {
         handle: raw_window_handle,
         display: raw_display_handle,
-        scale: scale_factor as f32,
+        scale: scale_factor,
         size: SugarloafWindowSize {
             width: width as u32,
             height: height as u32,

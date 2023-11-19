@@ -126,7 +126,8 @@ pub mod window {
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(cursor_icon: CursorIcon) {
         let d = native_display().lock().unwrap();
-        let _ = d.native_requests
+        let _ = d
+            .native_requests
             .send(native::Request::SetMouseCursor(cursor_icon));
     }
 
@@ -141,7 +142,8 @@ pub mod window {
 
     pub fn set_fullscreen(fullscreen: bool) {
         let d = native_display().lock().unwrap();
-        let _ = d.native_requests
+        let _ = d
+            .native_requests
             .send(native::Request::SetFullscreen(fullscreen));
     }
 
