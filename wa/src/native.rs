@@ -17,7 +17,7 @@ pub(crate) struct NativeDisplayData {
     pub native_requests: mpsc::Sender<Request>,
     pub clipboard: Box<dyn Clipboard>,
     pub dropped_files: DroppedFiles,
-    pub sugarloaf: Box<dyn sugarloaf::SugarloafFn>,
+    pub sugarloaf: Box<dyn sugarloaf::RenderableSugarloaf>,
 
     #[cfg(target_vendor = "apple")]
     pub view: crate::native::apple::frameworks::ObjcId,

@@ -2,6 +2,10 @@ extern crate png;
 extern crate tokio;
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use sugarloaf::components::rect::Rect;
+use sugarloaf::layout::SugarloafLayout;
+use sugarloaf::RenderableSugarloaf;
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
@@ -10,10 +14,6 @@ use winit::{
     event_loop::EventLoop,
     window::WindowBuilder,
 };
-
-use sugarloaf::components::rect::Rect;
-use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 #[tokio::main]
 async fn main() {
@@ -78,9 +78,9 @@ async fn main() {
                     ..
                 } => {
                     let new_inner_size = window.inner_size();
+                    sugarloaf.rescale(scale_factor as f32);
+                    sugarloaf.resize(new_inner_size.width, new_inner_size.height);
                     sugarloaf
-                        .rescale(scale_factor as f32)
-                        .resize(new_inner_size.width, new_inner_size.height)
                         .pile_rects(vec![
                             Rect {
                                 position: [10.0, 10.0],

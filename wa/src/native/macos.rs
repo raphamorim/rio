@@ -262,7 +262,7 @@ pub fn define_app_delegate() -> *const Class {
         );
     }
 
-    return decl.register();
+    decl.register()
 }
 
 pub fn define_cocoa_window_delegate() -> *const Class {
@@ -290,9 +290,9 @@ pub fn define_cocoa_window_delegate() -> *const Class {
             }
         }
         if native_display().lock().unwrap().quit_ordered {
-            return YES;
+            YES
         } else {
-            return NO;
+            NO
         }
     }
 
@@ -351,7 +351,7 @@ pub fn define_cocoa_window_delegate() -> *const Class {
     // Store internal state as user data
     decl.add_ivar::<*mut c_void>("display_ptr");
 
-    return decl.register();
+    decl.register()
 }
 
 // methods for both metal or OPENGL view
@@ -716,7 +716,7 @@ pub fn define_opengl_view_class() -> *const Class {
 
     decl.add_ivar::<*mut c_void>("display_ptr");
 
-    return decl.register();
+    decl.register()
 }
 
 pub fn define_metal_view_class() -> *const Class {
@@ -770,7 +770,7 @@ pub fn define_metal_view_class() -> *const Class {
         view_base_decl(&mut decl);
     }
 
-    return decl.register();
+    decl.register()
 }
 
 fn get_window_payload(this: &Object) -> &mut MacosDisplay {
@@ -960,9 +960,11 @@ where
 
     let () = msg_send![window, setContentView: view];
 
-    let dimensions = display
-        .update_dimensions()
-        .unwrap_or_else(|| (conf.window_width, conf.window_height, 1.0));
+    let dimensions = display.update_dimensions().unwrap_or((
+        conf.window_width,
+        conf.window_height,
+        1.0,
+    ));
 
     let sugarloaf_instance = create_sugarloaf_instance(
         display,

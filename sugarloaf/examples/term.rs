@@ -4,6 +4,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::{
     core::{Sugar, SugarDecoration, SugarStyle},
     layout::SugarloafLayout,
+    RenderableSugarloaf,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
@@ -407,16 +408,14 @@ async fn main() {
                 } => {
                     let scale_factor_f32 = scale_factor as f32;
                     let new_inner_size = window.inner_size();
-                    sugarloaf
-                        .rescale(scale_factor_f32)
-                        .resize(new_inner_size.width, new_inner_size.height)
-                        .calculate_bounds();
+                    sugarloaf.rescale(scale_factor_f32);
+                    sugarloaf.resize(new_inner_size.width, new_inner_size.height);
+                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::Resized(new_size) => {
-                    sugarloaf
-                        .resize(new_size.width, new_size.height)
-                        .calculate_bounds();
+                    sugarloaf.resize(new_size.width, new_size.height);
+                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {

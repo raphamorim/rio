@@ -41,8 +41,8 @@ use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::config::colors::{term::List, ColorWGPU};
 use rio_backend::sugarloaf::{
-    self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafWindow,
-    SugarloafWindowSize, SugarloafFn,
+    self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use state::State;
 use std::borrow::Cow;
@@ -388,10 +388,9 @@ impl Screen {
         new_scale: f32,
         new_size: winit::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
-        self.sugarloaf
-            .rescale(new_scale)
-            .resize(new_size.width, new_size.height)
-            .calculate_bounds();
+        self.sugarloaf.rescale(new_scale);
+        self.sugarloaf.resize(new_size.width, new_size.height);
+        self.sugarloaf.calculate_bounds();
 
         self
     }
