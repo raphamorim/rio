@@ -7,7 +7,7 @@ impl EventHandler for Stage {
 
     fn draw(&mut self) {}
 
-    fn char_event(&mut self, character: char, _: KeyMods, _: bool) {}
+    fn char_event(&mut self, _character: char, _: KeyMods, _: bool) {}
 }
 
 fn main() {

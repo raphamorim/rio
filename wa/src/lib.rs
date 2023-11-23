@@ -1,5 +1,7 @@
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
 
+#![allow(clippy::all)]
+
 pub mod conf;
 mod event;
 pub mod graphics;
@@ -178,11 +180,6 @@ pub mod window {
         let _ = d.native_requests.send(native::Request::ShowKeyboard(show));
     }
 
-    #[cfg(target_vendor = "apple")]
-    pub fn apple_gfx_api() -> crate::conf::AppleGfxApi {
-        let d = native_display().lock().unwrap();
-        d.gfx_api
-    }
     #[cfg(target_vendor = "apple")]
     pub fn apple_view() -> crate::native::apple::frameworks::ObjcId {
         let d = native_display().lock().unwrap();

@@ -41,23 +41,9 @@
 //! dpi_scale   -> 1.0
 //! ```
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum AppleGfxApi {
-    OpenGl,
-    WebGPU,
-    Metal,
-}
-
 /// Platform specific settings.
 #[derive(Debug)]
 pub struct Platform {
-    /// Which rendering context to create, Metal or OpenGL.
-    /// Miniquad always links with Metal.framework (assuming it is always present)
-    /// but it links with OpenGL dynamically and only if required.
-    ///
-    /// Defaults to AppleGfxApi::GL for legacy reasons.
-    pub apple_gfx_api: AppleGfxApi,
-
     /// On some platform it is possible to ask the OS for a specific swap interval.
     /// Note that this is highly platform and implementation dependent,
     /// there is no guarantee that FPS will be equal to swap_interval.
@@ -79,7 +65,6 @@ impl Default for Platform {
     fn default() -> Platform {
         Platform {
             swap_interval: None,
-            apple_gfx_api: AppleGfxApi::OpenGl,
             framebuffer_alpha: false,
             wayland_use_fallback_decorations: true,
         }

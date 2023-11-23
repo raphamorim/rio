@@ -21,8 +21,6 @@ pub(crate) struct NativeDisplayData {
 
     #[cfg(target_vendor = "apple")]
     pub view: crate::native::apple::frameworks::ObjcId,
-    #[cfg(target_vendor = "apple")]
-    pub gfx_api: crate::conf::AppleGfxApi,
 }
 #[cfg(target_vendor = "apple")]
 unsafe impl Send for NativeDisplayData {}
@@ -47,8 +45,6 @@ impl NativeDisplayData {
             clipboard,
             sugarloaf: Box::new(sugarloaf::SugarloafVoid),
             dropped_files: Default::default(),
-            #[cfg(target_vendor = "apple")]
-            gfx_api: crate::conf::AppleGfxApi::OpenGl,
             #[cfg(target_vendor = "apple")]
             view: std::ptr::null_mut(),
             #[cfg(target_os = "ios")]
