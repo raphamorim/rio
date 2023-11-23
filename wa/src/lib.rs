@@ -1,6 +1,7 @@
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
 
 #![allow(clippy::all)]
+#![cfg(target_os = "macos")]
 
 pub mod conf;
 mod event;
