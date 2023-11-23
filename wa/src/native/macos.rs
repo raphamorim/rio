@@ -1,11 +1,10 @@
-//! Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT)
-//! MacOs implementation is basically a mix between
-//! sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
-//! platform implementation
-//!
+//Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT)
+//MacOs implementation is basically a mix between
+//sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
+//platform implementation
+
 use {
     crate::{
-        conf::AppleGfxApi,
         event::{EventHandler, MouseButton},
         graphics::create_sugarloaf_instance,
         native::{
@@ -29,7 +28,6 @@ pub struct MacosDisplay {
     current_cursor: CursorIcon,
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
-    gfx_api: crate::conf::AppleGfxApi,
 
     event_handler: Option<Box<dyn EventHandler>>,
     f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
@@ -115,27 +113,27 @@ impl MacosDisplay {
             }
         }
     }
-    fn clipboard_get(&mut self) -> Option<String> {
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let content: ObjcId =
-                msg_send![pasteboard, stringForType: NSStringPboardType];
-            let string = nsstring_to_string(content);
-            if string.is_empty() {
-                return None;
-            }
-            Some(string)
-        }
-    }
-    fn clipboard_set(&mut self, data: &str) {
-        let str: ObjcId = str_to_nsstring(data);
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let () = msg_send![pasteboard, clearContents];
-            let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str];
-            let () = msg_send![pasteboard, writeObjects: arr];
-        }
-    }
+    // fn clipboard_get(&mut self) -> Option<String> {
+    //     unsafe {
+    //         let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
+    //         let content: ObjcId =
+    //             msg_send![pasteboard, stringForType: NSStringPboardType];
+    //         let string = nsstring_to_string(content);
+    //         if string.is_empty() {
+    //             return None;
+    //         }
+    //         Some(string)
+    //     }
+    // }
+    // fn clipboard_set(&mut self, data: &str) {
+    //     let str: ObjcId = str_to_nsstring(data);
+    //     unsafe {
+    //         let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
+    //         let () = msg_send![pasteboard, clearContents];
+    //         let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str];
+    //         let () = msg_send![pasteboard, writeObjects: arr];
+    //     }
+    // }
 
     pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
         let event_handler = self.event_handler.as_deref_mut()?;
@@ -153,7 +151,7 @@ impl MacosDisplay {
         (new_x, new_y)
     }
 
-    fn move_mouse_inside_window(&self, window: *mut Object) {
+    fn move_mouse_inside_window(&self, _window: *mut Object) {
         unsafe {
             let frame: NSRect = msg_send![self.window, frame];
             let origin = self.transform_mouse_point(&frame.origin);
@@ -637,7 +635,7 @@ pub fn define_opengl_view_class() -> *const Class {
             let superclass = superclass(this);
             let () = msg_send![super(this, superclass), reshape];
 
-            if let Some((w, h, scale_factor)) = payload.update_dimensions() {
+            if let Some((w, h, _scale_factor)) = payload.update_dimensions() {
                 if let Some(event_handler) = payload.context() {
                     event_handler.resize_event(w as _, h as _);
                 }
@@ -719,59 +717,59 @@ pub fn define_opengl_view_class() -> *const Class {
     decl.register()
 }
 
-pub fn define_metal_view_class() -> *const Class {
-    let superclass = class!(MTKView);
-    let mut decl = ClassDecl::new("RenderViewClass", superclass).unwrap();
-    decl.add_ivar::<*mut c_void>("display_ptr");
+// pub fn define_metal_view_class() -> *const Class {
+//     let superclass = class!(MTKView);
+//     let mut decl = ClassDecl::new("RenderViewClass", superclass).unwrap();
+//     decl.add_ivar::<*mut c_void>("display_ptr");
 
-    extern "C" fn timer_fired(this: &Object, _sel: Sel, _: ObjcId) {
-        unsafe {
-            let () = msg_send!(this, setNeedsDisplay: YES);
-        }
-    }
+//     extern "C" fn timer_fired(this: &Object, _sel: Sel, _: ObjcId) {
+//         unsafe {
+//             let () = msg_send!(this, setNeedsDisplay: YES);
+//         }
+//     }
 
-    extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
-        let payload = get_window_payload(this);
+//     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
+//         let payload = get_window_payload(this);
 
-        if payload.event_handler.is_none() {
-            let f = payload.f.take().unwrap();
-            payload.event_handler = Some(f());
-        }
+//         if payload.event_handler.is_none() {
+//             let f = payload.f.take().unwrap();
+//             payload.event_handler = Some(f());
+//         }
 
-        while let Ok(request) = payload.native_requests.try_recv() {
-            payload.process_request(request);
-        }
+//         while let Ok(request) = payload.native_requests.try_recv() {
+//             payload.process_request(request);
+//         }
 
-        if let Some(event_handler) = payload.context() {
-            event_handler.update();
-            event_handler.draw();
-        }
+//         if let Some(event_handler) = payload.context() {
+//             event_handler.update();
+//             event_handler.draw();
+//         }
 
-        unsafe {
-            let d = native_display().lock().unwrap();
-            if d.quit_requested || d.quit_ordered {
-                drop(d);
-                let () = msg_send![payload.window, performClose: nil];
-            }
-        }
-    }
+//         unsafe {
+//             let d = native_display().lock().unwrap();
+//             if d.quit_requested || d.quit_ordered {
+//                 drop(d);
+//                 let () = msg_send![payload.window, performClose: nil];
+//             }
+//         }
+//     }
 
-    unsafe {
-        //decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
-        decl.add_method(
-            sel!(timerFired:),
-            timer_fired as extern "C" fn(&Object, Sel, ObjcId),
-        );
-        decl.add_method(
-            sel!(drawRect:),
-            draw_rect as extern "C" fn(&Object, Sel, NSRect),
-        );
+//     unsafe {
+//         //decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
+//         decl.add_method(
+//             sel!(timerFired:),
+//             timer_fired as extern "C" fn(&Object, Sel, ObjcId),
+//         );
+//         decl.add_method(
+//             sel!(drawRect:),
+//             draw_rect as extern "C" fn(&Object, Sel, NSRect),
+//         );
 
-        view_base_decl(&mut decl);
-    }
+//         view_base_decl(&mut decl);
+//     }
 
-    decl.register()
-}
+//     decl.register()
+// }
 
 fn get_window_payload(this: &Object) -> &mut MacosDisplay {
     unsafe {
@@ -780,22 +778,22 @@ fn get_window_payload(this: &Object) -> &mut MacosDisplay {
     }
 }
 
-unsafe fn create_metal_view(_: NSRect, sample_count: i32, _: bool) -> ObjcId {
-    let mtl_device_obj = MTLCreateSystemDefaultDevice();
-    let view_class = define_metal_view_class();
-    let view: ObjcId = msg_send![view_class, alloc];
-    let view: ObjcId = msg_send![view, init];
+// unsafe fn create_metal_view(_: NSRect, sample_count: i32, _: bool) -> ObjcId {
+//     let mtl_device_obj = MTLCreateSystemDefaultDevice();
+//     let view_class = define_metal_view_class();
+//     let view: ObjcId = msg_send![view_class, alloc];
+//     let view: ObjcId = msg_send![view, init];
 
-    let () = msg_send![view, setDevice: mtl_device_obj];
-    let () = msg_send![view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
-    let () = msg_send![
-        view,
-        setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
-    ];
-    let () = msg_send![view, setSampleCount: sample_count];
+//     let () = msg_send![view, setDevice: mtl_device_obj];
+//     let () = msg_send![view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
+//     let () = msg_send![
+//         view,
+//         setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
+//     ];
+//     let () = msg_send![view, setSampleCount: sample_count];
 
-    view
-}
+//     view
+// }
 
 unsafe fn create_opengl_view(
     window_frame: NSRect,
@@ -870,7 +868,6 @@ where
     crate::set_display(NativeDisplayData {
         // high_dpi: conf.high_dpi,
         high_dpi: true,
-        gfx_api: conf.platform.apple_gfx_api,
         ..NativeDisplayData::new(conf.window_width, conf.window_height, tx, clipboard)
     });
 
@@ -882,7 +879,6 @@ where
         current_cursor: CursorIcon::Default,
         cursor_grabbed: false,
         cursors: HashMap::new(),
-        gfx_api: conf.platform.apple_gfx_api,
         f: Some(Box::new(f)),
         event_handler: None,
         native_requests: rx,
@@ -938,17 +934,7 @@ where
     let () = msg_send![window, center];
     let () = msg_send![window, setAcceptsMouseMovedEvents: YES];
 
-    let view = match conf.platform.apple_gfx_api {
-        AppleGfxApi::OpenGl => {
-            create_opengl_view(window_frame, conf.sample_count, conf.high_dpi)
-        }
-        AppleGfxApi::Metal => {
-            create_metal_view(window_frame, conf.sample_count, conf.high_dpi)
-        }
-        AppleGfxApi::WebGPU => {
-            create_metal_view(window_frame, conf.sample_count, conf.high_dpi)
-        }
-    };
+    let view = create_opengl_view(window_frame, conf.sample_count, conf.high_dpi);
     {
         let mut d = native_display().lock().unwrap();
         d.view = view;
