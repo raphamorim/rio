@@ -1,3 +1,5 @@
+#![cfg(target_os = "macos")]
+
 use wa::*;
 
 struct Stage {}
