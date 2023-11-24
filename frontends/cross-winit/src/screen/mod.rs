@@ -512,18 +512,10 @@ impl Screen {
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
 
-            // When the logical key is some named key, use it, otherwise fallback to
-            // key without modifiers to account for bindings.
-            let logical_key = if matches!(key.logical_key, Key::Character(_)) {
-                key.key_without_modifiers()
-            } else {
-                key.logical_key.clone()
-            };
-
-            let key = match (&binding.trigger, logical_key) {
+            let key = match (&binding.trigger, &key.logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
-                    key: code,
+                    key: code.clone(),
                     location: key.location,
                 },
             };
