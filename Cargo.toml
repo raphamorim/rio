@@ -51,7 +51,7 @@ wasm-bindgen-test = "0.3"
 env_logger = "0.10"
 console_log = "0.2"
 console_error_panic_hook = "0.1.7"
-winit = { git = "https://github.com/raphamorim/winit", default-features = false, features = ["rwh_05"] }
+winit = { version = "0.29.4", default-features = false, features = ["rwh_05"] }
 
 [profile.release]
 opt-level = 3
