@@ -2572,8 +2572,10 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729a30a469de249c6effc17ec8d039b0aa29b3af79b819b7f51cb6ab8046a90"
 dependencies = [
+ "ab_glyph",
  "crossfont",
  "log 0.4.20",
+ "memmap2 0.9.0",
  "smithay-client-toolkit",
  "tiny-skia",
 ]
@@ -3670,8 +3672,9 @@ checksum = "ed94fce61571a4006852b7389a063ab983c02eb1bb37b47f8272ce92d06d9538"
 
 [[package]]
 name = "winit"
-version = "0.29.3"
-source = "git+https://github.com/raphamorim/winit#14140607d120e6cd832ccb72305f18ad042bbc95"
+version = "0.29.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25d662bb83b511acd839534bb2d88521b0bbc81440969cb077d23c4db9e62c7"
 dependencies = [
  "ahash",
  "android-activity",
