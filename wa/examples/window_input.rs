@@ -1,9 +1,10 @@
-#![cfg(target_os = "macos")]
-
+#[cfg(target_os = "macos")]
 use wa::*;
 
+#[cfg(target_os = "macos")]
 struct Stage {}
 
+#[cfg(target_os = "macos")]
 impl EventHandler for Stage {
     fn update(&mut self) {}
 
@@ -36,5 +37,6 @@ impl EventHandler for Stage {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
     wa::start(conf::Conf::default(), || Box::new(Stage {}));
 }
