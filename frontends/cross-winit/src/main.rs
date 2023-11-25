@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     {
-        if let Err(_) = setup_logs_by_filter_level(&config.developer.log_level) {
+        if setup_logs_by_filter_level(&config.developer.log_level).is_err() {
             eprintln!("unable to configure log level");
         }
 
