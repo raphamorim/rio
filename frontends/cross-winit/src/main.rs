@@ -4,8 +4,6 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
-use rio_backend::{ansi, clipboard, crosswords, event, performer, selection};
-
 mod cli;
 mod ime;
 mod logger;
@@ -18,10 +16,13 @@ mod screen;
 mod sequencer;
 mod ui;
 mod watch;
+
 use crate::event::EventP;
 use crate::sequencer::Sequencer;
+use clap::Parser;
 use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
+use rio_backend::{ansi, clipboard, crosswords, event, performer, selection};
 use std::str::FromStr;
 
 #[cfg(windows)]
@@ -57,10 +58,7 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
 
     // Set env vars from config.
     for env_config in config.env_vars.iter() {
-        let mut env_vec = vec![];
-        for config in env_config.split('=') {
-            env_vec.push(config);
-        }
+        let env_vec: Vec<&str> = env_config.split('=').collect();
 
         if env_vec.len() == 2 {
             std::env::set_var(env_vec[0], env_vec[1]);
@@ -97,29 +95,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load command line options.
-    let options = cli::Options::new();
+    let args = cli::Cli::parse();
 
-    let mut config_error: Option<rio_backend::config::ConfigError> = None;
-    let mut config = match rio_backend::config::Config::try_load() {
-        Ok(config) => config,
-        Err(error) => {
-            config_error = Some(error);
-            rio_backend::config::Config::default()
-        }
+    let (mut config, config_error) = match rio_backend::config::Config::try_load() {
+        Ok(config) => (config, None),
+        Err(err) => (rio_backend::config::Config::default(), Some(err)),
     };
 
-    let setup_logs = setup_logs_by_filter_level(&config.developer.log_level);
-    if setup_logs.is_err() {
-        println!("unable to configure log level");
-    }
+    {
+        if setup_logs_by_filter_level(&config.developer.log_level).is_err() {
+            eprintln!("unable to configure log level");
+        }
 
-    if let Some(command) = options.window_options.terminal_options.command() {
-        config.shell = command;
-        config.use_fork = false;
-    }
+        if let Some(command) = args.window_options.terminal_options.command() {
+            config.shell = command;
+            config.use_fork = false;
+        }
 
-    if let Some(working_dir_cli) = options.window_options.terminal_options.working_dir {
-        config.working_dir = Some(working_dir_cli);
+        if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
+            config.working_dir = Some(working_dir_cli);
+        }
     }
 
     #[cfg(target_os = "linux")]

@@ -2572,10 +2572,8 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729a30a469de249c6effc17ec8d039b0aa29b3af79b819b7f51cb6ab8046a90"
 dependencies = [
- "ab_glyph",
  "crossfont",
  "log 0.4.20",
- "memmap2 0.9.0",
  "smithay-client-toolkit",
  "tiny-skia",
 ]
