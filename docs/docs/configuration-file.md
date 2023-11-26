@@ -131,7 +131,7 @@ background-opacity = 1.0
 Using image as background:
 
 ```toml
-[window.background_image]
+[window.background-image]
 path = "/Users/rapha/Desktop/eastward.jpg"
 width = 200.0
 height = 200.0
@@ -189,7 +189,7 @@ weight = 800
 
 ## Navigation
 
-`mode` - Define navigation mode
+- `mode` - Define navigation mode
 	- `NativeTab` (MacOs only)
 	- `CollapsedTab`
 	- `BottomTab`
@@ -197,10 +197,10 @@ weight = 800
 	- `Breadcrumb`
 	- `Plain`
 
-`clickable` - Enable click on tabs to switch.
-`use-current-path` - Use same path whenever a new tab is created.
-`color-automation` - Set a specific color for the tab whenever a specific program is running.
-`macos-hide-window-buttons` - (MacOS only) Hide window buttons
+- `clickable` - Enable click on tabs to switch.
+- `use-current-path` - Use same path whenever a new tab is created.
+- `color-automation` - Set a specific color for the tab whenever a specific program is running.
+- `macos-hide-window-buttons` - (MacOS only) Hide window buttons
 
 ```toml
 [navigation]

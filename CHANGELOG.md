@@ -18,7 +18,7 @@ background-opacity = 1.0
 Using image as background:
 
 ```toml
-[window.background_image]
+[window.background-image]
 path = "/Users/rapha/Desktop/eastward.jpg"
 width = 200.0
 height = 200.0
