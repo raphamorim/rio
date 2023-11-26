@@ -64,7 +64,7 @@ impl State {
             }
         }
 
-        let dynamic_background = ([0., 0., 0., .0], wgpu::Color::TRANSPARENT);
+        let dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
