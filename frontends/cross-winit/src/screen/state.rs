@@ -42,6 +42,7 @@ pub struct State {
     ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
+    opacity: f32,
 }
 
 impl State {
@@ -63,11 +64,7 @@ impl State {
             }
         }
 
-        let dynamic_background = if config.background.mode.is_image() {
-            ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
-        } else {
-            named_colors.background
-        };
+        let dynamic_background = ([0., 0., 0., .0], wgpu::Color::TRANSPARENT);
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
@@ -75,6 +72,7 @@ impl State {
         }
 
         State {
+            opacity: config.background.opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
@@ -129,7 +127,6 @@ impl State {
         self.hyperlink_range.is_some()
     }
 
-    // TODO: Square.into()
     #[inline]
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
@@ -308,7 +305,7 @@ impl State {
 
     #[inline]
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
-        match square.fg {
+        let mut color = match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -373,12 +370,18 @@ impl State {
 
                 self.colors[index]
             }
+        };
+
+        if self.opacity < 1. {
+            color[3] = self.opacity;
         }
+
+        color
     }
 
     #[inline]
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
-        match square.bg {
+        let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.dynamic_background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -429,7 +432,13 @@ impl State {
             },
             AnsiColor::Spec(rgb) => rgb.to_arr(),
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
+        };
+
+        if color[3] >= 1.0 && self.opacity < 1. {
+            color[3] = self.opacity;
         }
+
+        color
     }
 
     #[inline]
