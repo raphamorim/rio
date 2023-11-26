@@ -300,7 +300,7 @@ yellow = '#FCBA28'
 
 ## Bindings
 
-You can create custom key bindings for Rio terminal, [more information](raphamorim.io/rio/docs/custom-key-bindings)
+You can create custom key bindings for Rio terminal, [more information](/docs/key-bindings#custom-key-bindings)
 
 ```toml
 [bindings]
