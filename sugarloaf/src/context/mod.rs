@@ -7,6 +7,7 @@ pub struct Context {
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
     pub scale: f32,
+    alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
 }
 
@@ -51,7 +52,7 @@ impl Context {
         let size = &sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(sugarloaf_window).unwrap() };
+        let surface = unsafe { instance.create_surface(&sugarloaf_window).unwrap() };
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -73,29 +74,37 @@ impl Context {
         // space selection which also causes colors to mismatch. Optionally we can whitelist
         // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
         // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
-        #[cfg(windows)]
-        let unsupported_formats = [
-            wgpu::TextureFormat::Rgba8Snorm,
-            wgpu::TextureFormat::Rgba16Float,
-        ];
+        // #[cfg(windows)]
+        // let unsupported_formats = [
+        //     wgpu::TextureFormat::Rgba8Snorm,
+        //     wgpu::TextureFormat::Rgba16Float,
+        // ];
 
-        // not reproduce-able on mac
-        #[cfg(not(windows))]
-        let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+        // // not reproduce-able on mac
+        // #[cfg(not(windows))]
+        // let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
 
-        let filtered_formats: Vec<wgpu::TextureFormat> = caps
-            .formats
-            .iter()
-            .copied()
-            .filter(|&x| {
-                !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
-            })
-            .collect();
+        // let filtered_formats: Vec<wgpu::TextureFormat> = caps
+        //     .formats
+        //     .iter()
+        //     .copied()
+        //     .filter(|&x| {
+        //         !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
+        //     })
+        //     .collect();
 
-        let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
-        if !filtered_formats.is_empty() {
-            format = filtered_formats.first().unwrap().to_owned();
-        }
+        // let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
+        // if !filtered_formats.is_empty() {
+        //     format = filtered_formats.first().unwrap().to_owned();
+        // }
+
+        // Explicitly request an SRGB format, if available
+        let pref_format_srgb = caps.formats[0].add_srgb_suffix();
+        let format = if caps.formats.contains(&pref_format_srgb) {
+            pref_format_srgb
+        } else {
+            caps.formats[0]
+        };
 
         log::info!(
             "Sugarloaf selected format: {format:?} from {:?}",
@@ -126,6 +135,20 @@ impl Context {
         })
         .await;
 
+        let alpha_mode = if caps
+                .alpha_modes
+                .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
+            {
+                wgpu::CompositeAlphaMode::PostMultiplied
+            } else if caps
+                .alpha_modes
+                .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+            {
+                wgpu::CompositeAlphaMode::PreMultiplied
+            } else {
+                wgpu::CompositeAlphaMode::Auto
+            };
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -134,8 +157,8 @@ impl Context {
                 width: size.width,
                 height: size.height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
             },
         );
 
@@ -144,6 +167,7 @@ impl Context {
             queue,
             surface,
             format,
+            alpha_mode,
             size: SugarloafWindowSize {
                 width: size.width,
                 height: size.height,
@@ -164,8 +188,8 @@ impl Context {
                 width,
                 height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
             },
         );
     }

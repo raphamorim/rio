@@ -335,8 +335,14 @@ impl Screen {
         let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
+        let mut bg_color = self.state.named_colors.background.1;
+
+        if config.background.opacity < 1. {
+            bg_color.a = config.background.opacity as f64;
+        }
+
         self.init(
-            self.state.named_colors.background.1,
+            bg_color,
             config.background.mode.is_image(),
             &config.background.image,
         );

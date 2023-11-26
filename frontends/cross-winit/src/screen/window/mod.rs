@@ -28,6 +28,7 @@ pub fn create_window_builder(
         })
         .with_resizable(true)
         .with_decorations(true)
+        .with_transparent(true)
         .with_window_icon(Some(icon));
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
@@ -50,7 +51,6 @@ pub fn create_window_builder(
         window_builder = window_builder
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
-            .with_transparent(true)
             .with_fullsize_content_view(true);
 
         if config.navigation.is_native() {

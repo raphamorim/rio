@@ -1,6 +1,3 @@
-use crate::native::macos::MacosDisplay;
-use raw_window_handle::HasRawDisplayHandle;
-use raw_window_handle::HasRawWindowHandle;
 use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::Sugarloaf;
 use sugarloaf::SugarloafWindow;
@@ -8,7 +5,8 @@ use sugarloaf::SugarloafWindowSize;
 
 #[inline]
 pub fn create_sugarloaf_instance(
-    display: MacosDisplay,
+    handle: raw_window_handle::RawWindowHandle,
+    display: raw_window_handle::RawDisplayHandle,
     width: f32,
     height: f32,
     scale_factor: f32,
@@ -25,11 +23,9 @@ pub fn create_sugarloaf_instance(
         (2, 1),
     );
 
-    let raw_window_handle = display.raw_window_handle();
-    let raw_display_handle = display.raw_display_handle();
     let sugarloaf_window = SugarloafWindow {
-        handle: raw_window_handle,
-        display: raw_display_handle,
+        handle,
+        display,
         scale: scale_factor,
         size: SugarloafWindowSize {
             width: width as u32,
