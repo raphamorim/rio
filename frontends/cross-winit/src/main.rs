@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load command line options.
-    let cli = cli::Cli::parse();
+    let args = cli::Cli::parse();
 
     let (mut config, config_error) = match rio_backend::config::Config::try_load() {
         Ok(config) => (config, None),
@@ -107,12 +107,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("unable to configure log level");
         }
 
-        if let Some(command) = cli.window_options.terminal_options.command() {
+        if let Some(command) = args.window_options.terminal_options.command() {
             config.shell = command;
             config.use_fork = false;
         }
 
-        if let Some(working_dir_cli) = cli.window_options.terminal_options.working_dir {
+        if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
             config.working_dir = Some(working_dir_cli);
         }
     }
