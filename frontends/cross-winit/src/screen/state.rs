@@ -220,21 +220,6 @@ impl State {
         }
     }
 
-    #[inline]
-    fn create_empty_sugar_stack_from_columns(&self, columns: usize) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
-        for _ in 0..columns {
-            stack.push(Sugar {
-                content: ' ',
-                foreground_color: self.named_colors.background.0,
-                background_color: self.named_colors.background.0,
-                style: None,
-                decoration: None,
-            })
-        }
-        stack
-    }
-
     // create_rich_sugar_stack is different than create_sugar_stack
     // it activates features like hyperlinks and text selection
     // this function is only called if state has either selection or hyperlink is some
@@ -579,11 +564,6 @@ impl State {
                 sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
             }
         }
-
-        // This is a fake row created only for visual purposes
-        let empty_last_line =
-            self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
-        sugarloaf.stack(empty_last_line);
 
         self.navigation.content(
             (sugarloaf.layout.width, sugarloaf.layout.height),
