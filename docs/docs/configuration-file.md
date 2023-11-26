@@ -11,7 +11,6 @@ Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml`
 
 Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
-
 ## Cursor
 
 Default cursor is `Block`.
@@ -96,7 +95,7 @@ Possible choices: `both`, `left` and `right`.
 option-as-alt = 'left'
 ```
 
-## Window configuration
+## Window
 
 - `width` - define the intial window width.
 	- Default: `600`
@@ -116,7 +115,7 @@ height = 400
 mode = "Windowed"
 ```
 
-## Background configuration
+## Background
 
 - `opacity` - changes the background transparency state
 	- Default: `1.0`
