@@ -136,18 +136,18 @@ impl Context {
         .await;
 
         let alpha_mode = if caps
-                .alpha_modes
-                .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
-            {
-                wgpu::CompositeAlphaMode::PostMultiplied
-            } else if caps
-                .alpha_modes
-                .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
-            {
-                wgpu::CompositeAlphaMode::PreMultiplied
-            } else {
-                wgpu::CompositeAlphaMode::Auto
-            };
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PostMultiplied
+        } else if caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            wgpu::CompositeAlphaMode::Auto
+        };
 
         surface.configure(
             &device,

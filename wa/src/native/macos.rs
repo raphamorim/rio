@@ -792,10 +792,7 @@ fn get_window_payload(this: &Object) -> &mut MacosDisplay {
 //     view
 // }
 
-unsafe fn create_opengl_view(
-    window_frame: NSRect,
-    sample_count: i32,
-) -> ObjcId {
+unsafe fn create_opengl_view(window_frame: NSRect, sample_count: i32) -> ObjcId {
     use NSOpenGLPixelFormatAttribute::*;
 
     let mut attrs: Vec<u32> = vec![];
