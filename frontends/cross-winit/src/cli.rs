@@ -7,16 +7,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, about, version)]
-pub struct Options {
+pub struct Cli {
     /// Options which can be passed via IPC.
     #[clap(flatten)]
     pub window_options: WindowOptions,
-}
-
-impl Options {
-    pub fn new() -> Self {
-        Self::parse()
-    }
 }
 
 #[derive(Serialize, Deserialize, Args, Default, Clone, Debug, PartialEq, Eq)]

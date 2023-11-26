@@ -90,16 +90,14 @@ impl Sequencer {
                             }
                         }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
-                            let mut config_error: Option<
-                                rio_backend::config::ConfigError,
-                            > = None;
-                            let config = match rio_backend::config::Config::try_load() {
-                                Ok(config) => config,
-                                Err(error) => {
-                                    config_error = Some(error);
-                                    rio_backend::config::Config::default()
-                                }
-                            };
+                            let (config, config_error) =
+                                match rio_backend::config::Config::try_load() {
+                                    Ok(config) => (config, None),
+                                    Err(error) => (
+                                        rio_backend::config::Config::default(),
+                                        Some(error),
+                                    ),
+                                };
 
                             self.config = config.into();
                             for (_id, route) in self.router.routes.iter_mut() {
