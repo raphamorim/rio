@@ -19,6 +19,12 @@ pub struct Window {
     pub height: i32,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
+    #[serde(default = "default_opacity", rename = "background-opacity")]
+    pub background_opacity: f32,
+    #[serde(default = "default_opacity", rename = "foreground-opacity")]
+    pub foreground_opacity: f32,
+    #[serde(rename = "background-image", skip_serializing)]
+    pub background_image: Option<ImageProperties>,
 }
 
 impl Default for Window {
@@ -27,39 +33,9 @@ impl Default for Window {
             width: default_window_width(),
             height: default_window_height(),
             mode: WindowMode::default(),
-        }
-    }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
-pub enum BackgroundMode {
-    #[default]
-    Color,
-    Image,
-}
-
-impl BackgroundMode {
-    pub fn is_image(self) -> bool {
-        self == BackgroundMode::Image
-    }
-}
-
-#[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
-pub struct Background {
-    #[serde(default = "default_background_opacity", skip_serializing)]
-    pub opacity: f32,
-    #[serde(default = "BackgroundMode::default", skip_serializing)]
-    pub mode: BackgroundMode,
-    #[serde(default = "Option::default", skip_serializing)]
-    pub image: Option<ImageProperties>,
-}
-
-impl Default for Background {
-    fn default() -> Background {
-        Background {
-            opacity: default_background_opacity(),
-            image: None,
-            mode: BackgroundMode::Color,
+            background_opacity: default_opacity(),
+            foreground_opacity: default_opacity(),
+            background_image: None,
         }
     }
 }

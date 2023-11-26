@@ -8,7 +8,7 @@ pub mod window;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::navigation::Navigation;
-use crate::config::window::{Background, Window};
+use crate::config::window::Window;
 use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,6 @@ pub struct Config {
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
     pub window: Window,
-    #[serde(default = "Background::default")]
-    pub background: Background,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_shell")]
@@ -350,7 +348,6 @@ impl Default for Config {
             blinking_cursor: false,
             adaptive_theme: None,
             adaptive_colors: None,
-            background: Background::default(),
             bindings: Bindings::default(),
             colors: Colors::default(),
             cursor: default_cursor(),
@@ -448,7 +445,6 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
-        assert_eq!(result.background.opacity, default_background_opacity());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, default_theme());
         assert_eq!(result.cursor, default_cursor());
@@ -631,8 +627,9 @@ mod tests {
             line-height = 2.0
             padding-x = 0.0
 
-            [background]
-            opacity = 0.5
+            [window]
+            background-opacity = 0.5
+            foreground-opacity = 1.0
             [background.image]
             path = "my-image-path.png"
 
@@ -645,9 +642,10 @@ mod tests {
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
-        assert_eq!(result.background.opacity, 0.5);
+        assert_eq!(result.window.background_opacity, 0.5);
+        assert_eq!(result.window.foreground_opacity, 0.5);
         assert_eq!(
-            result.background.image,
+            result.window.background_image,
             Some(sugarloaf::core::ImageProperties {
                 path: String::from("my-image-path.png"),
                 ..sugarloaf::core::ImageProperties::default()

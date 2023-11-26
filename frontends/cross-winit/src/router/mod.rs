@@ -280,8 +280,7 @@ impl RouteWindow {
 
         screen.init(
             screen.state.named_colors.background.1,
-            config.background.mode.is_image(),
-            &config.background.image,
+            &config.window.background_image,
         );
 
         Ok(Self {
@@ -316,8 +315,7 @@ impl RouteWindow {
 
         screen.init(
             screen.state.named_colors.background.1,
-            config.background.mode.is_image(),
-            &config.background.image,
+            &config.window.background_image,
         );
 
         Self {

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Breaking: Background API has moved to Window**
+
+Example:
+
+```toml
+[window]
+width = 600
+height = 400
+mode = "Windowed"
+foreground-opacity = 1.0
+background-opacity = 1.0
+```
+
+Using image as background:
+
+```toml
+[window.background_image]
+path = "/Users/rapha/Desktop/eastward.jpg"
+width = 200.0
+height = 200.0
+x = 0.0
+y = 0.0
+```
+
+- Support opacity for foreground and background.
 - **Breaking:** MacOS default navigation mode will become `NativeTab`.
 - Cursor hide feature is now behind configuration `hide-cursor-when-typing`.
 - Confirm before quite (it can be disabled through configuration `confirm-before-quit`).
