@@ -74,37 +74,29 @@ impl Context {
         // space selection which also causes colors to mismatch. Optionally we can whitelist
         // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
         // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
-        // #[cfg(windows)]
-        // let unsupported_formats = [
-        //     wgpu::TextureFormat::Rgba8Snorm,
-        //     wgpu::TextureFormat::Rgba16Float,
-        // ];
+        #[cfg(windows)]
+        let unsupported_formats = [
+            wgpu::TextureFormat::Rgba8Snorm,
+            wgpu::TextureFormat::Rgba16Float,
+        ];
 
-        // // not reproduce-able on mac
-        // #[cfg(not(windows))]
-        // let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+        // not reproduce-able on mac
+        #[cfg(not(windows))]
+        let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
 
-        // let filtered_formats: Vec<wgpu::TextureFormat> = caps
-        //     .formats
-        //     .iter()
-        //     .copied()
-        //     .filter(|&x| {
-        //         !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
-        //     })
-        //     .collect();
+        let filtered_formats: Vec<wgpu::TextureFormat> = caps
+            .formats
+            .iter()
+            .copied()
+            .filter(|&x| {
+                !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
+            })
+            .collect();
 
-        // let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
-        // if !filtered_formats.is_empty() {
-        //     format = filtered_formats.first().unwrap().to_owned();
-        // }
-
-        // Explicitly request an SRGB format, if available
-        let pref_format_srgb = caps.formats[0].add_srgb_suffix();
-        let format = if caps.formats.contains(&pref_format_srgb) {
-            pref_format_srgb
-        } else {
-            caps.formats[0]
-        };
+        let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
+        if !filtered_formats.is_empty() {
+            format = filtered_formats.first().unwrap().to_owned();
+        }
 
         log::info!(
             "Sugarloaf selected format: {format:?} from {:?}",

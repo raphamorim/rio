@@ -104,32 +104,34 @@ option-as-alt = 'left'
 	- Default: `400`
 
 - `mode` - define how the window will be created
-    - `Windowed` (default) is based on width and height
-    - `Maximized` window is created with maximized
-    - `Fullscreen` window is created with fullscreen
+  - `Windowed` (default) is based on width and height
+  - `Maximized` window is created with maximized
+  - `Fullscreen` window is created with fullscreen
+
+- `foreground-opacity` Set text opacity.
+	- Default: `1.0`.
+
+- `background-opacity` Set background opacity.
+	- Default: `1.0`.
+
+- `background-image` Set an image as background.
+	- Default: `None`
+
+Example:
 
 ```toml
 [window]
 width = 600
 height = 400
 mode = "Windowed"
+foreground-opacity = 1.0
+background-opacity = 1.0
 ```
 
-## Background
-
-- `opacity` - changes the background transparency state
-	- Default: `1.0`
-
-- `mode` - defines background mode bewteen `Color` and `Image`
-
-- `image` - Set an image as background, default is `None`.
+Using image as background:
 
 ```toml
-[background]
-mode = "Image"
-opacity = 1.0
-
-[background.image]
+[window.background_image]
 path = "/Users/rapha/Desktop/eastward.jpg"
 width = 200.0
 height = 200.0

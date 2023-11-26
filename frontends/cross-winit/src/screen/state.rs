@@ -42,7 +42,8 @@ pub struct State {
     ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
-    opacity: f32,
+    background_opacity: f32,
+    foreground_opacity: f32,
 }
 
 impl State {
@@ -72,7 +73,8 @@ impl State {
         }
 
         State {
-            opacity: config.background.opacity,
+            background_opacity: config.window.background_opacity,
+            foreground_opacity: config.window.foreground_opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
@@ -357,8 +359,8 @@ impl State {
             }
         };
 
-        if self.opacity < 1. {
-            color[3] = self.opacity;
+        if self.foreground_opacity < 1. {
+            color[3] = self.foreground_opacity;
         }
 
         color
@@ -419,8 +421,8 @@ impl State {
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
         };
 
-        if color[3] >= 1.0 && self.opacity < 1. {
-            color[3] = self.opacity;
+        if color[3] >= 1.0 && self.background_opacity < 1. {
+            color[3] = self.background_opacity;
         }
 
         color
