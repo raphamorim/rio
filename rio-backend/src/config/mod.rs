@@ -630,7 +630,7 @@ mod tests {
             [window]
             background-opacity = 0.5
             foreground-opacity = 1.0
-            [background.image]
+            [window.background-image]
             path = "my-image-path.png"
 
             [fonts]
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
         assert_eq!(result.window.background_opacity, 0.5);
-        assert_eq!(result.window.foreground_opacity, 0.5);
+        assert_eq!(result.window.foreground_opacity, 1.0);
         assert_eq!(
             result.window.background_image,
             Some(sugarloaf::core::ImageProperties {
