@@ -8,7 +8,7 @@ pub mod window;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::navigation::Navigation;
-use crate::config::window::{Background, Window};
+use crate::config::window::Window;
 use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,6 @@ pub struct Config {
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
     pub window: Window,
-    #[serde(default = "Background::default")]
-    pub background: Background,
     #[serde(default = "Performance::default")]
     pub performance: Performance,
     #[serde(default = "default_shell")]
@@ -91,7 +89,7 @@ pub struct Config {
     pub working_dir: Option<String>,
     #[serde(rename = "line-height", default = "default_line_height")]
     pub line_height: f32,
-    #[serde(default = "default_theme")]
+    #[serde(default = "String::default")]
     pub theme: String,
     #[serde(
         default = "Option::default",
@@ -101,6 +99,8 @@ pub struct Config {
     pub adaptive_theme: Option<AdaptiveTheme>,
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
+    #[serde(default = "default_editor")]
+    pub editor: String,
     #[serde(rename = "padding-x", default = "default_padding_x")]
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
@@ -348,9 +348,9 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             blinking_cursor: false,
+            editor: default_editor(),
             adaptive_theme: None,
             adaptive_colors: None,
-            background: Background::default(),
             bindings: Bindings::default(),
             colors: Colors::default(),
             cursor: default_cursor(),
@@ -366,7 +366,7 @@ impl Default for Config {
             padding_x: default_padding_x(),
             performance: Performance::default(),
             shell: default_shell(),
-            theme: default_theme(),
+            theme: String::default(),
             use_fork: default_use_fork(),
             window: Window::default(),
             working_dir: default_working_dir(),
@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path(&tmp_dir().join("it-should-never-exist"));
-        assert_eq!(config.theme, default_theme());
+        assert_eq!(config.theme, String::default());
         assert_eq!(config.cursor, default_cursor());
     }
 
@@ -432,7 +432,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
 
         // Colors
         assert_eq!(result.colors, Colors::default());
@@ -448,9 +448,8 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.env_vars, default_env_vars());
-        assert_eq!(result.background.opacity, default_background_opacity());
         assert_eq!(result.cursor, default_cursor());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
@@ -483,7 +482,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -502,7 +501,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::Low);
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -523,7 +522,7 @@ mod tests {
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -551,7 +550,7 @@ mod tests {
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.cursor, '_');
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -571,7 +570,7 @@ mod tests {
         assert_eq!(result.performance, Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -591,7 +590,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
@@ -613,7 +612,7 @@ mod tests {
 
         assert_eq!(result.performance, Performance::default());
         assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, default_theme());
+        assert_eq!(result.theme, String::default());
         // Bindings
         assert_eq!(result.bindings.keys[0].key, "Q");
         assert_eq!(result.bindings.keys[0].with, "super");
@@ -631,9 +630,10 @@ mod tests {
             line-height = 2.0
             padding-x = 0.0
 
-            [background]
-            opacity = 0.5
-            [background.image]
+            [window]
+            background-opacity = 0.5
+            foreground-opacity = 1.0
+            [window.background-image]
             path = "my-image-path.png"
 
             [fonts]
@@ -645,9 +645,10 @@ mod tests {
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
-        assert_eq!(result.background.opacity, 0.5);
+        assert_eq!(result.window.background_opacity, 0.5);
+        assert_eq!(result.window.foreground_opacity, 1.0);
         assert_eq!(
-            result.background.image,
+            result.window.background_image,
             Some(sugarloaf::core::ImageProperties {
                 path: String::from("my-image-path.png"),
                 ..sugarloaf::core::ImageProperties::default()

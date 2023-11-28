@@ -1,3 +1,11 @@
+#[cfg(target_os = "macos")]
+use {
+    cocoa::base::{id, NO, YES},
+    objc::{msg_send, sel, sel_impl},
+};
+
+use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::RawWindowHandle;
 use rio_backend::config::Config;
 use std::rc::Rc;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
@@ -6,6 +14,19 @@ pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
+
+#[cfg(target_os = "macos")]
+fn set_has_shadow(window: &Window, has_shadows: bool) {
+    let raw_window = match window.raw_window_handle() {
+        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
+        _ => return,
+    };
+
+    let value = if has_shadows { YES } else { NO };
+    unsafe {
+        let _: id = msg_send![raw_window, setHasShadow: value];
+    }
+}
 
 pub fn create_window_builder(
     title: &str,
@@ -28,6 +49,8 @@ pub fn create_window_builder(
         })
         .with_resizable(true)
         .with_decorations(true)
+        .with_transparent(true)
+        .with_blur(config.window.blur)
         .with_window_icon(Some(icon));
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
@@ -50,7 +73,6 @@ pub fn create_window_builder(
         window_builder = window_builder
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
-            .with_transparent(true)
             .with_fullsize_content_view(true);
 
         if config.navigation.is_native() {
@@ -87,7 +109,7 @@ pub fn create_window_builder(
     window_builder
 }
 
-pub fn configure_window(winit_window: Window, _config: &Rc<Config>) -> Window {
+pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     let current_mouse_cursor = CursorIcon::Text;
     winit_window.set_cursor_icon(current_mouse_cursor);
 
@@ -110,13 +132,20 @@ pub fn configure_window(winit_window: Window, _config: &Rc<Config>) -> Window {
         // None - No special handling is applied for `Option` key.
         use winit::platform::macos::{OptionAsAlt, WindowExtMacOS};
 
-        match _config.option_as_alt.to_lowercase().as_str() {
+        match config.option_as_alt.to_lowercase().as_str() {
             "both" => winit_window.set_option_as_alt(OptionAsAlt::Both),
             "left" => winit_window.set_option_as_alt(OptionAsAlt::OnlyLeft),
             "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
             _ => {}
         }
     }
+
+    let is_transparent = config.window.background_opacity < 1.;
+
+    winit_window.set_transparent(is_transparent);
+
+    #[cfg(target_os = "macos")]
+    set_has_shadow(&winit_window, !is_transparent);
 
     winit_window
 }

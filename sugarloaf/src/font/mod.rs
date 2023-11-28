@@ -86,7 +86,7 @@ fn find_font(
                         if file.read_to_end(&mut font_data).is_ok() {
                             match FontArc::try_from_vec(font_data) {
                                 Ok(arc) => {
-                                    warn!(
+                                    info!(
                                         "Font '{}' found in {}",
                                         family,
                                         path.display()

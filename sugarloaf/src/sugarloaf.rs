@@ -603,64 +603,26 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
-        self.reset_state();
-        self.rects = vec![];
+        // Every time a font size change the cached bounds also changes
+        self.sugar_cache = HashMap::new();
 
-        match self.ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
-
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("sugarloaf::init -> Clear frame"),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-
-                // Every time a font size change the cached bounds also changes
-                self.sugar_cache = HashMap::new();
-
-                let text_scale = self.layout.style.text_scale;
-                // Bounds are defined in runtime
-                if self.is_text_monospaced {
-                    self.font_bound =
-                        self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
-                } else {
-                    self.font_bound =
-                        self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
-                }
-
-                self.layout.scaled_sugarwidth = self.font_bound.0;
-                self.layout.scaled_sugarheight = self.font_bound.1;
-
-                self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
-                self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
-
-                self.layout.update_columns_per_font_width();
-
-                self.ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
-            }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
-            }
+        let text_scale = self.layout.style.text_scale;
+        // Bounds are defined in runtime
+        if self.is_text_monospaced {
+            self.font_bound =
+                self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
+        } else {
+            self.font_bound =
+                self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
         }
+
+        self.layout.scaled_sugarwidth = self.font_bound.0;
+        self.layout.scaled_sugarheight = self.font_bound.1;
+
+        self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
+        self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+
+        self.layout.update_columns_per_font_width();
     }
 
     #[inline]

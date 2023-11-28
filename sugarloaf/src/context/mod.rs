@@ -7,6 +7,7 @@ pub struct Context {
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
     pub scale: f32,
+    alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
 }
 
@@ -51,7 +52,7 @@ impl Context {
         let size = &sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(sugarloaf_window).unwrap() };
+        let surface = unsafe { instance.create_surface(&sugarloaf_window).unwrap() };
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -126,6 +127,20 @@ impl Context {
         })
         .await;
 
+        let alpha_mode = if caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PostMultiplied
+        } else if caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            wgpu::CompositeAlphaMode::Auto
+        };
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -134,8 +149,8 @@ impl Context {
                 width: size.width,
                 height: size.height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
             },
         );
 
@@ -144,6 +159,7 @@ impl Context {
             queue,
             surface,
             format,
+            alpha_mode,
             size: SugarloafWindowSize {
                 width: size.width,
                 height: size.height,
@@ -164,8 +180,8 @@ impl Context {
                 width,
                 height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
             },
         );
     }

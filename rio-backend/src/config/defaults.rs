@@ -12,7 +12,7 @@ pub fn default_padding_x() -> f32 {
 
     #[cfg(target_os = "macos")]
     {
-        10.
+        5.
     }
 }
 
@@ -64,7 +64,7 @@ pub fn default_working_dir() -> Option<String> {
 }
 
 #[inline]
-pub fn default_background_opacity() -> f32 {
+pub fn default_opacity() -> f32 {
     1.0
 }
 
@@ -89,6 +89,11 @@ pub fn default_theme() -> String {
 }
 
 #[inline]
+pub fn default_editor() -> String {
+    String::from("vi")
+}
+
+#[inline]
 pub fn default_window_width() -> i32 {
     600
 }
@@ -105,6 +110,14 @@ pub fn default_scroll_multiplier() -> f64 {
 
 pub fn default_config_file_content() -> String {
     r#"
+# Editor
+#
+# Default editor is "vi".
+#
+# Whenever the key binding `OpenConfigEditor` is triggered it will 
+# use the value of the editor along with the rio configuration path.
+# editor = 'vi'
+
 # Cursor
 #
 # Default cursor is Block
@@ -184,33 +197,20 @@ performance = "High"
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
+# • background-opacity - Set background opacity
+#
+# • foreground-opacity - Set foreground opacity
+#
+# • blur - Set background blur
+#
 # Example:
 # [window]
 # width = 600
 # height = 400
 # mode = "Windowed"
-
-# Background configuration
-#
-# • opacity - changes the background transparency state
-#   Default: 1.0
-#
-# • mode - defines background mode bewteen "Color" and "Image"
-#
-# • image - Set an image as background
-#   Default: None
-#
-# Example:
-# [background]
-# mode = "Image"
-# opacity = 1.0
-#
-# [background.image]
-# path = "/Users/rapha/Desktop/eastward.jpg"
-# width = 200.0
-# height = 200.0
-# x = 0.0
-# y = 0.0
+# foreground-opacity = 1.0
+# background-opacity = 1.0
+# blur = false
 
 # Window Height
 #

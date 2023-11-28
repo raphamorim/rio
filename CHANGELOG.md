@@ -2,7 +2,35 @@
 
 ## Unreleased
 
+- **Breaking**: Settings UI has been removed and `editor` property has been added.
+- **Breaking**: default `padding-x` for MacOS has moved from `10.0` to `5.0`.
+- **Breaking: Background API has moved to Window**
+
+Example:
+
+```toml
+[window]
+width = 600
+height = 400
+mode = "Windowed"
+foreground-opacity = 1.0
+background-opacity = 1.0
+```
+
+Using image as background:
+
+```toml
+[window.background-image]
+path = "/Users/rapha/Desktop/eastward.jpg"
+width = 200.0
+height = 200.0
+x = 0.0
+y = 0.0
+```
+
 - **Breaking:** MacOS default navigation mode will become `NativeTab`.
+- Support for blur background.
+- Support opacity for foreground and background.
 - Cursor hide feature is now behind configuration `hide-cursor-when-typing`.
 - Confirm before quite (it can be disabled through configuration `confirm-before-quit`).
 - Introduces `navigation.macos-enable-close-last-tab` which allows to close the last tab in MacOS. Default value is `true` (Ref: [#296](https://github.com/raphamorim/rio/issues/296))

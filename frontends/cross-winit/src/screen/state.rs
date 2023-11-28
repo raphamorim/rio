@@ -42,6 +42,8 @@ pub struct State {
     ignore_selection_fg_color: bool,
     dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
+    background_opacity: f32,
+    foreground_opacity: f32,
 }
 
 impl State {
@@ -63,11 +65,7 @@ impl State {
             }
         }
 
-        let dynamic_background = if config.background.mode.is_image() {
-            ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
-        } else {
-            named_colors.background
-        };
+        let dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
@@ -75,6 +73,8 @@ impl State {
         }
 
         State {
+            background_opacity: config.window.background_opacity,
+            foreground_opacity: config.window.foreground_opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
@@ -129,7 +129,6 @@ impl State {
         self.hyperlink_range.is_some()
     }
 
-    // TODO: Square.into()
     #[inline]
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
@@ -223,21 +222,6 @@ impl State {
         }
     }
 
-    #[inline]
-    fn create_empty_sugar_stack_from_columns(&self, columns: usize) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
-        for _ in 0..columns {
-            stack.push(Sugar {
-                content: ' ',
-                foreground_color: self.named_colors.background.0,
-                background_color: self.named_colors.background.0,
-                style: None,
-                decoration: None,
-            })
-        }
-        stack
-    }
-
     // create_rich_sugar_stack is different than create_sugar_stack
     // it activates features like hyperlinks and text selection
     // this function is only called if state has either selection or hyperlink is some
@@ -308,7 +292,7 @@ impl State {
 
     #[inline]
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
-        match square.fg {
+        let mut color = match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -373,12 +357,18 @@ impl State {
 
                 self.colors[index]
             }
+        };
+
+        if self.foreground_opacity < 1. {
+            color[3] = self.foreground_opacity;
         }
+
+        color
     }
 
     #[inline]
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
-        match square.bg {
+        let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.dynamic_background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -429,7 +419,13 @@ impl State {
             },
             AnsiColor::Spec(rgb) => rgb.to_arr(),
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
+        };
+
+        if color[3] >= 1.0 && self.background_opacity < 1. {
+            color[3] = self.background_opacity;
         }
+
+        color
     }
 
     #[inline]
@@ -570,11 +566,6 @@ impl State {
                 sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
             }
         }
-
-        // This is a fake row created only for visual purposes
-        let empty_last_line =
-            self.create_empty_sugar_stack_from_columns(sugarloaf.layout.columns);
-        sugarloaf.stack(empty_last_line);
 
         self.navigation.content(
             (sugarloaf.layout.width, sugarloaf.layout.height),

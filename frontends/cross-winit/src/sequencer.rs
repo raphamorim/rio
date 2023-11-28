@@ -138,7 +138,7 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::CursorBlinkingChange) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.window.screen.render();
+                                route.window.winit_window.request_redraw();
                             }
                         }
                         RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
@@ -293,10 +293,11 @@ impl Sequencer {
                             }
                         }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                            if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.open_settings();
-                                route.redraw();
-                            }
+                            self.router.open_config_window(
+                                event_loop_window_target,
+                                self.event_proxy.clone().unwrap(),
+                                &self.config,
+                            );
                         }
                         #[cfg(target_os = "macos")]
                         RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -790,7 +791,7 @@ impl Sequencer {
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         if route.has_key_wait(&key_event) {
-                            if route.path == RoutePath::Settings
+                            if route.path != RoutePath::Terminal
                                 && key_event.state == ElementState::Released
                             {
                                 // Scheduler must be cleaned after leave the terminal route
@@ -925,6 +926,7 @@ impl Sequencer {
 
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         route.window.screen.resize(new_size);
+                        route.window.screen.context_manager.schedule_render(60);
                     }
                 }
 
@@ -995,6 +997,7 @@ impl Sequencer {
                             }
                         }
 
+                        route.window.winit_window.pre_present_notify();
                         match route.path {
                             RoutePath::Assistant => {
                                 route.window.screen.render_assistant(&route.assistant);
@@ -1003,10 +1006,8 @@ impl Sequencer {
                                 route.window.screen.render_welcome();
                             }
                             RoutePath::Terminal => {
+                                // Notify winit that we're about to present.
                                 route.window.screen.render();
-                            }
-                            RoutePath::Settings => {
-                                route.window.screen.render_settings(&route.settings);
                             }
                             RoutePath::ConfirmQuit => {
                                 route

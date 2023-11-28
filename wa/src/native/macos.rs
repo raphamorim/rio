@@ -3,6 +3,8 @@
 //sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
 //platform implementation
 
+use raw_window_handle::HasRawDisplayHandle;
+use raw_window_handle::HasRawWindowHandle;
 use {
     crate::{
         event::{EventHandler, MouseButton},
@@ -165,14 +167,9 @@ impl MacosDisplay {
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
         let mut d = native_display().lock().unwrap();
-        let mut current_dpi_scale = 1.0;
-        if d.high_dpi {
-            let screen: ObjcId = msg_send![self.window, screen];
-            let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
-            current_dpi_scale = dpi_scale as f32;
-        }
-
-        d.dpi_scale = current_dpi_scale;
+        let screen: ObjcId = msg_send![self.window, screen];
+        let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
+        d.dpi_scale = dpi_scale as f32;
 
         let bounds: NSRect = msg_send![self.view, bounds];
         let screen_width = (bounds.size.width as f32 * d.dpi_scale) as i32;
@@ -185,7 +182,7 @@ impl MacosDisplay {
         d.screen_height = screen_height;
 
         if dim_changed {
-            Some((screen_width, screen_height, current_dpi_scale))
+            Some((screen_width, screen_height, d.dpi_scale))
         } else {
             None
         }
@@ -795,11 +792,7 @@ fn get_window_payload(this: &Object) -> &mut MacosDisplay {
 //     view
 // }
 
-unsafe fn create_opengl_view(
-    window_frame: NSRect,
-    sample_count: i32,
-    high_dpi: bool,
-) -> ObjcId {
+unsafe fn create_opengl_view(window_frame: NSRect, sample_count: i32) -> ObjcId {
     use NSOpenGLPixelFormatAttribute::*;
 
     let mut attrs: Vec<u32> = vec![];
@@ -841,11 +834,11 @@ unsafe fn create_opengl_view(
         pixelFormat: glpixelformat_obj
     ];
 
-    if high_dpi {
-        let () = msg_send![view, setWantsBestResolutionOpenGLSurface: YES];
-    } else {
-        let () = msg_send![view, setWantsBestResolutionOpenGLSurface: NO];
-    }
+    // if high_dpi {
+    let () = msg_send![view, setWantsBestResolutionOpenGLSurface: YES];
+    // } else {
+    //     let () = msg_send![view, setWantsBestResolutionOpenGLSurface: NO];
+    // }
 
     view
 }
@@ -866,8 +859,6 @@ where
     let (tx, rx) = std::sync::mpsc::channel();
     let clipboard = Box::new(MacosClipboard);
     crate::set_display(NativeDisplayData {
-        // high_dpi: conf.high_dpi,
-        high_dpi: true,
         ..NativeDisplayData::new(conf.window_width, conf.window_height, tx, clipboard)
     });
 
@@ -929,12 +920,17 @@ where
     (*window_delegate).set_ivar("display_ptr", &mut display as *mut _ as *mut c_void);
 
     let title = str_to_nsstring(&conf.window_title);
-    //let () = msg_send![window, setReleasedWhenClosed: NO];
+
+    // Prevent Cocoa native tabs from being used
+    let _: () = msg_send![window, setTabbingMode:2 /* NSWindowTabbingModeDisallowed */];
+    let _: () = msg_send![window, setRestorable: NO];
+
+    let () = msg_send![window, setReleasedWhenClosed: NO];
     let () = msg_send![window, setTitle: title];
     let () = msg_send![window, center];
     let () = msg_send![window, setAcceptsMouseMovedEvents: YES];
 
-    let view = create_opengl_view(window_frame, conf.sample_count, conf.high_dpi);
+    let view = create_opengl_view(window_frame, conf.sample_count);
     {
         let mut d = native_display().lock().unwrap();
         d.view = view;
@@ -949,18 +945,19 @@ where
     let dimensions = display.update_dimensions().unwrap_or((
         conf.window_width,
         conf.window_height,
-        1.0,
+        2.0,
     ));
 
     let sugarloaf_instance = create_sugarloaf_instance(
-        display,
+        display.raw_window_handle(),
+        display.raw_display_handle(),
         dimensions.0 as f32,
         dimensions.1 as f32,
         dimensions.2,
     );
     {
         let mut d = native_display().lock().unwrap();
-        d.sugarloaf = Box::new(sugarloaf_instance);
+        d.sugarloaf = Some(sugarloaf_instance);
     }
 
     let nstimer: ObjcId = msg_send![

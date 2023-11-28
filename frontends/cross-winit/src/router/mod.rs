@@ -1,6 +1,5 @@
 pub mod assistant;
 pub mod dialog;
-pub mod settings;
 pub mod welcome;
 
 use crate::event::EventProxy;
@@ -8,11 +7,13 @@ use crate::screen::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
 use crate::EventP;
 use assistant::Assistant;
+use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::sugarloaf::font::loader;
-use settings::Settings;
 use std::collections::HashMap;
 use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 use std::rc::Rc;
 use winit::event_loop::EventLoop;
 use winit::event_loop::EventLoopWindowTarget;
@@ -21,7 +22,6 @@ use winit::window::{Window, WindowId};
 
 pub struct Route {
     pub assistant: assistant::Assistant,
-    pub settings: Settings,
     pub path: RoutePath,
     pub window: RouteWindow,
 }
@@ -33,16 +33,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn open_settings(&mut self) {
-        self.path = RoutePath::Settings;
-    }
-
-    #[inline]
-    pub fn update_config(
-        &mut self,
-        config: &Rc<rio_backend::config::Config>,
-        db: &loader::Database,
-    ) {
+    pub fn update_config(&mut self, config: &Rc<RioConfig>, db: &loader::Database) {
         self.window
             .screen
             .update_config(config, self.window.winit_window.theme(), db);
@@ -91,34 +82,6 @@ impl Route {
             return false;
         }
 
-        if self.path == RoutePath::Settings {
-            match key_event.logical_key {
-                Key::Named(NamedKey::ArrowDown) => {
-                    self.settings.move_down();
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    self.settings.move_up();
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    self.settings.move_left();
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    self.settings.move_right();
-                }
-                Key::Named(NamedKey::Enter) => {
-                    self.settings.write_current_config_into_file();
-                    self.path = RoutePath::Terminal;
-                }
-                Key::Named(NamedKey::Escape) => {
-                    self.settings.reset();
-                    self.path = RoutePath::Terminal;
-                }
-                _ => {}
-            }
-
-            return true;
-        }
-
         let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
         if self.path == RoutePath::Assistant && is_enter {
             if self.assistant.is_warning() {
@@ -131,21 +94,61 @@ impl Route {
 
         if self.path == RoutePath::ConfirmQuit {
             if key_event.logical_key == Key::Named(NamedKey::Escape) {
-                self.quit();
-            } else if is_enter {
                 self.path = RoutePath::Terminal;
-                return true;
+            } else if is_enter {
+                self.quit();
             }
-        }
-
-        if self.path == RoutePath::Welcome && is_enter {
-            self.settings.create_file();
-            self.path = RoutePath::Terminal;
 
             return true;
         }
 
+        if self.path == RoutePath::Welcome && is_enter {
+            self.create_config_file();
+            self.path = RoutePath::Terminal;
+            return true;
+        }
+
         true
+    }
+
+    #[inline]
+    pub fn create_config_file(&self) {
+        let default_file_path = rio_backend::config::config_file_path();
+        if default_file_path.exists() {
+            return;
+        }
+
+        let default_dir_path = rio_backend::config::config_dir_path();
+        match std::fs::create_dir_all(&default_dir_path) {
+            Ok(_) => {
+                log::info!("configuration path created {}", default_dir_path.display());
+            }
+            Err(err_message) => {
+                log::error!("could not create config directory: {err_message}");
+            }
+        }
+
+        match File::create(&default_file_path) {
+            Err(err_message) => {
+                log::error!(
+                    "could not create config file {}: {err_message}",
+                    default_file_path.display()
+                )
+            }
+            Ok(mut created_file) => {
+                log::info!("configuration file created {}", default_file_path.display());
+
+                if let Err(err_message) = writeln!(
+                    created_file,
+                    "{}",
+                    rio_backend::config::config_file_content()
+                ) {
+                    log::error!(
+                        "could not update config file with defaults: {err_message}"
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -153,7 +156,6 @@ impl Route {
 pub enum RoutePath {
     Assistant,
     Terminal,
-    Settings,
     Welcome,
     ConfirmQuit,
 }
@@ -162,6 +164,7 @@ pub struct Router {
     pub routes: HashMap<WindowId, Route>,
     propagated_report: Option<RioError>,
     pub font_database: loader::Database,
+    pub config_route: Option<WindowId>,
 }
 
 impl Router {
@@ -172,6 +175,7 @@ impl Router {
         Router {
             routes: HashMap::new(),
             propagated_report: None,
+            config_route: None,
             font_database,
         }
     }
@@ -187,7 +191,6 @@ impl Router {
         let mut route = Route {
             window: route_window,
             path: RoutePath::Terminal,
-            settings: Settings::new(&self.font_database),
             assistant: Assistant::new(),
         };
 
@@ -199,12 +202,57 @@ impl Router {
         self.routes.insert(id, route);
     }
 
+    pub fn open_config_window(
+        &mut self,
+        event_loop: &EventLoopWindowTarget<EventP>,
+        event_proxy: EventProxy,
+        config: &Rc<RioConfig>,
+    ) {
+        // In case configuration window does exists already
+        if let Some(route_id) = self.config_route {
+            if let Some(route) = self.routes.get(&route_id) {
+                route.window.winit_window.focus_window();
+                return;
+            }
+        }
+
+        let current_config: RioConfig = config.as_ref().clone();
+        let new_config = RioConfig {
+            shell: rio_backend::config::Shell {
+                program: config.editor.clone(),
+                args: vec![rio_backend::config::config_file_path()
+                    .display()
+                    .to_string()],
+            },
+            ..current_config
+        };
+
+        let window = RouteWindow::from_target(
+            event_loop,
+            event_proxy,
+            &new_config.into(),
+            &self.font_database,
+            "Rio Settings",
+            None,
+        );
+        let id = window.winit_window.id();
+        self.routes.insert(
+            id,
+            Route {
+                window,
+                path: RoutePath::Terminal,
+                assistant: Assistant::new(),
+            },
+        );
+        self.config_route = Some(id);
+    }
+
     #[inline]
     pub fn create_window(
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<RioConfig>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -218,7 +266,6 @@ impl Router {
             window.winit_window.id(),
             Route {
                 window,
-                settings: Settings::new(&self.font_database),
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
             },
@@ -231,7 +278,7 @@ impl Router {
         &mut self,
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<RioConfig>,
         tab_id: Option<String>,
     ) {
         let window = RouteWindow::from_target(
@@ -246,7 +293,6 @@ impl Router {
             window.winit_window.id(),
             Route {
                 window,
-                settings: Settings::new(&self.font_database),
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
             },
@@ -266,7 +312,7 @@ pub struct RouteWindow {
 impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventP>,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<RioConfig>,
         font_database: &loader::Database,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
@@ -280,8 +326,7 @@ impl RouteWindow {
 
         screen.init(
             screen.state.named_colors.background.1,
-            config.background.mode.is_image(),
-            &config.background.image,
+            &config.window.background_image,
         );
 
         Ok(Self {
@@ -297,7 +342,7 @@ impl RouteWindow {
     pub fn from_target(
         event_loop: &EventLoopWindowTarget<EventP>,
         event_proxy: EventProxy,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<RioConfig>,
         font_database: &loader::Database,
         window_name: &str,
         tab_id: Option<String>,
@@ -316,8 +361,7 @@ impl RouteWindow {
 
         screen.init(
             screen.state.named_colors.background.1,
-            config.background.mode.is_image(),
-            &config.background.image,
+            &config.window.background_image,
         );
 
         Self {

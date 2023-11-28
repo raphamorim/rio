@@ -335,11 +335,13 @@ impl Screen {
         let lines = self.sugarloaf.layout.lines;
         self.resize_all_contexts(width, height, columns, lines);
 
-        self.init(
-            self.state.named_colors.background.1,
-            config.background.mode.is_image(),
-            &config.background.image,
-        );
+        let mut bg_color = self.state.named_colors.background.1;
+
+        if config.window.background_opacity < 1. {
+            bg_color.a = config.window.background_opacity as f64;
+        }
+
+        self.init(bg_color, &config.window.background_image);
     }
 
     #[inline]
@@ -1190,16 +1192,13 @@ impl Screen {
     pub fn init(
         &mut self,
         color: ColorWGPU,
-        use_image_as_background: bool,
-        background_image_opt: &Option<sugarloaf::core::ImageProperties>,
+        background_image: &Option<sugarloaf::core::ImageProperties>,
     ) {
         let initial_columns = self.sugarloaf.layout.columns;
 
         self.sugarloaf.set_background_color(color);
-        if use_image_as_background {
-            if let Some(background_image) = background_image_opt {
-                self.sugarloaf.set_background_image(background_image);
-            }
+        if let Some(image) = background_image {
+            self.sugarloaf.set_background_image(image);
         }
 
         self.sugarloaf.calculate_bounds();
@@ -1211,12 +1210,6 @@ impl Screen {
             let lines = self.sugarloaf.layout.lines;
             self.resize_all_contexts(width, height, columns, lines);
         }
-    }
-
-    #[inline]
-    pub fn render_settings(&mut self, settings: &router::settings::Settings) {
-        crate::router::settings::screen::render(&mut self.sugarloaf, settings);
-        self.sugarloaf.render();
     }
 
     #[inline]
