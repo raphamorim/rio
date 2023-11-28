@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum NavigationMode {
     Plain,
     TopTab,
+    #[cfg(target_os = "macos")]
     NativeTab,
     BottomTab,
     Breadcrumb,
