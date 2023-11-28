@@ -12,7 +12,7 @@ pub fn default_padding_x() -> f32 {
 
     #[cfg(target_os = "macos")]
     {
-        10.
+        5.
     }
 }
 
@@ -184,33 +184,17 @@ performance = "High"
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
+# • background-opacity - Set background opacity
+#
+# • foreground-opacity - Set foreground opacity
+#
 # Example:
 # [window]
 # width = 600
 # height = 400
 # mode = "Windowed"
-
-# Background configuration
-#
-# • opacity - changes the background transparency state
-#   Default: 1.0
-#
-# • mode - defines background mode bewteen "Color" and "Image"
-#
-# • image - Set an image as background
-#   Default: None
-#
-# Example:
-# [background]
-# mode = "Image"
-# opacity = 1.0
-#
-# [background.image]
-# path = "/Users/rapha/Desktop/eastward.jpg"
-# width = 200.0
-# height = 200.0
-# x = 0.0
-# y = 0.0
+# foreground-opacity = 1.0
+# background-opacity = 1.0
 
 # Window Height
 #
