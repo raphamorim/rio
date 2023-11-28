@@ -1221,12 +1221,6 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_settings(&mut self, settings: &router::settings::Settings) {
-        crate::router::settings::screen::render(&mut self.sugarloaf, settings);
-        self.sugarloaf.render();
-    }
-
-    #[inline]
     pub fn render_assistant(&mut self, assistant: &router::assistant::Assistant) {
         crate::router::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();

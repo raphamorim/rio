@@ -89,6 +89,11 @@ pub fn default_theme() -> String {
 }
 
 #[inline]
+pub fn default_editor() -> String {
+    String::from("vi")
+}
+
+#[inline]
 pub fn default_window_width() -> i32 {
     600
 }
