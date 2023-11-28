@@ -128,6 +128,9 @@ option-as-alt = 'left'
 - `background-opacity` Set background opacity.
 	- Default: `1.0`.
 
+- `blur` Set blur on background.
+	- Default: `false`.
+
 - `background-image` Set an image as background.
 	- Default: `None`
 
@@ -140,7 +143,19 @@ height = 400
 mode = "Windowed"
 foreground-opacity = 1.0
 background-opacity = 1.0
+blur = false
 ```
+
+Example using blur and background opacity:
+
+```toml
+[window]
+foreground-opacity = 1.0
+background-opacity = 0.5
+blur = true
+```
+
+![Demo blur and background opacity](/assets/demos/demo-macos-blur.png)
 
 Using image as background:
 

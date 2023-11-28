@@ -23,6 +23,8 @@ pub struct Window {
     pub background_opacity: f32,
     #[serde(default = "default_opacity", rename = "foreground-opacity")]
     pub foreground_opacity: f32,
+    #[serde(default = "bool::default")]
+    pub blur: bool,
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
 }
@@ -36,6 +38,7 @@ impl Default for Window {
             background_opacity: default_opacity(),
             foreground_opacity: default_opacity(),
             background_image: None,
+            blur: false,
         }
     }
 }
