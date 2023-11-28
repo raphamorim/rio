@@ -201,6 +201,8 @@ performance = "High"
 #
 # • foreground-opacity - Set foreground opacity
 #
+# • blur - Set background blur
+#
 # Example:
 # [window]
 # width = 600
@@ -208,6 +210,7 @@ performance = "High"
 # mode = "Windowed"
 # foreground-opacity = 1.0
 # background-opacity = 1.0
+# blur = false
 
 # Window Height
 #
