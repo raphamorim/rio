@@ -39,6 +39,8 @@ copa = { workspace = true }
 wgpu = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2.2"
+cocoa = "0.25.0"
 objc2 = { version = "=0.3.0-beta.0" }
 objc2-foundation = { version = "=0.2.0-alpha.5" }
 

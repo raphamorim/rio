@@ -138,7 +138,7 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::CursorBlinkingChange) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.window.screen.render();
+                                route.window.winit_window.request_redraw();
                             }
                         }
                         RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
@@ -926,6 +926,7 @@ impl Sequencer {
 
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         route.window.screen.resize(new_size);
+                        route.window.screen.context_manager.schedule_render(60);
                     }
                 }
 
@@ -996,6 +997,7 @@ impl Sequencer {
                             }
                         }
 
+                        route.window.winit_window.pre_present_notify();
                         match route.path {
                             RoutePath::Assistant => {
                                 route.window.screen.render_assistant(&route.assistant);
@@ -1004,6 +1006,7 @@ impl Sequencer {
                                 route.window.screen.render_welcome();
                             }
                             RoutePath::Terminal => {
+                                // Notify winit that we're about to present.
                                 route.window.screen.render();
                             }
                             RoutePath::ConfirmQuit => {

@@ -28,8 +28,9 @@ x = 0.0
 y = 0.0
 ```
 
-- Support opacity for foreground and background.
 - **Breaking:** MacOS default navigation mode will become `NativeTab`.
+- Support for blur background.
+- Support opacity for foreground and background.
 - Cursor hide feature is now behind configuration `hide-cursor-when-typing`.
 - Confirm before quite (it can be disabled through configuration `confirm-before-quit`).
 - Introduces `navigation.macos-enable-close-last-tab` which allows to close the last tab in MacOS. Default value is `true` (Ref: [#296](https://github.com/raphamorim/rio/issues/296))
