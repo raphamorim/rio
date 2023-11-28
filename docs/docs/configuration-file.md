@@ -21,6 +21,20 @@ Other available options are: `_` and `|`
 cursor = '▇'
 ```
 
+## Editor
+
+Default editor is `vi`.
+
+Whenever the key binding `OpenConfigEditor` is triggered it will use the value of the editor along with the rio configuration path.
+
+An example, considering you have VS Code installed and you want to use it as your editor:
+
+```toml
+editor = 'code'
+```
+
+Whenever `OpenConfigEditor` runs it will trigger `$ code <path-to-rio-configuration-file>`.
+
 ## Blinking Cursor
 
 Default is `false`

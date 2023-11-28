@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Breaking**: Settings UI has been removed and `editor` property has been added.
+- **Breaking**: default `padding-x` for MacOS has moved from `10.0` to `5.0`.
 - **Breaking: Background API has moved to Window**
 
 Example:
