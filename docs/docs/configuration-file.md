@@ -146,7 +146,7 @@ background-opacity = 1.0
 blur = false
 ```
 
-Example using blur and background opacity:
+### Using blur and background opacity:
 
 ```toml
 [window]
@@ -157,16 +157,19 @@ blur = true
 
 ![Demo blur and background opacity](/assets/demos/demo-macos-blur.png)
 
-Using image as background:
+### Using image as background:
 
 ```toml
 [window.background-image]
-path = "/Users/rapha/Desktop/eastward.jpg"
-width = 200.0
-height = 200.0
+path = "/Users/hugoamor/Desktop/musashi.png"
+opacity = 0.5
+width = 400.0
+height = 400.0
 x = 0.0
-y = 0.0
+y = -100.0
 ```
+
+![Demo image as background](/assets/demos/demo-background-image.png)
 
 ## Fonts
 
@@ -251,19 +254,21 @@ Default:
 	- (Linux/BSD) user login shell
 	- (Windows) powershell
 
-### Example 1: for MacOS using fish shell from bin path:
+### Shell Examples
+
+1. MacOS using fish shell from bin path:
 
 ```toml
 shell = { program = "/bin/fish", args = ["--login"] }
 ```
 
-### Example 2: for Windows using powershell
+2. Windows using powershell
 
 ```toml
 shell = { program = "pwsh", args = [] }
 ```
 
-### Example 3: for Windows using powershell with login
+3. Windows using powershell with login
 
 ```toml
 shell = { program = "pwsh", args = ["-l"] }
