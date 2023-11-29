@@ -128,7 +128,7 @@ option-as-alt = 'left'
 - `background-opacity` Set background opacity.
 	- Default: `1.0`.
 
-- `blur` Set blur on background.
+- `blur` Set blur on the window background. Changing this config requires restarting Rio to take effect.
 	- Default: `false`.
 
 - `background-image` Set an image as background.
