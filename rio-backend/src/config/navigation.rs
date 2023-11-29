@@ -1,5 +1,4 @@
 use crate::config::colors::{deserialize_to_arr, ColorArray};
-use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -120,24 +119,10 @@ pub struct Navigation {
     pub clickable: bool,
     #[serde(default = "bool::default", rename = "use-current-path")]
     pub use_current_path: bool,
-    #[serde(
-        default = "bool::default",
-        rename = "use-terminal-title",
-        skip_serializing
-    )]
+    #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(
-        default = "bool::default",
-        rename = "macos-hide-window-buttons",
-        skip_serializing
-    )]
+    #[serde(default = "bool::default", rename = "macos-hide-window-buttons")]
     pub macos_hide_window_buttons: bool,
-    #[serde(
-        rename = "macos-enable-close-last-tab",
-        skip_serializing,
-        default = "default_bool_true"
-    )]
-    pub macos_enable_close_last_tab: bool,
 }
 
 impl Navigation {
