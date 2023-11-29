@@ -8,6 +8,7 @@ pub enum NavigationMode {
     #[cfg(target_os = "macos")]
     NativeTab,
     BottomTab,
+    #[cfg(not(windows))]
     Breadcrumb,
     CollapsedTab,
 }
