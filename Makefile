@@ -179,7 +179,7 @@ publish-crates:
 	cargo publish -p corcovado
 	cargo publish -p teletypewriter
 	cargo publish -p sugarloaf
-	cargo publish -p rio-config
+	cargo publish -p rio-backend
 	cargo publish -p rioterm
 
 test-renderer:
