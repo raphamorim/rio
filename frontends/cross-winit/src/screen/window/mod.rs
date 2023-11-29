@@ -4,7 +4,9 @@ use {
     objc::{msg_send, sel, sel_impl},
 };
 
+#[cfg(target_os = "macos")]
 use raw_window_handle::HasRawWindowHandle;
+#[cfg(target_os = "macos")]
 use raw_window_handle::RawWindowHandle;
 use rio_backend::config::Config;
 use std::rc::Rc;
