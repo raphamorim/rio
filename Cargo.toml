@@ -33,6 +33,7 @@ rio-config = { path = "rio-config", version = "0.0.28" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.0.28" }
 copa = { path = "copa", default-features = true, version = "0.0.28" }
 teletypewriter = { path = "teletypewriter", version = "0.0.28" }
+rio-backend = { path = "rio-backend", version = "0.0.28" }
 
 raw-window-handle = "0.5"
 parking_lot = "0.12.1"
