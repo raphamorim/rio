@@ -1,5 +1,6 @@
 [package]
 name = "rioterm"
+description = "Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
