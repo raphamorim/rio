@@ -201,7 +201,7 @@ performance = "High"
 #
 # • foreground-opacity - Set foreground opacity
 #
-# • blur - Set background blur
+# • blur - Set blur on the window background. Changing this config requires restarting Rio to take effect.
 #
 # Example:
 # [window]
