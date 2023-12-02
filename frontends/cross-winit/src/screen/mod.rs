@@ -191,7 +191,7 @@ impl Screen {
             context_manager,
             ime,
             sugarloaf,
-            mouse: Mouse::new(config.scroll_multiplier),
+            mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             state,
             bindings,
             clipboard,
@@ -327,7 +327,8 @@ impl Screen {
             terminal.blinking_cursor = config.blinking_cursor;
         }
 
-        self.mouse.set_multiplier(config.scroll_multiplier);
+        self.mouse
+            .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
@@ -1366,8 +1367,8 @@ impl Screen {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let width = self.sugarloaf.layout.width as f64;
-        let height = self.sugarloaf.layout.height as f64;
+        let width = self.sugarloaf.layout.scaled_sugarwidth as f64;
+        let height = self.sugarloaf.layout.scaled_sugarheight as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -1384,10 +1385,7 @@ impl Screen {
             } else {
                 MOUSE_WHEEL_DOWN
             };
-            let lines = (self.mouse.accumulated_scroll.y
-                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor)
-                    as f64)
-                .abs() as usize;
+            let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
 
             for _ in 0..lines {
                 self.mouse_report(code, ElementState::Pressed);
@@ -1406,17 +1404,19 @@ impl Screen {
         } else if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
             && !self.modifiers.state().shift_key()
         {
-            self.mouse.accumulated_scroll.x += new_scroll_x_px;
-            self.mouse.accumulated_scroll.y += new_scroll_y_px;
+            self.mouse.accumulated_scroll.x +=
+                (new_scroll_x_px * self.mouse.multiplier) / self.mouse.divider;
+            self.mouse.accumulated_scroll.y +=
+                (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
 
-            // // The chars here are the same as for the respective arrow keys.
+            // The chars here are the same as for the respective arrow keys.
             let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / (self.sugarloaf.layout.font_size * self.sugarloaf.layout.scale_factor)
-                    as f64)
+                / (self.sugarloaf.layout.scaled_sugarheight) as f64)
                 .abs() as usize;
+
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 
             let mut content = Vec::with_capacity(3 * (lines + columns));
@@ -1437,7 +1437,8 @@ impl Screen {
                 self.ctx_mut().current_mut().messenger.send_bytes(content);
             }
         } else {
-            self.mouse.accumulated_scroll.y += new_scroll_y_px * self.mouse.multiplier;
+            self.mouse.accumulated_scroll.y +=
+                (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
             let lines = (self.mouse.accumulated_scroll.y
                 / self.sugarloaf.layout.font_size as f64) as i32;
 

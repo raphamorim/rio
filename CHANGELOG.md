@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-- TBD
+- **New scroll API**: Scroll calculation for canonical mode will be based on `(accumulated scroll * multiplier / divider)` so if you want quicker scroll, keep increasing the multiplier if you want to reduce you increase the divider. Can use both properties also to find the best scroll for you:
+
+```toml
+[scroll]
+multiplier = 3.0
+divider = 1.0
+```
+
+- Corrections for TMUX scroll calculations.
 
 ## 0.0.28
 
