@@ -29,6 +29,11 @@ fn set_has_shadow(window: &Window, has_shadows: bool) {
         let _: id = msg_send![raw_window, setHasShadow: value];
     }
 }
+#[cfg(all(
+    any(feature = "wayland", feature = "x11"),
+    not(any(target_os = "macos", windows))
+))]
+pub const APPLICATION_ID: &str = "rio";
 
 pub fn create_window_builder(
     title: &str,
@@ -57,14 +62,12 @@ pub fn create_window_builder(
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
-        use crate::screen::constants::APPLICATION_ID;
         use winit::platform::x11::WindowBuilderExtX11;
         window_builder = window_builder.with_name(APPLICATION_ID, "");
     }
 
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     {
-        use crate::screen::constants::APPLICATION_ID;
         use winit::platform::wayland::WindowBuilderExtWayland;
         window_builder = window_builder.with_name(APPLICATION_ID, "");
     }
