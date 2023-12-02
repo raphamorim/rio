@@ -13,7 +13,6 @@ mod messenger;
 mod mouse;
 mod navigation;
 mod state;
-pub mod window;
 
 use crate::clipboard::{Clipboard, ClipboardType};
 use crate::crosswords::{

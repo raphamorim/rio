@@ -1,9 +1,10 @@
 pub mod assistant;
 pub mod dialog;
 pub mod welcome;
+mod window;
 
 use crate::event::EventProxy;
-use crate::screen::window::{configure_window, create_window_builder};
+use crate::router::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
 use crate::EventP;
 use assistant::Assistant;
