@@ -46,6 +46,15 @@ const MENTIONS = [
       </>
     ),
   },
+  {
+    tweetUrl: 'https://twitter.com/EduRonqui/status/1730619921632022997',
+    username: 'ferfabricio',
+    quote: (
+      <>
+        Eu comecei a usar o Rio term faz uns dias e ta sendo uma experiência muito bacana! parabéns @raphamorims
+      </>
+    ),
+  },
 ];
 
 export default MENTIONS;
