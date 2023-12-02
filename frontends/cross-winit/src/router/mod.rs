@@ -19,6 +19,10 @@ use std::rc::Rc;
 use winit::event_loop::EventLoop;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::{Key, NamedKey};
+#[cfg(not(any(target_os = "macos", windows)))]
+use winit::platform::startup_notify::{
+    self, EventLoopExtStartupNotify, WindowBuilderExtStartupNotify,
+};
 use winit::window::{Window, WindowId};
 
 pub struct Route {
@@ -318,7 +322,19 @@ impl RouteWindow {
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
-        let window_builder = create_window_builder("Rio", config, None);
+
+        #[allow(unused_mut)]
+        let mut window_builder = create_window_builder("Rio", config, None);
+
+        #[cfg(not(any(target_os = "macos", windows)))]
+        if let Some(token) = event_loop.read_token_from_env() {
+            log::debug!("Activating window with token: {token:?}");
+            window_builder = window_builder.with_activation_token(token);
+
+            // Remove the token from the env.
+            startup_notify::reset_activation_token_env();
+        }
+
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
