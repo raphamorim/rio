@@ -9,3 +9,5 @@ release
 .jekyll-cache
 .jekyll-metadata
 NOTES
+
+.direnv/
