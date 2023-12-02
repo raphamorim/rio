@@ -103,11 +103,6 @@ pub fn default_window_height() -> i32 {
     400
 }
 
-#[inline]
-pub fn default_scroll_multiplier() -> f64 {
-    3.0
-}
-
 pub fn default_config_file_content() -> String {
     r#"
 # Editor
@@ -130,13 +125,6 @@ cursor = '▇'
 # Default is false
 #
 blinking-cursor = false
-
-# Scroll Speed Multiplier
-#
-# You can change how many lines are scrolled each time by setting this option.
-# Defaul is 3.0.
-# Example:
-# scroll-multiplier = 3.0
 
 # Ignore theme selection foreground color
 #
@@ -259,6 +247,22 @@ performance = "High"
 # family = "cascadiamono"
 # style = "italic"
 # weight = 800
+
+# Scroll
+#
+# You can change how many lines are scrolled each time by setting this option.
+#
+# Scroll calculation for canonical mode will be based on `lines = (accumulated scroll * multiplier / divider)`,
+# If you want a quicker scroll, keep increasing the multiplier.
+# If you want to reduce scroll speed you will need to increase the divider.
+# You can use both properties also to find the best scroll for you.
+#
+# Multiplier default is 3.0.
+# Divider default is 1.0.
+# Example:
+# [scroll]
+# multiplier = 3.0
+# divider = 1.0
 
 # Navigation
 #

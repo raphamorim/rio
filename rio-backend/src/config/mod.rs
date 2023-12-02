@@ -50,6 +50,21 @@ pub struct Shell {
     pub args: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Scroll {
+    pub multiplier: f64,
+    pub divider: f64,
+}
+
+impl Default for Scroll {
+    fn default() -> Scroll {
+        Scroll {
+            multiplier: 3.0,
+            divider: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Developer {
     #[serde(default = "bool::default", rename = "enable-fps-counter")]
@@ -91,6 +106,8 @@ pub struct Config {
     pub line_height: f32,
     #[serde(default = "String::default")]
     pub theme: String,
+    #[serde(default = "Scroll::default")]
+    pub scroll: Scroll,
     #[serde(
         default = "Option::default",
         skip_serializing,
@@ -105,8 +122,6 @@ pub struct Config {
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
     pub cursor: char,
-    #[serde(default = "default_scroll_multiplier", rename = "scroll-multiplier")]
-    pub scroll_multiplier: f64,
     #[serde(default = "default_env_vars", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -354,7 +369,7 @@ impl Default for Config {
             bindings: Bindings::default(),
             colors: Colors::default(),
             cursor: default_cursor(),
-            scroll_multiplier: default_scroll_multiplier(),
+            scroll: Scroll::default(),
             use_kitty_keyboard_protocol: false,
             developer: Developer::default(),
             disable_unfocused_render: false,

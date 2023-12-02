@@ -19,6 +19,7 @@ pub struct AccumulatedScroll {
 #[derive(Debug)]
 pub struct Mouse {
     pub multiplier: f64,
+    pub divider: f64,
     pub left_button_state: ElementState,
     pub middle_button_state: ElementState,
     pub right_button_state: ElementState,
@@ -37,6 +38,7 @@ impl Default for Mouse {
     fn default() -> Mouse {
         Mouse {
             multiplier: 3.0,
+            divider: 1.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
             left_button_state: ElementState::Released,
@@ -54,16 +56,18 @@ impl Default for Mouse {
 }
 
 impl Mouse {
-    pub fn new(multiplier: f64) -> Self {
+    pub fn new(multiplier: f64, divider: f64) -> Self {
         Self {
             multiplier,
+            divider,
             ..Default::default()
         }
     }
 
     #[inline]
-    pub fn set_multiplier(&mut self, multiplier: f64) {
+    pub fn set_multiplier_and_divider(&mut self, multiplier: f64, divider: f64) {
         self.multiplier = multiplier;
+        self.divider = divider;
     }
 }
 
