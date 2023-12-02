@@ -16,8 +16,30 @@
       rust-toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
     in
     {
-      devShells.${system}.default = pkgs.mkShell {
-        packages = [ rust-toolchain ];
+      devShells.${system}.default = pkgs.mkShell rec {
+        packages = with pkgs; [
+          pkg-config
+          cmake
+          fontconfig
+
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXrandr
+          xorg.libXi
+          xorg.libxkbfile
+          xorg.xkbutils
+          xorg.xkbevd
+          xorg.libXScrnSaver
+          libxkbcommon
+
+          directx-shader-compiler
+          libGL
+          vulkan-headers
+          vulkan-loader
+          vulkan-tools
+        ] ++ [ rust-toolchain ];
+
+        LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath packages)}";
       };
     };
 }
