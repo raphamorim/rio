@@ -29,6 +29,11 @@
       });
     in
     {
+      apps.${system}.default = {
+        type = "app";
+        program = "${rio-pkg}/bin/rio";
+      };
+
       overlays.default = final: prev: {
         rio = rio-pkg;
       };
