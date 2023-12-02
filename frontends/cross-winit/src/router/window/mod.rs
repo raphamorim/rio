@@ -55,7 +55,6 @@ pub fn create_window_builder(
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,
             height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
         })
-        .with_theme(Some(winit::window::Theme::Dark))
         .with_resizable(true)
         .with_decorations(true)
         .with_transparent(true)
