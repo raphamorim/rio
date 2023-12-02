@@ -14,8 +14,25 @@
       };
 
       rust-toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+
+      rio-pkg = pkgs.callPackge ({ rustPlatform, lib, ... }: rustPlatform.buildRustPackage {
+        pname = "rio";
+
+        src = ./.;
+        cargoLock.lockFile = ./Cargo.lock;
+
+        meta = {
+          description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.";
+          homepage = "https://raphamorim.io/rio/";
+          license = lib.licenses.mit;
+        };
+      });
     in
     {
+      overlays.default = final: prev: {
+        rio = rio-pkg;
+      };
+
       devShells.${system}.default = pkgs.mkShell rec {
         packages = with pkgs; [
           pkg-config
