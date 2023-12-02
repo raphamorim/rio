@@ -364,7 +364,19 @@ impl RouteWindow {
         window_name: &str,
         tab_id: Option<String>,
     ) -> Self {
-        let window_builder = create_window_builder(window_name, config, tab_id.clone());
+        #[allow(unused_mut)]
+        let mut window_builder =
+            create_window_builder(window_name, config, tab_id.clone());
+
+        #[cfg(not(any(target_os = "macos", windows)))]
+        if let Some(token) = event_loop.read_token_from_env() {
+            log::debug!("Activating window with token: {token:?}");
+            window_builder = window_builder.with_activation_token(token);
+
+            // Remove the token from the env.
+            startup_notify::reset_activation_token_env();
+        }
+
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
