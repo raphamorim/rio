@@ -555,6 +555,10 @@ pub fn default_key_bindings(
         Key::Named(ArrowDown), +BindingMode::VI; ViMotion::Down;
         Key::Named(ArrowLeft), +BindingMode::VI; ViMotion::Left;
         Key::Named(ArrowRight), +BindingMode::VI; ViMotion::Right;
+        Key::Named(ArrowUp), ModifiersState::SUPER, ~BindingMode::VI; Action::None;
+        Key::Named(ArrowDown), ModifiersState::SUPER, ~BindingMode::VI; Action::None;
+        Key::Named(ArrowLeft), ModifiersState::SUPER, ~BindingMode::VI; Action::None;
+        Key::Named(ArrowRight), ModifiersState::SUPER, ~BindingMode::VI; Action::None;
         "0",                          +BindingMode::VI;
             ViMotion::First;
         "4",   ModifiersState::SHIFT, +BindingMode::VI;
