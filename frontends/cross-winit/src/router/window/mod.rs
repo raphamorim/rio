@@ -57,7 +57,7 @@ pub fn create_window_builder(
         })
         .with_resizable(true)
         .with_decorations(true)
-        .with_transparent(true)
+        .with_transparent(config.window.background_opacity < 1.)
         .with_blur(config.window.blur)
         .with_window_icon(Some(icon));
 
@@ -77,6 +77,8 @@ pub fn create_window_builder(
     {
         use winit::platform::macos::WindowBuilderExtMacOS;
         window_builder = window_builder
+            // MacOS is always transparent
+            .with_transparent(true)
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true);

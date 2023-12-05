@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix compiled binary shows nothing inside the app window [#366](https://github.com/raphamorim/rio/issues/366).
+- Fix command key + left and right strange behavior [#359](https://github.com/raphamorim/rio/issues/359).
 - **New scroll API**: Scroll calculation for canonical mode will be based on `(accumulated scroll * multiplier / divider)` so if you want quicker scroll, keep increasing the multiplier if you want to reduce you increase the divider. Can use both properties also to find the best scroll for you:
 
 ```toml
