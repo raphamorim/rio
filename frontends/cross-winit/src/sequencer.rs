@@ -292,6 +292,29 @@ impl Sequencer {
                                 }
                             }
                         }
+                        RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                use teletypewriter::WinsizeBuilder;
+                                let size = WinsizeBuilder {
+                                    cols: route.window.screen.sugarloaf.layout.columns
+                                        as u16,
+                                    rows: route.window.screen.sugarloaf.layout.lines
+                                        as u16,
+                                    width: route.window.screen.sugarloaf.layout.width
+                                        as u16,
+                                    height: route.window.screen.sugarloaf.layout.height
+                                        as u16,
+                                };
+                                let text = format(size);
+                                route
+                                    .window
+                                    .screen
+                                    .ctx_mut()
+                                    .current_mut()
+                                    .messenger
+                                    .send_bytes(text.into_bytes());
+                            }
+                        }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {
                             self.router.open_config_window(
                                 event_loop_window_target,

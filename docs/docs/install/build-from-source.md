@@ -24,7 +24,7 @@ rustup update stable
 
 These are the minimum dependencies required to build Rio terminal, please note that with some setups additional dependencies might be desired.
 
-If you're running Wayland with an Nvidia GPU, you'll likely want the _EGL_ drivers installed too (these are called `libegl1-mesa-dev` on Ubuntu).
+If you're running Wayland with an Nvidia GPU and you are planning to use Rio with `OpenGL` as primary renderer backend, you'll likely want the _EGL_ drivers installed too (these are called `libegl1-mesa-dev` on Ubuntu).
 
 #### Debian/Ubuntu
 

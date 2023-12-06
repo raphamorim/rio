@@ -1,12 +1,14 @@
 use crate::ansi::CursorShape;
-use crate::ansi::{mode::Mode, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::ansi::{mode::Mode, sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use cursor_icon::CursorIcon;
 use log::{debug, warn};
 use std::str::FromStr;
+use std::time::Duration;
 use std::time::Instant;
+use sugarloaf::graphics::SugarGraphicData;
 
 use crate::crosswords::attr::Attr;
 
@@ -18,18 +20,21 @@ use std::fmt::Write;
 use copa::{Params, ParamsIter};
 
 /// Maximum time before a synchronized update is aborted.
-// const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+
+/// Maximum number of bytes read in one synchronized update (2MiB).
+const SYNC_BUFFER_SIZE: usize = 0x20_0000;
 
 /// Number of bytes in the synchronized update DCS sequence before the passthrough parameters.
-// const SYNC_ESCAPE_START_LEN: usize = 5;
+const SYNC_ESCAPE_START_LEN: usize = 5;
 
-// /// Start of the DCS sequence for beginning synchronized updates.
-// const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-//     [b'\x1b', b'P', b'=', b'1', b's'];
+/// Start of the DCS sequence for beginning synchronized updates.
+const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+    [b'\x1b', b'P', b'=', b'1', b's'];
 
-// /// Start of the DCS sequence for terminating synchronized updates.
-// const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-//     [b'\x1b', b'P', b'=', b'2', b's'];
+/// Start of the DCS sequence for terminating synchronized updates.
+const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
+    [b'\x1b', b'P', b'=', b'2', b's'];
 
 fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {
@@ -68,6 +73,19 @@ fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
         g: scale(colors[1])?,
         b: scale(colors[2])?,
     })
+}
+
+/// Pending DCS sequence.
+#[derive(Debug)]
+enum Dcs {
+    /// Begin of the synchronized update.
+    SyncStart,
+
+    /// End of the synchronized update.
+    SyncEnd,
+
+    /// Sixel data
+    SixelData(Box<sixel::Parser>),
 }
 
 /// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
@@ -317,6 +335,22 @@ pub trait Handler {
     /// Report text area size in characters.
     fn text_area_size_chars(&mut self) {}
 
+    /// Report a graphics attribute.
+    fn graphics_attribute(&mut self, _: u16, _: u16) {}
+
+    /// Create a parser for Sixel data.
+    fn start_sixel_graphic(&mut self, _params: &Params) -> Option<Box<sixel::Parser>> {
+        None
+    }
+
+    /// Insert a new graphic item.
+    fn insert_graphic(
+        &mut self,
+        _data: SugarGraphicData,
+        _palette: Option<Vec<ColorRgb>>,
+    ) {
+    }
+
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 
@@ -352,19 +386,10 @@ struct ProcessorState {
 
     /// State for synchronized terminal updates.
     sync_state: SyncState,
+
+    /// DCS sequence waiting for termination.
+    dcs: Option<Dcs>,
 }
-
-/// Maximum number of bytes read in one synchronized update (2MiB).
-const SYNC_BUFFER_SIZE: usize = 0x20_0000;
-
-/// Number of bytes in the BSU/ESU CSI sequences.
-const SYNC_ESCAPE_LEN: usize = 8;
-
-/// BSU CSI sequence for beginning or extending synchronized updates.
-const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
-
-/// ESU CSI sequence for terminating synchronized updates.
-const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 
 #[derive(Debug)]
 struct SyncState {
@@ -373,6 +398,9 @@ struct SyncState {
 
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
+
+    /// Sync DCS waiting for termination sequence.
+    pending_dcs: Option<Dcs>,
 }
 
 impl Default for SyncState {
@@ -380,6 +408,7 @@ impl Default for SyncState {
         Self {
             buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
             timeout: None,
+            pending_dcs: None,
         }
     }
 }
@@ -448,25 +477,48 @@ impl ParserProcessor {
     {
         self.state.sync_state.buffer.push(byte);
 
-        // Handle sync CSI escape sequences.
-        self.advance_sync_csi(handler);
+        // Handle sync DCS escape sequences.
+        match self.state.sync_state.pending_dcs {
+            Some(_) => self.advance_sync_dcs_end(handler, byte),
+            None => self.advance_sync_dcs_start(),
+        }
     }
 
-    /// Handle BSU/ESU CSI sequences during synchronized update.
-    fn advance_sync_csi<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
+    /// Find the start of sync DCS sequences.
+    fn advance_sync_dcs_start(&mut self) {
         // Get the last few bytes for comparison.
         let len = self.state.sync_state.buffer.len();
-        let offset = len.saturating_sub(SYNC_ESCAPE_LEN);
+        let offset = len.saturating_sub(SYNC_ESCAPE_START_LEN);
         let end = &self.state.sync_state.buffer[offset..];
 
         // Check for extension/termination of the synchronized update.
-        if end == BSU_CSI {
-            // self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
-        } else if end == ESU_CSI || len >= SYNC_BUFFER_SIZE - 1 {
-            self.stop_sync(handler);
+        if end == SYNC_START_ESCAPE_START {
+            self.state.sync_state.pending_dcs = Some(Dcs::SyncStart);
+        } else if end == SYNC_END_ESCAPE_START || len >= SYNC_BUFFER_SIZE - 1 {
+            self.state.sync_state.pending_dcs = Some(Dcs::SyncEnd);
+        }
+    }
+
+    /// Parse the DCS termination sequence for synchronized updates.
+    fn advance_sync_dcs_end<H>(&mut self, handler: &mut H, byte: u8)
+    where
+        H: Handler,
+    {
+        match byte {
+            // Ignore DCS passthrough characters.
+            0x00..=0x17 | 0x19 | 0x1c..=0x7f | 0xa0..=0xff => (),
+            // Cancel the DCS sequence.
+            0x18 | 0x1a | 0x80..=0x9f => self.state.sync_state.pending_dcs = None,
+            // Dispatch on ESC.
+            0x1b => match self.state.sync_state.pending_dcs.take() {
+                Some(Dcs::SyncStart) => {
+                    self.state.sync_state.timeout =
+                        Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
+                }
+                Some(Dcs::SyncEnd) => self.stop_sync(handler),
+                Some(Dcs::SixelData(_)) => (),
+                None => (),
+            },
         }
     }
 }
@@ -516,19 +568,48 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
         ignore: bool,
         action: char,
     ) {
-        debug!(
-            "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
-            params, intermediates, ignore, action
-        );
+        match (action, intermediates) {
+            ('q', []) => {
+                let parser = self.handler.start_sixel_graphic(params);
+                self.state.dcs = parser.map(Dcs::SixelData);
+            }
+            _ => debug!(
+                "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
+                params, intermediates, ignore, action
+            ),
+        }
     }
 
-    fn put(&mut self, _byte: u8) {
-        debug!("[put] {_byte:02x}");
+    fn put(&mut self, byte: u8) {
+        debug!("[put] {byte:02x}");
+        match self.state.dcs {
+            Some(Dcs::SixelData(ref mut parser)) => {
+                if let Err(err) = parser.put(byte) {
+                    log::warn!("Failed to parse Sixel data: {}", err);
+                    self.state.dcs = None;
+                }
+            }
+
+            _ => debug!("[unhandled put] byte={:?}", byte),
+        }
     }
 
     #[inline]
     fn unhook(&mut self) {
-        debug!("[unhandled unhook]");
+        match self.state.dcs.take() {
+            Some(Dcs::SyncStart) => {
+                self.state.sync_state.timeout =
+                    Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
+            }
+            Some(Dcs::SyncEnd) => (),
+            Some(Dcs::SixelData(parser)) => match parser.finish() {
+                Ok((graphic, palette)) => {
+                    self.handler.insert_graphic(graphic, Some(palette))
+                }
+                Err(err) => log::warn!("Failed to parse Sixel data: {}", err),
+            },
+            _ => debug!("[unhandled unhook]"),
+        }
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
@@ -928,6 +1009,9 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 handler.set_scrolling_region(top, bottom);
             }
             ('S', []) => handler.scroll_up(next_param_or(1) as usize),
+            ('S', [b'?']) => {
+                handler.graphics_attribute(next_param_or(0), next_param_or(0))
+            }
             ('s', []) => handler.save_cursor_position(),
             ('T', []) => handler.scroll_down(next_param_or(1) as usize),
             ('t', []) => match next_param_or(1) as usize {

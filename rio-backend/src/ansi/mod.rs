@@ -2,7 +2,9 @@ use bitflags::bitflags;
 
 pub mod charset;
 pub mod control;
+pub mod graphics;
 pub mod mode;
+pub mod sixel;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub enum CursorShape {

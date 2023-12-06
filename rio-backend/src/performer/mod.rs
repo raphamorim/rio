@@ -2,7 +2,8 @@ pub mod handler;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-use crate::event::{EventListener, Msg, RioEvent};
+use crate::event::{Msg, RioEvent};
+use crate::superloop::Superloop;
 use corcovado::channel;
 #[cfg(unix)]
 use corcovado::unix::UnixReady;
@@ -14,7 +15,6 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Instant;
-use winit::window::WindowId;
 
 /// Like `thread::spawn`, but with a `name` argument.
 pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>
@@ -33,14 +33,14 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
-pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
+pub struct Machine<T: teletypewriter::EventedPty> {
     sender: channel::Sender<Msg>,
     receiver: channel::Receiver<Msg>,
     pty: T,
     poll: corcovado::Poll,
-    terminal: Arc<FairMutex<Crosswords<U>>>,
-    event_proxy: U,
-    window_id: WindowId,
+    terminal: Arc<FairMutex<Crosswords>>,
+    event_proxy: Superloop,
+    window_id: u8,
 }
 
 #[derive(Default)]
@@ -109,17 +109,16 @@ impl Writing {
     }
 }
 
-impl<T, U> Machine<T, U>
+impl<T> Machine<T>
 where
     T: teletypewriter::EventedPty + Send + 'static,
-    U: EventListener + Send + 'static,
 {
-    pub fn new(
-        terminal: Arc<FairMutex<Crosswords<U>>>,
+    pub fn new<'a>(
+        terminal: Arc<FairMutex<Crosswords>>,
         pty: T,
-        event_proxy: U,
-        window_id: WindowId,
-    ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
+        event_proxy: Superloop,
+        window_id: u8,
+    ) -> Result<Machine<T>, Box<dyn std::error::Error>> {
         // let (mut sender, mut receiver) = unbounded::<Msg>();
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;

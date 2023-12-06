@@ -1,46 +1,5 @@
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
 
-//! Context creation configuration
-//!
-//! A [`Conf`](struct.Conf.html) struct is used to describe a hardware and platform specific setup,
-//! mostly video display settings.
-//!
-//! ## High DPI rendering
-//!
-//! You can set the [`Conf::high_dpi`](struct.Conf.html#structfield.high_dpi) flag during initialization to request
-//! a full-resolution framebuffer on HighDPI displays. The default behaviour
-//! is `high_dpi = false`, this means that the application will
-//! render to a lower-resolution framebuffer on HighDPI displays and the
-//! rendered content will be upscaled by the window system composer.
-//! In a HighDPI scenario, you still request the same window size during
-//! [`miniquad::start`](../fn.start.html), but the framebuffer sizes returned by [`Context::screen_size`](../graphics/struct.Context.html#method.screen_size)
-//! will be scaled up according to the DPI scaling ratio.
-//! You can also get a DPI scaling factor with the function
-//! [`Context::dpi_scale`](../graphics/struct.Context.html#method.dpi_scale).
-//! Here's an example on a Mac with Retina display:
-//! ```ignore
-//! Conf {
-//!   width = 640,
-//!   height = 480,
-//!   high_dpi = true,
-//!   .. Default::default()
-//! };
-//! ```
-//!
-//! The functions [`screen_size`](../graphics/struct.Context.html#method.screen_size) and [`dpi_scale`](../graphics/struct.Context.html#method.dpi_scale) will
-//! return the following values:
-//! ```bash
-//! screen_size -> (1280, 960)
-//! dpi_scale   -> 2.0
-//! ```
-//!
-//! If the high_dpi flag is false, or you're not running on a Retina display,
-//! the values would be:
-//! ```bash
-//! screen_size -> (640, 480)
-//! dpi_scale   -> 1.0
-//! ```
-
 /// Platform specific settings.
 #[derive(Debug)]
 pub struct Platform {
@@ -107,25 +66,22 @@ pub struct Conf {
     /// Platform specific settings. Hints to OS for context creation, driver-specific
     /// settings etc.
     pub platform: Platform,
+
+    pub hide_toolbar: bool,
+    pub transparency: bool,
+    pub blur: bool,
+    pub hide_toolbar_buttons: bool,
 }
 
 /// Icon image in three levels of detail.
-#[derive(Clone)]
 pub struct Icon {
-    /// 16 * 16 image of RGBA pixels (each 4 * u8) in row-major order.
-    pub small: [u8; 16 * 16 * 4],
-    /// 32 x 32 image of RGBA pixels (each 4 * u8) in row-major order.
-    pub medium: [u8; 32 * 32 * 4],
-    /// 64 x 64 image of RGBA pixels (each 4 * u8) in row-major order.
-    pub big: [u8; 64 * 64 * 4],
+    pub inner: [u8; 410598],
 }
 
 impl Icon {
-    pub fn miniquad_logo() -> Icon {
+    pub fn logo() -> Icon {
         Icon {
-            small: crate::default_icon::SMALL,
-            medium: crate::default_icon::MEDIUM,
-            big: crate::default_icon::BIG,
+            inner: *crate::resources::images::LOGO_ICON,
         }
     }
 }
@@ -146,10 +102,14 @@ impl Default for Conf {
             window_height: 600,
             high_dpi: false,
             fullscreen: false,
+            blur: false,
+            transparency: false,
+            hide_toolbar: false,
             sample_count: 1,
             window_resizable: true,
-            icon: Some(Icon::miniquad_logo()),
+            icon: Some(Icon::logo()),
             platform: Default::default(),
+            hide_toolbar_buttons: false,
         }
     }
 }

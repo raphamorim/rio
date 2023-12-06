@@ -8,7 +8,7 @@ members = [
   "rio-backend",
   "wa",
 
-  "frontends/cross-winit",
+  "frontends/cross-wa",
 ]
 resolver = "2"
 
@@ -34,6 +34,7 @@ rio-proc-macros = { path = "rio-proc-macros", version = "0.0.33" }
 copa = { path = "copa", default-features = true, version = "0.0.33" }
 teletypewriter = { path = "teletypewriter", version = "0.0.33" }
 rio-backend = { path = "rio-backend", version = "0.0.33" }
+wa = { path = "wa", version = "0.0.33" }
 
 raw-window-handle = "0.5"
 parking_lot = "0.12.1"

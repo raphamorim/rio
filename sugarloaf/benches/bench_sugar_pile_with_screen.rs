@@ -82,6 +82,7 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
                                     foreground_color: [1.0, 1.0, 1.0, 1.0],
                                     background_color: [0.0, 1.0, 1.0, 1.0],
                                     style: None,
+                                    media: None,
                                     decoration: None,
                                 });
                             }

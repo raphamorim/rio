@@ -1,6 +1,7 @@
 // square.rs was originally taken from Alacritty as cell.rs https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/term/cell.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::ansi::graphics::GraphicsCell;
 use crate::config::colors::{AnsiColor, NamedColor};
 use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
@@ -32,6 +33,7 @@ bitflags! {
         const ALL_UNDERLINES            = Self::UNDERLINE.bits() | Self::DOUBLE_UNDERLINE.bits()
                                         | Self::UNDERCURL.bits() | Self::DOTTED_UNDERLINE.bits()
                                         | Self::DASHED_UNDERLINE.bits();
+        const GRAPHICS = 0b1000_0000_0000_0000;
     }
 }
 
@@ -98,6 +100,8 @@ pub struct CellExtra {
     underline_color: Option<crate::config::colors::AnsiColor>,
 
     hyperlink: Option<Hyperlink>,
+
+    graphics: Option<GraphicsCell>,
 }
 
 /// Content and attributes of a single cell in the terminal grid.
@@ -134,6 +138,35 @@ impl Square {
     pub fn push_zerowidth(&mut self, character: char) {
         let extra = self.extra.get_or_insert(Default::default());
         Arc::make_mut(extra).zerowidth.push(character);
+    }
+
+    /// Graphic present in the cell.
+    #[inline]
+    pub fn graphics(&self) -> Option<&GraphicsCell> {
+        self.extra
+            .as_deref()
+            .and_then(|extra| extra.graphics.as_ref())
+    }
+
+    /// Extract the graphics value from the cell.
+    #[inline]
+    pub fn take_graphics(&mut self) -> Option<GraphicsCell> {
+        if let Some(extra) = &mut self.extra {
+            if extra.graphics.is_some() {
+                return Arc::make_mut(extra).graphics.take();
+            }
+        }
+
+        None
+    }
+
+    /// Write the graphic data in the cell.
+    #[inline]
+    pub fn set_graphics(&mut self, graphics_cell: GraphicsCell) {
+        let extra = self.extra.get_or_insert_with(Default::default);
+        Arc::make_mut(extra).graphics = Some(graphics_cell);
+
+        self.flags_mut().insert(Flags::GRAPHICS);
     }
 
     #[inline(never)]
@@ -202,7 +235,8 @@ impl GridSquare for Square {
                     | Flags::STRIKEOUT
                     | Flags::WRAPLINE
                     | Flags::WIDE_CHAR_SPACER
-                    | Flags::LEADING_WIDE_CHAR_SPACER,
+                    | Flags::LEADING_WIDE_CHAR_SPACER
+                    | Flags::GRAPHICS,
             )
             && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
     }

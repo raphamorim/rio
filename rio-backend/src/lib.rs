@@ -6,5 +6,6 @@ pub mod error;
 pub mod event;
 pub mod performer;
 pub mod selection;
+pub mod superloop;
 
 pub use sugarloaf;

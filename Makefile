@@ -27,7 +27,7 @@ run:
 	cargo run --release
 
 dev:
-	cargo run
+	cargo run -p rioterm
 
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib

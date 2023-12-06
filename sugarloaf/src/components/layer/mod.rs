@@ -2,8 +2,6 @@ mod atlas;
 mod raster;
 pub mod types;
 
-// #[cfg(feature = "svg")]
-// mod vector;
 use crate::context::Context;
 use atlas::Atlas;
 
@@ -21,8 +19,6 @@ use crate::components::core::image;
 #[derive(Debug)]
 pub struct LayerBrush {
     raster_cache: RefCell<raster::Cache>,
-    // #[cfg(feature = "svg")]
-    // vector_cache: RefCell<vector::Cache>,
     pipeline: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -283,9 +279,6 @@ impl LayerBrush {
 
         LayerBrush {
             raster_cache: RefCell::new(raster::Cache::default()),
-
-            // #[cfg(feature = "svg")]
-            // vector_cache: RefCell::new(vector::Cache::default()),
             pipeline,
             vertices,
             indices,
@@ -295,7 +288,6 @@ impl LayerBrush {
             texture_atlas,
             texture_layout,
             constant_layout,
-
             layers: Vec::new(),
             prepare_layer: 0,
         }
@@ -307,14 +299,6 @@ impl LayerBrush {
 
         memory.dimensions()
     }
-
-    // #[cfg(feature = "svg")]
-    // pub fn viewport_dimensions(&self, handle: &svg::Handle) -> Size<u32> {
-    //     let mut cache = self.vector_cache.borrow_mut();
-    //     let svg = cache.load(handle);
-
-    //     svg.viewport_dimensions()
-    // }
 
     pub fn prepare(
         &mut self,
@@ -330,9 +314,6 @@ impl LayerBrush {
 
         let instances: &mut Vec<Instance> = &mut Vec::new();
         let mut raster_cache = self.raster_cache.borrow_mut();
-
-        // #[cfg(feature = "svg")]
-        // let mut vector_cache = self.vector_cache.borrow_mut();
 
         for image in images {
             match &image {
@@ -350,36 +331,7 @@ impl LayerBrush {
                             instances,
                         );
                     }
-                } // #[cfg(not(feature = "image"))]
-                  // types::Image::Raster { .. } => {}
-
-                  // #[cfg(feature = "svg")]
-                  // types::Image::Vector {
-                  //     handle,
-                  //     color,
-                  //     bounds,
-                  // } => {
-                  //     let size = [bounds.width, bounds.height];
-
-                  //     if let Some(atlas_entry) = vector_cache.upload(
-                  //         device,
-                  //         encoder,
-                  //         handle,
-                  //         *color,
-                  //         size,
-                  //         _scale,
-                  //         &mut self.texture_atlas,
-                  //     ) {
-                  //         add_instances(
-                  //             [bounds.x, bounds.y],
-                  //             size,
-                  //             atlas_entry,
-                  //             instances,
-                  //         );
-                  //     }
-                  // }
-                  // #[cfg(not(feature = "svg"))]
-                  // types::Image::Vector { .. } => {}
+                }
             }
         }
 
@@ -432,9 +384,6 @@ impl LayerBrush {
         let instances: &mut Vec<Instance> = &mut Vec::new();
         let mut raster_cache = self.raster_cache.borrow_mut();
 
-        // #[cfg(feature = "svg")]
-        // let mut vector_cache = self.vector_cache.borrow_mut();
-
         for image in images {
             match &image {
                 types::Image::Raster { handle, bounds } => {
@@ -451,36 +400,7 @@ impl LayerBrush {
                             instances,
                         );
                     }
-                } // #[cfg(not(feature = "image"))]
-                  // types::Image::Raster { .. } => {}
-
-                  // #[cfg(feature = "svg")]
-                  // types::Image::Vector {
-                  //     handle,
-                  //     color,
-                  //     bounds,
-                  // } => {
-                  //     let size = [bounds.width, bounds.height];
-
-                  //     if let Some(atlas_entry) = vector_cache.upload(
-                  //         device,
-                  //         encoder,
-                  //         handle,
-                  //         *color,
-                  //         size,
-                  //         _scale,
-                  //         &mut self.texture_atlas,
-                  //     ) {
-                  //         add_instances(
-                  //             [bounds.x, bounds.y],
-                  //             size,
-                  //             atlas_entry,
-                  //             instances,
-                  //         );
-                  //     }
-                  // }
-                  // #[cfg(not(feature = "svg"))]
-                  // types::Image::Vector { .. } => {}
+                }
             }
         }
 
@@ -580,15 +500,12 @@ impl LayerBrush {
 
             layer.render(&mut render_pass);
 
-            // drop(render_pass);
+            drop(render_pass);
         }
     }
 
     pub fn end_frame(&mut self) {
         self.raster_cache.borrow_mut().trim(&mut self.texture_atlas);
-
-        // #[cfg(feature = "svg")]
-        // self.vector_cache.borrow_mut().trim(&mut self.texture_atlas);
 
         self.prepare_layer = 0;
     }

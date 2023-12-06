@@ -5,21 +5,36 @@
 
 pub mod conf;
 mod event;
-pub mod graphics;
-mod native;
+pub mod native;
+pub mod sync;
 
 pub use event::*;
 
-mod default_icon;
+mod resources;
 
-use std::sync::{Mutex, OnceLock};
+use once_cell::sync::OnceCell;
+use sync::FairMutex;
 
-static NATIVE_DISPLAY: OnceLock<Mutex<native::NativeDisplayData>> = OnceLock::new();
+static NATIVE_DISPLAY: OnceCell<FairMutex<native::Handler>> = OnceCell::new();
 
-fn set_display(display: native::NativeDisplayData) {
-    let _ = NATIVE_DISPLAY.set(Mutex::new(display));
+fn set_handler() {
+    let _ = NATIVE_DISPLAY.set(FairMutex::new(native::Handler::new()));
 }
-fn native_display() -> &'static Mutex<native::NativeDisplayData> {
+
+fn get_handler() -> &'static FairMutex<native::Handler> {
+    NATIVE_DISPLAY
+        .get()
+        .expect("Backend has not initialized NATIVE_DISPLAY yet.") //|| Mutex::new(Default::default()))
+}
+
+fn set_display(id: u8, display: native::NativeDisplayData) {
+    let handler: &FairMutex<native::Handler> = get_handler();
+    let mut d = handler.lock();
+    d.insert(id, display);
+    // let _ = NATIVE_DISPLAY.set(FairMutex::new(display));
+}
+
+fn native_display() -> &'static FairMutex<native::Handler> {
     NATIVE_DISPLAY
         .get()
         .expect("Backend has not initialized NATIVE_DISPLAY yet.") //|| Mutex::new(Default::default()))
@@ -29,47 +44,27 @@ fn native_display() -> &'static Mutex<native::NativeDisplayData> {
 /// in macroquad <= 0.3, it was ctx.screen_size(). Now it is window::screen_size()
 pub mod window {
     use super::*;
-
-    /// The same as
-    /// ```ignore
-    /// if metal {
-    ///    Box::new(MetalContext::new())
-    /// } else {
-    ///   Box::new(GlContext::new())
-    /// };
-    /// ```
-    /// but under #[cfg] gate to avoid MetalContext on non-apple platforms
-    // pub fn new_rendering_backend() -> Box<dyn RenderingBackend> {
-    //     #[cfg(target_vendor = "apple")]
-    //     {
-    //         if window::apple_gfx_api() == conf::AppleGfxApi::Metal {
-    //             Box::new(MetalContext::new())
-    //         } else {
-    //             Box::new(GlContext::new())
-    //         }
-    //     }
-    //     #[cfg(not(target_vendor = "apple"))]
-    //     Box::new(GlContext::new())
-    // }
-
     /// The current framebuffer size in pixels
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn screen_size() -> (f32, f32) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         (d.screen_width as f32, d.screen_height as f32)
     }
 
     /// The dpi scaling factor (window pixels to framebuffer pixels)
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn dpi_scale() -> f32 {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.dpi_scale
     }
 
     /// True when high_dpi was requested and actually running in a high-dpi scenario
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn high_dpi() -> bool {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.high_dpi
     }
 
@@ -81,7 +76,8 @@ pub mod window {
     /// happen in the order_quit implmentation) and execution might continue for some time after
     /// But the window is going to be inevitably closed at some point.
     pub fn order_quit() {
-        let mut d = native_display().lock().unwrap();
+        let mut d = native_display().lock();
+        let d = d.get_mut(0).unwrap();
         d.quit_ordered = true;
     }
 
@@ -96,7 +92,8 @@ pub mod window {
     /// If the event handler callback does nothing, the application will be quit as usual.
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit() {
-        let mut d = native_display().lock().unwrap();
+        let mut d = native_display().lock();
+        let d = d.get_mut(0).unwrap();
         d.quit_requested = true;
     }
 
@@ -106,7 +103,8 @@ pub mod window {
     /// function makes sense is from inside the event handler callback when
     /// the "quit_requested_event" event has been received
     pub fn cancel_quit() {
-        let mut d = native_display().lock().unwrap();
+        let mut d = native_display().lock();
+        let d = d.get_mut(0).unwrap();
         d.quit_requested = false;
     }
     /// Capture mouse cursor to the current window
@@ -116,19 +114,31 @@ pub mod window {
     ///         so set_cursor_grab(false) on window's focus lost is recommended.
     /// TODO: implement window focus events
     pub fn set_cursor_grab(grab: bool) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
     }
 
     /// Show or hide the mouse cursor
     pub fn show_mouse(shown: bool) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         let _ = d.native_requests.send(native::Request::ShowMouse(shown));
+    }
+
+    /// Show or hide the mouse cursor
+    pub fn set_window_title(title: String) {
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
+        let _ = d
+            .native_requests
+            .send(native::Request::SetWindowTitle(title));
     }
 
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(cursor_icon: CursorIcon) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         let _ = d
             .native_requests
             .send(native::Request::SetMouseCursor(cursor_icon));
@@ -136,7 +146,8 @@ pub mod window {
 
     /// Set the application's window size.
     pub fn set_window_size(new_width: u32, new_height: u32) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         let _ = d.native_requests.send(native::Request::SetWindowSize {
             new_width,
             new_height,
@@ -144,7 +155,8 @@ pub mod window {
     }
 
     pub fn set_fullscreen(fullscreen: bool) {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         let _ = d
             .native_requests
             .send(native::Request::SetFullscreen(fullscreen));
@@ -152,44 +164,37 @@ pub mod window {
 
     /// Get current OS clipboard value
     pub fn clipboard_get() -> Option<String> {
-        let mut d = native_display().lock().unwrap();
+        let mut d = native_display().lock();
+        let d = d.get_mut(0).unwrap();
         d.clipboard.get()
     }
-
     /// Save value to OS clipboard
     pub fn clipboard_set(data: &str) {
-        let mut d = native_display().lock().unwrap();
+        let mut d = native_display().lock();
+        let d = d.get_mut(0).unwrap();
         d.clipboard.set(data)
     }
     pub fn dropped_file_count() -> usize {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.dropped_files.bytes.len()
     }
     pub fn dropped_file_bytes(index: usize) -> Option<Vec<u8>> {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.dropped_files.bytes.get(index).cloned()
     }
     pub fn dropped_file_path(index: usize) -> Option<std::path::PathBuf> {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.dropped_files.paths.get(index).cloned()
-    }
-
-    /// Show/hide onscreen keyboard.
-    /// Only works on Android right now.
-    pub fn show_keyboard(show: bool) {
-        let d = native_display().lock().unwrap();
-        let _ = d.native_requests.send(native::Request::ShowKeyboard(show));
     }
 
     #[cfg(target_vendor = "apple")]
     pub fn apple_view() -> crate::native::apple::frameworks::ObjcId {
-        let d = native_display().lock().unwrap();
+        let d = native_display().lock();
+        let d = d.get(0).unwrap();
         d.view
-    }
-    #[cfg(target_ios = "ios")]
-    pub fn apple_view_ctrl() -> crate::native::apple::frameworks::ObjcId {
-        let d = native_display().lock().unwrap();
-        d.view_ctrl
     }
 }
 
@@ -209,12 +214,27 @@ pub enum CursorIcon {
     NWSEResize,
 }
 
-pub fn start<F>(conf: conf::Conf, f: F)
-where
-    F: 'static + FnOnce() -> Box<dyn EventHandler>,
-{
-    #[cfg(target_os = "macos")]
-    unsafe {
-        native::macos::run(conf, f);
-    }
-}
+// pub fn run()
+// {
+//     #[cfg(target_os = "macos")]
+//     unsafe {
+//         native::macos::run();
+//     }
+// }
+
+// pub fn create_app()  {
+//     #[cfg(target_os = "macos")]
+//     unsafe {
+//         native::macos::create_app();
+//     }
+// }
+
+// pub fn create_window<F>(conf: conf::Conf, f: F)
+// where
+//     F: 'static + FnOnce() -> Box<dyn EventHandler>,
+// {
+//     #[cfg(target_os = "macos")]
+//     unsafe {
+//         native::macos::create_window(conf, f);
+//     }
+// }

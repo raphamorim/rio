@@ -1,5 +1,6 @@
 use crate::components::rect::Rect;
 use crate::glyph::FontId;
+use crate::graphics::SugarGraphic;
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -9,6 +10,7 @@ pub struct Sugar {
     pub background_color: [f32; 4],
     pub style: Option<SugarStyle>,
     pub decoration: Option<SugarDecoration>,
+    pub media: Option<SugarGraphic>,
 }
 
 #[derive(Debug)]

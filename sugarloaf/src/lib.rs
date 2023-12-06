@@ -3,10 +3,17 @@ pub mod context;
 pub mod core;
 pub mod font;
 pub mod glyph;
+pub mod graphics;
 pub mod layout;
 mod sugarloaf;
 pub mod tools;
+
 pub use crate::sugarloaf::{
-    RenderableSugarloaf, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafVoid,
-    SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
+    Sugarloaf,
+    SugarloafErrors,
+    SugarloafWindow,
+    SugarloafWindowSize,
+    SugarloafRenderer,
+    SugarloafWithErrors,
 };
+pub use graphics::{SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics};

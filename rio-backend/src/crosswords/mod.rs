@@ -20,6 +20,12 @@ pub mod pos;
 pub mod square;
 pub mod vi_mode;
 
+use crate::ansi::graphics::GraphicCell;
+use crate::ansi::graphics::Graphics;
+use crate::ansi::graphics::TextureRef;
+use crate::ansi::graphics::UpdateQueues;
+use crate::ansi::graphics::MAX_GRAPHIC_DIMENSIONS;
+use crate::ansi::sixel;
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, KeyboardModes,
     KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
@@ -31,32 +37,39 @@ use crate::config::colors::{
     AnsiColor, ColorRgb,
 };
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
-use crate::event::{EventListener, RioEvent};
+use crate::event::RioEvent;
+use crate::event::UpdateOpcode;
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
+use crate::superloop::Superloop;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
+use copa::Params;
 use grid::row::Row;
 use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
+use std::collections::HashSet;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
+use sugarloaf::graphics::SugarGraphicData;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
-use winit::window::WindowId;
 
 pub type NamedColor = colors::NamedColor;
 
 pub const MIN_COLUMNS: usize = 2;
 pub const MIN_LINES: usize = 1;
 const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
+
+/// Max. number of graphics stored in a single cell.
+const MAX_GRAPHICS_PER_CELL: usize = 20;
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]
@@ -91,13 +104,20 @@ bitflags! {
                                 | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
                                 | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
                                 | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
+        const SIXEL_DISPLAY       = 0b1000_0000_0000_0000_0000;
+        const SIXEL_PRIV_PALETTE  = 0b1000_0000_0000_0000_0001;
+        const SIXEL_CURSOR_TO_THE_RIGHT  = 0b1000_0000_0000_0000_0010;
         const ANY                 = u32::MAX;
     }
 }
 
 impl Default for Mode {
     fn default() -> Mode {
-        Mode::SHOW_CURSOR | Mode::LINE_WRAP | Mode::ALTERNATE_SCROLL | Mode::URGENCY_HINTS
+        Mode::SHOW_CURSOR
+            | Mode::LINE_WRAP
+            | Mode::ALTERNATE_SCROLL
+            | Mode::URGENCY_HINTS
+            | Mode::SIXEL_PRIV_PALETTE
     }
 }
 
@@ -337,10 +357,7 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
 
 #[derive(Debug, Clone)]
-pub struct Crosswords<U>
-where
-    U: EventListener,
-{
+pub struct Crosswords {
     active_charset: CharsetIndex,
     mode: Mode,
     pub vi_mode_cursor: ViModeCursor,
@@ -349,16 +366,17 @@ where
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
     tabs: TabStops,
-    event_proxy: U,
+    event_proxy: Superloop,
     pub selection: Option<Selection>,
     #[allow(dead_code)]
     colors: List,
     pub title: String,
     damage: TermDamageState,
+    graphics: Graphics,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
-    window_id: WindowId,
+    window_id: u8,
     title_stack: Vec<String>,
     hyperlink_re: regex::Regex,
 
@@ -369,14 +387,15 @@ where
     inactive_keyboard_mode_stack: Vec<KeyboardModes>,
 }
 
-impl<U: EventListener> Crosswords<U> {
-    pub fn new(
-        cols: usize,
-        rows: usize,
+impl Crosswords {
+    pub fn new<D: Dimensions>(
+        dimensions: D,
         cursor_shape: CursorShape,
-        event_proxy: U,
-        window_id: WindowId,
-    ) -> Crosswords<U> {
+        event_proxy: Superloop,
+        window_id: u8,
+    ) -> Crosswords {
+        let cols = dimensions.columns();
+        let rows = dimensions.screen_lines();
         let grid = Grid::new(rows, cols, 10_000);
         let alt = Grid::new(rows, cols, 0);
 
@@ -406,6 +425,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
             damage: TermDamageState::new(cols, rows),
+            graphics: Graphics::new(&dimensions),
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -425,10 +445,12 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.reset(self.grid.columns());
     }
 
+    #[inline]
     pub fn display_offset(&mut self) -> usize {
         self.grid.display_offset()
     }
 
+    #[inline]
     pub fn clear_saved_history(&mut self) {
         self.clear_screen(ClearMode::Saved);
     }
@@ -456,26 +478,34 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    #[inline]
     pub fn bottommost_line(&self) -> Line {
         self.grid.bottommost_line()
     }
 
+    #[inline]
     pub fn colors(&self) -> List {
         self.colors
     }
 
+    /// Get queues to update graphic data. If both queues are empty, it returns
+    /// `None`.
     #[inline]
-    pub fn exit(&mut self)
-    where
-        U: EventListener,
-    {
+    pub fn graphics_take_queues(&mut self) -> Option<UpdateQueues> {
+        self.graphics.take_queues()
+    }
+
+    #[inline]
+    pub fn exit(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CloseTerminal, self.window_id);
     }
 
-    pub fn resize<S: Dimensions>(&mut self, num_cols: usize, num_lines: usize) {
+    pub fn resize<S: Dimensions>(&mut self, size: S) {
         let old_cols = self.grid.columns();
         let old_lines = self.grid.screen_lines();
+        let num_cols = size.columns();
+        let num_lines = size.screen_lines();
 
         if old_cols == num_cols && old_lines == num_lines {
             info!("Crosswords::resize dimensions unchanged");
@@ -520,14 +550,14 @@ impl<U: EventListener> Crosswords<U> {
 
         // Resize damage information.
         self.damage.resize(num_cols, num_lines);
+
+        // Update size information for graphics.
+        self.graphics.resize(&size);
     }
 
     /// Toggle the vi mode.
     #[inline]
-    pub fn toggle_vi_mode(&mut self)
-    where
-        U: EventListener,
-    {
+    pub fn toggle_vi_mode(&mut self) {
         self.mode ^= Mode::VI;
 
         if self.mode.contains(Mode::VI) {
@@ -563,10 +593,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn vi_motion(&mut self, motion: ViMotion)
-    where
-        U: EventListener,
-    {
+    pub fn vi_motion(&mut self, motion: ViMotion) {
         // Require vi mode to be active.
         if !self.mode.contains(Mode::VI) {
             return;
@@ -579,10 +606,7 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Scroll display to point if it is outside of viewport.
     #[inline]
-    pub fn scroll_to_pos(&mut self, pos: Pos)
-    where
-        U: EventListener,
-    {
+    pub fn scroll_to_pos(&mut self, pos: Pos) {
         let display_offset = self.grid.display_offset() as i32;
         let screen_lines = self.grid.screen_lines() as i32;
 
@@ -1008,10 +1032,7 @@ impl<U: EventListener> Crosswords<U> {
         visible_rows
     }
 
-    fn deccolm(&mut self)
-    where
-        U: EventListener,
-    {
+    fn deccolm(&mut self) {
         // Setting 132 column font makes no sense, but run the other side effects.
         // Clear scrolling region.
         self.set_scrolling_region(1, None);
@@ -1268,7 +1289,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
-impl<U: EventListener> Handler for Crosswords<U> {
+impl Handler for Crosswords {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
         match mode {
@@ -1320,6 +1341,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.blinking_cursor = true;
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+            }
+            AnsiMode::SixelDisplay => self.mode.insert(Mode::SIXEL_DISPLAY),
+            AnsiMode::SixelPrivateColorRegisters => {
+                self.mode.insert(Mode::SIXEL_PRIV_PALETTE)
+            }
+            AnsiMode::SixelCursorToTheRight => {
+                self.mode.insert(Mode::SIXEL_CURSOR_TO_THE_RIGHT);
             }
         }
     }
@@ -1390,6 +1418,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // self.blinking_cursor = false;
                 // self.event_proxy
                 //     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+            }
+            AnsiMode::SixelDisplay => self.mode.remove(Mode::SIXEL_DISPLAY),
+            AnsiMode::SixelPrivateColorRegisters => {
+                self.graphics.sixel_shared_palette = None;
+                self.mode.remove(Mode::SIXEL_PRIV_PALETTE);
+            }
+            AnsiMode::SixelCursorToTheRight => {
+                self.mode.remove(Mode::SIXEL_CURSOR_TO_THE_RIGHT)
             }
         }
     }
@@ -2295,11 +2331,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn text_area_size_pixels(&mut self) {
         debug!("text_area_size_pixels");
-        // self.event_proxy.send_event(RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
-        //     let height = window_size.num_lines * window_size.cell_height;
-        //     let width = window_size.num_cols * window_size.cell_width;
-        //     format!("\x1b[4;{height};{width}t")
-        // })));
+        self.event_proxy.send_event(
+            RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
+                let height = window_size.height;
+                let width = window_size.width;
+                format!("\x1b[4;{height};{width}t")
+            })),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -2313,39 +2352,363 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
     }
-}
 
-/// Terminal test helpers.
-#[cfg(test)]
-pub mod test {
-    use super::*;
+    #[inline]
+    fn graphics_attribute(&mut self, pi: u16, pa: u16) {
+        // From Xterm documentation:
+        //
+        //   CSI ? Pi ; Pa ; Pv S
+        //
+        //   Pi = 1  -> item is number of color registers.
+        //   Pi = 2  -> item is Sixel graphics geometry (in pixels).
+        //   Pi = 3  -> item is ReGIS graphics geometry (in pixels).
+        //
+        //   Pa = 1  -> read attribute.
+        //   Pa = 2  -> reset to default.
+        //   Pa = 3  -> set to value in Pv.
+        //   Pa = 4  -> read the maximum allowed value.
+        //
+        //   Pv is ignored by xterm except when setting (Pa == 3).
+        //   Pv = n <- A single integer is used for color registers.
+        //   Pv = width ; height <- Two integers for graphics geometry.
+        //
+        //   xterm replies with a control sequence of the same form:
+        //
+        //   CSI ? Pi ; Ps ; Pv S
+        //
+        //   where Ps is the status:
+        //   Ps = 0  <- success.
+        //   Ps = 1  <- error in Pi.
+        //   Ps = 2  <- error in Pa.
+        //   Ps = 3  <- failure.
+        //
+        //   On success, Pv represents the value read or set.
 
-    pub struct CrosswordsSize {
-        pub columns: usize,
-        pub screen_lines: usize,
+        fn generate_response(pi: u16, ps: u16, pv: &[usize]) -> String {
+            use std::fmt::Write;
+            let mut text = format!("\x1b[?{};{}", pi, ps);
+            for item in pv {
+                let _ = write!(&mut text, ";{}", item);
+            }
+            text.push('S');
+            text
+        }
+
+        let (ps, pv) = match pi {
+            1 => {
+                match pa {
+                    1 => (0, &[sixel::MAX_COLOR_REGISTERS][..]), // current value is always the
+                    // maximum
+                    2 => (3, &[][..]), // Report unsupported
+                    3 => (3, &[][..]), // Report unsupported
+                    4 => (0, &[sixel::MAX_COLOR_REGISTERS][..]),
+                    _ => (2, &[][..]), // Report error in Pa
+                }
+            }
+
+            2 => {
+                match pa {
+                    1 => {
+                        self.event_proxy.send_event(
+                            RioEvent::TextAreaSizeRequest(Arc::new(move |window_size| {
+                                let width = window_size.width;
+                                let height = window_size.height;
+                                let graphic_dimensions = [
+                                    std::cmp::min(
+                                        width as usize,
+                                        MAX_GRAPHIC_DIMENSIONS[0],
+                                    ),
+                                    std::cmp::min(
+                                        height as usize,
+                                        MAX_GRAPHIC_DIMENSIONS[1],
+                                    ),
+                                ];
+
+                                let (ps, pv) = (0, &graphic_dimensions[..]);
+                                generate_response(pi, ps, pv)
+                            })),
+                            self.window_id,
+                        );
+                        return;
+                    }
+                    2 => (3, &[][..]), // Report unsupported
+                    3 => (3, &[][..]), // Report unsupported
+                    4 => (0, &MAX_GRAPHIC_DIMENSIONS[..]),
+                    _ => (2, &[][..]), // Report error in Pa
+                }
+            }
+
+            3 => {
+                (1, &[][..]) // Report error in Pi (ReGIS unknown)
+            }
+
+            _ => {
+                (1, &[][..]) // Report error in Pi
+            }
+        };
+
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(generate_response(pi, ps, pv)),
+            self.window_id,
+        );
     }
 
-    impl CrosswordsSize {
-        pub fn new(columns: usize, screen_lines: usize) -> Self {
-            Self {
-                columns,
-                screen_lines,
+    #[inline]
+    fn start_sixel_graphic(&mut self, params: &Params) -> Option<Box<sixel::Parser>> {
+        let palette = self.graphics.sixel_shared_palette.take();
+        Some(Box::new(sixel::Parser::new(params, palette)))
+    }
+
+    #[inline]
+    fn insert_graphic(
+        &mut self,
+        graphic: SugarGraphicData,
+        palette: Option<Vec<ColorRgb>>,
+    ) {
+        let cell_width = self.graphics.cell_width as usize;
+        let cell_height = self.graphics.cell_height as usize;
+
+        // Store last palette if we receive a new one, and it is shared.
+        if let Some(palette) = palette {
+            if !self.mode.contains(Mode::SIXEL_PRIV_PALETTE) {
+                self.graphics.sixel_shared_palette = Some(palette);
             }
         }
+
+        if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
+            || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]
+        {
+            return;
+        }
+
+        let width = graphic.width as u16;
+        let height = graphic.height as u16;
+
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        let graphic_id = self.graphics.next_id();
+
+        // If SIXEL_DISPLAY is disabled, the start of the graphic is the
+        // cursor position, and the grid can be scrolled if the graphic is
+        // larger than the screen. The cursor is moved to the next line
+        // after the graphic.
+        //
+        // If it is disabled, the graphic starts at (0, 0), the grid is never
+        // scrolled, and the cursor position is unmodified.
+
+        let scrolling = !self.mode.contains(Mode::SIXEL_DISPLAY);
+
+        let leftmost = if scrolling {
+            self.grid.cursor.pos.col.0
+        } else {
+            0
+        };
+
+        // A very simple optimization is to detect is a new graphic is replacing
+        // completely a previous one. This happens if the following conditions
+        // are met:
+        //
+        // - Both graphics are attached to the same top-left cell.
+        // - Both graphics have the same size.
+        // - The new graphic does not contain transparent pixels.
+        //
+        // In this case, we will ignore cells with a reference to the replaced
+        // graphic.
+
+        let skip_textures = {
+            if graphic.maybe_transparent() {
+                HashSet::new()
+            } else {
+                let mut set = HashSet::new();
+
+                let line = if scrolling {
+                    self.grid.cursor.pos.row
+                } else {
+                    Line(0)
+                };
+
+                if let Some(old_graphics) = self.grid[line][Column(leftmost)].graphics() {
+                    for graphic in old_graphics {
+                        let tex = &*graphic.texture;
+                        if tex.width == width
+                            && tex.height == height
+                            && tex.cell_height == cell_height
+                        {
+                            set.insert(tex.id);
+                        }
+                    }
+                }
+
+                set
+            }
+        };
+
+        // Fill the cells under the graphic.
+        //
+        // The cell in the first column contains a reference to the
+        // graphic, with the offset from the start. The rest of the
+        // cells are not overwritten, allowing any text behind
+        // transparent portions of the image to be visible.
+
+        let texture = Arc::new(TextureRef {
+            id: graphic_id,
+            width,
+            height,
+            cell_height,
+            texture_operations: Arc::downgrade(&self.graphics.texture_operations),
+        });
+
+        for (top, offset_y) in (0..).zip((0..height).step_by(cell_height)) {
+            let line = if scrolling {
+                self.grid.cursor.pos.row
+            } else {
+                // Check if the image is beyond the screen limit.
+                if top >= self.grid.screen_lines() as i32 {
+                    break;
+                }
+
+                Line(top)
+            };
+
+            // Store a reference to the graphic in the first column.
+            let row_len = self.grid[line].len();
+            for (left, offset_x) in (leftmost..).zip((0..width).step_by(cell_width)) {
+                if left >= row_len {
+                    break;
+                }
+
+                let texture_operations =
+                    Arc::downgrade(&self.graphics.texture_operations);
+                let graphic_cell = GraphicCell {
+                    texture: texture.clone(),
+                    offset_x,
+                    offset_y,
+                    texture_operations,
+                };
+
+                let mut cell = self.grid.cursor.template.clone();
+                let cell_ref = &mut self.grid[line][Column(left)];
+
+                // If the cell contains any graphics, and the region of the cell
+                // is not fully filled by the new graphic, the old graphics are
+                // kept in the cell.
+                let graphics = match cell_ref.take_graphics() {
+                    Some(mut old_graphics)
+                        if old_graphics.iter().any(|graphic| {
+                            !skip_textures.contains(&graphic.texture.id)
+                        }) && !graphic.is_filled(
+                            offset_x as usize,
+                            offset_y as usize,
+                            cell_width,
+                            cell_height,
+                        ) =>
+                    {
+                        // Ensure that we don't exceed the graphics limit per cell.
+                        while old_graphics.len() >= MAX_GRAPHICS_PER_CELL {
+                            drop(old_graphics.remove(0));
+                        }
+
+                        old_graphics.push(graphic_cell);
+                        old_graphics
+                    }
+
+                    _ => smallvec::smallvec![graphic_cell],
+                };
+
+                cell.set_graphics(graphics);
+                *cell_ref = cell;
+
+                self.damage
+                    .damage_point(Pos::new((line.0 as usize).into(), Column(left)));
+            }
+
+            if scrolling && offset_y < height.saturating_sub(cell_height as u16) {
+                self.linefeed();
+            }
+        }
+
+        if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+            let graphic_columns = (graphic.width + cell_width - 1) / cell_width;
+            self.move_forward(Column(graphic_columns));
+        } else if scrolling {
+            self.linefeed();
+            self.carriage_return();
+        }
+
+        // Add the graphic data to the pending queue.
+        self.graphics.pending.push(SugarGraphicData {
+            id: graphic_id,
+            ..graphic
+        });
+
+        self.event_proxy.send_event(
+            RioEvent::RequestUpdate(UpdateOpcode::UpdateGraphicLibrary as u8),
+            self.window_id,
+        );
+    }
+}
+
+pub struct CrosswordsSize {
+    pub columns: usize,
+    pub screen_lines: usize,
+    pub width: u32,
+    pub height: u32,
+    pub square_width: u32,
+    pub square_height: u32,
+}
+
+impl CrosswordsSize {
+    pub fn new(columns: usize, screen_lines: usize) -> Self {
+        Self {
+            columns,
+            screen_lines,
+            width: 0,
+            height: 0,
+            square_width: 0,
+            square_height: 0,
+        }
     }
 
-    impl Dimensions for CrosswordsSize {
-        fn total_lines(&self) -> usize {
-            self.screen_lines()
+    pub fn new_with_dimensions(
+        columns: usize,
+        screen_lines: usize,
+        width: u32,
+        height: u32,
+        square_width: u32,
+        square_height: u32,
+    ) -> Self {
+        Self {
+            columns,
+            screen_lines,
+            width,
+            height,
+            square_width,
+            square_height,
         }
+    }
+}
 
-        fn screen_lines(&self) -> usize {
-            self.screen_lines
-        }
+impl Dimensions for CrosswordsSize {
+    fn total_lines(&self) -> usize {
+        self.screen_lines()
+    }
 
-        fn columns(&self) -> usize {
-            self.columns
-        }
+    fn screen_lines(&self) -> usize {
+        self.screen_lines
+    }
+
+    fn columns(&self) -> usize {
+        self.columns
+    }
+
+    fn square_width(&self) -> f32 {
+        0.
+    }
+
+    fn square_height(&self) -> f32 {
+        0.
     }
 }
 
@@ -2353,19 +2716,14 @@ pub mod test {
 mod tests {
     use super::*;
     use crate::crosswords::pos::{Column, Line, Pos, Side};
-    use crate::crosswords::test::CrosswordsSize;
-    use crate::event::VoidListener;
-    use winit::window::WindowId;
+    use crate::crosswords::CrosswordsSize;
+    use crate::superloop::Superloop;
 
     #[test]
     fn scroll_up() {
-        let mut cw = Crosswords::new(
-            1,
-            10,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let size = CrosswordsSize::new(1, 10);
+        let superloop: Superloop = Superloop::new();
+        let mut cw = Crosswords::new(size, CursorShape::Block, superloop, 0);
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -2396,8 +2754,9 @@ mod tests {
 
     #[test]
     fn test_linefeed() {
-        let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 1, CursorShape::Block, VoidListener {}, WindowId::from(0));
+        let mut superloop: Superloop = Superloop::new();
+        let size = CrosswordsSize::new(1, 1);
+        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -2406,8 +2765,9 @@ mod tests {
 
     #[test]
     fn test_linefeed_moving_cursor() {
-        let mut cw: Crosswords<VoidListener> =
-            Crosswords::new(1, 3, CursorShape::Block, VoidListener {}, WindowId::from(0));
+        let superloop: Superloop = Superloop::new();
+        let size = CrosswordsSize::new(1, 3);
+        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -2429,15 +2789,9 @@ mod tests {
 
     #[test]
     fn test_input() {
-        let columns: usize = 5;
-        let rows: usize = 10;
-        let mut cw: Crosswords<VoidListener> = Crosswords::new(
-            columns,
-            rows,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let size = CrosswordsSize::new(5, 10);
+        let superloop: Superloop = Superloop::new();
+        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -2456,13 +2810,8 @@ mod tests {
     #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let superloop: Superloop = Superloop::new();
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
         let grid = &mut term.grid;
         for i in 0..4 {
             if i == 1 {
@@ -2534,13 +2883,8 @@ mod tests {
     #[test]
     fn line_selection_works() {
         let size = CrosswordsSize::new(5, 1);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let mut superloop: Superloop = Superloop::new();
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].c = 'a';
@@ -2564,13 +2908,8 @@ mod tests {
     #[test]
     fn block_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let superloop: Superloop = Superloop::new();
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
         let grid = &mut term.grid;
         for i in 1..4 {
             grid[Line(i)][Column(0)].c = '"';
@@ -2642,13 +2981,9 @@ mod tests {
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_single_line() {
         let size = CrosswordsSize::new(20, 3);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let superloop: Superloop = Superloop::new();
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+
         let grid = &mut term.grid;
         for i in 0..19 {
             grid[Line(0)][Column(i)].c = ' ';
@@ -2778,14 +3113,9 @@ mod tests {
 
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_multiple_lines() {
+        let superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(4, 4);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
 
         let grid = &mut term.grid;
         grid[Line(0)][Column(0)].c = 'h';
@@ -2862,14 +3192,9 @@ mod tests {
 
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_existent_hyperlink() {
+        let superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(4, 4);
-        let mut term = Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        );
+        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
 
         let grid = &mut term.grid;
         let hyperlink = Hyperlink::new(None, "https://rio.io");
@@ -2950,9 +3275,9 @@ mod tests {
 
     #[test]
     fn parse_cargo_version() {
-        assert_eq!(version_number("0.0.1-canary"), 1);
-        assert_eq!(version_number("0.1.2-canary"), 1_02);
-        assert_eq!(version_number("1.2.3-canary"), 1_02_03);
+        assert_eq!(version_number("0.0.1-nightly"), 1);
+        assert_eq!(version_number("0.1.2-nightly"), 1_02);
+        assert_eq!(version_number("1.2.3-nightly"), 1_02_03);
         assert_eq!(version_number("999.99.99"), 9_99_99_99);
     }
 }

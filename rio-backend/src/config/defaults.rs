@@ -127,7 +127,7 @@ cursor = '▇'
 
 # Blinking Cursor
 #
-# Default is false
+# Default is true
 #
 blinking-cursor = false
 

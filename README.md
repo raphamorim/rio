@@ -59,4 +59,4 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 - Components text render was originally from https://github.com/hecrj/wgpu_glyph
 - The legacy Rio logo was made using _Adobe Sketchbook_ on iPad (between versions 0.0.1 between 0.0.18).
 - WA was built originally from a fork from [Macroquad](https://github.com/not-fl3/macroquad) which is licensed under MIT license.
-- https://github.com/madsmtm/menubar/
+- https://github.com/servo/core-foundation-rs/blob/d4ce710182f1756c9d874ab917283fe1a1b7a011/cocoa/src/appkit.rs#L1447

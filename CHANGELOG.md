@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0
+
+- Sixel graphics initial support.
+
 ## Unreleased
 
 - TBD

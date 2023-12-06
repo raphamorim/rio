@@ -67,7 +67,7 @@ impl Drop for RcObjcId {
     }
 }
 
-#[link(name = "system")]
+#[link(name = "System")]
 extern "C" {
     pub static _NSConcreteStackBlock: [*const c_void; 32];
     pub static _NSConcreteBogusBlock: [*const c_void; 32];
@@ -195,6 +195,14 @@ extern "C" {
         -> ObjcId;
     pub fn CGAssociateMouseAndMouseCursorPosition(connected: bool);
     pub fn CGWarpMouseCursorPosition(newCursorPosition: NSPoint);
+
+    // Wildly used private APIs; Apple uses them for their Terminal.app.
+    pub fn CGSMainConnectionID() -> *mut ObjcId;
+    pub fn CGSSetWindowBackgroundBlurRadius(
+        connection_id: *mut ObjcId,
+        window_id: i32,
+        radius: i64,
+    ) -> i32;
 }
 
 #[link(name = "Metal", kind = "framework")]
@@ -1260,7 +1268,7 @@ pub struct MIDIEventPacket {
     pub words: [u32; 64usize],
 }
 
-#[link(name = "CoreMidi", kind = "framework")]
+#[link(name = "CoreMIDI", kind = "framework")]
 extern "C" {
     pub static kMIDIPropertyManufacturer: CFStringRef;
     pub static kMIDIPropertyDisplayName: CFStringRef;
