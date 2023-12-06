@@ -39,7 +39,6 @@ use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::config::colors::{term::List, ColorWGPU};
-use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
     SugarloafWindow, SugarloafWindowSize,
@@ -137,7 +136,7 @@ impl Screen {
             &sugarloaf_window,
             power_preference,
             config.fonts.to_owned(),
-            sugarloaf_layout,
+            sugarloaf_layout.clone(),
             Some(font_database),
         )
         .await
@@ -176,8 +175,7 @@ impl Screen {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
-            (sugarloaf.layout.columns, sugarloaf.layout.lines),
+            sugarloaf_layout,
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
@@ -408,15 +406,7 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            let size = CrosswordsSize::new_with_dimensions(
-                columns,
-                lines,
-                width.into(),
-                height.into(),
-                self.sugarloaf.layout.scaled_sugarwidth as u32,
-                self.sugarloaf.layout.scaled_sugarheight as u32,
-            );
-            terminal.resize::<CrosswordsSize>(size);
+            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout.clone());
             drop(terminal);
             let _ = context.messenger.send_resize(
                 width,
@@ -623,11 +613,7 @@ impl Screen {
 
                         self.context_manager.add_context(
                             redirect,
-                            (
-                                self.sugarloaf.layout.width_u32,
-                                self.sugarloaf.layout.height_u32,
-                            ),
-                            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
+                            self.sugarloaf.layout.clone(),
                             (
                                 &self.state.get_cursor_state_from_ref(),
                                 self.state.has_blinking_enabled,

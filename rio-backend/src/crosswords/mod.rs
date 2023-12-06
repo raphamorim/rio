@@ -2465,11 +2465,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
     }
 
+    #[inline]
     fn start_sixel_graphic(&mut self, params: &Params) -> Option<Box<sixel::Parser>> {
         let palette = self.graphics.sixel_shared_palette.take();
         Some(Box::new(sixel::Parser::new(params, palette)))
     }
 
+    #[inline]
     fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
@@ -2702,6 +2704,14 @@ impl Dimensions for CrosswordsSize {
 
     fn columns(&self) -> usize {
         self.columns
+    }
+
+    fn square_width(&self) -> f32 {
+        0.
+    }
+
+    fn square_height(&self) -> f32 {
+        0.
     }
 }
 

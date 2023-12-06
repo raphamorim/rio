@@ -8,7 +8,7 @@ pub struct Delta<T: Default> {
     pub bottom_y: T,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SugarloafLayout {
     pub scale_factor: f32,
     pub line_height: f32,
