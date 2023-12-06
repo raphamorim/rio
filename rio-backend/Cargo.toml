@@ -37,6 +37,7 @@ unicode-width = { workspace = true }
 copa = { workspace = true }
 wgpu = { workspace = true }
 cursor-icon = { version = "1.0.0", default-features = false }
+smallvec = { version = "1.9.0", default-features = false }
 
 [features]
 default = ["wayland", "x11"]

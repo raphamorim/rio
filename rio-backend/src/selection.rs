@@ -441,20 +441,14 @@ mod tests {
     use super::*;
 
     use crate::crosswords::pos::{Column, Pos, Side};
-    use crate::crosswords::test::CrosswordsSize;
     use crate::crosswords::Crosswords;
+    use crate::crosswords::CrosswordsSize;
     use crate::event::VoidListener;
     use winit::window::WindowId;
 
     fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);
-        Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        )
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, WindowId::from(0))
     }
 
     /// Test case of single cell selection.

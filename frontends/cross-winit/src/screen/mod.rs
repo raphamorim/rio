@@ -39,6 +39,7 @@ use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::config::colors::{term::List, ColorWGPU};
+use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
     SugarloafWindow, SugarloafWindowSize,
@@ -407,7 +408,15 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(columns, lines);
+            let size = CrosswordsSize::new_with_dimensions(
+                columns,
+                lines,
+                width.into(),
+                height.into(),
+                self.sugarloaf.layout.scaled_sugarwidth as u32,
+                self.sugarloaf.layout.scaled_sugarheight as u32,
+            );
+            terminal.resize::<CrosswordsSize>(size);
             drop(terminal);
             let _ = context.messenger.send_resize(
                 width,

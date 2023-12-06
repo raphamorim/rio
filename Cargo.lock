@@ -2474,6 +2474,7 @@ dependencies = [
  "raw-window-handle 0.5.2",
  "regex",
  "serde",
+ "smallvec",
  "sugarloaf",
  "teletypewriter",
  "toml",

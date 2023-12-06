@@ -6,6 +6,7 @@ use crate::performer::Machine;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
 use rio_backend::config::Shell;
+use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
@@ -88,7 +89,8 @@ pub struct ContextManager<T: EventListener> {
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
-        let terminal = Crosswords::new(1, 1, CursorShape::Block, event_proxy, window_id);
+        let size = CrosswordsSize::new(1, 1);
+        let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
         let (sender, _receiver) = corcovado::channel::channel();
 
@@ -112,13 +114,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
         let event_proxy_clone = event_proxy.clone();
-        let mut terminal = Crosswords::new(
+        let size = CrosswordsSize::new_with_dimensions(
             cols_rows.0,
             cols_rows.1,
-            cursor_state.0.content,
-            event_proxy,
-            window_id,
+            dimensions.0,
+            dimensions.1,
+            dimensions.0 / (cols_rows.0 as u32),
+            dimensions.1 / (cols_rows.1 as u32),
         );
+        let mut terminal =
+            Crosswords::new(size, cursor_state.0.content, event_proxy, window_id);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 

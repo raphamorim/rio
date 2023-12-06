@@ -459,6 +459,18 @@ pub trait Dimensions {
     fn history_size(&self) -> usize {
         self.total_lines().saturating_sub(self.screen_lines())
     }
+
+    /// square height in pixels.
+    #[inline]
+    fn square_height(&self) -> f32 {
+        0.0
+    }
+
+    /// square width in pixels.
+    #[inline]
+    fn square_width(&self) -> f32 {
+        0.0
+    }
 }
 
 impl<G> Dimensions for Grid<G> {
