@@ -65,7 +65,9 @@ impl State {
             }
         }
 
-        let dynamic_background = if config.window.background_image.is_some() || config.window.background_opacity < 1. {
+        let dynamic_background = if config.window.background_image.is_some()
+            || config.window.background_opacity < 1.
+        {
             ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
         } else {
             named_colors.background
