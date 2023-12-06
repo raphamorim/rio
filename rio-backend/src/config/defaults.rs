@@ -191,6 +191,8 @@ performance = "High"
 #
 # • blur - Set blur on the window background. Changing this config requires restarting Rio to take effect.
 #
+# • macos-hide-toolbar-buttons - (MacOS only) Hide window buttons
+#
 # Example:
 # [window]
 # width = 600
@@ -199,6 +201,7 @@ performance = "High"
 # foreground-opacity = 1.0
 # background-opacity = 1.0
 # blur = false
+# macos-hide-toolbar-buttons = false
 
 # Window Height
 #
@@ -277,7 +280,6 @@ performance = "High"
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
-# "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
 # Example:
 # [navigation]
@@ -285,7 +287,6 @@ performance = "High"
 # clickable = false
 # use-current-path = false
 # color-automation = []
-# macos-hide-window-buttons = false
 
 # Shell
 #
