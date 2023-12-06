@@ -122,8 +122,6 @@ pub struct Navigation {
     pub use_current_path: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(default = "bool::default", rename = "macos-hide-window-buttons")]
-    pub macos_hide_window_buttons: bool,
 }
 
 impl Navigation {
