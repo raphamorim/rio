@@ -168,8 +168,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                cols_rows.0 as u16,
-                cols_rows.1 as u16,
+                sugarloaf_layout.columns as u16,
+                sugarloaf_layout.lines as u16,
             );
         }
 
