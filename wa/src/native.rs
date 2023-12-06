@@ -1,5 +1,5 @@
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
-
+use std::collections::HashMap;
 use std::sync::mpsc;
 
 #[derive(Default)]
@@ -7,17 +7,54 @@ pub(crate) struct DroppedFiles {
     pub paths: Vec<std::path::PathBuf>,
     pub bytes: Vec<Vec<u8>>,
 }
+
+pub(crate) struct Handler {
+    inner: HashMap<u8, NativeDisplayData>,
+}
+
+impl Handler {
+    pub fn new() -> Self {
+        Handler {
+            inner: HashMap::new(),
+        }
+    }
+
+    #[inline]
+    pub fn insert(&mut self, id: u8, display: NativeDisplayData) {
+        self.inner.insert(id, display);
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self, id: u8) -> Option<&mut NativeDisplayData> {
+        self.inner.get_mut(&id)
+    }
+
+    #[inline]
+    pub fn get(&self, id: u8) -> Option<&NativeDisplayData> {
+        self.inner.get(&id)
+    }
+
+    #[inline]
+    pub fn remove(&mut self, id: u8) {
+        self.inner.remove(&id);
+    }
+}
+
 pub(crate) struct NativeDisplayData {
     pub screen_width: i32,
     pub screen_height: i32,
     pub dpi_scale: f32,
     pub high_dpi: bool,
+    pub has_initialized: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
     pub native_requests: mpsc::Sender<Request>,
     pub clipboard: Box<dyn Clipboard>,
     pub dropped_files: DroppedFiles,
-    pub sugarloaf: Option<sugarloaf::Sugarloaf>,
+
+    pub display_handle: Option<raw_window_handle::RawDisplayHandle>,
+    pub window_handle: Option<raw_window_handle::RawWindowHandle>,
+    pub dimensions: (i32, i32, f32),
 
     #[cfg(target_vendor = "apple")]
     pub view: crate::native::apple::frameworks::ObjcId,
@@ -35,6 +72,7 @@ impl NativeDisplayData {
         clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
+            has_initialized: false,
             screen_width,
             screen_height,
             dpi_scale: 1.,
@@ -43,12 +81,12 @@ impl NativeDisplayData {
             quit_ordered: false,
             native_requests,
             clipboard,
-            sugarloaf: None,
+            dimensions: (0, 0, 0.),
+            display_handle: None,
+            window_handle: None,
             dropped_files: Default::default(),
             #[cfg(target_vendor = "apple")]
             view: std::ptr::null_mut(),
-            #[cfg(target_os = "ios")]
-            view_ctrl: std::ptr::null_mut(),
         }
     }
 }
@@ -57,10 +95,10 @@ impl NativeDisplayData {
 pub(crate) enum Request {
     SetCursorGrab(bool),
     ShowMouse(bool),
+    SetWindowTitle(String),
     SetMouseCursor(crate::CursorIcon),
     SetWindowSize { new_width: u32, new_height: u32 },
     SetFullscreen(bool),
-    ShowKeyboard(bool),
 }
 
 pub trait Clipboard: Send + Sync {

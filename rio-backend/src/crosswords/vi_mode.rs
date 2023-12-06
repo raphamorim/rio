@@ -7,7 +7,6 @@ use crate::crosswords::grid::{Dimensions, GridSquare};
 use crate::crosswords::pos::{Boundary, Column, Direction, Line, Pos, Side};
 use crate::crosswords::square::Flags;
 use crate::crosswords::Crosswords;
-use crate::event::EventListener;
 
 /// Possible vi mode motion movements.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -67,11 +66,7 @@ impl ViModeCursor {
 
     /// Move vi mode cursor.
     #[must_use = "this returns the result of the operation, without modifying the original"]
-    pub fn motion<T: EventListener>(
-        mut self,
-        term: &mut Crosswords<T>,
-        motion: ViMotion,
-    ) -> Self {
+    pub fn motion(mut self, term: &mut Crosswords, motion: ViMotion) -> Self {
         match motion {
             ViMotion::Up => {
                 if self.pos.row > term.grid.topmost_line() {
@@ -170,7 +165,7 @@ impl ViModeCursor {
     /// Get target cursor pos for vim-like page movement.
     #[allow(unused)]
     #[must_use = "this returns the result of the operation, without modifying the original"]
-    pub fn scroll<T: EventListener>(mut self, term: &Crosswords<T>, lines: i32) -> Self {
+    pub fn scroll(mut self, term: &Crosswords, lines: i32) -> Self {
         // Clamp movement to within visible region.
         let line = (self.pos.row - lines).grid_clamp(&term.grid, Boundary::Grid);
 
@@ -185,7 +180,7 @@ impl ViModeCursor {
 }
 
 /// Find next end of line to move to.
-fn last<T: EventListener>(term: &Crosswords<T>, mut pos: Pos) -> Pos {
+fn last(term: &Crosswords, mut pos: Pos) -> Pos {
     // Expand across wide cells.
     pos = term.expand_wide(pos, Direction::Right);
 
@@ -209,7 +204,7 @@ fn last<T: EventListener>(term: &Crosswords<T>, mut pos: Pos) -> Pos {
 }
 
 /// Find next non-empty cell to move to.
-fn first_occupied<T: EventListener>(term: &Crosswords<T>, mut pos: Pos) -> Pos {
+fn first_occupied(term: &Crosswords, mut pos: Pos) -> Pos {
     let last_column = term.grid.last_column();
 
     // Expand left across wide chars, since we're searching lines left to right.
@@ -255,8 +250,8 @@ fn first_occupied<T: EventListener>(term: &Crosswords<T>, mut pos: Pos) -> Pos {
 }
 
 /// Move by semantically separated word, like w/b/e/ge in vi.
-fn semantic<T: EventListener>(
-    term: &mut Crosswords<T>,
+fn semantic(
+    term: &mut Crosswords,
     mut pos: Pos,
     direction: Direction,
     side: Side,
@@ -307,12 +302,7 @@ fn semantic<T: EventListener>(
 }
 
 /// Move by whitespace separated word, like W/B/E/gE in vi.
-fn word<T: EventListener>(
-    term: &mut Crosswords<T>,
-    mut pos: Pos,
-    direction: Direction,
-    side: Side,
-) -> Pos {
+fn word(term: &mut Crosswords, mut pos: Pos, direction: Direction, side: Side) -> Pos {
     // Make sure we jump above wide chars.
     pos = term.expand_wide(pos, direction);
 
@@ -348,31 +338,21 @@ fn word<T: EventListener>(
 }
 
 /// Find first non-empty cell in line.
-fn first_occupied_in_line<T: EventListener>(
-    term: &Crosswords<T>,
-    line: Line,
-) -> Option<Pos> {
+fn first_occupied_in_line(term: &Crosswords, line: Line) -> Option<Pos> {
     (0..term.grid.columns())
         .map(|col| Pos::new(line, Column(col)))
         .find(|&pos| !is_space(term, pos))
 }
 
 /// Find last non-empty cell in line.
-fn last_occupied_in_line<T: EventListener>(
-    term: &Crosswords<T>,
-    line: Line,
-) -> Option<Pos> {
+fn last_occupied_in_line(term: &Crosswords, line: Line) -> Option<Pos> {
     (0..term.grid.columns())
         .map(|col| Pos::new(line, Column(col)))
         .rfind(|&pos| !is_space(term, pos))
 }
 
 /// Advance pos based on direction.
-fn advance<T: EventListener>(
-    term: &Crosswords<T>,
-    pos: Pos,
-    direction: Direction,
-) -> Pos {
+fn advance(term: &Crosswords, pos: Pos, direction: Direction) -> Pos {
     if direction == Direction::Left {
         pos.sub(&term.grid, Boundary::Grid, 1)
     } else {
@@ -381,7 +361,7 @@ fn advance<T: EventListener>(
 }
 
 /// Check if cell at pos contains whitespace.
-fn is_space<T: EventListener>(term: &Crosswords<T>, pos: Pos) -> bool {
+fn is_space(term: &Crosswords, pos: Pos) -> bool {
     let cell = &term.grid[pos.row][pos.col];
     !cell
         .flags()
@@ -390,16 +370,12 @@ fn is_space<T: EventListener>(term: &Crosswords<T>, pos: Pos) -> bool {
 }
 
 /// Check if the cell at a pos contains the WRAPLINE flag.
-fn is_wrap<T: EventListener>(term: &Crosswords<T>, pos: Pos) -> bool {
+fn is_wrap(term: &Crosswords, pos: Pos) -> bool {
     term.grid[pos].flags.contains(Flags::WRAPLINE)
 }
 
 /// Check if pos is at screen boundary.
-fn is_boundary<T: EventListener>(
-    term: &Crosswords<T>,
-    pos: Pos,
-    direction: Direction,
-) -> bool {
+fn is_boundary(term: &Crosswords, pos: Pos, direction: Direction) -> bool {
     (pos.row <= term.grid.topmost_line() && pos.col == 0 && direction == Direction::Left)
         || (pos.row == term.bottommost_line()
             && pos.col + 1 >= term.grid.columns()
@@ -409,21 +385,16 @@ fn is_boundary<T: EventListener>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::crosswords::pos::{Column, Line};
+    use crate::crosswords::CrosswordsSize;
     use crate::crosswords::{Crosswords, CursorShape};
-    use crate::event::VoidListener;
     use crate::performer::handler::Handler;
-    use winit::window::WindowId;
+    use crate::superloop::Superloop;
 
     fn term() -> Crosswords<VoidListener> {
-        Crosswords::new(
-            20,
-            20,
-            CursorShape::Underline,
-            VoidListener,
-            WindowId::from(0),
-        )
+        let mut superloop: Superloop = Superloop::new();
+        let size = CrosswordsSize::new(20, 20);
+        Crosswords::new(size, CursorShape::Underline, superloop, 0)
     }
 
     #[test]
@@ -532,7 +503,7 @@ mod tests {
         assert_eq!(cursor.pos, Pos::new(Line(0), Column(0)));
     }
 
-    fn motion_semantic_term() -> Crosswords<VoidListener> {
+    fn motion_semantic_term() -> Crosswords {
         let mut term = term();
 
         term.grid[Line(0)][Column(0)].c = 'x';

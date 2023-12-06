@@ -72,6 +72,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
                     style: None,
+                    media: None,
                     decoration: None,
                 });
 
@@ -80,6 +81,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
                     style: None,
+                    media: None,
                     decoration: None,
                 });
 
@@ -88,6 +90,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
                     style: None,
+                    media: None,
                     decoration: None,
                 });
             }

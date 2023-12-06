@@ -1,5 +1,8 @@
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
 
+use bitflags::bitflags;
+use smol_str::SmolStr;
+
 #[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
 pub enum MouseButton {
     Right,
@@ -140,12 +143,115 @@ pub enum KeyCode {
     Unknown,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct KeyMods {
+impl TryFrom<&str> for KeyCode {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(k: &str) -> Result<KeyCode, Self::Error> {
+        let key = match k {
+            "`" => KeyCode::Apostrophe,
+            "0" => KeyCode::Key0,
+            "1" => KeyCode::Key1,
+            "2" => KeyCode::Key2,
+            "3" => KeyCode::Key3,
+            "4" => KeyCode::Key4,
+            "5" => KeyCode::Key5,
+            "6" => KeyCode::Key6,
+            "7" => KeyCode::Key7,
+            "8" => KeyCode::Key8,
+            "9" => KeyCode::Key9,
+            "-" => KeyCode::Minus,
+            "=" => KeyCode::Equal,
+            // "+" => KeyCode::Plus,
+            "q" => KeyCode::Q,
+            "w" => KeyCode::W,
+            "e" => KeyCode::E,
+            "r" => KeyCode::R,
+            "t" => KeyCode::T,
+            "y" => KeyCode::Y,
+            "u" => KeyCode::U,
+            "i" => KeyCode::I,
+            "o" => KeyCode::O,
+            "p" => KeyCode::P,
+            "[" => KeyCode::LeftBracket,
+            "]" => KeyCode::RightBracket,
+
+            "a" => KeyCode::A,
+            "s" => KeyCode::S,
+            "d" => KeyCode::D,
+            "f" => KeyCode::F,
+            "g" => KeyCode::G,
+            "h" => KeyCode::H,
+            "j" => KeyCode::J,
+            "k" => KeyCode::K,
+            "l" => KeyCode::L,
+            ";" => KeyCode::Semicolon,
+            "\\" => KeyCode::Backslash,
+
+            "z" => KeyCode::Z,
+            "x" => KeyCode::X,
+            "c" => KeyCode::C,
+            "v" => KeyCode::V,
+            "b" => KeyCode::B,
+            "n" => KeyCode::N,
+            "m" => KeyCode::M,
+            "," => KeyCode::Comma,
+            "." => KeyCode::Period,
+            "/" => KeyCode::Slash,
+            " " => KeyCode::Space,
+            _ => return Err("Could not convert str to KeyCode".into()),
+        };
+
+        Ok(key)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
+pub struct ModifiersState {
     pub shift: bool,
-    pub ctrl: bool,
+    pub control: bool,
     pub alt: bool,
     pub logo: bool,
+}
+
+bitflags! {
+    /// Represents the current state of the keyboard modifiers
+    ///
+    /// Each flag represents a modifier and is set if this modifier is active.
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Modifiers: u32 {
+        /// The "shift" key.
+        const SHIFT = 0b100;
+        /// The "control" key.
+        const CONTROL = 0b100 << 3;
+        /// The "alt" key.
+        const ALT = 0b100 << 6;
+        /// This is the "windows" key on PC and "command" key on Mac.
+        const SUPER = 0b100 << 9;
+    }
+}
+
+impl From<ModifiersState> for Modifiers {
+    fn from(mods: ModifiersState) -> Modifiers {
+        let mut to_mods = Modifiers::empty();
+        to_mods.set(Modifiers::SHIFT, mods.shift);
+        to_mods.set(Modifiers::CONTROL, mods.control);
+        to_mods.set(Modifiers::ALT, mods.alt);
+        to_mods.set(Modifiers::SUPER, mods.logo);
+        to_mods
+    }
+}
+
+impl ModifiersState {
+    pub fn is_empty(&self) -> bool {
+        self.shift == false
+            && self.control == false
+            && self.alt == false
+            && self.logo == false
+    }
+
+    pub fn empty() -> ModifiersState {
+        ModifiersState::default()
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -156,19 +262,45 @@ pub enum TouchPhase {
     Cancelled,
 }
 
+pub enum EventHandlerAction {
+    Init,
+    Update(u8),
+    Noop,
+    Render,
+    Quit,
+}
+
 /// A trait defining event callbacks.
 pub trait EventHandler {
-    fn update(&mut self);
+    fn process(&mut self) -> EventHandlerAction;
+    fn init(
+        &mut self,
+        _id: u8,
+        _raw_window_handle: raw_window_handle::RawWindowHandle,
+        _raw_display_handle: raw_window_handle::RawDisplayHandle,
+        _w: i32,
+        _h: i32,
+        _s: f32,
+    ) {
+    }
     fn draw(&mut self);
-    fn resize_event(&mut self, _width: f32, _height: f32) {}
+    fn update(&mut self, _opcode: u8);
+    fn resize_event(&mut self, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
     fn mouse_motion_event(&mut self, _x: f32, _y: f32) {}
     fn mouse_wheel_event(&mut self, _x: f32, _y: f32) {}
     fn mouse_button_down_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
     fn mouse_button_up_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
 
-    fn char_event(&mut self, _character: char, _keymods: KeyMods, _repeat: bool) {}
-    fn key_down_event(&mut self, _keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {}
-    fn key_up_event(&mut self, _keycode: KeyCode, _keymods: KeyMods) {}
+    // fn char_event(&mut self, _character: char, _mods: ModifiersState, _repeat: bool) {}
+    fn key_down_event(
+        &mut self,
+        _keycode: KeyCode,
+        _mods: ModifiersState,
+        _repeat: bool,
+        _text: Option<SmolStr>,
+    ) {
+    }
+    fn key_up_event(&mut self, _keycode: KeyCode, _mods: ModifiersState) {}
 
     /// Default implementation emulates mouse clicks
     fn touch_event(&mut self, phase: TouchPhase, _id: u64, x: f32, y: f32) {

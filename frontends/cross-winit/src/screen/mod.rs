@@ -174,7 +174,7 @@ impl Screen {
             &sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
-            sugarloaf_layout,
+            sugarloaf_layout.clone(),
             Some(font_database),
         )
         .await
@@ -213,8 +213,7 @@ impl Screen {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            (sugarloaf.layout.width_u32, sugarloaf.layout.height_u32),
-            (sugarloaf.layout.columns, sugarloaf.layout.lines),
+            sugarloaf_layout,
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
@@ -406,7 +405,7 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(columns, lines);
+            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout.clone());
             drop(terminal);
             let _ = context.messenger.send_resize(
                 width,
@@ -611,11 +610,7 @@ impl Screen {
 
                         self.context_manager.add_context(
                             redirect,
-                            (
-                                self.sugarloaf.layout.width_u32,
-                                self.sugarloaf.layout.height_u32,
-                            ),
-                            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
+                            self.sugarloaf.layout.clone(),
                             (
                                 &self.state.get_cursor_state_from_ref(),
                                 self.state.has_blinking_enabled,
@@ -1238,6 +1233,7 @@ impl Screen {
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
         let has_blinking_enabled = terminal.blinking_cursor;
+        let graphics = terminal.graphics_take_queues();
         drop(terminal);
         self.context_manager.update_titles();
 
@@ -1248,6 +1244,7 @@ impl Screen {
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
+            graphics,
             display_offset as i32,
             has_blinking_enabled,
         );

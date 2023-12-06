@@ -74,6 +74,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.050),
@@ -85,6 +86,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
@@ -96,6 +98,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -107,6 +110,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -118,6 +122,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -129,6 +134,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -141,12 +147,14 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -158,6 +166,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -169,6 +178,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -180,6 +190,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -191,6 +202,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
@@ -203,6 +215,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
         ];
 
@@ -217,6 +230,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 't',
@@ -228,6 +242,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -239,6 +254,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'l',
@@ -250,6 +266,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'i',
@@ -261,6 +278,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'c',
@@ -272,6 +290,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: ' ',
@@ -283,6 +302,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'b',
@@ -294,6 +314,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'o',
@@ -305,6 +326,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'l',
@@ -316,6 +338,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'd',
@@ -327,6 +350,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
         ];
 
@@ -336,6 +360,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.92),
                     size: (1.0, 0.05),
@@ -348,6 +373,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -355,6 +381,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'u',
@@ -362,6 +389,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'l',
@@ -369,6 +397,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -376,6 +405,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'r',
@@ -383,6 +413,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
         ];
 
@@ -392,6 +423,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
@@ -403,6 +435,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
@@ -414,6 +447,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
@@ -425,6 +459,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
@@ -436,6 +471,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
@@ -447,6 +483,7 @@ async fn main() {
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: Some(SugarDecoration {
                     relative_position: (0.0, 0.85),
                     size: (1.0, 0.025),
@@ -479,6 +516,7 @@ async fn main() {
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: block,
             },
             Sugar {
@@ -487,12 +525,14 @@ async fn main() {
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
+                media: None,
                 decoration: underline,
             },
             Sugar {
@@ -501,12 +541,14 @@ async fn main() {
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
+                media: None,
                 decoration: beam,
             },
         ];

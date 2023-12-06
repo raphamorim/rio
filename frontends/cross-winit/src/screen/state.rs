@@ -7,12 +7,15 @@ use crate::ime::Preedit;
 use crate::screen::navigation::ScreenNavigation;
 use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
+use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::core::{
+    Sugar, SugarDecoration, SugarGraphic, SugarStack, SugarStyle,
+};
 use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -141,6 +144,26 @@ impl State {
     }
 
     #[inline]
+    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
+        let foreground_color = self.compute_fg_color(square);
+        let background_color = self.compute_bg_color(square);
+
+        let media = &square.graphics().unwrap()[0].texture;
+        Sugar {
+            content: ' ',
+            foreground_color,
+            background_color,
+            style: None,
+            decoration: None,
+            media: Some(SugarGraphic {
+                id: media.id,
+                width: media.width,
+                height: media.height,
+            }),
+        }
+    }
+
+    #[inline]
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
@@ -191,6 +214,7 @@ impl State {
             background_color,
             style,
             decoration,
+            media: None,
         }
     }
 
@@ -252,6 +276,11 @@ impl State {
                 continue;
             }
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                stack.push(self.create_graphic_sugar(square));
+                continue;
+            }
+
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
@@ -286,6 +315,7 @@ impl State {
                     background_color: self.named_colors.selection_background,
                     style: None,
                     decoration: None,
+                    media: None,
                 };
                 stack.push(selected_sugar);
             } else {
@@ -447,6 +477,11 @@ impl State {
         for column in 0..columns {
             let square = &row.inner[column];
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                stack.push(self.create_graphic_sugar(square));
+                continue;
+            }
+            
             if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
@@ -474,6 +509,7 @@ impl State {
             background_color: self.compute_bg_color(square),
             style: None,
             decoration: None,
+            media: None,
         };
 
         let is_italic = square.flags.contains(Flags::ITALIC);
@@ -532,17 +568,25 @@ impl State {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_term(
         &mut self,
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         context_manager: &context::ContextManager<EventProxy>,
+        graphics_opt: Option<UpdateQueues>,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
+
+        if let Some(graphics) = graphics_opt {
+            for graphic_data in graphics.pending {
+                sugarloaf.add_graphic(graphic_data);
+            }
+        }
 
         self.font_size = sugarloaf.layout.font_size;
 

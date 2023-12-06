@@ -14,15 +14,3 @@ pub enum Image {
         bounds: Rectangle,
     },
 }
-// A vector image.
-// Vector {
-//     /// The handle of a vector image.
-//     handle: svg::Handle,
-
-//     /// The [`Color`] filter
-//     color: Option<wgpu::Color>,
-
-//     /// The bounds of the image.
-//     bounds: Rectangle,
-// },
-// }

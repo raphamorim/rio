@@ -6,10 +6,11 @@
 #![allow(dead_code)]
 
 use crate::{
-    event::{KeyCode, KeyMods},
+    event::{KeyCode, ModifiersState},
     native::apple::frameworks::*,
     CursorIcon,
 };
+use smol_str::SmolStr;
 
 pub fn nsstring_to_string(string: ObjcId) -> String {
     unsafe {
@@ -132,7 +133,7 @@ pub fn load_webkit_cursor(cursor_name_str: &str) -> ObjcId {
     }
 }
 
-pub fn get_event_char(event: ObjcId) -> Option<char> {
+pub fn get_event_char(event: ObjcId) -> Option<SmolStr> {
     unsafe {
         let characters: ObjcId = msg_send![event, characters];
         if characters == nil {
@@ -143,15 +144,15 @@ pub fn get_event_char(event: ObjcId) -> Option<char> {
         if chars.is_empty() {
             return None;
         }
-        Some(chars.chars().next().unwrap())
+        Some(chars.into())
     }
 }
 
-pub fn get_event_key_modifier(event: ObjcId) -> KeyMods {
+pub fn get_event_key_modifier(event: ObjcId) -> ModifiersState {
     let flags: u64 = unsafe { msg_send![event, modifierFlags] };
-    KeyMods {
+    ModifiersState {
         shift: flags & NSEventModifierFlags::NSShiftKeyMask as u64 != 0,
-        ctrl: flags & NSEventModifierFlags::NSControlKeyMask as u64 != 0,
+        control: flags & NSEventModifierFlags::NSControlKeyMask as u64 != 0,
         alt: flags & NSEventModifierFlags::NSAlternateKeyMask as u64 != 0,
         logo: flags & NSEventModifierFlags::NSCommandKeyMask as u64 != 0,
     }

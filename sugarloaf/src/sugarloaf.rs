@@ -15,9 +15,11 @@ use crate::font::{
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
 use crate::glyph::{FontId, GlyphCruncher};
+use crate::graphics::SugarloafGraphics;
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -31,22 +33,29 @@ pub struct CachedSugar {
     monospaced_font_scale: Option<f32>,
 }
 
-pub trait RenderableSugarloaf {
-    fn clear(&mut self) {}
-    fn render(&mut self) {}
-    fn resize(&mut self, _width: u32, _height: u32) {}
-    fn rescale(&mut self, _scale: f32) {}
+struct GraphicRect {
+    id: crate::graphics::SugarGraphicId,
+    height: u16,
+    width: u16,
+    pos_x: f32,
+    pos_y: f32,
+    columns: f32,
+    start_row: f32,
+    end_row: f32,
 }
 
 pub struct Sugarloaf {
     sugar_cache: HashMap<char, CachedSugar>,
     pub ctx: Context,
     pub layout: SugarloafLayout,
+    pub graphics: SugarloafGraphics,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
+    graphic_rects: BTreeMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
     text_y: f32,
+    current_row: u16,
     font_bound: (f32, f32),
     fonts: SugarloafFonts,
     is_text_monospaced: bool,
@@ -112,6 +121,25 @@ unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
 }
 
 impl Sugarloaf {
+    // pub fn empty() -> Sugarloaf {
+    //     Sugarloaf {
+    //         sugar_cache: HashMap::new(),
+    //         graphics: SugarloafGraphics::new(),
+    //         layer_brush,
+    //         fonts,
+    //         ctx,
+    //         rect_brush,
+    //         rects: vec![],
+    //         graphic_rects: BTreeMap::new(),
+    //         text_brush,
+    //         text_y: 0.0,
+    //         current_row: 0,
+    //         font_bound: (0.0, 0.0),
+    //         layout: SugarloafLayout::default(),
+    //         is_text_monospaced: true,
+    //     }
+    // }
+
     pub async fn new(
         raw_window_handle: &SugarloafWindow,
         renderer: SugarloafRenderer,
@@ -140,13 +168,16 @@ impl Sugarloaf {
 
         let instance = Sugarloaf {
             sugar_cache: HashMap::new(),
+            graphics: SugarloafGraphics::new(),
             layer_brush,
             fonts,
             ctx,
             rect_brush,
             rects: vec![],
+            graphic_rects: BTreeMap::new(),
             text_brush,
             text_y: 0.0,
+            current_row: 0,
             font_bound: (0.0, 0.0),
             layout,
             is_text_monospaced,
@@ -363,6 +394,7 @@ impl Sugarloaf {
                 && stack[i].background_color == stack[i + 1].background_color
                 && stack[i].decoration.is_none()
                 && stack[i + 1].decoration.is_none()
+                && stack[i].media.is_none()
             {
                 repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
                 x += add_pos_x;
@@ -535,6 +567,28 @@ impl Sugarloaf {
                 }
             }
 
+            if let Some(sugar_media) = &stack[i].media {
+                if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
+                    rect.columns += 1.0;
+                    rect.end_row = self.current_row.into();
+                } else {
+                    println!("miss {:?}", sugar_media.id);
+                    self.graphic_rects.insert(
+                        sugar_media.id,
+                        GraphicRect {
+                            id: sugar_media.id,
+                            height: sugar_media.height,
+                            width: sugar_media.width,
+                            pos_x: scaled_rect_pos_x,
+                            pos_y: scaled_rect_pos_y,
+                            columns: 1.0,
+                            start_row: 1.0,
+                            end_row: 1.0,
+                        },
+                    );
+                }
+            }
+
             if repeated.reset_on_next() {
                 repeated.reset();
             }
@@ -542,6 +596,7 @@ impl Sugarloaf {
             x += add_pos_x;
         }
 
+        self.current_row += 1;
         self.text_y += self.layout.scaled_sugarheight;
     }
 
@@ -694,28 +749,21 @@ impl Sugarloaf {
         self.text_brush.queue(section);
         self
     }
-}
 
-pub struct SugarloafVoid;
-impl RenderableSugarloaf for SugarloafVoid {
-    fn render(&mut self) {}
-}
-
-impl RenderableSugarloaf for Sugarloaf {
     #[inline]
-    fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
         self.layout.resize(width, height).update();
     }
 
     #[inline]
-    fn rescale(&mut self, scale: f32) {
+    pub fn rescale(&mut self, scale: f32) {
         self.ctx.scale = scale;
         self.layout.rescale(scale).update();
     }
 
     #[inline]
-    fn render(&mut self) {
+    pub fn render(&mut self) {
         self.reset_state();
 
         match self.ctx.surface.get_current_texture() {
@@ -754,6 +802,45 @@ impl RenderableSugarloaf for Sugarloaf {
                         .render_with_encoder(0, view, &mut encoder, None);
                 }
 
+                for entry_render in
+                    &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
+                {
+                    if let Some(entry) = self.graphic_rects.get(&entry_render) {
+                        if let Some(graphic_data) = self.graphics.get(&entry.id) {
+                            let rows = entry.end_row - entry.start_row;
+                            println!("{:?}", entry.columns);
+                            println!("{:?}", rows);
+                            println!("{:?}", self.current_row);
+                            println!("{:?}", (rows) * self.layout.scaled_sugarheight);
+
+                            let height = (rows - 2.) * self.layout.scaled_sugarheight;
+
+                            let a = layer::types::Image::Raster {
+                                handle: graphic_data.handle.clone(),
+                                bounds: Rectangle {
+                                    x: entry.pos_x,
+                                    y: entry.pos_y,
+                                    width: entry.width as f32,
+                                    height,
+                                },
+                            };
+
+                            self.layer_brush.prepare_ref(
+                                &mut encoder,
+                                &mut self.ctx,
+                                &[&a],
+                            );
+
+                            self.layer_brush.render_with_encoder(
+                                0,
+                                view,
+                                &mut encoder,
+                                None,
+                            );
+                        }
+                    }
+                }
+
                 self.rect_brush.render(
                     &mut encoder,
                     view,
@@ -763,10 +850,14 @@ impl RenderableSugarloaf for Sugarloaf {
                 );
 
                 self.rects = vec![];
+                self.graphic_rects = BTreeMap::new();
+                self.current_row = 0;
 
                 let _ = self
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
+
+                self.layer_brush.end_frame();
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

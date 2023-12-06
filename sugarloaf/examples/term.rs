@@ -83,6 +83,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '',
@@ -90,6 +91,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -101,6 +103,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -112,6 +115,7 @@ async fn main() {
                     is_bold: true,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -119,6 +123,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -126,6 +131,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -137,6 +143,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -148,6 +155,7 @@ async fn main() {
                     is_bold: false,
                 }),
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'u',
@@ -155,6 +163,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -162,6 +171,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -169,6 +179,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'r',
@@ -176,6 +187,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -183,6 +195,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '|',
@@ -190,6 +203,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -197,6 +211,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '|',
@@ -204,6 +219,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
         ];
 
@@ -220,6 +236,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'r',
@@ -227,6 +244,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(underline),
+                media: None,
             },
             Sugar {
                 content: 'i',
@@ -234,6 +252,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(underline),
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -241,6 +260,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '¼',
@@ -248,6 +268,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '¬',
@@ -255,6 +276,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '|',
@@ -262,6 +284,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -269,6 +292,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'f',
@@ -276,6 +300,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'g',
@@ -283,6 +308,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             // // Font Unicode (unicode font)
             Sugar {
@@ -291,6 +317,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             // Font Symbol (apple symbols font)
             Sugar {
@@ -299,6 +326,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             // Font Regular (firamono)
             Sugar {
@@ -307,6 +335,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             // // Font Emojis
             Sugar {
@@ -315,6 +344,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '👷',
@@ -322,6 +352,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
         ];
 
@@ -333,6 +364,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: Some(underline),
+                media: None,
             },
             Sugar {
                 content: '➜',
@@ -340,6 +372,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: Some(underline),
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -347,6 +380,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '％',
@@ -354,6 +388,7 @@ async fn main() {
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '',
@@ -361,6 +396,7 @@ async fn main() {
                 background_color: [0.5, 0.5, 0.5, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: 'a',
@@ -368,6 +404,7 @@ async fn main() {
                 background_color: [1.0, 1.0, 1.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 // content: '',
@@ -376,6 +413,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '🥇',
@@ -383,6 +421,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
             Sugar {
                 content: '',
@@ -390,6 +429,7 @@ async fn main() {
                 background_color: [0.0, 0.0, 0.0, 1.0],
                 style: None,
                 decoration: None,
+                media: None,
             },
         ];
 
