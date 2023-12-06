@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Sixel graphics initial support.
 - Fix regression with color ansi when transparency is off.
 - **Breaking**: Config `navigation.macos-hide-window-buttons` has moved to `window.macos-hide-toolbar-buttons`.
 
