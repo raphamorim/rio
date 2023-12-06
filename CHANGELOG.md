@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- TBD
+- **Breaking**: Config `navigation.macos-hide-window-buttons` has moved to `window.macos-hide-toolbar-buttons`.
 
 ## 0.0.29
 

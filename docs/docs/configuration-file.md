@@ -124,6 +124,8 @@ option-as-alt = 'left'
 - `background-image` Set an image as background.
 	- Default: `None`
 
+- `macos-hide-toolbar-buttons` - (MacOS only) Hide toolbar buttons
+
 Example:
 
 ```toml
@@ -134,6 +136,7 @@ mode = "Windowed"
 foreground-opacity = 1.0
 background-opacity = 1.0
 blur = false
+macos-hide-toolbar-buttons = false
 ```
 
 ### Using blur and background opacity:
@@ -241,7 +244,6 @@ divider = 1.0
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created.
 - `color-automation` - Set a specific color for the tab whenever a specific program is running.
-- `macos-hide-window-buttons` - (MacOS only) Hide window buttons
 
 ```toml
 [navigation]
@@ -249,7 +251,6 @@ mode = "CollapsedTab"
 clickable = false
 use-current-path = false
 color-automation = []
-macos-hide-window-buttons = false
 ```
 
 ## Shell

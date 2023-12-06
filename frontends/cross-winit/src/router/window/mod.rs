@@ -93,7 +93,7 @@ pub fn create_window_builder(
             }
         }
 
-        if config.navigation.macos_hide_window_buttons {
+        if config.window.macos_hide_toolbar_buttons {
             window_builder = window_builder.with_titlebar_buttons_hidden(true);
         }
     }
