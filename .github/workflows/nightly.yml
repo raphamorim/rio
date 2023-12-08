@@ -1,22 +1,21 @@
-name: Release Canary
+name: Nightly
 
 on:
-  workflow_run:
-    workflows: ['Test']
-    types:
-      - completed
+  workflow_dispatch:
+  schedule:
+    # 01:00 every day
+    - cron: '0 1 * * *'
 
 env:
   CARGO_TERM_COLOR: always
   GITHUB_REPOSITORY: raphamorim/rio
   RUST_BACKTRACE: full
   RUSTFLAGS: '-C link-arg=-s'
-  CANARY_TAG: canary
+  NIGHTLY_TAG: nightly
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   create_tag:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main' }}
     outputs:
       created: ${{ steps.status.outputs.created }}
     runs-on: ubuntu-latest
@@ -29,23 +28,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get all changed *.rs file(s) or any file in the misc folder excluding the docs folder
-        id: changed-files-excluded
-        uses: tj-actions/changed-files@v36
-        with:
-          files: |
-            **/*.rs
-            misc
-          files_ignore: docs
-
       - name: Run step if any *.rs file(s) or any file in the misc folder change
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: |
           echo "One or more *.rs file(s) or any file in the static folder but not in the docs folder has changed."
           echo "List all the files that have changed: ${{ steps.changed-files-excluded.outputs.all_changed_files }}"
 
-      - name: Delete old canary release
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
+      - name: Delete old nightly release
         uses: dev-drprasad/delete-tag-and-release@v1.0
         with:
           tag_name: canary
@@ -54,18 +42,16 @@ jobs:
 
       - name: Bump version and push tag
         id: tag_version
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         uses: mathieudutour/github-tag-action@v6.1
         with:
-          custom_tag: 'canary'
+          custom_tag: ${{ env.NIGHTLY_TAG }}
           tag_prefix: ''
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - id: status
-        if: steps.changed-files-excluded.outputs.any_changed == 'true'
         run: echo "created=true" >> "$GITHUB_OUTPUT"
 
-  canary-release-macos:
+  nightly-release-macos:
     needs: create_tag
     if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: macos-11.0
@@ -90,11 +76,11 @@ jobs:
       - name: make release-macos
         run: make release-macos
 
-      - name: Release canary
+      - name: Release nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Canary - ${{ github.sha }}
-          tag_name: ${{ env.CANARY_TAG }}
+          name: Nightly - ${{ github.sha }}
+          tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +88,7 @@ jobs:
             release/macos-rio.zip
             LICENSE
 
-  canary-release-deb:
+  nightly-release-deb:
     needs: create_tag
     if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: ubuntu-latest
@@ -128,11 +114,11 @@ jobs:
       - run: make release-debian-x11
       - run: make release-debian-wayland
 
-      - name: Release canary
+      - name: Release nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Canary - ${{ github.sha }}
-          tag_name: ${{ env.CANARY_TAG }}
+          name: Nightly - ${{ github.sha }}
+          tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -140,7 +126,7 @@ jobs:
             release/debian/x11/*
             release/debian/wayland/*
 
-  canary-release-windows:
+  nightly-release-windows:
     needs: create_tag
     if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: windows-latest
@@ -179,11 +165,11 @@ jobs:
 
       - run: cp ./target/release/rio.exe ./Rio-portable.exe
 
-      - name: Release canary
+      - name: Release Nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Canary - ${{ github.sha }}
-          tag_name: ${{ env.CANARY_TAG }}
+          name: Nightly - ${{ github.sha }}
+          tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
