@@ -5,15 +5,7 @@ pub fn default_env_vars() -> Vec<String> {
 
 #[inline]
 pub fn default_padding_x() -> f32 {
-    #[cfg(not(target_os = "macos"))]
-    {
-        0.
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        5.
-    }
+    0.
 }
 
 #[inline]
@@ -309,6 +301,10 @@ performance = "High"
 # Example 3 for Windows using powershell with login
 #
 # shell = { program = "pwsh", args = ["-l"] }
+#
+# Example 4 for MacOS with tmux installed by homebrew
+#
+# shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", # "/var/www"] }
 
 # Startup directory
 #

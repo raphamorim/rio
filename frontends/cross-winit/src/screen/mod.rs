@@ -110,6 +110,13 @@ impl Screen {
             }
         }
 
+        #[cfg(target_os = "macos")]
+        {
+            if config.navigation.is_native() {
+                padding_y_top = 0.0;
+            }
+        }
+
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
@@ -245,45 +252,6 @@ impl Screen {
     pub fn is_macos_deadzone_draggable(&self, pos_x: f64) -> bool {
         let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
         pos_x >= DEADZONE_START_X * scale_f64
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn should_reload_with_updated_margin_top_y(
-        &mut self,
-        tab_num: usize,
-        is_fullscreen: bool,
-    ) -> bool {
-        let mut should_reload = false;
-        if is_fullscreen {
-            if tab_num <= 1 && self.sugarloaf.layout.margin.top_y != 0.0 {
-                self.sugarloaf.layout.set_margin_top_y(0.0);
-                should_reload = true;
-            } else if tab_num > 1
-                && self.sugarloaf.layout.margin.top_y
-                    != constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
-            {
-                self.sugarloaf
-                    .layout
-                    .set_margin_top_y(constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB);
-                should_reload = true;
-            }
-
-            return should_reload;
-        }
-
-        let expected = if tab_num > 1 {
-            constants::PADDING_Y_WITH_MANY_NATIVE_TAB
-        } else {
-            constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
-        };
-
-        should_reload = self.sugarloaf.layout.margin.top_y != expected;
-        if should_reload {
-            self.sugarloaf.layout.set_margin_top_y(expected);
-        }
-
-        should_reload
     }
 
     /// update_config is triggered in any configuration file update

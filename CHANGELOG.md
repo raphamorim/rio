@@ -4,6 +4,7 @@
 
 - Fix regression with color ansi when transparency is off.
 - **Breaking**: Config `navigation.macos-hide-window-buttons` has moved to `window.macos-hide-toolbar-buttons`.
+- **Breaking**: Config property `padding-x` has been updated from 5.0 to 0.0 on MacOS.
 
 ## 0.0.29
 

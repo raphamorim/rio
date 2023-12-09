@@ -50,6 +50,7 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
 
     std::env::set_var("COLORTERM", "truecolor");
     std::env::remove_var("DESKTOP_STARTUP_ID");
+    std::env::remove_var("XDG_ACTIVATION_TOKEN");
     #[cfg(target_os = "macos")]
     {
         platform::macos::set_locale_environment();
