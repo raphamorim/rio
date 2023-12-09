@@ -11,8 +11,8 @@ Rio is available for:
 - [FreeBSD](/docs/install/freebsd)
 - [WebAssembly](/docs/install/webassembly)
 
-Rio terminal applications have two type of builds: stable and canary.
+Rio terminal applications have two type of builds: stable and nightly.
 
-While stable versions are thoroughly tested and takes longer to release, canary versions are created by daily and weekly basis.
+While stable versions are thoroughly tested and takes longer to release, nightly versions are created by daily basis.
 
-To check if you are using a stable or canary version, you can check the version: stable follows the semantic versioning so you would often see stable releases similar to `v0.0.0` pattern, while canary appends the "-canary" suffix to the version (eg. `v0.0.0-canary`).
+[Github releases for Nightly](https://github.com/raphamorim/rio/releases/tag/nightly)
