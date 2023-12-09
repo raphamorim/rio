@@ -66,7 +66,7 @@ release-macos: app-universal
 	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
 	mkdir -p $(RELEASE_DIR)
 	cp -rf ./target/release/osx/* ./release/
-	cd ./release && zip -r ./macos-rio.zip ./*
+	cd ./release && zip -r ./macos-unsigned.zip ./*
 
 release-macos-local: release-macos
 	rm -rf /Applications/$(APP_NAME)

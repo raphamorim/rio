@@ -47,7 +47,7 @@ jobs:
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            release/macos-rio.zip
+            release/macos-unsigned.zip
             LICENSE
 
   nightly-release-deb:
