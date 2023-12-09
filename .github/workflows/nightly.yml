@@ -36,7 +36,7 @@ jobs:
       - name: Delete old nightly release
         uses: dev-drprasad/delete-tag-and-release@v1.0
         with:
-          tag_name: canary
+          tag_name: ${{ env.NIGHTLY_TAG }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           delete_release: true
 
