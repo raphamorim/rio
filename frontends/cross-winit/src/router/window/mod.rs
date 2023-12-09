@@ -86,7 +86,8 @@ pub fn create_window_builder(
         if config.navigation.is_native() {
             window_builder = window_builder
                 .with_title_hidden(false)
-                .with_titlebar_transparent(false);
+                .with_titlebar_transparent(false)
+                .with_fullsize_content_view(false);
 
             if let Some(identifier) = tab_id {
                 window_builder = window_builder.with_tabbing_identifier(&identifier);

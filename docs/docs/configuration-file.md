@@ -272,16 +272,22 @@ Default:
 shell = { program = "/bin/fish", args = ["--login"] }
 ```
 
-2. Windows using powershell
+2. Windows using powershell:
 
 ```toml
 shell = { program = "pwsh", args = [] }
 ```
 
-3. Windows using powershell with login
+3. Windows using powershell with login:
 
 ```toml
 shell = { program = "pwsh", args = ["-l"] }
+```
+
+4. MacOS with tmux installed by homebrew:
+
+```toml
+shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", "/var/www"] }
 ```
 
 ## Startup directory
