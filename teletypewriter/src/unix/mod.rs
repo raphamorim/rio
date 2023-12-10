@@ -887,6 +887,7 @@ pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
     #[cfg(not(target_os = "macos"))]
     let name = match std::fs::read(comm_path) {
         Ok(comm_str) => String::from_utf8_lossy(&comm_str)
+            .trim_end()
             .parse()
             .unwrap_or_default(),
         Err(..) => String::from(""),

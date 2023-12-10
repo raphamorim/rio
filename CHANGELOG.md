@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- TBD
+- Fixed bug where color automation did not work on Linux because of line ending character.
 
 ## 0.0.30
 
