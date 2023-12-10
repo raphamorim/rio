@@ -641,6 +641,7 @@ pub fn default_key_bindings(
         // from: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys
         let mut modifiers = vec![
             ModifiersState::SHIFT,
+            ModifiersState::ALT,
             ModifiersState::SHIFT | ModifiersState::ALT,
             ModifiersState::CONTROL,
             ModifiersState::SHIFT | ModifiersState::CONTROL,
@@ -648,12 +649,13 @@ pub fn default_key_bindings(
             ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
         ];
 
-        // In MacOs we target the same behaviour that Terminal.app has
-        // Terminal.app does not deal with ctlseqs with ALT keys
-        #[cfg(not(target_os = "macos"))]
-        {
-            modifiers.push(ModifiersState::ALT);
-        }
+        // // In MacOs we target the same behaviour that Terminal.app has
+        // // Terminal.app does not deal with ctlseqs with ALT keys
+        // TODO: Enable it by option
+        // #[cfg(not(target_os = "macos"))]
+        // {
+        //     modifiers.push(ModifiersState::ALT);
+        // }
 
         for (index, mods) in modifiers.drain(..).enumerate() {
             let modifiers_code = index + 2;
