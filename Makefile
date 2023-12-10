@@ -57,8 +57,10 @@ $(APP_NAME)-%: $(TARGET)-%
 	@mkdir -p $(APP_EXTRAS_DIR)
 	@cp -fRp $(APP_TEMPLATE) $(TARGET_DIR_OSX)
 	@cp -fp $(APP_BINARY) $(APP_BINARY_DIR)
-	@tic -xe rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 	@touch -r "$(APP_BINARY)" "$(TARGET_DIR_OSX)/$(APP_NAME)"
+
+install-terminfo:
+	@tic -xe rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
