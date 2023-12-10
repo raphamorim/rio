@@ -41,7 +41,7 @@ jobs:
       - name: Release nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Nightly - ${{ github.sha }}
+          name: Nightly
           tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
@@ -77,7 +77,7 @@ jobs:
       - name: Release nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Nightly - ${{ github.sha }}
+          name: Nightly
           tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
@@ -126,7 +126,7 @@ jobs:
       - name: Release Nightly
         uses: softprops/action-gh-release@v1
         with:
-          name: Nightly - ${{ github.sha }}
+          name: Nightly
           tag_name: ${{ env.NIGHTLY_TAG }}
           prerelease: true
           append_body: true
