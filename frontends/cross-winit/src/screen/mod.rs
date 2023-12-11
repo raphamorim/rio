@@ -64,7 +64,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 #[inline]
-fn padding_top_from_config(config: &Rc<rio_backend::config::Config>) -> f32 {
+fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
     #[cfg(not(target_os = "macos"))]
     {
         if config.navigation.is_placed_on_top() {
@@ -83,7 +83,7 @@ fn padding_top_from_config(config: &Rc<rio_backend::config::Config>) -> f32 {
 }
 
 #[inline]
-fn padding_bottom_from_config(config: &Rc<rio_backend::config::Config>) -> f32 {
+fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
     if config.navigation.is_placed_on_bottom() {
         config.fonts.size
     } else {
