@@ -494,9 +494,7 @@ impl Screen {
                     Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
                     Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key.to_owned(),
-                        mods,
-                        mode,
+                        key, mods, mode,
                     )
                     .into(),
                 };
@@ -810,11 +808,7 @@ impl Screen {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key.to_owned(),
-                    mods,
-                    mode,
-                )
+                bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode)
             }
         };
 
