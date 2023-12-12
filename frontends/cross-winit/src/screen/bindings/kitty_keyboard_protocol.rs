@@ -8,7 +8,7 @@ use winit::keyboard::KeyLocation;
 use winit::keyboard::NamedKey::*;
 
 #[inline(never)]
-pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
+pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
     let mut modifiers = 0;
     if mods.shift_key() {
         modifiers |= 0b0001;
@@ -248,7 +248,7 @@ pub fn build_key_sequence(key: KeyEvent, mods: ModifiersState, mode: Mode) -> Ve
     if mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
         && key.state != ElementState::Released
     {
-        if let Some(text) = key.text {
+        if let Some(text) = &key.text {
             let mut codepoints = text.chars().map(u32::from);
             if let Some(codepoint) = codepoints.next() {
                 payload.push_str(&format!(";{codepoint}"));
