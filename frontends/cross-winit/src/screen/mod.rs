@@ -63,6 +63,34 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
+#[inline]
+fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
+    #[cfg(not(target_os = "macos"))]
+    {
+        if config.navigation.is_placed_on_top() {
+            return constants::PADDING_Y_WITH_TAB_ON_TOP;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if config.navigation.is_native() {
+            return 0.0;
+        }
+    }
+
+    constants::PADDING_Y
+}
+
+#[inline]
+fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
+    if config.navigation.is_placed_on_bottom() {
+        config.fonts.size
+    } else {
+        0.0
+    }
+}
+
 pub struct Screen {
     bindings: bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
@@ -95,27 +123,9 @@ impl Screen {
             rio_backend::config::Performance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let mut padding_y_bottom = 0.0;
-        if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.fonts.size
-        }
+        let padding_y_bottom = padding_bottom_from_config(config);
 
-        #[allow(unused_mut)]
-        let mut padding_y_top = constants::PADDING_Y;
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            if config.navigation.is_placed_on_top() {
-                padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            if config.navigation.is_native() {
-                padding_y_top = 0.0;
-            }
-        }
+        let padding_y_top = padding_top_from_config(config);
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
@@ -271,15 +281,15 @@ impl Screen {
             return;
         }
 
-        let mut padding_y_bottom = 0.0;
-        if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.fonts.size
-        }
+        let padding_y_bottom = padding_bottom_from_config(config);
+
+        let padding_y_top = padding_top_from_config(config);
 
         self.sugarloaf.layout.recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
+            padding_y_top,
             padding_y_bottom,
         );
 
