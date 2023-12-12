@@ -59,17 +59,6 @@ Default is false
 use-kitty-keyboard-protocol = false
 ```
 
-## Performance
-
-Set WGPU rendering performance
-
-- `High`: Adapter that has the highest performance. This is often a discrete GPU.
-- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
-
-```toml
-performance = "High"
-```
-
 ## Themes
 
 Rio looks for a specified theme in the themes folder.
@@ -163,6 +152,28 @@ y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
+
+## Renderer
+
+- `Performance` - Set WGPU rendering performance
+	- `High`: Adapter that has the highest performance. This is often a discrete GPU.
+	- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
+
+- `Backend` - Set WGPU rendering backend
+  - `Automatic`: Leave Sugarloaf/WGPU to decide
+  - `GL`: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+  - `Vulkan`: Supported on Windows, Linux/Android
+  - `DX12`: Supported on Windows 10
+  - `DX11`: Supported on Windows 7+
+  - `Metal`: Supported on macOS/iOS
+
+Example:
+
+```toml
+[renderer]
+performance = "High"
+backend = "Automatic"
+```
 
 ## Fonts
 

@@ -2,12 +2,14 @@ pub mod bindings;
 pub mod colors;
 pub mod defaults;
 pub mod navigation;
+pub mod renderer;
 pub mod theme;
 pub mod window;
 
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::navigation::Navigation;
+use crate::config::renderer::Renderer;
 use crate::config::window::Window;
 use colors::Colors;
 use log::warn;
@@ -22,26 +24,6 @@ pub enum ConfigError {
     ErrLoadingConfig(String),
     ErrLoadingTheme(String),
     PathNotFound,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
-pub enum Performance {
-    #[default]
-    High,
-    Low,
-}
-
-impl std::fmt::Display for Performance {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Performance::High => {
-                write!(f, "High")
-            }
-            Performance::Low => {
-                write!(f, "Low")
-            }
-        }
-    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -90,8 +72,6 @@ pub struct Config {
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
     pub window: Window,
-    #[serde(default = "Performance::default")]
-    pub performance: Performance,
     #[serde(default = "default_shell")]
     pub shell: Shell,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
@@ -143,6 +123,8 @@ pub struct Config {
     pub confirm_before_quit: bool,
     #[serde(default = "default_bool_true", rename = "hide-cursor-when-typing")]
     pub hide_cursor_when_typing: bool,
+    #[serde(default = "Renderer::default")]
+    pub renderer: Renderer,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -379,7 +361,7 @@ impl Default for Config {
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
             padding_x: default_padding_x(),
-            performance: Performance::default(),
+            renderer: Renderer::default(),
             shell: default_shell(),
             theme: String::default(),
             use_fork: default_use_fork(),
@@ -445,7 +427,10 @@ mod tests {
 
         assert!(!result.disable_unfocused_render);
 
-        assert_eq!(result.performance, Performance::default());
+        assert_eq!(
+            result.renderer.performance,
+            renderer::Performance::default()
+        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
 
@@ -461,7 +446,10 @@ mod tests {
     fn test_if_explict_defaults_match() {
         let result = create_temporary_config("defaults", &default_config_file_content());
 
-        assert_eq!(result.performance, Performance::default());
+        assert_eq!(
+            result.renderer.performance,
+            renderer::Performance::default()
+        );
         assert_eq!(result.env_vars, default_env_vars());
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, String::default());
@@ -495,7 +483,10 @@ mod tests {
 
         let result = Config::load_from_path(&file_name);
 
-        assert_eq!(result.performance, Performance::default());
+        assert_eq!(
+            result.renderer.performance,
+            renderer::Performance::default()
+        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -506,15 +497,18 @@ mod tests {
     }
 
     #[test]
-    fn test_change_config_performance() {
+    fn test_change_config_renderer() {
         let result = create_temporary_config(
             "change-performance",
             r#"
+            [renderer]
             performance = "Low"
+            backend = "Vulkan"
         "#,
         );
 
-        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
+        assert_eq!(result.renderer.backend, renderer::Backend::Vulkan);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -533,7 +527,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
@@ -562,7 +556,8 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
+        assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
         assert_eq!(result.cursor, '_');
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -582,7 +577,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.option_as_alt, String::from("Both"));
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -603,7 +598,10 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::default());
+        assert_eq!(
+            result.renderer.performance,
+            renderer::Performance::default()
+        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -625,7 +623,10 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::default());
+        assert_eq!(
+            result.renderer.performance,
+            renderer::Performance::default()
+        );
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Bindings
@@ -640,10 +641,12 @@ mod tests {
         let result = create_temporary_config(
             "change-style",
             r#"
-            performance = "Low"
             font-size = 14.0
             line-height = 2.0
             padding-x = 0.0
+
+            [renderer]
+            performance = "Low"
 
             [window]
             background-opacity = 0.5
@@ -656,7 +659,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.padding_x, 0.0);
@@ -685,7 +688,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::High);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, "lucario");
         // Colors
@@ -836,13 +839,15 @@ mod tests {
         let result = create_temporary_config(
             "change-use-fork",
             r#"
-            performance = "Low"
             disable-unfocused-render = true
             use-fork = true
+
+            [renderer]
+            performance = "Low"
         "#,
         );
 
-        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Advanced
         assert!(result.disable_unfocused_render);
         assert!(result.use_fork);
@@ -868,11 +873,13 @@ mod tests {
     }
 
     #[test]
-    fn test_change_developer() {
+    fn test_change_developer_and_performance() {
         let result = create_temporary_config(
             "change-developer",
             r#"
+            [renderer]
             performance = "Low"
+            backend = "GL"
 
             [developer]
             enable-fps-counter = true
@@ -880,7 +887,8 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.performance, Performance::Low);
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
+        assert_eq!(result.renderer.backend, renderer::Backend::GL);
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);

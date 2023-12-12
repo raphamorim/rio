@@ -54,7 +54,7 @@ async fn main() {
 
     let mut sugarloaf = Sugarloaf::new(
         &sugarloaf_window,
-        wgpu::PowerPreference::HighPerformance,
+        sugarloaf::SugarloafRenderer::default(),
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
         None,

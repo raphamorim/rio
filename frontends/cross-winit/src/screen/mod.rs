@@ -38,10 +38,13 @@ use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rio_backend::config::colors::{term::List, ColorWGPU};
+use rio_backend::config::{
+    colors::{term::List, ColorWGPU},
+    renderer::{Backend as RendererBackend, Performance as RendererPerformance},
+};
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
-    SugarloafWindow, SugarloafWindowSize,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use state::State;
 use std::borrow::Cow;
@@ -116,15 +119,7 @@ impl Screen {
         let raw_display_handle = winit_window.raw_display_handle();
         let window_id = winit_window.id();
 
-        let power_preference: wgpu::PowerPreference = match config.performance {
-            rio_backend::config::Performance::High => {
-                wgpu::PowerPreference::HighPerformance
-            }
-            rio_backend::config::Performance::Low => wgpu::PowerPreference::LowPower,
-        };
-
         let padding_y_bottom = padding_bottom_from_config(config);
-
         let padding_y_top = padding_top_from_config(config);
 
         let sugarloaf_layout = SugarloafLayout::new(
@@ -149,9 +144,35 @@ impl Screen {
             },
         };
 
+        let power_preference = match config.renderer.performance {
+            RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
+            RendererPerformance::Low => wgpu::PowerPreference::LowPower,
+        };
+
+        let backend = match config.renderer.backend {
+            RendererBackend::Automatic => {
+                #[cfg(target_arch = "wasm32")]
+                let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                #[cfg(not(target_arch = "wasm32"))]
+                let default_backend = wgpu::Backends::all();
+
+                default_backend
+            }
+            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
+            RendererBackend::GL => wgpu::Backends::GL,
+            RendererBackend::Metal => wgpu::Backends::METAL,
+            RendererBackend::DX11 => wgpu::Backends::DX11,
+            RendererBackend::DX12 => wgpu::Backends::DX12,
+        };
+
+        let sugarloaf_renderer = SugarloafRenderer {
+            power_preference,
+            backend,
+        };
+
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
             &sugarloaf_window,
-            power_preference,
+            sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout,
             Some(font_database),
