@@ -57,11 +57,8 @@ impl ContextManagerTitles {
     ) -> ContextManagerTitles {
         let last_title_update = Instant::now();
         ContextManagerTitles {
-            titles: HashMap::from([(
-                idx,
-                [program.to_owned(), terminal_title.to_owned()],
-            )]),
             key: format!("{}{}{};", idx, program, terminal_title),
+            titles: HashMap::from([(idx, [program, terminal_title])]),
             last_title_update,
         }
     }
@@ -431,7 +428,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         let window_title = if terminal_title.is_empty() {
                             program.to_owned()
                         } else {
-                            format!("{} ({})", terminal_title, program).to_owned()
+                            format!("{} ({})", terminal_title, program)
                         };
 
                         self.event_proxy
