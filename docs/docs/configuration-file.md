@@ -43,6 +43,16 @@ Default is `false`
 blinking-cursor = false
 ```
 
+## Hide cursor when typing
+
+Hide the cursor while typing
+
+Default is `true`
+
+```toml
+hide-cursor-when-typing = false
+```
+
 ## Ignore theme selection foreground color
 
 Default is `false`
