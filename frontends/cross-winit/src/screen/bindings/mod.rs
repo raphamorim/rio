@@ -753,7 +753,10 @@ pub fn default_key_bindings(
         ));
     }
 
-    bindings.extend(platform_key_bindings(use_navigation_key_bindings));
+    bindings.extend(platform_key_bindings(
+        use_navigation_key_bindings,
+        config_keyboard,
+    ));
 
     config_key_bindings(unprocessed_config_key_bindings, bindings)
 }
@@ -940,7 +943,10 @@ pub fn config_key_bindings(
 
 // Macos
 #[cfg(all(target_os = "macos", not(test)))]
-pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(
+    use_navigation_key_bindings: bool,
+    config_keyboard: ConfigKeyboard,
+) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
         KeyBinding;
         "0", ModifiersState::SUPER; Action::ResetFontSize;
@@ -951,10 +957,6 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         "-", ModifiersState::SUPER; Action::DecreaseFontSize;
         Key::Named(Insert), ModifiersState::SHIFT, ~BindingMode::VI;
             Action::Esc("\x1b[2;2~".into());
-        Key::Named(ArrowLeft), ModifiersState::ALT,  ~BindingMode::VI;
-            Action::Esc("\x1bb".into());
-        Key::Named(ArrowRight), ModifiersState::ALT,  ~BindingMode::VI;
-            Action::Esc("\x1bf".into());
         "k", ModifiersState::SUPER, ~BindingMode::VI;
             Action::Esc("\x0c".into());
         "k", ModifiersState::SUPER, ~BindingMode::VI;  Action::ClearHistory;
@@ -991,12 +993,25 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
         ));
     }
 
+    if config_keyboard.disable_ctlseqs_alt {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            Key::Named(ArrowLeft), ModifiersState::ALT,  ~BindingMode::VI;
+                Action::Esc("\x1bb".into());
+            Key::Named(ArrowRight), ModifiersState::ALT,  ~BindingMode::VI;
+                Action::Esc("\x1bf".into());
+        ));
+    }
+
     key_bindings
 }
 
 // Not Windows, Macos
 #[cfg(not(any(target_os = "macos", target_os = "windows", test)))]
-pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(
+    use_navigation_key_bindings: bool,
+    _: ConfigKeyboard,
+) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
         KeyBinding;
         "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
@@ -1031,7 +1046,10 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
 
 // Windows
 #[cfg(all(target_os = "windows", not(test)))]
-pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(
+    use_navigation_key_bindings: bool,
+    _: ConfigKeyboard,
+) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
         KeyBinding;
         "v", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
@@ -1069,7 +1087,7 @@ pub fn platform_key_bindings(use_navigation_key_bindings: bool) -> Vec<KeyBindin
 }
 
 #[cfg(test)]
-pub fn platform_key_bindings(_use_navigation_key_bindings: bool) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(_: bool, _: ConfigKeyboard) -> Vec<KeyBinding> {
     vec![]
 }
 
