@@ -95,13 +95,26 @@ pub fn default_window_height() -> i32 {
     400
 }
 
+#[inline]
+pub fn default_disable_ctlseqs_alt() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 pub fn default_config_file_content() -> String {
     r#"
 # Editor
 #
 # Default editor is "vi".
 #
-# Whenever the key binding `OpenConfigEditor` is triggered it will 
+# Whenever the key binding `OpenConfigEditor` is triggered it will
 # use the value of the editor along with the rio configuration path.
 # editor = 'vi'
 
