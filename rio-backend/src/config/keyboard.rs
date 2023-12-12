@@ -11,6 +11,7 @@ pub struct Keyboard {
     pub disable_ctlseqs_alt: bool,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Keyboard {
     fn default() -> Keyboard {
         Keyboard {
