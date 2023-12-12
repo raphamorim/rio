@@ -8,10 +8,10 @@ pub const FONT_ID_ITALIC: usize = 1;
 pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
 pub const FONT_ID_SYMBOL: usize = 4;
-pub const FONT_ID_EMOJIS: usize = 5;
+pub const FONT_ID_UNICODE: usize = 5;
 pub const FONT_ID_BUILTIN: usize = 6;
-pub const FONT_ID_ICONS: usize = 7;
-pub const FONT_ID_UNICODE: usize = 8;
+pub const FONT_ID_EMOJIS: usize = 7;
+pub const FONT_ID_ICONS: usize = 8;
 // After 8 is extra fonts
 
 use crate::font::constants::*;
