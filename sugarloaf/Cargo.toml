@@ -38,7 +38,7 @@ twox-hash = { version = "1.6.3", default-features = false }
 image = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
-ordered-float = "4.2.0"
+ordered-float = "4.1.1"
 rustc-hash = "1.1.0"
 raw-window-handle = { workspace = true }
 ab_glyph = "0.2.23"
