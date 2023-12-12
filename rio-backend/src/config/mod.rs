@@ -1,6 +1,7 @@
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
+pub mod keyboard;
 pub mod navigation;
 pub mod renderer;
 pub mod theme;
@@ -8,6 +9,7 @@ pub mod window;
 
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
+use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
 use crate::config::window::Window;
@@ -74,12 +76,10 @@ pub struct Config {
     pub window: Window,
     #[serde(default = "default_shell")]
     pub shell: Shell,
-    #[serde(default = "bool::default", rename = "disable-unfocused-render")]
-    pub disable_unfocused_render: bool,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
-    #[serde(default = "bool::default", rename = "use-kitty-keyboard-protocol")]
-    pub use_kitty_keyboard_protocol: bool,
+    #[serde(default = "Keyboard::default")]
+    pub keyboard: Keyboard,
     #[serde(default = "default_working_dir", rename = "working-dir")]
     pub working_dir: Option<String>,
     #[serde(rename = "line-height", default = "default_line_height")]
@@ -121,7 +121,7 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
-    #[serde(default = "default_bool_true", rename = "hide-cursor-when-typing")]
+    #[serde(default = "bool::default", rename = "hide-cursor-when-typing")]
     pub hide_cursor_when_typing: bool,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,
@@ -352,9 +352,8 @@ impl Default for Config {
             colors: Colors::default(),
             cursor: default_cursor(),
             scroll: Scroll::default(),
-            use_kitty_keyboard_protocol: false,
+            keyboard: Keyboard::default(),
             developer: Developer::default(),
-            disable_unfocused_render: false,
             env_vars: default_env_vars(),
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
@@ -425,7 +424,7 @@ mod tests {
         "#,
         );
 
-        assert!(!result.disable_unfocused_render);
+        assert!(!result.renderer.disable_unfocused_render);
 
         assert_eq!(
             result.renderer.performance,
@@ -456,7 +455,7 @@ mod tests {
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
-        assert!(!result.disable_unfocused_render);
+        assert!(!result.renderer.disable_unfocused_render);
         assert_eq!(result.use_fork, default_use_fork());
         assert_eq!(result.line_height, default_line_height());
 
@@ -839,17 +838,17 @@ mod tests {
         let result = create_temporary_config(
             "change-use-fork",
             r#"
-            disable-unfocused-render = true
             use-fork = true
 
             [renderer]
+            disable-unfocused-render = true
             performance = "Low"
         "#,
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Advanced
-        assert!(result.disable_unfocused_render);
+        assert!(result.renderer.disable_unfocused_render);
         assert!(result.use_fork);
 
         // Colors

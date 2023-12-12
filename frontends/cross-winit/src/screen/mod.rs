@@ -193,7 +193,7 @@ impl Screen {
         let bindings = bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
-            config.use_kitty_keyboard_protocol,
+            config.keyboard,
         );
         let ime = Ime::new();
 
