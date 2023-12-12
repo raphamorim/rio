@@ -132,14 +132,6 @@ blinking-cursor = false
 # Example:
 # use-kitty-keyboard-protocol = false
 
-# Performance
-#
-# Set WGPU rendering performance
-# High: Adapter that has the highest performance. This is often a discrete GPU.
-# Low: Adapter that uses the least possible power. This is often an integrated GPU.
-#
-performance = "High"
-
 # Theme
 #
 # It makes Rio look for the specified theme in the themes folder
@@ -195,13 +187,23 @@ performance = "High"
 # blur = false
 # macos-hide-toolbar-buttons = false
 
-# Window Height
+# Renderer
 #
-# window-height changes the inital window height.
-#   Default: 400
+# • Performance: Set WGPU rendering performance
+#   - High: Adapter that has the highest performance. This is often a discrete GPU.
+#   - Low: Adapter that uses the least possible power. This is often an integrated GPU.
+#
+# • Backend: Set WGPU rendering backend
+#   - Automatic: Leave Sugarloaf/WGPU to decide
+#   - GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+#   - Vulkan: Supported on Windows, Linux/Android
+#   - DX12: Supported on Windows 10
+#   - DX11: Supported on Windows 7+
+#   - Metal: Supported on macOS/iOS
 #
 # Example:
-# window-height = 400
+# performance = "High"
+# backend = "Automatic"
 
 # Fonts
 #

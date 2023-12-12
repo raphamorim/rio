@@ -35,7 +35,7 @@ pub fn create_sugarloaf_instance(
 
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
         &sugarloaf_window,
-        wgpu::PowerPreference::HighPerformance,
+        sugarloaf::SugarloafRenderer::default(),
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
         None,

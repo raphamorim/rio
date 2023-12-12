@@ -51,7 +51,7 @@ fn bench_sugar_pile(c: &mut Criterion) {
 
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
         &sugarloaf_window,
-        wgpu::PowerPreference::LowPower,
+        sugarloaf::SugarloafRenderer::default(),
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
         None,

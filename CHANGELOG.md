@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Breaking**: Configuration `performance` has moved to `renderer.performance`.
+- Introduction of new configuration property called `renderer`.
+```toml
+[renderer]
+performance = "High"
+backend = "Automatic"
+
+# backend options:
+# Automatic: Leave Sugarloaf/WGPU to decide
+# GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+# Vulkan: Supported on Windows, Linux/Android
+# DX12: Supported on Windows 10
+# DX11: Supported on Windows 7+
+# Metal: Supported on macOS/iOS
+```
 - Fix: update padding top on config change [#378](https://github.com/raphamorim/rio/pull/378) by [@hougesen](https://github.com/hougesen)
 - Fixed bug where color automation did not work on Linux because of line ending character.
 - Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371) 

@@ -14,13 +14,8 @@ pub struct Context {
 impl Context {
     pub async fn new(
         sugarloaf_window: &SugarloafWindow,
-        power_preference: wgpu::PowerPreference,
+        renderer_config: &crate::sugarloaf::SugarloafRenderer,
     ) -> Context {
-        #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-        #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
-
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
         // will be used. The following values are allowed:
@@ -31,7 +26,8 @@ impl Context {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend = wgpu::util::backend_bits_from_env().unwrap_or(default_backend);
+        let backend =
+            wgpu::util::backend_bits_from_env().unwrap_or(renderer_config.backend);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
@@ -56,7 +52,7 @@ impl Context {
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference,
+                power_preference: renderer_config.power_preference,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })

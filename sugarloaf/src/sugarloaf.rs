@@ -80,6 +80,25 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+pub struct SugarloafRenderer {
+    pub power_preference: wgpu::PowerPreference,
+    pub backend: wgpu::Backends,
+}
+
+impl Default for SugarloafRenderer {
+    fn default() -> SugarloafRenderer {
+        #[cfg(target_arch = "wasm32")]
+        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+        #[cfg(not(target_arch = "wasm32"))]
+        let default_backend = wgpu::Backends::all();
+
+        SugarloafRenderer {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            backend: default_backend,
+        }
+    }
+}
+
 unsafe impl raw_window_handle::HasRawWindowHandle for SugarloafWindow {
     fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
         self.handle
@@ -95,12 +114,12 @@ unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
 impl Sugarloaf {
     pub async fn new(
         raw_window_handle: &SugarloafWindow,
-        power_preference: wgpu::PowerPreference,
+        renderer: SugarloafRenderer,
         fonts: SugarloafFonts,
         layout: SugarloafLayout,
         #[allow(unused)] db: Option<&Database>,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
-        let ctx = Context::new(raw_window_handle, power_preference).await;
+        let ctx = Context::new(raw_window_handle, &renderer).await;
         let mut sugarloaf_errors = None;
 
         #[cfg(not(target_arch = "wasm32"))]
