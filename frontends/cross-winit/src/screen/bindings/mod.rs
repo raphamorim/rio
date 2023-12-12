@@ -8,6 +8,7 @@ use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
 use rio_backend::config::bindings::KeyBinding as ConfigKeyBinding;
+use rio_backend::config::keyboard::Keyboard as ConfigKeyboard;
 use std::fmt::Debug;
 use winit::event::MouseButton;
 use winit::keyboard::Key::*;
@@ -499,7 +500,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 pub fn default_key_bindings(
     unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
     use_navigation_key_bindings: bool,
-    use_kitty_keyboard_protocol: bool,
+    config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
@@ -587,7 +588,7 @@ pub fn default_key_bindings(
             ViMotion::Bracket;
     );
 
-    if !use_kitty_keyboard_protocol {
+    if !config_keyboard.use_kitty_keyboard_protocol {
         bindings.extend(bindings!(
             KeyBinding;
             Key::Named(Home), ModifiersState::SHIFT, +BindingMode::ALT_SCREEN, ~BindingMode::VI; Action::Esc("\x1b[1;2H".into());
@@ -649,15 +650,14 @@ pub fn default_key_bindings(
             ModifiersState::SHIFT | ModifiersState::ALT | ModifiersState::CONTROL,
         ];
 
-        // // In MacOs we target the same behaviour that Terminal.app has
-        // // Terminal.app does not deal with ctlseqs with ALT keys
-        // TODO: Enable it by option
-        // #[cfg(not(target_os = "macos"))]
-        // {
-        //     modifiers.push(ModifiersState::ALT);
-        // }
-
         for (index, mods) in modifiers.drain(..).enumerate() {
+            // If disable_ctlseqs_alt is enabled, should ignore ALT
+            // Useful for example if want same behaviour that Terminal.app have
+            // Since Terminal.app does not deal with ctlseqs with ALT keys
+            if index == 1 && config_keyboard.disable_ctlseqs_alt {
+                continue;
+            }
+
             let modifiers_code = index + 2;
             bindings.extend(bindings!(
                 KeyBinding;

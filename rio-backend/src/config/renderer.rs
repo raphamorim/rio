@@ -7,6 +7,8 @@ pub struct Renderer {
     pub performance: Performance,
     #[serde(default = "Backend::default", skip_serializing)]
     pub backend: Backend,
+    #[serde(default = "bool::default", rename = "disable-unfocused-render")]
+    pub disable_unfocused_render: bool,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]

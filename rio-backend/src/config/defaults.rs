@@ -125,13 +125,6 @@ blinking-cursor = false
 # Example:
 # ignore-selection-foreground-color = false
 
-# Enable Kitty Keyboard protocol
-#
-# Default is false
-#
-# Example:
-# use-kitty-keyboard-protocol = false
-
 # Theme
 #
 # It makes Rio look for the specified theme in the themes folder
@@ -201,9 +194,25 @@ blinking-cursor = false
 #   - DX11: Supported on Windows 7+
 #   - Metal: Supported on macOS/iOS
 #
+# • disable-renderer-when-unfocused: This property disable renderer processes while Rio is unfocused.
+#
 # Example:
+# [renderer]
 # performance = "High"
 # backend = "Automatic"
+# disable-renderer-when-unfocused = false
+
+# Keyboard
+#
+# use-kitty-keyboard-protocol - Enable Kitty Keyboard protocol
+#
+# disable-ctlseqs-alt - Disable ctlseqs with ALT keys
+#   - For example: Terminal.app does not deal with ctlseqs with ALT keys
+#
+# Example:
+# [keyboard]
+# use-kitty-keyboard-protocol = false
+# disable-ctlseqs-alt = false
 
 # Fonts
 #
@@ -325,13 +334,6 @@ blinking-cursor = false
 #
 # Example:
 # env-vars = []
-
-# Disable render when unfocused
-#
-# This property disable renderer processes while Rio is unfocused.
-#
-# Example:
-# disable-renderer-when-unfocused = false
 
 # Use fork
 #

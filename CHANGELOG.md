@@ -3,10 +3,24 @@
 ## Unreleased
 
 - **Breaking**: Configuration `performance` has moved to `renderer.performance`.
+- **Breaking**: Configuration `disable-renderer-when-unfocused` has moved to `renderer.disable-renderer-when-unfocused`.
+- **Breaking**: Configuration `use-kitty-keyboard-protocol` has moved to `keyboard.use-kitty-keyboard-protocol`.
+
+- Introduction of new configuration property called `keyboard`.
+
+```toml
+[keyboard]
+use-kitty-keyboard-protocol = false
+disable-ctlseqs-alt = false
+```
+
+- Introduction of `keyboard.disable-ctlseqs-alt`: Disable ctlseqs with ALT keys. It is useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
+
 - Introduction of new configuration property called `renderer`.
 ```toml
 [renderer]
 performance = "High"
+disable-renderer-when-unfocused = false
 backend = "Automatic"
 
 # backend options:

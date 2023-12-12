@@ -82,7 +82,7 @@ impl State {
             background_opacity: config.window.background_opacity,
             foreground_opacity: config.window.foreground_opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
-            is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
+            is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
             is_vi_mode_enabled: false,
             is_blinking: false,

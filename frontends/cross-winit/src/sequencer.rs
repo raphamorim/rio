@@ -76,7 +76,7 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::Render) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                if self.config.disable_unfocused_render
+                                if self.config.renderer.disable_unfocused_render
                                     && !route.window.is_focused
                                 {
                                     return;

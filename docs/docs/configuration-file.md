@@ -61,14 +61,6 @@ Default is `false`
 ignore-selection-foreground-color = false
 ```
 
-## Enable Kitty Keyboard protocol
-
-Default is false
-
-```toml
-use-kitty-keyboard-protocol = false
-```
-
 ## Themes
 
 Rio looks for a specified theme in the themes folder.
@@ -177,12 +169,15 @@ y = -100.0
   - `DX11`: Supported on Windows 7+
   - `Metal`: Supported on macOS/iOS
 
+- `disable-renderer-when-unfocused` - This property disable renderer processes while Rio is unfocused.
+
 Example:
 
 ```toml
 [renderer]
 performance = "High"
 backend = "Automatic"
+disable-renderer-when-unfocused = false
 ```
 
 ## Fonts
@@ -231,6 +226,21 @@ weight = 400
 family = "cascadiamono"
 style = "italic"
 weight = 800
+```
+
+## Keyboard
+
+- `use-kitty-keyboard-protocol` - Enable Kitty Keyboard protocol
+
+- `disable-ctlseqs-alt` - Disable ctlseqs with ALT keys
+	- Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
+
+Example:
+
+```toml
+[keyboard]
+use-kitty-keyboard-protocol = false
+disable-ctlseqs-alt = false
 ```
 
 ## Scroll
@@ -327,14 +337,6 @@ The example below sets fish as the default SHELL using env vars, please do not c
 
 ```toml
 env-vars = []
-```
-
-## Disable render when unfocused
-
-This property disables the renderer process when Rio no longer has focus.
-
-```toml
-disable-renderer-when-unfocused = false
 ```
 
 ## Use fork
