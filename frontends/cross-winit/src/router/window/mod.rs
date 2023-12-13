@@ -8,8 +8,11 @@ use {
 use raw_window_handle::HasRawWindowHandle;
 #[cfg(target_os = "macos")]
 use raw_window_handle::RawWindowHandle;
+use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
 use std::rc::Rc;
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
@@ -61,6 +64,25 @@ pub fn create_window_builder(
         .with_blur(config.window.blur)
         .with_window_icon(Some(icon));
 
+    match config.window.decorations {
+        Decorations::Disabled => {
+            window_builder = window_builder.with_decorations(false);
+        }
+        Decorations::Transparent => {
+            #[cfg(target_os = "macos")]
+            {
+                window_builder = window_builder.with_titlebar_transparent(true)
+            }
+        }
+        Decorations::Buttonless => {
+            #[cfg(target_os = "macos")]
+            {
+                window_builder = window_builder.with_titlebar_buttons_hidden(true)
+            }
+        }
+        _ => {}
+    };
+
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
         use winit::platform::x11::WindowBuilderExtX11;
@@ -75,7 +97,6 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowBuilderExtMacOS;
         window_builder = window_builder
             // MacOS is always transparent
             .with_transparent(true)
@@ -100,11 +121,11 @@ pub fn create_window_builder(
     }
 
     match config.window.mode {
-        rio_backend::config::window::WindowMode::Fullscreen => {
+        WindowMode::Fullscreen => {
             window_builder =
                 window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
-        rio_backend::config::window::WindowMode::Maximized => {
+        WindowMode::Maximized => {
             window_builder = window_builder.with_maximized(true);
         }
         _ => {
