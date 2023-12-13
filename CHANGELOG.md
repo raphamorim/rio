@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- TBD
+- Fix: font order priority.
+- Fix: add default values to keyboard config (#382)
 
 ## 0.0.31
 
