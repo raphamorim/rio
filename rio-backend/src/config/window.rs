@@ -11,6 +11,15 @@ pub enum WindowMode {
     Windowed,
 }
 
+#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum Decorations {
+    #[default]
+    Enabled,
+    Disabled,
+    Transparent,
+    Buttonless,
+}
+
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
     #[serde(default = "default_window_width")]
@@ -29,6 +38,8 @@ pub struct Window {
     pub background_image: Option<ImageProperties>,
     #[serde(default = "bool::default", rename = "macos-hide-toolbar-buttons")]
     pub macos_hide_toolbar_buttons: bool,
+    #[serde(default = "Decorations::default")]
+    pub decorations: Decorations,
 }
 
 impl Default for Window {
@@ -40,6 +51,7 @@ impl Default for Window {
             background_opacity: default_opacity(),
             foreground_opacity: default_opacity(),
             background_image: None,
+            decorations: Decorations::default(),
             blur: false,
             macos_hide_toolbar_buttons: false,
         }
