@@ -98,7 +98,10 @@ impl std::str::FromStr for NavigationMode {
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
+    #[serde(default = "String::new")]
     pub program: String,
+    #[serde(default = "String::new")]
+    pub path: String,
     #[serde(
         deserialize_with = "deserialize_to_arr",
         default = "crate::config::colors::defaults::tabs"
