@@ -39,7 +39,8 @@ pub struct MacosDisplay {
     cursors: HashMap<CursorIcon, ObjcId>,
 
     event_handler: Option<Box<dyn EventHandler>>,
-    f: Box<dyn 'static + FnMut(&Window)>,
+    // f: Box<dyn 'static + FnMut(&Window)>,
+    f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
     modifiers: Modifiers,
     native_requests: Receiver<Request>,
 }
@@ -1050,8 +1051,8 @@ impl<'a> App {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Window {
     id: usize,
-    ns_window: *mut Object,
-    ns_view: *mut Object,
+    pub ns_window: *mut Object,
+    pub ns_view: *mut Object,
 }
 
 unsafe impl Send for Window {}
@@ -1064,7 +1065,8 @@ impl Window {
         conf: crate::conf::Conf,
         f: F) -> Result<Window, Box<dyn std::error::Error>>
     where
-        F: 'static + FnMut(&Window),
+        // F: 'static + FnMut(&Window),
+        F: 'static + FnOnce() -> Box<dyn EventHandler>,
     {
         unsafe {
             let (tx, rx) = std::sync::mpsc::channel();
@@ -1090,7 +1092,7 @@ impl Window {
                 current_cursor: CursorIcon::Default,
                 cursor_grabbed: false,
                 cursors: HashMap::new(),
-                f: Box::new(f),
+                f: Some(Box::new(f)),
                 event_handler: None,
                 native_requests: rx,
                 modifiers: Modifiers::default(),
