@@ -862,14 +862,14 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                                     1,
                                     d.window_handle.unwrap(),
                                     d.display_handle.unwrap(),
-                                    600,
-                                    400,
+                                    d.dimensions.0,
+                                    d.dimensions.1,
                                     d.dimensions.2,
                                 );
 
                                 event_handler.resize_event(
-                                    600,
-                                    400,
+                                    d.dimensions.0,
+                                    d.dimensions.1,
                                     d.dimensions.2,
                                     true,
                                 );
@@ -1192,13 +1192,13 @@ impl Window {
             println!("window {:?}", display.window);
             println!("view {:?}", display.view);
 
+            let () = msg_send![*window, setContentView: **view.as_strong_ptr()];
 
             let dimensions = display.update_dimensions().unwrap_or((
                 conf.window_width,
                 conf.window_height,
                 2.0,
             ));
-
             {
                 let mut d = native_display().lock();
                 let d = d.get_mut(0).unwrap();
@@ -1206,8 +1206,6 @@ impl Window {
                 d.display_handle = Some(display.raw_display_handle());
                 d.dimensions = dimensions;
             }
-
-            let () = msg_send![*window, setContentView: **view.as_strong_ptr()];
 
             let boxed_view = Box::into_raw(Box::new(display));
 
