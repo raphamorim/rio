@@ -35,6 +35,11 @@ impl Handler {
     }
 
     #[inline]
+    pub fn size(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[inline]
     pub fn remove(&mut self, id: u8) {
         self.inner.remove(&id);
     }

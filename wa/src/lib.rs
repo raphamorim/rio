@@ -46,25 +46,25 @@ pub mod window {
     use super::*;
     /// The current framebuffer size in pixels
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
-    pub fn screen_size() -> (f32, f32) {
+    pub fn screen_size(id: u8) -> (f32, f32) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         (d.screen_width as f32, d.screen_height as f32)
     }
 
     /// The dpi scaling factor (window pixels to framebuffer pixels)
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
-    pub fn dpi_scale() -> f32 {
+    pub fn dpi_scale(id: u8) -> f32 {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.dpi_scale
     }
 
     /// True when high_dpi was requested and actually running in a high-dpi scenario
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
-    pub fn high_dpi() -> bool {
+    pub fn high_dpi(id: u8) -> bool {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.high_dpi
     }
 
@@ -75,15 +75,15 @@ pub mod window {
     /// Window might not be actually closed right away (exit(0) might not
     /// happen in the order_quit implmentation) and execution might continue for some time after
     /// But the window is going to be inevitably closed at some point.
-    pub fn order_quit() {
+    pub fn order_quit(id: u8) {
         let mut d = native_display().lock();
-        let d = d.get_mut(0).unwrap();
+        let d = d.get_mut(id).unwrap();
         d.quit_ordered = true;
     }
 
     /// Shortcut for `order_quit`. Will add a legacy attribute at some point.
-    pub fn quit() {
-        order_quit()
+    pub fn quit(id: u8) {
+        order_quit(id)
     }
 
     /// Calling request_quit() will trigger "quit_requested_event" event , giving
@@ -91,9 +91,9 @@ pub mod window {
     /// (for instance to show a 'Really Quit?' dialog box).
     /// If the event handler callback does nothing, the application will be quit as usual.
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
-    pub fn request_quit() {
+    pub fn request_quit(id: u8) {
         let mut d = native_display().lock();
-        let d = d.get_mut(0).unwrap();
+        let d = d.get_mut(id).unwrap();
         d.quit_requested = true;
     }
 
@@ -102,9 +102,9 @@ pub mod window {
     /// by calling "request_quit()". The only place where calling this
     /// function makes sense is from inside the event handler callback when
     /// the "quit_requested_event" event has been received
-    pub fn cancel_quit() {
+    pub fn cancel_quit(id: u8) {
         let mut d = native_display().lock();
-        let d = d.get_mut(0).unwrap();
+        let d = d.get_mut(id).unwrap();
         d.quit_requested = false;
     }
     /// Capture mouse cursor to the current window
@@ -113,87 +113,87 @@ pub mod window {
     /// NOTICE: on desktop cursor will not be automatically released after window lost focus
     ///         so set_cursor_grab(false) on window's focus lost is recommended.
     /// TODO: implement window focus events
-    pub fn set_cursor_grab(grab: bool) {
+    pub fn set_cursor_grab(id: u8, grab: bool) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
     }
 
     /// Show or hide the mouse cursor
-    pub fn show_mouse(shown: bool) {
+    pub fn show_mouse(id: u8, shown: bool) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d.native_requests.send(native::Request::ShowMouse(shown));
     }
 
     /// Show or hide the mouse cursor
-    pub fn set_window_title(title: String) {
+    pub fn set_window_title(id: u8, title: String) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d
             .native_requests
             .send(native::Request::SetWindowTitle(title));
     }
 
     /// Set the mouse cursor icon.
-    pub fn set_mouse_cursor(cursor_icon: CursorIcon) {
+    pub fn set_mouse_cursor(id: u8, cursor_icon: CursorIcon) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d
             .native_requests
             .send(native::Request::SetMouseCursor(cursor_icon));
     }
 
     /// Set the application's window size.
-    pub fn set_window_size(new_width: u32, new_height: u32) {
+    pub fn set_window_size(id: u8, new_width: u32, new_height: u32) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d.native_requests.send(native::Request::SetWindowSize {
             new_width,
             new_height,
         });
     }
 
-    pub fn set_fullscreen(fullscreen: bool) {
+    pub fn set_fullscreen(id: u8, fullscreen: bool) {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         let _ = d
             .native_requests
             .send(native::Request::SetFullscreen(fullscreen));
     }
 
     /// Get current OS clipboard value
-    pub fn clipboard_get() -> Option<String> {
+    pub fn clipboard_get(id: u8) -> Option<String> {
         let mut d = native_display().lock();
-        let d = d.get_mut(0).unwrap();
+        let d = d.get_mut(id).unwrap();
         d.clipboard.get()
     }
     /// Save value to OS clipboard
-    pub fn clipboard_set(data: &str) {
+    pub fn clipboard_set(id: u8, data: &str) {
         let mut d = native_display().lock();
-        let d = d.get_mut(0).unwrap();
+        let d = d.get_mut(id).unwrap();
         d.clipboard.set(data)
     }
-    pub fn dropped_file_count() -> usize {
+    pub fn dropped_file_count(id: u8) -> usize {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.dropped_files.bytes.len()
     }
-    pub fn dropped_file_bytes(index: usize) -> Option<Vec<u8>> {
+    pub fn dropped_file_bytes(id: u8, index: usize) -> Option<Vec<u8>> {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.dropped_files.bytes.get(index).cloned()
     }
-    pub fn dropped_file_path(index: usize) -> Option<std::path::PathBuf> {
+    pub fn dropped_file_path(id: u8, index: usize) -> Option<std::path::PathBuf> {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.dropped_files.paths.get(index).cloned()
     }
 
     #[cfg(target_vendor = "apple")]
-    pub fn apple_view() -> crate::native::apple::frameworks::ObjcId {
+    pub fn apple_view(id: u8) -> crate::native::apple::frameworks::ObjcId {
         let d = native_display().lock();
-        let d = d.get(0).unwrap();
+        let d = d.get(id).unwrap();
         d.view
     }
 }
