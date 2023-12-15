@@ -10,12 +10,14 @@ pub(crate) struct DroppedFiles {
 
 pub(crate) struct Handler {
     inner: HashMap<u16, NativeDisplayData>,
+    next: u16,
 }
 
 impl Handler {
     pub fn new() -> Self {
         Handler {
             inner: HashMap::new(),
+            next: 0,
         }
     }
 
@@ -35,8 +37,10 @@ impl Handler {
     }
 
     #[inline]
-    pub fn next_id(&self) -> u16 {
-        (self.inner.len()).try_into().unwrap_or(254) + 1
+    pub fn next_id(&mut self) -> u16 {
+        let next = self.next;
+        self.next += 1;
+        next
     }
 
     #[inline]
