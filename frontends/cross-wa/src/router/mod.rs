@@ -458,8 +458,8 @@ pub async fn run(
         || Box::new(router)
     ).await;
     let refwindow = window.unwrap();
-    println!("window from new_window {:?}", refwindow.ns_window);
-    println!("view from new_window {:?}", refwindow.ns_view);
+    // println!("window from new_window {:?}", refwindow.ns_window);
+    // println!("view from new_window {:?}", refwindow.ns_view);
     // });
     // app.create_window(wa_conf, |window| {
 
