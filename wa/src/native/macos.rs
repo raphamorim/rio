@@ -32,7 +32,7 @@ pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
     fullscreen: bool,
-    id: u8,
+    id: u16,
     // [NSCursor hide]/unhide calls should be balanced
     // hide/hide/unhide will keep cursor hidden
     // so need to keep internal cursor state to avoid problems from
@@ -846,7 +846,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                         let mut handler = native_display().lock();
                         let d = handler.get_mut(payload.id).unwrap();
                         if d.quit_requested || d.quit_ordered {
-                            handler.remove(0);
+                            handler.remove(payload.id);
                             let () = msg_send![payload.window, performClose: nil];
                         }
                     },
@@ -1072,7 +1072,7 @@ impl<'a> App {
 }
 
 pub struct Window {
-    id: u8,
+    id: u16,
     pub ns_window: *mut Object,
     pub ns_view: *mut Object,
 }
@@ -1082,8 +1082,6 @@ unsafe impl Sync for Window {}
 
 impl Window {
     pub async fn new_window<F>(
-        class_name: &str,
-        name: &str,
         conf: crate::conf::Conf,
         f: F) -> Result<Self, Box<dyn std::error::Error>>
     where
@@ -1094,8 +1092,7 @@ impl Window {
             let (tx, rx) = std::sync::mpsc::channel();
             let clipboard = Box::new(MacosClipboard);
 
-            let id = crate::get_handler().lock().inner.len() + 1;
-            let id: u8 = id.try_into().unwrap();
+            let id = crate::get_handler().lock().next_id();
 
             crate::set_display(
                 id,
@@ -1163,7 +1160,7 @@ impl Window {
 
             assert!(!window.is_null());
 
-            let window_delegate_class = define_cocoa_window_delegate(format!("RenderViewClass-{name}").as_str());
+            let window_delegate_class = define_cocoa_window_delegate(format!("RenderViewClassWithId{id}").as_str());
             let window_delegate = StrongPtr::new(msg_send![window_delegate_class, new]);
             let () = msg_send![*window, setDelegate: *window_delegate];
 
@@ -1177,7 +1174,7 @@ impl Window {
             let view = View::create_metal_view(
                 window_frame,
                 conf.sample_count,
-                format!("RenderWindowDelegate-{name}").as_str(),
+                format!("RenderWindowDelegateWithId{id}").as_str(),
                 &mut display
             );
             {

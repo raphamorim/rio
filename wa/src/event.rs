@@ -275,7 +275,7 @@ pub trait EventHandler {
     fn process(&mut self) -> EventHandlerAction;
     fn init(
         &mut self,
-        _id: u8,
+        _id: u16,
         _raw_window_handle: raw_window_handle::RawWindowHandle,
         _raw_display_handle: raw_window_handle::RawDisplayHandle,
         _w: i32,

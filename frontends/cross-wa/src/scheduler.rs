@@ -11,11 +11,11 @@ use crate::event::EventPayload;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TimerId {
     topic: Topic,
-    id: u8,
+    id: u16,
 }
 
 impl TimerId {
-    pub fn new(topic: Topic, id: u8) -> Self {
+    pub fn new(topic: Topic, id: u16) -> Self {
         Self { topic, id }
     }
 }
@@ -120,7 +120,7 @@ impl Scheduler {
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
     #[allow(dead_code)]
-    pub fn unschedule_tab(&mut self, id: u8) {
+    pub fn unschedule_tab(&mut self, id: u16) {
         self.timers.retain(|timer| timer.id.id != id);
     }
 }

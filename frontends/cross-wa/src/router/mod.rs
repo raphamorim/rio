@@ -21,8 +21,8 @@ use wa::*;
 
 struct Router {
     config: Rc<rio_backend::config::Config>,
-    routes: HashMap<u8, Route>,
-    current: u8,
+    routes: HashMap<u16, Route>,
+    current: u16,
     superloop: Superloop,
     scheduler: Scheduler,
     font_database: loader::Database,
@@ -31,7 +31,7 @@ struct Router {
 impl EventHandler for Router {
     fn init(
         &mut self,
-        id: u8,
+        id: u16,
         raw_window_handle: raw_window_handle::RawWindowHandle,
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         width: i32,
@@ -70,12 +70,32 @@ impl EventHandler for Router {
                 next = EventHandlerAction::Init;
             }
             RioEvent::CreateWindow => {
-                // let _ = wa::native::macos::Window::new_window(
-                //     "aa",
-                //     "Rio",
-                //     wa_conf,
-                //     || Box::new(router)
-                // ).await;
+                let scheduler = Scheduler::new(self.superloop.clone());
+                let router = Router {
+                config: self.config.clone(),
+                current: 1,
+                routes: HashMap::new(),
+                superloop: self.superloop.clone(),
+                scheduler,
+                font_database: self.font_database.clone(),
+            };
+
+                let wa_conf = conf::Conf {
+                    window_title: String::from("~"),
+                    window_width: self.config.window.width,
+                    window_height: self.config.window.height,
+                    fullscreen: self.config.window.is_fullscreen(),
+                    transparency: self.config.window.background_opacity < 1.,
+                    blur: self.config.window.blur,
+                    hide_toolbar: !self.config.navigation.is_native(),
+                    hide_toolbar_buttons: self.config.window.macos_hide_toolbar_buttons,
+                    ..Default::default()
+                };
+
+                let _ = futures::executor::block_on(wa::native::macos::Window::new_window(
+                    wa_conf,
+                    || Box::new(router)
+                ));
             }
             RioEvent::Paste => {
                 if let Some(value) = window::clipboard_get(self.current) {
@@ -433,7 +453,7 @@ pub async fn run(
 
     superloop.send_event(RioEvent::PowerOn, 0);
 
-    let mut router = Router {
+    let router = Router {
         config: config.clone(),
         current: 1,
         routes: HashMap::new(),
@@ -457,8 +477,6 @@ pub async fn run(
     let app: wa::native::macos::App = wa::native::macos::App::new();
     // spawn(async {
     let _ = wa::native::macos::Window::new_window(
-        "aa",
-        "Rio",
         wa_conf,
         || Box::new(router)
     ).await;

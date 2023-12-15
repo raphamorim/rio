@@ -376,7 +376,7 @@ pub struct Crosswords {
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
-    window_id: u8,
+    window_id: u16,
     title_stack: Vec<String>,
     hyperlink_re: regex::Regex,
 
@@ -392,7 +392,7 @@ impl Crosswords {
         dimensions: D,
         cursor_shape: CursorShape,
         event_proxy: Superloop,
-        window_id: u8,
+        window_id: u16,
     ) -> Crosswords {
         let cols = dimensions.columns();
         let rows = dimensions.screen_lines();
