@@ -48,7 +48,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 pub struct Route {
-    id: u8,
+    pub id: u8,
     pub ctx: ContextManager,
     pub state: State,
     pub ime: Ime,

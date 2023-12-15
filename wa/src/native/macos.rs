@@ -32,6 +32,7 @@ pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
     fullscreen: bool,
+    id: u8,
     // [NSCursor hide]/unhide calls should be balanced
     // hide/hide/unhide will keep cursor hidden
     // so need to keep internal cursor state to avoid problems from
@@ -212,7 +213,7 @@ impl MacosDisplay {
 impl MacosDisplay {
     fn transform_mouse_point(&self, point: &NSPoint) -> (f32, f32) {
         let binding = native_display().lock();
-        let d = binding.get(0).unwrap();
+        let d = binding.get(self.id).unwrap();
         let new_x = point.x as f32 * d.dpi_scale;
         let new_y = d.screen_height as f32 - (point.y as f32 * d.dpi_scale) - 1.;
 
@@ -233,7 +234,7 @@ impl MacosDisplay {
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
         let mut binding = native_display().lock();
-        let d = binding.get_mut(0).unwrap();
+        let d = binding.get_mut(self.id).unwrap();
         let screen: ObjcId = msg_send![self.window, screen];
         let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
         d.dpi_scale = dpi_scale as f32;
@@ -436,6 +437,8 @@ pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
             return NO;
         }
 
+        let payload = payload.unwrap();
+
         unsafe {
             let capture_manager =
                 msg_send_![class![MTLCaptureManager], sharedCaptureManager];
@@ -443,20 +446,20 @@ pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
         }
 
         // only give user-code a chance to intervene when sapp_quit() wasn't already called
-        if !native_display().lock().get(0).unwrap().quit_ordered {
+        if !native_display().lock().get(payload.id).unwrap().quit_ordered {
             // if window should be closed and event handling is enabled, give user code
             // a chance to intervene via sapp_cancel_quit()
-            native_display().lock().get_mut(0).unwrap().quit_requested = true;
-            if let Some(event_handler) = payload.unwrap().context() {
+            native_display().lock().get_mut(payload.id).unwrap().quit_requested = true;
+            if let Some(event_handler) = payload.context() {
                 event_handler.quit_requested_event();
             }
 
             // user code hasn't intervened, quit the app
-            if native_display().lock().get(0).unwrap().quit_requested {
-                native_display().lock().get_mut(0).unwrap().quit_ordered = true;
+            if native_display().lock().get(payload.id).unwrap().quit_requested {
+                native_display().lock().get_mut(payload.id).unwrap().quit_ordered = true;
             }
         }
-        if native_display().lock().get(0).unwrap().quit_ordered {
+        if native_display().lock().get(payload.id).unwrap().quit_ordered {
             YES
         } else {
             NO
@@ -828,6 +831,8 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                 payload.process_request(request);
             }
 
+            let id = payload.id;
+
             if let Some(event_handler) = payload.context() {
                 match event_handler.process() {
                     EventHandlerAction::Render => {
@@ -839,7 +844,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                     EventHandlerAction::Noop => {}
                     EventHandlerAction::Quit => unsafe {
                         let mut handler = native_display().lock();
-                        let d = handler.get_mut(0).unwrap();
+                        let d = handler.get_mut(payload.id).unwrap();
                         if d.quit_requested || d.quit_ordered {
                             handler.remove(0);
                             let () = msg_send![payload.window, performClose: nil];
@@ -847,7 +852,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                     },
                     EventHandlerAction::Init => {
                         let mut d = native_display().lock();
-                        let d = d.get_mut(0).unwrap();
+                        let d = d.get_mut(id).unwrap();
 
                         // Initialization should happen only once
                         if !d.has_initialized {
@@ -1067,7 +1072,7 @@ impl<'a> App {
 }
 
 pub struct Window {
-    id: usize,
+    id: u8,
     pub ns_window: *mut Object,
     pub ns_view: *mut Object,
 }
@@ -1077,8 +1082,8 @@ unsafe impl Sync for Window {}
 
 impl Window {
     pub async fn new_window<F>(
-        _class_name: &str,
-        _name: &str,
+        class_name: &str,
+        name: &str,
         conf: crate::conf::Conf,
         f: F) -> Result<Self, Box<dyn std::error::Error>>
     where
@@ -1089,8 +1094,11 @@ impl Window {
             let (tx, rx) = std::sync::mpsc::channel();
             let clipboard = Box::new(MacosClipboard);
 
+            let id = crate::get_handler().lock().inner.len() + 1;
+            let id: u8 = id.try_into().unwrap();
+
             crate::set_display(
-                0,
+                id,
                 NativeDisplayData {
                     ..NativeDisplayData::new(
                         conf.window_width,
@@ -1102,6 +1110,7 @@ impl Window {
             );
 
             let mut display = MacosDisplay {
+                id,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
                 fullscreen: false,
@@ -1154,7 +1163,7 @@ impl Window {
 
             assert!(!window.is_null());
 
-            let window_delegate_class = define_cocoa_window_delegate("RenderViewClass");
+            let window_delegate_class = define_cocoa_window_delegate(format!("RenderViewClass-{name}").as_str());
             let window_delegate = StrongPtr::new(msg_send![window_delegate_class, new]);
             let () = msg_send![*window, setDelegate: *window_delegate];
 
@@ -1168,12 +1177,12 @@ impl Window {
             let view = View::create_metal_view(
                 window_frame,
                 conf.sample_count,
-                "RenderWindowDelegate",
+                format!("RenderWindowDelegate-{name}").as_str(),
                 &mut display
             );
             {
                 let mut d = native_display().lock();
-                let d = d.get_mut(0).unwrap();
+                let d = d.get_mut(id).unwrap();
                 d.view = **view.as_strong_ptr();
             }
 
@@ -1189,7 +1198,7 @@ impl Window {
             ));
             {
                 let mut d = native_display().lock();
-                let d = d.get_mut(0).unwrap();
+                let d = d.get_mut(id).unwrap();
                 d.window_handle = Some(display.raw_window_handle());
                 d.display_handle = Some(display.raw_display_handle());
                 d.dimensions = dimensions;
@@ -1272,7 +1281,7 @@ impl Window {
             let () = msg_send![*window, makeKeyAndOrderFront: nil];
 
             let window_handle = Window {
-                id: 0,
+                id,
                 ns_window: *window,
                 ns_view: **view.as_strong_ptr(),
             };

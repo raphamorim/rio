@@ -69,8 +69,16 @@ impl EventHandler for Router {
             RioEvent::PowerOn => {
                 next = EventHandlerAction::Init;
             }
+            RioEvent::CreateWindow => {
+                // let _ = wa::native::macos::Window::new_window(
+                //     "aa",
+                //     "Rio",
+                //     wa_conf,
+                //     || Box::new(router)
+                // ).await;
+            }
             RioEvent::Paste => {
-                if let Some(value) = window::clipboard_get() {
+                if let Some(value) = window::clipboard_get(self.current) {
                     if let Some(current) = self.routes.get_mut(&self.current) {
                         current.paste(&value, true);
                         next = EventHandlerAction::Render;
@@ -78,7 +86,7 @@ impl EventHandler for Router {
                 }
             }
             RioEvent::Copy(data) => {
-                window::clipboard_set(&data);
+                window::clipboard_set(self.current, &data);
             }
             RioEvent::UpdateConfig => {
                 let (config, _config_error) =
@@ -114,7 +122,7 @@ impl EventHandler for Router {
             }
             RioEvent::Title(title) => {
                 if let Some(current) = self.routes.get_mut(&self.current) {
-                    window::set_window_title(title);
+                    window::set_window_title(current.id, title);
                 }
             }
             RioEvent::CreateNativeTab(_) => {}
@@ -291,7 +299,7 @@ impl EventHandler for Router {
         if let Some(current) = self.routes.get_mut(&self.current) {
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
-                    window::set_mouse_cursor(wa::CursorIcon::Pointer);
+                    window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
                     self.superloop.send_event(RioEvent::Render, self.current);
                     return;
                 }
@@ -309,11 +317,11 @@ impl EventHandler for Router {
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
         if let Some(current) = self.routes.get_mut(&self.current) {
             if self.config.hide_cursor_when_typing {
-                window::show_mouse(true);
+                window::show_mouse(current.id, true);
             }
 
             if let Some(cursor) = current.process_motion_event(x, y) {
-                window::set_mouse_cursor(cursor);
+                window::set_mouse_cursor(current.id, cursor);
             }
 
             current.render();
@@ -333,7 +341,7 @@ impl EventHandler for Router {
             // }
 
             if self.config.hide_cursor_when_typing {
-                window::show_mouse(true);
+                window::show_mouse(current.id, true);
             }
 
             // match delta {
@@ -363,7 +371,7 @@ impl EventHandler for Router {
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = self.routes.get_mut(&self.current) {
             if self.config.hide_cursor_when_typing {
-                window::show_mouse(true);
+                window::show_mouse(current.id, true);
             }
 
             current.process_mouse(button, x, y, true);
@@ -372,7 +380,7 @@ impl EventHandler for Router {
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = self.routes.get_mut(&self.current) {
             if self.config.hide_cursor_when_typing {
-                window::show_mouse(true);
+                window::show_mouse(current.id, true);
             }
 
             current.process_mouse(button, x, y, false);
@@ -448,19 +456,13 @@ pub async fn run(
 
     let app: wa::native::macos::App = wa::native::macos::App::new();
     // spawn(async {
-    let window = wa::native::macos::Window::new_window(
+    let _ = wa::native::macos::Window::new_window(
         "aa",
         "Rio",
         wa_conf,
         || Box::new(router)
     ).await;
-    let refwindow = window.unwrap();
-    // println!("window from new_window {:?}", refwindow.ns_window);
-    // println!("view from new_window {:?}", refwindow.ns_view);
-    // });
-    // app.create_window(wa_conf, |window| {
 
-    // });
     app.run();
 
     Ok(())
