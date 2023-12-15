@@ -40,7 +40,7 @@ pub struct Machine<T: teletypewriter::EventedPty> {
     poll: corcovado::Poll,
     terminal: Arc<FairMutex<Crosswords>>,
     event_proxy: Superloop,
-    window_id: u8,
+    window_id: u16,
 }
 
 #[derive(Default)]
@@ -117,7 +117,7 @@ where
         terminal: Arc<FairMutex<Crosswords>>,
         pty: T,
         event_proxy: Superloop,
-        window_id: u8,
+        window_id: u16,
     ) -> Result<Machine<T>, Box<dyn std::error::Error>> {
         // let (mut sender, mut receiver) = unbounded::<Msg>();
         let (sender, receiver) = channel::channel();

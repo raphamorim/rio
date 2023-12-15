@@ -79,14 +79,14 @@ pub struct ContextManager {
     current_index: usize,
     capacity: usize,
     event_proxy: Superloop,
-    window_id: u8,
+    window_id: u16,
     pub config: ContextManagerConfig,
     pub titles: ContextManagerTitles,
 }
 
 impl ContextManager {
     #[inline]
-    pub fn create_dead_context(event_proxy: Superloop, window_id: u8) -> Context {
+    pub fn create_dead_context(event_proxy: Superloop, window_id: u16) -> Context {
         let size = CrosswordsSize::new(MIN_COLUMNS, MIN_LINES);
         let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
         let terminal: Arc<FairMutex<Crosswords>> = Arc::new(FairMutex::new(terminal));
@@ -106,7 +106,7 @@ impl ContextManager {
     pub fn create_context(
         cursor_state: (&CursorState, bool),
         event_proxy: Superloop,
-        window_id: u8,
+        window_id: u16,
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context, Box<dyn Error>> {
@@ -187,7 +187,7 @@ impl ContextManager {
     pub fn start(
         cursor_state: (&CursorState, bool),
         mut event_proxy: Superloop,
-        window_id: u8,
+        window_id: u16,
         ctx_config: ContextManagerConfig,
         size: SugarloafLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
@@ -249,7 +249,7 @@ impl ContextManager {
     pub fn start_with_capacity(
         capacity: usize,
         event_proxy: Superloop,
-        window_id: u8,
+        window_id: u16,
     ) -> Result<Self, Box<dyn Error>> {
         let config = ContextManagerConfig {
             use_fork: true,

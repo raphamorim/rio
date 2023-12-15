@@ -55,7 +55,7 @@ impl Superloop {
             .unwrap()
     }
 
-    pub fn send_event(&mut self, event: RioEvent, _id: u8) {
+    pub fn send_event(&mut self, event: RioEvent, _id: u16) {
         self.0.lock().inner.0.list.push_back(event);
     }
 }

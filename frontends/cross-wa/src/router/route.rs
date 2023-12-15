@@ -48,7 +48,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 pub struct Route {
-    pub id: u8,
+    pub id: u16,
     pub ctx: ContextManager,
     pub state: State,
     pub ime: Ime,
@@ -63,7 +63,7 @@ pub struct Route {
 
 impl Route {
     pub fn new(
-        id: u8,
+        id: u16,
         raw_window_handle: raw_window_handle::RawWindowHandle,
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         config: Rc<rio_backend::config::Config>,

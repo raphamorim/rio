@@ -9,7 +9,7 @@ pub(crate) struct DroppedFiles {
 }
 
 pub(crate) struct Handler {
-    inner: HashMap<u8, NativeDisplayData>,
+    inner: HashMap<u16, NativeDisplayData>,
 }
 
 impl Handler {
@@ -20,27 +20,27 @@ impl Handler {
     }
 
     #[inline]
-    pub fn insert(&mut self, id: u8, display: NativeDisplayData) {
+    pub fn insert(&mut self, id: u16, display: NativeDisplayData) {
         self.inner.insert(id, display);
     }
 
     #[inline]
-    pub fn get_mut(&mut self, id: u8) -> Option<&mut NativeDisplayData> {
+    pub fn get_mut(&mut self, id: u16) -> Option<&mut NativeDisplayData> {
         self.inner.get_mut(&id)
     }
 
     #[inline]
-    pub fn get(&self, id: u8) -> Option<&NativeDisplayData> {
+    pub fn get(&self, id: u16) -> Option<&NativeDisplayData> {
         self.inner.get(&id)
     }
 
     #[inline]
-    pub fn size(&self) -> usize {
-        self.inner.len()
+    pub fn next_id(&self) -> u16 {
+        (self.inner.len()).try_into().unwrap_or(254) + 1
     }
 
     #[inline]
-    pub fn remove(&mut self, id: u8) {
+    pub fn remove(&mut self, id: u16) {
         self.inner.remove(&id);
     }
 }
