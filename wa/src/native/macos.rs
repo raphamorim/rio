@@ -590,8 +590,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
         if let Some(payload) = get_window_payload(this) {
-
-
             unsafe {
                 let cursor_id = {
                     let current_cursor = payload.current_cursor;
@@ -802,7 +800,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     decl.add_protocol(Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"));
 
     extern "C" fn display_layer(view: &mut Object, sel: Sel, _layer_id: ObjcId) {
-        println!("oi");
+        println!("display_layer");
     }
 
     extern "C" fn draw_layer_in_context(
@@ -820,11 +818,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     }
 
     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
-        println!("PORQUE MEU DEUS");
         if let Some(payload) = get_window_payload(this) {
-            println!("window from get_window_payload {:?}", payload.window);
-            println!("view from get_window_payload {:?}", payload.view);
-
             if payload.event_handler.is_none() {
                 let f = payload.f.take().unwrap();
                 payload.event_handler = Some(f());
@@ -941,11 +935,11 @@ impl View {
             setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
         ];
         let () = msg_send![*view, setSampleCount: sample_count];
-        let () = msg_send![*view, setWantsLayer: YES];
-        let () = msg_send![
-            *view,
-            setLayerContentsPlacement: NSViewLayerContentsPlacementTopLeft
-        ];
+        // let () = msg_send![*view, setWantsLayer: YES];
+        // let () = msg_send![
+        //     *view,
+        //     setLayerContentsPlacement: NSViewLayerContentsPlacementTopLeft
+        // ];
 
         Self { inner: view }
     }
@@ -1171,9 +1165,6 @@ impl Window {
             let () = msg_send![*window, center];
             let () = msg_send![*window, setAcceptsMouseMovedEvents: YES];
 
-            (**window_delegate)
-                .set_ivar(VIEW_CLASS_NAME, &mut display as *mut _ as *mut c_void);
-
             let view = View::create_metal_view(
                 window_frame,
                 conf.sample_count,
@@ -1188,9 +1179,6 @@ impl Window {
 
             display.window = *window;
             display.view = **view.as_strong_ptr();
-
-            println!("window {:?}", display.window);
-            println!("view {:?}", display.view);
 
             let () = msg_send![*window, setContentView: **view.as_strong_ptr()];
 
@@ -1210,6 +1198,9 @@ impl Window {
             let boxed_view = Box::into_raw(Box::new(display));
 
             (*(*boxed_view).view)
+                .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
+
+            (**window_delegate)
                 .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
 
             // let nstimer: ObjcId = msg_send![

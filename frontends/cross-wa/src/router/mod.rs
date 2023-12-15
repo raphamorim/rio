@@ -382,9 +382,6 @@ impl EventHandler for Router {
         if let Some(current) = self.routes.get_mut(&self.current) {
             // let s = d.sugarloaf.clone().unwrap();
             // let mut s = s.lock();
-            current
-                .sugarloaf
-                .resize(w.try_into().unwrap(), h.try_into().unwrap());
             if rescale {
                 current.sugarloaf.rescale(scale_factor);
                 current
