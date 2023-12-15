@@ -3,8 +3,8 @@ mod constants;
 pub mod mouse;
 mod route;
 
+use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
 use crate::renderer::{padding_top_from_config, padding_bottom_from_config};
-use tokio::spawn;
 use crate::event::{RioEvent, UpdateOpcode};
 use crate::ime::Ime;
 use crate::scheduler::{Scheduler, TimerId, Topic};
@@ -379,7 +379,6 @@ impl EventHandler for Router {
         }
     }
     fn resize_event(&mut self, w: i32, h: i32, scale_factor: f32, rescale: bool) {
-        println!("{} {} {} {}", w, h, scale_factor, rescale);
         if let Some(current) = self.routes.get_mut(&self.current) {
             // let s = d.sugarloaf.clone().unwrap();
             // let mut s = s.lock();
@@ -429,13 +428,13 @@ pub async fn run(
 
     superloop.send_event(RioEvent::PowerOn, 0);
 
-    let router = Router {
+    let mut router = Router {
         config: config.clone(),
         current: 1,
         routes: HashMap::new(),
-        superloop,
+        superloop: superloop.clone(),
         scheduler,
-        font_database,
+        font_database: font_database.clone(),
     };
 
     let wa_conf = conf::Conf {
@@ -452,15 +451,15 @@ pub async fn run(
 
     let app: wa::native::macos::App = wa::native::macos::App::new();
     // spawn(async {
-        let window = wa::native::macos::Window::new_window(
-            "aa",
-            "Rio",
-            wa_conf,
-            move |window| {
-                println!("oi");
-
-            }
-        ).await;
+    let window = wa::native::macos::Window::new_window(
+        "aa",
+        "Rio",
+        wa_conf,
+        || Box::new(router)
+    ).await;
+    let refwindow = window.unwrap();
+    println!("window from new_window {:?}", refwindow.ns_window);
+    println!("view from new_window {:?}", refwindow.ns_view);
     // });
     // app.create_window(wa_conf, |window| {
 
