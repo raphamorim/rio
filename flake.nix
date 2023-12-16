@@ -9,20 +9,24 @@
     let
       eachSystem = nixpkgs.lib.genAttrs (import systems);
 
-      # rio-pkg = pkgs.callPackge ({ rustPlatform, lib, ... }: rustPlatform.buildRustPackage {
-      #   pname = "rio";
+      mkRio = ({ rustPlatform, lib, ... }: rustPlatform.buildRustPackage {
+        pname = "rio";
 
-      #   src = ./.;
-      #   cargoLock.lockFile = ./Cargo.lock;
+        src = ./.;
+        cargoLock.lockFile = ./Cargo.lock;
 
-      #   meta = {
-      #     description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.";
-      #     homepage = "https://raphamorim.io/rio/";
-      #     license = lib.licenses.mit;
-      #   };
-      # });
+        meta = {
+          description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.";
+          homepage = "https://raphamorim.io/rio/";
+          license = lib.licenses.mit;
+        };
+      });
     in
     {
+      overlays.default = final: prev: {
+        rio = prev.callPackage mkRio { };
+      };
+
       devShellls = eachSystem (system:
         let
           pkgs = import nixpkgs {
