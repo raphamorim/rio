@@ -274,7 +274,7 @@ divider = 1.0
 
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created.
-- `color-automation` - Set a specific color for the tab whenever a specific program is running.
+- `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 
 ```toml
 [navigation]

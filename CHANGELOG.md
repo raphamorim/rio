@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- TBD
+- Added support for path based color automation.
 
 ## 0.0.32
 

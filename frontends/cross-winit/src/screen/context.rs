@@ -45,7 +45,7 @@ pub struct ContextManagerConfig {
 
 pub struct ContextManagerTitles {
     last_title_update: Instant,
-    pub titles: HashMap<usize, [String; 2]>,
+    pub titles: HashMap<usize, [String; 3]>,
     pub key: String,
 }
 
@@ -54,17 +54,24 @@ impl ContextManagerTitles {
         idx: usize,
         program: String,
         terminal_title: String,
+        path: String,
     ) -> ContextManagerTitles {
         let last_title_update = Instant::now();
         ContextManagerTitles {
             key: format!("{}{}{};", idx, program, terminal_title),
-            titles: HashMap::from([(idx, [program, terminal_title])]),
+            titles: HashMap::from([(idx, [program, terminal_title, path])]),
             last_title_update,
         }
     }
 
-    pub fn set_key_val(&mut self, idx: usize, program: String, terminal_title: String) {
-        self.titles.insert(idx, [program, terminal_title]);
+    pub fn set_key_val(
+        &mut self,
+        idx: usize,
+        program: String,
+        terminal_title: String,
+        path: String,
+    ) {
+        self.titles.insert(idx, [program, terminal_title, path]);
     }
 
     pub fn set_key(&mut self, key: String) {
@@ -228,7 +235,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         };
 
-        let titles = ContextManagerTitles::new(0, String::from("tab"), String::from(""));
+        let titles = ContextManagerTitles::new(
+            0,
+            String::from("tab"),
+            String::new(),
+            ctx_config.working_dir.clone().unwrap_or_default(),
+        );
 
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {
@@ -284,7 +296,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::from(""), String::from(""));
+        let titles =
+            ContextManagerTitles::new(0, String::new(), String::new(), String::new());
 
         Ok(ContextManager {
             current_index: 0,
@@ -410,6 +423,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         context.shell_pid,
                     );
 
+                    let path = teletypewriter::foreground_process_path(
+                        *context.main_fd,
+                        context.shell_pid,
+                    )
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
                     #[cfg(not(target_os = "macos"))]
                     let terminal_title = String::from("");
 
@@ -437,7 +457,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
                     id =
                         id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
-                    self.titles.set_key_val(i, program, terminal_title);
+                    self.titles.set_key_val(i, program, terminal_title, path);
                 }
                 self.titles.set_key(id);
             }
@@ -454,7 +474,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
                     id =
                         id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
-                    self.titles.set_key_val(i, program, terminal_title);
+
+                    // TODO: get path on Windows
+                    let path = String::new();
+
+                    self.titles.set_key_val(i, program, terminal_title, path);
                 }
                 self.titles.set_key(id);
             }
