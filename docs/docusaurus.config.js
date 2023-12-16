@@ -12,6 +12,8 @@ const tagline = {
   en: 'A modern terminal for the 21st century.',
   ko: '21세기의 현대적인 터미널.',
   'pt-br': 'Terminal moderno para o século 21',
+  es: 'Una terminal moderna para el siglo 21.',
+  pl: 'Nowoczesny terminal na miarę XXI wieku.',
 };
 
 /** @type {import('@docusaurus/types').Config} */
@@ -27,7 +29,7 @@ const config = {
   onBrokenMarkdownLinks: 'warn',
   i18n: {
     defaultLocale,
-    locales: ['en', 'ko', 'pt-br'],
+    locales: ['en', 'ko', 'pt-br', 'es', 'pl'],
   },
 
   headTags: [

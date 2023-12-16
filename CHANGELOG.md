@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.32
+
+- Fix: font order priority.
+- Fix: add default values to keyboard config (#382)
+
+## 0.0.31
+
+- **Breaking**: Configuration `performance` has moved to `renderer.performance`.
+- **Breaking**: Configuration `disable-renderer-when-unfocused` has moved to `renderer.disable-renderer-when-unfocused`.
+- **Breaking**: Configuration `use-kitty-keyboard-protocol` has moved to `keyboard.use-kitty-keyboard-protocol`.
+
+- Introduction of new configuration property called `keyboard`.
+
+```toml
+[keyboard]
+use-kitty-keyboard-protocol = false
+disable-ctlseqs-alt = false
+```
+
+- Introduction of `keyboard.disable-ctlseqs-alt`: Disable ctlseqs with ALT keys. It is useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
+
+- Introduction of new configuration property called `renderer`.
+```toml
+[renderer]
+performance = "High"
+disable-renderer-when-unfocused = false
+backend = "Automatic"
+
+# backend options:
+# Automatic: Leave Sugarloaf/WGPU to decide
+# GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+# Vulkan: Supported on Windows, Linux/Android
+# DX12: Supported on Windows 10
+# DX11: Supported on Windows 7+
+# Metal: Supported on macOS/iOS
+```
+- Fix: update padding top on config change [#378](https://github.com/raphamorim/rio/pull/378) by [@hougesen](https://github.com/hougesen)
+- Fixed bug where color automation did not work on Linux because of line ending character.
+- Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371) 
+- Fix: remove duplicate kitty backspace keybinds [#375](https://github.com/raphamorim/rio/pull/375) by [@hougesen](https://github.com/hougesen)
+- Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. [#344](https://github.com/raphamorim/rio/issues/344) by [@hougesen](https://github.com/hougesen)
+
+## 0.0.30
+
+- Fix regression with color ansi when transparency is off.
+- **Breaking**: Config `navigation.macos-hide-window-buttons` has moved to `window.macos-hide-toolbar-buttons`.
+- **Breaking**: Config property `padding-x` has been updated from 5.0 to 0.0 on MacOS.
+
+## 0.0.29
+
+- Fix compiled binary shows nothing inside the app window [#366](https://github.com/raphamorim/rio/issues/366).
+- Fix command key + left and right strange behavior [#359](https://github.com/raphamorim/rio/issues/359).
 - **New scroll API**: Scroll calculation for canonical mode will be based on `(accumulated scroll * multiplier / divider)` so if you want quicker scroll, keep increasing the multiplier if you want to reduce you increase the divider. Can use both properties also to find the best scroll for you:
 
 ```toml

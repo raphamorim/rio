@@ -43,31 +43,22 @@ Default is `false`
 blinking-cursor = false
 ```
 
+## Hide cursor when typing
+
+Hide the cursor while typing
+
+Default is `true`
+
+```toml
+hide-cursor-when-typing = false
+```
+
 ## Ignore theme selection foreground color
 
 Default is `false`
 
 ```toml
 ignore-selection-foreground-color = false
-```
-
-## Enable Kitty Keyboard protocol
-
-Default is false
-
-```toml
-use-kitty-keyboard-protocol = false
-```
-
-## Performance
-
-Set WGPU rendering performance
-
-- `High`: Adapter that has the highest performance. This is often a discrete GPU.
-- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
-
-```toml
-performance = "High"
 ```
 
 ## Themes
@@ -124,6 +115,8 @@ option-as-alt = 'left'
 - `background-image` Set an image as background.
 	- Default: `None`
 
+- `macos-hide-toolbar-buttons` - (MacOS only) Hide toolbar buttons
+
 Example:
 
 ```toml
@@ -134,6 +127,7 @@ mode = "Windowed"
 foreground-opacity = 1.0
 background-opacity = 1.0
 blur = false
+macos-hide-toolbar-buttons = false
 ```
 
 ### Using blur and background opacity:
@@ -160,6 +154,31 @@ y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
+
+## Renderer
+
+- `Performance` - Set WGPU rendering performance
+	- `High`: Adapter that has the highest performance. This is often a discrete GPU.
+	- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
+
+- `Backend` - Set WGPU rendering backend
+  - `Automatic`: Leave Sugarloaf/WGPU to decide
+  - `GL`: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+  - `Vulkan`: Supported on Windows, Linux/Android
+  - `DX12`: Supported on Windows 10
+  - `DX11`: Supported on Windows 7+
+  - `Metal`: Supported on macOS/iOS
+
+- `disable-renderer-when-unfocused` - This property disable renderer processes while Rio is unfocused.
+
+Example:
+
+```toml
+[renderer]
+performance = "High"
+backend = "Automatic"
+disable-renderer-when-unfocused = false
+```
 
 ## Fonts
 
@@ -209,6 +228,21 @@ style = "italic"
 weight = 800
 ```
 
+## Keyboard
+
+- `use-kitty-keyboard-protocol` - Enable Kitty Keyboard protocol
+
+- `disable-ctlseqs-alt` - Disable ctlseqs with ALT keys
+	- Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
+
+Example:
+
+```toml
+[keyboard]
+use-kitty-keyboard-protocol = false
+disable-ctlseqs-alt = false
+```
+
 ## Scroll
 
 You can change how many lines are scrolled each time by setting this option. Scroll calculation for canonical mode will be based on `lines = (accumulated scroll * multiplier / divider)`.
@@ -241,7 +275,6 @@ divider = 1.0
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created.
 - `color-automation` - Set a specific color for the tab whenever a specific program is running.
-- `macos-hide-window-buttons` - (MacOS only) Hide window buttons
 
 ```toml
 [navigation]
@@ -249,7 +282,6 @@ mode = "CollapsedTab"
 clickable = false
 use-current-path = false
 color-automation = []
-macos-hide-window-buttons = false
 ```
 
 ## Shell
@@ -271,16 +303,22 @@ Default:
 shell = { program = "/bin/fish", args = ["--login"] }
 ```
 
-2. Windows using powershell
+2. Windows using powershell:
 
 ```toml
 shell = { program = "pwsh", args = [] }
 ```
 
-3. Windows using powershell with login
+3. Windows using powershell with login:
 
 ```toml
 shell = { program = "pwsh", args = ["-l"] }
+```
+
+4. MacOS with tmux installed by homebrew:
+
+```toml
+shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", "/var/www"] }
 ```
 
 ## Startup directory
@@ -299,14 +337,6 @@ The example below sets fish as the default SHELL using env vars, please do not c
 
 ```toml
 env-vars = []
-```
-
-## Disable render when unfocused
-
-This property disables the renderer process when Rio no longer has focus.
-
-```toml
-disable-renderer-when-unfocused = false
 ```
 
 ## Use fork

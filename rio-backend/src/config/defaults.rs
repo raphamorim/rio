@@ -5,15 +5,7 @@ pub fn default_env_vars() -> Vec<String> {
 
 #[inline]
 pub fn default_padding_x() -> f32 {
-    #[cfg(not(target_os = "macos"))]
-    {
-        0.
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        5.
-    }
+    0.
 }
 
 #[inline]
@@ -103,13 +95,26 @@ pub fn default_window_height() -> i32 {
     400
 }
 
+#[inline]
+pub fn default_disable_ctlseqs_alt() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 pub fn default_config_file_content() -> String {
     r#"
 # Editor
 #
 # Default editor is "vi".
 #
-# Whenever the key binding `OpenConfigEditor` is triggered it will 
+# Whenever the key binding `OpenConfigEditor` is triggered it will
 # use the value of the editor along with the rio configuration path.
 # editor = 'vi'
 
@@ -132,21 +137,6 @@ blinking-cursor = false
 #
 # Example:
 # ignore-selection-foreground-color = false
-
-# Enable Kitty Keyboard protocol
-#
-# Default is false
-#
-# Example:
-# use-kitty-keyboard-protocol = false
-
-# Performance
-#
-# Set WGPU rendering performance
-# High: Adapter that has the highest performance. This is often a discrete GPU.
-# Low: Adapter that uses the least possible power. This is often an integrated GPU.
-#
-performance = "High"
 
 # Theme
 #
@@ -191,6 +181,8 @@ performance = "High"
 #
 # • blur - Set blur on the window background. Changing this config requires restarting Rio to take effect.
 #
+# • macos-hide-toolbar-buttons - (MacOS only) Hide window buttons
+#
 # Example:
 # [window]
 # width = 600
@@ -199,14 +191,41 @@ performance = "High"
 # foreground-opacity = 1.0
 # background-opacity = 1.0
 # blur = false
+# macos-hide-toolbar-buttons = false
 
-# Window Height
+# Renderer
 #
-# window-height changes the inital window height.
-#   Default: 400
+# • Performance: Set WGPU rendering performance
+#   - High: Adapter that has the highest performance. This is often a discrete GPU.
+#   - Low: Adapter that uses the least possible power. This is often an integrated GPU.
+#
+# • Backend: Set WGPU rendering backend
+#   - Automatic: Leave Sugarloaf/WGPU to decide
+#   - GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
+#   - Vulkan: Supported on Windows, Linux/Android
+#   - DX12: Supported on Windows 10
+#   - DX11: Supported on Windows 7+
+#   - Metal: Supported on macOS/iOS
+#
+# • disable-renderer-when-unfocused: This property disable renderer processes while Rio is unfocused.
 #
 # Example:
-# window-height = 400
+# [renderer]
+# performance = "High"
+# backend = "Automatic"
+# disable-renderer-when-unfocused = false
+
+# Keyboard
+#
+# use-kitty-keyboard-protocol - Enable Kitty Keyboard protocol
+#
+# disable-ctlseqs-alt - Disable ctlseqs with ALT keys
+#   - For example: Terminal.app does not deal with ctlseqs with ALT keys
+#
+# Example:
+# [keyboard]
+# use-kitty-keyboard-protocol = false
+# disable-ctlseqs-alt = false
 
 # Fonts
 #
@@ -277,7 +296,6 @@ performance = "High"
 # "clickable" - Enable click on tabs to switch.
 # "use-current-path" - Use same path whenever a new tab is created.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running.
-# "macos-hide-window-buttons" - (MacOS only) Hide window buttons
 #
 # Example:
 # [navigation]
@@ -285,7 +303,6 @@ performance = "High"
 # clickable = false
 # use-current-path = false
 # color-automation = []
-# macos-hide-window-buttons = false
 
 # Shell
 #
@@ -308,6 +325,10 @@ performance = "High"
 # Example 3 for Windows using powershell with login
 #
 # shell = { program = "pwsh", args = ["-l"] }
+#
+# Example 4 for MacOS with tmux installed by homebrew
+#
+# shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", # "/var/www"] }
 
 # Startup directory
 #
@@ -326,13 +347,6 @@ performance = "High"
 #
 # Example:
 # env-vars = []
-
-# Disable render when unfocused
-#
-# This property disable renderer processes while Rio is unfocused.
-#
-# Example:
-# disable-renderer-when-unfocused = false
 
 # Use fork
 #

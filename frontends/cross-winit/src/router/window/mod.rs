@@ -8,8 +8,11 @@ use {
 use raw_window_handle::HasRawWindowHandle;
 #[cfg(target_os = "macos")]
 use raw_window_handle::RawWindowHandle;
+use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
 use std::rc::Rc;
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
@@ -57,9 +60,28 @@ pub fn create_window_builder(
         })
         .with_resizable(true)
         .with_decorations(true)
-        .with_transparent(true)
+        .with_transparent(config.window.background_opacity < 1.)
         .with_blur(config.window.blur)
         .with_window_icon(Some(icon));
+
+    match config.window.decorations {
+        Decorations::Disabled => {
+            window_builder = window_builder.with_decorations(false);
+        }
+        Decorations::Transparent => {
+            #[cfg(target_os = "macos")]
+            {
+                window_builder = window_builder.with_titlebar_transparent(true)
+            }
+        }
+        Decorations::Buttonless => {
+            #[cfg(target_os = "macos")]
+            {
+                window_builder = window_builder.with_titlebar_buttons_hidden(true)
+            }
+        }
+        _ => {}
+    };
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
@@ -75,8 +97,9 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowBuilderExtMacOS;
         window_builder = window_builder
+            // MacOS is always transparent
+            .with_transparent(true)
             .with_title_hidden(true)
             .with_titlebar_transparent(true)
             .with_fullsize_content_view(true);
@@ -84,24 +107,25 @@ pub fn create_window_builder(
         if config.navigation.is_native() {
             window_builder = window_builder
                 .with_title_hidden(false)
-                .with_titlebar_transparent(false);
+                .with_titlebar_transparent(false)
+                .with_fullsize_content_view(false);
 
             if let Some(identifier) = tab_id {
                 window_builder = window_builder.with_tabbing_identifier(&identifier);
             }
         }
 
-        if config.navigation.macos_hide_window_buttons {
+        if config.window.macos_hide_toolbar_buttons {
             window_builder = window_builder.with_titlebar_buttons_hidden(true);
         }
     }
 
     match config.window.mode {
-        rio_backend::config::window::WindowMode::Fullscreen => {
+        WindowMode::Fullscreen => {
             window_builder =
                 window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
-        rio_backend::config::window::WindowMode::Maximized => {
+        WindowMode::Maximized => {
             window_builder = window_builder.with_maximized(true);
         }
         _ => {

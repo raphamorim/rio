@@ -29,14 +29,14 @@ impl Default for NavigationMode {
 }
 
 impl NavigationMode {
-    const PLAIN_STR: &str = "Plain";
-    const COLLAPSED_TAB_STR: &str = "CollapsedTab";
-    const TOP_TAB_STR: &str = "TopTab";
-    const BOTTOM_TAB_STR: &str = "BottomTab";
+    const PLAIN_STR: &'static str = "Plain";
+    const COLLAPSED_TAB_STR: &'static str = "CollapsedTab";
+    const TOP_TAB_STR: &'static str = "TopTab";
+    const BOTTOM_TAB_STR: &'static str = "BottomTab";
     #[cfg(target_os = "macos")]
-    const NATIVE_TAB_STR: &str = "NativeTab";
+    const NATIVE_TAB_STR: &'static str = "NativeTab";
     #[cfg(not(windows))]
-    const BREADCRUMB_STR: &str = "Breadcrumb";
+    const BREADCRUMB_STR: &'static str = "Breadcrumb";
 
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -122,8 +122,6 @@ pub struct Navigation {
     pub use_current_path: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(default = "bool::default", rename = "macos-hide-window-buttons")]
-    pub macos_hide_window_buttons: bool,
 }
 
 impl Navigation {

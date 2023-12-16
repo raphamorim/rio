@@ -1,0 +1,136 @@
+name: Nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:00 every day
+    - cron: '0 1 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_REPOSITORY: raphamorim/rio
+  RUST_BACKTRACE: full
+  RUSTFLAGS: '-C link-arg=-s'
+  NIGHTLY_TAG: nightly
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  nightly-release-macos:
+    runs-on: macos-11.0
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal
+
+      - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      - name: make release-macos
+        run: make release-macos
+
+      - name: Release nightly
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            release/macos-unsigned.zip
+            LICENSE
+
+  # nightly-release-deb:
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #     discussions: write
+
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 0
+
+  #     - name: rust cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-all-crates: true
+
+  #     - run: sudo apt install rename
+  #     - run: rustup toolchain install stable --profile minimal
+  #     - run: cargo install cargo-deb
+  #     - run: mkdir -p release
+
+  #     - run: make release-debian-x11
+  #     - run: make release-debian-wayland
+
+  #     - name: Release nightly
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         name: Nightly
+  #         tag_name: ${{ env.NIGHTLY_TAG }}
+  #         prerelease: true
+  #         append_body: true
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         files: |
+  #           release/debian/x11/*
+  #           release/debian/wayland/*
+
+  nightly-release-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+
+      - name: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal
+
+      - run: cargo build --release
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.0.1
+
+      - name: Crate msi installer
+        run: |
+          wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
+          wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
+          -out "./Rio-installer.msi" "misc/windows/rio.wxs"
+
+      - run: cp ./target/release/rio.exe ./Rio-portable.exe
+
+      - name: Release Nightly
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            ./Rio-portable.exe
+            ./Rio-installer.msi

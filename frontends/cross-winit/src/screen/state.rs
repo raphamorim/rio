@@ -65,7 +65,13 @@ impl State {
             }
         }
 
-        let dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
+        let dynamic_background = if config.window.background_image.is_some()
+            || config.window.background_opacity < 1.
+        {
+            ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
+        } else {
+            named_colors.background
+        };
 
         let mut color_automation = HashMap::new();
         for rule in &config.navigation.color_automation {
@@ -76,7 +82,7 @@ impl State {
             background_opacity: config.window.background_opacity,
             foreground_opacity: config.window.foreground_opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
-            is_kitty_keyboard_enabled: config.use_kitty_keyboard_protocol,
+            is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
             is_vi_mode_enabled: false,
             is_blinking: false,

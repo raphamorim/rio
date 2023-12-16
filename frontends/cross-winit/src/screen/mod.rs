@@ -38,10 +38,13 @@ use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rio_backend::config::colors::{term::List, ColorWGPU};
+use rio_backend::config::{
+    colors::{term::List, ColorWGPU},
+    renderer::{Backend as RendererBackend, Performance as RendererPerformance},
+};
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
-    SugarloafWindow, SugarloafWindowSize,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use state::State;
 use std::borrow::Cow;
@@ -62,6 +65,34 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
+
+#[inline]
+fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
+    #[cfg(not(target_os = "macos"))]
+    {
+        if config.navigation.is_placed_on_top() {
+            return constants::PADDING_Y_WITH_TAB_ON_TOP;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if config.navigation.is_native() {
+            return 0.0;
+        }
+    }
+
+    constants::PADDING_Y
+}
+
+#[inline]
+fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
+    if config.navigation.is_placed_on_bottom() {
+        config.fonts.size
+    } else {
+        0.0
+    }
+}
 
 pub struct Screen {
     bindings: bindings::KeyBindings,
@@ -88,27 +119,8 @@ impl Screen {
         let raw_display_handle = winit_window.raw_display_handle();
         let window_id = winit_window.id();
 
-        let power_preference: wgpu::PowerPreference = match config.performance {
-            rio_backend::config::Performance::High => {
-                wgpu::PowerPreference::HighPerformance
-            }
-            rio_backend::config::Performance::Low => wgpu::PowerPreference::LowPower,
-        };
-
-        let mut padding_y_bottom = 0.0;
-        if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.fonts.size
-        }
-
-        #[allow(unused_mut)]
-        let mut padding_y_top = constants::PADDING_Y;
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            if config.navigation.is_placed_on_top() {
-                padding_y_top = constants::PADDING_Y_WITH_TAB_ON_TOP;
-            }
-        }
+        let padding_y_bottom = padding_bottom_from_config(config);
+        let padding_y_top = padding_top_from_config(config);
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
@@ -132,9 +144,35 @@ impl Screen {
             },
         };
 
+        let power_preference = match config.renderer.performance {
+            RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
+            RendererPerformance::Low => wgpu::PowerPreference::LowPower,
+        };
+
+        let backend = match config.renderer.backend {
+            RendererBackend::Automatic => {
+                #[cfg(target_arch = "wasm32")]
+                let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+                #[cfg(not(target_arch = "wasm32"))]
+                let default_backend = wgpu::Backends::all();
+
+                default_backend
+            }
+            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
+            RendererBackend::GL => wgpu::Backends::GL,
+            RendererBackend::Metal => wgpu::Backends::METAL,
+            RendererBackend::DX11 => wgpu::Backends::DX11,
+            RendererBackend::DX12 => wgpu::Backends::DX12,
+        };
+
+        let sugarloaf_renderer = SugarloafRenderer {
+            power_preference,
+            backend,
+        };
+
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
             &sugarloaf_window,
-            power_preference,
+            sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout,
             Some(font_database),
@@ -155,7 +193,7 @@ impl Screen {
         let bindings = bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
-            config.use_kitty_keyboard_protocol,
+            config.keyboard,
         );
         let ime = Ime::new();
 
@@ -247,45 +285,6 @@ impl Screen {
         pos_x >= DEADZONE_START_X * scale_f64
     }
 
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn should_reload_with_updated_margin_top_y(
-        &mut self,
-        tab_num: usize,
-        is_fullscreen: bool,
-    ) -> bool {
-        let mut should_reload = false;
-        if is_fullscreen {
-            if tab_num <= 1 && self.sugarloaf.layout.margin.top_y != 0.0 {
-                self.sugarloaf.layout.set_margin_top_y(0.0);
-                should_reload = true;
-            } else if tab_num > 1
-                && self.sugarloaf.layout.margin.top_y
-                    != constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
-            {
-                self.sugarloaf
-                    .layout
-                    .set_margin_top_y(constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB);
-                should_reload = true;
-            }
-
-            return should_reload;
-        }
-
-        let expected = if tab_num > 1 {
-            constants::PADDING_Y_WITH_MANY_NATIVE_TAB
-        } else {
-            constants::PADDING_Y_WITH_SINGLE_NATIVE_TAB
-        };
-
-        should_reload = self.sugarloaf.layout.margin.top_y != expected;
-        if should_reload {
-            self.sugarloaf.layout.set_margin_top_y(expected);
-        }
-
-        should_reload
-    }
-
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(
@@ -303,15 +302,15 @@ impl Screen {
             return;
         }
 
-        let mut padding_y_bottom = 0.0;
-        if config.navigation.is_placed_on_bottom() {
-            padding_y_bottom += config.fonts.size
-        }
+        let padding_y_bottom = padding_bottom_from_config(config);
+
+        let padding_y_top = padding_top_from_config(config);
 
         self.sugarloaf.layout.recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
+            padding_y_top,
             padding_y_bottom,
         );
 
@@ -495,9 +494,7 @@ impl Screen {
                     Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
                     Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key.to_owned(),
-                        mods,
-                        mode,
+                        key, mods, mode,
                     )
                     .into(),
                 };
@@ -811,11 +808,7 @@ impl Screen {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key.to_owned(),
-                    mods,
-                    mode,
-                )
+                bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode)
             }
         };
 

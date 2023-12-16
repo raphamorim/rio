@@ -76,7 +76,7 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::Render) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                if self.config.disable_unfocused_render
+                                if self.config.renderer.disable_unfocused_render
                                     && !route.window.is_focused
                                 {
                                     return;
@@ -971,27 +971,6 @@ impl Sequencer {
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         // let start = std::time::Instant::now();
-
-                        #[cfg(target_os = "macos")]
-                        {
-                            if route.window.screen.context_manager.config.is_native
-                                && route
-                                    .window
-                                    .screen
-                                    .should_reload_with_updated_margin_top_y(
-                                        route.window.winit_window.num_tabs(),
-                                        route.window.winit_window.fullscreen().is_some(),
-                                    )
-                            {
-                                route.update_config(
-                                    &self.config,
-                                    &self.router.font_database,
-                                );
-                                event_loop_window_target
-                                    .set_control_flow(ControlFlow::Wait);
-                                return;
-                            }
-                        }
 
                         route.window.winit_window.pre_present_notify();
                         match route.path {
