@@ -181,7 +181,7 @@ blinking-cursor = false
 #
 # • blur - Set blur on the window background. Changing this config requires restarting Rio to take effect.
 #
-# • macos-hide-toolbar-buttons - (MacOS only) Hide window buttons
+# • decorations - Set window decorations, options: "Enabled", "Disabled", "Transparent", "Buttonless"
 #
 # Example:
 # [window]
@@ -191,7 +191,7 @@ blinking-cursor = false
 # foreground-opacity = 1.0
 # background-opacity = 1.0
 # blur = false
-# macos-hide-toolbar-buttons = false
+# decorations = "Enabled"
 
 # Renderer
 #

@@ -115,7 +115,11 @@ option-as-alt = 'left'
 - `background-image` Set an image as background.
 	- Default: `None`
 
-- `macos-hide-toolbar-buttons` - (MacOS only) Hide toolbar buttons
+- `decorations` - Set window decorations
+	- `Enabled` (default) enable window decorations.
+	- `Disabled` disable all window decorations.
+	- `Transparent` window decorations with transparency.
+	- `Buttonless` remove buttons from window decorations.
 
 Example:
 
@@ -127,7 +131,7 @@ mode = "Windowed"
 foreground-opacity = 1.0
 background-opacity = 1.0
 blur = false
-macos-hide-toolbar-buttons = false
+decorations = "Enabled"
 ```
 
 ### Using blur and background opacity:
