@@ -164,6 +164,30 @@ impl MacosDisplay {
             let () = msg_send![pasteboard, writeObjects: arr];
         }
     }
+    // fn hide_application(&self) {
+    //     unsafe {
+    //         let () = msg_send![self.ns_app, hide: self.ns_app];
+    //     }
+    // }
+    // fn get_appearance(&self) -> Appearance {
+    //     let name = unsafe {
+    //         let appearance: id = msg_send![self.ns_app, effectiveAppearance];
+    //         nsstring_to_str(msg_send![appearance, name])
+    //     };
+    //     log::debug!("NSAppearanceName is {name}");
+    //     match name {
+    //         "NSAppearanceNameVibrantDark" | "NSAppearanceNameDarkAqua" => Appearance::Dark,
+    //         "NSAppearanceNameVibrantLight" | "NSAppearanceNameAqua" => Appearance::Light,
+    //         "NSAppearanceNameAccessibilityHighContrastVibrantLight"
+    //         | "NSAppearanceNameAccessibilityHighContrastAqua" => Appearance::LightHighContrast,
+    //         "NSAppearanceNameAccessibilityHighContrastVibrantDark"
+    //         | "NSAppearanceNameAccessibilityHighContrastDarkAqua" => Appearance::DarkHighContrast,
+    //         _ => {
+    //             log::warn!("Unknown NSAppearanceName {name}, assume Light");
+    //             Appearance::Light
+    //         }
+    //     }
+    // }
     fn confirm_quit(&self, path: &str) -> Option<bool> {
         unsafe {
             let panel: *mut Object = msg_send![class!(NSAlert), new];
@@ -834,7 +858,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             let id = payload.id;
 
             if let Some(event_handler) = payload.context() {
-                match event_handler.process() {
+                match event_handler.process(id) {
                     EventHandlerAction::Render => {
                         event_handler.draw();
                     }
@@ -853,6 +877,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                     EventHandlerAction::Init => {
                         let mut d = native_display().lock();
                         let d = d.get_mut(id).unwrap();
+                        println!("{:?}", id);
 
                         // Initialization should happen only once
                         if !d.has_initialized {

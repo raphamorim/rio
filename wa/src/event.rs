@@ -272,7 +272,7 @@ pub enum EventHandlerAction {
 
 /// A trait defining event callbacks.
 pub trait EventHandler {
-    fn process(&mut self) -> EventHandlerAction;
+    fn process(&mut self, _id: u16) -> EventHandlerAction;
     fn init(
         &mut self,
         _id: u16,
