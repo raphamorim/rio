@@ -356,6 +356,11 @@ impl EventHandler for Router {
             }
         }
     }
+    fn open_file(&mut self, filepath: String) {
+        if let Some(current) = &mut self.route {
+            current.paste(&filepath, true);
+        }
+    }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
         if let Some(current) = &mut self.route {
             // if route.path != RoutePath::Terminal {
