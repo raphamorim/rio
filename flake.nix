@@ -1,7 +1,7 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    systems.url = "github:nix-systems/default-linux";
+    systems.url = "github:nix-systems/default";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
@@ -27,48 +27,42 @@
         rio = prev.callPackage mkRio { };
       };
 
-      devShellls = eachSystem (system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
+      devShells = eachSystem
+        (system:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              overlays = [ rust-overlay.overlays.default ];
+            };
 
-          rust-toolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-            extensions = [ "rust-src" "rust-analyzer" ];
-          };
-        in
-        {
-          default = pkgs.mkShell rec {
-            packages = with pkgs;
-              [
-                rust-toolchain
+            rust-toolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+              extensions = [ "rust-src" "rust-analyzer" ];
+            };
+          in
+          {
+            default = pkgs.mkShell
+              {
+                packages = with pkgs; if stdenv.isDarwin then [
+                  darwin.libobjc
+                  darwin.apple_sdk_11_0.frameworks.AppKit
+                  darwin.apple_sdk_11_0.frameworks.AVFoundation
+                  darwin.apple_sdk_11_0.frameworks.Vision
+                ] else [
+                  fontconfig
+                  libGL
+                  libxkbcommon
+                  vulkan-loader
+                ] ++ (with pkgs; [
+                  xorg.libX11
+                  xorg.libXcursor
+                  xorg.libXi
+                  xorg.libXrandr
+                  xorg.libxcb
 
-                pkg-config
-                cmake
-                fontconfig
-
-                xorg.libX11
-                xorg.libXcursor
-                xorg.libXrandr
-                xorg.libXi
-                xorg.libxkbfile
-                xorg.xkbutils
-                xorg.xkbevd
-                xorg.libXScrnSaver
-                libxkbcommon
-
-                directx-shader-compiler
-                libGL
-                vulkan-headers
-                vulkan-loader
-                vulkan-tools
-
-                wayland
-              ] ++ [ rust-toolchain ];
-
-            LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath packages) }";
-          };
-        });
+                  wayland
+                ]) ++ [ rust-toolchain ];
+              };
+            # LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath packages) }";
+          });
     };
 }
