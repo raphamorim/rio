@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added support for path based color automation.
+- Added `window.decorations` property, available options are `Enabled`, `Disabled`, `Transparent` and `Buttonless`.
 
 ## 0.0.32
 
