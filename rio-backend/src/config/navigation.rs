@@ -98,7 +98,10 @@ impl std::str::FromStr for NavigationMode {
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct ColorAutomation {
+    #[serde(default = "String::new")]
     pub program: String,
+    #[serde(default = "String::new")]
+    pub path: String,
     #[serde(
         deserialize_with = "deserialize_to_arr",
         default = "crate::config::colors::defaults::tabs"
@@ -252,6 +255,7 @@ mod tests {
             decoded.navigation.color_automation[0].program,
             "vim".to_string()
         );
+        assert_eq!(decoded.navigation.color_automation[0].path, String::new());
         assert_eq!(
             decoded.navigation.color_automation[0].color,
             hex_to_color_arr("#333333")
@@ -266,6 +270,8 @@ mod tests {
             color-automation = [
                 { program = 'ssh', color = '#F1F1F1' },
                 { program = 'tmux', color = '#333333' },
+                { path = '/home', color = '#ffffff' },
+                { program = 'nvim', path = '/usr', color = '#00b952' },
             ]
         "#;
 
@@ -274,21 +280,51 @@ mod tests {
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
+
         assert_eq!(
             decoded.navigation.color_automation[0].program,
             "ssh".to_string()
         );
+        assert_eq!(decoded.navigation.color_automation[0].path, String::new());
         assert_eq!(
             decoded.navigation.color_automation[0].color,
             hex_to_color_arr("#F1F1F1")
         );
+
         assert_eq!(
             decoded.navigation.color_automation[1].program,
             "tmux".to_string()
         );
+        assert_eq!(decoded.navigation.color_automation[1].path, String::new());
         assert_eq!(
             decoded.navigation.color_automation[1].color,
             hex_to_color_arr("#333333")
+        );
+
+        assert_eq!(
+            decoded.navigation.color_automation[2].program,
+            String::new()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[2].path,
+            "/home".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[2].color,
+            hex_to_color_arr("#ffffff")
+        );
+
+        assert_eq!(
+            decoded.navigation.color_automation[3].program,
+            "nvim".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[3].path,
+            "/usr".to_string()
+        );
+        assert_eq!(
+            decoded.navigation.color_automation[3].color,
+            hex_to_color_arr("#00b952")
         );
     }
 }
