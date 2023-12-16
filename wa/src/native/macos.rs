@@ -872,10 +872,15 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
         Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
     );
 
-    extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
+    extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
+
         // if let Some(payload) = get_window_payload(this) {
         //     println!("{:?}", payload.id);
         // }
+    }
+
+    extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
+        YES
     }
 
     extern "C" fn draw_layer_in_context(
@@ -969,6 +974,10 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             sel!(displayLayer:),
             display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
         );
+        // decl.add_method(
+        //     sel!(wantsUpdateLayer:),
+        //     wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
+        // );
         decl.add_method(
             sel!(drawLayer:inContext:),
             draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
