@@ -11,8 +11,6 @@ use raw_window_handle::RawWindowHandle;
 use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
 use std::rc::Rc;
-#[cfg(target_os = "macos")]
-use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
@@ -71,12 +69,14 @@ pub fn create_window_builder(
         Decorations::Transparent => {
             #[cfg(target_os = "macos")]
             {
+                use winit::platform::macos::WindowBuilderExtMacOS;
                 window_builder = window_builder.with_titlebar_transparent(true)
             }
         }
         Decorations::Buttonless => {
             #[cfg(target_os = "macos")]
             {
+                use winit::platform::macos::WindowBuilderExtMacOS;
                 window_builder = window_builder.with_titlebar_buttons_hidden(true)
             }
         }
@@ -97,26 +97,19 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "macos")]
     {
-        window_builder = window_builder
-            // MacOS is always transparent
-            .with_transparent(true)
-            .with_title_hidden(true)
-            .with_titlebar_transparent(true)
-            .with_fullsize_content_view(true);
+        use winit::platform::macos::WindowBuilderExtMacOS;
+        // MacOS is always transparent
+        window_builder = window_builder.with_transparent(true);
 
         if config.navigation.is_native() {
-            window_builder = window_builder
-                .with_title_hidden(false)
-                .with_titlebar_transparent(false)
-                .with_fullsize_content_view(false);
-
             if let Some(identifier) = tab_id {
                 window_builder = window_builder.with_tabbing_identifier(&identifier);
             }
-        }
-
-        if config.window.macos_hide_toolbar_buttons {
-            window_builder = window_builder.with_titlebar_buttons_hidden(true);
+        } else {
+            window_builder = window_builder
+                .with_title_hidden(true)
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true);
         }
     }
 

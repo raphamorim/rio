@@ -36,8 +36,6 @@ pub struct Window {
     pub blur: bool,
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
-    #[serde(default = "bool::default", rename = "macos-hide-toolbar-buttons")]
-    pub macos_hide_toolbar_buttons: bool,
     #[serde(default = "Decorations::default")]
     pub decorations: Decorations,
 }
@@ -53,7 +51,6 @@ impl Default for Window {
             background_image: None,
             decorations: Decorations::default(),
             blur: false,
-            macos_hide_toolbar_buttons: false,
         }
     }
 }
