@@ -317,6 +317,8 @@ pub trait EventHandler {
         }
     }
 
+    fn open_file(&mut self, _filename: String) {}
+
     /// Represents raw hardware mouse motion event
     /// Note that these events are delivered regardless of input focus and not in pixels, but in
     /// hardware units instead. And those units may be different from pixels depending on the target platform

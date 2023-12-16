@@ -393,11 +393,12 @@ extern "C" fn application_open_file(
 ) {
     let launched: BOOL = unsafe { *this.get_ivar("launched") };
     if launched == YES {
-        let file_name = unsafe { nsstring_to_string(file_name) }.to_string();
-        // if let Some(conn) = Connection::get() {
-        //     log::debug!("application_open_file {file_name}");
-        //     conn.dispatch_app_event(ApplicationEvent::OpenCommandScript(file_name));
-        // }
+        let file_name = nsstring_to_string(file_name).to_string();
+        if let Some(payload) = get_window_payload(this) {
+            if let Some(event_handler) = payload.context() {
+                event_handler.open_file(file_name);
+            }
+        }
     }
 }
 
@@ -985,7 +986,11 @@ struct View {
 }
 
 impl View {
-    unsafe fn create_metal_view(_: NSRect, sample_count: i32, class_name: &str) -> Self {
+    unsafe fn create_metal_view(
+        _: NSRect,
+        sample_count: i32,
+        class_name: &str,
+    ) -> Self {
         let mtl_device_obj = MTLCreateSystemDefaultDevice();
         let view_class = define_metal_view_class(class_name);
         let view: ObjcId = msg_send![view_class, alloc];
