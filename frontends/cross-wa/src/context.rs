@@ -47,7 +47,7 @@ pub struct ContextManagerConfig {
 
 pub struct ContextManagerTitles {
     last_title_update: Instant,
-    pub titles: HashMap<usize, [String; 2]>,
+    pub titles: HashMap<usize, [String; 3]>,
     pub key: String,
 }
 
@@ -56,19 +56,28 @@ impl ContextManagerTitles {
         idx: usize,
         program: String,
         terminal_title: String,
+        path: String,
     ) -> ContextManagerTitles {
         let last_title_update = Instant::now();
         ContextManagerTitles {
             key: format!("{}{}{};", idx, program, terminal_title),
-            titles: HashMap::from([(idx, [program, terminal_title])]),
+            titles: HashMap::from([(idx, [program, terminal_title, path])]),
             last_title_update,
         }
     }
 
-    pub fn set_key_val(&mut self, idx: usize, program: String, terminal_title: String) {
-        self.titles.insert(idx, [program, terminal_title]);
+    #[inline]
+    pub fn set_key_val(
+        &mut self,
+        idx: usize,
+        program: String,
+        terminal_title: String,
+        path: String,
+    ) {
+        self.titles.insert(idx, [program, terminal_title, path]);
     }
 
+    #[inline]
     pub fn set_key(&mut self, key: String) {
         self.key = key;
     }
@@ -217,7 +226,12 @@ impl ContextManager {
             }
         };
 
-        let titles = ContextManagerTitles::new(0, String::from("tab"), String::from(""));
+        let titles = ContextManagerTitles::new(
+            0,
+            String::from("tab"),
+            String::new(),
+            ctx_config.working_dir.clone().unwrap_or_default(),
+        );
 
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {
@@ -272,7 +286,8 @@ impl ContextManager {
             &config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::from(""), String::from(""));
+        let titles =
+            ContextManagerTitles::new(0, String::new(), String::new(), String::new());
 
         Ok(ContextManager {
             current_index: 0,
@@ -398,6 +413,13 @@ impl ContextManager {
                         context.shell_pid,
                     );
 
+                    let path = teletypewriter::foreground_process_path(
+                        *context.main_fd,
+                        context.shell_pid,
+                    )
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
                     #[cfg(not(target_os = "macos"))]
                     let terminal_title = String::from("");
 
@@ -419,13 +441,15 @@ impl ContextManager {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        self.event_proxy
-                            .send_event(RioEvent::Title(window_title), self.window_id);
+                        self.event_proxy.send_event(
+                            RioEvent::Title(window_title, path.clone()),
+                            self.window_id,
+                        );
                     }
 
                     id =
                         id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
-                    self.titles.set_key_val(i, program, terminal_title);
+                    self.titles.set_key_val(i, program, terminal_title, path);
                 }
                 self.titles.set_key(id);
             }
@@ -438,11 +462,15 @@ impl ContextManager {
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    let terminal_title = String::from("");
+                    let empty_string = String::from("");
 
-                    id =
-                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
-                    self.titles.set_key_val(i, program, terminal_title);
+                    id = id.to_owned() + &(format!("{}{}{};", i, program, empty_string));
+                    self.titles.set_key_val(
+                        i,
+                        program,
+                        empty_string.clone(),
+                        empty_string,
+                    );
                 }
                 self.titles.set_key(id);
             }

@@ -47,14 +47,14 @@ pub struct ScreenNavigation {
     width: f32,
     height: f32,
     scale: f32,
-    color_automation: HashMap<String, [f32; 4]>,
+    color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
 }
 
 impl ScreenNavigation {
     pub fn new(
         mode: NavigationMode,
         colors: [[f32; 4]; 3],
-        color_automation: HashMap<String, [f32; 4]>,
+        color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
         width: f32,
         height: f32,
         scale: f32,
@@ -87,7 +87,7 @@ impl ScreenNavigation {
         dimensions: (f32, f32),
         scale: f32,
         keys: &str,
-        titles: &HashMap<usize, [String; 2]>,
+        titles: &HashMap<usize, [String; 3]>,
         current: usize,
         len: usize,
     ) {
@@ -145,7 +145,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn collapsed_tab(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
+    pub fn collapsed_tab(&mut self, titles: &HashMap<usize, [String; 3]>, len: usize) {
         if len <= 1 {
             return;
         }
@@ -161,7 +161,11 @@ impl ScreenNavigation {
             }
 
             if let Some(name_idx) = titles.get(&i) {
-                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                if let Some(color_overwrite) = get_color_overwrite(
+                    &self.color_automation,
+                    &name_idx[0],
+                    &name_idx[2],
+                ) {
                     color = *color_overwrite;
                 }
             }
@@ -177,7 +181,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn breadcrumb(&mut self, titles: &HashMap<usize, [String; 2]>, len: usize) {
+    pub fn breadcrumb(&mut self, titles: &HashMap<usize, [String; 3]>, len: usize) {
         let mut initial_position = (self.width / self.scale) - 100.;
         let position_modifier = 80.;
         let mut min_view = 9;
@@ -195,7 +199,11 @@ impl ScreenNavigation {
         if let Some(main_name_idx) = titles.get(&current_index) {
             main_name = main_name_idx[0].to_string();
 
-            if let Some(color_overwrite) = self.color_automation.get(&main_name_idx[0]) {
+            if let Some(color_overwrite) = get_color_overwrite(
+                &self.color_automation,
+                &main_name_idx[0],
+                &main_name_idx[2],
+            ) {
                 fg_color = self.colors.inactive;
                 bg_color = *color_overwrite;
                 icon_color = bg_color;
@@ -278,8 +286,11 @@ impl ScreenNavigation {
                 if let Some(name_idx) = titles.get(&iterator) {
                     name = name_idx[0].to_string();
 
-                    if let Some(color_overwrite) = self.color_automation.get(&name_idx[0])
-                    {
+                    if let Some(color_overwrite) = get_color_overwrite(
+                        &self.color_automation,
+                        &name_idx[0],
+                        &name_idx[2],
+                    ) {
                         fg_color = self.colors.inactive;
                         bg_color = *color_overwrite;
                         icon_color = bg_color;
@@ -329,7 +340,7 @@ impl ScreenNavigation {
     #[inline]
     pub fn tab(
         &mut self,
-        titles: &HashMap<usize, [String; 2]>,
+        titles: &HashMap<usize, [String; 3]>,
         len: usize,
         position_y: f32,
         text_pos_mod: f32,
@@ -370,7 +381,11 @@ impl ScreenNavigation {
                     name = name_idx[0].to_string();
                 }
 
-                if let Some(color_overwrite) = self.color_automation.get(&name_idx[0]) {
+                if let Some(color_overwrite) = get_color_overwrite(
+                    &self.color_automation,
+                    &name_idx[0],
+                    &name_idx[2],
+                ) {
                     foreground_color = self.colors.inactive;
                     background_color = *color_overwrite;
                 }
@@ -406,5 +421,70 @@ impl ScreenNavigation {
             initial_position_x += name_modifier;
             self.rects.push(renderable_item);
         }
+    }
+}
+
+#[inline]
+fn get_color_overwrite<'a>(
+    color_automation: &'a HashMap<String, HashMap<String, [f32; 4]>>,
+    program: &str,
+    path: &str,
+) -> Option<&'a [f32; 4]> {
+    color_automation
+        .get(program)
+        .and_then(|m| m.get(path).or_else(|| m.get("")))
+        .or_else(|| color_automation.get("").and_then(|m| m.get(path)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::state::navigation::get_color_overwrite;
+
+    #[test]
+    fn test_get_color_overwrite() {
+        let program = "nvim";
+        let path = "/home/";
+
+        let program_and_path = [0.0, 0.0, 0.0, 0.0];
+        let program_only = [1.1, 1.1, 1.1, 1.1];
+        let path_only = [2.2, 2.2, 2.2, 2.2];
+        let neither = [3.3, 3.3, 3.3, 3.3];
+
+        let color_automation = HashMap::from([
+            (
+                program.to_owned(),
+                HashMap::from([
+                    (path.to_owned(), program_and_path),
+                    (String::new(), program_only),
+                ]),
+            ),
+            (
+                String::new(),
+                HashMap::from([(path.to_owned(), path_only), (String::new(), neither)]),
+            ),
+        ]);
+
+        let program_and_path_result =
+            get_color_overwrite(&color_automation, program, path)
+                .expect("it to return a color");
+
+        assert_eq!(&program_and_path, program_and_path_result);
+
+        let program_only_result = get_color_overwrite(&color_automation, program, "")
+            .expect("it to return a color");
+
+        assert_eq!(&program_only, program_only_result);
+
+        let path_only_result = get_color_overwrite(&color_automation, "", path)
+            .expect("it to return a color");
+
+        assert_eq!(&path_only, path_only_result);
+
+        let neither_result =
+            get_color_overwrite(&color_automation, "", "").expect("it to return a color");
+
+        assert_eq!(&neither, neither_result);
     }
 }

@@ -75,7 +75,7 @@ pub enum RioEvent {
     MouseCursorDirty,
 
     /// Window title change.
-    Title(String),
+    Title(String, String),
 
     /// Reset to the default window title.
     ResetTitle,
@@ -141,7 +141,7 @@ impl Debug for RioEvent {
             RioEvent::TextAreaSizeRequest(_) => write!(f, "TextAreaSizeRequest"),
             RioEvent::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
             RioEvent::PtyWrite(text) => write!(f, "PtyWrite({text})"),
-            RioEvent::Title(title) => write!(f, "Title({title})"),
+            RioEvent::Title(title, subtitle) => write!(f, "Title({title}, {subtitle})"),
             RioEvent::Minimize(cond) => write!(f, "Minimize({cond})"),
             RioEvent::Hide => write!(f, "Hide)"),
             RioEvent::HideOtherApplications => write!(f, "HideOtherApplications)"),
