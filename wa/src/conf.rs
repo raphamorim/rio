@@ -71,6 +71,7 @@ pub struct Conf {
     pub transparency: bool,
     pub blur: bool,
     pub hide_toolbar_buttons: bool,
+    pub tab_identifier: Option<String>,
 }
 
 /// Icon image in three levels of detail.
@@ -100,7 +101,7 @@ impl Default for Conf {
             window_title: "".to_owned(),
             window_width: 800,
             window_height: 600,
-            high_dpi: false,
+            high_dpi: true,
             fullscreen: false,
             blur: false,
             transparency: false,
@@ -110,6 +111,7 @@ impl Default for Conf {
             icon: Some(Icon::logo()),
             platform: Default::default(),
             hide_toolbar_buttons: false,
+            tab_identifier: None,
         }
     }
 }

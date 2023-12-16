@@ -861,8 +861,10 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
         Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
     );
 
-    extern "C" fn display_layer(view: &mut Object, sel: Sel, _layer_id: ObjcId) {
-        println!("display_layer");
+    extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
+        // if let Some(payload) = get_window_payload(this) {
+        //     println!("{:?}", payload.id);
+        // }
     }
 
     extern "C" fn draw_layer_in_context(
@@ -881,6 +883,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
         if let Some(payload) = get_window_payload(this) {
+            // println!("draw_rect {:?}", payload.id);
             if payload.event_handler.is_none() {
                 let f = payload.f.take().unwrap();
                 payload.event_handler = Some(f());
@@ -917,7 +920,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                         if !d.has_initialized {
                             {
                                 event_handler.init(
-                                    1,
+                                    id,
                                     d.window_handle.unwrap(),
                                     d.display_handle.unwrap(),
                                     d.dimensions.0,
@@ -982,20 +985,15 @@ struct View {
 }
 
 impl View {
-    unsafe fn create_metal_view(
-        _: NSRect,
-        sample_count: i32,
-        class_name: &str,
-        display: &mut MacosDisplay,
-    ) -> Self {
+    unsafe fn create_metal_view(_: NSRect, sample_count: i32, class_name: &str) -> Self {
         let mtl_device_obj = MTLCreateSystemDefaultDevice();
         let view_class = define_metal_view_class(class_name);
         let view: ObjcId = msg_send![view_class, alloc];
         let view: StrongPtr = StrongPtr::new(msg_send![view, init]);
 
-        let boxed_view = Box::into_raw(Box::new(Self {
-            inner: StrongPtr::new(*view),
-        }));
+        // let boxed_view = Box::into_raw(Box::new(Self {
+        //     inner: StrongPtr::new(*view),
+        // }));
 
         let () = msg_send![*view, setDevice: mtl_device_obj];
         let () = msg_send![*view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
@@ -1244,7 +1242,6 @@ impl Window {
                 window_frame,
                 conf.sample_count,
                 format!("RenderWindowDelegateWithId{id}").as_str(),
-                &mut display,
             );
             {
                 let mut d = native_display().lock();
@@ -1333,9 +1330,8 @@ impl Window {
                 }
             }
 
-            if !conf.hide_toolbar {
-                let () =
-                    msg_send![*window,  setTabbingIdentifier: str_to_nsstring("tab-1")];
+            if !conf.hide_toolbar && conf.tab_identifier.is_some() {
+                let () = msg_send![*window,  setTabbingIdentifier: str_to_nsstring(&conf.tab_identifier.unwrap())];
                 let _: () = msg_send![*window, setTabbingMode:NSWindowTabbingMode::NSWindowTabbingModePreferred];
             } else {
                 let _: () = msg_send![*window, setTabbingMode:NSWindowTabbingMode::NSWindowTabbingModeDisallowed];

@@ -48,24 +48,33 @@ pub mod window {
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn screen_size(id: u16) -> (f32, f32) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        (d.screen_width as f32, d.screen_height as f32)
+        if let Some(d) = d.get(id) {
+            (d.screen_width as f32, d.screen_height as f32)
+        } else {
+            (800., 600.)
+        }
     }
 
     /// The dpi scaling factor (window pixels to framebuffer pixels)
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn dpi_scale(id: u16) -> f32 {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.dpi_scale
+        if let Some(d) = d.get(id) {
+            d.dpi_scale
+        } else {
+            1.0
+        }
     }
 
     /// True when high_dpi was requested and actually running in a high-dpi scenario
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn high_dpi(id: u16) -> bool {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.high_dpi
+        if let Some(d) = d.get(id) {
+            d.high_dpi
+        } else {
+            true
+        }
     }
 
     /// This function simply quits the application without
@@ -77,8 +86,9 @@ pub mod window {
     /// But the window is going to be inevitably closed at some point.
     pub fn order_quit(id: u16) {
         let mut d = native_display().lock();
-        let d = d.get_mut(id).unwrap();
-        d.quit_ordered = true;
+        if let Some(d) = d.get_mut(id) {
+            d.quit_ordered = true;
+        }
     }
 
     /// Shortcut for `order_quit`. Will add a legacy attribute at some point.
@@ -93,8 +103,9 @@ pub mod window {
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit(id: u16) {
         let mut d = native_display().lock();
-        let d = d.get_mut(id).unwrap();
-        d.quit_requested = true;
+        if let Some(d) = d.get_mut(id) {
+            d.quit_requested = true;
+        }
     }
 
     /// Cancels a pending quit request, either initiated
@@ -104,8 +115,9 @@ pub mod window {
     /// the "quit_requested_event" event has been received
     pub fn cancel_quit(id: u16) {
         let mut d = native_display().lock();
-        let d = d.get_mut(id).unwrap();
-        d.quit_requested = false;
+        if let Some(d) = d.get_mut(id) {
+            d.quit_requested = false;
+        }
     }
     /// Capture mouse cursor to the current window
     /// On WASM this will automatically hide cursor
@@ -115,86 +127,98 @@ pub mod window {
     /// TODO: implement window focus events
     pub fn set_cursor_grab(id: u16, grab: bool) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
+        if let Some(d) = d.get(id) {
+            let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
+        }
     }
 
     /// Show or hide the mouse cursor
     pub fn show_mouse(id: u16, shown: bool) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d.native_requests.send(native::Request::ShowMouse(shown));
+        if let Some(d) = d.get(id) {
+            let _ = d.native_requests.send(native::Request::ShowMouse(shown));
+        }
     }
 
     /// Show or hide the mouse cursor
     pub fn set_window_title(id: u16, title: String) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d
-            .native_requests
-            .send(native::Request::SetWindowTitle(title));
+        if let Some(d) = d.get(id) {
+            let _ = d
+                .native_requests
+                .send(native::Request::SetWindowTitle(title));
+        }
     }
 
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(id: u16, cursor_icon: CursorIcon) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d
-            .native_requests
-            .send(native::Request::SetMouseCursor(cursor_icon));
+        if let Some(d) = d.get(id) {
+            let _ = d
+                .native_requests
+                .send(native::Request::SetMouseCursor(cursor_icon));
+        }
     }
 
     /// Set the application's window size.
     pub fn set_window_size(id: u16, new_width: u32, new_height: u32) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d.native_requests.send(native::Request::SetWindowSize {
-            new_width,
-            new_height,
-        });
+        if let Some(d) = d.get(id) {
+            let _ = d.native_requests.send(native::Request::SetWindowSize {
+                new_width,
+                new_height,
+            });
+        }
     }
 
     pub fn set_fullscreen(id: u16, fullscreen: bool) {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        let _ = d
-            .native_requests
-            .send(native::Request::SetFullscreen(fullscreen));
+        if let Some(d) = d.get(id) {
+            let _ = d
+                .native_requests
+                .send(native::Request::SetFullscreen(fullscreen));
+        }
     }
 
     /// Get current OS clipboard value
     pub fn clipboard_get(id: u16) -> Option<String> {
         let mut d = native_display().lock();
-        let d = d.get_mut(id).unwrap();
-        d.clipboard.get()
+        if let Some(d) = d.get_mut(id) {
+            d.clipboard.get()
+        } else {
+            Some(String::from(""))
+        }
     }
     /// Save value to OS clipboard
     pub fn clipboard_set(id: u16, data: &str) {
         let mut d = native_display().lock();
-        let d = d.get_mut(id).unwrap();
-        d.clipboard.set(data)
+        if let Some(d) = d.get_mut(id) {
+            d.clipboard.set(data)
+        }
     }
     pub fn dropped_file_count(id: u16) -> usize {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.dropped_files.bytes.len()
+        if let Some(d) = d.get(id) {
+            d.dropped_files.bytes.len()
+        } else {
+            0
+        }
     }
     pub fn dropped_file_bytes(id: u16, index: usize) -> Option<Vec<u8>> {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.dropped_files.bytes.get(index).cloned()
+        if let Some(d) = d.get(id) {
+            d.dropped_files.bytes.get(index).cloned()
+        } else {
+            None
+        }
     }
     pub fn dropped_file_path(id: u16, index: usize) -> Option<std::path::PathBuf> {
         let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.dropped_files.paths.get(index).cloned()
-    }
-
-    #[cfg(target_vendor = "apple")]
-    pub fn apple_view(id: u16) -> crate::native::apple::frameworks::ObjcId {
-        let d = native_display().lock();
-        let d = d.get(id).unwrap();
-        d.view
+        if let Some(d) = d.get(id) {
+            d.dropped_files.paths.get(index).cloned()
+        } else {
+            None
+        }
     }
 }
 

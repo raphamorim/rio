@@ -22,7 +22,6 @@ use wa::*;
 struct Router {
     config: Rc<rio_backend::config::Config>,
     route: Option<Route>,
-    id: Option<u16>,
     superloop: Superloop,
     scheduler: Scheduler,
     font_database: loader::Database,
@@ -51,7 +50,6 @@ impl EventHandler for Router {
         )
         .unwrap();
         self.route = Some(initial_route);
-        self.id = Some(id);
     }
     #[inline]
     fn process(&mut self, window_id: u16) -> EventHandlerAction {
@@ -78,7 +76,6 @@ impl EventHandler for Router {
                 let router = Router {
                     config: self.config.clone(),
                     route: None,
-                    id: None,
                     superloop: superloop,
                     scheduler,
                     font_database: self.font_database.clone(),
@@ -93,6 +90,7 @@ impl EventHandler for Router {
                     blur: self.config.window.blur,
                     hide_toolbar: !self.config.navigation.is_native(),
                     hide_toolbar_buttons: self.config.window.macos_hide_toolbar_buttons,
+                    tab_identifier: None,
                     ..Default::default()
                 };
 
@@ -145,6 +143,7 @@ impl EventHandler for Router {
             }
             RioEvent::Title(title) => {
                 if let Some(current) = &mut self.route {
+                    println!("set_window_title {:?}", current.id);
                     window::set_window_title(current.id, title);
                 }
             }
@@ -323,8 +322,7 @@ impl EventHandler for Router {
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                    self.superloop
-                        .send_event(RioEvent::Render, self.id.unwrap());
+                    self.superloop.send_event(RioEvent::Render, current.id);
                     return;
                 }
             }
@@ -460,7 +458,6 @@ pub async fn run(
     let router = Router {
         config: config.clone(),
         route: None,
-        id: None,
         superloop: superloop.clone(),
         scheduler,
         font_database: font_database.clone(),
@@ -475,14 +472,12 @@ pub async fn run(
         blur: config.window.blur,
         hide_toolbar: !config.navigation.is_native(),
         hide_toolbar_buttons: config.window.macos_hide_toolbar_buttons,
+        tab_identifier: None,
         ..Default::default()
     };
 
     let app: wa::native::macos::App = wa::native::macos::App::new();
-    // spawn(async {
     let _ = wa::native::macos::Window::new_window(wa_conf, || Box::new(router)).await;
-
     app.run();
-
     Ok(())
 }
