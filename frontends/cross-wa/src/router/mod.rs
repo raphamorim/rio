@@ -3,11 +3,11 @@ mod constants;
 pub mod mouse;
 mod route;
 
-use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
-use crate::renderer::{padding_top_from_config, padding_bottom_from_config};
 use crate::event::{RioEvent, UpdateOpcode};
 use crate::ime::Ime;
+use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::event::EventPayload;
 use rio_backend::superloop::Superloop;
 use route::Route;
@@ -71,17 +71,18 @@ impl EventHandler for Router {
                 next = EventHandlerAction::Init;
             }
             RioEvent::CreateWindow => {
-                self.superloop.send_event(RioEvent::PowerOn, 1);
+                let mut superloop = Superloop::new();
+                superloop.send_event(RioEvent::PowerOn, 0);
 
-                let scheduler = Scheduler::new(self.superloop.clone());
+                let scheduler = Scheduler::new(superloop.clone());
                 let router = Router {
-                config: self.config.clone(),
-                route: None,
-                id: None,
-                superloop: self.superloop.clone(),
-                scheduler,
-                font_database: self.font_database.clone(),
-            };
+                    config: self.config.clone(),
+                    route: None,
+                    id: None,
+                    superloop: superloop,
+                    scheduler,
+                    font_database: self.font_database.clone(),
+                };
 
                 let wa_conf = conf::Conf {
                     window_title: String::from("~"),
@@ -95,10 +96,9 @@ impl EventHandler for Router {
                     ..Default::default()
                 };
 
-                let _ = futures::executor::block_on(wa::native::macos::Window::new_window(
-                    wa_conf,
-                    || Box::new(router)
-                ));
+                let _ = futures::executor::block_on(
+                    wa::native::macos::Window::new_window(wa_conf, || Box::new(router)),
+                );
             }
             RioEvent::Paste => {
                 if let Some(value) = window::clipboard_get(window_id) {
@@ -323,7 +323,8 @@ impl EventHandler for Router {
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                    self.superloop.send_event(RioEvent::Render, self.id.unwrap());
+                    self.superloop
+                        .send_event(RioEvent::Render, self.id.unwrap());
                     return;
                 }
             }
@@ -479,10 +480,7 @@ pub async fn run(
 
     let app: wa::native::macos::App = wa::native::macos::App::new();
     // spawn(async {
-    let _ = wa::native::macos::Window::new_window(
-        wa_conf,
-        || Box::new(router)
-    ).await;
+    let _ = wa::native::macos::Window::new_window(wa_conf, || Box::new(router)).await;
 
     app.run();
 
