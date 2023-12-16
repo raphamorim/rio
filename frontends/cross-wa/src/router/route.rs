@@ -13,12 +13,12 @@ use crate::context::{self, ContextManager};
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
+use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::router::bindings;
 use crate::router::bindings::ViAction;
 use crate::router::bindings::{
     Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding,
 };
-use crate::renderer::{padding_top_from_config, padding_bottom_from_config};
 use crate::router::constants;
 use crate::router::mouse::calculate_mouse_position;
 use crate::router::mouse::Mouse;
@@ -26,19 +26,23 @@ use crate::router::Ime;
 use crate::router::{RioEvent, Superloop, UpdateOpcode};
 use crate::state::State;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::config::renderer::{
+    Backend as RendererBackend, Performance as RendererPerformance,
+};
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::Pos;
 use rio_backend::crosswords::pos::Side;
 use rio_backend::crosswords::square::Hyperlink;
 use rio_backend::crosswords::{MIN_COLUMNS, MIN_LINES};
 use rio_backend::selection::SelectionType;
-use rio_backend::config::renderer::{Backend as RendererBackend, Performance as RendererPerformance};
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::rc::Rc;
 use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::{Sugarloaf, SugarloafRenderer, SugarloafErrors, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{
+    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
+};
 use wa::{KeyCode, Modifiers, ModifiersState};
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
@@ -97,7 +101,7 @@ impl Route {
             ..config.colors.background.1
         };
 
-       let power_preference = match config.renderer.performance {
+        let power_preference = match config.renderer.performance {
             RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
             RendererPerformance::Low => wgpu::PowerPreference::LowPower,
         };
@@ -1446,4 +1450,3 @@ impl Route {
         self.sugarloaf.render();
     }
 }
-

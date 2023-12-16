@@ -4,10 +4,10 @@
 //platform implementation
 
 use crate::sync::FairMutex;
+use objc::rc::{StrongPtr, WeakPtr};
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
 use std::sync::Arc;
-use objc::rc::{StrongPtr, WeakPtr};
 use {
     crate::{
         event::{EventHandler, EventHandlerAction, MouseButton},
@@ -258,6 +258,7 @@ impl MacosDisplay {
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
         let mut binding = native_display().lock();
+        println!("update_dimensions {:?}", self.id);
         let d = binding.get_mut(self.id).unwrap();
         let screen: ObjcId = msg_send![self.window, screen];
         let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
@@ -363,23 +364,26 @@ extern "C" fn application_open_untitled_file(
     let launched: BOOL = unsafe { *this.get_ivar("launched") };
     log::debug!("application_open_untitled_file launched={launched}");
     // if let Some(conn) = Connection::get() {
-        // if launched == YES {
-            // conn.dispatch_app_event(ApplicationEvent::PerformKeyAssignment(
-            //     KeyAssignment::SpawnWindow,
-            // ));
-        // }
-        // return YES;
+    // if launched == YES {
+    // conn.dispatch_app_event(ApplicationEvent::PerformKeyAssignment(
+    //     KeyAssignment::SpawnWindow,
+    // ));
+    // }
+    // return YES;
     // }
     NO
 }
 
-extern "C" fn application_did_finish_launching(this: &mut Object, _sel: Sel, _notif: *mut Object) {
+extern "C" fn application_did_finish_launching(
+    this: &mut Object,
+    _sel: Sel,
+    _notif: *mut Object,
+) {
     log::debug!("application_did_finish_launching");
     unsafe {
         (*this).set_ivar("launched", YES);
     }
 }
-
 
 extern "C" fn application_open_file(
     this: &mut Object,
@@ -411,11 +415,13 @@ pub fn define_app_delegate() -> *const Class {
         );
         decl.add_method(
             sel!(applicationDidFinishLaunching:),
-            application_did_finish_launching as extern "C" fn(&mut Object, Sel, *mut Object),
+            application_did_finish_launching
+                as extern "C" fn(&mut Object, Sel, *mut Object),
         );
         decl.add_method(
             sel!(application:openFile:),
-            application_open_file as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            application_open_file
+                as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
         );
         decl.add_method(
             sel!(applicationOpenUntitledFile:),
@@ -470,20 +476,43 @@ pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
         }
 
         // only give user-code a chance to intervene when sapp_quit() wasn't already called
-        if !native_display().lock().get(payload.id).unwrap().quit_ordered {
+        if !native_display()
+            .lock()
+            .get(payload.id)
+            .unwrap()
+            .quit_ordered
+        {
             // if window should be closed and event handling is enabled, give user code
             // a chance to intervene via sapp_cancel_quit()
-            native_display().lock().get_mut(payload.id).unwrap().quit_requested = true;
+            native_display()
+                .lock()
+                .get_mut(payload.id)
+                .unwrap()
+                .quit_requested = true;
             if let Some(event_handler) = payload.context() {
                 event_handler.quit_requested_event();
             }
 
             // user code hasn't intervened, quit the app
-            if native_display().lock().get(payload.id).unwrap().quit_requested {
-                native_display().lock().get_mut(payload.id).unwrap().quit_ordered = true;
+            if native_display()
+                .lock()
+                .get(payload.id)
+                .unwrap()
+                .quit_requested
+            {
+                native_display()
+                    .lock()
+                    .get_mut(payload.id)
+                    .unwrap()
+                    .quit_ordered = true;
             }
         }
-        if native_display().lock().get(payload.id).unwrap().quit_ordered {
+        if native_display()
+            .lock()
+            .get(payload.id)
+            .unwrap()
+            .quit_ordered
+        {
             YES
         } else {
             NO
@@ -567,7 +596,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     fn fire_mouse_event(this: &Object, event: ObjcId, down: bool, btn: MouseButton) {
         if let Some(payload) = get_window_payload(this) {
-
             unsafe {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
@@ -644,7 +672,12 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             let repeat: bool = unsafe { msg_send!(event, isARepeat) };
             if let Some(key) = get_event_keycode(event) {
                 if let Some(event_handler) = payload.context() {
-                    event_handler.key_down_event(key, mods, repeat, get_event_char(event));
+                    event_handler.key_down_event(
+                        key,
+                        mods,
+                        repeat,
+                        get_event_char(event),
+                    );
                 }
             }
         }
@@ -815,16 +848,18 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     decl.add_method(sel!(keyUp:), key_up as extern "C" fn(&Object, Sel, ObjcId));
 }
 
-
 pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
     decl.add_ivar::<*mut c_void>(VIEW_CLASS_NAME);
 
     decl.add_protocol(
-        Protocol::get("NSTextInputClient").expect("failed to get NSTextInputClient protocol"),
+        Protocol::get("NSTextInputClient")
+            .expect("failed to get NSTextInputClient protocol"),
     );
-    decl.add_protocol(Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"));
+    decl.add_protocol(
+        Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
+    );
 
     extern "C" fn display_layer(view: &mut Object, sel: Sel, _layer_id: ObjcId) {
         println!("display_layer");
@@ -877,7 +912,6 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                     EventHandlerAction::Init => {
                         let mut d = native_display().lock();
                         let d = d.get_mut(id).unwrap();
-                        println!("{:?}", id);
 
                         // Initialization should happen only once
                         if !d.has_initialized {
@@ -944,11 +978,16 @@ fn get_window_payload(this: &Object) -> Option<&mut MacosDisplay> {
 }
 
 struct View {
-    inner: StrongPtr
+    inner: StrongPtr,
 }
 
 impl View {
-    unsafe fn create_metal_view(_: NSRect, sample_count: i32, class_name: &str, display: &mut MacosDisplay) -> Self {
+    unsafe fn create_metal_view(
+        _: NSRect,
+        sample_count: i32,
+        class_name: &str,
+        display: &mut MacosDisplay,
+    ) -> Self {
         let mtl_device_obj = MTLCreateSystemDefaultDevice();
         let view_class = define_metal_view_class(class_name);
         let view: ObjcId = msg_send![view_class, alloc];
@@ -1046,9 +1085,11 @@ impl<'a> App {
 
         unsafe {
             let app_delegate_class = define_app_delegate();
-            let app_delegate_instance = StrongPtr::new(msg_send![app_delegate_class, new]);
+            let app_delegate_instance =
+                StrongPtr::new(msg_send![app_delegate_class, new]);
 
-            let ns_app = StrongPtr::new(msg_send![class!(NSApplication), sharedApplication]);
+            let ns_app =
+                StrongPtr::new(msg_send![class!(NSApplication), sharedApplication]);
             let () = msg_send![*ns_app, setDelegate: *app_delegate_instance];
             let () = msg_send![
                 *ns_app,
@@ -1108,7 +1149,8 @@ unsafe impl Sync for Window {}
 impl Window {
     pub async fn new_window<F>(
         conf: crate::conf::Conf,
-        f: F) -> Result<Self, Box<dyn std::error::Error>>
+        f: F,
+    ) -> Result<Self, Box<dyn std::error::Error>>
     where
         // F: 'static + FnMut(&Window),
         F: 'static + FnOnce() -> Box<dyn EventHandler>,
@@ -1185,7 +1227,9 @@ impl Window {
 
             assert!(!window.is_null());
 
-            let window_delegate_class = define_cocoa_window_delegate(format!("RenderViewClassWithId{id}").as_str());
+            let window_delegate_class = define_cocoa_window_delegate(
+                format!("RenderViewClassWithId{id}").as_str(),
+            );
             let window_delegate = StrongPtr::new(msg_send![window_delegate_class, new]);
             let () = msg_send![*window, setDelegate: *window_delegate];
 
@@ -1200,7 +1244,7 @@ impl Window {
                 window_frame,
                 conf.sample_count,
                 format!("RenderWindowDelegateWithId{id}").as_str(),
-                &mut display
+                &mut display,
             );
             {
                 let mut d = native_display().lock();
@@ -1311,5 +1355,4 @@ impl Window {
             Ok(window_handle)
         }
     }
-    
 }

@@ -9,11 +9,7 @@ mod sugarloaf;
 pub mod tools;
 
 pub use crate::sugarloaf::{
-    Sugarloaf,
-    SugarloafErrors,
-    SugarloafWindow,
-    SugarloafWindowSize,
-    SugarloafRenderer,
+    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
 };
 pub use graphics::{SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics};
