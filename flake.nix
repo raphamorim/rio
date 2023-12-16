@@ -1,67 +1,70 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    systems.url = "github:nix-systems/default-linux";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { nixpkgs, rust-overlay, ... }:
+  outputs = { systems, nixpkgs, rust-overlay, ... }:
     let
-      system = "x86_64-linux";
+      eachSystem = nixpkgs.lib.genAttrs (import systems);
 
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ rust-overlay.overlays.default ];
-      };
+      # rio-pkg = pkgs.callPackge ({ rustPlatform, lib, ... }: rustPlatform.buildRustPackage {
+      #   pname = "rio";
 
-      rust-toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+      #   src = ./.;
+      #   cargoLock.lockFile = ./Cargo.lock;
 
-      rio-pkg = pkgs.callPackge ({ rustPlatform, lib, ... }: rustPlatform.buildRustPackage {
-        pname = "rio";
-
-        src = ./.;
-        cargoLock.lockFile = ./Cargo.lock;
-
-        meta = {
-          description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.";
-          homepage = "https://raphamorim.io/rio/";
-          license = lib.licenses.mit;
-        };
-      });
+      #   meta = {
+      #     description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.";
+      #     homepage = "https://raphamorim.io/rio/";
+      #     license = lib.licenses.mit;
+      #   };
+      # });
     in
     {
-      apps.${system}.default = {
-        type = "app";
-        program = "${rio-pkg}/bin/rio";
-      };
+      devShellls = eachSystem (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
 
-      overlays.default = final: prev: {
-        rio = rio-pkg;
-      };
+          rust-toolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+            extensions = [ "rust-src" "rust-analyzer" ];
+          };
+        in
+        {
+          default = pkgs.mkShell rec {
+            packages = with pkgs;
+              [
+                rust-toolchain
 
-      devShells.${system}.default = pkgs.mkShell rec {
-        packages = with pkgs; [
-          pkg-config
-          cmake
-          fontconfig
+                pkg-config
+                cmake
+                fontconfig
 
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
-          xorg.libxkbfile
-          xorg.xkbutils
-          xorg.xkbevd
-          xorg.libXScrnSaver
-          libxkbcommon
+                xorg.libX11
+                xorg.libXcursor
+                xorg.libXrandr
+                xorg.libXi
+                xorg.libxkbfile
+                xorg.xkbutils
+                xorg.xkbevd
+                xorg.libXScrnSaver
+                libxkbcommon
 
-          directx-shader-compiler
-          libGL
-          vulkan-headers
-          vulkan-loader
-          vulkan-tools
-        ] ++ [ rust-toolchain ];
+                directx-shader-compiler
+                libGL
+                vulkan-headers
+                vulkan-loader
+                vulkan-tools
 
-        LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath packages)}";
-      };
+                wayland
+              ] ++ [ rust-toolchain ];
+
+            LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgs.lib.makeLibraryPath packages) }";
+          };
+        });
     };
 }
