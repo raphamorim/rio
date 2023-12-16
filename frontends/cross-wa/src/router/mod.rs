@@ -81,6 +81,10 @@ impl EventHandler for Router {
                     font_database: self.font_database.clone(),
                 };
 
+                let hide_toolbar_buttons = self.config.window.decorations
+                    == rio_backend::config::window::Decorations::Buttonless
+                    || self.config.window.decorations
+                        == rio_backend::config::window::Decorations::Disabled;
                 let wa_conf = conf::Conf {
                     window_title: String::from("~"),
                     window_width: self.config.window.width,
@@ -89,7 +93,7 @@ impl EventHandler for Router {
                     transparency: self.config.window.background_opacity < 1.,
                     blur: self.config.window.blur,
                     hide_toolbar: !self.config.navigation.is_native(),
-                    hide_toolbar_buttons: self.config.window.macos_hide_toolbar_buttons,
+                    hide_toolbar_buttons,
                     tab_identifier: None,
                     ..Default::default()
                 };
@@ -141,10 +145,9 @@ impl EventHandler for Router {
                 // }
                 next = EventHandlerAction::Render;
             }
-            RioEvent::Title(title) => {
+            RioEvent::Title(title, subtitle) => {
                 if let Some(current) = &mut self.route {
-                    println!("set_window_title {:?}", current.id);
-                    window::set_window_title(current.id, title);
+                    window::set_window_title(current.id, title, subtitle);
                 }
             }
             RioEvent::CreateNativeTab(_) => {}
@@ -468,6 +471,10 @@ pub async fn run(
         font_database: font_database.clone(),
     };
 
+    let hide_toolbar_buttons = config.window.decorations
+        == rio_backend::config::window::Decorations::Buttonless
+        || config.window.decorations
+            == rio_backend::config::window::Decorations::Disabled;
     let wa_conf = conf::Conf {
         window_title: String::from("~"),
         window_width: config.window.width,
@@ -476,7 +483,7 @@ pub async fn run(
         transparency: config.window.background_opacity < 1.,
         blur: config.window.blur,
         hide_toolbar: !config.navigation.is_native(),
-        hide_toolbar_buttons: config.window.macos_hide_toolbar_buttons,
+        hide_toolbar_buttons,
         tab_identifier: None,
         ..Default::default()
     };

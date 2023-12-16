@@ -124,6 +124,14 @@ impl MacosDisplay {
             let _: () = msg_send![&*self.window, setSubtitle: &*subtitle];
         }
     }
+    fn set_title_and_subtitle(&self, title: &str, subtitle: &str) {
+        unsafe {
+            let title = str_to_nsstring(title);
+            let _: () = msg_send![&*self.window, setTitle: &*title];
+            let subtitle = str_to_nsstring(subtitle);
+            let _: () = msg_send![&*self.window, setSubtitle: &*subtitle];
+        }
+    }
     fn set_window_size(&mut self, new_width: u32, new_height: u32) {
         let mut frame: NSRect = unsafe { msg_send![self.window, frame] };
         frame.origin.y += frame.size.height;
@@ -286,7 +294,9 @@ impl MacosDisplay {
         match request {
             SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
             ShowMouse(show) => self.show_mouse(show),
-            SetWindowTitle(title) => self.set_title(&title),
+            SetWindowTitle(title, subtitle) => {
+                self.set_title_and_subtitle(&title, &subtitle)
+            }
             SetMouseCursor(icon) => self.set_mouse_cursor(icon),
             SetWindowSize {
                 new_width,
@@ -986,11 +996,7 @@ struct View {
 }
 
 impl View {
-    unsafe fn create_metal_view(
-        _: NSRect,
-        sample_count: i32,
-        class_name: &str,
-    ) -> Self {
+    unsafe fn create_metal_view(_: NSRect, sample_count: i32, class_name: &str) -> Self {
         let mtl_device_obj = MTLCreateSystemDefaultDevice();
         let view_class = define_metal_view_class(class_name);
         let view: ObjcId = msg_send![view_class, alloc];
@@ -1079,7 +1085,6 @@ pub enum NSWindowTabbingMode {
 
 pub struct App {
     ns_app: StrongPtr,
-    ns_app_delegate: StrongPtr,
 }
 
 impl<'a> App {
@@ -1101,15 +1106,13 @@ impl<'a> App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            Self {
-                ns_app,
-                ns_app_delegate: app_delegate_instance,
-            }
+            Self { ns_app }
         }
     }
 
     pub fn run(&self) {
         unsafe {
+            let () = msg_send![*self.ns_app, finishLaunching];
             // let nstimer: ObjcId = msg_send![
             //     class!(NSTimer),
             //     timerWithTimeInterval: 0.001
@@ -1121,22 +1124,8 @@ impl<'a> App {
             // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
             // let () =
             //     msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
-
             let () = msg_send![*self.ns_app, run];
         }
-        // let nstimer: ObjcId = msg_send![
-        //     class!(NSTimer),
-        //     timerWithTimeInterval: 0.001
-        //     target: self.displays.get(&0).unwrap().view
-        //     selector: sel!(timerFired:)
-        //     userInfo: nil
-        //     repeats: true
-        // ];
-        // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
-        // let () = msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
-
-        // let () = msg_send![self.ns_app, finishLaunching];
-        // // let () = msg_send![self.ns_app, run];
     }
 }
 
@@ -1341,6 +1330,12 @@ impl Window {
             } else {
                 let _: () = msg_send![*window, setTabbingMode:NSWindowTabbingMode::NSWindowTabbingModeDisallowed];
             }
+
+            let min_size = NSSize {
+                width: 200.,
+                height: 200.,
+            };
+            let _: () = msg_send![*window, setMinSize: min_size];
 
             let _: () = msg_send![*window, setRestorable: NO];
 

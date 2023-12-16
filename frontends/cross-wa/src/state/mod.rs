@@ -72,9 +72,14 @@ impl State {
 
         let dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
 
-        let mut color_automation = HashMap::new();
+        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
+            HashMap::new();
+
         for rule in &config.navigation.color_automation {
-            color_automation.insert(rule.program.to_string(), rule.color);
+            color_automation
+                .entry(rule.program.clone())
+                .or_default()
+                .insert(rule.path.clone(), rule.color);
         }
 
         State {

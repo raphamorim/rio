@@ -141,12 +141,12 @@ pub mod window {
     }
 
     /// Show or hide the mouse cursor
-    pub fn set_window_title(id: u16, title: String) {
+    pub fn set_window_title(id: u16, title: String, subtitle: String) {
         let d = native_display().lock();
         if let Some(d) = d.get(id) {
             let _ = d
                 .native_requests
-                .send(native::Request::SetWindowTitle(title));
+                .send(native::Request::SetWindowTitle(title, subtitle));
         }
     }
 
