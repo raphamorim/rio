@@ -21,8 +21,8 @@ use wa::*;
 
 struct Router {
     config: Rc<rio_backend::config::Config>,
-    routes: HashMap<u16, Route>,
-    current: u16,
+    route: Option<Route>,
+    id: Option<u16>,
     superloop: Superloop,
     scheduler: Scheduler,
     font_database: loader::Database,
@@ -50,10 +50,11 @@ impl EventHandler for Router {
             scale_factor,
         )
         .unwrap();
-        self.routes.insert(id, initial_route);
+        self.route = Some(initial_route);
+        self.id = Some(id);
     }
     #[inline]
-    fn process(&mut self) -> EventHandlerAction {
+    fn process(&mut self, window_id: u16) -> EventHandlerAction {
         let mut next = EventHandlerAction::Noop;
 
         // TODO:
@@ -70,11 +71,13 @@ impl EventHandler for Router {
                 next = EventHandlerAction::Init;
             }
             RioEvent::CreateWindow => {
+                self.superloop.send_event(RioEvent::PowerOn, 1);
+
                 let scheduler = Scheduler::new(self.superloop.clone());
                 let router = Router {
                 config: self.config.clone(),
-                current: 1,
-                routes: HashMap::new(),
+                route: None,
+                id: None,
                 superloop: self.superloop.clone(),
                 scheduler,
                 font_database: self.font_database.clone(),
@@ -98,15 +101,15 @@ impl EventHandler for Router {
                 ));
             }
             RioEvent::Paste => {
-                if let Some(value) = window::clipboard_get(self.current) {
-                    if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(value) = window::clipboard_get(window_id) {
+                    if let Some(current) = &mut self.route {
                         current.paste(&value, true);
                         next = EventHandlerAction::Render;
                     }
                 }
             }
             RioEvent::Copy(data) => {
-                window::clipboard_set(self.current, &data);
+                window::clipboard_set(window_id, &data);
             }
             RioEvent::UpdateConfig => {
                 let (config, _config_error) =
@@ -128,7 +131,7 @@ impl EventHandler for Router {
                 //     .screen
                 //     .update_config(config, self.window.winit_window.theme(), db);
 
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     current.update_config(&self.config);
                 }
 
@@ -141,26 +144,26 @@ impl EventHandler for Router {
                 next = EventHandlerAction::Render;
             }
             RioEvent::Title(title) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     window::set_window_title(current.id, title);
                 }
             }
             RioEvent::CreateNativeTab(_) => {}
             RioEvent::MouseCursorDirty => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     current.mouse.accumulated_scroll =
                         mouse::AccumulatedScroll::default();
                 }
             }
             RioEvent::Scroll(scroll) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     let mut terminal = current.ctx.current().terminal.lock();
                     terminal.scroll_display(scroll);
                     drop(terminal);
                 }
             }
             RioEvent::ClipboardLoad(clipboard_type, format) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     // if route.window.is_focused {
                     let text = format(current.clipboard_get(clipboard_type).as_str());
                     current
@@ -172,14 +175,14 @@ impl EventHandler for Router {
                 }
             }
             RioEvent::ClipboardStore(clipboard_type, content) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     // if current.is_focused {
                     current.clipboard_store(clipboard_type, content);
                     // }
                 }
             }
             RioEvent::PtyWrite(text) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     current
                         .ctx
                         .current_mut()
@@ -188,7 +191,7 @@ impl EventHandler for Router {
                 }
             }
             RioEvent::UpdateFontSize(action) => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     let should_update = match action {
                         0 => current.sugarloaf.layout.reset_font_size(),
                         2 => current.sugarloaf.layout.increase_font_size(),
@@ -238,7 +241,7 @@ impl EventHandler for Router {
     fn update(&mut self, opcode: u8) {
         match opcode.into() {
             UpdateOpcode::UpdateGraphicLibrary => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     let mut terminal = current.ctx.current().terminal.lock();
                     let graphics = terminal.graphics_take_queues();
                     if let Some(graphic_queues) = graphics {
@@ -254,7 +257,7 @@ impl EventHandler for Router {
                 }
             }
             UpdateOpcode::ForceRefresh => {
-                if let Some(current) = self.routes.get_mut(&self.current) {
+                if let Some(current) = &mut self.route {
                     if let Some(_err) = current
                         .sugarloaf
                         .update_font(self.config.fonts.to_owned(), None)
@@ -304,7 +307,7 @@ impl EventHandler for Router {
 
     #[inline]
     fn draw(&mut self) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             current.render();
         }
     }
@@ -316,11 +319,11 @@ impl EventHandler for Router {
         repeat: bool,
         character: Option<smol_str::SmolStr>,
     ) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                    self.superloop.send_event(RioEvent::Render, self.current);
+                    self.superloop.send_event(RioEvent::Render, self.id.unwrap());
                     return;
                 }
             }
@@ -329,13 +332,13 @@ impl EventHandler for Router {
         }
     }
     fn key_up_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             current.process_key_event(keycode, mods, false, false, None);
             current.render();
         }
     }
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -349,13 +352,13 @@ impl EventHandler for Router {
     }
     fn touch_event(&mut self, phase: TouchPhase, _id: u64, _x: f32, _y: f32) {
         if phase == TouchPhase::Started {
-            if let Some(current) = self.routes.get_mut(&self.current) {
+            if let Some(current) = &mut self.route {
                 current.mouse.accumulated_scroll = Default::default();
             }
         }
     }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             // if route.path != RoutePath::Terminal {
             //     return;
             // }
@@ -389,7 +392,7 @@ impl EventHandler for Router {
         }
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -398,7 +401,7 @@ impl EventHandler for Router {
         }
     }
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -407,7 +410,7 @@ impl EventHandler for Router {
         }
     }
     fn resize_event(&mut self, w: i32, h: i32, scale_factor: f32, rescale: bool) {
-        if let Some(current) = self.routes.get_mut(&self.current) {
+        if let Some(current) = &mut self.route {
             // let s = d.sugarloaf.clone().unwrap();
             // let mut s = s.lock();
             if rescale {
@@ -455,8 +458,8 @@ pub async fn run(
 
     let router = Router {
         config: config.clone(),
-        current: 1,
-        routes: HashMap::new(),
+        route: None,
+        id: None,
         superloop: superloop.clone(),
         scheduler,
         font_database: font_database.clone(),
