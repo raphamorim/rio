@@ -15,7 +15,40 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
+   create_tag:
+    outputs:
+      created: ${{ steps.status.outputs.created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Delete old nightly release
+        uses: dev-drprasad/delete-tag-and-release@v1.0
+        with:
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_release: true
+
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.1
+        with:
+          custom_tag: ${{ env.NIGHTLY_TAG }}
+          tag_prefix: ''
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: status
+        run: echo "created=true" >> "$GITHUB_OUTPUT"
+
   nightly-release-macos:
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: macos-11.0
     permissions:
       contents: write
@@ -87,6 +120,8 @@ jobs:
   #           release/debian/wayland/*
 
   nightly-release-windows:
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
     runs-on: windows-latest
     defaults:
       run:
