@@ -411,13 +411,69 @@ extern "C" fn application_open_file(
     }
 }
 
+#[repr(u64)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NSApplicationTerminateReply {
+    NSTerminateCancel = 0,
+    NSTerminateNow = 1,
+    NSTerminateLater = 2,
+}
+
 pub fn define_app_delegate() -> *const Class {
     let superclass = class!(NSObject);
     let mut decl = ClassDecl::new("NSAppDelegate", superclass).unwrap();
+
+    extern "C" fn application_should_terminate(
+        _self: &mut Object,
+        _sel: Sel,
+        _app: *mut Object,
+    ) -> u64 {
+        unsafe {
+            let panel: *mut Object = msg_send![class!(NSAlert), new];
+
+            let prompt = "Do you want to quit?";
+            let title = "Leave Rio terminal?";
+            let yes = "Yes";
+            let no = "No";
+            let cancel = "Cancel";
+
+            let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
+            let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:4];
+
+            let title_string: *mut Object = msg_send![class!(NSString), alloc];
+            let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:4];
+
+            let yes_string: *mut Object = msg_send![class!(NSString), alloc];
+            let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:4];
+
+            let no_string: *mut Object = msg_send![class!(NSString), alloc];
+            let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:4];
+
+            let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
+            let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:4];
+
+            let _: () = msg_send![panel, setMessageText: title_allocated_string];
+            let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
+            let _: () = msg_send![panel, addButtonWithTitle: yes_allocated_string];
+            let _: () = msg_send![panel, addButtonWithTitle: no_allocated_string];
+            let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
+            let response: std::ffi::c_long = msg_send![panel, runModal];
+            match response {
+                1000 => NSApplicationTerminateReply::NSTerminateNow as u64,
+                1001 | _ => NSApplicationTerminateReply::NSTerminateCancel as u64,
+            }
+        }
+    }
+
     unsafe {
         // decl.add_method(
         //     sel!(applicationDockMenu:),
         //     application_dock_menu as extern "C" fn(&mut Object, Sel, *mut Object) -> *mut Object,
+        // );
+        // decl.add_method(
+        //     sel!(applicationShouldTerminate:),
+        //     application_should_terminate
+        //         as extern "C" fn(&mut Object, Sel, *mut Object) -> u64,
         // );
         decl.add_method(
             sel!(applicationShouldTerminateAfterLastWindowClosed:),
@@ -458,137 +514,6 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
         }
     }
 }
-
-// pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
-//     extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
-//         let payload = get_window_payload(this);
-
-//         if payload.is_none() {
-//             return NO;
-//         }
-
-//         let payload = payload.unwrap();
-
-//         unsafe {
-//             let capture_manager =
-//                 msg_send_![class![MTLCaptureManager], sharedCaptureManager];
-//             msg_send_![capture_manager, stopCapture];
-//         }
-
-//         // only give user-code a chance to intervene when sapp_quit() wasn't already called
-//         if !native_display()
-//             .lock()
-//             .get(payload.id)
-//             .unwrap()
-//             .quit_ordered
-//         {
-//             // if window should be closed and event handling is enabled, give user code
-//             // a chance to intervene via sapp_cancel_quit()
-//             native_display()
-//                 .lock()
-//                 .get_mut(payload.id)
-//                 .unwrap()
-//                 .quit_requested = true;
-//             if let Some(event_handler) = payload.context() {
-//                 event_handler.quit_requested_event();
-//             }
-
-//             // user code hasn't intervened, quit the app
-//             if native_display()
-//                 .lock()
-//                 .get(payload.id)
-//                 .unwrap()
-//                 .quit_requested
-//             {
-//                 native_display()
-//                     .lock()
-//                     .get_mut(payload.id)
-//                     .unwrap()
-//                     .quit_ordered = true;
-//             }
-//         }
-//         if native_display()
-//             .lock()
-//             .get(payload.id)
-//             .unwrap()
-//             .quit_ordered
-//         {
-//             YES
-//         } else {
-//             NO
-//         }
-//     }
-
-    // extern "C" fn will_start_live_resize(this: &mut Object, _sel: Sel, _notification: ObjcId) {
-    //     if let Some(a) = get_window_payload(this) {
-    //     }
-    // }
-
-    // extern "C" fn did_end_live_resize(this: &mut Object, _sel: Sel, _notification: ObjcId) {
-    //     if let Some(a) = get_window_payload(this) {
-    //     }
-    // }
-
-    // extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
-    //     if let Some(payload) = get_window_payload(this) {
-    //         send_resize_event(payload, false);
-    //     }
-    // }
-
-    // extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
-    //     if let Some(payload) = get_window_payload(this) {
-    //         send_resize_event(payload, true);
-    //     }
-    // }
-    // extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-    //     if let Some(payload) = get_window_payload(this) {
-    //         payload.fullscreen = true;
-    //     }
-    // }
-    // extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-    //     if let Some(payload) = get_window_payload(this) {
-    //         payload.fullscreen = false;
-    //     }
-    // }
-    // let superclass = class!(NSObject);
-    // let mut decl = ClassDecl::new(window_delegate, superclass).unwrap();
-
-    // Add callback methods
-    // unsafe {
-        // decl.add_method(
-        //     sel!(windowShouldClose:),
-        //     window_should_close as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
-        // );
-        // decl.add_method(
-        //     sel!(windowDidResize:),
-        //     window_did_resize as extern "C" fn(&Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(windowDidChangeScreen:),
-        //     window_did_change_screen as extern "C" fn(&Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(windowDidEnterFullScreen:),
-        //     window_did_enter_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(windowDidExitFullScreen:),
-        //     window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(windowWillStartLiveResize:),
-        //     will_start_live_resize as extern "C" fn(&mut Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(windowDidEndLiveResize:),
-        //     did_end_live_resize as extern "C" fn(&mut Object, Sel, ObjcId),
-        // );
-    // }
-    // Store internal state as user data
-    // decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
-
-    // decl.register()
-// }
 
 // methods for both metal or OPENGL view
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
@@ -1006,7 +931,6 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
         if let Some(payload) = get_window_payload(this) {
-            // println!("draw_rect {:?}", payload.id);
             if payload.event_handler.is_none() {
                 let f = payload.f.take().unwrap();
                 payload.event_handler = Some(f());

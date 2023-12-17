@@ -566,6 +566,10 @@ pub extern "C" fn yes(_: &Object, _: Sel) -> BOOL {
     YES
 }
 
+pub extern "C" fn no1(_: &Object, _: Sel, _: ObjcId) -> BOOL {
+    NO
+}
+
 pub extern "C" fn yes1(_: &Object, _: Sel, _: ObjcId) -> BOOL {
     YES
 }
