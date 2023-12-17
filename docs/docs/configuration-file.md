@@ -90,6 +90,35 @@ Possible choices: `both`, `left` and `right`.
 option-as-alt = 'left'
 ```
 
+## Startup directory
+
+Directory the shell is started in. If this is unset the working directory of the parent process will be used.
+
+This configuration only works if `use-fork` is disabled
+
+```toml
+working-dir = "/Users/raphael/Documents/"
+```
+
+## Environment variables
+
+The example below sets fish as the default SHELL using env vars, please do not copy this if you do not need it.
+
+```toml
+env-vars = []
+```
+
+## Use fork
+
+Defaults for POSIX-based systems (Windows is not configurable):
+
+- MacOS: spawn processes
+- Linux/BSD: fork processes
+
+```toml
+use-fork = false
+```
+
 ## Window
 
 - `width` - define the intial window width.
@@ -304,54 +333,33 @@ Default:
 1. MacOS using fish shell from bin path:
 
 ```toml
-shell = { program = "/bin/fish", args = ["--login"] }
+[shell]
+program = "/bin/fish"
+args = ["--login"]
 ```
 
 2. Windows using powershell:
 
 ```toml
-shell = { program = "pwsh", args = [] }
+[shell]
+program = "pwsh"
+args = []
 ```
 
 3. Windows using powershell with login:
 
 ```toml
-shell = { program = "pwsh", args = ["-l"] }
+[shell]
+program = "pwsh"
+args = ["-l"]
 ```
 
 4. MacOS with tmux installed by homebrew:
 
 ```toml
-shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", "/var/www"] }
-```
-
-## Startup directory
-
-Directory the shell is started in. If this is unset the working directory of the parent process will be used.
-
-This configuration only works if `use-fork` is disabled
-
-```toml
-working-dir = "/Users/raphael/Documents/"
-```
-
-## Environment variables
-
-The example below sets fish as the default SHELL using env vars, please do not copy this if you do not need it.
-
-```toml
-env-vars = []
-```
-
-## Use fork
-
-Defaults for POSIX-based systems (Windows is not configurable):
-
-- MacOS: spawn processes
-- Linux/BSD: fork processes
-
-```toml
-use-fork = false
+[shell]
+program = "/opt/homebrew/bin/tmux"
+args = ["new-session", "-c", "/var/www"]
 ```
 
 ## Colors
