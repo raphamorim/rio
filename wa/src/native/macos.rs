@@ -25,8 +25,8 @@ const NSViewLayerContentsPlacementTopLeft: isize = 11;
 #[allow(non_upper_case_globals)]
 const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 
-const VIEW_CLASS_NAME: &str = "RioWindowView";
-const WINDOW_CLASS_NAME: &str = "RioWindow";
+const VIEW_IVAR_NAME: &str = "RioDisplay";
+const VIEW_CLASS_NAME: &str = "RioViewWithId";
 
 pub struct MacosDisplay {
     window: ObjcId,
@@ -266,7 +266,6 @@ impl MacosDisplay {
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
         let mut binding = native_display().lock();
-        println!("update_dimensions {:?}", self.id);
         let d = binding.get_mut(self.id).unwrap();
         let screen: ObjcId = msg_send![self.window, screen];
         let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
@@ -450,16 +449,6 @@ pub fn define_app_delegate() -> *const Class {
 fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     if let Some((w, h, scale_factor)) = unsafe { payload.update_dimensions() } {
         if let Some(event_handler) = payload.context() {
-            // let s = d.sugarloaf.clone().unwrap();
-            // let mut s = s.lock();
-            // s.resize(w.try_into().unwrap(), h.try_into().unwrap());
-            // if rescale {
-            //     s.rescale(scale_factor);
-            //     s.resize(w.try_into().unwrap(), h.try_into().unwrap());
-            //     s.calculate_bounds();
-            // } else {
-            //     s.resize(w.try_into().unwrap(), h.try_into().unwrap());
-            // }
             event_handler.resize_event(
                 w.try_into().unwrap(),
                 h.try_into().unwrap(),
@@ -470,118 +459,136 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     }
 }
 
-pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
-    extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
-        let payload = get_window_payload(this);
+// pub fn define_cocoa_window_delegate(window_delegate: &str) -> *const Class {
+//     extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
+//         let payload = get_window_payload(this);
 
-        if payload.is_none() {
-            return NO;
-        }
+//         if payload.is_none() {
+//             return NO;
+//         }
 
-        let payload = payload.unwrap();
+//         let payload = payload.unwrap();
 
-        unsafe {
-            let capture_manager =
-                msg_send_![class![MTLCaptureManager], sharedCaptureManager];
-            msg_send_![capture_manager, stopCapture];
-        }
+//         unsafe {
+//             let capture_manager =
+//                 msg_send_![class![MTLCaptureManager], sharedCaptureManager];
+//             msg_send_![capture_manager, stopCapture];
+//         }
 
-        // only give user-code a chance to intervene when sapp_quit() wasn't already called
-        if !native_display()
-            .lock()
-            .get(payload.id)
-            .unwrap()
-            .quit_ordered
-        {
-            // if window should be closed and event handling is enabled, give user code
-            // a chance to intervene via sapp_cancel_quit()
-            native_display()
-                .lock()
-                .get_mut(payload.id)
-                .unwrap()
-                .quit_requested = true;
-            if let Some(event_handler) = payload.context() {
-                event_handler.quit_requested_event();
-            }
+//         // only give user-code a chance to intervene when sapp_quit() wasn't already called
+//         if !native_display()
+//             .lock()
+//             .get(payload.id)
+//             .unwrap()
+//             .quit_ordered
+//         {
+//             // if window should be closed and event handling is enabled, give user code
+//             // a chance to intervene via sapp_cancel_quit()
+//             native_display()
+//                 .lock()
+//                 .get_mut(payload.id)
+//                 .unwrap()
+//                 .quit_requested = true;
+//             if let Some(event_handler) = payload.context() {
+//                 event_handler.quit_requested_event();
+//             }
 
-            // user code hasn't intervened, quit the app
-            if native_display()
-                .lock()
-                .get(payload.id)
-                .unwrap()
-                .quit_requested
-            {
-                native_display()
-                    .lock()
-                    .get_mut(payload.id)
-                    .unwrap()
-                    .quit_ordered = true;
-            }
-        }
-        if native_display()
-            .lock()
-            .get(payload.id)
-            .unwrap()
-            .quit_ordered
-        {
-            YES
-        } else {
-            NO
-        }
-    }
+//             // user code hasn't intervened, quit the app
+//             if native_display()
+//                 .lock()
+//                 .get(payload.id)
+//                 .unwrap()
+//                 .quit_requested
+//             {
+//                 native_display()
+//                     .lock()
+//                     .get_mut(payload.id)
+//                     .unwrap()
+//                     .quit_ordered = true;
+//             }
+//         }
+//         if native_display()
+//             .lock()
+//             .get(payload.id)
+//             .unwrap()
+//             .quit_ordered
+//         {
+//             YES
+//         } else {
+//             NO
+//         }
+//     }
 
-    extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
-            send_resize_event(payload, false);
-        }
-    }
+    // extern "C" fn will_start_live_resize(this: &mut Object, _sel: Sel, _notification: ObjcId) {
+    //     if let Some(a) = get_window_payload(this) {
+    //     }
+    // }
 
-    extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
-            send_resize_event(payload, true);
-        }
-    }
-    extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
-            payload.fullscreen = true;
-        }
-    }
-    extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
-            payload.fullscreen = false;
-        }
-    }
-    let superclass = class!(NSObject);
-    let mut decl = ClassDecl::new(window_delegate, superclass).unwrap();
+    // extern "C" fn did_end_live_resize(this: &mut Object, _sel: Sel, _notification: ObjcId) {
+    //     if let Some(a) = get_window_payload(this) {
+    //     }
+    // }
+
+    // extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
+    //     if let Some(payload) = get_window_payload(this) {
+    //         send_resize_event(payload, false);
+    //     }
+    // }
+
+    // extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
+    //     if let Some(payload) = get_window_payload(this) {
+    //         send_resize_event(payload, true);
+    //     }
+    // }
+    // extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
+    //     if let Some(payload) = get_window_payload(this) {
+    //         payload.fullscreen = true;
+    //     }
+    // }
+    // extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
+    //     if let Some(payload) = get_window_payload(this) {
+    //         payload.fullscreen = false;
+    //     }
+    // }
+    // let superclass = class!(NSObject);
+    // let mut decl = ClassDecl::new(window_delegate, superclass).unwrap();
 
     // Add callback methods
-    unsafe {
-        decl.add_method(
-            sel!(windowShouldClose:),
-            window_should_close as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
-        );
-        decl.add_method(
-            sel!(windowDidResize:),
-            window_did_resize as extern "C" fn(&Object, Sel, ObjcId),
-        );
-        decl.add_method(
-            sel!(windowDidChangeScreen:),
-            window_did_change_screen as extern "C" fn(&Object, Sel, ObjcId),
-        );
-        decl.add_method(
-            sel!(windowDidEnterFullScreen:),
-            window_did_enter_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
-        );
-        decl.add_method(
-            sel!(windowDidExitFullScreen:),
-            window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
-        );
-    }
+    // unsafe {
+        // decl.add_method(
+        //     sel!(windowShouldClose:),
+        //     window_should_close as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
+        // );
+        // decl.add_method(
+        //     sel!(windowDidResize:),
+        //     window_did_resize as extern "C" fn(&Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(windowDidChangeScreen:),
+        //     window_did_change_screen as extern "C" fn(&Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(windowDidEnterFullScreen:),
+        //     window_did_enter_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(windowDidExitFullScreen:),
+        //     window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(windowWillStartLiveResize:),
+        //     will_start_live_resize as extern "C" fn(&mut Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(windowDidEndLiveResize:),
+        //     did_end_live_resize as extern "C" fn(&mut Object, Sel, ObjcId),
+        // );
+    // }
     // Store internal state as user data
-    decl.add_ivar::<*mut c_void>(VIEW_CLASS_NAME);
+    // decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
 
-    decl.register()
-}
+    // decl.register()
+// }
 
 // methods for both metal or OPENGL view
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
@@ -674,6 +681,87 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     cursor: cursor_id
                 ];
             }
+        }
+    }
+
+    extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
+        let payload = get_window_payload(this);
+
+        if payload.is_none() {
+            return NO;
+        }
+
+        let payload = payload.unwrap();
+
+        unsafe {
+            let capture_manager =
+                msg_send_![class![MTLCaptureManager], sharedCaptureManager];
+            msg_send_![capture_manager, stopCapture];
+        }
+
+        // only give user-code a chance to intervene when sapp_quit() wasn't already called
+        if !native_display()
+            .lock()
+            .get(payload.id)
+            .unwrap()
+            .quit_ordered
+        {
+            // if window should be closed and event handling is enabled, give user code
+            // a chance to intervene via sapp_cancel_quit()
+            native_display()
+                .lock()
+                .get_mut(payload.id)
+                .unwrap()
+                .quit_requested = true;
+            if let Some(event_handler) = payload.context() {
+                event_handler.quit_requested_event();
+            }
+
+            // user code hasn't intervened, quit the app
+            if native_display()
+                .lock()
+                .get(payload.id)
+                .unwrap()
+                .quit_requested
+            {
+                native_display()
+                    .lock()
+                    .get_mut(payload.id)
+                    .unwrap()
+                    .quit_ordered = true;
+            }
+        }
+        if native_display()
+            .lock()
+            .get(payload.id)
+            .unwrap()
+            .quit_ordered
+        {
+            YES
+        } else {
+            NO
+        }
+    }
+
+    extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            send_resize_event(payload, false);
+        }
+    }
+
+    extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            send_resize_event(payload, true);
+        }
+    }
+    extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            payload.fullscreen = true;
+        }
+    }
+    extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            payload.fullscreen = false;
         }
     }
 
@@ -856,13 +944,33 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         sel!(flagsChanged:),
         flags_changed as extern "C" fn(&Object, Sel, ObjcId),
     );
+    decl.add_method(
+        sel!(windowShouldClose:),
+        window_should_close as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
+    );
+    decl.add_method(
+        sel!(windowDidResize:),
+        window_did_resize as extern "C" fn(&Object, Sel, ObjcId),
+    );
+    decl.add_method(
+        sel!(windowDidChangeScreen:),
+        window_did_change_screen as extern "C" fn(&Object, Sel, ObjcId),
+    );
+    decl.add_method(
+        sel!(windowDidEnterFullScreen:),
+        window_did_enter_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
+    );
+    decl.add_method(
+        sel!(windowDidExitFullScreen:),
+        window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
+    );
     decl.add_method(sel!(keyUp:), key_up as extern "C" fn(&Object, Sel, ObjcId));
 }
 
 pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
-    decl.add_ivar::<*mut c_void>(VIEW_CLASS_NAME);
+    decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
 
     decl.add_protocol(
         Protocol::get("NSTextInputClient")
@@ -873,7 +981,6 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     );
 
     extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
-
         // if let Some(payload) = get_window_payload(this) {
         //     println!("{:?}", payload.id);
         // }
@@ -991,7 +1098,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
 fn get_window_payload(this: &Object) -> Option<&mut MacosDisplay> {
     unsafe {
-        let ptr: *mut c_void = *this.get_ivar(VIEW_CLASS_NAME);
+        let ptr: *mut c_void = *this.get_ivar(VIEW_IVAR_NAME);
         if ptr.is_null() {
             None
         } else {
@@ -1228,11 +1335,9 @@ impl Window {
 
             assert!(!window.is_null());
 
-            let window_delegate_class = define_cocoa_window_delegate(
-                format!("RenderViewClassWithId{id}").as_str(),
-            );
-            let window_delegate = StrongPtr::new(msg_send![window_delegate_class, new]);
-            let () = msg_send![*window, setDelegate: *window_delegate];
+            // let window_delegate_class = define_cocoa_window_delegate(
+            //     format!("RenderViewClassWithId{id}").as_str(),
+            // );
 
             let title = str_to_nsstring(&conf.window_title);
 
@@ -1244,7 +1349,7 @@ impl Window {
             let view = View::create_metal_view(
                 window_frame,
                 conf.sample_count,
-                format!("RenderWindowDelegateWithId{id}").as_str(),
+                format!("{VIEW_CLASS_NAME}{id}").as_str(),
             );
             {
                 let mut d = native_display().lock();
@@ -1255,7 +1360,9 @@ impl Window {
             display.window = *window;
             display.view = **view.as_strong_ptr();
 
-            let () = msg_send![*window, setContentView: **view.as_strong_ptr()];
+            // let window_delegate = StrongPtr::new(msg_send![window_delegate_class, new]);
+            let () = msg_send![*window, setDelegate: display.view];
+            let () = msg_send![*window, setContentView: display.view];
 
             let dimensions = display.update_dimensions().unwrap_or((
                 conf.window_width,
@@ -1273,10 +1380,10 @@ impl Window {
             let boxed_view = Box::into_raw(Box::new(display));
 
             (*(*boxed_view).view)
-                .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
+                .set_ivar(VIEW_IVAR_NAME, &mut *boxed_view as *mut _ as *mut c_void);
 
-            (**window_delegate)
-                .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
+            // (**window_delegate)
+            //     .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
 
             // let nstimer: ObjcId = msg_send![
             //     class!(NSTimer),
