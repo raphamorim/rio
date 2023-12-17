@@ -164,11 +164,11 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     }
 
     let is_transparent = config.window.background_opacity < 1.;
-
     winit_window.set_transparent(is_transparent);
-
     #[cfg(target_os = "macos")]
     set_has_shadow(&winit_window, !is_transparent);
+
+    winit_window.set_blur(config.window.blur);
 
     winit_window
 }
