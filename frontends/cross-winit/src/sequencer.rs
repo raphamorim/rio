@@ -390,7 +390,10 @@ impl Sequencer {
                             || self.config.window.blur
                         {
                             for (_id, route) in self.router.routes.iter_mut() {
-                                route.update_config(&self.config, &self.router.font_database);
+                                route.update_config(
+                                    &self.config,
+                                    &self.router.font_database,
+                                );
 
                                 route.redraw();
                             }
