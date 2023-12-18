@@ -162,6 +162,33 @@ blinking-cursor = false
 # Example:
 # option-as-alt = 'left'
 
+# Startup directory
+#
+# Directory the shell is started in. If this is unset the working
+# directory of the parent process will be used.
+#
+# This configuration only has effect if use-fork is disabled
+#
+# Example:
+# working-dir = "/Users/raphael/Documents/"
+
+# Environment variables
+#
+# The example below sets fish as the default SHELL using env vars
+# please do not copy this if you do not need
+#
+# Example:
+# env-vars = []
+
+# Use fork
+#
+# Defaults for POSIX-based systems (Windows is not configurable):
+# MacOS: spawn processes
+# Linux/BSD: fork processes
+#
+# Example:
+# use-fork = false
+
 # Window configuration
 #
 # • width - define the intial window width.
@@ -316,46 +343,27 @@ blinking-cursor = false
 #
 # Example 1 using fish shell from bin path:
 #
-# shell = { program = "/bin/fish", args = ["--login"] }
+# [shell]
+# program = "/bin/fish"
+# args = ["--login"]
 #
 # Example 2 for Windows using powershell
 #
-# shell = { program = "pwsh", args = [] }
+# [shell]
+# program = "pwsh"
+# args = []
 #
 # Example 3 for Windows using powershell with login
 #
-# shell = { program = "pwsh", args = ["-l"] }
+# [shell]
+# program = "pwsh"
+# args = ["-l"]
 #
 # Example 4 for MacOS with tmux installed by homebrew
 #
-# shell = { program = "/opt/homebrew/bin/tmux", args = ["new-session", "-c", # "/var/www"] }
-
-# Startup directory
-#
-# Directory the shell is started in. If this is unset the working
-# directory of the parent process will be used.
-#
-# This configuration only has effect if use-fork is disabled
-#
-# Example:
-# working-dir = "/Users/raphael/Documents/"
-
-# Environment variables
-#
-# The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need
-#
-# Example:
-# env-vars = []
-
-# Use fork
-#
-# Defaults for POSIX-based systems (Windows is not configurable):
-# MacOS: spawn processes
-# Linux/BSD: fork processes
-#
-# Example:
-# use-fork = false
+# [shell]
+# program = "/opt/homebrew/bin/tmux"
+# args = ["new-session", "-c", "/var/www"]
 
 # Colors
 #
