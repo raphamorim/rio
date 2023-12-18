@@ -918,11 +918,10 @@ impl Route {
     #[inline]
     pub fn trigger_hyperlink(&self) -> bool {
         #[cfg(target_os = "macos")]
-        let is_hyperlink_key_active = false;
-        // let is_hyperlink_key_active = self.modifiers.state().super_key();
+        let is_hyperlink_key_active = self.modifiers.logo;
 
         #[cfg(not(target_os = "macos"))]
-        let is_hyperlink_key_active = self.modifiers.state().alt_key();
+        let is_hyperlink_key_active = self.modifiers.alt;
 
         if !is_hyperlink_key_active || !self.state.has_hyperlink_range() {
             return false;
