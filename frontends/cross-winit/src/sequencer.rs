@@ -386,12 +386,11 @@ impl Sequencer {
                     {
                         // This is a hacky solution to force an update to the window on linux
                         // Fix is only for windows with opacity that aren't being computed at all
-                        if self.config.window.background_opacity < 1. {
+                        if self.config.window.background_opacity < 1.
+                            || self.config.window.blur
+                        {
                             for (_id, route) in self.router.routes.iter_mut() {
-                                route.update_config(
-                                    &self.config,
-                                    &self.router.font_database,
-                                );
+                                route.update_config(&self.config, &self.router.font_database);
 
                                 route.redraw();
                             }
