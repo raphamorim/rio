@@ -146,7 +146,7 @@ pub mod window {
         if let Some(d) = d.get(id) {
             let _ = d
                 .native_requests
-                .send(native::Request::SetWindowTitle(title, subtitle));
+                .send(native::Request::SetWindowTitle { title, subtitle });
         }
     }
 

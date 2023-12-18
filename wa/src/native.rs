@@ -104,7 +104,7 @@ impl NativeDisplayData {
 pub(crate) enum Request {
     SetCursorGrab(bool),
     ShowMouse(bool),
-    SetWindowTitle(String, String),
+    SetWindowTitle { title: String, subtitle: String },
     SetMouseCursor(crate::CursorIcon),
     SetWindowSize { new_width: u32, new_height: u32 },
     SetFullscreen(bool),
