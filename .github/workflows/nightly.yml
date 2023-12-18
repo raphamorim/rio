@@ -15,7 +15,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-   create_tag:
+  create_tag:
     outputs:
       created: ${{ steps.status.outputs.created }}
     runs-on: ubuntu-latest
