@@ -2,9 +2,9 @@
 
 ## Unreleased
 
+- **Breaking**: Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
 - Added support for path based color automation.
 - Added `window.decorations` property, available options are `Enabled`, `Disabled`, `Transparent` and `Buttonless`.
-- Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
 
 ## 0.0.32
 
