@@ -25,6 +25,57 @@ struct Router {
     superloop: Superloop,
     scheduler: Scheduler,
     font_database: loader::Database,
+    #[cfg(target_os = "macos")]
+    tab_group: Option<u64>,
+}
+
+fn create_window(
+    config: &Rc<rio_backend::config::Config>,
+    font_database: &loader::Database,
+    tab_group: Option<u64>,
+) -> Result<wa::native::macos::Window, Box<dyn std::error::Error>> {
+    let mut superloop = Superloop::new();
+    superloop.send_event(RioEvent::PowerOn, 0);
+
+    let scheduler = Scheduler::new(superloop.clone());
+    let router = Router {
+        config: config.clone(),
+        route: None,
+        superloop: superloop,
+        scheduler,
+        font_database: font_database.clone(),
+        tab_group,
+    };
+
+    let hide_toolbar_buttons = config.window.decorations
+        == rio_backend::config::window::Decorations::Buttonless
+        || config.window.decorations
+            == rio_backend::config::window::Decorations::Disabled;
+
+    #[cfg(target_os = "macos")]
+    let tab_identifier = if tab_group.is_some() {
+        Some(format!("tab-group-{}", tab_group.unwrap()))
+    } else {
+        None
+    };
+
+    let wa_conf = conf::Conf {
+        window_title: String::from("~"),
+        window_width: config.window.width,
+        window_height: config.window.height,
+        fullscreen: config.window.is_fullscreen(),
+        transparency: config.window.background_opacity < 1.,
+        blur: config.window.blur,
+        hide_toolbar: !config.navigation.is_native(),
+        hide_toolbar_buttons,
+        #[cfg(target_os = "macos")]
+        tab_identifier: tab_identifier,
+        ..Default::default()
+    };
+
+    futures::executor::block_on(wa::native::macos::Window::new_window(wa_conf, || {
+        Box::new(router)
+    }))
 }
 
 impl EventHandler for Router {
@@ -69,38 +120,22 @@ impl EventHandler for Router {
                 next = EventHandlerAction::Init;
             }
             RioEvent::CreateWindow => {
-                let mut superloop = Superloop::new();
-                superloop.send_event(RioEvent::PowerOn, 0);
-
-                let scheduler = Scheduler::new(superloop.clone());
-                let router = Router {
-                    config: self.config.clone(),
-                    route: None,
-                    superloop: superloop,
-                    scheduler,
-                    font_database: self.font_database.clone(),
+                #[cfg(target_os = "macos")]
+                let new_tab_group = if self.config.navigation.is_native() {
+                    if let Some(current_tab_group) = self.tab_group {
+                        Some(current_tab_group + 1)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 };
 
-                let hide_toolbar_buttons = self.config.window.decorations
-                    == rio_backend::config::window::Decorations::Buttonless
-                    || self.config.window.decorations
-                        == rio_backend::config::window::Decorations::Disabled;
-                let wa_conf = conf::Conf {
-                    window_title: String::from("~"),
-                    window_width: self.config.window.width,
-                    window_height: self.config.window.height,
-                    fullscreen: self.config.window.is_fullscreen(),
-                    transparency: self.config.window.background_opacity < 1.,
-                    blur: self.config.window.blur,
-                    hide_toolbar: !self.config.navigation.is_native(),
-                    hide_toolbar_buttons,
-                    tab_identifier: None,
-                    ..Default::default()
-                };
-
-                let _ = futures::executor::block_on(
-                    wa::native::macos::Window::new_window(wa_conf, || Box::new(router)),
-                );
+                let _ = create_window(&self.config, &self.font_database, new_tab_group);
+            }
+            #[cfg(target_os = "macos")]
+            RioEvent::CreateNativeTab(_) => {
+                let _ = create_window(&self.config, &self.font_database, self.tab_group);
             }
             RioEvent::Paste => {
                 if let Some(value) = window::clipboard_get(window_id) {
@@ -150,7 +185,6 @@ impl EventHandler for Router {
                     window::set_window_title(current.id, title, subtitle);
                 }
             }
-            RioEvent::CreateNativeTab(_) => {}
             RioEvent::MouseCursorDirty => {
                 if let Some(current) = &mut self.route {
                     current.mouse.accumulated_scroll =
@@ -463,18 +497,27 @@ pub async fn run(
 
     superloop.send_event(RioEvent::PowerOn, 0);
 
+    #[cfg(target_os = "macos")]
+    let (tab_group, tab_identifier) = if config.navigation.is_native() {
+        (Some(0), Some(String::from("tab-group-0")))
+    } else {
+        (None, None)
+    };
+
     let router = Router {
         config: config.clone(),
         route: None,
         superloop: superloop.clone(),
         scheduler,
         font_database: font_database.clone(),
+        tab_group,
     };
 
     let hide_toolbar_buttons = config.window.decorations
         == rio_backend::config::window::Decorations::Buttonless
         || config.window.decorations
             == rio_backend::config::window::Decorations::Disabled;
+
     let wa_conf = conf::Conf {
         window_title: String::from("~"),
         window_width: config.window.width,
@@ -484,7 +527,8 @@ pub async fn run(
         blur: config.window.blur,
         hide_toolbar: !config.navigation.is_native(),
         hide_toolbar_buttons,
-        tab_identifier: None,
+        #[cfg(target_os = "macos")]
+        tab_identifier,
         ..Default::default()
     };
 

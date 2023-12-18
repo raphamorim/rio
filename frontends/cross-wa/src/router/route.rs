@@ -63,6 +63,8 @@ pub struct Route {
     clipboard: Clipboard,
     pub sugarloaf: Sugarloaf,
     pub modifiers: ModifiersState,
+    #[cfg(target_os = "macos")]
+    tab_identifier: String,
 }
 
 impl Route {
@@ -202,6 +204,8 @@ impl Route {
             state,
             superloop,
             modifiers: ModifiersState::empty(),
+            #[cfg(target_os = "macos")]
+            tab_identifier: format!("id-{id}"),
         })
     }
 
@@ -691,8 +695,8 @@ impl Route {
                     }
                     Act::TabCreateNew => {
                         self.superloop.send_event(
-                            RioEvent::CreateNativeTab(Some(String::from("aa"))),
-                            1,
+                            RioEvent::CreateNativeTab(Some(self.tab_identifier.clone())),
+                            0,
                         );
                         // let redirect = true;
 

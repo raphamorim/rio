@@ -293,7 +293,7 @@ impl MacosDisplay {
         match request {
             SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
             ShowMouse(show) => self.show_mouse(show),
-            SetWindowTitle(title, subtitle) => {
+            SetWindowTitle { title, subtitle } => {
                 self.set_title_and_subtitle(&title, &subtitle)
             }
             SetMouseCursor(icon) => self.set_mouse_cursor(icon),
