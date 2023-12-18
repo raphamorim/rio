@@ -381,7 +381,9 @@ impl Sequencer {
                     {
                         crate::ui::appkit::create_toolbar();
                     }
+                }
 
+                Event::Resumed => {
                     #[cfg(not(any(target_os = "macos", windows)))]
                     {
                         // This is a hacky solution to force an update to the window on linux
@@ -400,8 +402,6 @@ impl Sequencer {
                         }
                     }
                 }
-
-                Event::Resumed => {}
 
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::CloseRequested,
