@@ -238,6 +238,11 @@ pub enum CursorIcon {
     NWSEResize,
 }
 
+#[cfg(target_os = "macos")]
+pub type App = native::macos::App;
+#[cfg(target_os = "macos")]
+pub type Window = native::macos::Window;
+
 // pub fn run()
 // {
 //     #[cfg(target_os = "macos")]

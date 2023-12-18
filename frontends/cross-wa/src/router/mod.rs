@@ -7,16 +7,11 @@ use crate::event::{RioEvent, UpdateOpcode};
 use crate::ime::Ime;
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rio_backend::event::EventPayload;
 use rio_backend::superloop::Superloop;
 use route::Route;
-use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
-use std::time::Duration;
 use sugarloaf::font::loader;
-
 use wa::*;
 
 struct Router {
@@ -33,7 +28,7 @@ fn create_window(
     config: &Rc<rio_backend::config::Config>,
     font_database: &loader::Database,
     tab_group: Option<u64>,
-) -> Result<wa::native::macos::Window, Box<dyn std::error::Error>> {
+) -> Result<Window, Box<dyn std::error::Error>> {
     let mut superloop = Superloop::new();
     superloop.send_event(RioEvent::PowerOn, 0);
 
@@ -73,9 +68,7 @@ fn create_window(
         ..Default::default()
     };
 
-    futures::executor::block_on(wa::native::macos::Window::new_window(wa_conf, || {
-        Box::new(router)
-    }))
+    futures::executor::block_on(Window::new_window(wa_conf, || Box::new(router)))
 }
 
 impl EventHandler for Router {
@@ -486,7 +479,6 @@ pub async fn run(
     let mut superloop = Superloop::new();
 
     let config = Rc::new(config);
-
     let _ =
         crate::watcher::watch(rio_backend::config::config_dir_path(), superloop.clone());
 
@@ -532,8 +524,8 @@ pub async fn run(
         ..Default::default()
     };
 
-    let app: wa::native::macos::App = wa::native::macos::App::new();
-    let _ = wa::native::macos::Window::new_window(wa_conf, || Box::new(router)).await;
+    let app: App = App::new();
+    let _ = Window::new_window(wa_conf, || Box::new(router)).await;
     app.run();
     Ok(())
 }
