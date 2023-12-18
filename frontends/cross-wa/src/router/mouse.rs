@@ -6,12 +6,6 @@ use rio_backend::crosswords::pos::Pos;
 use std::time::Instant;
 use wa::MouseButton;
 
-#[derive(Debug)]
-pub enum State {
-    Clicked,
-    Released,
-}
-
 #[derive(Default, Debug)]
 pub struct AccumulatedScroll {
     /// Scroll we should perform along `x` axis.

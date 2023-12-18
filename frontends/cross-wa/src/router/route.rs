@@ -186,6 +186,9 @@ impl Route {
         );
 
         sugarloaf.set_background_color(background_color);
+        if let Some(image) = background_image {
+            sugarloaf.set_background_image(&image);
+        }
         // TODO: Bug sugarloaf is not starting with right width/height
         // s.resize(width, height);
         // sugarloaf.resize(width as u32, height as u32);
