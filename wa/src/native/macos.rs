@@ -27,7 +27,6 @@ const NSViewLayerContentsPlacementTopLeft: isize = 11;
 const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 
 const VIEW_IVAR_NAME: &str = "RioDisplay";
-const MARKED_TEXT_IVAR_NAME: &str = "RioDisplayMarkedText";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
 
 const NSNotFound: i32 = i32::MAX;
@@ -559,7 +558,7 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     }
 }
 
-// methods for both metal or OPENGL view
+#[inline]
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_window_payload(this) {
@@ -637,7 +636,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
         println!("selected_range");
-        NSRange::new(NSNotFound as _, 0)
+        NSRange {
+            location: 0,
+            length: 1,
+        }
     }
 
     // Called by the IME when inserting composed text and/or emoji
@@ -645,15 +647,36 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         this: &Object,
         _sel: Sel,
         astring: ObjcId,
-        replacement_range: NSRange,
+        _replacement_range: NSRange,
     ) {
-        println!("insert_text_replacement_range");
-        let s = unsafe { nsstring_to_string(astring) };
-        if let Some(payload) = get_window_payload(this) {
-            payload.marked_text.clear();
-            // payload.ime_last_event.replace(s);
-            // payload.events.dispatch(WindowEvent::KeyEvent(event));
-            payload.ime = ImeState::Commited;
+        println!("insertText:replacementRange:");
+
+        // SAFETY: This method is guaranteed to get either a `NSString` or a `NSAttributedString`.
+        // let string = if string.is_kind_of::<NSAttributedString>() {
+        //     let string: *const NSObject = string;
+        //     let string: *const NSAttributedString = string.cast();
+        //     unsafe { &*string }.string().to_string()
+        // } else {
+        //     let string: *const NSObject = string;
+        //     let string: *const NSString = string.cast();
+        //     unsafe { &*string }.to_string()
+        // };
+
+        let string = nsstring_to_string(astring);
+        let is_control = string.chars().next().map_or(false, |c| c.is_control());
+
+        if !is_control {
+            if let Some(payload) = get_window_payload(this) {
+                // Commit only if we have marked text.
+                // if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
+                if let Some(event_handler) = payload.context() {
+                    event_handler
+                        .ime_event(crate::ImeState::Preedit(String::new(), None));
+                    event_handler.ime_event(crate::ImeState::Commit(string));
+                    payload.ime = ImeState::Commited;
+                }
+                // }
+            }
         }
     }
 
@@ -664,30 +687,36 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        println!("set_marked_text_selected_range_replacement_range");
+        println!("setMarkedText:selectedRange:replacementRange:");
         let s = unsafe { nsstring_to_string(astring) };
 
         if let Some(payload) = get_window_payload(this) {
-            payload.marked_text = s.to_string().into();
+            let preedit_string: String = s.to_string().into();
+            payload.marked_text = preedit_string.clone();
 
-            /*
-            let key_is_down = inner.key_is_down.take().unwrap_or(true);
-
-            let key = KeyCode::composed(s);
-
-            let event = KeyEvent {
-                key,
-                modifiers: Modifiers::NONE,
-                repeat_count: 1,
-                key_is_down,
+            if payload.ime == ImeState::Disabled {
+                if let Some(event_handler) = payload.context() {
+                    event_handler.ime_event(crate::ImeState::Enabled);
+                }
             }
-            .normalize_shift();
 
-            inner.ime_last_event.replace(event.clone());
-            inner.events.dispatch(WindowEvent::KeyEvent(event));
-            */
-            payload.ime_last_event.take();
-            payload.ime = ImeState::Preedit;
+            if payload.marked_text.len() > 0 {
+                payload.ime = ImeState::Preedit;
+            } else {
+                // In case the preedit was cleared, set IME into the Ground state.
+                payload.ime = ImeState::Ground;
+            }
+
+            let cursor_range = if payload.marked_text.is_empty() {
+                None
+            } else {
+                Some((payload.marked_text.len(), payload.marked_text.len()))
+            };
+
+            if let Some(event_handler) = payload.context() {
+                event_handler
+                    .ime_event(crate::ImeState::Preedit(preedit_string, cursor_range));
+            }
         }
     }
 
@@ -722,6 +751,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         // the input method editor
         let window: ObjcId = unsafe { msg_send![this, window] };
         let frame: NSRect = unsafe { msg_send![window, frame] };
+        return frame;
+
         let content: NSRect =
             unsafe { msg_send![window, contentRectForFrameRect: frame] };
         let backing_frame: NSRect =
@@ -750,15 +781,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> ObjcId {
         println!("valid_attributes_for_marked_text");
+
         // FIXME: returns NSArray<NSAttributedStringKey> *
         let content: &[ObjcId; 0] = &[];
-        let arr = unsafe {
+        unsafe {
             msg_send![class!(NSArray),
                 arrayWithObjects: content.as_ptr()
                 count: content.len()
             ]
-        };
-        arr
+        }
     }
 
     extern "C" fn attributed_substring_for_proposed_range(
@@ -896,7 +927,22 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn key_down(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_window_payload(this) {
+            // eprintln!(
+            //     "key_common ENTER (down={} chars={:?} unmod={:?} modifiers={:?}",
+            //     key_is_down, chars, unmod, modifiers
+            // );
+
             let mods = get_event_key_modifier(event);
+            if mods.is_empty() {
+                unsafe {
+                    let input_context: ObjcId = msg_send![this, inputContext];
+                    let res: BOOL = msg_send![input_context, handleEvent: event];
+                    if res == YES {
+                        return;
+                    }
+                }
+            }
+
             let repeat: bool = unsafe { msg_send!(event, isARepeat) };
             if let Some(key) = get_event_keycode(event) {
                 if let Some(event_handler) = payload.context() {
@@ -1145,21 +1191,11 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     // When keyboard changes should drop IME
     // #[method_id(selectedKeyboardInputSource)]
     // pub fn selectedKeyboardInputSource(&self) -> Option<Id<NSTextInputSourceIdentifier>>;
-
-    decl.add_ivar::<ObjcId>(MARKED_TEXT_IVAR_NAME);
-    decl.add_protocol(
-        Protocol::get("NSTextInputClient")
-            .expect("failed to get NSTextInputClient protocol"),
-    );
-    decl.add_protocol(
-        Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
-    );
 }
 
 pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
-    decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
 
     extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
         // if let Some(payload) = get_window_payload(this) {
@@ -1272,6 +1308,15 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
         view_base_decl(&mut decl);
     }
+
+    decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
+    decl.add_protocol(
+        Protocol::get("NSTextInputClient")
+            .expect("failed to get NSTextInputClient protocol"),
+    );
+    decl.add_protocol(
+        Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
+    );
 
     decl.register()
 }
