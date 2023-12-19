@@ -152,7 +152,7 @@ blinking-cursor = false
 # define x axis padding (default is 0)
 #
 # Example:
-# padding-x = 0
+# padding-x = 10
 
 # Option as Alt
 #

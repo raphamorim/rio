@@ -77,7 +77,7 @@ theme = "dracula"
 Define x axis padding (default is 0)
 
 ```toml
-padding-x = 0
+padding-x = 10
 ```
 
 ## Option as Alt
