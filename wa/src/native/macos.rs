@@ -1546,15 +1546,9 @@ impl Window {
                 modifiers: Modifiers::default(),
             };
 
-            // let autoreleasePool: *mut Object = msg_send![class!(NSAutoreleasePool), new];
-
-            // let window_masks = if conf.hide_toolbar {
-            //     NSWindowStyleMask::NSBorderlessWindowMask as u64
-            //         | NSWindowStyleMask::NSMiniaturizableWindowMask as u64
-            //         | NSWindowStyleMask::NSResizableWindowMask as u64
-            // } else {
             let window_masks = if conf.hide_toolbar {
                 NSWindowStyleMask::NSTitledWindowMask as u64
+                // NSWindowStyleMask::NSBorderlessWindowMask as u64
                     | NSWindowStyleMask::NSClosableWindowMask as u64
                     | NSWindowStyleMask::NSMiniaturizableWindowMask as u64
                     | NSWindowStyleMask::NSResizableWindowMask as u64
@@ -1648,7 +1642,7 @@ impl Window {
             assert!(!view.is_null());
 
             if conf.hide_toolbar {
-                // let () = msg_send![window, setMovableByWindowBackground: YES];
+                // let () = msg_send![*window, setMovableByWindowBackground: YES];
                 let () = msg_send![*window, setTitleVisibility: YES];
                 let () = msg_send![*window, setTitlebarAppearsTransparent: YES];
             }
