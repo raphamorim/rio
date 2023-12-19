@@ -349,7 +349,6 @@ impl EventHandler for Router {
         if let Some(current) = &mut self.route {
             match ime_state {
                 ImeState::Commit(text) => {
-                    println!("commit {}", text);
                     // Don't use bracketed paste for single char input.
                     current.paste(&text, text.chars().count() > 1);
                 }

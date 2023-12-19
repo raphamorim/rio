@@ -51,7 +51,7 @@ unsafe impl objc::Encode for NSRangePointer {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum ImeState {
     // The IME events are disabled, so only `ReceivedCharacter` is being sent to the user.
     Disabled,
@@ -597,24 +597,25 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _a_selector: Sel) {
-        println!("set Ime as Continue");
+        // println!("do_command_by_selector");
         if let Some(payload) = get_window_payload(this) {
             if payload.ime == ImeState::Commited {
                 return;
             }
 
-            payload.ime = ImeState::Ground;
-            payload.ime_last_event.take();
+            if !payload.marked_text.is_empty() && payload.ime == ImeState::Preedit {
+                payload.ime = ImeState::Ground;
+            }
         }
     }
 
     extern "C" fn has_marked_text(this: &Object, _sel: Sel) -> BOOL {
-        println!("has_marked_text");
+        // println!("has_marked_text");
         if let Some(payload) = get_window_payload(this) {
-            if payload.marked_text.is_empty() {
-                NO
-            } else {
+            if !payload.marked_text.is_empty() {
                 YES
+            } else {
+                NO
             }
         } else {
             NO
@@ -622,12 +623,12 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
-        println!("marked_range");
+        // println!("marked_range");
         if let Some(payload) = get_window_payload(this) {
-            if payload.marked_text.is_empty() {
-                NSRange::new(NSNotFound as _, 0)
-            } else {
+            if !payload.marked_text.is_empty() {
                 NSRange::new(0, payload.marked_text.len() as u64)
+            } else {
+                NSRange::new(NSNotFound as _, 0)
             }
         } else {
             NSRange::new(NSNotFound as _, 0)
@@ -635,7 +636,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
-        println!("selected_range");
+        // println!("selected_range");
         NSRange {
             location: 0,
             length: 1,
@@ -649,18 +650,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         astring: ObjcId,
         _replacement_range: NSRange,
     ) {
-        println!("insertText:replacementRange:");
-
-        // SAFETY: This method is guaranteed to get either a `NSString` or a `NSAttributedString`.
-        // let string = if string.is_kind_of::<NSAttributedString>() {
-        //     let string: *const NSObject = string;
-        //     let string: *const NSAttributedString = string.cast();
-        //     unsafe { &*string }.string().to_string()
-        // } else {
-        //     let string: *const NSObject = string;
-        //     let string: *const NSString = string.cast();
-        //     unsafe { &*string }.to_string()
-        // };
+        // println!("insertText:replacementRange:");
 
         let string = nsstring_to_string(astring);
         let is_control = string.chars().next().map_or(false, |c| c.is_control());
@@ -668,15 +658,20 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         if !is_control {
             if let Some(payload) = get_window_payload(this) {
                 // Commit only if we have marked text.
-                // if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
-                if let Some(event_handler) = payload.context() {
-                    event_handler
-                        .ime_event(crate::ImeState::Preedit(String::new(), None));
-                    event_handler.ime_event(crate::ImeState::Commit(string));
-                    payload.ime = ImeState::Commited;
+                if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
+                    if let Some(event_handler) = payload.context() {
+                        event_handler
+                            .ime_event(crate::ImeState::Preedit(String::new(), None));
+                        event_handler.ime_event(crate::ImeState::Commit(string));
+                        payload.ime = ImeState::Commited;
+                    }
                 }
-                // }
             }
+
+            // unsafe {
+            //     let input_context: ObjcId = msg_send![this, inputContext];
+            //     let () = msg_send![input_context, invalidateCharacterCoordinates];
+            // }
         }
     }
 
@@ -687,8 +682,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        println!("setMarkedText:selectedRange:replacementRange:");
-        let s = unsafe { nsstring_to_string(astring) };
+        // println!("setMarkedText:selectedRange:replacementRange:");
+        let s = nsstring_to_string(astring);
 
         if let Some(payload) = get_window_payload(this) {
             let preedit_string: String = s.to_string().into();
@@ -721,11 +716,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn unmark_text(this: &Object, _sel: Sel) {
-        println!("unmarkText");
+        // println!("unmarkText");
         if let Some(payload) = get_window_payload(this) {
             payload.marked_text.clear();
-            payload.ime_last_event.take();
             payload.ime = ImeState::Ground;
+
+            // unsafe {
+            //     let input_context: ObjcId = msg_send![this, inputContext];
+            //     let _: () = msg_send![input_context, discardMarkedText];
+            // }
         }
     }
 
@@ -734,7 +733,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _sel: Sel,
         _point: NSPoint,
     ) -> NSUInteger {
-        println!("character_index_for_point");
+        // println!("character_index_for_point");
         // NSNotFound as _
         0
     }
@@ -742,21 +741,20 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn first_rect_for_character_range(
         this: &Object,
         _sel: Sel,
-        range: NSRange,
-        actual: *mut c_void,
+        _range: NSRange,
+        _actual: *mut c_void,
     ) -> NSRect {
-        println!("first_rect_for_character_range");
+        // println!("first_rect_for_character_range");
 
         // Returns a rect in screen coordinates; this is used to place
         // the input method editor
         let window: ObjcId = unsafe { msg_send![this, window] };
         let frame: NSRect = unsafe { msg_send![window, frame] };
-        return frame;
 
         let content: NSRect =
             unsafe { msg_send![window, contentRectForFrameRect: frame] };
-        let backing_frame: NSRect =
-            unsafe { msg_send![this, convertRectToBacking: frame] };
+        // let backing_frame: NSRect =
+        //     unsafe { msg_send![this, convertRectToBacking: frame] };
 
         if let Some(payload) = get_window_payload(this) {
             let point: NSPoint = unsafe { msg_send!(this, locationInWindow) };
@@ -780,7 +778,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> ObjcId {
-        println!("valid_attributes_for_marked_text");
+        // println!("valid_attributes_for_marked_text");
 
         // FIXME: returns NSArray<NSAttributedStringKey> *
         let content: &[ObjcId; 0] = &[];
@@ -798,7 +796,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _proposed_range: NSRange,
         _actual_range: *mut c_void,
     ) -> ObjcId {
-        println!("attributed_substring_for_proposed_range");
+        // println!("attributed_substring_for_proposed_range");
         nil
     }
 
@@ -927,31 +925,54 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn key_down(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_window_payload(this) {
-            // eprintln!(
-            //     "key_common ENTER (down={} chars={:?} unmod={:?} modifiers={:?}",
-            //     key_is_down, chars, unmod, modifiers
-            // );
-
+            let repeat: bool = unsafe { msg_send!(event, isARepeat) };
+            let unmod = unsafe { msg_send!(event, charactersIgnoringModifiers) };
+            let unmod = nsstring_to_string(unmod);
             let mods = get_event_key_modifier(event);
-            if mods.is_empty() {
+            let chars = get_event_char(event);
+
+            log::info!(
+                "KEY_DOWN (chars={:?} unmod={:?} modifiers={:?}",
+                chars,
+                unmod,
+                mods
+            );
+
+            let old_ime = &payload.ime;
+            // unmod is differently depending of the keymap used, for example if you
+            // are using US-International and press CTRL -> Key N -> Key Space will produce `~`.
+            if unmod.is_empty() || !repeat {
                 unsafe {
                     let input_context: ObjcId = msg_send![this, inputContext];
-                    let res: BOOL = msg_send![input_context, handleEvent: event];
-                    if res == YES {
-                        return;
-                    }
+                    let _res: BOOL = msg_send![input_context, handleEvent: event];
+                    // if res == YES {
+                    //     return;
+                    // }
                 }
             }
 
-            let repeat: bool = unsafe { msg_send!(event, isARepeat) };
-            if let Some(key) = get_event_keycode(event) {
-                if let Some(event_handler) = payload.context() {
-                    event_handler.key_down_event(
-                        key,
-                        mods,
-                        repeat,
-                        get_event_char(event),
-                    );
+            let had_ime_input = match payload.ime {
+                ImeState::Commited => {
+                    // Allow normal input after the commit.
+                    payload.ime = ImeState::Ground;
+                    payload.marked_text = String::from("");
+                    true
+                }
+                ImeState::Preedit => true,
+                // `key_down` could result in preedit clear, so compare old and current state.
+                _ => old_ime != &payload.ime,
+            };
+
+            if !had_ime_input {
+                if let Some(key) = get_event_keycode(event) {
+                    if let Some(event_handler) = payload.context() {
+                        event_handler.key_down_event(
+                            key,
+                            mods,
+                            repeat,
+                            get_event_char(event),
+                        );
+                    }
                 }
             }
         }
@@ -961,6 +982,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         if let Some(payload) = get_window_payload(this) {
             let mods = get_event_key_modifier(event);
             if let Some(key) = get_event_keycode(event) {
+                log::info!("KEY_UP (key={:?} modifiers={:?}", key, mods);
                 if let Some(event_handler) = payload.context() {
                     event_handler.key_up_event(key, mods);
                 }
