@@ -270,6 +270,18 @@ pub enum EventHandlerAction {
     Quit,
 }
 
+// -> Press "`" key
+// Ime::Preedit("`", Some((0, 0)))
+// -> Press "E" key
+// Ime::Preedit("", None) // Synthetic event generated to clear preedit
+// Ime::Commit("è")
+pub enum ImeState {
+    Preedit(String, Option<(usize, usize)>),
+    Commit(String),
+    Disabled,
+    Enabled,
+}
+
 /// A trait defining event callbacks.
 pub trait EventHandler {
     fn process(&mut self, _id: u16) -> EventHandlerAction;
@@ -286,6 +298,7 @@ pub trait EventHandler {
     fn draw(&mut self);
     fn update(&mut self, _opcode: u8);
     fn resize_event(&mut self, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
+    fn ime_event(&mut self, _ime: ImeState) {}
     fn mouse_motion_event(&mut self, _x: f32, _y: f32) {}
     fn mouse_wheel_event(&mut self, _x: f32, _y: f32) {}
     fn mouse_button_down_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}

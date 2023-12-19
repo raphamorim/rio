@@ -4,7 +4,7 @@ pub mod mouse;
 mod route;
 
 use crate::event::{RioEvent, UpdateOpcode};
-use crate::ime::Ime;
+use crate::ime::{Ime, Preedit};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use rio_backend::superloop::Superloop;
@@ -338,6 +338,40 @@ impl EventHandler for Router {
     fn draw(&mut self) {
         if let Some(current) = &mut self.route {
             current.render();
+        }
+    }
+
+    fn ime_event(&mut self, ime_state: ImeState) {
+        // if route.path == RoutePath::Assistant {
+        //     return;
+        // }
+
+        if let Some(current) = &mut self.route {
+            match ime_state {
+                ImeState::Commit(text) => {
+                    println!("commit {}", text);
+                    // Don't use bracketed paste for single char input.
+                    current.paste(&text, text.chars().count() > 1);
+                }
+                ImeState::Preedit(text, cursor_offset) => {
+                    let preedit = if text.is_empty() {
+                        None
+                    } else {
+                        Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
+                    };
+
+                    if current.ime.preedit() != preedit.as_ref() {
+                        current.ime.set_preedit(preedit);
+                        current.render();
+                    }
+                }
+                ImeState::Enabled => {
+                    current.ime.set_enabled(true);
+                }
+                ImeState::Disabled => {
+                    current.ime.set_enabled(false);
+                }
+            }
         }
     }
 
