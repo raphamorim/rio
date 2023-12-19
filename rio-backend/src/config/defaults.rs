@@ -149,7 +149,7 @@ blinking-cursor = false
 
 # Padding-x
 #
-# define x axis padding (default is 10)
+# define x axis padding (default is 0)
 #
 # Example:
 # padding-x = 10
