@@ -7,6 +7,8 @@
 ## 0.0.33
 
 - **Breaking**: Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
+- Fix: Rio failing to draw blur upon launch #379
+- Fix: Window transparency does not work on X11 #361
 - Added support for path based color automation.
 - Added `window.decorations` property, available options are `Enabled`, `Disabled`, `Transparent` and `Buttonless`.
 
