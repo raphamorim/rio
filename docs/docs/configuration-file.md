@@ -174,6 +174,8 @@ blur = true
 
 ![Demo blur and background opacity](/assets/demos/demo-macos-blur.png)
 
+![Demo blur and background opacity 2](/assets/demos/demos-nixos-blur.png)
+
 ### Using image as background:
 
 ```toml
