@@ -3,19 +3,20 @@
 //sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
 //platform implementation
 
-use crate::sync::FairMutex;
-use objc::rc::{StrongPtr, WeakPtr};
+use crate::KeyCode;
+use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
-use std::sync::Arc;
+
 use {
     crate::{
         event::{EventHandler, EventHandlerAction, MouseButton},
+        get_handler,
         native::{
             apple::{apple_util::*, frameworks::*},
             NativeDisplayData, Request,
         },
-        native_display, CursorIcon,
+        CursorIcon,
     },
     std::{collections::HashMap, os::raw::c_void, sync::mpsc::Receiver},
 };
@@ -26,13 +27,55 @@ const NSViewLayerContentsPlacementTopLeft: isize = 11;
 const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 
 const VIEW_IVAR_NAME: &str = "RioDisplay";
+const MARKED_TEXT_IVAR_NAME: &str = "RioDisplayMarkedText";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
+
+const NSNotFound: i32 = i32::MAX;
+
+#[cfg(target_pointer_width = "32")]
+pub type NSInteger = libc::c_int;
+#[cfg(target_pointer_width = "32")]
+pub type NSUInteger = libc::c_uint;
+
+#[cfg(target_pointer_width = "64")]
+pub type NSInteger = libc::c_long;
+#[cfg(target_pointer_width = "64")]
+pub type NSUInteger = libc::c_ulong;
+
+#[derive(Debug)]
+#[repr(C)]
+struct NSRangePointer(*mut NSRange);
+
+unsafe impl objc::Encode for NSRangePointer {
+    fn encode() -> objc::Encoding {
+        unsafe { objc::Encoding::from_str(&format!("^{}", NSRange::encode().as_str())) }
+    }
+}
+
+#[derive(PartialEq)]
+enum ImeState {
+    // The IME events are disabled, so only `ReceivedCharacter` is being sent to the user.
+    Disabled,
+
+    // The ground state of enabled IME input. It means that both Preedit and regular keyboard
+    // input could be start from it.
+    Ground,
+
+    // The IME is in preedit.
+    Preedit,
+
+    // The text was just commited, so the next input from the keyboard must be ignored.
+    Commited,
+}
 
 pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
     fullscreen: bool,
     id: u16,
+    ime: ImeState,
+    marked_text: String,
+    ime_last_event: Option<KeyCode>,
     // [NSCursor hide]/unhide calls should be balanced
     // hide/hide/unhide will keep cursor hidden
     // so need to keep internal cursor state to avoid problems from
@@ -235,6 +278,7 @@ impl MacosDisplay {
             }
         }
     }
+    #[inline]
     pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
         let event_handler = self.event_handler.as_deref_mut()?;
 
@@ -244,7 +288,7 @@ impl MacosDisplay {
 
 impl MacosDisplay {
     fn transform_mouse_point(&self, point: &NSPoint) -> (f32, f32) {
-        let binding = native_display().lock();
+        let binding = get_handler().lock();
         let d = binding.get(self.id).unwrap();
         let new_x = point.x as f32 * d.dpi_scale;
         let new_y = d.screen_height as f32 - (point.y as f32 * d.dpi_scale) - 1.;
@@ -265,7 +309,7 @@ impl MacosDisplay {
     }
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
-        let mut binding = native_display().lock();
+        let mut binding = get_handler().lock();
         let d = binding.get_mut(self.id).unwrap();
         let screen: ObjcId = msg_send![self.window, screen];
         let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
@@ -552,6 +596,181 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             }
         }
     }
+
+    extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _a_selector: Sel) {
+        println!("set Ime as Continue");
+        if let Some(payload) = get_window_payload(this) {
+            if payload.ime == ImeState::Commited {
+                return;
+            }
+
+            payload.ime = ImeState::Ground;
+            payload.ime_last_event.take();
+        }
+    }
+
+    extern "C" fn has_marked_text(this: &Object, _sel: Sel) -> BOOL {
+        println!("has_marked_text");
+        if let Some(payload) = get_window_payload(this) {
+            if payload.marked_text.is_empty() {
+                NO
+            } else {
+                YES
+            }
+        } else {
+            NO
+        }
+    }
+
+    extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
+        println!("marked_range");
+        if let Some(payload) = get_window_payload(this) {
+            if payload.marked_text.is_empty() {
+                NSRange::new(NSNotFound as _, 0)
+            } else {
+                NSRange::new(0, payload.marked_text.len() as u64)
+            }
+        } else {
+            NSRange::new(NSNotFound as _, 0)
+        }
+    }
+
+    extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
+        println!("selected_range");
+        NSRange::new(NSNotFound as _, 0)
+    }
+
+    // Called by the IME when inserting composed text and/or emoji
+    extern "C" fn insert_text_replacement_range(
+        this: &Object,
+        _sel: Sel,
+        astring: ObjcId,
+        replacement_range: NSRange,
+    ) {
+        println!("insert_text_replacement_range");
+        let s = unsafe { nsstring_to_string(astring) };
+        if let Some(payload) = get_window_payload(this) {
+            payload.marked_text.clear();
+            // payload.ime_last_event.replace(s);
+            // payload.events.dispatch(WindowEvent::KeyEvent(event));
+            payload.ime = ImeState::Commited;
+        }
+    }
+
+    extern "C" fn set_marked_text_selected_range_replacement_range(
+        this: &Object,
+        _sel: Sel,
+        astring: ObjcId,
+        _selected_range: NSRange,
+        _replacement_range: NSRange,
+    ) {
+        println!("set_marked_text_selected_range_replacement_range");
+        let s = unsafe { nsstring_to_string(astring) };
+
+        if let Some(payload) = get_window_payload(this) {
+            payload.marked_text = s.to_string().into();
+
+            /*
+            let key_is_down = inner.key_is_down.take().unwrap_or(true);
+
+            let key = KeyCode::composed(s);
+
+            let event = KeyEvent {
+                key,
+                modifiers: Modifiers::NONE,
+                repeat_count: 1,
+                key_is_down,
+            }
+            .normalize_shift();
+
+            inner.ime_last_event.replace(event.clone());
+            inner.events.dispatch(WindowEvent::KeyEvent(event));
+            */
+            payload.ime_last_event.take();
+            payload.ime = ImeState::Preedit;
+        }
+    }
+
+    extern "C" fn unmark_text(this: &Object, _sel: Sel) {
+        println!("unmarkText");
+        if let Some(payload) = get_window_payload(this) {
+            payload.marked_text.clear();
+            payload.ime_last_event.take();
+            payload.ime = ImeState::Ground;
+        }
+    }
+
+    extern "C" fn character_index_for_point(
+        _this: &Object,
+        _sel: Sel,
+        _point: NSPoint,
+    ) -> NSUInteger {
+        println!("character_index_for_point");
+        // NSNotFound as _
+        0
+    }
+
+    extern "C" fn first_rect_for_character_range(
+        this: &Object,
+        _sel: Sel,
+        range: NSRange,
+        actual: *mut c_void,
+    ) -> NSRect {
+        println!("first_rect_for_character_range");
+
+        // Returns a rect in screen coordinates; this is used to place
+        // the input method editor
+        let window: ObjcId = unsafe { msg_send![this, window] };
+        let frame: NSRect = unsafe { msg_send![window, frame] };
+        let content: NSRect =
+            unsafe { msg_send![window, contentRectForFrameRect: frame] };
+        let backing_frame: NSRect =
+            unsafe { msg_send![this, convertRectToBacking: frame] };
+
+        if let Some(payload) = get_window_payload(this) {
+            let point: NSPoint = unsafe { msg_send!(this, locationInWindow) };
+            let cursor_pos = payload.transform_mouse_point(&point);
+
+            let rect = NSRect {
+                origin: NSPoint {
+                    x: content.origin.x + (cursor_pos.0 as f64),
+                    y: content.origin.y + content.size.height - (cursor_pos.1 as f64),
+                },
+                size: NSSize {
+                    width: cursor_pos.0 as f64,
+                    height: cursor_pos.1 as f64,
+                },
+            };
+
+            rect
+        } else {
+            frame
+        }
+    }
+
+    extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> ObjcId {
+        println!("valid_attributes_for_marked_text");
+        // FIXME: returns NSArray<NSAttributedStringKey> *
+        let content: &[ObjcId; 0] = &[];
+        let arr = unsafe {
+            msg_send![class!(NSArray),
+                arrayWithObjects: content.as_ptr()
+                count: content.len()
+            ]
+        };
+        arr
+    }
+
+    extern "C" fn attributed_substring_for_proposed_range(
+        _this: &Object,
+        _sel: Sel,
+        _proposed_range: NSRange,
+        _actual_range: *mut c_void,
+    ) -> ObjcId {
+        println!("attributed_substring_for_proposed_range");
+        nil
+    }
+
     extern "C" fn mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
         fire_mouse_event(this, event, true, MouseButton::Left);
     }
@@ -625,15 +844,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
 
         // only give user-code a chance to intervene when sapp_quit() wasn't already called
-        if !native_display()
-            .lock()
-            .get(payload.id)
-            .unwrap()
-            .quit_ordered
-        {
+        if !get_handler().lock().get(payload.id).unwrap().quit_ordered {
             // if window should be closed and event handling is enabled, give user code
             // a chance to intervene via sapp_cancel_quit()
-            native_display()
+            get_handler()
                 .lock()
                 .get_mut(payload.id)
                 .unwrap()
@@ -643,25 +857,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             }
 
             // user code hasn't intervened, quit the app
-            if native_display()
-                .lock()
-                .get(payload.id)
-                .unwrap()
-                .quit_requested
-            {
-                native_display()
+            if get_handler().lock().get(payload.id).unwrap().quit_requested {
+                get_handler()
                     .lock()
                     .get_mut(payload.id)
                     .unwrap()
                     .quit_ordered = true;
             }
         }
-        if native_display()
-            .lock()
-            .get(payload.id)
-            .unwrap()
-            .quit_ordered
-        {
+        if get_handler().lock().get(payload.id).unwrap().quit_ordered {
             YES
         } else {
             NO
@@ -890,13 +1094,59 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
     );
     decl.add_method(sel!(keyUp:), key_up as extern "C" fn(&Object, Sel, ObjcId));
-}
 
-pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
-    let superclass = class!(MTKView);
-    let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
-    decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
+    // NSTextInputClient
+    decl.add_method(
+        sel!(doCommandBySelector:),
+        do_command_by_selector as extern "C" fn(&Object, Sel, Sel),
+    );
+    decl.add_method(
+        sel!(characterIndexForPoint:),
+        character_index_for_point as extern "C" fn(&Object, Sel, NSPoint) -> NSUInteger,
+    );
+    decl.add_method(
+        sel!(firstRectForCharacterRange:actualRange:),
+        first_rect_for_character_range
+            as extern "C" fn(&Object, Sel, NSRange, *mut c_void) -> NSRect,
+    );
+    decl.add_method(
+        sel!(hasMarkedText),
+        has_marked_text as extern "C" fn(&Object, Sel) -> BOOL,
+    );
+    decl.add_method(
+        sel!(markedRange),
+        marked_range as extern "C" fn(&Object, Sel) -> NSRange,
+    );
+    decl.add_method(
+        sel!(selectedRange),
+        selected_range as extern "C" fn(&Object, Sel) -> NSRange,
+    );
+    decl.add_method(
+        sel!(setMarkedText:selectedRange:replacementRange:),
+        set_marked_text_selected_range_replacement_range
+            as extern "C" fn(&Object, Sel, ObjcId, NSRange, NSRange),
+    );
+    decl.add_method(sel!(unmarkText), unmark_text as extern "C" fn(&Object, Sel));
+    decl.add_method(
+        sel!(validAttributesForMarkedText),
+        valid_attributes_for_marked_text as extern "C" fn(&Object, Sel) -> ObjcId,
+    );
+    decl.add_method(
+        sel!(attributedSubstringForProposedRange:actualRange:),
+        attributed_substring_for_proposed_range
+            as extern "C" fn(&Object, Sel, NSRange, *mut c_void) -> ObjcId,
+    );
+    decl.add_method(
+        sel!(insertText:replacementRange:),
+        insert_text_replacement_range as extern "C" fn(&Object, Sel, ObjcId, NSRange),
+    );
 
+    // TODO:
+    // When keyboard changes should drop IME
+    // #[method_id(selectedKeyboardInputSource)]
+    // pub fn selectedKeyboardInputSource(&self) -> Option<Id<NSTextInputSourceIdentifier>>;
+
+    decl.add_ivar::<ObjcId>(MARKED_TEXT_IVAR_NAME);
     decl.add_protocol(
         Protocol::get("NSTextInputClient")
             .expect("failed to get NSTextInputClient protocol"),
@@ -904,6 +1154,12 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     decl.add_protocol(
         Protocol::get("CALayerDelegate").expect("CALayerDelegate not defined"),
     );
+}
+
+pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
+    let superclass = class!(MTKView);
+    let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
+    decl.add_ivar::<*mut c_void>(VIEW_IVAR_NAME);
 
     extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
         // if let Some(payload) = get_window_payload(this) {
@@ -952,7 +1208,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                     }
                     EventHandlerAction::Noop => {}
                     EventHandlerAction::Quit => unsafe {
-                        let mut handler = native_display().lock();
+                        let mut handler = get_handler().lock();
                         let d = handler.get_mut(payload.id).unwrap();
                         if d.quit_requested || d.quit_ordered {
                             handler.remove(payload.id);
@@ -960,7 +1216,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                         }
                     },
                     EventHandlerAction::Init => {
-                        let mut d = native_display().lock();
+                        let mut d = get_handler().lock();
                         let d = d.get_mut(id).unwrap();
 
                         // Initialization should happen only once
@@ -1209,6 +1465,9 @@ impl Window {
                 id,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
+                ime: ImeState::Disabled,
+                marked_text: String::from(""),
+                ime_last_event: None,
                 fullscreen: false,
                 cursor_shown: true,
                 current_cursor: CursorIcon::Default,
@@ -1276,7 +1535,7 @@ impl Window {
                 format!("{VIEW_CLASS_NAME}{id}").as_str(),
             );
             {
-                let mut d = native_display().lock();
+                let mut d = get_handler().lock();
                 let d = d.get_mut(id).unwrap();
                 d.view = **view.as_strong_ptr();
             }
@@ -1294,7 +1553,7 @@ impl Window {
                 2.0,
             ));
             {
-                let mut d = native_display().lock();
+                let mut d = get_handler().lock();
                 let d = d.get_mut(id).unwrap();
                 d.window_handle = Some(display.raw_window_handle());
                 d.display_handle = Some(display.raw_display_handle());

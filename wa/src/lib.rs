@@ -22,6 +22,7 @@ fn set_handler() {
 }
 
 fn get_handler() -> &'static FairMutex<native::Handler> {
+    // println!("get_handler");
     NATIVE_DISPLAY
         .get()
         .expect("Backend has not initialized NATIVE_DISPLAY yet.") //|| Mutex::new(Default::default()))
@@ -31,13 +32,6 @@ fn set_display(id: u16, display: native::NativeDisplayData) {
     let handler: &FairMutex<native::Handler> = get_handler();
     let mut d = handler.lock();
     d.insert(id, display);
-    // let _ = NATIVE_DISPLAY.set(FairMutex::new(display));
-}
-
-fn native_display() -> &'static FairMutex<native::Handler> {
-    NATIVE_DISPLAY
-        .get()
-        .expect("Backend has not initialized NATIVE_DISPLAY yet.") //|| Mutex::new(Default::default()))
 }
 
 /// Window and associated to window rendering context related functions.
@@ -47,7 +41,7 @@ pub mod window {
     /// The current framebuffer size in pixels
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn screen_size(id: u16) -> (f32, f32) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             (d.screen_width as f32, d.screen_height as f32)
         } else {
@@ -58,7 +52,7 @@ pub mod window {
     /// The dpi scaling factor (window pixels to framebuffer pixels)
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn dpi_scale(id: u16) -> f32 {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             d.dpi_scale
         } else {
@@ -69,7 +63,7 @@ pub mod window {
     /// True when high_dpi was requested and actually running in a high-dpi scenario
     /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn high_dpi(id: u16) -> bool {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             d.high_dpi
         } else {
@@ -85,7 +79,7 @@ pub mod window {
     /// happen in the order_quit implmentation) and execution might continue for some time after
     /// But the window is going to be inevitably closed at some point.
     pub fn order_quit(id: u16) {
-        let mut d = native_display().lock();
+        let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_ordered = true;
         }
@@ -102,7 +96,7 @@ pub mod window {
     /// If the event handler callback does nothing, the application will be quit as usual.
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit(id: u16) {
-        let mut d = native_display().lock();
+        let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_requested = true;
         }
@@ -114,7 +108,7 @@ pub mod window {
     /// function makes sense is from inside the event handler callback when
     /// the "quit_requested_event" event has been received
     pub fn cancel_quit(id: u16) {
-        let mut d = native_display().lock();
+        let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_requested = false;
         }
@@ -126,7 +120,7 @@ pub mod window {
     ///         so set_cursor_grab(false) on window's focus lost is recommended.
     /// TODO: implement window focus events
     pub fn set_cursor_grab(id: u16, grab: bool) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
         }
@@ -134,7 +128,7 @@ pub mod window {
 
     /// Show or hide the mouse cursor
     pub fn show_mouse(id: u16, shown: bool) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d.native_requests.send(native::Request::ShowMouse(shown));
         }
@@ -142,7 +136,7 @@ pub mod window {
 
     /// Show or hide the mouse cursor
     pub fn set_window_title(id: u16, title: String, subtitle: String) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d
                 .native_requests
@@ -152,7 +146,7 @@ pub mod window {
 
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(id: u16, cursor_icon: CursorIcon) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d
                 .native_requests
@@ -162,7 +156,7 @@ pub mod window {
 
     /// Set the application's window size.
     pub fn set_window_size(id: u16, new_width: u32, new_height: u32) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d.native_requests.send(native::Request::SetWindowSize {
                 new_width,
@@ -172,7 +166,7 @@ pub mod window {
     }
 
     pub fn set_fullscreen(id: u16, fullscreen: bool) {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             let _ = d
                 .native_requests
@@ -182,7 +176,7 @@ pub mod window {
 
     /// Get current OS clipboard value
     pub fn clipboard_get(id: u16) -> Option<String> {
-        let mut d = native_display().lock();
+        let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.clipboard.get()
         } else {
@@ -191,13 +185,13 @@ pub mod window {
     }
     /// Save value to OS clipboard
     pub fn clipboard_set(id: u16, data: &str) {
-        let mut d = native_display().lock();
+        let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.clipboard.set(data)
         }
     }
     pub fn dropped_file_count(id: u16) -> usize {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             d.dropped_files.bytes.len()
         } else {
@@ -205,7 +199,7 @@ pub mod window {
         }
     }
     pub fn dropped_file_bytes(id: u16, index: usize) -> Option<Vec<u8>> {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             d.dropped_files.bytes.get(index).cloned()
         } else {
@@ -213,7 +207,7 @@ pub mod window {
         }
     }
     pub fn dropped_file_path(id: u16, index: usize) -> Option<std::path::PathBuf> {
-        let d = native_display().lock();
+        let d = get_handler().lock();
         if let Some(d) = d.get(id) {
             d.dropped_files.paths.get(index).cloned()
         } else {

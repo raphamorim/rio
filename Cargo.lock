@@ -2837,6 +2837,7 @@ version = "0.0.33"
 dependencies = [
  "bitflags 2.4.1",
  "lazy_static",
+ "libc",
  "log 0.4.20",
  "objc",
  "once_cell",
