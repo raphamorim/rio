@@ -11,6 +11,12 @@ Before compiling Rio terminal, you'll have to first clone the source code:
 git clone https://github.com/raphamorim/rio.git
 ```
 
+🚧 Currently Rio terminal is in the process of transition to 0.1.x (new window system, loop, image protocol and etecetera). For any update you want to make to the terminal, please contribute to the branch `0.0.x` instead.
+
+```sh
+cd rio && git remote update && git checkout 0.0.x
+```
+
 Then install the Rust compiler with `rustup` ([rustup.rs](https://rustup.rs/)).
 
 After installation of Rust, ensure you have the correct Rust compiler installed by running:
