@@ -2,6 +2,8 @@
 
 <img src="misc/logo.svg" alt="Rio terminal logo" width="320px" />
 
+🚧 Currently Rio terminal is in the process of transition to 0.1.x (new window system, loop, image protocol and etecetera). For any update you want to make to the terminal, please contribute to the branch `0.0.x` instead.
+
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
