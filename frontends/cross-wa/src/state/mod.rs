@@ -70,7 +70,13 @@ impl State {
         //     }
         // }
 
-        let dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
+        let dynamic_background = if config.window.background_image.is_some()
+            || config.window.background_opacity < 1.
+        {
+            ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT)
+        } else {
+            named_colors.background
+        };
 
         let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
             HashMap::new();

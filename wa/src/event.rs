@@ -282,6 +282,11 @@ pub enum ImeState {
     Enabled,
 }
 
+pub enum DragState {
+    Entered,
+    Exited,
+}
+
 /// A trait defining event callbacks.
 pub trait EventHandler {
     fn process(&mut self, _id: u16) -> EventHandlerAction;
@@ -357,9 +362,13 @@ pub trait EventHandler {
     fn quit_requested_event(&mut self) {}
 
     /// A file has been dropped over the application.
-    /// Applications can request the number of dropped files with
-    /// `ctx.dropped_file_count()`, path of an individual file with
-    /// `ctx.dropped_file_path()`, and for wasm targets the file bytes
-    /// can be requested with `ctx.dropped_file_bytes()`.
-    fn files_dropped_event(&mut self) {}
+    fn files_dropped_event(&mut self, _filepaths: Vec<std::path::PathBuf>) {}
+
+    /// A file has been dragged over the application..
+    fn files_dragged_event(
+        &mut self,
+        _filepaths: Vec<std::path::PathBuf>,
+        _drag_state: DragState,
+    ) {
+    }
 }

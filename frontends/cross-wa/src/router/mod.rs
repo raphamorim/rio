@@ -499,8 +499,39 @@ impl EventHandler for Router {
         // window::cancel_quit();
     }
 
-    fn files_dropped_event(&mut self) {
-        // println!("{:?}", window::dropped_file_path(0));
+    fn files_dragged_event(
+        &mut self,
+        _filepaths: Vec<std::path::PathBuf>,
+        drag_state: DragState,
+    ) {
+        match drag_state {
+            DragState::Entered => {
+                // TODO: Add preview drop
+            }
+            DragState::Exited => {
+                // TODO: Clean preview drop
+            }
+        }
+    }
+
+    fn files_dropped_event(&mut self, filepaths: Vec<std::path::PathBuf>) {
+        if filepaths.is_empty() {
+            return;
+        }
+
+        if let Some(current) = &mut self.route {
+            // if route.path == RoutePath::Assistant {
+            //     return;
+            // }
+            let mut dropped_files = String::from("");
+            for filepath in filepaths {
+                dropped_files.push_str(&(filepath.to_string_lossy().to_string() + " "));
+            }
+
+            if !dropped_files.is_empty() {
+                current.paste(&dropped_files, true);
+            }
+        }
     }
 }
 

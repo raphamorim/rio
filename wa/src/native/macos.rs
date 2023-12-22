@@ -734,8 +734,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _point: NSPoint,
     ) -> NSUInteger {
         // println!("character_index_for_point");
-        // NSNotFound as _
-        0
+        NSNotFound as _
+        // 0
     }
 
     extern "C" fn first_rect_for_character_range(
@@ -855,6 +855,65 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 ];
             }
         }
+    }
+
+    extern "C" fn dragging_entered(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
+        if let Some(payload) = get_window_payload(this) {
+            unsafe {
+                let pboard: ObjcId = msg_send![sender, draggingPasteboard];
+                let filenames: ObjcId =
+                    msg_send![pboard, propertyListForType: NSFilenamesPboardType];
+                let count: u64 = msg_send![filenames, count];
+                if count > 0 {
+                    let mut dragged_files = vec![];
+                    for index in 0..count {
+                        let item = msg_send![filenames, objectAtIndex: index];
+                        let path = nsstring_to_string(item);
+                        dragged_files.push(std::path::PathBuf::from(path));
+                    }
+
+                    if let Some(event_handler) = payload.context() {
+                        event_handler.files_dragged_event(
+                            dragged_files,
+                            crate::DragState::Entered,
+                        );
+                    }
+                }
+            }
+        }
+        YES
+    }
+
+    extern "C" fn dragging_exited(this: &Object, _: Sel, _sender: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            if let Some(event_handler) = payload.context() {
+                event_handler.files_dragged_event(vec![], crate::DragState::Exited);
+            }
+        }
+    }
+
+    extern "C" fn perform_drag_operation(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
+        if let Some(payload) = get_window_payload(this) {
+            unsafe {
+                let pboard: ObjcId = msg_send![sender, draggingPasteboard];
+                let filenames: ObjcId =
+                    msg_send![pboard, propertyListForType: NSFilenamesPboardType];
+                let count: u64 = msg_send![filenames, count];
+                if count > 0 {
+                    let mut dropped_files = vec![];
+                    for index in 0..count {
+                        let item = msg_send![filenames, objectAtIndex: index];
+                        let path = nsstring_to_string(item);
+                        dropped_files.push(std::path::PathBuf::from(path));
+                    }
+
+                    if let Some(event_handler) = payload.context() {
+                        event_handler.files_dropped_event(dropped_files);
+                    }
+                }
+            }
+        }
+        YES
     }
 
     extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
@@ -1162,6 +1221,19 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
     );
     decl.add_method(sel!(keyUp:), key_up as extern "C" fn(&Object, Sel, ObjcId));
+
+    decl.add_method(
+        sel!(draggingEntered:),
+        dragging_entered as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
+    );
+    decl.add_method(
+        sel!(draggingExited:),
+        dragging_exited as extern "C" fn(&Object, Sel, ObjcId),
+    );
+    decl.add_method(
+        sel!(performDragOperation:),
+        perform_drag_operation as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
+    );
 
     // NSTextInputClient
     decl.add_method(
@@ -1640,6 +1712,14 @@ impl Window {
             // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
             // let () = msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
             assert!(!view.is_null());
+
+            // register for drag and drop operations.
+            let dragged_arr: ObjcId =
+                msg_send![class!(NSArray), arrayWithObject: NSFilenamesPboardType];
+            let () = msg_send![
+                *window,
+                registerForDraggedTypes: dragged_arr
+            ];
 
             if conf.hide_toolbar {
                 // let () = msg_send![*window, setMovableByWindowBackground: YES];
