@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.1.0
+## 0.1.0 (Unreleased)
 
+- Migration from Winit to WA.
 - Sixel graphics initial support.
 
 ## Unreleased
