@@ -117,6 +117,8 @@ extern "C" {
     pub static NSPasteboardURLReadingFileURLsOnlyKey: ObjcId;
     pub static NSTrackingArea: ObjcId;
     pub static NSStringPboardType: ObjcId;
+    pub static NSFilenamesPboardType: ObjcId;
+    pub static NSURLPboardType: ObjcId;
     pub static NSPasteboardTypeFileURL: ObjcId;
 }
 
