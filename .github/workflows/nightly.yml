@@ -55,9 +55,9 @@ jobs:
       discussions: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: '0.0.x'
 
       - name: rust cache
         uses: Swatinem/rust-cache@v2
@@ -132,9 +132,9 @@ jobs:
       discussions: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: '0.0.x'
 
       - name: rust cache
         uses: Swatinem/rust-cache@v2
