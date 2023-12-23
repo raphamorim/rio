@@ -191,6 +191,12 @@ impl EventHandler for Router {
                     drop(terminal);
                 }
             }
+            RioEvent::Quit => {
+                println!("oie");
+                if let Some(current) = &self.route {
+                    window::request_quit(current.id);
+                }
+            }
             RioEvent::ClipboardLoad(clipboard_type, format) => {
                 if let Some(current) = &mut self.route {
                     // if route.window.is_focused {
@@ -419,9 +425,19 @@ impl EventHandler for Router {
             }
         }
     }
-    fn open_file(&mut self, filepath: String) {
+    fn open_file_event(&mut self, filepath: String) {
         if let Some(current) = &mut self.route {
             current.paste(&filepath, true);
+        }
+    }
+    fn open_urls_event(&mut self, opened_urls: Vec<String>) {
+        if let Some(current) = &mut self.route {
+            let mut urls = String::from("");
+            for url in opened_urls {
+                urls.push_str(&url);
+            }
+
+            current.paste(&urls, true);
         }
     }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
@@ -494,11 +510,9 @@ impl EventHandler for Router {
             current.resize_all_contexts();
         }
     }
-
     fn quit_requested_event(&mut self) {
-        // window::cancel_quit();
+        // window::cancel_quit(self.id);
     }
-
     fn files_dragged_event(
         &mut self,
         _filepaths: Vec<std::path::PathBuf>,
@@ -513,7 +527,6 @@ impl EventHandler for Router {
             }
         }
     }
-
     fn files_dropped_event(&mut self, filepaths: Vec<std::path::PathBuf>) {
         if filepaths.is_empty() {
             return;

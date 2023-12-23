@@ -3,7 +3,12 @@
 ## 0.1.0 (Unreleased)
 
 - Migration from Winit to WA.
+	- MacOS
+	- Windows
+	- Linux Wayland
+	- Linux x11
 - Sixel graphics initial support.
+- iTerm2 image protocol.
 
 ## Unreleased
 

@@ -363,7 +363,7 @@ impl ContextManager {
 
     #[inline]
     pub fn quit(&mut self) {
-        self.event_proxy.send_event(RioEvent::Exit, self.window_id);
+        self.event_proxy.send_event(RioEvent::Quit, self.window_id);
     }
 
     #[cfg(target_os = "macos")]

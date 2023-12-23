@@ -3,10 +3,12 @@
 //sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
 //platform implementation
 
-use crate::KeyCode;
 use objc::rc::StrongPtr;
+use parking_lot::FairMutex;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 use {
     crate::{
@@ -29,7 +31,9 @@ const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 const VIEW_IVAR_NAME: &str = "RioDisplay";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
 
-const NSNotFound: i32 = i32::MAX;
+const NSNOT_FOUND: i32 = i32::MAX;
+
+static NATIVE_APP: OnceLock<FairMutex<App>> = OnceLock::new();
 
 #[cfg(target_pointer_width = "32")]
 pub type NSInteger = libc::c_int;
@@ -74,7 +78,6 @@ pub struct MacosDisplay {
     id: u16,
     ime: ImeState,
     marked_text: String,
-    ime_last_event: Option<KeyCode>,
     // [NSCursor hide]/unhide calls should be balanced
     // hide/hide/unhide will keep cursor hidden
     // so need to keep internal cursor state to avoid problems from
@@ -238,42 +241,12 @@ impl MacosDisplay {
     //         }
     //     }
     // }
-    fn confirm_quit(&self, path: &str) -> Option<bool> {
-        unsafe {
-            let panel: *mut Object = msg_send![class!(NSAlert), new];
-
-            let prompt =
-                format!("Do you want to save changes to {} before quitting?", path);
-            let title = "Save changes?";
-            let yes = "Yes";
-            let no = "No";
-            let cancel = "Cancel";
-
-            let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
-            let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:4];
-
-            let title_string: *mut Object = msg_send![class!(NSString), alloc];
-            let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:4];
-
-            let yes_string: *mut Object = msg_send![class!(NSString), alloc];
-            let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:4];
-
-            let no_string: *mut Object = msg_send![class!(NSString), alloc];
-            let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:4];
-
-            let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
-            let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:4];
-
-            let _: () = msg_send![panel, setMessageText: title_allocated_string];
-            let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
-            let _: () = msg_send![panel, addButtonWithTitle: yes_allocated_string];
-            let _: () = msg_send![panel, addButtonWithTitle: no_allocated_string];
-            let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
-            let response: std::ffi::c_long = msg_send![panel, runModal];
-            match response {
-                1000 => Some(true),
-                1001 => Some(false),
-                _ => None,
+    fn confirm_quit(&self) {
+        let native_app: Option<&FairMutex<App>> = NATIVE_APP.get();
+        if native_app.is_some() {
+            let app = native_app.unwrap().lock();
+            unsafe {
+                let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
             }
         }
     }
@@ -336,6 +309,7 @@ impl MacosDisplay {
         match request {
             SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
             ShowMouse(show) => self.show_mouse(show),
+            RequestQuit => self.confirm_quit(),
             SetWindowTitle { title, subtitle } => {
                 self.set_title_and_subtitle(&title, &subtitle)
             }
@@ -409,7 +383,7 @@ impl Modifiers {
 // }
 
 extern "C" fn application_open_untitled_file(
-    this: &mut Object,
+    this: &Object,
     _sel: Sel,
     _app: *mut Object,
 ) -> BOOL {
@@ -437,8 +411,33 @@ extern "C" fn application_did_finish_launching(
     }
 }
 
+extern "C" fn application_open_urls(
+    this: &Object,
+    _sel: Sel,
+    _sender: ObjcId,
+    urls: ObjcId,
+) -> () {
+    if let Some(payload) = get_window_payload(this) {
+        unsafe {
+            let count: u64 = msg_send![urls, count];
+            if count > 0 {
+                let mut urls_to_send = vec![];
+                for index in 0..count {
+                    let item = msg_send![urls, objectAtIndex: index];
+                    let path = nsstring_to_string(item);
+                    urls_to_send.push(path);
+                }
+
+                if let Some(event_handler) = payload.context() {
+                    event_handler.open_urls_event(urls_to_send);
+                }
+            }
+        }
+    }
+}
+
 extern "C" fn application_open_file(
-    this: &mut Object,
+    this: &Object,
     _sel: Sel,
     _app: *mut Object,
     file_name: *mut Object,
@@ -448,7 +447,7 @@ extern "C" fn application_open_file(
         let file_name = nsstring_to_string(file_name).to_string();
         if let Some(payload) = get_window_payload(this) {
             if let Some(event_handler) = payload.context() {
-                event_handler.open_file(file_name);
+                event_handler.open_file_event(file_name);
             }
         }
     }
@@ -474,8 +473,8 @@ pub fn define_app_delegate() -> *const Class {
         unsafe {
             let panel: *mut Object = msg_send![class!(NSAlert), new];
 
-            let prompt = "Do you want to quit?";
-            let title = "Leave Rio terminal?";
+            let prompt = "All sessions will be closed";
+            let title = "Quit Rio terminal?";
             let yes = "Yes";
             let no = "No";
             let cancel = "Cancel";
@@ -513,30 +512,34 @@ pub fn define_app_delegate() -> *const Class {
         //     sel!(applicationDockMenu:),
         //     application_dock_menu as extern "C" fn(&mut Object, Sel, *mut Object) -> *mut Object,
         // );
-        // decl.add_method(
-        //     sel!(applicationShouldTerminate:),
-        //     application_should_terminate
-        //         as extern "C" fn(&mut Object, Sel, *mut Object) -> u64,
-        // );
+        decl.add_method(
+            sel!(applicationShouldTerminate:),
+            application_should_terminate
+                as extern "C" fn(&mut Object, Sel, *mut Object) -> u64,
+        );
         decl.add_method(
             sel!(applicationShouldTerminateAfterLastWindowClosed:),
-            yes1 as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
+            no1 as extern "C" fn(&Object, Sel, ObjcId) -> BOOL,
         );
         decl.add_method(
             sel!(applicationDidFinishLaunching:),
             application_did_finish_launching
                 as extern "C" fn(&mut Object, Sel, *mut Object),
         );
+        // decl.add_method(
+        //     sel!(application:openFile:),
+        //     application_open_file
+        //         as extern "C" fn(&Object, Sel, *mut Object, *mut Object),
+        // );
         decl.add_method(
-            sel!(application:openFile:),
-            application_open_file
-                as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            sel!(application:openURLs:),
+            application_open_urls as extern "C" fn(&Object, Sel, ObjcId, ObjcId),
         );
-        decl.add_method(
-            sel!(applicationOpenUntitledFile:),
-            application_open_untitled_file
-                as extern "C" fn(&mut Object, Sel, *mut Object) -> BOOL,
-        );
+        // decl.add_method(
+        //     sel!(applicationOpenUntitledFile:),
+        //     application_open_untitled_file
+        //         as extern "C" fn(&Object, Sel, *mut Object) -> BOOL,
+        // );
     }
 
     decl.add_ivar::<BOOL>("launched");
@@ -628,10 +631,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if !payload.marked_text.is_empty() {
                 NSRange::new(0, payload.marked_text.len() as u64)
             } else {
-                NSRange::new(NSNotFound as _, 0)
+                NSRange::new(NSNOT_FOUND as _, 0)
             }
         } else {
-            NSRange::new(NSNotFound as _, 0)
+            NSRange::new(NSNOT_FOUND as _, 0)
         }
     }
 
@@ -734,7 +737,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _point: NSPoint,
     ) -> NSUInteger {
         // println!("character_index_for_point");
-        NSNotFound as _
+        NSNOT_FOUND as _
         // 0
     }
 
@@ -1519,8 +1522,10 @@ pub enum NSWindowTabbingMode {
 }
 
 pub struct App {
-    ns_app: StrongPtr,
+    pub ns_app: StrongPtr,
 }
+unsafe impl Send for App {}
+unsafe impl Sync for App {}
 
 impl<'a> App {
     pub fn new() -> App {
@@ -1540,6 +1545,10 @@ impl<'a> App {
                     as i64
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
+
+            NATIVE_APP.set(FairMutex::new(App {
+                ns_app: ns_app.clone(),
+            }));
 
             Self { ns_app }
         }
@@ -1565,7 +1574,6 @@ impl<'a> App {
 }
 
 pub struct Window {
-    id: u16,
     pub ns_window: *mut Object,
     pub ns_view: *mut Object,
 }
@@ -1606,7 +1614,6 @@ impl Window {
                 window: std::ptr::null_mut(),
                 ime: ImeState::Disabled,
                 marked_text: String::from(""),
-                ime_last_event: None,
                 fullscreen: false,
                 cursor_shown: true,
                 current_cursor: CursorIcon::Default,
@@ -1783,7 +1790,6 @@ impl Window {
             let () = msg_send![*window, makeKeyAndOrderFront: nil];
 
             let window_handle = Window {
-                id,
                 ns_window: *window,
                 ns_view: **view.as_strong_ptr(),
             };
