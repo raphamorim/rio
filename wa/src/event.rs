@@ -264,9 +264,7 @@ pub enum TouchPhase {
 
 pub enum EventHandlerAction {
     Init,
-    Update(u8),
     Noop,
-    Render,
     Quit,
 }
 
@@ -300,8 +298,6 @@ pub trait EventHandler {
         _s: f32,
     ) {
     }
-    fn draw(&mut self);
-    fn update(&mut self, _opcode: u8);
     fn resize_event(&mut self, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
     fn ime_event(&mut self, _ime: ImeState) {}
     fn mouse_motion_event(&mut self, _x: f32, _y: f32) {}
