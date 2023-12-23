@@ -1333,12 +1333,6 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
             if let Some(event_handler) = payload.context() {
                 match event_handler.process(id) {
-                    EventHandlerAction::Render => {
-                        event_handler.draw();
-                    }
-                    EventHandlerAction::Update(update_opcode) => {
-                        event_handler.update(update_opcode);
-                    }
                     EventHandlerAction::Noop => {}
                     EventHandlerAction::Quit => unsafe {
                         let mut handler = get_handler().lock();

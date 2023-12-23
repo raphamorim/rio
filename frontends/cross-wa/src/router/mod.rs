@@ -107,7 +107,9 @@ impl EventHandler for Router {
 
         match self.superloop.event() {
             RioEvent::Render | RioEvent::Wakeup => {
-                return EventHandlerAction::Render;
+                if let Some(current) = &mut self.route {
+                    current.render();
+                }
             }
             RioEvent::PowerOn => {
                 next = EventHandlerAction::Init;
@@ -134,7 +136,7 @@ impl EventHandler for Router {
                 if let Some(value) = window::clipboard_get(window_id) {
                     if let Some(current) = &mut self.route {
                         current.paste(&value, true);
-                        next = EventHandlerAction::Render;
+                        current.render();
                     }
                 }
             }
@@ -163,6 +165,8 @@ impl EventHandler for Router {
 
                 if let Some(current) = &mut self.route {
                     current.update_config(&self.config);
+
+                    current.render();
                 }
 
                 // if let Some(error) = &config_error {
@@ -171,7 +175,6 @@ impl EventHandler for Router {
                 //     route.clear_errors();
                 // }
                 // }
-                next = EventHandlerAction::Render;
             }
             RioEvent::Title(title, subtitle) => {
                 if let Some(current) = &mut self.route {
@@ -246,12 +249,76 @@ impl EventHandler for Router {
                     current.sugarloaf.layout.update();
 
                     current.resize_all_contexts();
-                }
 
-                next = EventHandlerAction::Render;
+                    current.render();
+                }
             }
             RioEvent::RequestUpdate(opcode) => {
-                next = EventHandlerAction::Update(opcode);
+                match opcode.into() {
+                    UpdateOpcode::UpdateGraphicLibrary => {
+                        if let Some(current) = &mut self.route {
+                            let mut terminal = current.ctx.current().terminal.lock();
+                            let graphics = terminal.graphics_take_queues();
+                            if let Some(graphic_queues) = graphics {
+                                let renderer = &mut current.sugarloaf;
+                                for graphic_data in graphic_queues.pending {
+                                    renderer.graphics.add(graphic_data);
+                                }
+
+                                for graphic_data in graphic_queues.remove_queue {
+                                    renderer.graphics.remove(&graphic_data);
+                                }
+                            }
+                        }
+                    }
+                    UpdateOpcode::ForceRefresh => {
+                        if let Some(current) = &mut self.route {
+                            if let Some(_err) = current
+                                .sugarloaf
+                                .update_font(self.config.fonts.to_owned(), None)
+                            {
+                                // self.context_manager
+                                // .report_error_fonts_not_found(err.fonts_not_found);
+                                return EventHandlerAction::Noop;
+                            }
+
+                            let padding_y_bottom =
+                                padding_bottom_from_config(&self.config);
+                            let padding_y_top = padding_top_from_config(&self.config);
+
+                            current.sugarloaf.layout.recalculate(
+                                self.config.fonts.size,
+                                self.config.line_height,
+                                self.config.padding_x,
+                                padding_y_top,
+                                padding_y_bottom,
+                            );
+
+                            current.sugarloaf.layout.update();
+
+                            current.mouse.set_multiplier_and_divider(
+                                self.config.scroll.multiplier,
+                                self.config.scroll.divider,
+                            );
+
+                            current.resize_all_contexts();
+
+                            let mut bg_color = current.state.named_colors.background.1;
+
+                            if self.config.window.background_opacity < 1. {
+                                bg_color.a = self.config.window.background_opacity as f64;
+                            }
+
+                            current.sugarloaf.set_background_color(bg_color);
+                            if let Some(image) = &self.config.window.background_image {
+                                current.sugarloaf.set_background_image(&image);
+                            }
+
+                            current.sugarloaf.calculate_bounds();
+                            current.sugarloaf.render();
+                        }
+                    }
+                }
             }
             // RioEvent::ScheduleDraw(millis) => {
             //     let timer_id = TimerId::new(Topic::Render, 0);
@@ -270,81 +337,6 @@ impl EventHandler for Router {
         };
 
         next
-    }
-
-    // Update needs to be async with a wait
-    fn update(&mut self, opcode: u8) {
-        match opcode.into() {
-            UpdateOpcode::UpdateGraphicLibrary => {
-                if let Some(current) = &mut self.route {
-                    let mut terminal = current.ctx.current().terminal.lock();
-                    let graphics = terminal.graphics_take_queues();
-                    if let Some(graphic_queues) = graphics {
-                        let renderer = &mut current.sugarloaf;
-                        for graphic_data in graphic_queues.pending {
-                            renderer.graphics.add(graphic_data);
-                        }
-
-                        for graphic_data in graphic_queues.remove_queue {
-                            renderer.graphics.remove(&graphic_data);
-                        }
-                    }
-                }
-            }
-            UpdateOpcode::ForceRefresh => {
-                if let Some(current) = &mut self.route {
-                    if let Some(_err) = current
-                        .sugarloaf
-                        .update_font(self.config.fonts.to_owned(), None)
-                    {
-                        // self.context_manager
-                        // .report_error_fonts_not_found(err.fonts_not_found);
-                        return;
-                    }
-
-                    let padding_y_bottom = padding_bottom_from_config(&self.config);
-                    let padding_y_top = padding_top_from_config(&self.config);
-
-                    current.sugarloaf.layout.recalculate(
-                        self.config.fonts.size,
-                        self.config.line_height,
-                        self.config.padding_x,
-                        padding_y_top,
-                        padding_y_bottom,
-                    );
-
-                    current.sugarloaf.layout.update();
-
-                    current.mouse.set_multiplier_and_divider(
-                        self.config.scroll.multiplier,
-                        self.config.scroll.divider,
-                    );
-
-                    current.resize_all_contexts();
-
-                    let mut bg_color = current.state.named_colors.background.1;
-
-                    if self.config.window.background_opacity < 1. {
-                        bg_color.a = self.config.window.background_opacity as f64;
-                    }
-
-                    current.sugarloaf.set_background_color(bg_color);
-                    if let Some(image) = &self.config.window.background_image {
-                        current.sugarloaf.set_background_image(&image);
-                    }
-
-                    current.sugarloaf.calculate_bounds();
-                    current.sugarloaf.render();
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn draw(&mut self) {
-        if let Some(current) = &mut self.route {
-            current.render();
-        }
     }
 
     fn ime_event(&mut self, ime_state: ImeState) {
