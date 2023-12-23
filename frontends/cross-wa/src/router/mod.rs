@@ -96,9 +96,7 @@ impl EventHandler for Router {
         self.route = Some(initial_route);
     }
     #[inline]
-    fn process(&mut self, window_id: u16) -> EventHandlerAction {
-        let mut next = EventHandlerAction::Noop;
-
+    fn process(&mut self, window_id: u16) {
         // TODO:
         // match self.scheduler.update() {
         //     Some(instant) => { return next },
@@ -110,9 +108,6 @@ impl EventHandler for Router {
                 if let Some(current) = &mut self.route {
                     current.render();
                 }
-            }
-            RioEvent::PowerOn => {
-                next = EventHandlerAction::Init;
             }
             RioEvent::CreateWindow => {
                 #[cfg(target_os = "macos")]
@@ -195,7 +190,6 @@ impl EventHandler for Router {
                 }
             }
             RioEvent::Quit => {
-                println!("oie");
                 if let Some(current) = &self.route {
                     window::request_quit(current.id);
                 }
@@ -238,7 +232,7 @@ impl EventHandler for Router {
                     };
 
                     if !should_update {
-                        return EventHandlerAction::Noop;
+                        return;
                     }
 
                     // This is a hacky solution, sugarloaf compute bounds in runtime
@@ -279,7 +273,7 @@ impl EventHandler for Router {
                             {
                                 // self.context_manager
                                 // .report_error_fonts_not_found(err.fonts_not_found);
-                                return EventHandlerAction::Noop;
+                                return;
                             }
 
                             let padding_y_bottom =
@@ -335,8 +329,6 @@ impl EventHandler for Router {
             // }
             RioEvent::Noop | _ => {}
         };
-
-        next
     }
 
     fn ime_event(&mut self, ime_state: ImeState) {

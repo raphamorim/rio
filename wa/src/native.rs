@@ -54,7 +54,6 @@ pub(crate) struct NativeDisplayData {
     pub screen_height: i32,
     pub dpi_scale: f32,
     pub high_dpi: bool,
-    pub has_initialized: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
     pub native_requests: mpsc::Sender<Request>,
@@ -81,7 +80,6 @@ impl NativeDisplayData {
         clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
-            has_initialized: false,
             screen_width,
             screen_height,
             dpi_scale: 1.,
