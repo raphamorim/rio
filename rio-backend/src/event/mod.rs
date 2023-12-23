@@ -48,8 +48,7 @@ pub enum ClickState {
 
 #[derive(Clone)]
 pub enum RioEvent {
-    PowerOn,
-    ScheduleDraw(u64),
+    ScheduleRender(u64),
     Render,
     Paste,
     Copy(String),
@@ -136,7 +135,6 @@ pub enum RioEvent {
 impl Debug for RioEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            RioEvent::PowerOn => write!(f, "PowerOn"),
             RioEvent::ClipboardStore(ty, text) => {
                 write!(f, "ClipboardStore({ty:?}, {text})")
             }
@@ -152,7 +150,7 @@ impl Debug for RioEvent {
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::Wakeup => write!(f, "Wakeup"),
-            RioEvent::ScheduleDraw(millis) => write!(f, "ScheduleDraw({millis})"),
+            RioEvent::ScheduleRender(millis) => write!(f, "ScheduleRender({millis})"),
             RioEvent::Render => write!(f, "Render"),
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
