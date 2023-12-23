@@ -96,9 +96,9 @@ pub mod window {
     /// If the event handler callback does nothing, the application will be quit as usual.
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit(id: u16) {
-        let mut d = get_handler().lock();
-        if let Some(d) = d.get_mut(id) {
-            d.quit_requested = true;
+        let d = get_handler().lock();
+        if let Some(d) = d.get(id) {
+            let _ = d.native_requests.send(native::Request::RequestQuit);
         }
     }
 

@@ -730,7 +730,7 @@ impl Route {
                     //     }
                     // }
                     Act::Quit => {
-                        self.ctx.quit();
+                        wa::window::request_quit(self.id);
                     }
                     Act::IncreaseFontSize => {
                         self.change_font_size(2);
