@@ -7,7 +7,6 @@ use objc::rc::StrongPtr;
 use parking_lot::FairMutex;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
-use std::sync::Arc;
 use std::sync::OnceLock;
 
 use {
@@ -86,6 +85,7 @@ pub struct MacosDisplay {
     current_cursor: CursorIcon,
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
+    has_initialized: bool,
 
     event_handler: Option<Box<dyn EventHandler>>,
     // f: Box<dyn 'static + FnMut(&Window)>,
@@ -1331,46 +1331,43 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
             let id = payload.id;
 
-            if let Some(event_handler) = payload.context() {
-                match event_handler.process(id) {
-                    EventHandlerAction::Noop => {}
-                    EventHandlerAction::Quit => unsafe {
-                        let mut handler = get_handler().lock();
-                        let d = handler.get_mut(payload.id).unwrap();
-                        if d.quit_requested || d.quit_ordered {
-                            handler.remove(payload.id);
-                            let () = msg_send![payload.window, performClose: nil];
-                        }
-                    },
-                    EventHandlerAction::Init => {
-                        let mut d = get_handler().lock();
-                        let d = d.get_mut(id).unwrap();
+            if !payload.has_initialized {
+                let d = get_handler().lock();
+                let d = d.get(id).unwrap();
+                if let Some(event_handler) = payload.context() {
+                    event_handler.init(
+                        id,
+                        d.window_handle.unwrap(),
+                        d.display_handle.unwrap(),
+                        d.dimensions.0,
+                        d.dimensions.1,
+                        d.dimensions.2,
+                    );
 
-                        // Initialization should happen only once
-                        if !d.has_initialized {
-                            {
-                                event_handler.init(
-                                    id,
-                                    d.window_handle.unwrap(),
-                                    d.display_handle.unwrap(),
-                                    d.dimensions.0,
-                                    d.dimensions.1,
-                                    d.dimensions.2,
-                                );
-
-                                event_handler.resize_event(
-                                    d.dimensions.0,
-                                    d.dimensions.1,
-                                    d.dimensions.2,
-                                    true,
-                                );
-                            }
-
-                            d.has_initialized = true;
-                        }
-                    }
+                    event_handler.resize_event(
+                        d.dimensions.0,
+                        d.dimensions.1,
+                        d.dimensions.2,
+                        true,
+                    );
                 }
+
+                payload.has_initialized = true;
+                return;
             }
+
+            if let Some(event_handler) = payload.context() {
+                event_handler.process(id);
+            }
+
+            //         EventHandlerAction::Quit => unsafe {
+            //             let mut handler = get_handler().lock();
+            //             let d = handler.get_mut(payload.id).unwrap();
+            //             if d.quit_requested || d.quit_ordered {
+            //                 handler.remove(payload.id);
+            //                 let () = msg_send![payload.window, performClose: nil];
+            //             }
+            //         },
         }
     }
 
@@ -1603,6 +1600,7 @@ impl Window {
             );
 
             let mut display = MacosDisplay {
+                has_initialized: false,
                 id,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
