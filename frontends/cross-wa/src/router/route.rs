@@ -1450,7 +1450,7 @@ impl Route {
         // and the terminal also have instructions of blinking enabled
         if self.state.has_blinking_enabled && has_blinking_enabled {
             self.superloop
-                .send_event(RioEvent::ScheduleDraw(800), self.id);
+                .send_event(RioEvent::ScheduleRender(800), self.id);
         }
 
         self.sugarloaf.render();

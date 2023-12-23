@@ -303,7 +303,7 @@ impl ContextManager {
     #[inline]
     pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
-            .send_event(RioEvent::ScheduleDraw(scheduled_time), self.window_id);
+            .send_event(RioEvent::ScheduleRender(scheduled_time), self.window_id);
     }
 
     #[inline]

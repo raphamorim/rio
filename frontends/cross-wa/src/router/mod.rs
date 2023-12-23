@@ -29,8 +29,7 @@ fn create_window(
     font_database: &loader::Database,
     tab_group: Option<u64>,
 ) -> Result<Window, Box<dyn std::error::Error>> {
-    let mut superloop = Superloop::new();
-    superloop.send_event(RioEvent::PowerOn, 0);
+    let superloop = Superloop::new();
 
     let scheduler = Scheduler::new(superloop.clone());
     let router = Router {
@@ -314,7 +313,7 @@ impl EventHandler for Router {
                     }
                 }
             }
-            // RioEvent::ScheduleDraw(millis) => {
+            // RioEvent::ScheduleRender(millis) => {
             //     let timer_id = TimerId::new(Topic::Render, 0);
             //     let event = EventPayload::new(RioEvent::Render, self.current);
 
@@ -537,8 +536,7 @@ pub async fn run(
     config: rio_backend::config::Config,
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut superloop = Superloop::new();
-
+    let superloop = Superloop::new();
     let config = Rc::new(config);
     let _ =
         crate::watcher::watch(rio_backend::config::config_dir_path(), superloop.clone());
@@ -547,8 +545,6 @@ pub async fn run(
 
     let mut font_database = loader::Database::new();
     font_database.load_system_fonts();
-
-    superloop.send_event(RioEvent::PowerOn, 0);
 
     #[cfg(target_os = "macos")]
     let (tab_group, tab_identifier) = if config.navigation.is_native() {
