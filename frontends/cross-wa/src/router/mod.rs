@@ -4,7 +4,7 @@ mod menu;
 pub mod mouse;
 mod route;
 
-use crate::event::{RioEvent, UpdateOpcode};
+use crate::event::RioEvent;
 use crate::ime::{Ime, Preedit};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
@@ -92,7 +92,7 @@ impl EventHandler for Router {
             height,
             scale_factor,
         )
-        .unwrap();
+        .expect("Expected window to be created");
         self.route = Some(initial_route);
     }
     #[inline]
@@ -103,12 +103,22 @@ impl EventHandler for Router {
         //     None => {},
         // };
 
-        match self.superloop.event() {
-            RioEvent::Render | RioEvent::Wakeup => {
-                if let Some(current) = &mut self.route {
-                    current.render();
-                }
+        let (event, should_redraw) = self.superloop.event();
+
+        if should_redraw {
+            if let Some(current) = &mut self.route {
+                current.render();
             }
+        }
+
+        match event {
+            // RioEvent::Render | RioEvent::Wakeup => {
+            //     if !should_redraw {
+            //         if let Some(current) = &mut self.route {
+            //             current.render();
+            //         }
+            //     }
+            // }
             RioEvent::CreateWindow => {
                 #[cfg(target_os = "macos")]
                 let new_tab_group = if self.config.navigation.is_native() {
@@ -126,17 +136,6 @@ impl EventHandler for Router {
             #[cfg(target_os = "macos")]
             RioEvent::CreateNativeTab(_) => {
                 let _ = create_window(&self.config, &self.font_database, self.tab_group);
-            }
-            RioEvent::Paste => {
-                if let Some(value) = window::clipboard_get(window_id) {
-                    if let Some(current) = &mut self.route {
-                        current.paste(&value, true);
-                        current.render();
-                    }
-                }
-            }
-            RioEvent::Copy(data) => {
-                window::clipboard_set(window_id, &data);
             }
             RioEvent::UpdateConfig => {
                 let (config, _config_error) =
@@ -247,69 +246,18 @@ impl EventHandler for Router {
                     current.render();
                 }
             }
-            RioEvent::RequestUpdate(opcode) => {
-                match opcode.into() {
-                    UpdateOpcode::UpdateGraphicLibrary => {
-                        if let Some(current) = &mut self.route {
-                            let mut terminal = current.ctx.current().terminal.lock();
-                            let graphics = terminal.graphics_take_queues();
-                            if let Some(graphic_queues) = graphics {
-                                let renderer = &mut current.sugarloaf;
-                                for graphic_data in graphic_queues.pending {
-                                    renderer.graphics.add(graphic_data);
-                                }
-
-                                for graphic_data in graphic_queues.remove_queue {
-                                    renderer.graphics.remove(&graphic_data);
-                                }
-                            }
+            RioEvent::UpdateGraphicLibrary => {
+                if let Some(current) = &mut self.route {
+                    let mut terminal = current.ctx.current().terminal.lock();
+                    let graphics = terminal.graphics_take_queues();
+                    if let Some(graphic_queues) = graphics {
+                        let renderer = &mut current.sugarloaf;
+                        for graphic_data in graphic_queues.pending {
+                            renderer.graphics.add(graphic_data);
                         }
-                    }
-                    UpdateOpcode::ForceRefresh => {
-                        if let Some(current) = &mut self.route {
-                            if let Some(_err) = current
-                                .sugarloaf
-                                .update_font(self.config.fonts.to_owned(), None)
-                            {
-                                // self.context_manager
-                                // .report_error_fonts_not_found(err.fonts_not_found);
-                                return;
-                            }
 
-                            let padding_y_bottom =
-                                padding_bottom_from_config(&self.config);
-                            let padding_y_top = padding_top_from_config(&self.config);
-
-                            current.sugarloaf.layout.recalculate(
-                                self.config.fonts.size,
-                                self.config.line_height,
-                                self.config.padding_x,
-                                padding_y_top,
-                                padding_y_bottom,
-                            );
-
-                            current.sugarloaf.layout.update();
-
-                            current.mouse.set_multiplier_and_divider(
-                                self.config.scroll.multiplier,
-                                self.config.scroll.divider,
-                            );
-
-                            current.resize_all_contexts();
-
-                            let mut bg_color = current.state.named_colors.background.1;
-
-                            if self.config.window.background_opacity < 1. {
-                                bg_color.a = self.config.window.background_opacity as f64;
-                            }
-
-                            current.sugarloaf.set_background_color(bg_color);
-                            if let Some(image) = &self.config.window.background_image {
-                                current.sugarloaf.set_background_image(&image);
-                            }
-
-                            current.sugarloaf.calculate_bounds();
-                            current.sugarloaf.render();
+                        for graphic_data in graphic_queues.remove_queue {
+                            renderer.graphics.remove(&graphic_data);
                         }
                     }
                 }
@@ -327,6 +275,52 @@ impl EventHandler for Router {
             //         );
             //     }
             // }
+            RioEvent::ForceRefresh => {
+                if let Some(current) = &mut self.route {
+                    if let Some(_err) = current
+                        .sugarloaf
+                        .update_font(self.config.fonts.to_owned(), None)
+                    {
+                        // self.context_manager
+                        // .report_error_fonts_not_found(err.fonts_not_found);
+                        return;
+                    }
+
+                    let padding_y_bottom = padding_bottom_from_config(&self.config);
+                    let padding_y_top = padding_top_from_config(&self.config);
+
+                    current.sugarloaf.layout.recalculate(
+                        self.config.fonts.size,
+                        self.config.line_height,
+                        self.config.padding_x,
+                        padding_y_top,
+                        padding_y_bottom,
+                    );
+
+                    current.sugarloaf.layout.update();
+
+                    current.mouse.set_multiplier_and_divider(
+                        self.config.scroll.multiplier,
+                        self.config.scroll.divider,
+                    );
+
+                    current.resize_all_contexts();
+
+                    let mut bg_color = current.state.named_colors.background.1;
+
+                    if self.config.window.background_opacity < 1. {
+                        bg_color.a = self.config.window.background_opacity as f64;
+                    }
+
+                    current.sugarloaf.set_background_color(bg_color);
+                    if let Some(image) = &self.config.window.background_image {
+                        current.sugarloaf.set_background_image(&image);
+                    }
+
+                    current.sugarloaf.calculate_bounds();
+                    current.sugarloaf.render();
+                }
+            }
             RioEvent::Noop | _ => {}
         };
     }
@@ -375,7 +369,7 @@ impl EventHandler for Router {
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                    self.superloop.send_event(RioEvent::Render, current.id);
+                    current.render();
                     return;
                 }
             }
@@ -583,7 +577,6 @@ pub async fn run(
     };
 
     let (app, app_connection) = App::new();
-    // menu::create_menu();
     menu::create_menu(app_connection);
     let _ = Window::new_window(wa_conf, || Box::new(router)).await;
 

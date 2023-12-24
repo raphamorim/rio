@@ -9,39 +9,32 @@
 // A router is a window, but it can contain a sub route that is a panel
 // For example /:window-id/:panel-one
 
-use crate::context::{self, ContextManager};
-use crate::crosswords::grid::Scroll;
-use crate::crosswords::vi_mode::ViMotion;
-use crate::crosswords::Mode;
+use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
-use crate::router::bindings;
-use crate::router::bindings::ViAction;
 use crate::router::bindings::{
-    Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding,
+    self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
-use crate::router::constants;
-use crate::router::mouse::calculate_mouse_position;
-use crate::router::mouse::Mouse;
-use crate::router::Ime;
-use crate::router::{RioEvent, Superloop, UpdateOpcode};
-use crate::state::State;
+use crate::router::mouse::{calculate_mouse_position, Mouse};
+use crate::router::{constants, Ime, RioEvent, Superloop};
+use crate::state::{
+    context::{self, ContextManager},
+    State,
+};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::renderer::{
     Backend as RendererBackend, Performance as RendererPerformance,
 };
-use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::crosswords::pos::Pos;
-use rio_backend::crosswords::pos::Side;
-use rio_backend::crosswords::square::Hyperlink;
-use rio_backend::crosswords::{MIN_COLUMNS, MIN_LINES};
+use rio_backend::crosswords::{
+    grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink, MIN_COLUMNS, MIN_LINES,
+};
 use rio_backend::selection::SelectionType;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::rc::Rc;
-use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::{
-    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use wa::{KeyCode, Modifiers, ModifiersState};
 
@@ -359,8 +352,8 @@ impl Route {
     pub fn process_mouse(
         &mut self,
         button: wa::MouseButton,
-        x: f32,
-        y: f32,
+        _x: f32,
+        _y: f32,
         is_pressed: bool,
     ) {
         match button {
@@ -697,9 +690,9 @@ impl Route {
                         self.ctx.create_new_window();
                     }
                     Act::TabCreateNew => {
-                        self.superloop.send_event(
+                        self.superloop.send_event_with_high_priority(
                             RioEvent::CreateNativeTab(Some(self.tab_identifier.clone())),
-                            0,
+                            self.id,
                         );
                         // let redirect = true;
 
@@ -1057,10 +1050,8 @@ impl Route {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        self.superloop.send_event(
-            RioEvent::RequestUpdate(UpdateOpcode::ForceRefresh as u8),
-            self.id,
-        );
+        self.superloop
+            .send_event_with_high_priority(RioEvent::UpdateConfig, self.id);
     }
 
     #[inline]
@@ -1150,7 +1141,7 @@ impl Route {
         match action {
             0 | 1 | 2 => self
                 .superloop
-                .send_event(RioEvent::UpdateFontSize(action), self.id),
+                .send_event_with_high_priority(RioEvent::UpdateFontSize(action), self.id),
             _ => {}
         };
     }

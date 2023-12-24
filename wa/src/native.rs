@@ -8,14 +8,7 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
-use corcovado::channel;
 use std::collections::HashMap;
-
-#[derive(Default)]
-pub(crate) struct DroppedFiles {
-    pub paths: Vec<std::path::PathBuf>,
-    pub bytes: Vec<Vec<u8>>,
-}
 
 pub(crate) struct Handler {
     inner: HashMap<u16, NativeDisplayData>,
@@ -66,7 +59,6 @@ pub(crate) struct NativeDisplayData {
     pub quit_requested: bool,
     pub quit_ordered: bool,
     pub clipboard: Box<dyn Clipboard>,
-    pub dropped_files: DroppedFiles,
 
     pub display_handle: Option<raw_window_handle::RawDisplayHandle>,
     pub window_handle: Option<raw_window_handle::RawWindowHandle>,
@@ -97,7 +89,6 @@ impl NativeDisplayData {
             dimensions: (0, 0, 0.),
             display_handle: None,
             window_handle: None,
-            dropped_files: Default::default(),
             #[cfg(target_vendor = "apple")]
             view: std::ptr::null_mut(),
         }

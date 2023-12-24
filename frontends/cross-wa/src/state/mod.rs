@@ -1,7 +1,7 @@
+pub mod context;
 pub mod navigation;
 
 use crate::ansi::CursorShape;
-use crate::context;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
