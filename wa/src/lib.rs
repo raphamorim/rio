@@ -1,8 +1,8 @@
 // Copyright (c) 2023-present, Raphael Amorim.
-// 
+//
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-// 
+//
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
 // https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
 // The code has suffered several changes like support to multiple windows, extension of windows
@@ -244,6 +244,8 @@ pub enum CursorIcon {
 pub type App = native::macos::App;
 #[cfg(target_os = "macos")]
 pub type Window = native::macos::Window;
+#[cfg(target_os = "macos")]
+pub type MenuItem = native::apple::menu::MenuItem;
 
 // pub fn run()
 // {

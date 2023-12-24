@@ -2836,6 +2836,8 @@ name = "wa"
 version = "0.0.33"
 dependencies = [
  "bitflags 2.4.1",
+ "corcovado",
+ "futures",
  "lazy_static",
  "libc",
  "log 0.4.20",

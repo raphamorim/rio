@@ -1,5 +1,6 @@
 pub mod bindings;
 mod constants;
+mod menu;
 pub mod mouse;
 mod route;
 
@@ -581,8 +582,11 @@ pub async fn run(
         ..Default::default()
     };
 
-    let app: App = App::new();
+    let (app, app_connection) = App::new();
+    // menu::create_menu();
+    menu::create_menu(app_connection);
     let _ = Window::new_window(wa_conf, || Box::new(router)).await;
+
     app.run();
     Ok(())
 }

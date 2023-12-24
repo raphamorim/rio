@@ -1,8 +1,8 @@
 // Copyright (c) 2023-present, Raphael Amorim.
-// 
+//
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-// 
+//
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
 // https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
 
@@ -65,8 +65,7 @@ pub struct Conf {
     pub window_resizable: bool,
 
     /// Miniquad allows to change the window icon programmatically.
-    /// The icon will be used as
-    /// - TODO: dock and titlebar icon on  MacOs
+    #[cfg(not(target_os = "macos"))]
     pub icon: Option<Icon>,
 
     /// Platform specific settings. Hints to OS for context creation, driver-specific
@@ -114,10 +113,11 @@ impl Default for Conf {
             hide_toolbar: false,
             sample_count: 1,
             window_resizable: true,
-            icon: Some(Icon::logo()),
             platform: Default::default(),
             hide_toolbar_buttons: false,
             tab_identifier: None,
+            #[cfg(not(target_os = "macos"))]
+            icon: Some(Icon::logo()),
         }
     }
 }

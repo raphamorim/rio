@@ -1,14 +1,14 @@
 // Copyright (c) 2023-present, Raphael Amorim.
-// 
+//
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-// 
+//
 // Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
 // https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
-use crate::native::apple::menu::{Menu, MenuItem, RepresentedItem, KeyAssignment};
+use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
@@ -96,7 +96,7 @@ pub struct MacosDisplay {
     // f: Box<dyn 'static + FnMut(&Window)>,
     f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
     modifiers: Modifiers,
-    native_requests: Receiver<Request>,
+    native_requests: corcovado::channel::Receiver<Request>,
 }
 
 unsafe impl raw_window_handle::HasRawWindowHandle for MacosDisplay {
@@ -366,21 +366,30 @@ impl Modifiers {
     }
 }
 
-
-extern "C" fn wa_perform_key_assignment(
+extern "C" fn rio_perform_key_assignment(
     _self: &Object,
     _sel: Sel,
     menu_item: *mut Object,
 ) {
     let menu_item = MenuItem::with_menu_item(menu_item);
     // Safe because waPerformKeyAssignment: is only used with KeyAssignment
-    let action = menu_item.get_represented_item();
-    log::debug!("wa_perform_key_assignment {action:?}",);
-    match action {
-        Some(RepresentedItem::KeyAssignment(action)) => {
-            println!("{:?}", action);
+    let opt_action = menu_item.get_represented_item();
+    log::debug!("rio_perform_key_assignment {opt_action:?}",);
+    if let Some(action) = opt_action {
+        match action {
+            RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                let native_app: Option<&App> = NATIVE_APP.get();
+                if let Some(app) = native_app {
+                    let _ = app.sender.send(action);
+                }
+            }
+            RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref _text)) => {
+                let native_app: Option<&App> = NATIVE_APP.get();
+                if let Some(app) = native_app {
+                    let _ = app.sender.send(action);
+                }
+            }
         }
-        None => {}
     }
 }
 
@@ -391,7 +400,7 @@ extern "C" fn application_dock_menu(
 ) -> *mut Object {
     let dock_menu = Menu::new_with_title("");
     let new_window_item =
-        MenuItem::new_with("New Window", Some(sel!(waPerformKeyAssignment:)), "");
+        MenuItem::new_with("New Window", Some(sel!(rioPerformKeyAssignment:)), "");
     new_window_item
         .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
     dock_menu.add_item(&new_window_item);
@@ -526,7 +535,8 @@ pub fn define_app_delegate() -> *const Class {
     unsafe {
         decl.add_method(
             sel!(applicationDockMenu:),
-            application_dock_menu as extern "C" fn(&Object, Sel, *mut Object) -> *mut Object,
+            application_dock_menu
+                as extern "C" fn(&Object, Sel, *mut Object) -> *mut Object,
         );
         decl.add_method(
             sel!(applicationShouldTerminate:),
@@ -549,7 +559,7 @@ pub fn define_app_delegate() -> *const Class {
         // );
         decl.add_method(
             sel!(rioPerformKeyAssignment:),
-            wa_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
+            rio_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
         );
         decl.add_method(
             sel!(application:openURLs:),
@@ -1534,13 +1544,15 @@ pub enum NSWindowTabbingMode {
 
 pub struct App {
     pub ns_app: StrongPtr,
+    pub sender: corcovado::channel::Sender<RepresentedItem>,
 }
 unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl<'a> App {
-    pub fn new() -> App {
+    pub fn new() -> (App, corcovado::channel::Receiver<RepresentedItem>) {
         crate::set_handler();
+        let (sender, receiver) = corcovado::channel::channel();
 
         unsafe {
             let app_delegate_class = define_app_delegate();
@@ -1559,9 +1571,16 @@ impl<'a> App {
 
             let _ = NATIVE_APP.set(App {
                 ns_app: ns_app.clone(),
+                sender: sender.clone(),
             });
 
-            Self { ns_app }
+            (
+                Self {
+                    ns_app,
+                    sender: sender,
+                },
+                receiver,
+            )
         }
     }
 
@@ -1602,7 +1621,7 @@ impl Window {
         F: 'static + FnOnce() -> Box<dyn EventHandler>,
     {
         unsafe {
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (sender, receiver) = corcovado::channel::channel();
             let clipboard = Box::new(MacosClipboard);
 
             let id = crate::get_handler().lock().next_id();
@@ -1613,7 +1632,7 @@ impl Window {
                     ..NativeDisplayData::new(
                         conf.window_width,
                         conf.window_height,
-                        tx,
+                        sender,
                         clipboard,
                     )
                 },
@@ -1633,7 +1652,7 @@ impl Window {
                 cursors: HashMap::new(),
                 f: Some(Box::new(f)),
                 event_handler: None,
-                native_requests: rx,
+                native_requests: receiver,
                 modifiers: Modifiers::default(),
             };
 
