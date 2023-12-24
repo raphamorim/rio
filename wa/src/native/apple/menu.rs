@@ -417,7 +417,7 @@ impl MenuItem {
     }
 }
 
-const WRAPPER_CLS_NAME: &str = "RioRepresentedItem";
+const WRAPPER_CLS_NAME: &str = "WaRepresentedItem";
 const WRAPPER_FIELD_NAME: &str = "item";
 /// Wraps RepresentedItem in an NSObject so that we can associate
 /// it with a MenuItem

@@ -367,15 +367,15 @@ impl Modifiers {
 }
 
 
-extern "C" fn rio_perform_key_assignment(
+extern "C" fn wa_perform_key_assignment(
     _self: &Object,
     _sel: Sel,
     menu_item: *mut Object,
 ) {
     let menu_item = MenuItem::with_menu_item(menu_item);
-    // Safe because weztermPerformKeyAssignment: is only used with KeyAssignment
+    // Safe because waPerformKeyAssignment: is only used with KeyAssignment
     let action = menu_item.get_represented_item();
-    log::debug!("rio_perform_key_assignment {action:?}",);
+    log::debug!("wa_perform_key_assignment {action:?}",);
     match action {
         Some(RepresentedItem::KeyAssignment(action)) => {
             println!("{:?}", action);
@@ -391,7 +391,7 @@ extern "C" fn application_dock_menu(
 ) -> *mut Object {
     let dock_menu = Menu::new_with_title("");
     let new_window_item =
-        MenuItem::new_with("New Window", Some(sel!(rioPerformKeyAssignment:)), "");
+        MenuItem::new_with("New Window", Some(sel!(waPerformKeyAssignment:)), "");
     new_window_item
         .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
     dock_menu.add_item(&new_window_item);
@@ -549,7 +549,7 @@ pub fn define_app_delegate() -> *const Class {
         // );
         decl.add_method(
             sel!(rioPerformKeyAssignment:),
-            rio_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
+            wa_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
         );
         decl.add_method(
             sel!(application:openURLs:),
