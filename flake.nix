@@ -81,7 +81,7 @@
           };
         in
         {
-          default = pkgsFor.${system}.mkShell {
+          default = pkgsFor.${system}.mkShell rec {
             packages = with pkgsFor.${system}; if stdenv.isDarwin then [
               darwin.libobjc
               darwin.apple_sdk_11_0.frameworks.AppKit
@@ -104,6 +104,8 @@
               xorg.libxcb
               wayland
             ];
+
+            LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgsFor.${system}.lib.makeLibraryPath packages)}";
           };
         }
       );
