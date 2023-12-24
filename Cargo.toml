@@ -6,8 +6,6 @@ members = [
   "copa",
   "rio-proc-macros",
   "rio-backend",
-  "wa",
-
   "frontends/cross-winit",
 ]
 resolver = "2"
