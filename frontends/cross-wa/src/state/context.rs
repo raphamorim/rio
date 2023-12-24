@@ -626,8 +626,10 @@ impl ContextManager {
         // Native tabs do not use Context tabbing API, instead it will
         // ask winit to create a window with a tab id
         if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::CreateNativeTab(working_dir), self.window_id);
+            self.event_proxy.send_event_with_high_priority(
+                RioEvent::CreateNativeTab(working_dir),
+                self.window_id,
+            );
             return;
         }
 

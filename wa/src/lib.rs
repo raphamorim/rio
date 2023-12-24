@@ -8,20 +8,26 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support and etc.
 
-#![allow(clippy::all)]
 #![cfg(target_os = "macos")]
 
 pub mod conf;
 mod event;
 pub mod native;
-pub mod sync;
-
-pub use event::*;
-
 mod resources;
+pub mod sync;
+pub use event::*;
 
 use once_cell::sync::OnceCell;
 use sync::FairMutex;
+
+macro_rules! unwrap_or_return {
+    ( $e:expr ) => {
+        match $e {
+            Some(x) => x,
+            None => return,
+        }
+    };
+}
 
 static NATIVE_DISPLAY: OnceCell<FairMutex<native::Handler>> = OnceCell::new();
 
@@ -30,7 +36,6 @@ fn set_handler() {
 }
 
 fn get_handler() -> &'static FairMutex<native::Handler> {
-    // println!("get_handler");
     NATIVE_DISPLAY
         .get()
         .expect("Backend has not initialized NATIVE_DISPLAY yet.") //|| Mutex::new(Default::default()))
@@ -38,16 +43,11 @@ fn get_handler() -> &'static FairMutex<native::Handler> {
 
 fn set_display(id: u16, display: native::NativeDisplayData) {
     let handler: &FairMutex<native::Handler> = get_handler();
-    let mut d = handler.lock();
-    d.insert(id, display);
+    handler.lock().insert(id, display);
 }
 
-/// Window and associated to window rendering context related functions.
-/// in macroquad <= 0.3, it was ctx.screen_size(). Now it is window::screen_size()
 pub mod window {
     use super::*;
-    /// The current framebuffer size in pixels
-    /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn screen_size(id: u16) -> (f32, f32) {
         let d = get_handler().lock();
         if let Some(d) = d.get(id) {
@@ -56,9 +56,6 @@ pub mod window {
             (800., 600.)
         }
     }
-
-    /// The dpi scaling factor (window pixels to framebuffer pixels)
-    /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn dpi_scale(id: u16) -> f32 {
         let d = get_handler().lock();
         if let Some(d) = d.get(id) {
@@ -67,9 +64,6 @@ pub mod window {
             1.0
         }
     }
-
-    /// True when high_dpi was requested and actually running in a high-dpi scenario
-    /// NOTE: [High DPI Rendering](../conf/index.html#high-dpi-rendering)
     pub fn high_dpi(id: u16) -> bool {
         let d = get_handler().lock();
         if let Some(d) = d.get(id) {
@@ -78,31 +72,15 @@ pub mod window {
             true
         }
     }
-
-    /// This function simply quits the application without
-    /// giving the user a chance to intervene. Usually this might
-    /// be called when the user clicks the 'Ok' button in a 'Really Quit?'
-    /// dialog box
-    /// Window might not be actually closed right away (exit(0) might not
-    /// happen in the order_quit implmentation) and execution might continue for some time after
-    /// But the window is going to be inevitably closed at some point.
     pub fn order_quit(id: u16) {
         let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_ordered = true;
         }
     }
-
-    /// Shortcut for `order_quit`. Will add a legacy attribute at some point.
     pub fn quit(id: u16) {
         order_quit(id)
     }
-
-    /// Calling request_quit() will trigger "quit_requested_event" event , giving
-    /// the user code a chance to intervene and cancel the pending quit process
-    /// (for instance to show a 'Really Quit?' dialog box).
-    /// If the event handler callback does nothing, the application will be quit as usual.
-    /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit(id: u16) {
         let d = get_handler().lock();
         if let Some(display) = d.get(id) {
@@ -114,14 +92,12 @@ pub mod window {
             }
         }
     }
-
     pub fn cancel_quit(id: u16) {
         let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_requested = false;
         }
     }
-
     pub fn set_cursor_grab(id: u16, grab: bool) {
         let d = get_handler().lock();
         if let Some(display) = d.get(id) {
@@ -133,30 +109,30 @@ pub mod window {
             }
         }
     }
-
     /// Show or hide the mouse cursor
     pub fn show_mouse(id: u16, shown: bool) {
         let d = get_handler().lock();
-        if let Some(display) = d.get(id) {
-            let view = display.view;
-            unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
-                    display.show_mouse(shown);
-                }
+        let view = unwrap_or_return!(d.get(id)).view;
+        // drop view as soon we have it, if let Some() keeps locked until block drop
+        drop(d);
+
+        unsafe {
+            if let Some(display) = native::macos::get_window_payload(&*view) {
+                display.show_mouse(shown);
             }
         }
     }
-
     /// Show or hide the mouse cursor
     pub fn set_window_title(id: u16, title: String, subtitle: String) {
         let d = get_handler().lock();
-        if let Some(display) = d.get(id) {
-            let view = display.view;
-            unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
-                    display.set_title(&title);
-                    display.set_subtitle(&subtitle);
-                }
+        let view = unwrap_or_return!(d.get(id)).view;
+        drop(d);
+        // drop view as soon we have it, if let Some() keeps locked until block drop
+
+        unsafe {
+            if let Some(display) = native::macos::get_window_payload(&*view) {
+                display.set_title(&title);
+                display.set_subtitle(&subtitle);
             }
         }
     }
@@ -164,12 +140,13 @@ pub mod window {
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(id: u16, cursor_icon: CursorIcon) {
         let d = get_handler().lock();
-        if let Some(display) = d.get(id) {
-            let view = display.view;
-            unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
-                    display.set_mouse_cursor(cursor_icon);
-                }
+        let view = unwrap_or_return!(d.get(id)).view;
+        drop(d);
+        // drop view as soon we have it, if let Some() keeps locked until block drop
+
+        unsafe {
+            if let Some(display) = native::macos::get_window_payload(&*view) {
+                display.set_mouse_cursor(cursor_icon);
             }
         }
     }
@@ -198,7 +175,6 @@ pub mod window {
             }
         }
     }
-
     /// Get current OS clipboard value
     pub fn clipboard_get(id: u16) -> Option<String> {
         let mut d = get_handler().lock();
@@ -213,30 +189,6 @@ pub mod window {
         let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.clipboard.set(data)
-        }
-    }
-    pub fn dropped_file_count(id: u16) -> usize {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            d.dropped_files.bytes.len()
-        } else {
-            0
-        }
-    }
-    pub fn dropped_file_bytes(id: u16, index: usize) -> Option<Vec<u8>> {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            d.dropped_files.bytes.get(index).cloned()
-        } else {
-            None
-        }
-    }
-    pub fn dropped_file_path(id: u16, index: usize) -> Option<std::path::PathBuf> {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            d.dropped_files.paths.get(index).cloned()
-        } else {
-            None
         }
     }
 }
@@ -263,28 +215,3 @@ pub type App = native::macos::App;
 pub type Window = native::macos::Window;
 #[cfg(target_os = "macos")]
 pub type MenuItem = native::apple::menu::MenuItem;
-
-// pub fn run()
-// {
-//     #[cfg(target_os = "macos")]
-//     unsafe {
-//         native::macos::run();
-//     }
-// }
-
-// pub fn create_app()  {
-//     #[cfg(target_os = "macos")]
-//     unsafe {
-//         native::macos::create_app();
-//     }
-// }
-
-// pub fn create_window<F>(conf: conf::Conf, f: F)
-// where
-//     F: 'static + FnOnce() -> Box<dyn EventHandler>,
-// {
-//     #[cfg(target_os = "macos")]
-//     unsafe {
-//         native::macos::create_window(conf, f);
-//     }
-// }

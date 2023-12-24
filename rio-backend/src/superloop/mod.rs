@@ -1,12 +1,12 @@
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
-use std::collections::LinkedList;
-use std::sync::atomic::AtomicUsize;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 pub struct InnerData {
-    list: LinkedList<RioEvent>,
-    _len: AtomicUsize,
+    list: VecDeque<RioEvent>,
+    redraw: Vec<u8>,
+    priority_list: Vec<RioEvent>,
 }
 
 pub struct Inner(InnerData);
@@ -15,8 +15,9 @@ impl Inner {
     /// Create a new, empty event listener list.
     pub fn new() -> Self {
         Self(InnerData {
-            list: LinkedList::new(),
-            _len: 0.into(),
+            list: VecDeque::new(),
+            redraw: Vec::new(),
+            priority_list: Vec::new(),
         })
     }
 }
@@ -44,19 +45,39 @@ impl Superloop {
     }
 
     #[inline]
-    pub fn event(&mut self) -> RioEvent {
-        self.0
-            .lock()
-            .inner
-            .0
-            .list
-            .pop_front()
-            .or(Some(RioEvent::Noop))
-            .unwrap()
+    pub fn event(&mut self) -> (RioEvent, bool) {
+        let mut inner = &mut self.0.lock().inner.0;
+
+        let redraw = if !inner.redraw.is_empty() {
+            inner.redraw.pop();
+            true
+        } else {
+            false
+        };
+
+        if !inner.priority_list.is_empty() {
+            return (inner.priority_list.pop().unwrap_or(RioEvent::Noop), redraw);
+        }
+
+        let current = inner.list.pop_front().unwrap_or(RioEvent::Noop);
+
+        // println!("{:?}", current);
+        (current, redraw)
     }
 
+    #[inline]
     pub fn send_event(&mut self, event: RioEvent, _id: u16) {
         self.0.lock().inner.0.list.push_back(event);
+    }
+
+    #[inline]
+    pub fn send_event_with_high_priority(&mut self, event: RioEvent, _id: u16) {
+        self.0.lock().inner.0.priority_list.push(event);
+    }
+
+    #[inline]
+    pub fn send_redraw(&mut self, _id: u16) {
+        self.0.lock().inner.0.redraw.push(0);
     }
 }
 

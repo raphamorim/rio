@@ -10,23 +10,6 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
-#[repr(u8)]
-pub enum UpdateOpcode {
-    ForceRefresh = 0,
-    UpdateGraphicLibrary = 1,
-}
-
-impl From<u8> for UpdateOpcode {
-    fn from(val: u8) -> UpdateOpcode {
-        match val {
-            0 => UpdateOpcode::ForceRefresh,
-            1 => UpdateOpcode::UpdateGraphicLibrary,
-
-            _ => UpdateOpcode::ForceRefresh,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum Msg {
     /// Data that should be written to the PTY.
@@ -126,7 +109,8 @@ pub enum RioEvent {
 
     BlinkCursor,
 
-    RequestUpdate(u8),
+    UpdateGraphicLibrary,
+    ForceRefresh,
 
     // No operation
     Noop,
@@ -177,7 +161,8 @@ impl Debug for RioEvent {
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
-            RioEvent::RequestUpdate(opcode) => write!(f, "RequestUpdate({opcode})"),
+            RioEvent::UpdateGraphicLibrary => write!(f, "UpdateGraphicLibrary"),
+            RioEvent::ForceRefresh => write!(f, "ForceRefresh"),
         }
     }
 }

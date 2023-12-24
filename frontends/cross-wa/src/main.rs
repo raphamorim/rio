@@ -6,7 +6,6 @@
 
 mod cli;
 mod constants;
-mod context;
 mod ime;
 mod logger;
 mod messenger;

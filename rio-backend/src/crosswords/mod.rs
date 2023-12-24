@@ -38,7 +38,6 @@ use crate::config::colors::{
 };
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::RioEvent;
-use crate::event::UpdateOpcode;
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::superloop::Superloop;
@@ -473,8 +472,7 @@ impl Crosswords {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
-            self.event_proxy
-                .send_event(RioEvent::Render, self.window_id);
+            self.event_proxy.send_redraw(self.window_id);
         }
     }
 
@@ -2643,10 +2641,8 @@ impl Handler for Crosswords {
             ..graphic
         });
 
-        self.event_proxy.send_event(
-            RioEvent::RequestUpdate(UpdateOpcode::UpdateGraphicLibrary as u8),
-            self.window_id,
-        );
+        self.event_proxy
+            .send_event(RioEvent::UpdateGraphicLibrary, self.window_id);
     }
 }
 

@@ -189,8 +189,9 @@ where
 
         // Queue terminal redraw unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            self.event_proxy
-                .send_event(RioEvent::Wakeup, self.window_id);
+            self.event_proxy.send_redraw(self.window_id);
+            // self.event_proxy
+            //     .send_event(RioEvent::Wakeup, self.window_id);
         }
 
         Ok(())
@@ -305,8 +306,7 @@ where
                 // Handle synchronized update timeout.
                 if events.is_empty() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
-                    self.event_proxy
-                        .send_event(RioEvent::Wakeup, self.window_id);
+                    self.event_proxy.send_redraw(self.window_id);
                     continue;
                 }
 
@@ -332,8 +332,9 @@ where
                                 // }
 
                                 self.terminal.lock().exit();
-                                self.event_proxy
-                                    .send_event(RioEvent::Wakeup, self.window_id);
+                                // self.event_proxy
+                                //     .send_event(RioEvent::Wakeup, self.window_id);
+                                self.event_proxy.send_redraw(self.window_id);
                                 break 'event_loop;
                             }
                         }
