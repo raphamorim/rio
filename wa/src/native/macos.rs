@@ -1352,9 +1352,9 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
         if let Some(payload) = get_window_payload(this) {
-            let id = payload.id;
-
             if !payload.has_initialized {
+                let id = payload.id;
+
                 if payload.event_handler.is_none() {
                     let f = payload.f.take().unwrap();
                     payload.event_handler = Some(f());
@@ -1385,7 +1385,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             }
 
             if let Some(event_handler) = payload.context() {
-                event_handler.process(id);
+                event_handler.process();
             }
 
             //         EventHandlerAction::Quit => unsafe {
