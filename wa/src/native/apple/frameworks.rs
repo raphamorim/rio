@@ -1,7 +1,10 @@
-// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
-// original copyright belongs to Makepad
-// Copy-pasted from https://github.com/makepad/makepad/blob/live/platform/src/platform/apple/apple_frameworks.rs
-// and slightly modified
+// Copyright (c) 2023-present, Raphael Amorim.
+// 
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+// 
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
+// https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
 
 // stripped mac core foundation + metal layer only whats needed
 

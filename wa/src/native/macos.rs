@@ -1,17 +1,22 @@
-//Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT)
-//MacOs implementation is basically a mix between
-//sokol_app's objective C code and Makepad's (<https://github.com/makepad/makepad/blob/live/platform/src/platform/apple>)
-//platform implementation
+// Copyright (c) 2023-present, Raphael Amorim.
+// 
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+// 
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
+// https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
+// The code has suffered several changes like support to multiple windows, extension of windows
+// properties, menu support, IME support, and etc.
 
+use crate::native::apple::menu::{Menu, MenuItem, RepresentedItem, KeyAssignment};
 use objc::rc::StrongPtr;
-use parking_lot::FairMutex;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
 use std::sync::OnceLock;
 
 use {
     crate::{
-        event::{EventHandler, EventHandlerAction, MouseButton},
+        event::{EventHandler, MouseButton},
         get_handler,
         native::{
             apple::{apple_util::*, frameworks::*},
@@ -22,17 +27,17 @@ use {
     std::{collections::HashMap, os::raw::c_void, sync::mpsc::Receiver},
 };
 
-#[allow(non_upper_case_globals)]
-const NSViewLayerContentsPlacementTopLeft: isize = 11;
-#[allow(non_upper_case_globals)]
-const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
+// #[allow(non_upper_case_globals)]
+// const NSViewLayerContentsPlacementTopLeft: isize = 11;
+// #[allow(non_upper_case_globals)]
+// const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 
 const VIEW_IVAR_NAME: &str = "RioDisplay";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
 
 const NSNOT_FOUND: i32 = i32::MAX;
 
-static NATIVE_APP: OnceLock<FairMutex<App>> = OnceLock::new();
+pub static NATIVE_APP: OnceLock<App> = OnceLock::new();
 
 #[cfg(target_pointer_width = "32")]
 pub type NSInteger = libc::c_int;
@@ -169,14 +174,6 @@ impl MacosDisplay {
             let _: () = msg_send![&*self.window, setSubtitle: &*subtitle];
         }
     }
-    fn set_title_and_subtitle(&self, title: &str, subtitle: &str) {
-        unsafe {
-            let title = str_to_nsstring(title);
-            let _: () = msg_send![&*self.window, setTitle: &*title];
-            let subtitle = str_to_nsstring(subtitle);
-            let _: () = msg_send![&*self.window, setSubtitle: &*subtitle];
-        }
-    }
     fn set_window_size(&mut self, new_width: u32, new_height: u32) {
         let mut frame: NSRect = unsafe { msg_send![self.window, frame] };
         frame.origin.y += frame.size.height;
@@ -242,9 +239,9 @@ impl MacosDisplay {
     //     }
     // }
     fn confirm_quit(&self) {
-        let native_app: Option<&FairMutex<App>> = NATIVE_APP.get();
+        let native_app: Option<&App> = NATIVE_APP.get();
         if native_app.is_some() {
-            let app = native_app.unwrap().lock();
+            let app = native_app.unwrap();
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
             }
@@ -311,7 +308,8 @@ impl MacosDisplay {
             ShowMouse(show) => self.show_mouse(show),
             RequestQuit => self.confirm_quit(),
             SetWindowTitle { title, subtitle } => {
-                self.set_title_and_subtitle(&title, &subtitle)
+                self.set_title(&title);
+                self.set_subtitle(&subtitle);
             }
             SetMouseCursor(icon) => self.set_mouse_cursor(icon),
             SetWindowSize {
@@ -368,19 +366,37 @@ impl Modifiers {
     }
 }
 
-// extern "C" fn application_dock_menu(
-//     _self: &mut Object,
-//     _sel: Sel,
-//     _app: *mut Object,
-// ) -> *mut Object {
-//     // let dock_menu = Menu::new_with_title("");
-//     // let new_window_item =
-//     //     MenuItem::new_with("New Window", Some(sel!(weztermPerformKeyAssignment:)), "");
-//     // new_window_item
-//     //     .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
-//     // dock_menu.add_item(&new_window_item);
-//     // dock_menu.autorelease()
-// }
+
+extern "C" fn rio_perform_key_assignment(
+    _self: &Object,
+    _sel: Sel,
+    menu_item: *mut Object,
+) {
+    let menu_item = MenuItem::with_menu_item(menu_item);
+    // Safe because weztermPerformKeyAssignment: is only used with KeyAssignment
+    let action = menu_item.get_represented_item();
+    log::debug!("rio_perform_key_assignment {action:?}",);
+    match action {
+        Some(RepresentedItem::KeyAssignment(action)) => {
+            println!("{:?}", action);
+        }
+        None => {}
+    }
+}
+
+extern "C" fn application_dock_menu(
+    _self: &Object,
+    _sel: Sel,
+    _app: *mut Object,
+) -> *mut Object {
+    let dock_menu = Menu::new_with_title("");
+    let new_window_item =
+        MenuItem::new_with("New Window", Some(sel!(rioPerformKeyAssignment:)), "");
+    new_window_item
+        .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
+    dock_menu.add_item(&new_window_item);
+    dock_menu.autorelease()
+}
 
 extern "C" fn application_open_untitled_file(
     this: &Object,
@@ -508,10 +524,10 @@ pub fn define_app_delegate() -> *const Class {
     }
 
     unsafe {
-        // decl.add_method(
-        //     sel!(applicationDockMenu:),
-        //     application_dock_menu as extern "C" fn(&mut Object, Sel, *mut Object) -> *mut Object,
-        // );
+        decl.add_method(
+            sel!(applicationDockMenu:),
+            application_dock_menu as extern "C" fn(&Object, Sel, *mut Object) -> *mut Object,
+        );
         decl.add_method(
             sel!(applicationShouldTerminate:),
             application_should_terminate
@@ -531,6 +547,10 @@ pub fn define_app_delegate() -> *const Class {
         //     application_open_file
         //         as extern "C" fn(&Object, Sel, *mut Object, *mut Object),
         // );
+        decl.add_method(
+            sel!(rioPerformKeyAssignment:),
+            rio_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
+        );
         decl.add_method(
             sel!(application:openURLs:),
             application_open_urls as extern "C" fn(&Object, Sel, ObjcId, ObjcId),
@@ -1537,9 +1557,9 @@ impl<'a> App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            NATIVE_APP.set(FairMutex::new(App {
+            let _ = NATIVE_APP.set(App {
                 ns_app: ns_app.clone(),
-            }));
+            });
 
             Self { ns_app }
         }
