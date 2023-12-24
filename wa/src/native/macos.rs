@@ -383,10 +383,12 @@ extern "C" fn rio_perform_key_assignment(
                     let _ = app.sender.send(action);
                 }
             }
-            RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref _text)) => {
-                let native_app: Option<&App> = NATIVE_APP.get();
-                if let Some(app) = native_app {
-                    let _ = app.sender.send(action);
+            RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
+                unsafe {
+                    let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
+                    let () = msg_send![pasteboard, clearContents];
+                    let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str_to_nsstring(text)];
+                    let () = msg_send![pasteboard, writeObjects: arr];
                 }
             }
         }
