@@ -301,7 +301,7 @@ pub enum DragState {
 
 /// A trait defining event callbacks.
 pub trait EventHandler {
-    fn process(&mut self, _id: u16);
+    fn process(&mut self);
     fn init(
         &mut self,
         _id: u16,

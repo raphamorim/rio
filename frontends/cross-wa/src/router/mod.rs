@@ -96,7 +96,7 @@ impl EventHandler for Router {
         self.route = Some(initial_route);
     }
     #[inline]
-    fn process(&mut self, window_id: u16) {
+    fn process(&mut self) {
         // TODO:
         // match self.scheduler.update() {
         //     Some(instant) => { return next },
