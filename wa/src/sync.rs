@@ -1,8 +1,8 @@
 // Copyright (c) 2023-present, Raphael Amorim.
-// 
+//
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-// 
+//
 // event/sync.rs was originally taken from Alacritty
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/sync.rs
 // which is licensed under Apache 2.0 license.

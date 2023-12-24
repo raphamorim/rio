@@ -23,7 +23,7 @@ sugarloaf = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = "2.4.1"
-futures = "0.3.29"
+futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }

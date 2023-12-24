@@ -1,26 +1,20 @@
 // Copyright (c) 2023-present, Raphael Amorim.
-// 
+//
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-// 
+//
 // Originally retired from wez/wezterm menu.rs
 // Ref: https://github.com/wez/wezterm/blob/84ae00c868e711cf97b2bfe885892428f1131a1d/window/src/os/macos/menu.rs
 // The code has suffered changed like removal of cocoa and ported to usage of apple_utils.rs
 
+pub use crate::event::KeyAssignment;
+use crate::native::apple::{apple_util::*, frameworks::*};
 use crate::native::macos::{App, NATIVE_APP};
-use crate::native::{
-    apple::{apple_util::*, frameworks::*},
-};
-use crate::native::macos::{NSUInteger, NSInteger};
+use crate::native::macos::{NSInteger, NSUInteger};
 use objc::declare::ClassDecl;
 use objc::rc::StrongPtr;
 use objc::runtime::{Class, Object, Sel, BOOL, NO, YES};
 use std::ffi::c_void;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum KeyAssignment {
-    SpawnWindow,
-}
 
 pub type SEL = Sel;
 
@@ -58,9 +52,7 @@ impl Menu {
 
     pub fn item_at_index(&self, index: usize) -> Option<MenuItem> {
         let index = index as NSInteger;
-        let item: ObjcId = unsafe {
-            msg_send![*self.menu, itemAtIndex: index]
-        };
+        let item: ObjcId = unsafe { msg_send![*self.menu, itemAtIndex: index] };
         if item.is_null() {
             None
         } else {
@@ -84,16 +76,12 @@ impl Menu {
         let native_app: Option<&App> = NATIVE_APP.get();
         if native_app.is_some() {
             let app = native_app.unwrap();
-            let existing: ObjcId = unsafe { 
-                msg_send![*app.ns_app, mainMenu]
-            };
+            let existing: ObjcId = unsafe { msg_send![*app.ns_app, mainMenu] };
             if existing == nil {
                 None
             } else {
                 Some(Self {
-                    menu: unsafe {
-                        StrongPtr::retain(existing)
-                    },
+                    menu: unsafe { StrongPtr::retain(existing) },
                 })
             }
         } else {
@@ -118,7 +106,7 @@ impl Menu {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setWindowsMenu: *self.menu];
             }
-        }        
+        }
     }
 
     pub fn assign_as_services_menu(&self) {
@@ -149,7 +137,8 @@ impl Menu {
 
     pub fn item_with_title(&self, title: &str) -> Option<MenuItem> {
         unsafe {
-            let item: ObjcId = msg_send![*self.menu, itemWithTitle: str_to_nsstring(title)];
+            let item: ObjcId =
+                msg_send![*self.menu, itemWithTitle: str_to_nsstring(title)];
             if item.is_null() {
                 None
             } else {
@@ -160,7 +149,11 @@ impl Menu {
         }
     }
 
-    pub fn get_or_create_sub_menu<F: FnOnce(&Menu)>(&self, title: &str, on_create: F) -> Menu {
+    pub fn get_or_create_sub_menu<F: FnOnce(&Menu)>(
+        &self,
+        title: &str,
+        on_create: F,
+    ) -> Menu {
         match self.item_with_title(title) {
             Some(m) => m.get_sub_menu().unwrap(),
             None => {
@@ -203,7 +196,8 @@ impl Menu {
 
     pub fn index_of_item_with_represented_object(&self, object: ObjcId) -> Option<usize> {
         unsafe {
-            let n: NSInteger = msg_send![*self.menu, indexOfItemWithRepresentedObject: object];
+            let n: NSInteger =
+                msg_send![*self.menu, indexOfItemWithRepresentedObject: object];
             if n == -1 {
                 None
             } else {
@@ -212,12 +206,18 @@ impl Menu {
         }
     }
 
-    pub fn index_of_item_with_represented_item(&self, item: &RepresentedItem) -> Option<usize> {
+    pub fn index_of_item_with_represented_item(
+        &self,
+        item: &RepresentedItem,
+    ) -> Option<usize> {
         let wrapped = item.clone().wrap();
         self.index_of_item_with_represented_object(*wrapped)
     }
 
-    pub fn get_item_with_represented_item(&self, item: &RepresentedItem) -> Option<MenuItem> {
+    pub fn get_item_with_represented_item(
+        &self,
+        item: &RepresentedItem,
+    ) -> Option<MenuItem> {
         let idx = self.index_of_item_with_represented_item(item)?;
         self.item_at_index(idx)
     }
@@ -231,6 +231,11 @@ pub struct MenuItem {
 pub enum RepresentedItem {
     KeyAssignment(KeyAssignment),
 }
+
+#[cfg(target_vendor = "apple")]
+unsafe impl Send for RepresentedItem {}
+#[cfg(target_vendor = "apple")]
+unsafe impl Sync for RepresentedItem {}
 
 impl RepresentedItem {
     fn wrap(self) -> StrongPtr {
@@ -264,7 +269,8 @@ impl MenuItem {
 
     pub fn new_separator() -> Self {
         unsafe {
-            let menu_item_separator: ObjcId = msg_send![class!(NSMenuItem), separatorItem];
+            let menu_item_separator: ObjcId =
+                msg_send![class!(NSMenuItem), separatorItem];
             let item = StrongPtr::new(menu_item_separator);
             Self { item }
         }
@@ -276,7 +282,8 @@ impl MenuItem {
             let title = str_to_nsstring(title);
             let action = action.unwrap_or_else(|| SEL::from_ptr(std::ptr::null()));
             let key = str_to_nsstring(key);
-            let item: ObjcId = msg_send![item, initWithTitle:title action:action keyEquivalent:key];
+            let item: ObjcId =
+                msg_send![item, initWithTitle:title action:action keyEquivalent:key];
 
             Self {
                 item: StrongPtr::new(item),
@@ -423,8 +430,8 @@ const WRAPPER_FIELD_NAME: &str = "item";
 /// it with a MenuItem
 fn get_wrapper_class() -> &'static Class {
     Class::get(WRAPPER_CLS_NAME).unwrap_or_else(|| {
-        let mut cls =
-            ClassDecl::new(WRAPPER_CLS_NAME, class!(NSObject)).expect("Unable to register class");
+        let mut cls = ClassDecl::new(WRAPPER_CLS_NAME, class!(NSObject))
+            .expect("Unable to register class");
 
         extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
             unsafe {
