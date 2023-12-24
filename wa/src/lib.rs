@@ -1,4 +1,12 @@
-// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT (https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT) and slightly modified
+// Copyright (c) 2023-present, Raphael Amorim.
+// 
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+// 
+// Originally retired from https://github.com/not-fl3/macroquad licensed under MIT
+// https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
+// The code has suffered several changes like support to multiple windows, extension of windows
+// properties, menu support and etc.
 
 #![allow(clippy::all)]
 #![cfg(target_os = "macos")]
