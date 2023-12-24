@@ -105,80 +105,97 @@ pub mod window {
     /// To prevent this, call the function "cancel_quit()"" from inside the event handler.
     pub fn request_quit(id: u16) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d.native_requests.send(native::Request::RequestQuit);
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.confirm_quit();
+                }
+            }
         }
     }
 
-    /// Cancels a pending quit request, either initiated
-    /// by the user clicking the window close button, or programmatically
-    /// by calling "request_quit()". The only place where calling this
-    /// function makes sense is from inside the event handler callback when
-    /// the "quit_requested_event" event has been received
     pub fn cancel_quit(id: u16) {
         let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
             d.quit_requested = false;
         }
     }
-    /// Capture mouse cursor to the current window
-    /// On WASM this will automatically hide cursor
-    /// On desktop this will bound cursor to windows border
-    /// NOTICE: on desktop cursor will not be automatically released after window lost focus
-    ///         so set_cursor_grab(false) on window's focus lost is recommended.
-    /// TODO: implement window focus events
+
     pub fn set_cursor_grab(id: u16, grab: bool) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d.native_requests.send(native::Request::SetCursorGrab(grab));
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.set_cursor_grab(grab);
+                }
+            }
         }
     }
 
     /// Show or hide the mouse cursor
     pub fn show_mouse(id: u16, shown: bool) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d.native_requests.send(native::Request::ShowMouse(shown));
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.show_mouse(shown);
+                }
+            }
         }
     }
 
     /// Show or hide the mouse cursor
     pub fn set_window_title(id: u16, title: String, subtitle: String) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d
-                .native_requests
-                .send(native::Request::SetWindowTitle { title, subtitle });
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.set_title(&title);
+                    display.set_subtitle(&subtitle);
+                }
+            }
         }
     }
 
     /// Set the mouse cursor icon.
     pub fn set_mouse_cursor(id: u16, cursor_icon: CursorIcon) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d
-                .native_requests
-                .send(native::Request::SetMouseCursor(cursor_icon));
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.set_mouse_cursor(cursor_icon);
+                }
+            }
         }
     }
 
     /// Set the application's window size.
     pub fn set_window_size(id: u16, new_width: u32, new_height: u32) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d.native_requests.send(native::Request::SetWindowSize {
-                new_width,
-                new_height,
-            });
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.set_window_size(new_width, new_height);
+                }
+            }
         }
     }
 
     pub fn set_fullscreen(id: u16, fullscreen: bool) {
         let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            let _ = d
-                .native_requests
-                .send(native::Request::SetFullscreen(fullscreen));
+        if let Some(display) = d.get(id) {
+            let view = display.view;
+            unsafe {
+                if let Some(display) = native::macos::get_window_payload(&*view) {
+                    display.set_fullscreen(fullscreen);
+                }
+            }
         }
     }
 

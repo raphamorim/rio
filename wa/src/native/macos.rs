@@ -20,11 +20,11 @@ use {
         get_handler,
         native::{
             apple::{apple_util::*, frameworks::*},
-            NativeDisplayData, Request,
+            NativeDisplayData,
         },
         CursorIcon,
     },
-    std::{collections::HashMap, os::raw::c_void, sync::mpsc::Receiver},
+    std::{collections::HashMap, os::raw::c_void},
 };
 
 // #[allow(non_upper_case_globals)]
@@ -96,7 +96,6 @@ pub struct MacosDisplay {
     // f: Box<dyn 'static + FnMut(&Window)>,
     f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
     modifiers: Modifiers,
-    native_requests: corcovado::channel::Receiver<Request>,
 }
 
 unsafe impl raw_window_handle::HasRawWindowHandle for MacosDisplay {
@@ -116,7 +115,7 @@ unsafe impl raw_window_handle::HasRawDisplayHandle for MacosDisplay {
 }
 
 impl MacosDisplay {
-    fn set_cursor_grab(&mut self, window: *mut Object, grab: bool) {
+    pub fn set_cursor_grab(&mut self, grab: bool) {
         if grab == self.cursor_grabbed {
             return;
         }
@@ -125,7 +124,7 @@ impl MacosDisplay {
 
         unsafe {
             if grab {
-                self.move_mouse_inside_window(window);
+                self.move_mouse_inside_window(self.window);
                 CGAssociateMouseAndMouseCursorPosition(false);
                 let () = msg_send![class!(NSCursor), hide];
             } else {
@@ -134,7 +133,7 @@ impl MacosDisplay {
             }
         }
     }
-    fn show_mouse(&mut self, show: bool) {
+    pub fn show_mouse(&mut self, show: bool) {
         if show && !self.cursor_shown {
             unsafe {
                 let () = msg_send![class!(NSCursor), unhide];
@@ -147,7 +146,7 @@ impl MacosDisplay {
         }
         self.cursor_shown = show;
     }
-    fn set_mouse_cursor(&mut self, cursor: crate::CursorIcon) {
+    pub fn set_mouse_cursor(&mut self, cursor: crate::CursorIcon) {
         if self.current_cursor != cursor {
             self.current_cursor = cursor;
             unsafe {
@@ -158,13 +157,13 @@ impl MacosDisplay {
             }
         }
     }
-    fn set_title(&self, title: &str) {
+    pub fn set_title(&self, title: &str) {
         unsafe {
             let title = str_to_nsstring(title);
             let _: () = msg_send![&*self.window, setTitle: &*title];
         }
     }
-    fn set_subtitle(&self, subtitle: &str) {
+    pub fn set_subtitle(&self, subtitle: &str) {
         // if !os::is_minimum_version(11) {
         //     return;
         // }
@@ -174,7 +173,7 @@ impl MacosDisplay {
             let _: () = msg_send![&*self.window, setSubtitle: &*subtitle];
         }
     }
-    fn set_window_size(&mut self, new_width: u32, new_height: u32) {
+    pub fn set_window_size(&mut self, new_width: u32, new_height: u32) {
         let mut frame: NSRect = unsafe { msg_send![self.window, frame] };
         frame.origin.y += frame.size.height;
         frame.origin.y -= new_height as f64;
@@ -185,7 +184,7 @@ impl MacosDisplay {
         let () =
             unsafe { msg_send![self.window, setFrame:frame display:true animate:true] };
     }
-    fn set_fullscreen(&mut self, fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
         if self.fullscreen != fullscreen {
             self.fullscreen = fullscreen;
             unsafe {
@@ -238,7 +237,7 @@ impl MacosDisplay {
     //         }
     //     }
     // }
-    fn confirm_quit(&self) {
+    pub fn confirm_quit(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
         if native_app.is_some() {
             let app = native_app.unwrap();
@@ -247,6 +246,7 @@ impl MacosDisplay {
             }
         }
     }
+
     #[inline]
     pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
         let event_handler = self.event_handler.as_deref_mut()?;
@@ -301,25 +301,25 @@ impl MacosDisplay {
         }
     }
 
-    fn process_request(&mut self, request: Request) {
-        use Request::*;
-        match request {
-            SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
-            ShowMouse(show) => self.show_mouse(show),
-            RequestQuit => self.confirm_quit(),
-            SetWindowTitle { title, subtitle } => {
-                self.set_title(&title);
-                self.set_subtitle(&subtitle);
-            }
-            SetMouseCursor(icon) => self.set_mouse_cursor(icon),
-            SetWindowSize {
-                new_width,
-                new_height,
-            } => self.set_window_size(new_width as _, new_height as _),
-            SetFullscreen(fullscreen) => self.set_fullscreen(fullscreen),
-            // _ => {}
-        }
-    }
+    // fn process_request(&mut self, request: Request) {
+    //     use Request::*;
+    //     match request {
+    //         SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
+    //         ShowMouse(show) => self.show_mouse(show),
+    //         RequestQuit => self.confirm_quit(),
+    //         SetWindowTitle { title, subtitle } => {
+    //             self.set_title(&title);
+    //             self.set_subtitle(&subtitle);
+    //         }
+    //         SetMouseCursor(icon) => self.set_mouse_cursor(icon),
+    //         SetWindowSize {
+    //             new_width,
+    //             new_height,
+    //         } => self.set_window_size(new_width as _, new_height as _),
+    //         SetFullscreen(fullscreen) => self.set_fullscreen(fullscreen),
+    //         // _ => {}
+    //     }
+    // }
 }
 
 #[derive(Default)]
@@ -1324,23 +1324,23 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
 
-    extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
-        // if let Some(payload) = get_window_payload(this) {
-        //     println!("{:?}", payload.id);
-        // }
-    }
+    // extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
+    // if let Some(payload) = get_window_payload(this) {
+    //     println!("{:?}", payload.id);
+    // }
+    // }
 
-    extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
-        YES
-    }
+    // extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
+    // YES
+    // }
 
-    extern "C" fn draw_layer_in_context(
-        _view: &mut Object,
-        _sel: Sel,
-        _layer_id: ObjcId,
-        _context: ObjcId,
-    ) {
-    }
+    // extern "C" fn draw_layer_in_context(
+    //     _view: &mut Object,
+    //     _sel: Sel,
+    //     _layer_id: ObjcId,
+    //     _context: ObjcId,
+    // ) {
+    // }
 
     extern "C" fn timer_fired(this: &Object, _sel: Sel, _: ObjcId) {
         unsafe {
@@ -1350,18 +1350,14 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
     extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
         if let Some(payload) = get_window_payload(this) {
-            if payload.event_handler.is_none() {
-                let f = payload.f.take().unwrap();
-                payload.event_handler = Some(f());
-            }
-
-            while let Ok(request) = payload.native_requests.try_recv() {
-                payload.process_request(request);
-            }
-
             let id = payload.id;
 
             if !payload.has_initialized {
+                if payload.event_handler.is_none() {
+                    let f = payload.f.take().unwrap();
+                    payload.event_handler = Some(f());
+                }
+
                 let d = get_handler().lock();
                 let d = d.get(id).unwrap();
                 if let Some(event_handler) = payload.context() {
@@ -1401,8 +1397,15 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
         }
     }
 
+    extern "C" fn dealloc(this: &Object, _sel: Sel) {
+        unsafe {
+            let superclass = class!(MTKView);
+            let () = msg_send![super(this, superclass), dealloc];
+        }
+    }
+
     unsafe {
-        //decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
+        decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
         decl.add_method(
             sel!(timerFired:),
             timer_fired as extern "C" fn(&Object, Sel, ObjcId),
@@ -1411,18 +1414,18 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             sel!(drawRect:),
             draw_rect as extern "C" fn(&Object, Sel, NSRect),
         );
-        decl.add_method(
-            sel!(displayLayer:),
-            display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
-        );
+        // decl.add_method(
+        //     sel!(displayLayer:),
+        //     display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
+        // );
         // decl.add_method(
         //     sel!(wantsUpdateLayer:),
         //     wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
         // );
-        decl.add_method(
-            sel!(drawLayer:inContext:),
-            draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
-        );
+        // decl.add_method(
+        //     sel!(drawLayer:inContext:),
+        //     draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
+        // );
 
         view_base_decl(&mut decl);
     }
@@ -1439,7 +1442,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     decl.register()
 }
 
-fn get_window_payload(this: &Object) -> Option<&mut MacosDisplay> {
+pub fn get_window_payload(this: &Object) -> Option<&mut MacosDisplay> {
     unsafe {
         let ptr: *mut c_void = *this.get_ivar(VIEW_IVAR_NAME);
         if ptr.is_null() {
@@ -1621,7 +1624,6 @@ impl Window {
         F: 'static + FnOnce() -> Box<dyn EventHandler>,
     {
         unsafe {
-            let (sender, receiver) = corcovado::channel::channel();
             let clipboard = Box::new(MacosClipboard);
 
             let id = crate::get_handler().lock().next_id();
@@ -1632,7 +1634,6 @@ impl Window {
                     ..NativeDisplayData::new(
                         conf.window_width,
                         conf.window_height,
-                        sender,
                         clipboard,
                     )
                 },
@@ -1652,7 +1653,6 @@ impl Window {
                 cursors: HashMap::new(),
                 f: Some(Box::new(f)),
                 event_handler: None,
-                native_requests: receiver,
                 modifiers: Modifiers::default(),
             };
 
