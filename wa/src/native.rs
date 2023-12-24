@@ -65,7 +65,6 @@ pub(crate) struct NativeDisplayData {
     pub high_dpi: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
-    pub native_requests: channel::Sender<Request>,
     pub clipboard: Box<dyn Clipboard>,
     pub dropped_files: DroppedFiles,
 
@@ -85,7 +84,6 @@ impl NativeDisplayData {
     pub fn new(
         screen_width: i32,
         screen_height: i32,
-        native_requests: channel::Sender<Request>,
         clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
@@ -95,7 +93,6 @@ impl NativeDisplayData {
             high_dpi: false,
             quit_requested: false,
             quit_ordered: false,
-            native_requests,
             clipboard,
             dimensions: (0, 0, 0.),
             display_handle: None,
@@ -105,17 +102,6 @@ impl NativeDisplayData {
             view: std::ptr::null_mut(),
         }
     }
-}
-
-#[derive(Debug)]
-pub(crate) enum Request {
-    SetCursorGrab(bool),
-    ShowMouse(bool),
-    SetWindowTitle { title: String, subtitle: String },
-    SetMouseCursor(crate::CursorIcon),
-    SetWindowSize { new_width: u32, new_height: u32 },
-    SetFullscreen(bool),
-    RequestQuit,
 }
 
 pub trait Clipboard: Send + Sync {
