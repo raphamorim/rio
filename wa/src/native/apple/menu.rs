@@ -64,8 +64,7 @@ impl Menu {
 
     pub fn assign_as_main_menu(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setMainMenu: *self.menu];
             }
@@ -74,8 +73,7 @@ impl Menu {
 
     pub fn get_main_menu() -> Option<Self> {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             let existing: ObjcId = unsafe { msg_send![*app.ns_app, mainMenu] };
             if existing == nil {
                 None
@@ -91,8 +89,7 @@ impl Menu {
 
     pub fn assign_as_help_menu(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setHelpMenu: *self.menu];
             }
@@ -101,8 +98,7 @@ impl Menu {
 
     pub fn assign_as_windows_menu(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setWindowsMenu: *self.menu];
             }
@@ -111,8 +107,7 @@ impl Menu {
 
     pub fn assign_as_services_menu(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setServicesMenu: *self.menu];
             }
@@ -121,8 +116,7 @@ impl Menu {
 
     pub fn assign_as_app_menu(&self) {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
             }
@@ -262,6 +256,7 @@ impl RepresentedItem {
 }
 
 impl MenuItem {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn with_menu_item(item: ObjcId) -> Self {
         let item = unsafe { StrongPtr::retain(item) };
         Self { item }

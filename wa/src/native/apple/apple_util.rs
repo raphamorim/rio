@@ -7,6 +7,8 @@
 // https://github.com/not-fl3/macroquad/blob/master/LICENSE-MIT
 
 #![allow(dead_code)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+#![allow(clippy::missing_safety_doc)]
 
 use crate::{
     event::{KeyCode, ModifiersState},
@@ -80,15 +82,14 @@ pub unsafe fn cfstring_ref_to_string(cfstring: CFStringRef) -> String {
     if converted == 0 || num_bytes == 0 {
         return String::new();
     }
-    let mut buffer = Vec::new();
-    buffer.resize(num_bytes as usize, 0u8);
+    let mut buffer = vec![0; num_bytes as usize];
     CFStringGetBytes(
         cfstring,
         range,
         kCFStringEncodingUTF8,
         0,
         false,
-        buffer.as_mut_ptr() as *mut u8,
+        buffer.as_mut_ptr(),
         num_bytes,
         std::ptr::null_mut::<u64>(),
     );

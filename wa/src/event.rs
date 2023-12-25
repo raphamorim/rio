@@ -257,10 +257,7 @@ impl From<ModifiersState> for Modifiers {
 
 impl ModifiersState {
     pub fn is_empty(&self) -> bool {
-        self.shift == false
-            && self.control == false
-            && self.alt == false
-            && self.logo == false
+        !self.shift && !self.control && !self.alt && !self.logo
     }
 
     pub fn empty() -> ModifiersState {

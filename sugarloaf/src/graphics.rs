@@ -1,13 +1,19 @@
 use crate::components::core::image::Handle;
 use std::collections::BTreeMap;
 
+pub struct SugarGraphicEntry {
+    pub id: SugarGraphicId,
+    pub handle: Handle,
+}
+
 pub struct SugarloafGraphics {
     inner: BTreeMap<SugarGraphicId, SugarGraphicEntry>,
 }
 
-pub struct SugarGraphicEntry {
-    pub id: SugarGraphicId,
-    pub handle: Handle,
+impl Default for SugarloafGraphics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SugarloafGraphics {
@@ -24,12 +30,12 @@ impl SugarloafGraphics {
 
     #[inline]
     pub fn get_mut(&mut self, id: &SugarGraphicId) -> Option<&mut SugarGraphicEntry> {
-        self.inner.get_mut(&id)
+        self.inner.get_mut(id)
     }
 
     #[inline]
     pub fn get(&mut self, id: &SugarGraphicId) -> Option<&SugarGraphicEntry> {
-        self.inner.get(&id)
+        self.inner.get(id)
     }
 
     #[inline]
@@ -54,7 +60,7 @@ impl SugarloafGraphics {
 
     #[inline]
     pub fn remove(&mut self, graphic_id: &SugarGraphicId) {
-        self.inner.remove(&graphic_id);
+        self.inner.remove(graphic_id);
     }
 }
 
