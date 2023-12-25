@@ -23,4 +23,5 @@ jobs:
           pr-labels: | # Labels to be set on the PR
             dependencies
             automated
-          pr-assignees: TornaxO7
+          pr-assignees: TornaxO7 RaySlash
+
