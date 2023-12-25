@@ -1575,7 +1575,7 @@ impl<'a> App {
                 let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
             };
-            println!("App Appearance is {name}");
+            log::info!("App Appearance is {name}");
             match name.as_str() {
                 "NSAppearanceNameVibrantDark" | "NSAppearanceNameDarkAqua" => {
                     Appearance::Dark
