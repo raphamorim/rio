@@ -388,6 +388,16 @@ impl State {
     }
 
     #[inline]
+    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity = self.foreground_opacity - acc;
+    }
+
+    #[inline]
+    pub fn increase_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity = self.foreground_opacity + acc;
+    }
+
+    #[inline]
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {

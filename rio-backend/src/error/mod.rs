@@ -13,6 +13,15 @@ pub struct RioError {
     pub level: RioErrorLevel,
 }
 
+impl RioError {
+    pub fn configuration_not_found() -> Self {
+        RioError {
+            level: RioErrorLevel::Warning,
+            report: RioErrorType::ConfigurationNotFound,
+        }
+    }
+}
+
 impl From<ConfigError> for RioError {
     fn from(error: ConfigError) -> Self {
         match error {

@@ -3,11 +3,13 @@ mod constants;
 mod menu;
 pub mod mouse;
 mod route;
+mod routes;
 
 use crate::event::RioEvent;
 use crate::ime::{Ime, Preedit};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use rio_backend::error::RioError;
 use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
@@ -19,7 +21,6 @@ struct Router {
     config: Rc<rio_backend::config::Config>,
     route: Option<Route>,
     superloop: Superloop,
-    scheduler: Scheduler,
     font_database: loader::Database,
     #[cfg(target_os = "macos")]
     tab_group: Option<u64>,
@@ -32,12 +33,10 @@ fn create_window(
 ) -> Result<Window, Box<dyn std::error::Error>> {
     let superloop = Superloop::new();
 
-    let scheduler = Scheduler::new(superloop.clone());
     let router = Router {
         config: config.clone(),
         route: None,
         superloop: superloop,
-        scheduler,
         font_database: font_database.clone(),
         tab_group,
     };
@@ -138,26 +137,24 @@ impl EventHandler for Router {
                 let _ = create_window(&self.config, &self.font_database, self.tab_group);
             }
             RioEvent::UpdateConfig => {
-                let (config, _config_error) =
-                    match rio_backend::config::Config::try_load() {
-                        Ok(config) => (config, None),
-                        Err(error) => {
-                            (rio_backend::config::Config::default(), Some(error))
-                        }
-                    };
+                let (config, config_error) = match rio_backend::config::Config::try_load()
+                {
+                    Ok(config) => (config, None),
+                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
+                };
 
                 self.config = config.into();
                 let appearance = wa::window::get_appearance();
 
                 if let Some(current) = &mut self.route {
+                    if let Some(error) = &config_error {
+                        current.report_error(&error.to_owned().into());
+                    } else {
+                        current.clear_errors();
+                    }
+
                     current.update_config(&self.config, appearance);
                 }
-
-                // if let Some(error) = &config_error {
-                //     route.report_error(&error.to_owned().into());
-                // } else {
-                //     route.clear_errors();
-                // }
             }
             RioEvent::Title(title, subtitle) => {
                 if let Some(current) = &mut self.route {
@@ -206,6 +203,11 @@ impl EventHandler for Router {
                         .current_mut()
                         .messenger
                         .send_bytes(text.into_bytes());
+                }
+            }
+            RioEvent::ReportToAssistant(error) => {
+                if let Some(current) = &mut self.route {
+                    current.report_error(&error);
                 }
             }
             RioEvent::UpdateFontSize(action) => {
@@ -264,12 +266,13 @@ impl EventHandler for Router {
             // }
             RioEvent::ForceRefresh => {
                 if let Some(current) = &mut self.route {
-                    if let Some(_err) = current
+                    if let Some(err) = current
                         .sugarloaf
                         .update_font(self.config.fonts.to_owned(), None)
                     {
-                        // self.context_manager
-                        // .report_error_fonts_not_found(err.fonts_not_found);
+                        current
+                            .ctx
+                            .report_error_fonts_not_found(err.fonts_not_found);
                         return;
                     }
 
@@ -313,11 +316,11 @@ impl EventHandler for Router {
     }
 
     fn ime_event(&mut self, ime_state: ImeState) {
-        // if route.path == RoutePath::Assistant {
-        //     return;
-        // }
-
         if let Some(current) = &mut self.route {
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
+
             match ime_state {
                 ImeState::Commit(text) => {
                     // Don't use bracketed paste for single char input.
@@ -353,6 +356,10 @@ impl EventHandler for Router {
         character: Option<smol_str::SmolStr>,
     ) {
         if let Some(current) = &mut self.route {
+            if current.has_key_wait(keycode) {
+                return;
+            }
+
             if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
                 if current.search_nearest_hyperlink_from_pos() {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
@@ -366,12 +373,20 @@ impl EventHandler for Router {
     }
     fn key_up_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
         if let Some(current) = &mut self.route {
+            if current.has_key_wait(keycode) {
+                return;
+            }
+
             current.process_key_event(keycode, mods, false, false, None);
             current.render();
         }
     }
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
+
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -412,9 +427,9 @@ impl EventHandler for Router {
     }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
         if let Some(current) = &mut self.route {
-            // if route.path != RoutePath::Terminal {
-            //     return;
-            // }
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
 
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
@@ -446,6 +461,10 @@ impl EventHandler for Router {
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
+
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -455,6 +474,10 @@ impl EventHandler for Router {
     }
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
+
             if self.config.hide_cursor_when_typing {
                 window::show_mouse(current.id, true);
             }
@@ -464,8 +487,6 @@ impl EventHandler for Router {
     }
     fn resize_event(&mut self, w: i32, h: i32, scale_factor: f32, rescale: bool) {
         if let Some(current) = &mut self.route {
-            // let s = d.sugarloaf.clone().unwrap();
-            // let mut s = s.lock();
             if rescale {
                 current.sugarloaf.rescale(scale_factor);
                 current
@@ -488,12 +509,16 @@ impl EventHandler for Router {
         _filepaths: Vec<std::path::PathBuf>,
         drag_state: DragState,
     ) {
-        match drag_state {
-            DragState::Entered => {
-                // TODO: Add preview drop
-            }
-            DragState::Exited => {
-                // TODO: Clean preview drop
+        if let Some(current) = &mut self.route {
+            match drag_state {
+                DragState::Entered => {
+                    current.state.decrease_foreground_opacity(0.3);
+                    current.render();
+                }
+                DragState::Exited => {
+                    current.state.increase_foreground_opacity(0.3);
+                    current.render();
+                }
             }
         }
     }
@@ -503,9 +528,10 @@ impl EventHandler for Router {
         }
 
         if let Some(current) = &mut self.route {
-            // if route.path == RoutePath::Assistant {
-            //     return;
-            // }
+            if current.path != routes::RoutePath::Terminal {
+                return;
+            }
+
             let mut dropped_files = String::from("");
             for filepath in filepaths {
                 dropped_files.push_str(&(filepath.to_string_lossy().to_string() + " "));
@@ -521,14 +547,14 @@ impl EventHandler for Router {
 #[inline]
 pub async fn run(
     config: rio_backend::config::Config,
-    _config_error: Option<rio_backend::config::ConfigError>,
+    config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    let superloop = Superloop::new();
+    let mut superloop = Superloop::new();
     let config = Rc::new(config);
     let _ =
         crate::watcher::watch(rio_backend::config::config_dir_path(), superloop.clone());
 
-    let scheduler = Scheduler::new(superloop.clone());
+    // let scheduler = Scheduler::new(superloop.clone());
 
     let mut font_database = loader::Database::new();
     font_database.load_system_fonts();
@@ -540,11 +566,17 @@ pub async fn run(
         (None, None)
     };
 
+    if config_error.is_some() {
+        superloop.send_event(
+            RioEvent::ReportToAssistant(RioError::configuration_not_found()),
+            0,
+        );
+    }
+
     let router = Router {
         config: config.clone(),
         route: None,
         superloop: superloop.clone(),
-        scheduler,
         font_database: font_database.clone(),
         tab_group,
     };

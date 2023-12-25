@@ -15,6 +15,10 @@ use crate::router::bindings::{
     self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
 use crate::router::mouse::{calculate_mouse_position, Mouse};
+use crate::router::routes::{
+    assistant::{self, Assistant},
+    welcome, RoutePath,
+};
 use crate::router::{constants, Ime, RioEvent, Superloop};
 use crate::state::{
     context::{self, ContextManager},
@@ -27,6 +31,7 @@ use rio_backend::config::renderer::{
 use rio_backend::crosswords::{
     grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink, MIN_COLUMNS, MIN_LINES,
 };
+use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::selection::SelectionType;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -56,6 +61,8 @@ pub struct Route {
     clipboard: Clipboard,
     pub sugarloaf: Sugarloaf,
     pub modifiers: ModifiersState,
+    pub path: RoutePath,
+    pub assistant: Assistant,
     #[cfg(target_os = "macos")]
     tab_identifier: String,
 }
@@ -72,6 +79,8 @@ impl Route {
         height: i32,
         scale_factor: f32,
     ) -> Result<Route, Box<dyn std::error::Error>> {
+        let route = RoutePath::Terminal;
+
         let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
         let context_manager_config = context::ContextManagerConfig {
@@ -169,8 +178,7 @@ impl Route {
             0,
             context_manager_config,
             sugarloaf.layout.clone(),
-            // sugarloaf_errors,
-            None,
+            sugarloaf_errors,
         )?;
 
         let bindings = bindings::default_key_bindings(
@@ -184,8 +192,7 @@ impl Route {
             sugarloaf.set_background_image(&image);
         }
         // TODO: Bug sugarloaf is not starting with right width/height
-        // s.resize(width, height);
-        // sugarloaf.resize(width as u32, height as u32);
+        sugarloaf.resize(width as u32, height as u32);
         sugarloaf.calculate_bounds();
         sugarloaf.render();
 
@@ -200,6 +207,8 @@ impl Route {
             ctx: context_manager,
             state,
             superloop,
+            path: RoutePath::Terminal,
+            assistant: Assistant::new(),
             modifiers: ModifiersState::empty(),
             #[cfg(target_os = "macos")]
             tab_identifier: format!("id-{id}"),
@@ -219,6 +228,18 @@ impl Route {
     #[inline]
     pub fn selection_is_empty(&self) -> bool {
         self.state.selection_range.is_none()
+    }
+
+    #[inline]
+    pub fn render_assistant(&mut self) {
+        assistant::screen(&mut self.sugarloaf, &self.assistant);
+        self.sugarloaf.render();
+    }
+
+    #[inline]
+    pub fn render_welcome(&mut self) {
+        welcome::screen(&mut self.sugarloaf);
+        self.sugarloaf.render();
     }
 
     #[inline]
@@ -1415,33 +1436,79 @@ impl Route {
     }
 
     #[inline]
+    pub fn report_error(&mut self, error: &RioError) {
+        if error.report == RioErrorType::ConfigurationNotFound {
+            self.path = RoutePath::Welcome;
+            return;
+        }
+
+        self.assistant.set(error.to_owned());
+        self.path = RoutePath::Assistant;
+    }
+
+    #[inline]
+    pub fn clear_errors(&mut self) {
+        self.assistant.clear();
+        self.path = RoutePath::Terminal;
+    }
+
+    #[inline]
+    pub fn has_key_wait(&mut self, key_event: KeyCode) -> bool {
+        if self.path == RoutePath::Terminal {
+            return false;
+        }
+
+        if self.path == RoutePath::Assistant && key_event == KeyCode::Enter {
+            self.assistant.clear();
+            self.path = RoutePath::Terminal;
+            return true;
+        }
+
+        if self.path == RoutePath::Welcome && key_event == KeyCode::Enter {
+            crate::platform::create_config_file();
+            self.path = RoutePath::Terminal;
+            return true;
+        }
+
+        true
+    }
+
+    #[inline]
     pub fn render(&mut self) {
-        let mut terminal = self.ctx.current().terminal.lock();
-        let visible_rows = terminal.visible_rows();
-        let cursor = terminal.cursor();
-        let display_offset = terminal.display_offset();
-        let has_blinking_enabled = terminal.blinking_cursor;
-        drop(terminal);
+        match self.path {
+            RoutePath::Assistant => {
+                assistant::screen(&mut self.sugarloaf, &self.assistant)
+            }
+            RoutePath::Welcome => welcome::screen(&mut self.sugarloaf),
+            RoutePath::Terminal => {
+                let mut terminal = self.ctx.current().terminal.lock();
+                let visible_rows = terminal.visible_rows();
+                let cursor = terminal.cursor();
+                let display_offset = terminal.display_offset();
+                let has_blinking_enabled = terminal.blinking_cursor;
+                drop(terminal);
 
-        // move to update
-        self.ctx.update_titles();
+                // move to update
+                self.ctx.update_titles();
 
-        self.state.set_ime(self.ime.preedit());
+                self.state.set_ime(self.ime.preedit());
 
-        self.state.prepare_term(
-            visible_rows,
-            cursor,
-            &mut self.sugarloaf,
-            &self.ctx,
-            display_offset as i32,
-            has_blinking_enabled,
-        );
+                self.state.prepare_term(
+                    visible_rows,
+                    cursor,
+                    &mut self.sugarloaf,
+                    &self.ctx,
+                    display_offset as i32,
+                    has_blinking_enabled,
+                );
 
-        // In this case the configuration of blinking cursor is enabled
-        // and the terminal also have instructions of blinking enabled
-        if self.state.has_blinking_enabled && has_blinking_enabled {
-            self.superloop
-                .send_event(RioEvent::ScheduleRender(800), self.id);
+                // In this case the configuration of blinking cursor is enabled
+                // and the terminal also have instructions of blinking enabled
+                if self.state.has_blinking_enabled && has_blinking_enabled {
+                    self.superloop
+                        .send_event(RioEvent::ScheduleRender(800), self.id);
+                }
+            }
         }
 
         self.sugarloaf.render();
