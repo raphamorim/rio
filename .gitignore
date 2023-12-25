@@ -9,3 +9,7 @@ release
 .jekyll-cache
 .jekyll-metadata
 NOTES
+
+.direnv/
+# produced by `nix build`
+result/
