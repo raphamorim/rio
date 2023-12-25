@@ -2,7 +2,7 @@ pub mod handler;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-use crate::event::{Msg, RioEvent};
+use crate::event::Msg;
 use crate::superloop::Superloop;
 use corcovado::channel;
 #[cfg(unix)]
