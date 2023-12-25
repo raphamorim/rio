@@ -46,7 +46,7 @@ impl Superloop {
 
     #[inline]
     pub fn event(&mut self) -> (RioEvent, bool) {
-        let mut inner = &mut self.0.lock().inner.0;
+        let inner = &mut self.0.lock().inner.0;
 
         let redraw = if !inner.redraw.is_empty() {
             inner.redraw.pop();

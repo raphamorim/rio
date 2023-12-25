@@ -264,53 +264,6 @@ impl EventHandler for Router {
             //         );
             //     }
             // }
-            RioEvent::ForceRefresh => {
-                if let Some(current) = &mut self.route {
-                    if let Some(err) = current
-                        .sugarloaf
-                        .update_font(self.config.fonts.to_owned(), None)
-                    {
-                        current
-                            .ctx
-                            .report_error_fonts_not_found(err.fonts_not_found);
-                        return;
-                    }
-
-                    let padding_y_bottom = padding_bottom_from_config(&self.config);
-                    let padding_y_top = padding_top_from_config(&self.config);
-
-                    current.sugarloaf.layout.recalculate(
-                        self.config.fonts.size,
-                        self.config.line_height,
-                        self.config.padding_x,
-                        padding_y_top,
-                        padding_y_bottom,
-                    );
-
-                    current.sugarloaf.layout.update();
-
-                    current.mouse.set_multiplier_and_divider(
-                        self.config.scroll.multiplier,
-                        self.config.scroll.divider,
-                    );
-
-                    current.resize_all_contexts();
-
-                    let mut bg_color = current.state.named_colors.background.1;
-
-                    if self.config.window.background_opacity < 1. {
-                        bg_color.a = self.config.window.background_opacity as f64;
-                    }
-
-                    current.sugarloaf.set_background_color(bg_color);
-                    if let Some(image) = &self.config.window.background_image {
-                        current.sugarloaf.set_background_image(&image);
-                    }
-
-                    current.sugarloaf.calculate_bounds();
-                    current.sugarloaf.render();
-                }
-            }
             RioEvent::Noop | _ => {}
         };
     }
