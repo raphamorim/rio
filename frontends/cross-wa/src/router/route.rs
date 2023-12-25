@@ -87,7 +87,8 @@ impl Route {
             should_update_titles: !(is_collapsed
                 && config.navigation.color_automation.is_empty()),
         };
-        let state = State::new(&config);
+        let appearance = wa::window::get_appearance();
+        let state = State::new(&config, appearance);
         let ime = Ime::new();
 
         let background_image = config.window.background_image.clone();
@@ -723,7 +724,7 @@ impl Route {
                     //     }
                     // }
                     Act::Quit => {
-                        wa::window::request_quit(self.id);
+                        wa::window::request_quit();
                     }
                     Act::IncreaseFontSize => {
                         self.change_font_size(2);
@@ -1034,10 +1035,9 @@ impl Route {
     pub fn update_config(
         &mut self,
         config: &Rc<rio_backend::config::Config>,
-        // current_theme: Option<winit::window::Theme>,
+        appearance: wa::Appearance,
     ) {
-        // self.state = State::new(config, current_theme);
-        self.state = State::new(config);
+        self.state = State::new(config, appearance);
 
         for context in self.ctx.contexts() {
             let mut terminal = context.terminal.lock();
@@ -1051,7 +1051,7 @@ impl Route {
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
         self.superloop
-            .send_event_with_high_priority(RioEvent::UpdateConfig, self.id);
+            .send_event_with_high_priority(RioEvent::ForceRefresh, self.id);
     }
 
     #[inline]

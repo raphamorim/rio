@@ -299,6 +299,13 @@ pub enum DragState {
     Exited,
 }
 
+pub enum Appearance {
+    Dark,
+    Light,
+    LightHighContrast,
+    DarkHighContrast,
+}
+
 /// A trait defining event callbacks.
 pub trait EventHandler {
     fn process(&mut self);
@@ -318,6 +325,7 @@ pub trait EventHandler {
     fn mouse_wheel_event(&mut self, _x: f32, _y: f32) {}
     fn mouse_button_down_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
     fn mouse_button_up_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
+    fn appearance_change_event(&mut self, _a: Appearance) {}
 
     // fn char_event(&mut self, _character: char, _mods: ModifiersState, _repeat: bool) {}
     fn key_down_event(
