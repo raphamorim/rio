@@ -193,28 +193,6 @@ impl MacosDisplay {
             }
         }
     }
-    fn clipboard_get(&mut self) -> Option<String> {
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let content: ObjcId =
-                msg_send![pasteboard, stringForType: NSStringPboardType];
-            let string = nsstring_to_string(content);
-            if string.is_empty() {
-                return None;
-            }
-            Some(string)
-        }
-    }
-    fn clipboard_set(&mut self, data: &str) {
-        let str: ObjcId = str_to_nsstring(data);
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let () = msg_send![pasteboard, clearContents];
-            let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str];
-            let () = msg_send![pasteboard, writeObjects: arr];
-        }
-    }
-
     #[inline]
     pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
         let event_handler = self.event_handler.as_deref_mut()?;
@@ -331,14 +309,9 @@ extern "C" fn rio_perform_key_assignment(
                     let _ = app.sender.send(action);
                 }
             }
-            RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => unsafe {
-                let pasteboard: ObjcId =
-                    msg_send![class!(NSPasteboard), generalPasteboard];
-                let () = msg_send![pasteboard, clearContents];
-                let arr: ObjcId =
-                    msg_send![class!(NSArray), arrayWithObject: str_to_nsstring(text)];
-                let () = msg_send![pasteboard, writeObjects: arr];
-            },
+            RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
+                App::clipboard_set(text);
+            }
         }
     }
 }
@@ -391,7 +364,7 @@ extern "C" fn application_open_urls(
     _sel: Sel,
     _sender: ObjcId,
     urls: ObjcId,
-) -> () {
+) {
     if let Some(payload) = get_window_payload(this) {
         unsafe {
             let count: u64 = msg_send![urls, count];
@@ -477,7 +450,8 @@ pub fn define_app_delegate() -> *const Class {
             let response: std::ffi::c_long = msg_send![panel, runModal];
             match response {
                 1000 => NSApplicationTerminateReply::NSTerminateNow as u64,
-                1001 | _ => NSApplicationTerminateReply::NSTerminateCancel as u64,
+                1001 => NSApplicationTerminateReply::NSTerminateCancel as u64,
+                _ => NSApplicationTerminateReply::NSTerminateCancel as u64,
             }
         }
     }
@@ -531,12 +505,7 @@ pub fn define_app_delegate() -> *const Class {
 fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     if let Some((w, h, scale_factor)) = unsafe { payload.update_dimensions() } {
         if let Some(event_handler) = payload.context() {
-            event_handler.resize_event(
-                w.try_into().unwrap(),
-                h.try_into().unwrap(),
-                scale_factor,
-                rescale,
-            );
+            event_handler.resize_event(w, h, scale_factor, rescale);
         }
     }
 }
@@ -669,7 +638,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         let s = nsstring_to_string(astring);
 
         if let Some(payload) = get_window_payload(this) {
-            let preedit_string: String = s.to_string().into();
+            let preedit_string: String = s.to_string();
             payload.marked_text = preedit_string.clone();
 
             if payload.ime == ImeState::Disabled {
@@ -678,7 +647,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 }
             }
 
-            if payload.marked_text.len() > 0 {
+            if !payload.marked_text.is_empty() {
                 payload.ime = ImeState::Preedit;
             } else {
                 // In case the preedit was cleared, set IME into the Ground state.
@@ -743,7 +712,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             let point: NSPoint = unsafe { msg_send!(this, locationInWindow) };
             let cursor_pos = payload.transform_mouse_point(&point);
 
-            let rect = NSRect {
+            NSRect {
                 origin: NSPoint {
                     x: content.origin.x + (cursor_pos.0 as f64),
                     y: content.origin.y + content.size.height - (cursor_pos.1 as f64),
@@ -752,9 +721,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     width: cursor_pos.0 as f64,
                     height: cursor_pos.1 as f64,
                 },
-            };
-
-            rect
+            }
         } else {
             frame
         }
@@ -825,7 +792,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     let cursor_id = *payload
                         .cursors
                         .entry(current_cursor)
-                        .or_insert_with(|| load_mouse_cursor(current_cursor.clone()));
+                        .or_insert_with(|| load_mouse_cursor(current_cursor));
                     assert!(!cursor_id.is_null());
                     cursor_id
                 };
@@ -1053,10 +1020,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     if let Some(event_handler) = payload.context() {
                         event_handler.key_down_event(keycode, mods, false, None);
                     }
-                } else {
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.key_up_event(keycode, mods);
-                    }
+                } else if let Some(event_handler) = payload.context() {
+                    event_handler.key_up_event(keycode, mods);
                 }
             }
         }
@@ -1515,7 +1480,7 @@ pub struct App {
 unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
-impl<'a> App {
+impl App {
     pub fn new() -> (App, corcovado::channel::Receiver<RepresentedItem>) {
         crate::set_handler();
         let (sender, receiver) = corcovado::channel::channel();
@@ -1540,13 +1505,7 @@ impl<'a> App {
                 sender: sender.clone(),
             });
 
-            (
-                Self {
-                    ns_app,
-                    sender: sender,
-                },
-                receiver,
-            )
+            (Self { ns_app, sender }, receiver)
         }
     }
 
@@ -1557,10 +1516,32 @@ impl<'a> App {
         }
     }
 
+    pub fn clipboard_get() -> Option<String> {
+        unsafe {
+            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
+            let content: ObjcId =
+                msg_send![pasteboard, stringForType: NSStringPboardType];
+            let string = nsstring_to_string(content);
+            if string.is_empty() {
+                return None;
+            }
+            Some(string)
+        }
+    }
+
+    pub fn clipboard_set(data: &str) {
+        let str: ObjcId = str_to_nsstring(data);
+        unsafe {
+            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
+            let () = msg_send![pasteboard, clearContents];
+            let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str];
+            let () = msg_send![pasteboard, writeObjects: arr];
+        }
+    }
+
     pub fn confirm_quit() {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
             }
@@ -1569,8 +1550,7 @@ impl<'a> App {
 
     pub fn appearance() -> Appearance {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             let name = unsafe {
                 let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
@@ -1603,8 +1583,7 @@ impl<'a> App {
 
     pub fn hide_application() {
         let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
+        if let Some(app) = native_app {
             let ns_app = *app.ns_app;
             unsafe {
                 let () = msg_send![ns_app, hide: ns_app];
@@ -1685,7 +1664,7 @@ impl Window {
             let window = StrongPtr::new(msg_send![
                 window,
                 initWithContentRect: window_frame
-                styleMask: window_masks as u64
+                styleMask: window_masks
                 backing: NSBackingStoreType::NSBackingStoreBuffered as u64
                 defer: NO
             ]);

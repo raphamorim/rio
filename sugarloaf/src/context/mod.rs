@@ -12,6 +12,7 @@ pub struct Context {
 }
 
 #[inline]
+#[cfg(not(target_os = "macos"))]
 fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureFormat {
     let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
 

@@ -805,7 +805,7 @@ impl Sugarloaf {
                 for entry_render in
                     &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
                 {
-                    if let Some(entry) = self.graphic_rects.get(&entry_render) {
+                    if let Some(entry) = self.graphic_rects.get(entry_render) {
                         if let Some(graphic_data) = self.graphics.get(&entry.id) {
                             let rows = entry.end_row - entry.start_row;
                             println!("{:?}", entry.columns);
