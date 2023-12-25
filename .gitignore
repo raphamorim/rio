@@ -11,4 +11,5 @@ release
 NOTES
 
 .direnv/
+# produced by `nix build`
 result/
