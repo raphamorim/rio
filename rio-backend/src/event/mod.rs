@@ -110,7 +110,6 @@ pub enum RioEvent {
     BlinkCursor,
 
     UpdateGraphicLibrary,
-    ForceRefresh,
 
     // No operation
     Noop,
@@ -162,7 +161,6 @@ impl Debug for RioEvent {
             RioEvent::Paste => write!(f, "Paste"),
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
             RioEvent::UpdateGraphicLibrary => write!(f, "UpdateGraphicLibrary"),
-            RioEvent::ForceRefresh => write!(f, "ForceRefresh"),
         }
     }
 }

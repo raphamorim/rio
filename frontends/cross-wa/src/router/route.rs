@@ -1052,7 +1052,6 @@ impl Route {
         self.mouse.accumulated_scroll.y %= height;
     }
 
-    #[inline]
     pub fn update_config(
         &mut self,
         config: &Rc<rio_backend::config::Config>,
@@ -1071,8 +1070,37 @@ impl Route {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        self.superloop
-            .send_event_with_high_priority(RioEvent::ForceRefresh, self.id);
+        if let Some(err) = self.sugarloaf.update_font(config.fonts.to_owned(), None) {
+            self.ctx.report_error_fonts_not_found(err.fonts_not_found);
+        }
+
+        let padding_y_bottom = padding_bottom_from_config(&config);
+        let padding_y_top = padding_top_from_config(&config);
+
+        self.sugarloaf.layout.recalculate(
+            config.fonts.size,
+            config.line_height,
+            config.padding_x,
+            padding_y_top,
+            padding_y_bottom,
+        );
+
+        self.sugarloaf.layout.update();
+        self.resize_all_contexts();
+
+        let mut bg_color = self.state.named_colors.background.1;
+
+        if config.window.background_opacity < 1. {
+            bg_color.a = config.window.background_opacity as f64;
+        }
+
+        self.sugarloaf.set_background_color(bg_color);
+        if let Some(image) = &config.window.background_image {
+            self.sugarloaf.set_background_image(&image);
+        }
+
+        self.sugarloaf.calculate_bounds();
+        self.render();
     }
 
     #[inline]
