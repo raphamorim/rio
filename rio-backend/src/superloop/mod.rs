@@ -59,10 +59,7 @@ impl Superloop {
             return (inner.priority_list.pop().unwrap_or(RioEvent::Noop), redraw);
         }
 
-        let current = inner.list.pop_front().unwrap_or(RioEvent::Noop);
-
-        // println!("{:?}", current);
-        (current, redraw)
+        (inner.list.pop_front().unwrap_or(RioEvent::Noop), redraw)
     }
 
     #[inline]
