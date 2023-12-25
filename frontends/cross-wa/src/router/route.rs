@@ -1447,7 +1447,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn clear_errors(&mut self) {
+    pub fn clear_assistant_errors(&mut self) {
         self.assistant.clear();
         self.path = RoutePath::Terminal;
     }
@@ -1459,15 +1459,12 @@ impl Route {
         }
 
         if self.path == RoutePath::Assistant && key_event == KeyCode::Enter {
-            self.assistant.clear();
-            self.path = RoutePath::Terminal;
-            return true;
+            self.clear_assistant_errors();
         }
 
         if self.path == RoutePath::Welcome && key_event == KeyCode::Enter {
-            crate::platform::create_config_file();
             self.path = RoutePath::Terminal;
-            return true;
+            crate::platform::create_config_file();
         }
 
         true

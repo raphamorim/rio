@@ -150,7 +150,7 @@ impl EventHandler for Router {
                     if let Some(error) = &config_error {
                         current.report_error(&error.to_owned().into());
                     } else {
-                        current.clear_errors();
+                        current.clear_assistant_errors();
                     }
 
                     current.update_config(&self.config, appearance);
@@ -551,8 +551,7 @@ pub async fn run(
 ) -> Result<(), Box<dyn Error>> {
     let mut superloop = Superloop::new();
     let config = Rc::new(config);
-    let _ =
-        crate::watcher::watch(rio_backend::config::config_dir_path(), superloop.clone());
+    let _ = crate::watcher::watch_config_file(superloop.clone());
 
     // let scheduler = Scheduler::new(superloop.clone());
 
@@ -601,7 +600,10 @@ pub async fn run(
     };
 
     let (app, app_connection) = App::new();
-    menu::create_menu(app_connection);
+    menu::create_menu();
+
+    crate::watcher::watch_app(app_connection);
+
     let _ = Window::new_window(wa_conf, || Box::new(router)).await;
 
     app.run();
