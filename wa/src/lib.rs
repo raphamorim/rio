@@ -81,16 +81,8 @@ pub mod window {
     pub fn quit(id: u16) {
         order_quit(id)
     }
-    pub fn request_quit(id: u16) {
-        let d = get_handler().lock();
-        if let Some(display) = d.get(id) {
-            let view = display.view;
-            unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
-                    display.confirm_quit();
-                }
-            }
-        }
+    pub fn request_quit() {
+        App::confirm_quit()
     }
     pub fn cancel_quit(id: u16) {
         let mut d = get_handler().lock();
@@ -135,6 +127,10 @@ pub mod window {
                 display.set_subtitle(&subtitle);
             }
         }
+    }
+
+    pub fn get_appearance() -> Appearance {
+        App::appearance()
     }
 
     /// Set the mouse cursor icon.

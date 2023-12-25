@@ -147,27 +147,16 @@ impl EventHandler for Router {
                     };
 
                 self.config = config.into();
-                // for (_id, route) in self.router.routes.iter_mut() {
-                // route.update_config(
-                //     &self.config,
-                //     &self.router.font_database,
-                // );
-
-                // self.window
-                //     .screen
-                //     .update_config(config, self.window.winit_window.theme(), db);
+                let appearance = wa::window::get_appearance();
 
                 if let Some(current) = &mut self.route {
-                    current.update_config(&self.config);
-
-                    current.render();
+                    current.update_config(&self.config, appearance);
                 }
 
                 // if let Some(error) = &config_error {
                 //     route.report_error(&error.to_owned().into());
                 // } else {
                 //     route.clear_errors();
-                // }
                 // }
             }
             RioEvent::Title(title, subtitle) => {
@@ -189,9 +178,7 @@ impl EventHandler for Router {
                 }
             }
             RioEvent::Quit => {
-                if let Some(current) = &self.route {
-                    window::request_quit(current.id);
-                }
+                window::request_quit();
             }
             RioEvent::ClipboardLoad(clipboard_type, format) => {
                 if let Some(current) = &mut self.route {
@@ -394,6 +381,11 @@ impl EventHandler for Router {
             }
 
             current.render();
+        }
+    }
+    fn appearance_change_event(&mut self, appearance: Appearance) {
+        if let Some(current) = &mut self.route {
+            current.update_config(&self.config, appearance);
         }
     }
     fn touch_event(&mut self, phase: TouchPhase, _id: u64, _x: f32, _y: f32) {

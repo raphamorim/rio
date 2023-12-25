@@ -9,6 +9,7 @@
 // properties, menu support, IME support, and etc.
 
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
+use crate::Appearance;
 use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
@@ -213,39 +214,6 @@ impl MacosDisplay {
             let () = msg_send![pasteboard, writeObjects: arr];
         }
     }
-    // fn hide_application(&self) {
-    //     unsafe {
-    //         let () = msg_send![self.ns_app, hide: self.ns_app];
-    //     }
-    // }
-    // fn get_appearance(&self) -> Appearance {
-    //     let name = unsafe {
-    //         let appearance: id = msg_send![self.ns_app, effectiveAppearance];
-    //         nsstring_to_str(msg_send![appearance, name])
-    //     };
-    //     log::debug!("NSAppearanceName is {name}");
-    //     match name {
-    //         "NSAppearanceNameVibrantDark" | "NSAppearanceNameDarkAqua" => Appearance::Dark,
-    //         "NSAppearanceNameVibrantLight" | "NSAppearanceNameAqua" => Appearance::Light,
-    //         "NSAppearanceNameAccessibilityHighContrastVibrantLight"
-    //         | "NSAppearanceNameAccessibilityHighContrastAqua" => Appearance::LightHighContrast,
-    //         "NSAppearanceNameAccessibilityHighContrastVibrantDark"
-    //         | "NSAppearanceNameAccessibilityHighContrastDarkAqua" => Appearance::DarkHighContrast,
-    //         _ => {
-    //             log::warn!("Unknown NSAppearanceName {name}, assume Light");
-    //             Appearance::Light
-    //         }
-    //     }
-    // }
-    pub fn confirm_quit(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
-        if native_app.is_some() {
-            let app = native_app.unwrap();
-            unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
-            }
-        }
-    }
 
     #[inline]
     pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
@@ -300,26 +268,6 @@ impl MacosDisplay {
             None
         }
     }
-
-    // fn process_request(&mut self, request: Request) {
-    //     use Request::*;
-    //     match request {
-    //         SetCursorGrab(grab) => self.set_cursor_grab(self.window, grab),
-    //         ShowMouse(show) => self.show_mouse(show),
-    //         RequestQuit => self.confirm_quit(),
-    //         SetWindowTitle { title, subtitle } => {
-    //             self.set_title(&title);
-    //             self.set_subtitle(&subtitle);
-    //         }
-    //         SetMouseCursor(icon) => self.set_mouse_cursor(icon),
-    //         SetWindowSize {
-    //             new_width,
-    //             new_height,
-    //         } => self.set_window_size(new_width as _, new_height as _),
-    //         SetFullscreen(fullscreen) => self.set_fullscreen(fullscreen),
-    //         // _ => {}
-    //     }
-    // }
 }
 
 #[derive(Default)]
@@ -1072,6 +1020,14 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
     }
 
+    extern "C" fn appearance_did_change(this: &Object, _sel: Sel, _app: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            if let Some(event_handler) = payload.context() {
+                event_handler.appearance_change_event(App::appearance());
+            }
+        }
+    }
+
     extern "C" fn key_up(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_window_payload(this) {
             let mods = get_event_key_modifier(event);
@@ -1314,6 +1270,11 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     decl.add_method(
         sel!(insertText:replacementRange:),
         insert_text_replacement_range as extern "C" fn(&Object, Sel, ObjcId, NSRange),
+    );
+    // Appearence
+    decl.add_method(
+        sel!(appearanceDidChange:),
+        appearance_did_change as extern "C" fn(&Object, Sel, ObjcId),
     );
 
     // TODO:
@@ -1592,18 +1553,62 @@ impl<'a> App {
     pub fn run(&self) {
         unsafe {
             let () = msg_send![*self.ns_app, finishLaunching];
-            // let nstimer: ObjcId = msg_send![
-            //     class!(NSTimer),
-            //     timerWithTimeInterval: 0.001
-            //     target: self.ns_view
-            //     selector: sel!(timerFired:)
-            //     userInfo: nil
-            //     repeats: true
-            // ];
-            // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
-            // let () =
-            //     msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
             let () = msg_send![*self.ns_app, run];
+        }
+    }
+
+    pub fn confirm_quit() {
+        let native_app: Option<&App> = NATIVE_APP.get();
+        if native_app.is_some() {
+            let app = native_app.unwrap();
+            unsafe {
+                let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
+            }
+        }
+    }
+
+    pub fn appearance() -> Appearance {
+        let native_app: Option<&App> = NATIVE_APP.get();
+        if native_app.is_some() {
+            let app = native_app.unwrap();
+            let name = unsafe {
+                let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
+                nsstring_to_string(msg_send![appearance, name])
+            };
+            println!("App Appearance is {name}");
+            match name.as_str() {
+                "NSAppearanceNameVibrantDark" | "NSAppearanceNameDarkAqua" => {
+                    Appearance::Dark
+                }
+                "NSAppearanceNameVibrantLight" | "NSAppearanceNameAqua" => {
+                    Appearance::Light
+                }
+                "NSAppearanceNameAccessibilityHighContrastVibrantLight"
+                | "NSAppearanceNameAccessibilityHighContrastAqua" => {
+                    Appearance::LightHighContrast
+                }
+                "NSAppearanceNameAccessibilityHighContrastVibrantDark"
+                | "NSAppearanceNameAccessibilityHighContrastDarkAqua" => {
+                    Appearance::DarkHighContrast
+                }
+                _ => {
+                    log::warn!("Unknown NSAppearanceName {name}, assume Light");
+                    Appearance::Light
+                }
+            }
+        } else {
+            Appearance::Light
+        }
+    }
+
+    pub fn hide_application() {
+        let native_app: Option<&App> = NATIVE_APP.get();
+        if native_app.is_some() {
+            let app = native_app.unwrap();
+            let ns_app = *app.ns_app;
+            unsafe {
+                let () = msg_send![ns_app, hide: ns_app];
+            }
         }
     }
 }
@@ -1613,16 +1618,12 @@ pub struct Window {
     pub ns_view: *mut Object,
 }
 
-unsafe impl Send for Window {}
-unsafe impl Sync for Window {}
-
 impl Window {
     pub async fn new_window<F>(
         conf: crate::conf::Conf,
         f: F,
     ) -> Result<Self, Box<dyn std::error::Error>>
     where
-        // F: 'static + FnMut(&Window),
         F: 'static + FnOnce() -> Box<dyn EventHandler>,
     {
         unsafe {
@@ -1720,6 +1721,18 @@ impl Window {
             let () = msg_send![*window, setDelegate: display.view];
             let () = msg_send![*window, setContentView: display.view];
 
+            let notification_center: &Object =
+                msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+            let notification_name =
+                str_to_nsstring("AppleInterfaceThemeChangedNotification");
+            let () = msg_send![
+                notification_center,
+                addObserver: **view.as_strong_ptr()
+                selector: sel!(appearanceDidChange:)
+                name: notification_name
+                object: nil
+            ];
+
             let dimensions = display.update_dimensions().unwrap_or((
                 conf.window_width,
                 conf.window_height,
@@ -1733,24 +1746,25 @@ impl Window {
                 d.dimensions = dimensions;
             }
 
-            let boxed_view = Box::into_raw(Box::new(display));
-
-            (*(*boxed_view).view)
-                .set_ivar(VIEW_IVAR_NAME, &mut *boxed_view as *mut _ as *mut c_void);
-
             // (**window_delegate)
             //     .set_ivar(VIEW_CLASS_NAME, &mut *boxed_view as *mut _ as *mut c_void);
 
             // let nstimer: ObjcId = msg_send![
             //     class!(NSTimer),
             //     timerWithTimeInterval: 0.001
-            //     target: *view
+            //     target: **view.as_strong_ptr()
             //     selector: sel!(timerFired:)
             //     userInfo: nil
             //     repeats: true
             // ];
             // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
             // let () = msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
+
+            let boxed_view = Box::into_raw(Box::new(display));
+
+            (*(*boxed_view).view)
+                .set_ivar(VIEW_IVAR_NAME, &mut *boxed_view as *mut _ as *mut c_void);
+
             assert!(!view.is_null());
 
             // register for drag and drop operations.

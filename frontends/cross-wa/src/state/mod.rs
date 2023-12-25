@@ -49,26 +49,24 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        config: &Config,
-        // , current_theme: Option<Theme>
-    ) -> State {
+    pub fn new(config: &Config, appearance: wa::Appearance) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        // if let Some(theme) = current_theme {
-        //     if let Some(adaptive_colors) = &config.adaptive_colors {
-        //         match theme {
-        //             Theme::Light => {
-        //                 named_colors = adaptive_colors.light.unwrap_or(named_colors);
-        //             }
-        //             Theme::Dark => {
-        //                 named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-        //             }
-        //         }
-        //     }
-        // }
+        if let Some(adaptive_colors) = &config.adaptive_colors {
+            match appearance {
+                wa::Appearance::Light => {
+                    named_colors = adaptive_colors.light.unwrap_or(named_colors);
+                }
+                wa::Appearance::Dark => {
+                    named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                }
+                // TODO
+                wa::Appearance::LightHighContrast => {}
+                wa::Appearance::DarkHighContrast => {}
+            }
+        }
 
         let dynamic_background = if config.window.background_image.is_some()
             || config.window.background_opacity < 1.
