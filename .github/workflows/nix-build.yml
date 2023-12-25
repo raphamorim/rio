@@ -6,14 +6,14 @@ on:
       - main
     paths:
       - '**/*.rs'
-      - '.github/workflows/nix.yml'
+      - '.github/workflows/nix-build.yml'
       - 'nix/**'
   push:
     branches:
       - main
     paths:
       - '**/*.rs'
-      - '.github/workflows/nix.yml'
+      - '.github/workflows/nix-build.yml'
       - 'nix/**'
 
 jobs:
