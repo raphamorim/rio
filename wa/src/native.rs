@@ -8,17 +8,20 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
-use std::collections::HashMap;
+// use std::collections::HashMap;
+use fnv::FnvHashMap;
+
+// let mut map = FnvHashMap::default();
 
 pub(crate) struct Handler {
-    inner: HashMap<u16, NativeDisplayData>,
+    inner: FnvHashMap<u16, NativeDisplayData>,
     next: u16,
 }
 
 impl Handler {
     pub fn new() -> Self {
         Handler {
-            inner: HashMap::new(),
+            inner: FnvHashMap::default(),
             next: 0,
         }
     }
