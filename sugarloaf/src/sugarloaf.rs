@@ -18,7 +18,7 @@ use crate::glyph::{FontId, GlyphCruncher};
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use unicode_width::UnicodeWidthChar;
 
 #[cfg(target_arch = "wasm32")]
@@ -39,7 +39,7 @@ pub trait RenderableSugarloaf {
 }
 
 pub struct Sugarloaf {
-    sugar_cache: HashMap<char, CachedSugar>,
+    sugar_cache: FnvHashMap<char, CachedSugar>,
     pub ctx: Context,
     pub layout: SugarloafLayout,
     text_brush: text::GlyphBrush<()>,
@@ -139,7 +139,7 @@ impl Sugarloaf {
         let layer_brush = LayerBrush::new(&ctx);
 
         let instance = Sugarloaf {
-            sugar_cache: HashMap::new(),
+            sugar_cache: FnvHashMap::default(),
             layer_brush,
             fonts,
             ctx,
@@ -216,7 +216,7 @@ impl Sugarloaf {
             }
 
             // Clean font cache per instance
-            self.sugar_cache = HashMap::new();
+            self.sugar_cache = FnvHashMap::default();
 
             let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
                 .build(&self.ctx.device, self.ctx.format);
@@ -623,7 +623,7 @@ impl Sugarloaf {
     #[inline]
     pub fn calculate_bounds(&mut self) {
         // Every time a font size change the cached bounds also changes
-        self.sugar_cache = HashMap::new();
+        self.sugar_cache = FnvHashMap::default();
 
         let text_scale = self.layout.style.text_scale;
         // Bounds are defined in runtime
