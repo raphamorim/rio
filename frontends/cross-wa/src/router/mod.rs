@@ -27,12 +27,20 @@ struct Router {
     tab_group: Option<u64>,
 }
 
-fn create_window(
+pub fn create_window(
     config: &Rc<rio_backend::config::Config>,
+    config_error: &Option<rio_backend::config::ConfigError>,
     font_database: &loader::Database,
     tab_group: Option<u64>,
 ) -> Result<Window, Box<dyn std::error::Error>> {
-    let superloop = Superloop::new();
+    let mut superloop = Superloop::new();
+
+    if config_error.is_some() {
+        superloop.send_event(
+            RioEvent::ReportToAssistant(RioError::configuration_not_found()),
+            0,
+        );
+    }
 
     let router = Router {
         config: config.clone(),
@@ -131,11 +139,21 @@ impl EventHandler for Router {
                     None
                 };
 
-                let _ = create_window(&self.config, &self.font_database, new_tab_group);
+                let _ = create_window(
+                    &self.config,
+                    &None,
+                    &self.font_database,
+                    new_tab_group,
+                );
             }
             #[cfg(target_os = "macos")]
             RioEvent::CreateNativeTab(_) => {
-                let _ = create_window(&self.config, &self.font_database, self.tab_group);
+                let _ = create_window(
+                    &self.config,
+                    &None,
+                    &self.font_database,
+                    self.tab_group,
+                );
             }
             RioEvent::UpdateConfig => {
                 let (config, config_error) = match rio_backend::config::Config::try_load()
@@ -513,44 +531,10 @@ pub async fn run(
     font_database.load_system_fonts();
 
     #[cfg(target_os = "macos")]
-    let (tab_group, tab_identifier) = if config.navigation.is_native() {
-        (Some(0), Some(String::from("tab-group-0")))
+    let tab_group = if config.navigation.is_native() {
+        Some(0)
     } else {
-        (None, None)
-    };
-
-    if config_error.is_some() {
-        superloop.send_event(
-            RioEvent::ReportToAssistant(RioError::configuration_not_found()),
-            0,
-        );
-    }
-
-    let router = Router {
-        config: config.clone(),
-        route: None,
-        superloop: superloop.clone(),
-        font_database: font_database.clone(),
-        tab_group,
-    };
-
-    let hide_toolbar_buttons = config.window.decorations
-        == rio_backend::config::window::Decorations::Buttonless
-        || config.window.decorations
-            == rio_backend::config::window::Decorations::Disabled;
-
-    let wa_conf = conf::Conf {
-        window_title: String::from("~"),
-        window_width: config.window.width,
-        window_height: config.window.height,
-        fullscreen: config.window.is_fullscreen(),
-        transparency: config.window.background_opacity < 1.,
-        blur: config.window.blur,
-        hide_toolbar: !config.navigation.is_native(),
-        hide_toolbar_buttons,
-        #[cfg(target_os = "macos")]
-        tab_identifier,
-        ..Default::default()
+        None
     };
 
     let (app, app_connection) = App::new();
@@ -558,7 +542,7 @@ pub async fn run(
 
     crate::sync::application_connection(app_connection);
 
-    let _ = Window::new_window(wa_conf, || Box::new(router)).await;
+    let _ = create_window(&config, &config_error, &font_database, tab_group);
 
     app.run();
     Ok(())
