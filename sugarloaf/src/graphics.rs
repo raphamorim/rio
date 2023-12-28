@@ -1,5 +1,5 @@
 use crate::components::core::image::Handle;
-use std::collections::BTreeMap;
+use fnv::FnvHashMap;
 
 pub struct SugarGraphicEntry {
     pub id: SugarGraphicId,
@@ -7,7 +7,7 @@ pub struct SugarGraphicEntry {
 }
 
 pub struct SugarloafGraphics {
-    inner: BTreeMap<SugarGraphicId, SugarGraphicEntry>,
+    inner: FnvHashMap<SugarGraphicId, SugarGraphicEntry>,
 }
 
 impl Default for SugarloafGraphics {
@@ -19,7 +19,7 @@ impl Default for SugarloafGraphics {
 impl SugarloafGraphics {
     pub fn new() -> Self {
         SugarloafGraphics {
-            inner: BTreeMap::new(),
+            inner: FnvHashMap::default(),
         }
     }
 

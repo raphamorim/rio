@@ -16,11 +16,6 @@ pub struct Platform {
     /// the way to limit FPS in the game!
     pub swap_interval: Option<i32>,
 
-    /// Whether the framebuffer should have an alpha channel.
-    /// Currently supported only on Android
-    /// TODO: Document(and check) what does it actually mean on android. Transparent window?
-    pub framebuffer_alpha: bool,
-
     /// Whether to draw the default window decorations on Wayland.
     /// Only works when using the Wayland backend.
     pub wayland_use_fallback_decorations: bool,
@@ -30,7 +25,6 @@ impl Default for Platform {
     fn default() -> Platform {
         Platform {
             swap_interval: None,
-            framebuffer_alpha: false,
             wayland_use_fallback_decorations: true,
         }
     }

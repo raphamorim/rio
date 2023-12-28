@@ -19,7 +19,6 @@ use crate::graphics::SugarloafGraphics;
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
-use std::collections::BTreeMap;
 use fnv::FnvHashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -52,7 +51,7 @@ pub struct Sugarloaf {
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
-    graphic_rects: BTreeMap<crate::SugarGraphicId, GraphicRect>,
+    graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
     text_y: f32,
     current_row: u16,
@@ -174,7 +173,7 @@ impl Sugarloaf {
             ctx,
             rect_brush,
             rects: vec![],
-            graphic_rects: BTreeMap::new(),
+            graphic_rects: FnvHashMap::default(),
             text_brush,
             text_y: 0.0,
             current_row: 0,
@@ -850,7 +849,7 @@ impl Sugarloaf {
                 );
 
                 self.rects = vec![];
-                self.graphic_rects = BTreeMap::new();
+                self.graphic_rects = FnvHashMap::default();
                 self.current_row = 0;
 
                 let _ = self
