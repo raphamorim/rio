@@ -9,6 +9,7 @@ use crate::event::RioEvent;
 use crate::ime::{Ime, Preedit};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use crate::sync;
 use rio_backend::error::RioError;
 use rio_backend::superloop::Superloop;
 use route::Route;
@@ -504,7 +505,7 @@ pub async fn run(
 ) -> Result<(), Box<dyn Error>> {
     let mut superloop = Superloop::new();
     let config = Rc::new(config);
-    let _ = crate::watcher::watch_config_file(superloop.clone());
+    let _ = sync::configuration_file_updates(superloop.clone());
 
     // let scheduler = Scheduler::new(superloop.clone());
 
@@ -555,7 +556,7 @@ pub async fn run(
     let (app, app_connection) = App::new();
     menu::create_menu();
 
-    crate::watcher::watch_app(app_connection);
+    crate::sync::application_connection(app_connection);
 
     let _ = Window::new_window(wa_conf, || Box::new(router)).await;
 
