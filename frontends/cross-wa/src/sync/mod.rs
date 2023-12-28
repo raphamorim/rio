@@ -5,9 +5,12 @@ use corcovado::Ready;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rio_backend::superloop::Superloop;
 use std::io::ErrorKind;
+use std::rc::Rc;
+use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
 use std::time::Instant;
+use sugarloaf::font::loader;
 
 const CONFIG_POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 const APP_POLLING_TIMEOUT: Duration = Duration::from_secs(1);
@@ -67,6 +70,7 @@ pub fn application_connection(receiver: corcovado::channel::Receiver<Represented
                                     RepresentedItem::KeyAssignment(
                                         KeyAssignment::SpawnWindow,
                                     ) => {
+                                        // Router 0 should be a window that never die
                                         println!("SpawnWindow");
                                     }
                                     _ => {}
