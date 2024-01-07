@@ -6,7 +6,8 @@
 
 ## 0.0.34
 
-- TBD
+- use Fowler–Noll–Vo hash function implementation for sugar cache (more efficient for smaller hash keys).
+- update winit to 0.29.9.
 
 ## 0.0.33
 
