@@ -4,6 +4,10 @@
 
 - TBD
 
+## 0.0.34
+
+- TBD
+
 ## 0.0.33
 
 - **Breaking**: Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
