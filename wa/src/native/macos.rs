@@ -9,6 +9,8 @@
 // properties, menu support, IME support, and etc.
 
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
+use crate::native::macos::NSEventMask::NSAnyEventMask;
+use crate::native::macos::NSEventType::NSApplicationDefined;
 use crate::Appearance;
 use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
@@ -37,6 +39,56 @@ const VIEW_IVAR_NAME: &str = "RioDisplay";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
 
 const NSNOT_FOUND: i32 = i32::MAX;
+
+#[repr(i16)]
+pub enum NSEventSubtype {
+    // TODO: Not sure what these values are
+    // NSMouseEventSubtype           = NX_SUBTYPE_DEFAULT,
+    // NSTabletPointEventSubtype     = NX_SUBTYPE_TABLET_POINT,
+    // NSTabletProximityEventSubtype = NX_SUBTYPE_TABLET_PROXIMITY
+    // NSTouchEventSubtype           = NX_SUBTYPE_MOUSE_TOUCH,
+    NSWindowExposedEventType = 0,
+    NSApplicationActivatedEventType = 1,
+    NSApplicationDeactivatedEventType = 2,
+    NSWindowMovedEventType = 4,
+    NSScreenChangedEventType = 8,
+    NSAWTEventType = 16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u64)] // NSUInteger
+pub enum NSEventType {
+    NSLeftMouseDown = 1,
+    NSLeftMouseUp = 2,
+    NSRightMouseDown = 3,
+    NSRightMouseUp = 4,
+    NSMouseMoved = 5,
+    NSLeftMouseDragged = 6,
+    NSRightMouseDragged = 7,
+    NSMouseEntered = 8,
+    NSMouseExited = 9,
+    NSKeyDown = 10,
+    NSKeyUp = 11,
+    NSFlagsChanged = 12,
+    NSAppKitDefined = 13,
+    NSSystemDefined = 14,
+    NSApplicationDefined = 15,
+    NSPeriodic = 16,
+    NSCursorUpdate = 17,
+    NSScrollWheel = 22,
+    NSTabletPoint = 23,
+    NSTabletProximity = 24,
+    NSOtherMouseDown = 25,
+    NSOtherMouseUp = 26,
+    NSOtherMouseDragged = 27,
+    NSEventTypeGesture = 29,
+    NSEventTypeMagnify = 30,
+    NSEventTypeSwipe = 31,
+    NSEventTypeRotate = 18,
+    NSEventTypeBeginGesture = 19,
+    NSEventTypeEndGesture = 20,
+    NSEventTypePressure = 34,
+}
 
 pub static NATIVE_APP: OnceLock<App> = OnceLock::new();
 
@@ -1510,10 +1562,56 @@ impl App {
     }
 
     pub fn run(&self) {
-        unsafe {
-            let () = msg_send![*self.ns_app, finishLaunching];
-            let () = msg_send![*self.ns_app, run];
+        let () = unsafe { msg_send![*self.ns_app, finishLaunching] };
+
+        loop {
+            unsafe {
+                let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
+
+                // Blocks until event available
+                let date: ObjcId = msg_send![class!(NSDate), distantPast];
+                let nsevent: ObjcId = msg_send![*self.ns_app,
+                        nextEventMatchingMask: NSAnyEventMask
+                        untilDate: date
+                        inMode:NSDefaultRunLoopMode
+                        dequeue:YES];
+
+                let event_type: ObjcId = msg_send![nsevent, type];
+                if event_type as u64 == NSApplicationDefined as u64 {
+                    let event_subtype: ObjcId = msg_send![nsevent, subtype];
+                    if event_subtype as i16
+                        == NSEventSubtype::NSApplicationActivatedEventType as i16
+                    {
+                        let nswindow: ObjcId = msg_send![nsevent, window];
+                        let () = msg_send![nswindow, eventLoopAwaken];
+                    }
+                } else {
+                    let () = msg_send![*self.ns_app, sendEvent: nsevent];
+                }
+
+                let date: ObjcId = msg_send![class!(NSDate), distantPast];
+                // Get all pending events
+                loop {
+                    let nsevent: ObjcId = msg_send![*self.ns_app,
+                        nextEventMatchingMask: NSAnyEventMask
+                        untilDate: date
+                        inMode:NSDefaultRunLoopMode
+                        dequeue:YES];
+                    let () = msg_send![*self.ns_app, sendEvent: nsevent];
+                    if nsevent == nil {
+                        break;
+                    }
+                }
+
+                let _: () = msg_send![pool, release];
+            }
+            // callback();
         }
+
+        // unsafe {
+        //     let () = msg_send![*self.ns_app, finishLaunching];
+        //     let () = msg_send![*self.ns_app, run];
+        // }
     }
 
     pub fn clipboard_get() -> Option<String> {
