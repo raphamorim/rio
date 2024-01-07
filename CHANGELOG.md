@@ -14,6 +14,11 @@
 
 - TBD
 
+## 0.0.34
+
+- use Fowler–Noll–Vo hash function implementation for sugar cache (more efficient for smaller hash keys)
+- update winit to 0.29.9
+
 ## 0.0.33
 
 - **Breaking**: Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
