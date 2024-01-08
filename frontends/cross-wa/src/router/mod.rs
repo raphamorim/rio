@@ -120,13 +120,6 @@ impl EventHandler for Router {
         }
 
         match event {
-            // RioEvent::Render | RioEvent::Wakeup => {
-            //     if !should_redraw {
-            //         if let Some(current) = &mut self.route {
-            //             current.render();
-            //         }
-            //     }
-            // }
             RioEvent::CreateWindow => {
                 #[cfg(target_os = "macos")]
                 let new_tab_group = if self.config.navigation.is_native() {

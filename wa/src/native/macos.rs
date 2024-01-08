@@ -256,6 +256,17 @@ impl MacosDisplay {
     }
 }
 
+// fn get_dimensions(window: *mut Object, view: *mut Object) -> (i32, i32, f32) {
+//     let screen: ObjcId = msg_send![window, screen];
+//     let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
+//     let dpi_scale = dpi_scale as f32;
+
+//     let bounds: NSRect = msg_send![view, bounds];
+//     let screen_width = (bounds.size.width as f32 * dpi_scale) as i32;
+//     let screen_height = (bounds.size.height as f32 * dpi_scale) as i32;
+//     (screen_width, screen_height, dpi_scale)
+// }
+
 impl MacosDisplay {
     fn transform_mouse_point(&self, point: &NSPoint) -> (f32, f32) {
         let binding = get_handler().lock();
@@ -1336,6 +1347,8 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             if !payload.has_initialized {
                 let id = payload.id;
 
+                unsafe { payload.update_dimensions() };
+
                 if payload.event_handler.is_none() {
                     let f = payload.f.take().unwrap();
                     payload.event_handler = Some(f());
@@ -1348,15 +1361,15 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
                         id,
                         d.window_handle.unwrap(),
                         d.display_handle.unwrap(),
-                        d.dimensions.0,
-                        d.dimensions.1,
-                        d.dimensions.2,
+                        d.screen_width,
+                        d.screen_height,
+                        d.dpi_scale,
                     );
 
                     event_handler.resize_event(
-                        d.dimensions.0,
-                        d.dimensions.1,
-                        d.dimensions.2,
+                        d.screen_width,
+                        d.screen_height,
+                        d.dpi_scale,
                         true,
                     );
                 }
@@ -1846,17 +1859,11 @@ impl Window {
                 object: nil
             ];
 
-            let dimensions = display.update_dimensions().unwrap_or((
-                conf.window_width,
-                conf.window_height,
-                2.0,
-            ));
             {
                 let mut d = get_handler().lock();
                 let d = d.get_mut(id).unwrap();
                 d.window_handle = Some(display.raw_window_handle());
                 d.display_handle = Some(display.raw_display_handle());
-                d.dimensions = dimensions;
             }
 
             // (**window_delegate)
