@@ -2843,7 +2843,6 @@ name = "wa"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.4.1",
- "corcovado",
  "fnv",
  "futures",
  "lazy_static",

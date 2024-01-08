@@ -11,11 +11,14 @@
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use crate::native::macos::NSEventMask::NSAnyEventMask;
 use crate::native::macos::NSEventType::NSApplicationDefined;
-use crate::Appearance;
+use crate::{AppHandler, Appearance};
 use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
 use std::sync::OnceLock;
+use std::time::Duration;
+
+const APP_POLLING_INTERVAL: Duration = Duration::from_secs(2);
 
 use {
     crate::{
@@ -90,7 +93,7 @@ pub enum NSEventType {
     NSEventTypePressure = 34,
 }
 
-pub static NATIVE_APP: OnceLock<App> = OnceLock::new();
+pub static NATIVE_APP: OnceLock<NativeApp> = OnceLock::new();
 
 #[cfg(target_pointer_width = "32")]
 pub type NSInteger = libc::c_int;
@@ -356,7 +359,7 @@ extern "C" fn rio_perform_key_assignment(
     if let Some(action) = opt_action {
         match action {
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-                let native_app: Option<&App> = NATIVE_APP.get();
+                let native_app: Option<&NativeApp> = NATIVE_APP.get();
                 if let Some(app) = native_app {
                     let _ = app.sender.send(action);
                 }
@@ -1527,15 +1530,25 @@ pub enum NSWindowTabbingMode {
 
 pub struct App {
     pub ns_app: StrongPtr,
-    pub sender: corcovado::channel::Sender<RepresentedItem>,
+    pub receiver: std::sync::mpsc::Receiver<RepresentedItem>,
+    pub handler: Box<dyn AppHandler>,
 }
-unsafe impl Send for App {}
-unsafe impl Sync for App {}
+
+pub struct NativeApp {
+    pub ns_app: StrongPtr,
+    pub sender: std::sync::mpsc::Sender<RepresentedItem>,
+}
+
+unsafe impl Send for NativeApp {}
+unsafe impl Sync for NativeApp {}
 
 impl App {
-    pub fn new() -> (App, corcovado::channel::Receiver<RepresentedItem>) {
+    pub fn new<F>(f: F) -> App
+    where
+        F: 'static + FnOnce() -> Box<dyn AppHandler>,
+    {
         crate::set_handler();
-        let (sender, receiver) = corcovado::channel::channel();
+        let (sender, receiver) = std::sync::mpsc::channel();
 
         unsafe {
             let app_delegate_class = define_app_delegate();
@@ -1552,16 +1565,26 @@ impl App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            let _ = NATIVE_APP.set(App {
+            let _ = NATIVE_APP.set(NativeApp {
                 ns_app: ns_app.clone(),
                 sender: sender.clone(),
             });
 
-            (Self { ns_app, sender }, receiver)
+            Self {
+                ns_app,
+                handler: f(),
+                receiver,
+            }
         }
     }
 
-    pub fn run(&self) {
+    #[inline]
+    pub fn create_window(&mut self) {
+        self.handler.create_window();
+    }
+
+    pub fn run(&mut self) {
+        self.handler.init();
         let () = unsafe { msg_send![*self.ns_app, finishLaunching] };
 
         loop {
@@ -1605,13 +1628,33 @@ impl App {
 
                 let _: () = msg_send![pool, release];
             }
-            // callback();
+
+            // if self.interval == APP_POLLING_INTERVAL {
+            self.callback();
+            // self.last_callback = Instant::now();
+            // }
+            // app_loop.create_window();
         }
 
         // unsafe {
         //     let () = msg_send![*self.ns_app, finishLaunching];
         //     let () = msg_send![*self.ns_app, run];
         // }
+    }
+
+    #[inline]
+    pub fn callback(&mut self) {
+        while let Ok(msg) = self.receiver.try_recv() {
+            match msg {
+                RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                    self.handler.create_window();
+                    break;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
     }
 
     pub fn clipboard_get() -> Option<String> {
@@ -1638,7 +1681,7 @@ impl App {
     }
 
     pub fn confirm_quit() {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
@@ -1647,7 +1690,7 @@ impl App {
     }
 
     pub fn appearance() -> Appearance {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             let name = unsafe {
                 let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
@@ -1680,7 +1723,7 @@ impl App {
     }
 
     pub fn hide_application() {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             let ns_app = *app.ns_app;
             unsafe {
