@@ -1531,7 +1531,8 @@ pub enum NSWindowTabbingMode {
 pub struct App {
     pub ns_app: StrongPtr,
     pub receiver: std::sync::mpsc::Receiver<RepresentedItem>,
-    pub handler: Box<dyn AppHandler>,
+    handler: Box<dyn AppHandler>,
+    last_callback: std::time::Instant,
 }
 
 pub struct NativeApp {
@@ -1571,6 +1572,7 @@ impl App {
             });
 
             Self {
+                last_callback: std::time::Instant::now(),
                 ns_app,
                 handler: f(),
                 receiver,
@@ -1629,32 +1631,23 @@ impl App {
                 let _: () = msg_send![pool, release];
             }
 
-            // if self.interval == APP_POLLING_INTERVAL {
-            self.callback();
-            // self.last_callback = Instant::now();
-            // }
-            // app_loop.create_window();
+            if self.last_callback.elapsed() > APP_POLLING_INTERVAL {
+                if let Ok(msg) = self.receiver.try_recv() {
+                    match msg {
+                        RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                            self.handler.create_window();
+                        }
+                        _ => {}
+                    }
+                }
+                self.last_callback = std::time::Instant::now();
+            }
         }
 
         // unsafe {
         //     let () = msg_send![*self.ns_app, finishLaunching];
         //     let () = msg_send![*self.ns_app, run];
         // }
-    }
-
-    #[inline]
-    pub fn callback(&mut self) {
-        while let Ok(msg) = self.receiver.try_recv() {
-            match msg {
-                RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-                    self.handler.create_window();
-                    break;
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
     }
 
     pub fn clipboard_get() -> Option<String> {

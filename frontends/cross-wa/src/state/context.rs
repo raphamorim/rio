@@ -22,7 +22,7 @@ use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
-const DEFAULT_CONTEXT_CAPACITY: usize = 20;
+const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
 pub struct Context {
     pub terminal: Arc<FairMutex<Crosswords>>,
