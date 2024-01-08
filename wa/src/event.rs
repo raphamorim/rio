@@ -303,6 +303,11 @@ pub enum Appearance {
     DarkHighContrast,
 }
 
+pub trait AppHandler {
+    fn create_window(&mut self);
+    fn init(&mut self);
+}
+
 /// A trait defining event callbacks.
 pub trait EventHandler {
     fn process(&mut self);

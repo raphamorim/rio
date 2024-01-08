@@ -16,7 +16,7 @@ mod renderer;
 mod router;
 mod scheduler;
 mod state;
-mod sync;
+mod watcher;
 
 use clap::Parser;
 use log::{info, LevelFilter, SetLoggerError};

@@ -9,7 +9,7 @@ use crate::event::RioEvent;
 use crate::ime::{Ime, Preedit};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::sync;
+use crate::watcher;
 use rio_backend::error::RioError;
 use rio_backend::superloop::Superloop;
 use route::Route;
@@ -516,34 +516,52 @@ impl EventHandler for Router {
     }
 }
 
+struct Looper {
+    config: Rc<rio_backend::config::Config>,
+    font_database: loader::Database,
+}
+
+impl Looper {
+    fn new(config: rio_backend::config::Config) -> Self {
+        let mut font_database = loader::Database::new();
+        font_database.load_system_fonts();
+        let config = Rc::new(config);
+        Self {
+            font_database,
+            config,
+        }
+    }
+}
+
+impl AppHandler for Looper {
+    fn create_window(&mut self) {
+        let _ = create_window(&self.config, &None, &self.font_database, None);
+    }
+
+    fn init(&mut self) {
+        let tab_group = if self.config.navigation.is_native() {
+            Some(0)
+        } else {
+            None
+        };
+
+        let _ = create_window(&self.config, &None, &self.font_database, tab_group);
+    }
+}
+
 #[inline]
 pub async fn run(
     config: rio_backend::config::Config,
     config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut superloop = Superloop::new();
-    let config = Rc::new(config);
-    let _ = sync::configuration_file_updates(superloop.clone());
+    let superloop = Superloop::new();
+    let app_loop = Looper::new(config);
+    let _ = watcher::configuration_file_updates(superloop.clone());
 
     // let scheduler = Scheduler::new(superloop.clone());
 
-    let mut font_database = loader::Database::new();
-    font_database.load_system_fonts();
-
-    #[cfg(target_os = "macos")]
-    let tab_group = if config.navigation.is_native() {
-        Some(0)
-    } else {
-        None
-    };
-
-    let (app, app_connection) = App::new();
+    let mut app = App::new(|| Box::new(app_loop));
     menu::create_menu();
-
-    crate::sync::application_connection(app_connection);
-
-    let _ = create_window(&config, &config_error, &font_database, tab_group);
-
     app.run();
     Ok(())
 }

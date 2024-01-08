@@ -9,8 +9,8 @@
 
 pub use crate::event::KeyAssignment;
 use crate::native::apple::{apple_util::*, frameworks::*};
-use crate::native::macos::{App, NATIVE_APP};
 use crate::native::macos::{NSInteger, NSUInteger};
+use crate::native::macos::{NativeApp, NATIVE_APP};
 use objc::declare::ClassDecl;
 use objc::rc::StrongPtr;
 use objc::runtime::{Class, Object, Sel, BOOL, NO, YES};
@@ -63,7 +63,7 @@ impl Menu {
     }
 
     pub fn assign_as_main_menu(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setMainMenu: *self.menu];
@@ -72,7 +72,7 @@ impl Menu {
     }
 
     pub fn get_main_menu() -> Option<Self> {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             let existing: ObjcId = unsafe { msg_send![*app.ns_app, mainMenu] };
             if existing == nil {
@@ -88,7 +88,7 @@ impl Menu {
     }
 
     pub fn assign_as_help_menu(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setHelpMenu: *self.menu];
@@ -97,7 +97,7 @@ impl Menu {
     }
 
     pub fn assign_as_windows_menu(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setWindowsMenu: *self.menu];
@@ -106,7 +106,7 @@ impl Menu {
     }
 
     pub fn assign_as_services_menu(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, setServicesMenu: *self.menu];
@@ -115,7 +115,7 @@ impl Menu {
     }
 
     pub fn assign_as_app_menu(&self) {
-        let native_app: Option<&App> = NATIVE_APP.get();
+        let native_app: Option<&NativeApp> = NATIVE_APP.get();
         if let Some(app) = native_app {
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
