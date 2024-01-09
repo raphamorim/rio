@@ -555,6 +555,6 @@ pub async fn run(
 
     let mut app = App::new(|| Box::new(app_loop));
     menu::create_menu();
-    app.run();
+    App::run();
     Ok(())
 }
