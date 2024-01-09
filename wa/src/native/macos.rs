@@ -11,6 +11,7 @@
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use crate::native::macos::NSEventMask::NSAnyEventMask;
 use crate::native::macos::NSEventType::NSApplicationDefined;
+use crate::FairMutex;
 use crate::{AppHandler, Appearance};
 use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
@@ -93,7 +94,8 @@ pub enum NSEventType {
     NSEventTypePressure = 34,
 }
 
-pub static NATIVE_APP: OnceLock<NativeApp> = OnceLock::new();
+pub static NATIVE_APP: OnceLock<FairMutex<App>> = OnceLock::new();
+pub static NATIVE_APP_EVENTS: OnceLock<FairMutex<Vec<RepresentedItem>>> = OnceLock::new();
 
 #[cfg(target_pointer_width = "32")]
 pub type NSInteger = libc::c_int;
@@ -370,9 +372,10 @@ extern "C" fn rio_perform_key_assignment(
     if let Some(action) = opt_action {
         match action {
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-                let native_app: Option<&NativeApp> = NATIVE_APP.get();
-                if let Some(app) = native_app {
-                    let _ = app.sender.send(action);
+                let sender = NATIVE_APP_EVENTS.get();
+                if let Some(channel) = sender {
+                    let mut events = channel.lock();
+                    events.push(action);
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
@@ -1543,26 +1546,18 @@ pub enum NSWindowTabbingMode {
 
 pub struct App {
     pub ns_app: StrongPtr,
-    pub receiver: std::sync::mpsc::Receiver<RepresentedItem>,
     handler: Box<dyn AppHandler>,
-    last_callback: std::time::Instant,
 }
 
-pub struct NativeApp {
-    pub ns_app: StrongPtr,
-    pub sender: std::sync::mpsc::Sender<RepresentedItem>,
-}
-
-unsafe impl Send for NativeApp {}
-unsafe impl Sync for NativeApp {}
+unsafe impl Send for App {}
+unsafe impl Sync for App {}
 
 impl App {
-    pub fn new<F>(f: F) -> App
+    pub fn new<F>(f: F) -> StrongPtr
     where
         F: 'static + FnOnce() -> Box<dyn AppHandler>,
     {
         crate::set_handler();
-        let (sender, receiver) = std::sync::mpsc::channel();
 
         unsafe {
             let app_delegate_class = define_app_delegate();
@@ -1579,17 +1574,14 @@ impl App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            let _ = NATIVE_APP.set(NativeApp {
+            let _ = NATIVE_APP.set(FairMutex::new(App {
                 ns_app: ns_app.clone(),
-                sender: sender.clone(),
-            });
-
-            Self {
-                last_callback: std::time::Instant::now(),
-                ns_app,
                 handler: f(),
-                receiver,
-            }
+            }));
+
+            let _ = NATIVE_APP_EVENTS.set(FairMutex::new(vec![]));
+
+            ns_app
         }
     }
 
@@ -1603,43 +1595,60 @@ impl App {
         _: CFRunLoopActivity,
         _: *mut std::ffi::c_void,
     ) {
-        // println!("triggered");
-        // if self.last_callback.elapsed() > APP_POLLING_INTERVAL {
-        //     if let Ok(msg) = self.receiver.try_recv() {
-        //         match msg {
-        //             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-        //                 self.handler.create_window();
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        //     self.last_callback = std::time::Instant::now();
-        // }
+        let sender = NATIVE_APP_EVENTS.get();
+        if let Some(events) = sender {
+            let events = events.lock();
+            if events.is_empty() {
+                return;
+            }
+
+            let mut events = events;
+            match events.pop() {
+                Some(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)) => {
+                    let native_app = NATIVE_APP.get();
+                    if let Some(app) = native_app {
+                        let mut app = app.lock();
+                        app.create_window();
+                    }
+                }
+                _ => {}
+            }
+            // let mut events = channel.lock();
+            // events.push(action);
+        }
+
+        // Run loop
         // unsafe {
-            // CFRunLoopWakeUp(CFRunLoopGetMain());
+        // CFRunLoopWakeUp(CFRunLoopGetMain());
         // }
     }
 
-    pub fn run(&mut self) {
-        self.handler.init();
+    pub fn run() {
+        let native_app = NATIVE_APP.get();
+        if let Some(app) = native_app {
+            let mut app = app.lock();
+            app.handler.init();
+            let ns_app = *app.ns_app;
+            drop(app);
 
-        let observer = unsafe {
-            CFRunLoopObserverCreate(
-                std::ptr::null(),
-                kCFRunLoopAllActivities,
-                YES,
-                0,
-                App::trigger,
-                std::ptr::null_mut(),
-            )
-        };
-        unsafe {
-            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, kCFRunLoopCommonModes);
-        }
+            let observer = unsafe {
+                CFRunLoopObserverCreate(
+                    std::ptr::null(),
+                    kCFRunLoopAllActivities,
+                    YES,
+                    0,
+                    App::trigger,
+                    std::ptr::null_mut(),
+                )
+            };
+            unsafe {
+                CFRunLoopAddObserver(CFRunLoopGetMain(), observer, kCFRunLoopCommonModes);
+            }
 
-        unsafe {
-            let () = msg_send![*self.ns_app, finishLaunching];
-            let () = msg_send![*self.ns_app, run];
+            unsafe {
+                let () = msg_send![ns_app, finishLaunching];
+                let () = msg_send![ns_app, run];
+            }
         }
     }
 
@@ -1713,8 +1722,9 @@ impl App {
     }
 
     pub fn confirm_quit() {
-        let native_app: Option<&NativeApp> = NATIVE_APP.get();
+        let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
+            let app = app.lock();
             unsafe {
                 let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
             }
@@ -1722,8 +1732,9 @@ impl App {
     }
 
     pub fn appearance() -> Appearance {
-        let native_app: Option<&NativeApp> = NATIVE_APP.get();
+        let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
+            let app = app.lock();
             let name = unsafe {
                 let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
@@ -1755,8 +1766,9 @@ impl App {
     }
 
     pub fn hide_application() {
-        let native_app: Option<&NativeApp> = NATIVE_APP.get();
+        let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
+            let app = app.lock();
             let ns_app = *app.ns_app;
             unsafe {
                 let () = msg_send![ns_app, hide: ns_app];
