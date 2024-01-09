@@ -8,7 +8,8 @@ members = [
   "rio-backend",
   "wa",
 
-  "frontends/cross-wa",
+  "frontends/0.1.x",
+  "frontends/0.0.x",
 ]
 resolver = "2"
 
