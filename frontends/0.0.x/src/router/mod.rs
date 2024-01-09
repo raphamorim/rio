@@ -8,9 +8,9 @@ use crate::router::window::{configure_window, create_window_builder};
 use crate::screen::Screen;
 use crate::EventP;
 use assistant::Assistant;
-use rio_backend::config::Config as RioConfig;
-use rio_backend::error::{RioError, RioErrorType};
-use rio_backend::sugarloaf::font::loader;
+use rio_backend_legacy::config::Config as RioConfig;
+use rio_backend_legacy::error::{RioError, RioErrorType};
+use rio_backend_legacy::sugarloaf::font::loader;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -118,12 +118,12 @@ impl Route {
 
     #[inline]
     pub fn create_config_file(&self) {
-        let default_file_path = rio_backend::config::config_file_path();
+        let default_file_path = rio_backend_legacy::config::config_file_path();
         if default_file_path.exists() {
             return;
         }
 
-        let default_dir_path = rio_backend::config::config_dir_path();
+        let default_dir_path = rio_backend_legacy::config::config_dir_path();
         match std::fs::create_dir_all(&default_dir_path) {
             Ok(_) => {
                 log::info!("configuration path created {}", default_dir_path.display());
@@ -146,7 +146,7 @@ impl Route {
                 if let Err(err_message) = writeln!(
                     created_file,
                     "{}",
-                    rio_backend::config::config_file_content()
+                    rio_backend_legacy::config::config_file_content()
                 ) {
                     log::error!(
                         "could not update config file with defaults: {err_message}"
@@ -223,9 +223,9 @@ impl Router {
 
         let current_config: RioConfig = config.as_ref().clone();
         let new_config = RioConfig {
-            shell: rio_backend::config::Shell {
+            shell: rio_backend_legacy::config::Shell {
                 program: config.editor.clone(),
-                args: vec![rio_backend::config::config_file_path()
+                args: vec![rio_backend_legacy::config::config_file_path()
                     .display()
                     .to_string()],
             },

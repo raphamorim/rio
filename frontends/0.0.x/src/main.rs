@@ -22,7 +22,7 @@ use crate::sequencer::Sequencer;
 use clap::Parser;
 use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
-use rio_backend::{ansi, clipboard, crosswords, event, performer, selection};
+use rio_backend_legacy::{ansi, clipboard, crosswords, event, performer, selection};
 use std::str::FromStr;
 
 #[cfg(windows)]
@@ -30,7 +30,7 @@ use windows_sys::Win32::System::Console::{
     AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS,
 };
 
-pub fn setup_environment_variables(config: &rio_backend::config::Config) {
+pub fn setup_environment_variables(config: &rio_backend_legacy::config::Config) {
     #[cfg(unix)]
     let terminfo = if teletypewriter::terminfo_exists("rio") {
         "rio"
@@ -98,9 +98,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load command line options.
     let args = cli::Cli::parse();
 
-    let (mut config, config_error) = match rio_backend::config::Config::try_load() {
+    let (mut config, config_error) = match rio_backend_legacy::config::Config::try_load() {
         Ok(config) => (config, None),
-        Err(err) => (rio_backend::config::Config::default(), Some(err)),
+        Err(err) => (rio_backend_legacy::config::Config::default(), Some(err)),
     };
 
     {

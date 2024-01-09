@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 winit = { workspace = true }
 log = { workspace = true }
-rio-backend = { workspace = true }
+rio-backend-legacy = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = "2.4.1"
@@ -64,11 +64,11 @@ windows-sys = { version = "0.48", features = [
 [features]
 default = ["wayland", "x11"]
 x11 = [
-    "rio-backend/x11",
+    "rio-backend-legacy/x11",
     "winit/x11"
 ]
 wayland = [
-    "rio-backend/wayland",
+    "rio-backend-legacy/wayland",
     "winit/wayland",
     "winit/wayland-dlopen",
     "winit/wayland-csd-adwaita-crossfont",

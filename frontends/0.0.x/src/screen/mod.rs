@@ -38,11 +38,11 @@ use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use rio_backend::config::{
+use rio_backend_legacy::config::{
     colors::{term::List, ColorWGPU},
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
-use rio_backend::sugarloaf::{
+use rio_backend_legacy::sugarloaf::{
     self, layout::SugarloafLayout, RenderableSugarloaf, Sugarloaf, SugarloafErrors,
     SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
@@ -67,7 +67,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 #[inline]
-fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
+fn padding_top_from_config(config: &rio_backend_legacy::config::Config) -> f32 {
     #[cfg(not(target_os = "macos"))]
     {
         if config.navigation.is_placed_on_top() {
@@ -86,7 +86,7 @@ fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
 }
 
 #[inline]
-fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
+fn padding_bottom_from_config(config: &rio_backend_legacy::config::Config) -> f32 {
     if config.navigation.is_placed_on_bottom() {
         config.fonts.size
     } else {
@@ -109,7 +109,7 @@ pub struct Screen {
 impl Screen {
     pub async fn new(
         winit_window: &winit::window::Window,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<rio_backend_legacy::config::Config>,
         event_proxy: EventProxy,
         font_database: &sugarloaf::font::loader::Database,
     ) -> Result<Screen, Box<dyn Error>> {
@@ -289,7 +289,7 @@ impl Screen {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<rio_backend::config::Config>,
+        config: &Rc<rio_backend_legacy::config::Config>,
         current_theme: Option<winit::window::Theme>,
         db: &sugarloaf::font::loader::Database,
     ) {

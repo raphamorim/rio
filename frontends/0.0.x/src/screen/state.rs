@@ -7,13 +7,13 @@ use crate::ime::Preedit;
 use crate::screen::navigation::ScreenNavigation;
 use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
-use rio_backend::config::colors::{
+use rio_backend_legacy::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
-use rio_backend::config::Config;
-use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend_legacy::config::Config;
+use rio_backend_legacy::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend_legacy::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
