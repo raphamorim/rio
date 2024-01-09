@@ -4,7 +4,7 @@ use crate::ime::Preedit;
 use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::watch::watch;
-use rio_backend::config::colors::ColorRgb;
+use rio_backend_legacy::config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -22,15 +22,15 @@ use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
-    config: Rc<rio_backend::config::Config>,
+    config: Rc<rio_backend_legacy::config::Config>,
     event_proxy: Option<EventProxy>,
     router: Router,
 }
 
 impl Sequencer {
     pub fn new(
-        config: rio_backend::config::Config,
-        config_error: Option<rio_backend::config::ConfigError>,
+        config: rio_backend_legacy::config::Config,
+        config_error: Option<rio_backend_legacy::config::ConfigError>,
     ) -> Sequencer {
         let mut router = Router::new();
         if let Some(error) = config_error {
@@ -51,7 +51,7 @@ impl Sequencer {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
         let _ = watch(
-            rio_backend::config::config_dir_path(),
+            rio_backend_legacy::config::config_dir_path(),
             self.event_proxy.clone().unwrap(),
         );
         let mut scheduler = Scheduler::new(proxy);
@@ -91,10 +91,10 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::UpdateConfig) => {
                             let (config, config_error) =
-                                match rio_backend::config::Config::try_load() {
+                                match rio_backend_legacy::config::Config::try_load() {
                                     Ok(config) => (config, None),
                                     Err(error) => (
-                                        rio_backend::config::Config::default(),
+                                        rio_backend_legacy::config::Config::default(),
                                         Some(error),
                                     ),
                                 };
@@ -265,14 +265,14 @@ impl Sequencer {
                                 //
                                 // TODO: Reimplement this flow
                                 let mut should_revert_to_previous_config: Option<
-                                    rio_backend::config::Config,
+                                    rio_backend_legacy::config::Config,
                                 > = None;
                                 if working_dir_overwrite.is_some() {
                                     let current_config = (*self.config).clone();
                                     should_revert_to_previous_config =
                                         Some(current_config.clone());
 
-                                    let config = rio_backend::config::Config {
+                                    let config = rio_backend_legacy::config::Config {
                                         working_dir: working_dir_overwrite,
                                         ..current_config
                                     };

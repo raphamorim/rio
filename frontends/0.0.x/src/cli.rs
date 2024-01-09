@@ -2,7 +2,7 @@
 // which is licensed under Apache 2.0 license.
 
 use clap::{Args, Parser, ValueHint};
-use rio_backend::config::Shell;
+use rio_backend_legacy::config::Shell;
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Default, Debug)]

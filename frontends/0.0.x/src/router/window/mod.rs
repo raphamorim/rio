@@ -8,8 +8,8 @@ use {
 use raw_window_handle::HasRawWindowHandle;
 #[cfg(target_os = "macos")]
 use raw_window_handle::RawWindowHandle;
-use rio_backend::config::window::{Decorations, WindowMode};
-use rio_backend::config::Config;
+use rio_backend_legacy::config::window::{Decorations, WindowMode};
+use rio_backend_legacy::config::Config;
 use std::rc::Rc;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
 

@@ -1,5 +1,5 @@
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend_legacy::sugarloaf::components::rect::Rect;
+use rio_backend_legacy::sugarloaf::Sugarloaf;
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf) {
@@ -124,5 +124,5 @@ fn welcome_content() -> String {
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
     format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in raphamorim.io/rio/docs
-    ", rio_backend::config::config_file_path().display(), shortcut)
+    ", rio_backend_legacy::config::config_file_path().display(), shortcut)
 }

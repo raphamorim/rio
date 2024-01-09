@@ -2457,6 +2457,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "rio-backend-legacy"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bitflags 2.4.1",
+ "bytemuck",
+ "copa",
+ "copypasta",
+ "corcovado",
+ "cursor-icon",
+ "dirs",
+ "image",
+ "libc",
+ "log 0.4.20",
+ "parking_lot",
+ "raw-window-handle 0.5.2",
+ "regex",
+ "serde",
+ "sugarloaf",
+ "teletypewriter",
+ "toml",
+ "unicode-width",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "rio-proc-macros"
 version = "0.1.0"
 dependencies = [
@@ -2486,7 +2513,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle 0.5.2",
  "regex",
- "rio-backend",
+ "rio-backend-legacy",
  "serde",
  "teletypewriter",
  "tinyvec",

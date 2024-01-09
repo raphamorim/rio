@@ -1,7 +1,7 @@
 use crate::screen::constants::*;
-use rio_backend::config::navigation::NavigationMode;
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
+use rio_backend_legacy::config::navigation::NavigationMode;
+use rio_backend_legacy::sugarloaf::components::rect::Rect;
+use rio_backend_legacy::sugarloaf::font::FONT_ID_BUILTIN;
 use std::collections::HashMap;
 
 pub struct Text {
