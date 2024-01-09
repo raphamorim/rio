@@ -5,9 +5,7 @@ use crate::event::{EventListener, RioEvent};
 use crate::performer::Machine;
 use crate::screen::Crosswords;
 use crate::screen::Messenger;
-use crate::screen::SugarloafLayout;
 use rio_backend::config::Shell;
-use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
@@ -94,8 +92,7 @@ pub struct ContextManager<T: EventListener> {
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
-        let size = CrosswordsSize::new(1, 1);
-        let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
+        let terminal = Crosswords::new(1, 1, CursorShape::Block, event_proxy, window_id);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
         let (sender, _receiver) = corcovado::channel::channel();
 
@@ -111,15 +108,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn create_context(
-        sugarloaf_layout: SugarloafLayout,
+        dimensions: (u32, u32),
+        cols_rows: (usize, usize),
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
         let event_proxy_clone = event_proxy.clone();
-        let mut terminal = Crosswords::new::<SugarloafLayout>(
-            sugarloaf_layout.clone(),
+        let mut terminal = Crosswords::new(
+            cols_rows.0,
+            cols_rows.1,
             cursor_state.0.content,
             event_proxy,
             window_id,
@@ -134,8 +133,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 log::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
-                    sugarloaf_layout.columns as u16,
-                    sugarloaf_layout.lines as u16,
+                    cols_rows.0 as u16,
+                    cols_rows.1 as u16,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -149,8 +148,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
                     &config.working_dir,
-                    sugarloaf_layout.columns as u16,
-                    sugarloaf_layout.lines as u16,
+                    cols_rows.0 as u16,
+                    cols_rows.1 as u16,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -172,8 +171,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                sugarloaf_layout.columns as u16,
-                sugarloaf_layout.lines as u16,
+                cols_rows.0 as u16,
+                cols_rows.1 as u16,
             );
         }
 
@@ -185,14 +184,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
         let messenger = Messenger::new(channel);
 
-        let width = sugarloaf_layout.width as u16;
-        let height = sugarloaf_layout.height as u16;
-        let _ = messenger.send_resize(
-            width,
-            height,
-            sugarloaf_layout.columns as u16,
-            sugarloaf_layout.lines as u16,
-        );
+        let width = dimensions.0 as u16;
+        let height = dimensions.1 as u16;
+        let _ =
+            messenger.send_resize(width, height, cols_rows.0 as u16, cols_rows.1 as u16);
 
         Ok(Context {
             #[cfg(not(target_os = "windows"))]
@@ -206,7 +201,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn start(
-        sugarloaf_layout: SugarloafLayout,
+        dimensions: (u32, u32),
+        col_rows: (usize, usize),
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
@@ -214,7 +210,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
-            sugarloaf_layout,
+            (dimensions.0, dimensions.1),
+            (col_rows.0, col_rows.1),
             cursor_state,
             event_proxy.clone(),
             window_id,
@@ -290,12 +287,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_update_titles: false,
             use_current_path: false,
         };
-
-        let sugarloaf_layout =
-            SugarloafLayout::new(100.0, 100.0, (0.0, 0.0, 0.0), 1.0, 14.0, 1.0, (2, 1));
-
         let initial_context = ContextManager::create_context(
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
             event_proxy.clone(),
             window_id,
@@ -610,7 +604,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn add_context(
         &mut self,
         redirect: bool,
-        sugarloaf_layout: SugarloafLayout,
+        dimensions: (u32, u32),
+        col_rows: (usize, usize),
         cursor_state: (&CursorState, bool),
     ) {
         let mut working_dir = None;
@@ -655,7 +650,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
 
             match ContextManager::create_context(
-                sugarloaf_layout,
+                dimensions,
+                col_rows,
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
@@ -703,20 +699,20 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = false;
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = true;
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
@@ -731,17 +727,17 @@ pub mod test {
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
@@ -749,7 +745,8 @@ pub mod test {
         for _ in 0..20 {
             context_manager.add_context(
                 should_redirect,
-                SugarloafLayout::default(),
+                (100, 100),
+                (1, 1),
                 (&CursorState::new('_'), false),
             );
         }
@@ -765,10 +762,10 @@ pub mod test {
                 .unwrap();
         let should_redirect = true;
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.current_index, 1);
@@ -778,16 +775,16 @@ pub mod test {
         assert_eq!(context_manager.capacity, 8);
 
         let should_redirect = false;
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         context_manager.set_current(3);
@@ -804,16 +801,16 @@ pub mod test {
                 .unwrap();
         let should_redirect = false;
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
@@ -836,28 +833,28 @@ pub mod test {
                 .unwrap();
         let should_redirect = false;
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
 
@@ -869,10 +866,10 @@ pub mod test {
         assert_eq!(context_manager.len(), 1);
         assert_eq!(context_manager.current_index, 0);
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
 
@@ -891,16 +888,16 @@ pub mod test {
                 .unwrap();
         let should_redirect = false;
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
@@ -921,34 +918,34 @@ pub mod test {
                 .unwrap();
         let should_redirect = false;
 
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
-        let sugarloaf_layout = SugarloafLayout::default();
         context_manager.add_context(
             should_redirect,
-            sugarloaf_layout,
+            (100, 100),
+            (1, 1),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 5);
