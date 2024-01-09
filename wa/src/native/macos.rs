@@ -1598,10 +1598,53 @@ impl App {
         self.handler.create_window();
     }
 
+    extern "C" fn trigger(
+        _observer: *mut __CFRunLoopObserver,
+        _: CFRunLoopActivity,
+        _: *mut std::ffi::c_void,
+    ) {
+        // println!("triggered");
+        // if self.last_callback.elapsed() > APP_POLLING_INTERVAL {
+        //     if let Ok(msg) = self.receiver.try_recv() {
+        //         match msg {
+        //             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+        //                 self.handler.create_window();
+        //             }
+        //             _ => {}
+        //         }
+        //     }
+        //     self.last_callback = std::time::Instant::now();
+        // }
+        // unsafe {
+            // CFRunLoopWakeUp(CFRunLoopGetMain());
+        // }
+    }
+
     pub fn run(&mut self) {
         self.handler.init();
-        let () = unsafe { msg_send![*self.ns_app, finishLaunching] };
 
+        let observer = unsafe {
+            CFRunLoopObserverCreate(
+                std::ptr::null(),
+                kCFRunLoopAllActivities,
+                YES,
+                0,
+                App::trigger,
+                std::ptr::null_mut(),
+            )
+        };
+        unsafe {
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, kCFRunLoopCommonModes);
+        }
+
+        unsafe {
+            let () = msg_send![*self.ns_app, finishLaunching];
+            let () = msg_send![*self.ns_app, run];
+        }
+    }
+
+    #[allow(unused)]
+    pub fn run_by_events(&mut self) {
         loop {
             unsafe {
                 let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
@@ -1643,24 +1686,7 @@ impl App {
 
                 let _: () = msg_send![pool, release];
             }
-
-            if self.last_callback.elapsed() > APP_POLLING_INTERVAL {
-                if let Ok(msg) = self.receiver.try_recv() {
-                    match msg {
-                        RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-                            self.handler.create_window();
-                        }
-                        _ => {}
-                    }
-                }
-                self.last_callback = std::time::Instant::now();
-            }
         }
-
-        // unsafe {
-        //     let () = msg_send![*self.ns_app, finishLaunching];
-        //     let () = msg_send![*self.ns_app, run];
-        // }
     }
 
     pub fn clipboard_get() -> Option<String> {
