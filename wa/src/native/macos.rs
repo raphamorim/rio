@@ -1384,15 +1384,6 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             if let Some(event_handler) = payload.context() {
                 event_handler.process();
             }
-
-            //         EventHandlerAction::Quit => unsafe {
-            //             let mut handler = get_handler().lock();
-            //             let d = handler.get_mut(payload.id).unwrap();
-            //             if d.quit_requested || d.quit_ordered {
-            //                 handler.remove(payload.id);
-            //                 let () = msg_send![payload.window, performClose: nil];
-            //             }
-            //         },
         }
     }
 

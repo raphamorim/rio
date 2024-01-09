@@ -119,165 +119,173 @@ impl EventHandler for Router {
             }
         }
 
-        match event {
-            RioEvent::CreateWindow => {
-                #[cfg(target_os = "macos")]
-                let new_tab_group = if self.config.navigation.is_native() {
-                    if let Some(current_tab_group) = self.tab_group {
-                        Some(current_tab_group + 1)
+        if event.is_none() {
+            return;
+        }
+
+        if let Some(event) = event {
+            match event {
+                RioEvent::CreateWindow => {
+                    #[cfg(target_os = "macos")]
+                    let new_tab_group = if self.config.navigation.is_native() {
+                        if let Some(current_tab_group) = self.tab_group {
+                            Some(current_tab_group + 1)
+                        } else {
+                            None
+                        }
                     } else {
                         None
-                    }
-                } else {
-                    None
-                };
-
-                let _ = create_window(
-                    &self.config,
-                    &None,
-                    &self.font_database,
-                    new_tab_group,
-                );
-            }
-            #[cfg(target_os = "macos")]
-            RioEvent::CreateNativeTab(_) => {
-                let _ = create_window(
-                    &self.config,
-                    &None,
-                    &self.font_database,
-                    self.tab_group,
-                );
-            }
-            RioEvent::UpdateConfig => {
-                let (config, config_error) = match rio_backend::config::Config::try_load()
-                {
-                    Ok(config) => (config, None),
-                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
-                };
-
-                self.config = config.into();
-                let appearance = wa::window::get_appearance();
-
-                if let Some(current) = &mut self.route {
-                    if let Some(error) = &config_error {
-                        current.report_error(&error.to_owned().into());
-                    } else {
-                        current.clear_assistant_errors();
-                    }
-
-                    current.update_config(&self.config, appearance);
-                }
-            }
-            RioEvent::Title(title, subtitle) => {
-                if let Some(current) = &mut self.route {
-                    window::set_window_title(current.id, title, subtitle);
-                }
-            }
-            RioEvent::MouseCursorDirty => {
-                if let Some(current) = &mut self.route {
-                    current.mouse.accumulated_scroll =
-                        mouse::AccumulatedScroll::default();
-                }
-            }
-            RioEvent::Scroll(scroll) => {
-                if let Some(current) = &mut self.route {
-                    let mut terminal = current.ctx.current().terminal.lock();
-                    terminal.scroll_display(scroll);
-                    drop(terminal);
-                }
-            }
-            RioEvent::Quit => {
-                window::request_quit();
-            }
-            RioEvent::ClipboardLoad(clipboard_type, format) => {
-                if let Some(current) = &mut self.route {
-                    // if route.window.is_focused {
-                    let text = format(current.clipboard_get(clipboard_type).as_str());
-                    current
-                        .ctx
-                        .current_mut()
-                        .messenger
-                        .send_bytes(text.into_bytes());
-                    // }
-                }
-            }
-            RioEvent::ClipboardStore(clipboard_type, content) => {
-                if let Some(current) = &mut self.route {
-                    // if current.is_focused {
-                    current.clipboard_store(clipboard_type, content);
-                    // }
-                }
-            }
-            RioEvent::PtyWrite(text) => {
-                if let Some(current) = &mut self.route {
-                    current
-                        .ctx
-                        .current_mut()
-                        .messenger
-                        .send_bytes(text.into_bytes());
-                }
-            }
-            RioEvent::ReportToAssistant(error) => {
-                if let Some(current) = &mut self.route {
-                    current.report_error(&error);
-                }
-            }
-            RioEvent::UpdateFontSize(action) => {
-                if let Some(current) = &mut self.route {
-                    let should_update = match action {
-                        0 => current.sugarloaf.layout.reset_font_size(),
-                        2 => current.sugarloaf.layout.increase_font_size(),
-                        1 => current.sugarloaf.layout.decrease_font_size(),
-                        _ => false,
                     };
 
-                    if !should_update {
-                        return;
-                    }
-
-                    // This is a hacky solution, sugarloaf compute bounds in runtime
-                    // so basically it updates with the new font-size, then compute the bounds
-                    // and then updates again with correct bounds
-                    current.sugarloaf.layout.update();
-                    current.sugarloaf.calculate_bounds();
-                    current.sugarloaf.layout.update();
-
-                    current.resize_all_contexts();
-
-                    current.render();
+                    let _ = create_window(
+                        &self.config,
+                        &None,
+                        &self.font_database,
+                        new_tab_group,
+                    );
                 }
-            }
-            RioEvent::UpdateGraphicLibrary => {
-                if let Some(current) = &mut self.route {
-                    let mut terminal = current.ctx.current().terminal.lock();
-                    let graphics = terminal.graphics_take_queues();
-                    if let Some(graphic_queues) = graphics {
-                        let renderer = &mut current.sugarloaf;
-                        for graphic_data in graphic_queues.pending {
-                            renderer.graphics.add(graphic_data);
+                #[cfg(target_os = "macos")]
+                RioEvent::CreateNativeTab(_) => {
+                    let _ = create_window(
+                        &self.config,
+                        &None,
+                        &self.font_database,
+                        self.tab_group,
+                    );
+                }
+                RioEvent::UpdateConfig => {
+                    let (config, config_error) =
+                        match rio_backend::config::Config::try_load() {
+                            Ok(config) => (config, None),
+                            Err(error) => {
+                                (rio_backend::config::Config::default(), Some(error))
+                            }
+                        };
+
+                    self.config = config.into();
+                    let appearance = wa::window::get_appearance();
+
+                    if let Some(current) = &mut self.route {
+                        if let Some(error) = &config_error {
+                            current.report_error(&error.to_owned().into());
+                        } else {
+                            current.clear_assistant_errors();
                         }
 
-                        for graphic_data in graphic_queues.remove_queue {
-                            renderer.graphics.remove(&graphic_data);
+                        current.update_config(&self.config, appearance);
+                    }
+                }
+                RioEvent::Title(title, subtitle) => {
+                    if let Some(current) = &mut self.route {
+                        window::set_window_title(current.id, title, subtitle);
+                    }
+                }
+                RioEvent::MouseCursorDirty => {
+                    if let Some(current) = &mut self.route {
+                        current.mouse.accumulated_scroll =
+                            mouse::AccumulatedScroll::default();
+                    }
+                }
+                RioEvent::Scroll(scroll) => {
+                    if let Some(current) = &mut self.route {
+                        let mut terminal = current.ctx.current().terminal.lock();
+                        terminal.scroll_display(scroll);
+                        drop(terminal);
+                    }
+                }
+                RioEvent::Quit => {
+                    window::request_quit();
+                }
+                RioEvent::ClipboardLoad(clipboard_type, format) => {
+                    if let Some(current) = &mut self.route {
+                        // if route.window.is_focused {
+                        let text = format(current.clipboard_get(clipboard_type).as_str());
+                        current
+                            .ctx
+                            .current_mut()
+                            .messenger
+                            .send_bytes(text.into_bytes());
+                        // }
+                    }
+                }
+                RioEvent::ClipboardStore(clipboard_type, content) => {
+                    if let Some(current) = &mut self.route {
+                        // if current.is_focused {
+                        current.clipboard_store(clipboard_type, content);
+                        // }
+                    }
+                }
+                RioEvent::PtyWrite(text) => {
+                    if let Some(current) = &mut self.route {
+                        current
+                            .ctx
+                            .current_mut()
+                            .messenger
+                            .send_bytes(text.into_bytes());
+                    }
+                }
+                RioEvent::ReportToAssistant(error) => {
+                    if let Some(current) = &mut self.route {
+                        current.report_error(&error);
+                    }
+                }
+                RioEvent::UpdateFontSize(action) => {
+                    if let Some(current) = &mut self.route {
+                        let should_update = match action {
+                            0 => current.sugarloaf.layout.reset_font_size(),
+                            2 => current.sugarloaf.layout.increase_font_size(),
+                            1 => current.sugarloaf.layout.decrease_font_size(),
+                            _ => false,
+                        };
+
+                        if !should_update {
+                            return;
+                        }
+
+                        // This is a hacky solution, sugarloaf compute bounds in runtime
+                        // so basically it updates with the new font-size, then compute the bounds
+                        // and then updates again with correct bounds
+                        current.sugarloaf.layout.update();
+                        current.sugarloaf.calculate_bounds();
+                        current.sugarloaf.layout.update();
+
+                        current.resize_all_contexts();
+
+                        current.render();
+                    }
+                }
+                RioEvent::UpdateGraphicLibrary => {
+                    if let Some(current) = &mut self.route {
+                        let mut terminal = current.ctx.current().terminal.lock();
+                        let graphics = terminal.graphics_take_queues();
+                        if let Some(graphic_queues) = graphics {
+                            let renderer = &mut current.sugarloaf;
+                            for graphic_data in graphic_queues.pending {
+                                renderer.graphics.add(graphic_data);
+                            }
+
+                            for graphic_data in graphic_queues.remove_queue {
+                                renderer.graphics.remove(&graphic_data);
+                            }
                         }
                     }
                 }
-            }
-            // RioEvent::ScheduleRender(millis) => {
-            //     let timer_id = TimerId::new(Topic::Render, 0);
-            //     let event = EventPayload::new(RioEvent::Render, self.current);
+                // RioEvent::ScheduleRender(millis) => {
+                //     let timer_id = TimerId::new(Topic::Render, 0);
+                //     let event = EventPayload::new(RioEvent::Render, self.current);
 
-            //     if !self.scheduler.scheduled(timer_id) {
-            //         self.scheduler.schedule(
-            //             event,
-            //             Duration::from_millis(millis),
-            //             false,
-            //             timer_id,
-            //         );
-            //     }
-            // }
-            RioEvent::Noop | _ => {}
-        };
+                //     if !self.scheduler.scheduled(timer_id) {
+                //         self.scheduler.schedule(
+                //             event,
+                //             Duration::from_millis(millis),
+                //             false,
+                //             timer_id,
+                //         );
+                //     }
+                // }
+                RioEvent::Noop | _ => {}
+            };
+        }
     }
 
     fn ime_event(&mut self, ime_state: ImeState) {
