@@ -475,7 +475,12 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
+            #[cfg(not(feature = "winit"))]
             self.event_proxy.send_redraw(self.window_id);
+
+            #[cfg(feature = "winit")]
+            self.event_proxy
+                .send_event(RioEvent::Wakeup, self.window_id);
         }
     }
 
