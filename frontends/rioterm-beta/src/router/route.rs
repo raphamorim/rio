@@ -9,6 +9,7 @@
 // A router is a window, but it can contain a sub route that is a panel
 // For example /:window-id/:panel-one
 
+use crate::router::loader;
 use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::router::bindings::{
@@ -38,7 +39,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::rc::Rc;
-use sugarloaf::{
+use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
@@ -75,7 +76,7 @@ impl Route {
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         config: Rc<rio_backend::config::Config>,
         superloop: rio_backend::superloop::Superloop,
-        font_database: &sugarloaf::font::loader::Database,
+        font_database: &loader::Database,
         width: i32,
         height: i32,
         scale_factor: f32,

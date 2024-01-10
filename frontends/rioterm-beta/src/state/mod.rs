@@ -20,7 +20,7 @@ use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyl
 use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use sugarloaf::SugarGraphic;
+use rio_backend::sugarloaf::SugarGraphic;
 
 struct Cursor {
     state: CursorState,

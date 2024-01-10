@@ -41,6 +41,7 @@ winit = { workspace = true, optional = true }
 
 [features]
 default = ["wayland", "x11"]
+wa = []
 winit = ["dep:winit"]
 x11 = [
     "copypasta/x11"

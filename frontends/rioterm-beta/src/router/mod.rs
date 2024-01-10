@@ -15,7 +15,7 @@ use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
 use std::rc::Rc;
-use sugarloaf::font::loader;
+use rio_backend::sugarloaf::font::loader;
 use wa::*;
 
 struct Router {

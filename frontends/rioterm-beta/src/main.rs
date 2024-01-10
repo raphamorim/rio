@@ -3,6 +3,7 @@
 // This is silently ignored on non-windows systems.
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
+#![cfg(not(feature = "winit"))]
 
 mod cli;
 mod constants;
