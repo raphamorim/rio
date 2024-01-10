@@ -4,7 +4,6 @@ use sugarloaf::core::SugarStyle;
 use sugarloaf::{
     core::{Sugar, SugarDecoration},
     layout::SugarloafLayout,
-    RenderableSugarloaf,
 };
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};

@@ -6,12 +6,6 @@ struct Stage {}
 
 #[cfg(target_os = "macos")]
 impl EventHandler for Stage {
-    fn update(&mut self, _code: u8) {}
-
-    fn draw(&mut self) {
-        println!("oi");
-    }
-
     fn key_down_event(
         &mut self,
         keycode: KeyCode,
@@ -46,12 +40,15 @@ impl EventHandler for Stage {
     //     };
     //     window::set_mouse_cursor(icon);
     // }
-    fn process(&mut self) -> EventHandlerAction {
-        EventHandlerAction::Render
+    fn process(&mut self) {
     }
 }
 
 fn main() {
     #[cfg(target_os = "macos")]
-    wa::start(conf::Conf::default(), || Box::new(Stage {}));
+    {
+        App::start(|| false);
+        conf::Conf::default(), || Box::new(Stage {}));
+
+    }
 }

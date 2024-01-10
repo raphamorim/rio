@@ -4,7 +4,6 @@ extern crate tokio;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::RenderableSugarloaf;
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;

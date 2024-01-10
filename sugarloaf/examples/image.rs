@@ -11,7 +11,6 @@ use winit::{
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::RenderableSugarloaf;
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 #[tokio::main]

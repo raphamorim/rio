@@ -6,6 +6,8 @@ pub mod error;
 pub mod event;
 pub mod performer;
 pub mod selection;
+
+#[cfg(not(feature = "winit"))]
 pub mod superloop;
 
 pub use sugarloaf;

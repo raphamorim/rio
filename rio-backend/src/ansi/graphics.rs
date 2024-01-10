@@ -206,7 +206,7 @@ impl Graphics {
 
 #[test]
 fn check_opaque_region() {
-    use crate::sugarloaf::core::ColorType;
+    use sugarloaf::graphics::ColorType;
     let graphic = SugarGraphicData {
         id: SugarGraphicId(0),
         width: 10,

@@ -115,7 +115,7 @@ where
     T: teletypewriter::EventedPty + Send + 'static,
     U: EventListener + Send + 'static,
 {
-    pub fn new<'a>(
+    pub fn new(
         terminal: Arc<FairMutex<Crosswords<U>>>,
         pty: T,
         event_proxy: U,

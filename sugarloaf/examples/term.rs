@@ -4,7 +4,6 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::{
     core::{Sugar, SugarDecoration, SugarStyle},
     layout::SugarloafLayout,
-    RenderableSugarloaf,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;

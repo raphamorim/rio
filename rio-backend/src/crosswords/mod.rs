@@ -2736,13 +2736,17 @@ mod tests {
     use super::*;
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::CrosswordsSize;
-    use crate::superloop::Superloop;
+    use crate::event::VoidListener;
 
     #[test]
     fn scroll_up() {
         let size = CrosswordsSize::new(1, 10);
-        let superloop: Superloop = Superloop::new();
-        let mut cw = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -2773,9 +2777,14 @@ mod tests {
 
     #[test]
     fn test_linefeed() {
-        let mut superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(1, 1);
-        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -2784,9 +2793,15 @@ mod tests {
 
     #[test]
     fn test_linefeed_moving_cursor() {
-        let superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(1, 3);
-        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
+
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -2809,8 +2824,13 @@ mod tests {
     #[test]
     fn test_input() {
         let size = CrosswordsSize::new(5, 10);
-        let superloop: Superloop = Superloop::new();
-        let mut cw: Crosswords = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -2829,8 +2849,13 @@ mod tests {
     #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let superloop: Superloop = Superloop::new();
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         let grid = &mut term.grid;
         for i in 0..4 {
             if i == 1 {
@@ -2902,8 +2927,13 @@ mod tests {
     #[test]
     fn line_selection_works() {
         let size = CrosswordsSize::new(5, 1);
-        let mut superloop: Superloop = Superloop::new();
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].c = 'a';
@@ -2927,8 +2957,13 @@ mod tests {
     #[test]
     fn block_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        let superloop: Superloop = Superloop::new();
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
         let grid = &mut term.grid;
         for i in 1..4 {
             grid[Line(i)][Column(0)].c = '"';
@@ -3000,8 +3035,12 @@ mod tests {
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_single_line() {
         let size = CrosswordsSize::new(20, 3);
-        let superloop: Superloop = Superloop::new();
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
 
         let grid = &mut term.grid;
         for i in 0..19 {
@@ -3132,9 +3171,13 @@ mod tests {
 
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_multiple_lines() {
-        let superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(4, 4);
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
 
         let grid = &mut term.grid;
         grid[Line(0)][Column(0)].c = 'h';
@@ -3211,9 +3254,13 @@ mod tests {
 
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_existent_hyperlink() {
-        let superloop: Superloop = Superloop::new();
         let size = CrosswordsSize::new(4, 4);
-        let mut term = Crosswords::new(size, CursorShape::Block, superloop, 0);
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
 
         let grid = &mut term.grid;
         let hyperlink = Hyperlink::new(None, "https://rio.io");

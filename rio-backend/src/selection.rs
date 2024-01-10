@@ -448,7 +448,12 @@ mod tests {
 
     fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);
-        Crosswords::new(size, CursorShape::Block, VoidListener {}, 0)
+        #[cfg(feature = "winit")]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(not(feature = "winit"))]
+        let window_id = 0;
+
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id)
     }
 
     /// Test case of single cell selection.
