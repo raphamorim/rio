@@ -1,5 +1,5 @@
 pub mod bindings;
-mod constants;
+pub mod constants;
 mod menu;
 pub mod mouse;
 mod route;
@@ -90,15 +90,13 @@ impl EventHandler for Router {
         scale_factor: f32,
     ) {
         let initial_route = Route::new(
-            id.into(),
+            id,
             raw_window_handle,
             raw_display_handle,
             self.config.clone(),
             self.superloop.clone(),
             &self.font_database,
-            width,
-            height,
-            scale_factor,
+            (width, height, scale_factor),
         )
         .expect("Expected window to be created");
         self.route = Some(initial_route);
@@ -128,11 +126,8 @@ impl EventHandler for Router {
                 RioEvent::CreateWindow => {
                     #[cfg(target_os = "macos")]
                     let new_tab_group = if self.config.navigation.is_native() {
-                        if let Some(current_tab_group) = self.tab_group {
-                            Some(current_tab_group + 1)
-                        } else {
-                            None
-                        }
+                        self.tab_group
+                            .map(|current_tab_group| current_tab_group + 1)
                     } else {
                         None
                     };
@@ -283,7 +278,8 @@ impl EventHandler for Router {
                 //         );
                 //     }
                 // }
-                RioEvent::Noop | _ => {}
+                RioEvent::Noop => {}
+                _ => {}
             };
         }
     }

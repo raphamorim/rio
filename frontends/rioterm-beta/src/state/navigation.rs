@@ -1,4 +1,4 @@
-use crate::constants::*;
+use crate::router::constants::*;
 use rio_backend::config::navigation::NavigationMode;
 use rio_backend::sugarloaf::components::rect::Rect;
 use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;

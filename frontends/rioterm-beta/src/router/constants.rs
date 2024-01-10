@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 #[cfg(not(any(target_os = "macos")))]
 pub const PADDING_Y: f32 = 2.0;
 

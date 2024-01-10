@@ -87,6 +87,7 @@ impl ContextManagerTitles {
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
     current_index: usize,
+    #[allow(unused)]
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 const CONFIG_POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 
-pub fn configuration_file_updates(mut event_proxy: Superloop) -> notify::Result<()> {
+pub fn configuration_file_updates(event_proxy: Superloop) -> notify::Result<()> {
     let path = rio_backend::config::config_dir_path();
     let (tx, rx) = std::sync::mpsc::channel();
 
