@@ -72,7 +72,7 @@ impl EventListener for Superloop {
         self.instance.lock().inner.0.redraw.push(0);
     }
 
-    fn send_event_with_high_priority(&self, event: RioEvent, _id: u16) {
+    fn send_event_with_high_priority(&self, event: RioEvent, _id: WindowId) {
         self.instance.lock().inner.0.priority_list.push(event);
         // self.size.fetch_add(1, Ordering::SeqCst);
     }
