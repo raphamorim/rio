@@ -6,7 +6,6 @@
 #![cfg(not(feature = "winit"))]
 
 mod cli;
-mod constants;
 mod ime;
 mod logger;
 mod messenger;

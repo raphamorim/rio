@@ -41,7 +41,7 @@ pub fn create_menu() {
     let menu_titles = ["Rio", "Shell", "Edit", "View", "Window", "Help"];
 
     for title in menu_titles {
-        let mut submenu = main_menu.get_or_create_sub_menu(&title, |menu| {
+        let _submenu = main_menu.get_or_create_sub_menu(title, |menu| {
             if title == "Window" {
                 menu.assign_as_windows_menu();
                 // macOS will insert stuff at the top and bottom, so we add

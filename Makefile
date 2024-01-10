@@ -163,9 +163,18 @@ install-debian-wayland:
 release-windows:
 	cargo wix -p rioterm
 
+# Note had to separate clippy default command because rio-backend feature
+# flag has been conflicting in the checks
 lint:
 	cargo fmt -- --check --color always
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy -p rioterm-beta -- -D warnings
+	cargo clippy -p rioterm --all-targets --all-features -- -D warnings
+	cargo clippy -p rio-proc-macros --all-targets --all-features -- -D warnings
+	cargo clippy -p copa --all-targets --all-features -- -D warnings
+	cargo clippy -p corcovado --all-targets --all-features -- -D warnings
+	cargo clippy -p teletypewriter --all-targets --all-features -- -D warnings
+	cargo clippy -p sugarloaf --all-targets --all-features -- -D warnings
+	cargo clippy -p rio-backend --all-targets --all-features -- -D warnings
 
 # There is errors regarding null pointers in corcovado that needs to be fixed for Windows
 test-win:

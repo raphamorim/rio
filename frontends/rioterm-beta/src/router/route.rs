@@ -77,9 +77,7 @@ impl Route {
         config: Rc<rio_backend::config::Config>,
         superloop: rio_backend::superloop::Superloop,
         font_database: &loader::Database,
-        width: i32,
-        height: i32,
-        scale_factor: f32,
+        dimensions: (i32, i32, f32),
     ) -> Result<Route, Box<dyn std::error::Error>> {
         let _route = RoutePath::Terminal;
 
@@ -139,10 +137,10 @@ impl Route {
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
         let sugarloaf_layout = SugarloafLayout::new(
-            width as f32,
-            height as f32,
+            dimensions.0 as f32,
+            dimensions.1 as f32,
             (config.padding_x, padding_y_top, padding_y_bottom),
-            scale_factor,
+            dimensions.2,
             config.fonts.size,
             config.line_height,
             (MIN_COLUMNS, MIN_LINES),
@@ -153,10 +151,10 @@ impl Route {
         let sugarloaf_window = SugarloafWindow {
             handle: raw_window_handle,
             display: raw_display_handle,
-            scale: scale_factor,
+            scale: dimensions.2,
             size: SugarloafWindowSize {
-                width: width as u32,
-                height: height as u32,
+                width: dimensions.0 as u32,
+                height: dimensions.1 as u32,
             },
         };
 
@@ -194,7 +192,7 @@ impl Route {
             sugarloaf.set_background_image(&image);
         }
         // TODO: Bug sugarloaf is not starting with right width/height
-        sugarloaf.resize(width as u32, height as u32);
+        sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
         sugarloaf.calculate_bounds();
         sugarloaf.render();
 
@@ -1078,8 +1076,8 @@ impl Route {
             self.ctx.report_error_fonts_not_found(err.fonts_not_found);
         }
 
-        let padding_y_bottom = padding_bottom_from_config(&config);
-        let padding_y_top = padding_top_from_config(&config);
+        let padding_y_bottom = padding_bottom_from_config(config);
+        let padding_y_top = padding_top_from_config(config);
 
         self.sugarloaf.layout.recalculate(
             config.fonts.size,
@@ -1100,7 +1098,7 @@ impl Route {
 
         self.sugarloaf.set_background_color(bg_color);
         if let Some(image) = &config.window.background_image {
-            self.sugarloaf.set_background_image(&image);
+            self.sugarloaf.set_background_image(image);
         }
 
         self.sugarloaf.calculate_bounds();
@@ -1191,11 +1189,9 @@ impl Route {
 
     #[inline]
     pub fn change_font_size(&mut self, action: u8) {
-        match action {
-            0 | 1 | 2 => self
-                .superloop
-                .send_event_with_high_priority(RioEvent::UpdateFontSize(action), self.id),
-            _ => {}
+        if let 0..=2 = action {
+            self.superloop
+                .send_event_with_high_priority(RioEvent::UpdateFontSize(action), self.id);
         };
     }
 
@@ -1209,13 +1205,13 @@ impl Route {
     #[cfg(target_os = "macos")]
     #[inline]
     fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
-        mods.alt == true
+        mods.alt
             && (self.state.option_as_alt == *"both"
-                || (self.state.option_as_alt == *"left"
-                    && false)
+                || (self.state.option_as_alt == *"left")
+                    // && false)
                     // && mods.lalt_state() == ModifiersKeyState::Pressed)
-                || (self.state.option_as_alt == *"right"
-                    && false))
+                || (self.state.option_as_alt == *"right"))
+        // && false))
         // && mods.ralt_state() == ModifiersKeyState::Pressed))
     }
 
