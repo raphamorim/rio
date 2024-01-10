@@ -34,6 +34,7 @@ pub struct CachedSugar {
 
 struct GraphicRect {
     id: crate::graphics::SugarGraphicId,
+    #[allow(unused)]
     height: u16,
     width: u16,
     pos_x: f32,

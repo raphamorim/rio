@@ -9,7 +9,7 @@
 
 pub use crate::event::KeyAssignment;
 use crate::native::apple::{apple_util::*, frameworks::*};
-use crate::native::macos::{App, NATIVE_APP};
+use crate::native::macos::NATIVE_APP;
 use crate::native::macos::{NSInteger, NSUInteger};
 use objc::declare::ClassDecl;
 use objc::rc::StrongPtr;

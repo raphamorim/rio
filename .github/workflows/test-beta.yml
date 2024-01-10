@@ -1,0 +1,27 @@
+name: Test
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [macos-latest]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup component add rustfmt clippy
+      - run: cargo fetch
+      - run: make lint
+      - run: cargo test
