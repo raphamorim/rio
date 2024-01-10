@@ -49,6 +49,7 @@ impl Handler {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn remove(&mut self, id: u16) {
         self.inner.remove(&id);
     }
@@ -65,7 +66,6 @@ pub(crate) struct NativeDisplayData {
 
     pub display_handle: Option<raw_window_handle::RawDisplayHandle>,
     pub window_handle: Option<raw_window_handle::RawWindowHandle>,
-    pub dimensions: (i32, i32, f32),
 
     #[cfg(target_vendor = "apple")]
     pub view: crate::native::apple::frameworks::ObjcId,
@@ -89,7 +89,6 @@ impl NativeDisplayData {
             quit_requested: false,
             quit_ordered: false,
             clipboard,
-            dimensions: (0, 0, 0.),
             display_handle: None,
             window_handle: None,
             #[cfg(target_vendor = "apple")]
