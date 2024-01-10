@@ -7,8 +7,7 @@ mod routes;
 
 use crate::event::RioEvent;
 use crate::ime::{Ime, Preedit};
-use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
-use crate::scheduler::{Scheduler, TimerId, Topic};
+// use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::watcher;
 use rio_backend::error::RioError;
 use rio_backend::event::EventListener;
@@ -34,7 +33,7 @@ pub fn create_window(
     font_database: &loader::Database,
     tab_group: Option<u64>,
 ) -> Result<Window, Box<dyn std::error::Error>> {
-    let mut superloop = Superloop::new();
+    let superloop = Superloop::new();
 
     if config_error.is_some() {
         superloop.send_event(
@@ -46,7 +45,7 @@ pub fn create_window(
     let router = Router {
         config: config.clone(),
         route: None,
-        superloop: superloop,
+        superloop,
         font_database: font_database.clone(),
         tab_group,
     };
@@ -73,7 +72,7 @@ pub fn create_window(
         hide_toolbar: !config.navigation.is_native(),
         hide_toolbar_buttons,
         #[cfg(target_os = "macos")]
-        tab_identifier: tab_identifier,
+        tab_identifier,
         ..Default::default()
     };
 
@@ -334,12 +333,12 @@ impl EventHandler for Router {
                 return;
             }
 
-            if keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper {
-                if current.search_nearest_hyperlink_from_pos() {
-                    window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                    current.render();
-                    return;
-                }
+            if (keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper)
+                && current.search_nearest_hyperlink_from_pos()
+            {
+                window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
+                current.render();
+                return;
             }
 
             current.process_key_event(keycode, mods, true, repeat, character);
@@ -554,7 +553,7 @@ impl AppHandler for Looper {
 #[inline]
 pub async fn run(
     config: rio_backend::config::Config,
-    config_error: Option<rio_backend::config::ConfigError>,
+    _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
     let superloop = Superloop::new();
     let app_loop = Looper::new(config);
@@ -562,7 +561,7 @@ pub async fn run(
 
     // let scheduler = Scheduler::new(superloop.clone());
 
-    let mut app = App::new(|| Box::new(app_loop));
+    App::start(|| Box::new(app_loop));
     menu::create_menu();
     App::run();
     Ok(())

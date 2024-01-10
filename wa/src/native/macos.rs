@@ -17,9 +17,6 @@ use objc::rc::StrongPtr;
 use raw_window_handle::HasRawDisplayHandle;
 use raw_window_handle::HasRawWindowHandle;
 use std::sync::OnceLock;
-use std::time::Duration;
-
-const APP_POLLING_INTERVAL: Duration = Duration::from_secs(2);
 
 use {
     crate::{
@@ -399,6 +396,7 @@ extern "C" fn application_dock_menu(
     dock_menu.autorelease()
 }
 
+#[allow(dead_code)]
 extern "C" fn application_open_untitled_file(
     this: &Object,
     _sel: Sel,
@@ -453,6 +451,7 @@ extern "C" fn application_open_urls(
     }
 }
 
+#[allow(dead_code)]
 extern "C" fn application_open_file(
     this: &Object,
     _sel: Sel,
@@ -1571,7 +1570,7 @@ unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub fn new<F>(f: F) -> StrongPtr
+    pub fn start<F>(f: F) -> StrongPtr
     where
         F: 'static + FnOnce() -> Box<dyn AppHandler>,
     {
@@ -1621,15 +1620,14 @@ impl App {
             }
 
             let mut events = events;
-            match events.pop() {
-                Some(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)) => {
-                    let native_app = NATIVE_APP.get();
-                    if let Some(app) = native_app {
-                        let mut app = app.lock();
-                        app.create_window();
-                    }
+            if let Some(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)) =
+                events.pop()
+            {
+                let native_app = NATIVE_APP.get();
+                if let Some(app) = native_app {
+                    let mut app = app.lock();
+                    app.create_window();
                 }
-                _ => {}
             }
             // let mut events = channel.lock();
             // events.push(action);

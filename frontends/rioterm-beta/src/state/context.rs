@@ -9,8 +9,8 @@ use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
+use rio_backend::event::WindowId;
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
-use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
@@ -89,14 +89,14 @@ pub struct ContextManager<T: EventListener> {
     current_index: usize,
     capacity: usize,
     event_proxy: T,
-    window_id: u16,
+    window_id: WindowId,
     pub config: ContextManagerConfig,
     pub titles: ContextManagerTitles,
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
-    pub fn create_dead_context(event_proxy: T, window_id: u16) -> Context<T> {
+    pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
         let size = CrosswordsSize::new(MIN_COLUMNS, MIN_LINES);
         let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
@@ -116,7 +116,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn create_context(
         cursor_state: (&CursorState, bool),
         event_proxy: T,
-        window_id: u16,
+        window_id: WindowId,
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
@@ -170,8 +170,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                cols_rows.0 as u16,
-                cols_rows.1 as u16,
+                2,
+                1,
             );
         }
 
@@ -196,8 +196,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn start(
         cursor_state: (&CursorState, bool),
-        mut event_proxy: T,
-        window_id: u16,
+        event_proxy: T,
+        window_id: WindowId,
         ctx_config: ContextManagerConfig,
         size: SugarloafLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
@@ -264,7 +264,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn start_with_capacity(
         capacity: usize,
         event_proxy: T,
-        window_id: u16,
+        window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
         let config = ContextManagerConfig {
             use_fork: true,
@@ -329,6 +329,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn close_current_window(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CloseWindow, self.window_id);
@@ -363,6 +364,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn quit(&mut self) {
         self.event_proxy.send_event(RioEvent::Quit, self.window_id);
     }
@@ -624,8 +626,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        // Native tabs do not use Context tabbing API, instead it will
-        // ask winit to create a window with a tab id
         if self.config.is_native {
             self.event_proxy.send_event_with_high_priority(
                 RioEvent::CreateNativeTab(working_dir),
@@ -672,11 +672,13 @@ pub mod test {
     #[test]
     fn test_capacity() {
         let context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
+                .unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
+                .unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
@@ -684,7 +686,8 @@ pub mod test {
     #[test]
     fn test_add_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
+                .unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -710,7 +713,8 @@ pub mod test {
     #[test]
     fn test_add_context_start_with_capacity_limit() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(3, Superloop::new(), 0_u16.into())
+                .unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -742,7 +746,8 @@ pub mod test {
     #[test]
     fn test_set_current() {
         let mut context_manager =
-            ContextManager::start_with_capacity(8, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(8, Superloop::new(), 0_u16.into())
+                .unwrap();
         let should_redirect = true;
 
         context_manager.add_context(
@@ -777,7 +782,8 @@ pub mod test {
     #[test]
     fn test_close_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(3, Superloop::new(), 0_u16.into())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -806,7 +812,8 @@ pub mod test {
     #[test]
     fn test_close_context_upcoming_ids() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -855,7 +862,8 @@ pub mod test {
     #[test]
     fn test_close_last_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(2, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(2, Superloop::new(), 0_u16.into())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -882,7 +890,8 @@ pub mod test {
     #[test]
     fn test_switch_to_next() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
+                .unwrap();
         let should_redirect = false;
 
         context_manager.add_context(

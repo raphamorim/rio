@@ -1,9 +1,9 @@
 use crate::event::sync::FairMutex;
 use crate::event::EventListener;
 use crate::event::RioEvent;
-use crate::event::WindowId;
 use std::collections::LinkedList;
 // use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::event::WindowId;
 use std::sync::Arc;
 
 pub struct InnerData {
@@ -25,6 +25,12 @@ impl Inner {
     }
 }
 
+impl Default for Inner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct Instance {
     pub inner: Inner,
 }
@@ -34,6 +40,12 @@ impl Instance {
         Instance {
             inner: Inner::new(),
         }
+    }
+}
+
+impl Default for Instance {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -86,6 +98,12 @@ impl Superloop {
             })),
             // size: AtomicUsize::new(0),
         }
+    }
+}
+
+impl Default for Superloop {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

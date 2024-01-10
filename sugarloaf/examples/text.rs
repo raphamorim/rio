@@ -4,7 +4,7 @@ use sugarloaf::{
     core::{Sugar, SugarDecoration},
     layout::SugarloafLayout,
 };
-use sugarloaf::{RenderableSugarloaf, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{

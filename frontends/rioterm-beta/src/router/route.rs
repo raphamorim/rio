@@ -42,7 +42,7 @@ use sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
-use wa::{KeyCode, Modifiers, ModifiersState};
+use wa::{KeyCode, ModifiersState};
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -80,7 +80,7 @@ impl Route {
         height: i32,
         scale_factor: f32,
     ) -> Result<Route, Box<dyn std::error::Error>> {
-        let route = RoutePath::Terminal;
+        let _route = RoutePath::Terminal;
 
         let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
@@ -232,12 +232,14 @@ impl Route {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn render_assistant(&mut self) {
         assistant::screen(&mut self.sugarloaf, &self.assistant);
         self.sugarloaf.render();
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn render_welcome(&mut self) {
         welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
