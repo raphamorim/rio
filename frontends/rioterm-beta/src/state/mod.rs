@@ -17,10 +17,10 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::SugarGraphic;
 use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use rio_backend::sugarloaf::SugarGraphic;
 
 struct Cursor {
     state: CursorState,
