@@ -1,5 +1,6 @@
 use crate::event::RioEvent;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use rio_backend::event::EventListener;
 use rio_backend::superloop::Superloop;
 use std::time::Duration;
 

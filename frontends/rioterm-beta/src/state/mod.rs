@@ -9,7 +9,8 @@ use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::selection::SelectionRange;
 use crate::state::navigation::ScreenNavigation;
-use rio_backend::ansi::graphics::UpdateQueues;
+use rio_backend::superloop::Superloop;
+// use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
@@ -583,7 +584,7 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &context::ContextManager,
+        context_manager: &context::ContextManager<Superloop>,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {

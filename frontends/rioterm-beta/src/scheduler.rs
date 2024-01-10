@@ -1,11 +1,11 @@
 // scheduler.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/scheduler.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::event::EventPayload;
+use rio_backend::event::EventListener;
 use rio_backend::superloop::Superloop;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
-
-use crate::event::EventPayload;
 
 /// ID uniquely identifying a timer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
