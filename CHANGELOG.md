@@ -1,18 +1,17 @@
 # Changelog
 
-## 0.1.0 (Unreleased)
+## Rio beta (0.1.0 - Unreleased)
 
 - Migration from Winit to WA.
 	- MacOS
-	- Windows
-	- Linux Wayland
-	- Linux x11
-- Sixel graphics initial support.
-- iTerm2 image protocol.
+	- ⏳ Windows
+	- ⏳ Linux Wayland
+	- ⏳ Linux x11
 
 ## Unreleased
 
-- TBD
+- Sixel graphics initial support.
+- iTerm2 image protocol.
 
 ## 0.0.34
 

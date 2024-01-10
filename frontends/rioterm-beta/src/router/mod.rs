@@ -11,6 +11,7 @@ use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::watcher;
 use rio_backend::error::RioError;
+use rio_backend::event::EventListener;
 use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
@@ -175,7 +176,7 @@ impl EventHandler for Router {
                         current.update_config(&self.config, appearance);
                     }
                 }
-                RioEvent::Title(title, subtitle) => {
+                RioEvent::TitleWithSubtitle(title, subtitle) => {
                     if let Some(current) = &mut self.route {
                         window::set_window_title(current.id, title, subtitle);
                     }

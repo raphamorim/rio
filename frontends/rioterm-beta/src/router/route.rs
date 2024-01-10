@@ -32,6 +32,7 @@ use rio_backend::crosswords::{
     grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink, MIN_COLUMNS, MIN_LINES,
 };
 use rio_backend::error::{RioError, RioErrorType};
+use rio_backend::event::EventListener;
 use rio_backend::selection::SelectionType;
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -51,7 +52,7 @@ const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 pub struct Route {
     pub id: u16,
-    pub ctx: ContextManager,
+    pub ctx: ContextManager<Superloop>,
     pub state: State,
     pub ime: Ime,
     pub mouse: Mouse,
@@ -1531,7 +1532,7 @@ impl Route {
                 // and the terminal also have instructions of blinking enabled
                 if self.state.has_blinking_enabled && has_blinking_enabled {
                     self.superloop
-                        .send_event(RioEvent::ScheduleRender(800), self.id);
+                        .send_event(RioEvent::PrepareRender(800), self.id);
                 }
             }
         }

@@ -8,6 +8,7 @@ use rio_backend::config::Shell;
 use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
@@ -24,8 +25,8 @@ use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
-pub struct Context {
-    pub terminal: Arc<FairMutex<Crosswords>>,
+pub struct Context<T: EventListener> {
+    pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
     pub main_fd: Arc<i32>,
@@ -83,22 +84,22 @@ impl ContextManagerTitles {
     }
 }
 
-pub struct ContextManager {
-    contexts: Vec<Context>,
+pub struct ContextManager<T: EventListener> {
+    contexts: Vec<Context<T>>,
     current_index: usize,
     capacity: usize,
-    event_proxy: Superloop,
+    event_proxy: T,
     window_id: u16,
     pub config: ContextManagerConfig,
     pub titles: ContextManagerTitles,
 }
 
-impl ContextManager {
+impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
-    pub fn create_dead_context(event_proxy: Superloop, window_id: u16) -> Context {
+    pub fn create_dead_context(event_proxy: T, window_id: u16) -> Context<T> {
         let size = CrosswordsSize::new(MIN_COLUMNS, MIN_LINES);
         let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
-        let terminal: Arc<FairMutex<Crosswords>> = Arc::new(FairMutex::new(terminal));
+        let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
         let (sender, _receiver) = corcovado::channel::channel();
 
         Context {
@@ -114,15 +115,15 @@ impl ContextManager {
     #[inline]
     pub fn create_context(
         cursor_state: (&CursorState, bool),
-        event_proxy: Superloop,
+        event_proxy: T,
         window_id: u16,
         size: SugarloafLayout,
         config: &ContextManagerConfig,
-    ) -> Result<Context, Box<dyn Error>> {
+    ) -> Result<Context<T>, Box<dyn Error>> {
         let mut terminal =
             Crosswords::new(size, cursor_state.0.content, event_proxy.clone(), window_id);
         terminal.blinking_cursor = cursor_state.1;
-        let terminal: Arc<FairMutex<Crosswords>> = Arc::new(FairMutex::new(terminal));
+        let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
         let pty;
         #[cfg(not(target_os = "windows"))]
@@ -195,7 +196,7 @@ impl ContextManager {
     #[inline]
     pub fn start(
         cursor_state: (&CursorState, bool),
-        mut event_proxy: Superloop,
+        mut event_proxy: T,
         window_id: u16,
         ctx_config: ContextManagerConfig,
         size: SugarloafLayout,
@@ -262,7 +263,7 @@ impl ContextManager {
     #[cfg(test)]
     pub fn start_with_capacity(
         capacity: usize,
-        event_proxy: Superloop,
+        event_proxy: T,
         window_id: u16,
     ) -> Result<Self, Box<dyn Error>> {
         let config = ContextManagerConfig {
@@ -303,7 +304,7 @@ impl ContextManager {
     #[inline]
     pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
-            .send_event(RioEvent::ScheduleRender(scheduled_time), self.window_id);
+            .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
     }
 
     #[inline]
@@ -442,7 +443,7 @@ impl ContextManager {
                         };
 
                         self.event_proxy.send_event(
-                            RioEvent::Title(window_title, path.clone()),
+                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
                             self.window_id,
                         );
                     }
@@ -478,7 +479,7 @@ impl ContextManager {
     }
 
     #[inline]
-    pub fn contexts(&self) -> &Vec<Context> {
+    pub fn contexts(&self) -> &Vec<Context<T>> {
         &self.contexts
     }
 
@@ -553,12 +554,12 @@ impl ContextManager {
     }
 
     #[inline]
-    pub fn current(&self) -> &Context {
+    pub fn current(&self) -> &Context<T> {
         &self.contexts[self.current_index]
     }
 
     #[inline]
-    pub fn current_mut(&mut self) -> &mut Context {
+    pub fn current_mut(&mut self) -> &mut Context<T> {
         &mut self.contexts[self.current_index]
     }
 

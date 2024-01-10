@@ -29,6 +29,9 @@ run:
 dev:
 	cargo run -p rioterm
 
+dev-beta:
+	cargo run -p rioterm-beta
+
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib
 	cd rio-wasm && make run
