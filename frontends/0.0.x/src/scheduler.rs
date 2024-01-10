@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use winit::event_loop::EventLoopProxy;
 
-use crate::event::EventP;
+use crate::event::EventPayload;
 
 /// ID uniquely identifying a timer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub enum Topic {
 #[derive(Debug)]
 pub struct Timer {
     pub deadline: Instant,
-    pub event: EventP,
+    pub event: EventPayload,
     pub id: TimerId,
 
     #[allow(unused)]
@@ -40,11 +40,11 @@ pub struct Timer {
 /// Scheduler tracking all pending timers.
 pub struct Scheduler {
     timers: VecDeque<Timer>,
-    event_proxy: EventLoopProxy<EventP>,
+    event_proxy: EventLoopProxy<EventPayload>,
 }
 
 impl Scheduler {
-    pub fn new(event_proxy: EventLoopProxy<EventP>) -> Self {
+    pub fn new(event_proxy: EventLoopProxy<EventPayload>) -> Self {
         Self {
             timers: VecDeque::new(),
             event_proxy,
@@ -74,7 +74,7 @@ impl Scheduler {
     /// Schedule a new event.
     pub fn schedule(
         &mut self,
-        event: EventP,
+        event: EventPayload,
         interval: Duration,
         repeat: bool,
         timer_id: TimerId,

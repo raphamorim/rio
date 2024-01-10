@@ -1,5 +1,5 @@
-use rio_backend_legacy::sugarloaf::components::rect::Rect;
-use rio_backend_legacy::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::components::rect::Rect;
+use rio_backend::sugarloaf::Sugarloaf;
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {

@@ -37,10 +37,10 @@ use crate::config::colors::{
     AnsiColor, ColorRgb,
 };
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
-use crate::event::RioEvent;
+use crate::event::WindowId;
+use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
-use crate::superloop::Superloop;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
@@ -356,7 +356,10 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
 
 #[derive(Debug, Clone)]
-pub struct Crosswords {
+pub struct Crosswords<U>
+where
+    U: EventListener,
+{
     active_charset: CharsetIndex,
     mode: Mode,
     pub vi_mode_cursor: ViModeCursor,
@@ -365,7 +368,7 @@ pub struct Crosswords {
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
     tabs: TabStops,
-    event_proxy: Superloop,
+    event_proxy: U,
     pub selection: Option<Selection>,
     #[allow(dead_code)]
     colors: List,
@@ -375,7 +378,7 @@ pub struct Crosswords {
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
-    window_id: u16,
+    window_id: WindowId,
     title_stack: Vec<String>,
     hyperlink_re: regex::Regex,
 
@@ -386,13 +389,13 @@ pub struct Crosswords {
     inactive_keyboard_mode_stack: Vec<KeyboardModes>,
 }
 
-impl Crosswords {
+impl<U: EventListener> Crosswords<U> {
     pub fn new<D: Dimensions>(
         dimensions: D,
         cursor_shape: CursorShape,
-        event_proxy: Superloop,
-        window_id: u16,
-    ) -> Crosswords {
+        event_proxy: U,
+        window_id: WindowId,
+    ) -> Crosswords<U> {
         let cols = dimensions.columns();
         let rows = dimensions.screen_lines();
         let grid = Grid::new(rows, cols, 10_000);
@@ -494,7 +497,10 @@ impl Crosswords {
     }
 
     #[inline]
-    pub fn exit(&mut self) {
+    pub fn exit(&mut self)
+    where
+        U: EventListener,
+    {
         self.event_proxy
             .send_event(RioEvent::CloseTerminal, self.window_id);
     }
@@ -555,7 +561,10 @@ impl Crosswords {
 
     /// Toggle the vi mode.
     #[inline]
-    pub fn toggle_vi_mode(&mut self) {
+    pub fn toggle_vi_mode(&mut self)
+    where
+        U: EventListener,
+    {
         self.mode ^= Mode::VI;
 
         if self.mode.contains(Mode::VI) {
@@ -591,7 +600,10 @@ impl Crosswords {
     }
 
     #[inline]
-    pub fn vi_motion(&mut self, motion: ViMotion) {
+    pub fn vi_motion(&mut self, motion: ViMotion)
+    where
+        U: EventListener,
+    {
         // Require vi mode to be active.
         if !self.mode.contains(Mode::VI) {
             return;
@@ -604,7 +616,10 @@ impl Crosswords {
 
     /// Scroll display to point if it is outside of viewport.
     #[inline]
-    pub fn scroll_to_pos(&mut self, pos: Pos) {
+    pub fn scroll_to_pos(&mut self, pos: Pos)
+    where
+        U: EventListener,
+    {
         let display_offset = self.grid.display_offset() as i32;
         let screen_lines = self.grid.screen_lines() as i32;
 
@@ -1030,7 +1045,10 @@ impl Crosswords {
         visible_rows
     }
 
-    fn deccolm(&mut self) {
+    fn deccolm(&mut self)
+    where
+        U: EventListener,
+    {
         // Setting 132 column font makes no sense, but run the other side effects.
         // Clear scrolling region.
         self.set_scrolling_region(1, None);
@@ -1287,7 +1305,7 @@ impl Crosswords {
     }
 }
 
-impl Handler for Crosswords {
+impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
         match mode {

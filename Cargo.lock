@@ -2454,6 +2454,7 @@ dependencies = [
  "toml",
  "unicode-width",
  "wgpu",
+ "winit",
 ]
 
 [[package]]
@@ -2513,7 +2514,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle 0.5.2",
  "regex",
- "rio-backend-legacy",
+ "rio-backend",
  "serde",
  "teletypewriter",
  "tinyvec",
