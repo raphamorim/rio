@@ -36,8 +36,8 @@ use {
 
 // #[allow(non_upper_case_globals)]
 // const NSViewLayerContentsPlacementTopLeft: isize = 11;
-// #[allow(non_upper_case_globals)]
-// const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
+#[allow(non_upper_case_globals)]
+const NSViewLayerContentsRedrawDuringViewResize: isize = 2;
 
 const VIEW_IVAR_NAME: &str = "RioDisplay";
 const VIEW_CLASS_NAME: &str = "RioViewWithId";
@@ -1317,73 +1317,84 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     // pub fn selectedKeyboardInputSource(&self) -> Option<Id<NSTextInputSourceIdentifier>>;
 }
 
+#[inline]
+extern "C" fn draw_rect(this: &Object, _sel: Sel, rect: NSRect) {
+    if let Some(payload) = get_window_payload(this) {
+        if !payload.has_initialized {
+            let id = payload.id;
+
+            unsafe { payload.update_dimensions() };
+
+            if payload.event_handler.is_none() {
+                let f = payload.f.take().unwrap();
+                payload.event_handler = Some(f());
+            }
+
+            let d = get_handler().lock();
+            let d = d.get(id).unwrap();
+            if let Some(event_handler) = payload.context() {
+                event_handler.init(
+                    id,
+                    d.window_handle.unwrap(),
+                    d.display_handle.unwrap(),
+                    d.screen_width,
+                    d.screen_height,
+                    d.dpi_scale,
+                );
+
+                event_handler.resize_event(
+                    d.screen_width,
+                    d.screen_height,
+                    d.dpi_scale,
+                    true,
+                );
+            }
+
+            payload.has_initialized = true;
+            return;
+        }
+
+        if let Some(event_handler) = payload.context() {
+            event_handler.process();
+        }
+    }
+}
+
 pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
 
-    // extern "C" fn display_layer(_this: &mut Object, _sel: Sel, _layer_id: ObjcId) {
-    // if let Some(payload) = get_window_payload(this) {
-    //     println!("{:?}", payload.id);
-    // }
-    // }
+    extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
+        let rect = NSRect {
+            origin: NSPoint { x: 0.0, y: 0.0 },
+            size: NSSize {
+                width: 0.0,
+                height: 0.0,
+            },
+        };
 
-    // extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
-    // YES
-    // }
+        draw_rect(this, sel, rect)
+    }
 
-    // extern "C" fn draw_layer_in_context(
-    //     _view: &mut Object,
-    //     _sel: Sel,
-    //     _layer_id: ObjcId,
-    //     _context: ObjcId,
-    // ) {
-    // }
+    extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
+        YES
+    }
+
+    extern "C" fn draw_layer_in_context(
+        _view: &mut Object,
+        _sel: Sel,
+        _layer_id: ObjcId,
+        _context: ObjcId,
+    ) {
+    }
+
+    extern "C" fn update_layer(_this: &mut Object, _sel: Sel) {
+        log::trace!("update_layer called");
+    }
 
     extern "C" fn timer_fired(this: &Object, _sel: Sel, _: ObjcId) {
         unsafe {
             let () = msg_send!(this, setNeedsDisplay: YES);
-        }
-    }
-
-    extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
-        if let Some(payload) = get_window_payload(this) {
-            if !payload.has_initialized {
-                let id = payload.id;
-
-                unsafe { payload.update_dimensions() };
-
-                if payload.event_handler.is_none() {
-                    let f = payload.f.take().unwrap();
-                    payload.event_handler = Some(f());
-                }
-
-                let d = get_handler().lock();
-                let d = d.get(id).unwrap();
-                if let Some(event_handler) = payload.context() {
-                    event_handler.init(
-                        id,
-                        d.window_handle.unwrap(),
-                        d.display_handle.unwrap(),
-                        d.screen_width,
-                        d.screen_height,
-                        d.dpi_scale,
-                    );
-
-                    event_handler.resize_event(
-                        d.screen_width,
-                        d.screen_height,
-                        d.dpi_scale,
-                        true,
-                    );
-                }
-
-                payload.has_initialized = true;
-                return;
-            }
-
-            if let Some(event_handler) = payload.context() {
-                event_handler.process();
-            }
         }
     }
 
@@ -1393,6 +1404,18 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             let () = msg_send![super(this, superclass), dealloc];
         }
     }
+
+    // extern "C" fn make_backing_layer(this: &mut Object, _: Sel) -> ObjcId {
+    //     log::trace!("make_backing_layer");
+    //     let class = class!(CAMetalLayer);
+    //     unsafe {
+    //         let layer: ObjcId = msg_send![class, new];
+    //         let () = msg_send![layer, setDelegate: view];
+    //         let () = msg_send![layer, setContentsScale: 1.0];
+    //         let () = msg_send![layer, setOpaque: NO];
+    //         layer
+    //     }
+    // }
 
     unsafe {
         decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
@@ -1404,18 +1427,22 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             sel!(drawRect:),
             draw_rect as extern "C" fn(&Object, Sel, NSRect),
         );
-        // decl.add_method(
-        //     sel!(displayLayer:),
-        //     display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
-        // );
-        // decl.add_method(
-        //     sel!(wantsUpdateLayer:),
-        //     wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
-        // );
-        // decl.add_method(
-        //     sel!(drawLayer:inContext:),
-        //     draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
-        // );
+        decl.add_method(
+            sel!(displayLayer:),
+            display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
+        );
+        decl.add_method(
+            sel!(updateLayer),
+            update_layer as extern "C" fn(&mut Object, Sel),
+        );
+        decl.add_method(
+            sel!(wantsUpdateLayer),
+            wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
+        );
+        decl.add_method(
+            sel!(drawLayer:inContext:),
+            draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
+        );
 
         view_base_decl(&mut decl);
     }
@@ -1868,6 +1895,12 @@ impl Window {
                 let d = d.get_mut(id).unwrap();
                 d.view = **view.as_strong_ptr();
             }
+
+            let () = msg_send![**view.as_strong_ptr(), setWantsLayer: YES];
+            let () = msg_send![
+                **view.as_strong_ptr(),
+                setLayerContentsRedrawPolicy: NSViewLayerContentsRedrawDuringViewResize
+            ];
 
             display.window = *window;
             display.view = **view.as_strong_ptr();
