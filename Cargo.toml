@@ -9,8 +9,8 @@ members = [
   "rio-backend-legacy",
   "wa",
 
-  "frontends/0.1.x",
-  "frontends/0.0.x",
+  "frontends/rioterm",
+  "frontends/rioterm-beta",
 ]
 resolver = "2"
 
