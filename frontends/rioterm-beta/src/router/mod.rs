@@ -11,11 +11,11 @@ use crate::ime::{Ime, Preedit};
 use crate::watcher;
 use rio_backend::error::RioError;
 use rio_backend::event::EventListener;
+use rio_backend::sugarloaf::font::loader;
 use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
 use std::rc::Rc;
-use rio_backend::sugarloaf::font::loader;
 use wa::*;
 
 struct Router {

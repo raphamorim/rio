@@ -10,13 +10,13 @@ use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
+use rio_backend::sugarloaf::layout::SugarloafLayout;
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rio_backend::sugarloaf::layout::SugarloafLayout;
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;

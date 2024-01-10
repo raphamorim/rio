@@ -9,12 +9,12 @@
 // A router is a window, but it can contain a sub route that is a panel
 // For example /:window-id/:panel-one
 
-use crate::router::loader;
 use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
 use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::router::bindings::{
     self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
+use crate::router::loader;
 use crate::router::mouse::{calculate_mouse_position, Mouse};
 use crate::router::routes::{
     assistant::{self, Assistant},
@@ -35,14 +35,14 @@ use rio_backend::crosswords::{
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::selection::SelectionType;
-use std::borrow::Cow;
-use std::ffi::OsStr;
-use std::fmt::Debug;
-use std::rc::Rc;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
+use std::borrow::Cow;
+use std::ffi::OsStr;
+use std::fmt::Debug;
+use std::rc::Rc;
 use wa::{KeyCode, ModifiersState};
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
