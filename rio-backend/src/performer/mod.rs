@@ -4,7 +4,6 @@ use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::Msg;
 use crate::event::{EventListener, WindowId};
-use crate::superloop::Superloop;
 use corcovado::channel;
 #[cfg(unix)]
 use corcovado::unix::UnixReady;

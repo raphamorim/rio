@@ -44,11 +44,11 @@ pub struct Superloop {
 }
 
 impl EventListener for Superloop {
-    fn send_event(&self, event: RioEvent, id: WindowId) {
+    fn send_event(&self, event: RioEvent, _id: WindowId) {
         self.instance.lock().inner.0.list.push_back(event);
     }
 
-    fn send_redraw(&self, id: WindowId) {
+    fn send_redraw(&self, _id: WindowId) {
         self.instance.lock().inner.0.redraw.push(0);
     }
 }

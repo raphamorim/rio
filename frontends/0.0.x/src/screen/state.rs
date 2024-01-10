@@ -13,7 +13,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -191,6 +191,7 @@ impl State {
             background_color,
             style,
             decoration,
+            media: None,
         }
     }
 
@@ -252,6 +253,11 @@ impl State {
                 continue;
             }
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                stack.push(self.create_graphic_sugar(square));
+                continue;
+            }
+
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
@@ -286,6 +292,7 @@ impl State {
                     background_color: self.named_colors.selection_background,
                     style: None,
                     decoration: None,
+                    media: None,
                 };
                 stack.push(selected_sugar);
             } else {
@@ -451,6 +458,11 @@ impl State {
                 continue;
             }
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                stack.push(self.create_graphic_sugar(square));
+                continue;
+            }
+
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else {
@@ -467,6 +479,26 @@ impl State {
     }
 
     #[inline]
+    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
+        let foreground_color = self.compute_fg_color(square);
+        let background_color = self.compute_bg_color(square);
+
+        let media = &square.graphics().unwrap()[0].texture;
+        Sugar {
+            content: ' ',
+            foreground_color,
+            background_color,
+            style: None,
+            decoration: None,
+            media: Some(SugarGraphic {
+                id: media.id,
+                width: media.width,
+                height: media.height,
+            }),
+        }
+    }
+
+    #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
         let mut sugar = Sugar {
             content: square.c,
@@ -474,6 +506,7 @@ impl State {
             background_color: self.compute_bg_color(square),
             style: None,
             decoration: None,
+            media: None,
         };
 
         let is_italic = square.flags.contains(Flags::ITALIC);
