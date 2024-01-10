@@ -1,7 +1,7 @@
-use rio_backend_legacy::error::{RioError, RioErrorLevel};
-use rio_backend_legacy::sugarloaf::components::rect::Rect;
-use rio_backend_legacy::sugarloaf::font::FONT_ID_BUILTIN;
-use rio_backend_legacy::sugarloaf::Sugarloaf;
+use rio_backend::error::{RioError, RioErrorLevel};
+use rio_backend::sugarloaf::components::rect::Rect;
+use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
+use rio_backend::sugarloaf::Sugarloaf;
 
 pub struct Assistant {
     pub inner: Option<RioError>,

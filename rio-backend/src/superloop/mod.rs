@@ -1,7 +1,9 @@
 use crate::event::sync::FairMutex;
+use crate::event::EventListener;
 use crate::event::RioEvent;
+use crate::event::WindowId;
 use std::collections::LinkedList;
-use std::sync::atomic::{AtomicUsize, Ordering};
+// use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub struct InnerData {
@@ -41,6 +43,16 @@ pub struct Superloop {
     // size: AtomicUsize,
 }
 
+impl EventListener for Superloop {
+    fn send_event(&self, event: RioEvent, id: WindowId) {
+        self.instance.lock().inner.0.list.push_back(event);
+    }
+
+    fn send_redraw(&self, id: WindowId) {
+        self.instance.lock().inner.0.redraw.push(0);
+    }
+}
+
 impl Superloop {
     pub fn new() -> Superloop {
         Superloop {
@@ -73,20 +85,8 @@ impl Superloop {
     }
 
     #[inline]
-    pub fn send_event(&mut self, event: RioEvent, _id: u16) {
-        self.instance.lock().inner.0.list.push_back(event);
-        // self.size.fetch_add(1, Ordering::SeqCst);
-    }
-
-    #[inline]
     pub fn send_event_with_high_priority(&mut self, event: RioEvent, _id: u16) {
         self.instance.lock().inner.0.priority_list.push(event);
-        // self.size.fetch_add(1, Ordering::SeqCst);
-    }
-
-    #[inline]
-    pub fn send_redraw(&mut self, _id: u16) {
-        self.instance.lock().inner.0.redraw.push(0);
         // self.size.fetch_add(1, Ordering::SeqCst);
     }
 }

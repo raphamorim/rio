@@ -16,6 +16,7 @@ use crate::crosswords::grid::{Dimensions, GridSquare, Indexed};
 use crate::crosswords::pos::{Boundary, Column, Line, Pos, Side};
 use crate::crosswords::square::{Flags, Square};
 use crate::crosswords::Crosswords;
+use crate::event::EventListener;
 
 /// A Pos and side within that point.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -280,7 +281,10 @@ impl Selection {
     }
 
     /// Convert selection to grid coordinates.
-    pub fn to_range(&self, term: &Crosswords) -> Option<SelectionRange> {
+    pub fn to_range<T: EventListener>(
+        &self,
+        term: &Crosswords<T>,
+    ) -> Option<SelectionRange> {
         let columns = term.grid.columns();
 
         // Order start above the end.
@@ -307,7 +311,11 @@ impl Selection {
         }
     }
 
-    fn range_semantic(term: &Crosswords, mut start: Pos, mut end: Pos) -> SelectionRange {
+    fn range_semantic<T: EventListener>(
+        term: &Crosswords<T>,
+        mut start: Pos,
+        mut end: Pos,
+    ) -> SelectionRange {
         if start == end {
             if let Some(matching) = term.bracket_search(start) {
                 if (matching.row == start.row && matching.col < start.col)
@@ -336,7 +344,11 @@ impl Selection {
         }
     }
 
-    fn range_lines(term: &Crosswords, start: Pos, end: Pos) -> SelectionRange {
+    fn range_lines<T: EventListener>(
+        term: &Crosswords<T>,
+        start: Pos,
+        end: Pos,
+    ) -> SelectionRange {
         let start = term.row_search_left(start);
         let end = term.row_search_right(end);
 
@@ -426,16 +438,17 @@ impl Selection {
 /// look like [ B] and [E ].
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use crate::superloop::Superloop;
+    use crate::crosswords::CrosswordsSize;
+    use crate::event::VoidListener;
 
     use crate::crosswords::pos::{Column, Pos, Side};
     use crate::crosswords::Crosswords;
 
-    fn term(height: usize, width: usize) -> Crosswords {
+    fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);
-        let mut superloop: Superloop = Superloop::new();
-        Crosswords::new(size, CursorShape::Block, superloop, 0)
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, 0)
     }
 
     /// Test case of single cell selection.

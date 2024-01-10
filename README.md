@@ -4,8 +4,6 @@
 
 <img src="misc/logo.svg" alt="Rio terminal logo" width="320px" />
 
-🚧 Currently Rio terminal is in the process of transition to 0.1.x (new window system, event loop, support to image protocol and etecetera). For any update you want to make to the terminal, please contribute to the branch `0.0.x` instead. Eventual releases will still be made from `0.0.x` while the transition isn't done.
-
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
 
 ## Platforms

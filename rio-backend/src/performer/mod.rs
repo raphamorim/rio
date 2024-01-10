@@ -3,6 +3,7 @@ pub mod handler;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
 use crate::event::Msg;
+use crate::event::{EventListener, WindowId};
 use crate::superloop::Superloop;
 use corcovado::channel;
 #[cfg(unix)]
@@ -33,14 +34,14 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
-pub struct Machine<T: teletypewriter::EventedPty> {
+pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     sender: channel::Sender<Msg>,
     receiver: channel::Receiver<Msg>,
     pty: T,
     poll: corcovado::Poll,
-    terminal: Arc<FairMutex<Crosswords>>,
-    event_proxy: Superloop,
-    window_id: u16,
+    terminal: Arc<FairMutex<Crosswords<U>>>,
+    event_proxy: U,
+    window_id: WindowId,
 }
 
 #[derive(Default)]
@@ -109,17 +110,17 @@ impl Writing {
     }
 }
 
-impl<T> Machine<T>
+impl<T, U> Machine<T, U>
 where
     T: teletypewriter::EventedPty + Send + 'static,
+    U: EventListener + Send + 'static,
 {
     pub fn new<'a>(
-        terminal: Arc<FairMutex<Crosswords>>,
+        terminal: Arc<FairMutex<Crosswords<U>>>,
         pty: T,
-        event_proxy: Superloop,
-        window_id: u16,
-    ) -> Result<Machine<T>, Box<dyn std::error::Error>> {
-        // let (mut sender, mut receiver) = unbounded::<Msg>();
+        event_proxy: U,
+        window_id: WindowId,
+    ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
