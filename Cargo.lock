@@ -2530,7 +2530,6 @@ dependencies = [
  "rio-backend",
  "serde",
  "smol_str",
- "sugarloaf",
  "teletypewriter",
  "tinyvec",
  "tokio",
