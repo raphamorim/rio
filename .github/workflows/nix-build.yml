@@ -3,14 +3,14 @@ name: nix build
 on:
   pull_request:
     branches:
-      - 0.0.x
+      - main
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
       - 'nix/**'
   push:
     branches:
-      - 0.0.x
+      - main
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
