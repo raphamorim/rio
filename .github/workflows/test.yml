@@ -32,7 +32,7 @@ jobs:
             make lint
           fi
         shell: bash
-      - run: cargo test
+      - run: make test
 
   # cli:
   #   strategy:

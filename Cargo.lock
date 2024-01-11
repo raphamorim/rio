@@ -1684,18 +1684,9 @@ checksum = "f665ee40bc4a3c5590afb1e9677db74a508659dfd71e126420da8274909a0167"
 
 [[package]]
 name = "memmap2"
-version = "0.7.1"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "memmap2"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deaba38d7abf1d4cca21cc89e932e542ba2b9258664d2a9ef0e61512039c9375"
+checksum = "45fd3a57831bf88bc63f8cebc0cf956116276e97fef3966103e96416209f7c92"
 dependencies = [
  "libc",
 ]
@@ -2087,7 +2078,7 @@ version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4586edfe4c648c71797a74c84bacb32b52b212eff5dfe2bb9f2c599844023e7"
 dependencies = [
- "ttf-parser 0.20.0",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -2734,7 +2725,7 @@ dependencies = [
  "cursor-icon",
  "libc",
  "log 0.4.20",
- "memmap2 0.9.0",
+ "memmap2",
  "rustix",
  "thiserror",
  "wayland-backend",
@@ -2825,7 +2816,7 @@ dependencies = [
  "js-sys",
  "linked-hash-map",
  "log 0.4.20",
- "memmap2 0.7.1",
+ "memmap2",
  "once_cell",
  "ordered-float",
  "png",
@@ -2836,7 +2827,7 @@ dependencies = [
  "slotmap",
  "tinyvec",
  "tokio",
- "ttf-parser 0.19.2",
+ "ttf-parser",
  "twox-hash",
  "unicode-width",
  "wasm-bindgen",
@@ -3063,12 +3054,6 @@ name = "tracing-core"
 version = "0.1.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
-
-[[package]]
-name = "ttf-parser"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49d64318d8311fc2668e48b63969f4343e0a85c4a109aa8460d6672e364b8bd1"
 
 [[package]]
 name = "ttf-parser"
@@ -3806,7 +3791,7 @@ dependencies = [
  "js-sys",
  "libc",
  "log 0.4.20",
- "memmap2 0.9.0",
+ "memmap2",
  "ndk",
  "ndk-sys",
  "objc2 0.4.1",
