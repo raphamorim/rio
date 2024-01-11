@@ -1,4 +1,4 @@
-name: Test
+name: Test Beta
 
 on: [push, pull_request]
 
@@ -23,6 +23,5 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
-      - run: make lint
       - run: cargo clippy -p rioterm-beta -- -D warnings
       - run: cargo test
