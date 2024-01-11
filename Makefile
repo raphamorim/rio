@@ -167,13 +167,7 @@ release-windows:
 # flag has been conflicting in the checks
 lint:
 	cargo fmt -- --check --color always
-	cargo clippy -p rioterm --all-targets --all-features -- -D warnings
-	cargo clippy -p rio-proc-macros --all-targets --all-features -- -D warnings
-	cargo clippy -p copa --all-targets --all-features -- -D warnings
-	cargo clippy -p corcovado --all-targets --all-features -- -D warnings
-	cargo clippy -p teletypewriter --all-targets --all-features -- -D warnings
-	cargo clippy -p sugarloaf -- -D warnings
-	cargo clippy -p rio-backend -- -D warnings
+	cargo clippy --workspace --exclude rioterm-beta --all-targets --all-features -- -D warnings
 
 # There is errors regarding null pointers in corcovado that needs to be fixed for Windows
 test-win:
