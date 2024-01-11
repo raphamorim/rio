@@ -167,7 +167,6 @@ release-windows:
 # flag has been conflicting in the checks
 lint:
 	cargo fmt -- --check --color always
-	cargo clippy -p rioterm-beta -- -D warnings
 	cargo clippy -p rioterm --all-targets --all-features -- -D warnings
 	cargo clippy -p rio-proc-macros --all-targets --all-features -- -D warnings
 	cargo clippy -p copa --all-targets --all-features -- -D warnings
