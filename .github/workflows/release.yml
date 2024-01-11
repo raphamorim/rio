@@ -19,7 +19,7 @@ jobs:
       discussions: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal
       - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
@@ -40,7 +40,7 @@ jobs:
       discussions: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -73,7 +73,7 @@ jobs:
       discussions: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release
