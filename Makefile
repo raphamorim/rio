@@ -172,7 +172,8 @@ lint:
 	cargo clippy -p copa --all-targets --all-features -- -D warnings
 	cargo clippy -p corcovado --all-targets --all-features -- -D warnings
 	cargo clippy -p teletypewriter --all-targets --all-features -- -D warnings
-	cargo clippy -p rio-backend --all-targets --all-features -- -D warnings
+	cargo clippy -p sugarloaf -- -D warnings
+	cargo clippy -p rio-backend -- -D warnings
 
 # There is errors regarding null pointers in corcovado that needs to be fixed for Windows
 test-win:
