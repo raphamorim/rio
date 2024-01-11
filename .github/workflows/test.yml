@@ -29,7 +29,7 @@ jobs:
           if [ "$RUNNER_OS" == "Windows" ]; then
             cargo clippy --all-targets --all-features
           else
-            cargo clippy --all-features --all-targets -- -D warnings
+            make lint
           fi
         shell: bash
       - run: cargo test
