@@ -24,4 +24,4 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo clippy -p rioterm-beta -- -D warnings
-      - run: cargo test
+      - run: cargo test -p rioterm-beta
