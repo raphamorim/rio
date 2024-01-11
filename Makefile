@@ -183,7 +183,7 @@ test-win:
 
 test:
 	make lint
-	RUST_BACKTRACE=full cargo test --release
+	RUST_BACKTRACE=full cargo test --workspace --release --exclude rioterm-beta
 
 publish-crates:
 	cargo build --release
