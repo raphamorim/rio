@@ -32,7 +32,7 @@ jobs:
             make lint
           fi
         shell: bash
-      - run: RUST_BACKTRACE=full cargo test --workspace --release --exclude rioterm-beta
+      - run: cargo test --workspace --release --exclude rioterm-beta
 
   # cli:
   #   strategy:
