@@ -268,6 +268,7 @@ impl Sugarloaf {
             }
 
             FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
+                // println!("FONT_ID_UNICODE {:?}", char_width);
                 px_scale = Some(PxScale {
                     x: self.layout.scaled_sugarwidth * char_width,
                     y: self.layout.scaled_sugarheight,
@@ -333,6 +334,9 @@ impl Sugarloaf {
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
             let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
+            // if stack[i].content != ' ' {
+            //     println!("{:?} {:?} {:?}", stack[i].content, cached_sugar.char_width, cached_sugar.font_id);
+            // }
             if i < size - 1
                 && cached_sugar.char_width <= 1.
                 && stack[i].content == stack[i + 1].content

@@ -7,11 +7,11 @@ pub const FONT_ID_REGULAR: usize = 0;
 pub const FONT_ID_ITALIC: usize = 1;
 pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
-pub const FONT_ID_SYMBOL: usize = 4;
-pub const FONT_ID_EMOJIS: usize = 5;
-pub const FONT_ID_BUILTIN: usize = 6;
+pub const FONT_ID_UNICODE: usize = 4;
+pub const FONT_ID_SYMBOL: usize = 5;
+pub const FONT_ID_EMOJIS: usize = 6;
 pub const FONT_ID_ICONS: usize = 7;
-pub const FONT_ID_UNICODE: usize = 8;
+pub const FONT_ID_BUILTIN: usize = 8;
 // After 8 is extra fonts
 
 use crate::font::constants::*;
@@ -205,51 +205,6 @@ impl Font {
 
         #[cfg(target_os = "macos")]
         {
-            let font_arc_symbol = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Apple Symbols"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.push(font_arc_symbol);
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let font_arc_symbol = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Symbol"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.push(font_arc_symbol);
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
-            fonts.push(font_arc_symbol);
-        }
-
-        let font_arc_emoji = FontArc::try_from_slice(FONT_EMOJI).unwrap();
-        fonts.push(font_arc_emoji);
-
-        let font_arc_builtin =
-            FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap();
-        fonts.push(font_arc_builtin);
-
-        let font_arc_icons =
-            FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap();
-        fonts.push(font_arc_icons);
-
-        #[cfg(target_os = "macos")]
-        {
             let font_arc_unicode = find_font(
                 db,
                 SugarloafFont {
@@ -295,6 +250,51 @@ impl Font {
             fonts.push(font_arc_unicode);
         }
 
+        #[cfg(target_os = "macos")]
+        {
+            let font_arc_symbol = find_font(
+                db,
+                SugarloafFont {
+                    family: String::from("Apple Symbols"),
+                    style: None,
+                    weight: None,
+                },
+            )
+            .0;
+            fonts.push(font_arc_symbol);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let font_arc_symbol = find_font(
+                db,
+                SugarloafFont {
+                    family: String::from("Symbol"),
+                    style: None,
+                    weight: None,
+                },
+            )
+            .0;
+            fonts.push(font_arc_symbol);
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let font_arc_symbol = FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap();
+            fonts.push(font_arc_symbol);
+        }
+
+        let font_arc_emoji = FontArc::try_from_slice(FONT_EMOJI).unwrap();
+        fonts.push(font_arc_emoji);
+
+        let font_arc_icons =
+            FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap();
+        fonts.push(font_arc_icons);
+
+        let font_arc_builtin =
+            FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap();
+        fonts.push(font_arc_builtin);
+
         if !spec.extras.is_empty() {
             for extra_font in spec.extras {
                 let extra_font_arc = find_font(
@@ -318,17 +318,16 @@ impl Font {
     #[cfg(target_arch = "wasm32")]
     pub fn load(_font_spec: SugarloafFonts) -> (Vec<FontArc>, Vec<SugarloafFont>) {
         (
-            true,
             vec![
                 FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
                 FontArc::try_from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
+                FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap(),
                 FontArc::try_from_slice(FONT_DEJAVU_SANS).unwrap(),
                 FontArc::try_from_slice(FONT_EMOJI).unwrap(),
-                FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
                 FontArc::try_from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-                FontArc::try_from_slice(FONT_UNICODE_FALLBACK).unwrap(),
+                FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             ],
             vec![],
         )
