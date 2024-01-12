@@ -25,7 +25,6 @@ use log::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct ComposedFontArc {
-    pub is_monospace: bool,
     pub regular: FontArc,
     pub bold: FontArc,
     pub italic: FontArc,
@@ -157,7 +156,7 @@ impl Font {
     pub fn load(
         mut spec: SugarloafFonts,
         db_opt: Option<&loader::Database>,
-    ) -> (bool, Vec<FontArc>, Vec<SugarloafFont>) {
+    ) -> (Vec<FontArc>, Vec<SugarloafFont>) {
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
         let mut fonts: Vec<FontArc> = vec![];
 
@@ -181,7 +180,6 @@ impl Font {
         }
 
         let regular = find_font(db, spec.regular);
-        let is_regular_font_monospaced = regular.1;
         fonts.push(regular.0);
         if let Some(err) = regular.2 {
             fonts_not_fount.push(err);
@@ -314,11 +312,11 @@ impl Font {
             }
         }
 
-        (is_regular_font_monospaced, fonts, fonts_not_fount)
+        (fonts, fonts_not_fount)
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn load(_font_spec: SugarloafFonts) -> (bool, Vec<FontArc>, Vec<SugarloafFont>) {
+    pub fn load(_font_spec: SugarloafFonts) -> (Vec<FontArc>, Vec<SugarloafFont>) {
         (
             true,
             vec![
