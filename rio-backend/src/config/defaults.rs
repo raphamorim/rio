@@ -162,6 +162,14 @@ blinking-cursor = false
 # Example:
 # option-as-alt = 'left'
 
+# Line height
+#
+# This option will apply an modifier to line-height
+# Default is `1.0`
+#
+# Example:
+# line-height = 1.2
+
 # Startup directory
 #
 # Directory the shell is started in. If this is unset the working
