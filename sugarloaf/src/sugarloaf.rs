@@ -56,7 +56,6 @@ pub struct Sugarloaf {
     rects: Vec<Rect>,
     text_y: f32,
     current_row: u16,
-    font_bound: (f32, f32),
     fonts: SugarloafFonts,
 }
 
@@ -158,7 +157,6 @@ impl Sugarloaf {
             text_brush,
             text_y: 0.0,
             current_row: 0,
-            font_bound: (0.0, 0.0),
             layout,
         };
 
@@ -636,10 +634,13 @@ impl Sugarloaf {
 
         let text_scale = self.layout.style.text_scale;
         // Bounds are defined in runtime
-        self.font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
+        let font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
 
-        self.layout.scaled_sugarwidth = self.font_bound.0;
-        self.layout.scaled_sugarheight = self.font_bound.1;
+        self.layout.scaled_sugarwidth = font_bound.0;
+        self.layout.scaled_sugarheight = font_bound.1;
+
+        // self.layout.scaled_sugarwidth = self.font_bound.0;
+        // self.layout.scaled_sugarheight = self.font_bound.1;
 
         self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
         self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
