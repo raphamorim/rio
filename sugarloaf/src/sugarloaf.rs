@@ -639,9 +639,6 @@ impl Sugarloaf {
         self.layout.scaled_sugarwidth = font_bound.0;
         self.layout.scaled_sugarheight = font_bound.1;
 
-        // self.layout.scaled_sugarwidth = self.font_bound.0;
-        // self.layout.scaled_sugarheight = self.font_bound.1;
-
         self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
         self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
 
