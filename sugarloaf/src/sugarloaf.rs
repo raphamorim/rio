@@ -58,7 +58,6 @@ pub struct Sugarloaf {
     current_row: u16,
     font_bound: (f32, f32),
     fonts: SugarloafFonts,
-    is_text_monospaced: bool,
 }
 
 #[derive(Debug)]
@@ -136,7 +135,7 @@ impl Sugarloaf {
         #[cfg(target_arch = "wasm32")]
         let loader = Font::load(fonts.to_owned());
 
-        let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
+        let (loaded_fonts, fonts_not_found) = loader;
 
         if !fonts_not_found.is_empty() {
             sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
@@ -161,7 +160,6 @@ impl Sugarloaf {
             current_row: 0,
             font_bound: (0.0, 0.0),
             layout,
-            is_text_monospaced,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -222,7 +220,7 @@ impl Sugarloaf {
             #[cfg(target_arch = "wasm32")]
             let loader = Font::load(fonts.to_owned());
 
-            let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
+            let (loaded_fonts, fonts_not_found) = loader;
             if !fonts_not_found.is_empty() {
                 return Some(SugarloafErrors { fonts_not_found });
             }
@@ -234,7 +232,6 @@ impl Sugarloaf {
                 .build(&self.ctx.device, self.ctx.format);
             self.text_brush = text_brush;
             self.fonts = fonts;
-            self.is_text_monospaced = is_text_monospaced;
         }
 
         None
@@ -368,11 +365,14 @@ impl Sugarloaf {
             }
 
             if cached_sugar.char_width > 1. {
-                sugar_char_width += 1.;
+                sugar_char_width = cached_sugar.char_width;
                 add_pos_x += sugar_x;
             }
 
-            let mut scale = PxScale::from(self.layout.style.text_scale);
+            let mut scale = PxScale {
+                x: self.layout.style.text_scale,
+                y: self.layout.style.text_scale
+            };
             if let Some(new_scale) = cached_sugar.px_scale {
                 scale = new_scale;
             }
@@ -629,13 +629,8 @@ impl Sugarloaf {
 
         let text_scale = self.layout.style.text_scale;
         // Bounds are defined in runtime
-        if self.is_text_monospaced {
-            self.font_bound =
-                self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
-        } else {
-            self.font_bound =
-                self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
-        }
+        self.font_bound =
+            self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
 
         self.layout.scaled_sugarwidth = self.font_bound.0;
         self.layout.scaled_sugarheight = self.font_bound.1;
