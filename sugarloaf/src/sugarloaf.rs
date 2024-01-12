@@ -418,7 +418,10 @@ impl Sugarloaf {
                 if text_builder.has_initialized {
                     let text = crate::components::text::OwnedText {
                         text: text_builder.content.to_owned(),
-                        scale,
+                        scale: PxScale {
+                            x: self.layout.style.text_scale,
+                            y: self.layout.style.text_scale
+                        },
                         font_id: text_builder.font_id,
                         extra: crate::components::text::Extra {
                             color: text_builder.color,
