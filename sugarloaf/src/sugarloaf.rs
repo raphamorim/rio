@@ -535,8 +535,7 @@ impl Sugarloaf {
                     size: [width_bound * quantity as f32, self.layout.sugarheight],
                 });
 
-                let dec_pos_y = (scaled_rect_pos_y)
-                    + (decoration.relative_position.1);
+                let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
                 self.rects.push(Rect {
                     position: [
                         (scaled_rect_pos_x
