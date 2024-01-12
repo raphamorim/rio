@@ -29,7 +29,7 @@ pub struct Database;
 pub struct CachedSugar {
     font_id: FontId,
     char_width: f32,
-    monospaced_font_scale: Option<f32>,
+    px_scale: Option<PxScale>,
 }
 
 struct GraphicRect {
@@ -121,25 +121,6 @@ unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
 }
 
 impl Sugarloaf {
-    // pub fn empty() -> Sugarloaf {
-    //     Sugarloaf {
-    //         sugar_cache: HashMap::new(),
-    //         graphics: SugarloafGraphics::new(),
-    //         layer_brush,
-    //         fonts,
-    //         ctx,
-    //         rect_brush,
-    //         rects: vec![],
-    //         graphic_rects: BTreeMap::new(),
-    //         text_brush,
-    //         text_y: 0.0,
-    //         current_row: 0,
-    //         font_bound: (0.0, 0.0),
-    //         layout: SugarloafLayout::default(),
-    //         is_text_monospaced: true,
-    //     }
-    // }
-
     pub async fn new(
         raw_window_handle: &SugarloafWindow,
         renderer: SugarloafRenderer,
@@ -260,30 +241,6 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn find_scale(
-        &mut self,
-        target_scale: f32,
-        content: char,
-        font_id: FontId,
-    ) -> Option<f32> {
-        let mut found = false;
-        let mut scale = self.layout.style.text_scale;
-        while !found && scale > 0.0 {
-            let width = self.get_font_bounds(content, font_id, scale).0
-                / self.layout.scale_factor;
-
-            if width <= target_scale {
-                found = true;
-            } else {
-                scale -= 1.0;
-            }
-        }
-
-        log::info!("find_scale: {:?} {:?} {}", content, font_id, scale);
-        Some(scale)
-    }
-
-    #[inline]
     pub fn get_font_id(&mut self, sugar: &mut Sugar) -> CachedSugar {
         if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
             return *cached_sugar;
@@ -301,53 +258,46 @@ impl Sugarloaf {
             }
         }
 
-        let mut monospaced_font_scale = None;
+        let mut px_scale = None;
         let char_width = sugar.content.width().unwrap_or(1) as f32;
-
-        let mut scale_target: f32 = 0.;
 
         match font_id {
             // Icons will look for width 1
             FontId(FONT_ID_ICONS) => {
-                scale_target = self.layout.sugarwidth;
+                px_scale = Some(PxScale {
+                    x: self.layout.scaled_sugarwidth,
+                    y: self.layout.scaled_sugarheight,
+                });
             }
 
             FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
-                scale_target = if char_width > 1. {
-                    self.layout.sugarwidth * 2.0
-                } else {
-                    self.layout.sugarwidth
-                };
+                px_scale = Some(PxScale {
+                    x: self.layout.scaled_sugarwidth * char_width,
+                    y: self.layout.scaled_sugarheight,
+                });
             }
 
             FontId(FONT_ID_EMOJIS) => {
-                scale_target = self.layout.sugarwidth * 2.0;
+                // scale_target = self.layout.sugarwidth * 2.0;
+                px_scale = Some(PxScale {
+                    x: self.layout.scaled_sugarwidth * 2.0,
+                    y: self.layout.scaled_sugarheight,
+                });
             }
 
-            FontId(FONT_ID_REGULAR) => {
-                if !self.is_text_monospaced {
-                    log::warn!("aligning non monospaced font {}", sugar.content);
-                    scale_target = if char_width > 1. {
-                        self.layout.sugarwidth * 2.
-                    } else {
-                        self.layout.sugarwidth
-                    };
-                }
-            }
-
-            // Emojis does not need since it's loaded as monospaced
-            // Text font only need for cases where it's not monospaced
+            // FontId(FONT_ID_REGULAR) => {
+            // px_scale = Some(PxScale {
+            //     x: self.layout.scaled_sugarwidth * 2.0,
+            //     y: self.layout.scaled_sugarheight,
+            // })
+            // }
             FontId(_) => {}
-        }
-
-        if scale_target != 0.0 {
-            monospaced_font_scale = self.find_scale(scale_target, sugar.content, font_id);
         }
 
         let cached_sugar = CachedSugar {
             font_id,
             char_width,
-            monospaced_font_scale,
+            px_scale,
         };
 
         self.sugar_cache.insert(
@@ -355,7 +305,7 @@ impl Sugarloaf {
             CachedSugar {
                 font_id,
                 char_width,
-                monospaced_font_scale,
+                px_scale,
             },
         );
 
@@ -422,8 +372,8 @@ impl Sugarloaf {
                 add_pos_x += sugar_x;
             }
 
-            let mut scale = self.layout.style.text_scale;
-            if let Some(new_scale) = cached_sugar.monospaced_font_scale {
+            let mut scale = PxScale::from(self.layout.style.text_scale);
+            if let Some(new_scale) = cached_sugar.px_scale {
                 scale = new_scale;
             }
 
@@ -468,7 +418,7 @@ impl Sugarloaf {
                 if text_builder.has_initialized {
                     let text = crate::components::text::OwnedText {
                         text: text_builder.content.to_owned(),
-                        scale: PxScale::from(text_builder.scale),
+                        scale,
                         font_id: text_builder.font_id,
                         extra: crate::components::text::Extra {
                             color: text_builder.color,
@@ -491,7 +441,7 @@ impl Sugarloaf {
 
                 let text = crate::components::text::OwnedText {
                     text: sugar_str,
-                    scale: PxScale::from(scale),
+                    scale,
                     font_id,
                     extra: crate::components::text::Extra {
                         color: stack[i].foreground_color,
@@ -569,7 +519,7 @@ impl Sugarloaf {
                     rect.columns += 1.0;
                     rect.end_row = self.current_row.into();
                 } else {
-                    println!("miss {:?}", sugar_media.id);
+                    // println!("miss {:?}", sugar_media.id);
                     self.graphic_rects.insert(
                         sugar_media.id,
                         GraphicRect {
@@ -616,7 +566,7 @@ impl Sugarloaf {
     ) -> (f32, f32) {
         let text = crate::components::text::Text {
             text: &content.to_owned().to_string(),
-            scale: PxScale::from(scale),
+            scale: PxScale { x: scale, y: scale },
             font_id,
             extra: crate::components::text::Extra {
                 color: [0., 0., 0., 0.],
@@ -626,7 +576,7 @@ impl Sugarloaf {
 
         let section = &crate::components::text::Section {
             screen_position: (0., 0.),
-            bounds: (scale, scale),
+            bounds: (self.layout.width, self.layout.height),
             text: vec![text],
             layout: crate::glyph::Layout::default_single_line()
                 .v_align(crate::glyph::VerticalAlign::Bottom)

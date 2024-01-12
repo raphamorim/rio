@@ -1,4 +1,5 @@
 use crate::components::rect::Rect;
+use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
 use crate::graphics::SugarGraphic;
 use serde::Deserialize;
@@ -17,7 +18,7 @@ pub struct Sugar {
 pub struct TextBuilder {
     pub content: String,
     pub font_id: FontId,
-    pub scale: f32,
+    pub scale: PxScale,
     pub color: [f32; 4],
     pub pos_x: f32,
     pub has_initialized: bool,
@@ -29,7 +30,7 @@ impl TextBuilder {
             content: String::from(""),
             font_id,
             color: [0., 0., 0., 0.],
-            scale: 0.0,
+            scale: PxScale { x: 0.0, y: 0.0 },
             pos_x: 0.0,
             has_initialized: false,
         }
@@ -39,7 +40,7 @@ impl TextBuilder {
     pub fn add(
         &mut self,
         content: &str,
-        scale: f32,
+        scale: PxScale,
         color: [f32; 4],
         pos_x: f32,
         font_id: FontId,
