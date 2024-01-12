@@ -38,7 +38,7 @@ run-wasm:
 
 dev-watch:
 	#cargo install cargo-watch
-	cargo watch -- cargo run
+	cargo watch -- cargo run -p rioterm
 
 install:
 	cargo fetch

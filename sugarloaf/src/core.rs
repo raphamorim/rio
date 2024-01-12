@@ -20,7 +20,6 @@ pub struct TextBuilder {
     pub scale: f32,
     pub color: [f32; 4],
     pub pos_x: f32,
-    pub width_bound: f32,
     pub has_initialized: bool,
 }
 
@@ -31,7 +30,6 @@ impl TextBuilder {
             font_id,
             color: [0., 0., 0., 0.],
             scale: 0.0,
-            width_bound: 0.0,
             pos_x: 0.0,
             has_initialized: false,
         }
@@ -44,7 +42,6 @@ impl TextBuilder {
         scale: f32,
         color: [f32; 4],
         pos_x: f32,
-        width_bound: f32,
         font_id: FontId,
     ) {
         // has not initialized yet
@@ -54,17 +51,14 @@ impl TextBuilder {
             self.pos_x = pos_x;
             self.has_initialized = true;
             self.font_id = font_id;
-            self.width_bound += width_bound;
         }
 
-        self.width_bound += width_bound;
         self.content += content;
     }
 
     #[inline]
     pub fn reset(&mut self) {
         // has not initialized yet
-        self.width_bound = 0.0;
         self.content = String::from("");
         self.has_initialized = false;
     }

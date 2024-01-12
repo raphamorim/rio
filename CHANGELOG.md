@@ -10,6 +10,8 @@
 
 ## Unreleased
 
+- Vertical text alignment is now `Bottom` as default instead of `Center`.
+- Partial support to `line-height` configuration.
 - Update ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
