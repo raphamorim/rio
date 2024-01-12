@@ -4,11 +4,9 @@
 // and licensed under Apache-2.0 license.
 
 use crate::glyph::layout::{
-    // linebreak::{EolLineBreak, LineBreak, LineBreaker},
-    linebreak::{LineBreak, LineBreaker},
+    linebreak::{EolLineBreak, LineBreak, LineBreaker},
     words::Words,
-    FontId,
-    SectionText,
+    FontId, SectionText,
 };
 use ab_glyph::*;
 use std::{
@@ -114,7 +112,7 @@ where
                     SectionText {
                         scale,
                         font_id,
-                        text: _,
+                        text,
                     },
                 info_chars,
                 line_breaks,
@@ -138,19 +136,19 @@ where
                 let glyph = scale_font.scaled_glyph(c);
                 // println!("{:?} {:?}", c, scale);
 
-                // let c_len = c.len_utf8();
-                // let mut line_break =
-                //     next_break.filter(|b| b.offset() == byte_index + c_len);
-                // if line_break.is_some() && byte_index + c_len == text.len() {
-                //     // handle inherent end-of-str breaks
-                //     line_break = line_break.and(c.eol_line_break(&self.line_breaker));
-                // }
+                let c_len = c.len_utf8();
+                let mut line_break =
+                    next_break.filter(|b| b.offset() == byte_index + c_len);
+                if line_break.is_some() && byte_index + c_len == text.len() {
+                    // handle inherent end-of-str breaks
+                    line_break = line_break.and(c.eol_line_break(&self.line_breaker));
+                }
 
                 return Some(Character {
                     glyph,
                     scale_font,
                     font_id: *font_id,
-                    line_break: None,
+                    line_break,
                     control: c.is_control(),
                     whitespace: c.is_whitespace(),
 
