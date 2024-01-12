@@ -366,7 +366,7 @@ impl Sugarloaf {
     pub fn stack(&mut self, mut stack: SugarStack) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
-        let mod_text_y = self.layout.scaled_sugarheight / 2.;
+        let mod_text_y = self.layout.scaled_sugarheight;
 
         let sugar_x = self.layout.scaled_sugarwidth;
         let sugar_width = self.layout.sugarwidth * 2.;
@@ -375,7 +375,6 @@ impl Sugarloaf {
         let mut text_builder = TextBuilder::new(FontId(FONT_ID_REGULAR));
         let mut repeated = RepeatedSugar::new(0);
 
-        let text_bound = self.layout.sugarheight * self.ctx.scale;
         if self.text_y == 0.0 {
             self.text_y = self.layout.style.screen_position.1;
         }
@@ -479,10 +478,10 @@ impl Sugarloaf {
 
                     let section = crate::components::text::OwnedSection {
                         screen_position: (text_builder.pos_x, section_pos_y),
-                        bounds: (text_builder.width_bound, text_bound),
+                        bounds: (self.layout.width, self.layout.height),
                         text: vec![text],
                         layout: crate::glyph::Layout::default_single_line()
-                            .v_align(crate::glyph::VerticalAlign::Center)
+                            .v_align(crate::glyph::VerticalAlign::Bottom)
                             .h_align(crate::glyph::HorizontalAlign::Left),
                     };
 
@@ -502,10 +501,10 @@ impl Sugarloaf {
 
                 let section = crate::components::text::OwnedSection {
                     screen_position: (section_pos_x, section_pos_y),
-                    bounds: (width_bound * quantity as f32, text_bound),
+                    bounds: (self.layout.width, self.layout.height),
                     text: vec![text],
                     layout: crate::glyph::Layout::default_single_line()
-                        .v_align(crate::glyph::VerticalAlign::Center)
+                        .v_align(crate::glyph::VerticalAlign::Bottom)
                         .h_align(crate::glyph::HorizontalAlign::Left),
                 };
 
@@ -516,7 +515,6 @@ impl Sugarloaf {
                     scale,
                     stack[i].foreground_color,
                     section_pos_x,
-                    width_bound * quantity as f32,
                     font_id,
                 );
             }
@@ -538,7 +536,7 @@ impl Sugarloaf {
                 });
 
                 let dec_pos_y = (scaled_rect_pos_y)
-                    + (decoration.relative_position.1 * self.layout.line_height);
+                    + (decoration.relative_position.1);
                 self.rects.push(Rect {
                     position: [
                         (scaled_rect_pos_x
@@ -558,7 +556,7 @@ impl Sugarloaf {
                     scaled_rect_pos_y,
                     stack[i].background_color,
                     width_bound * quantity as f32,
-                    self.layout.sugarheight,
+                    self.layout.sugarheight * self.layout.line_height,
                 );
 
                 // If the next rect background color is different the push rect
@@ -597,7 +595,7 @@ impl Sugarloaf {
         }
 
         self.current_row += 1;
-        self.text_y += self.layout.scaled_sugarheight;
+        self.text_y += self.layout.scaled_sugarheight * self.layout.line_height;
     }
 
     #[inline]
@@ -632,7 +630,7 @@ impl Sugarloaf {
             bounds: (scale, scale),
             text: vec![text],
             layout: crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
+                .v_align(crate::glyph::VerticalAlign::Bottom)
                 .h_align(crate::glyph::HorizontalAlign::Left),
         };
 
@@ -641,7 +639,7 @@ impl Sugarloaf {
         if let Some(rect) = self.text_brush.glyph_bounds(section) {
             let width = rect.max.x - rect.min.x;
             let height = rect.max.y - rect.min.y;
-            return (width, height * self.layout.line_height);
+            return (width, height);
         }
 
         (0., 0.)
@@ -731,11 +729,11 @@ impl Sugarloaf {
 
         let layout = if single_line {
             crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
+                .v_align(crate::glyph::VerticalAlign::Bottom)
                 .h_align(crate::glyph::HorizontalAlign::Left)
         } else {
             crate::glyph::Layout::default()
-                .v_align(crate::glyph::VerticalAlign::Center)
+                .v_align(crate::glyph::VerticalAlign::Bottom)
                 .h_align(crate::glyph::HorizontalAlign::Left)
         };
 
