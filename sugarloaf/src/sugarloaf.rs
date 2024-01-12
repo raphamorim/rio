@@ -371,7 +371,7 @@ impl Sugarloaf {
 
             let mut scale = PxScale {
                 x: self.layout.style.text_scale,
-                y: self.layout.style.text_scale
+                y: self.layout.style.text_scale,
             };
             if let Some(new_scale) = cached_sugar.px_scale {
                 scale = new_scale;
@@ -420,7 +420,7 @@ impl Sugarloaf {
                         text: text_builder.content.to_owned(),
                         scale: PxScale {
                             x: self.layout.style.text_scale,
-                            y: self.layout.style.text_scale
+                            y: self.layout.style.text_scale,
                         },
                         font_id: text_builder.font_id,
                         extra: crate::components::text::Extra {
@@ -632,8 +632,7 @@ impl Sugarloaf {
 
         let text_scale = self.layout.style.text_scale;
         // Bounds are defined in runtime
-        self.font_bound =
-            self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
+        self.font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
 
         self.layout.scaled_sugarwidth = self.font_bound.0;
         self.layout.scaled_sugarheight = self.font_bound.1;
