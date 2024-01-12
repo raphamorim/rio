@@ -265,7 +265,8 @@ impl Screen {
             self.sugarloaf.layout.margin.top_y,
             (
                 self.sugarloaf.layout.scaled_sugarwidth,
-                self.sugarloaf.layout.scaled_sugarheight * self.sugarloaf.layout.line_height,
+                self.sugarloaf.layout.scaled_sugarheight
+                    * self.sugarloaf.layout.line_height,
             ),
         )
     }
