@@ -214,7 +214,7 @@ impl RichTextBrush {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "base_fs_main",
+                entry_point: "base_fs_shader",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: BLEND,
