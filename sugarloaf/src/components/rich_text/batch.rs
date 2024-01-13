@@ -1,5 +1,5 @@
-use super::Color;
-use super::image_cache::TextureId;
+use crate::components::rich_text::image_cache::TextureId;
+use crate::components::rich_text::color::Color;
 
 /// Batch geometry vertex.
 #[derive(Copy, Clone)]

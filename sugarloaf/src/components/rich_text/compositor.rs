@@ -1,21 +1,12 @@
-pub use swash;
-
-pub mod color;
-pub mod shaders;
-pub mod text;
-
-mod batch;
-mod image_cache;
-
-pub use batch::{Command, DisplayList, Rect, Vertex, Pipeline};
-pub use image_cache::{
+pub use crate::components::rich_text::batch::{Command, DisplayList, Rect, Vertex, Pipeline};
+pub use crate::components::rich_text::image_cache::{
     Epoch, AddImage, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 
-use batch::BatchManager;
-use color::Color;
-use image_cache::{GlyphCache, ImageCache};
-use text::*;
+use crate::components::rich_text::batch::BatchManager;
+use crate::components::rich_text::color::{self, Color};
+use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
+use crate::components::rich_text::text::*;
 
 use std::borrow::Borrow;
 

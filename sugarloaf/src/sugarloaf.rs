@@ -1,6 +1,7 @@
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
+use crate::components::rich_text::{RichTextBrush};
 use crate::components::text;
 use crate::context::Context;
 use crate::core::{
@@ -55,6 +56,7 @@ pub struct Sugarloaf {
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
+    rich_text_brush: RichTextBrush,
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
     text_y: f32,
@@ -163,6 +165,7 @@ impl Sugarloaf {
             .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
+        let rich_text_brush = RichTextBrush::new(&ctx);
 
         let instance = Sugarloaf {
             sugar_cache: FnvHashMap::default(),
@@ -171,6 +174,7 @@ impl Sugarloaf {
             fonts,
             ctx,
             rect_brush,
+            rich_text_brush,
             rects: vec![],
             graphic_rects: FnvHashMap::default(),
             text_brush,
