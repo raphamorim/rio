@@ -1,113 +1,96 @@
 {
+  description = "Rio | A hardware-accelerated GPU terminal emulator";
+
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    systems.url = "github:nix-systems/default";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    systems = {
+        url = "github:nix-systems/default";
+        flake = false;
+    };
   };
 
-  outputs = inputs@{ self, nixpkgs, systems, rust-overlay, ... }:
-    let
-      # Using nix-systems to identify architecture
-      eachSystem = nixpkgs.lib.genAttrs (import systems);
-      pkgsFor = eachSystem (system:
-        import nixpkgs {
-          localSystem = system;
-          overlays = [
-            rust-overlay.overlays.default
-          ];
-        });
+  outputs = inputs@{ flake-parts, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [];
 
-      mkRio = ({ rustPlatform, lib, pkgs, ... }:
+      systems = import inputs.systems;
+
+      perSystem = { config, self', inputs', pkgs, system, lib, ... }:
         let
-          rlinkLibs = with pkgs; if stdenv.isDarwin then [
+          cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+          rust-toolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+              extensions = [ "rust-src" "rust-analyzer" ];
+          };
+
+          runtimeDeps = with pkgs; if stdenv.isDarwin then [
             darwin.libobjc
             darwin.apple_sdk_11_0.frameworks.AppKit
             darwin.apple_sdk_11_0.frameworks.AVFoundation
             darwin.apple_sdk_11_0.frameworks.Vision
-          ] else [
+          ] else (with pkgs; [
+            (lib.getLib gcc-unwrapped)
             fontconfig
             libGL
             libxkbcommon
             vulkan-loader
-          ] ++ (with pkgs; [
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libXrandr
-            xorg.libxcb
             wayland
+          ]) ++ (with pkgs.xorg; [
+            libX11
+            libXcursor
+            libXi
+            libXrandr
+            libxcb
           ]);
-        in
-        rustPlatform.buildRustPackage {
-          pname = "rio";
-          name = "rio"; # attribute name for packages
-          src = ./.;
-          nativeBuildInputs = with pkgs; [
+
+          buildDeps = with pkgs; [
             ncurses
-            cmake
+            ] ++ lib.optionals stdenv.isLinux [
             pkg-config
+            cmake
             autoPatchelfHook
           ];
 
-          runtimeDependencies = rlinkLibs;
-          buildInputs = rlinkLibs;
-          cargoLock.lockFile = ./Cargo.lock;
-
-          meta = {
-            description = "A hardware-accelerated GPU terminal emulator powered by WebGPU";
-            homepage = "https://raphamorim.io/rio";
-            license = lib.licenses.mit;
-            platforms = lib.platforms.unix;
-            changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
-            mainProgram = "rio";
+          rustPackage = rust-toolchain: pkgs.rustPlatform.buildRustPackage {
+              inherit (cargoToml.workspace.package) version;
+              name = "rio";
+              src = ./.;
+              cargoLock.lockFile = ./Cargo.lock;
+              buildInputs = runtimeDeps ++ buildDeps;
+              nativeBuildInputs = buildDeps;
+              buildNoDefaultFeatures = true;
+              buildFeatures = [ "x11" "wayland" ];
+              meta = {
+                  description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers";
+                  homepage = "https://raphamorim.io/rio";
+                  license = lib.licenses.mit;
+                  platforms = lib.platforms.unix;
+                  changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
+                  mainProgram = "rio";
+              };
           };
-        });
+
+          mkDevShell = rust-toolchain: pkgs.mkShell {
+              LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath (runtimeDeps ++ buildDeps)}:$LD_LIBRARY_PATH";
+            packages = buildDeps ++ runtimeDeps ++ [ rust-toolchain ];
+          };
     in
     {
-      overlays.default = final: prev: {
-        rio = prev.callPackage mkRio { };
+      _module.args.pkgs = import inputs.nixpkgs {
+        inherit system;
+          overlays = [ (import inputs.rust-overlay) ];
       };
 
-      # `nix build` works
-      packages = eachSystem (system: {
-        default = pkgsFor.${system}.callPackage mkRio { };
-      });
+      formatter = pkgs.alejandra;
+      packages.default = self'.packages.rio;
+      devShells.default = self'.devShells.msrv;
 
-      # `nix develop` works
-      devShells = eachSystem (system:
-        let
-          rust-toolchain = (pkgsFor.${system}.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-            extensions = [ "rust-src" "rust-analyzer" ];
-          };
-        in
-        {
-          default = pkgsFor.${system}.mkShell rec {
-            packages = with pkgsFor.${system}; if stdenv.isDarwin then [
-              darwin.libobjc
-              darwin.apple_sdk_11_0.frameworks.AppKit
-              darwin.apple_sdk_11_0.frameworks.AVFoundation
-              darwin.apple_sdk_11_0.frameworks.Vision
-            ] else [
-              fontconfig
-              libGL
-              libxkbcommon
-              vulkan-loader
-              ncurses
-              cmake
-              pkg-config
-              autoPatchelfHook
-              rust-toolchain
-              xorg.libX11
-              xorg.libXcursor
-              xorg.libXi
-              xorg.libXrandr
-              xorg.libxcb
-              wayland
-            ];
+      packages.rio = (rustPackage "rio");
 
-            LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${builtins.toString (pkgsFor.${system}.lib.makeLibraryPath packages)}";
-          };
-        }
-      );
+      devShells.msrv = (mkDevShell rust-toolchain);
+      devShells.stable = (mkDevShell pkgs.rust-bin.stable.latest.default);
+      devShells.nightly = (mkDevShell (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default)));
     };
+  };
 }
