@@ -19,11 +19,9 @@ Create new window: `Command + N`
 
 Create new tab: `Command + T`
 
-Move to next tab: `Command + Shift + RightBracket (])`
+Move to next tab: `Control + Tab` or `Command + Shift + RightBracket (])`
 
-Move to previous tab: `Command + Shift + LeftBracket ([)` or `Control + Shift + Tab`
-
-Switch tabs by created order: `Control + Tab`
+Move to previous tab: `Control + Shift + Tab` or `Command + Shift + LeftBracket ([)`
 
 Increase font size: `Command + Plus (+)`
 
@@ -69,11 +67,9 @@ Create new window: `Control + Shift + N`
 
 Create new tab: `Control + Shift + T`
 
-Move to next tab: `Control + Shift + RightBracket (])`
+Move to next tab: `Control + Tab` or `Control + Shift + RightBracket (])`
 
-Move to previous tab: `Control + Shift + LeftBracket ([)`
-
-Switch tabs by created order: `Control + Tab`
+Move to previous tab: `Control + Shift + Tab` `Control + Shift + LeftBracket ([)`
 
 Increase font size: `Control + Plus (+)`
 
@@ -97,11 +93,9 @@ Create new window: `Control + Shift + N`
 
 Create new tab: `Control + Shift + T`
 
-Move to next tab: `Control + Shift + RightBracket (])`
+Move to next tab:`Control + Tab` or `Control + Shift + RightBracket (])`
 
-Move to previous tab: `Control + Shift + LeftBracket ([)`
-
-Switch tabs by created order: `Control + Tab`
+Move to previous tab: `Control + Shift + Tab` or `Control + Shift + LeftBracket ([)`
 
 Increase font size: `Control + Plus (+)`
 
