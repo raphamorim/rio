@@ -117,8 +117,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         window_id: WindowId,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        let columns = size.columns as u16;
-        let lines = size.lines as u16;
+        let columns: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
+        let lines: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
         let event_proxy_clone = event_proxy.clone();
         let mut terminal =
             Crosswords::new(size, cursor_state.0.content, event_proxy, window_id);
@@ -170,8 +170,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                columns,
-                lines,
+                2,
+                1,
             );
         }
 
