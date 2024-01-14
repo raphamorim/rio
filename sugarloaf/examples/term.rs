@@ -96,11 +96,11 @@ async fn main() {
                 content: 'g',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     italic: false,
-                    
+
                     bold: true,
-                }),
+                },
                 decoration: None,
                 media: None,
             },
@@ -108,11 +108,11 @@ async fn main() {
                 content: 'a',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     italic: false,
-                    
+
                     bold: true,
-                }),
+                },
                 decoration: None,
                 media: None,
             },
@@ -136,11 +136,10 @@ async fn main() {
                 content: 'g',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     italic: true,
-                    
                     bold: false,
-                }),
+                },
                 decoration: None,
                 media: None,
             },
@@ -148,11 +147,10 @@ async fn main() {
                 content: 'a',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     italic: true,
-                    
                     bold: false,
-                }),
+                },
                 decoration: None,
                 media: None,
             },
