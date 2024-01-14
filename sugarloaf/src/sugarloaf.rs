@@ -271,8 +271,8 @@ impl Sugarloaf {
                 // })
                 // }
                 FontId(_) => PxScale {
-                    x: self.layout.sugarwidth,
-                    y: self.layout.sugarheight,
+                    x: self.layout.scaled_sugarwidth,
+                    y: self.layout.scaled_sugarheight,
                 },
             };
 
@@ -290,7 +290,6 @@ impl Sugarloaf {
         };
 
         let mut iterator = stack.into_iter().peekable();
-
         while iterator.peek().is_some() {
             let text = Text::build_from(&mut iterator, &next_text_pos);
             next_text_pos.x += text.quantity as f32 * self.layout.scaled_sugarwidth;
@@ -313,40 +312,40 @@ impl Sugarloaf {
                 self.text_brush.queue(&section);
             }
 
-            {
-                let rect_builder = RectBuilder {
-                    sugar_char_width: 1.,
-                    sugarheight: self.layout.sugarheight,
-                    scale: self.ctx.scale,
-                };
+            // {
+            //     let rect_builder = RectBuilder {
+            //         sugar_char_width: 1.,
+            //         sugarheight: self.layout.sugarheight,
+            //         scale: self.ctx.scale,
+            //     };
 
-                self.rects.extend(rect_builder.build_for(&text));
-            }
+            //     self.rects.extend(rect_builder.build_for(&text));
+            // }
 
-            if let Some(media) = &text.media {
-                self.graphic_rects
-                    .entry(media.id)
-                    .and_modify(|rect| {
-                        rect.columns += 1.0;
-                        rect.end_row = self.current_row.into();
-                    })
-                    .or_insert_with(|| {
-                        let pos = Point {
-                            x: text.pos.x / self.ctx.scale,
-                            y: text.pos.y / self.ctx.scale,
-                        };
+            // if let Some(media) = &text.media {
+            //     self.graphic_rects
+            //         .entry(media.id)
+            //         .and_modify(|rect| {
+            //             rect.columns += 1.0;
+            //             rect.end_row = self.current_row.into();
+            //         })
+            //         .or_insert_with(|| {
+            //             let pos = Point {
+            //                 x: text.pos.x / self.ctx.scale,
+            //                 y: text.pos.y / self.ctx.scale,
+            //             };
 
-                        GraphicRect {
-                            id: media.id,
-                            height: media.height,
-                            width: media.width,
-                            pos,
-                            columns: 1.0,
-                            start_row: 1.0,
-                            end_row: 1.0,
-                        }
-                    });
-            }
+            //             GraphicRect {
+            //                 id: media.id,
+            //                 height: media.height,
+            //                 width: media.width,
+            //                 pos,
+            //                 columns: 1.0,
+            //                 start_row: 1.0,
+            //                 end_row: 1.0,
+            //             }
+            //         });
+            // }
         }
 
         self.current_row += 1;
