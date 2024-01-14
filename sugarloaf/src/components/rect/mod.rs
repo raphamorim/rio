@@ -1,5 +1,8 @@
-use crate::components::core::orthographic_projection;
 use crate::context::Context;
+use crate::core::SugarDecoration;
+use crate::font::loader::SharedFaceDataResult;
+use crate::{components::core::orthographic_projection, core::Text};
+use ab_glyph::Point;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
@@ -62,6 +65,12 @@ pub struct Rect {
     pub position: [f32; 2],
     pub color: [f32; 4],
     pub size: [f32; 2],
+}
+
+impl From<&SugarDecoration> for Rect {
+    fn from(decoration: &SugarDecoration) -> Self {
+        todo!()
+    }
 }
 
 #[allow(unsafe_code)]

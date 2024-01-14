@@ -64,7 +64,7 @@ impl SugarloafGraphics {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SugarGraphic {
     pub id: SugarGraphicId,
     pub width: u16,

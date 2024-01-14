@@ -79,8 +79,8 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
                             for _i in 0..NUM {
                                 pile.push(Sugar {
                                     content: 'a',
-                                    foreground_color: [1.0, 1.0, 1.0, 1.0],
-                                    background_color: [0.0, 1.0, 1.0, 1.0],
+                                    fg_color: [1.0, 1.0, 1.0, 1.0],
+                                    bg_color: [0.0, 1.0, 1.0, 1.0],
                                     style: None,
                                     media: None,
                                     decoration: None,
