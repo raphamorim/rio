@@ -547,6 +547,23 @@ impl Sugarloaf {
                         .render_with_encoder(0, view, &mut encoder, None);
                 }
 
+                self.rect_brush.render(
+                    &mut encoder,
+                    view,
+                    (self.ctx.size.width, self.ctx.size.height),
+                    &self.rects,
+                    &mut self.ctx,
+                );
+
+                self.rects = vec![];
+                self.current_row = 0;
+
+                let _ = self
+                    .text_brush
+                    .draw_queued(&mut self.ctx, &mut encoder, view);
+
+                self.layer_brush.end_frame();
+
                 for entry_render in
                     &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
                 {
@@ -585,21 +602,6 @@ impl Sugarloaf {
                         }
                     }
                 }
-
-                self.rect_brush.render(
-                    &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                    &self.rects,
-                    &mut self.ctx,
-                );
-
-                let _ = self
-                    .text_brush
-                    .draw_queued(&mut self.ctx, &mut encoder, view);
-
-                self.layer_brush.end_frame();
-
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
