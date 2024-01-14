@@ -314,6 +314,8 @@ impl Sugarloaf {
                 let rect_builder = RectBuilder {
                     sugarwidth: self.layout.sugarwidth * 2., // "* 2." because we want some space to the left and right which sums up to one sugarwidth
                     sugarheight: self.layout.sugarheight,
+                    rect_pos_y: self.text_y + self.layout.style.screen_position.1,
+                    line_height: self.layout.line_height,
                     scale: self.ctx.scale,
                 };
 
@@ -345,6 +347,8 @@ impl Sugarloaf {
                     });
             }
         }
+
+        println!("{:#?}", self.rects);
 
         self.current_row += 1;
         self.text_y += self.layout.scaled_sugarheight * self.layout.line_height;

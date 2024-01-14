@@ -386,7 +386,7 @@ async fn main() {
                 winit::event::WindowEvent::RedrawRequested { .. } => {
                     sugarloaf.stack(sugar);
                     sugarloaf.stack(rio);
-                    sugarloaf.stack(special);
+                    // sugarloaf.stack(special);
                     sugarloaf.render();
                 }
                 _ => (),
