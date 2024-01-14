@@ -1,5 +1,3 @@
-use ab_glyph::Point;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rectangle<T = f32> {
     /// X coordinate of the top-left corner.

@@ -234,16 +234,16 @@ impl Sugarloaf {
     pub fn get_text_info(&mut self, text: &Text) -> TextInfo {
         *self.sugar_cache.entry(text.content).or_insert_with(|| {
             let font_id = {
-                let fonts: &[FontArc] = &self.text_brush.fonts();
+                let fonts: &[FontArc] = self.text_brush.fonts();
 
-                for (idx, font_arc) in fonts.iter().enumerate() {
-                    let found_glyph_id = font_arc.glyph_id(text.content);
-                    if found_glyph_id != ab_glyph::GlyphId(0) {
-                        FontId(idx);
-                    }
-                }
-
-                FontId(FONT_ID_REGULAR)
+                fonts
+                    .iter()
+                    .enumerate()
+                    .find(|(_, font_arc)| {
+                        font_arc.glyph_id(text.content) != ab_glyph::GlyphId(0)
+                    })
+                    .map(|(idx, _)| FontId(idx))
+                    .unwrap_or(FontId(FONT_ID_REGULAR))
             };
 
             let char_width = text.content.width().unwrap_or(1);

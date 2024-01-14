@@ -1,12 +1,11 @@
 use crate::components::rect::Rect;
 use crate::font::{FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR};
 use crate::glyph::ab_glyph::PxScale;
-use crate::glyph::{FontId, OwnedSection, OwnedText};
+use crate::glyph::FontId;
 use crate::graphics::SugarGraphic;
 use ab_glyph::Point;
-use fnv::FnvHashMap;
 use serde::Deserialize;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, PartialEq, Default)]
 pub struct Sugar {
@@ -38,7 +37,7 @@ impl Text {
     pub fn build_from(iterator: &mut impl Iterator<Item = Sugar>, pos: &Point) -> Self {
         let sugar = iterator.next().unwrap();
 
-        let font_id = FontId::from(sugar.style);
+        let font_id = FontId::from(&sugar.style);
 
         let Sugar {
             content,
@@ -53,7 +52,13 @@ impl Text {
             1
         } else {
             iterator
-                .take_while(|&next_sugar| next_sugar == sugar)
+                .take_while(|next_sugar| {
+                    next_sugar.content == sugar.content
+                        && next_sugar.fg_color == sugar.fg_color
+                        && next_sugar.bg_color == sugar.bg_color
+                        && next_sugar.decoration == sugar.decoration
+                        && next_sugar.media == sugar.media
+                })
                 .count()
         };
 
@@ -66,7 +71,7 @@ impl Text {
             style,
             decoration,
             media,
-            pos: pos.clone(),
+            pos: *pos,
         }
     }
 
@@ -74,45 +79,6 @@ impl Text {
     pub fn width(&self) -> usize {
         self.content.width().unwrap_or(1) * self.quantity
     }
-
-    // pub fn new(font_id: FontId) -> TextBuilder {
-    //     TextBuilder {
-    //         content: String::from(""),
-    //         font_id,
-    //         fg_color: [0., 0., 0., 0.],
-    //         scale: PxScale { x: 0.0, y: 0.0 },
-    //         pos_x: 0.0,
-    //         has_initialized: false,
-    //     }
-    // }
-
-    // #[inline]
-    // pub fn add(
-    //     &mut self,
-    //     content: &str,
-    //     scale: PxScale,
-    //     color: [f32; 4],
-    //     pos_x: f32,
-    //     font_id: FontId,
-    // ) {
-    //     // has not initialized yet
-    //     if !self.has_initialized {
-    //         self.scale = scale;
-    //         self.fg_color = color;
-    //         self.pos_x = pos_x;
-    //         self.has_initialized = true;
-    //         self.font_id = font_id;
-    //     }
-
-    //     self.content += content;
-    // }
-
-    // #[inline]
-    // pub fn reset(&mut self) {
-    //     // has not initialized yet
-    //     self.content = String::from("");
-    //     self.has_initialized = false;
-    // }
 }
 
 impl From<(&Text, PxScale)> for crate::components::text::OwnedText {
@@ -260,8 +226,8 @@ pub struct SugarStyle {
     pub bold: bool,
 }
 
-impl From<SugarStyle> for FontId {
-    fn from(style: SugarStyle) -> Self {
+impl From<&SugarStyle> for FontId {
+    fn from(style: &SugarStyle) -> Self {
         if style.italic && style.bold {
             FontId(FONT_ID_BOLD_ITALIC)
         } else if style.italic {
