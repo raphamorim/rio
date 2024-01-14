@@ -320,30 +320,30 @@ impl Sugarloaf {
                 self.rects.extend(rect_builder.build_for(&text));
             }
 
-            // if let Some(media) = &text.media {
-            //     self.graphic_rects
-            //         .entry(media.id)
-            //         .and_modify(|rect| {
-            //             rect.columns += 1.0;
-            //             rect.end_row = self.current_row.into();
-            //         })
-            //         .or_insert_with(|| {
-            //             let pos = Point {
-            //                 x: text.pos.x / self.ctx.scale,
-            //                 y: text.pos.y / self.ctx.scale,
-            //             };
+            if let Some(media) = &text.media {
+                self.graphic_rects
+                    .entry(media.id)
+                    .and_modify(|rect| {
+                        rect.columns += 1.0;
+                        rect.end_row = self.current_row.into();
+                    })
+                    .or_insert_with(|| {
+                        let pos = Point {
+                            x: text.pos.x / self.ctx.scale,
+                            y: text.pos.y / self.ctx.scale,
+                        };
 
-            //             GraphicRect {
-            //                 id: media.id,
-            //                 height: media.height,
-            //                 width: media.width,
-            //                 pos,
-            //                 columns: 1.0,
-            //                 start_row: 1.0,
-            //                 end_row: 1.0,
-            //             }
-            //         });
-            // }
+                        GraphicRect {
+                            id: media.id,
+                            height: media.height,
+                            width: media.width,
+                            pos,
+                            columns: 1.0,
+                            start_row: 1.0,
+                            end_row: 1.0,
+                        }
+                    });
+            }
         }
 
         self.current_row += 1;
