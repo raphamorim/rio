@@ -502,8 +502,7 @@ impl State {
             fg_color: self.compute_fg_color(square),
             bg_color: self.compute_bg_color(square),
             style,
-            decoration: None,
-            media: None,
+            ..Default::default()
         };
 
         if square.flags.contains(Flags::INVERSE) {

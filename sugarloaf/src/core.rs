@@ -145,7 +145,8 @@ impl BuildRectFor<&Text> for RectBuilder {
             let pos = Point {
                 x: (text.pos.x + text_char_width as f32 * decoration.relative_position.0)
                     / self.scale,
-                y: (text.pos.y / self.scale) + decoration.relative_position.1,
+                y: (text.pos.y / self.scale - self.sugarheight)
+                    + decoration.relative_position.1,
             };
 
             rects.push(Rect {
