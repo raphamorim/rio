@@ -98,7 +98,7 @@ async fn main() {
                 bg_color: [0.0, 0.0, 0.0, 1.0],
                 style: Some(SugarStyle {
                     italic: false,
-                    is_bold_italic: false,
+                    
                     bold: true,
                 }),
                 decoration: None,
@@ -110,7 +110,7 @@ async fn main() {
                 bg_color: [1.0, 1.0, 1.0, 1.0],
                 style: Some(SugarStyle {
                     italic: false,
-                    is_bold_italic: false,
+                    
                     bold: true,
                 }),
                 decoration: None,
@@ -138,7 +138,7 @@ async fn main() {
                 bg_color: [1.0, 1.0, 1.0, 1.0],
                 style: Some(SugarStyle {
                     italic: true,
-                    is_bold_italic: false,
+                    
                     bold: false,
                 }),
                 decoration: None,
@@ -150,7 +150,7 @@ async fn main() {
                 bg_color: [0.0, 0.0, 0.0, 1.0],
                 style: Some(SugarStyle {
                     italic: true,
-                    is_bold_italic: false,
+                    
                     bold: false,
                 }),
                 decoration: None,
