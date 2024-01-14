@@ -148,8 +148,8 @@ impl State {
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
-        let mut foreground_color = self.compute_fg_color(square);
-        let mut background_color = self.compute_bg_color(square);
+        let mut fg_color = self.compute_fg_color(square);
+        let mut bg_color = self.compute_bg_color(square);
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
             ' '
@@ -157,21 +157,14 @@ impl State {
             square.c
         };
 
-        let mut style: Option<SugarStyle> = None;
-        let is_italic = flags.contains(Flags::ITALIC);
-        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
+        let bold_italic = flags.contains(Flags::BOLD_ITALIC);
+        let style = SugarStyle {
+            italic: bold_italic || flags.contains(Flags::ITALIC),
+            bold: bold_italic || flags.contains(Flags::BOLD),
+        };
 
         if flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut background_color, &mut foreground_color);
+            std::mem::swap(&mut bg_color, &mut fg_color);
         }
 
         let mut decoration = None;
@@ -191,11 +184,11 @@ impl State {
 
         Sugar {
             content,
-            foreground_color,
-            background_color,
+            fg_color,
+            bg_color,
             style,
             decoration,
-            media: None,
+            ..Default::default()
         }
     }
 
@@ -288,15 +281,13 @@ impl State {
 
                 let selected_sugar = Sugar {
                     content,
-                    foreground_color: if self.ignore_selection_fg_color {
+                    fg_color: if self.ignore_selection_fg_color {
                         self.compute_fg_color(square)
                     } else {
                         self.named_colors.selection_foreground
                     },
-                    background_color: self.named_colors.selection_background,
-                    style: None,
-                    decoration: None,
-                    media: None,
+                    bg_color: self.named_colors.selection_background,
+                    ..Default::default()
                 };
                 stack.push(selected_sugar);
             } else {
@@ -494,29 +485,22 @@ impl State {
 
     #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
-        let mut sugar = Sugar {
-            content: square.c,
-            foreground_color: self.compute_fg_color(square),
-            background_color: self.compute_bg_color(square),
-            style: None,
-            decoration: None,
-            media: None,
+        let bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
+        let style = SugarStyle {
+            italic: bold_italic || square.flags.contains(Flags::ITALIC),
+            bold: bold_italic || square.flags.contains(Flags::BOLD),
         };
 
-        let is_italic = square.flags.contains(Flags::ITALIC);
-        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = square.flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            sugar.style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
+        let mut sugar = Sugar {
+            content: square.c,
+            fg_color: self.compute_fg_color(square),
+            bg_color: self.compute_bg_color(square),
+            style,
+            ..Default::default()
+        };
 
         if square.flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
+            std::mem::swap(&mut sugar.bg_color, &mut sugar.fg_color);
         }
 
         // If IME is enabled we get the current content to cursor
@@ -527,7 +511,7 @@ impl State {
         // If IME is enabled or is a block cursor, put background color
         // when cursor is over the character
         if self.is_ime_enabled || self.cursor.state.content == CursorShape::Block {
-            sugar.foreground_color = self.named_colors.background.0;
+            sugar.fg_color = self.named_colors.background.0;
         }
 
         sugar.decoration = self.cursor_to_decoration();
@@ -536,21 +520,20 @@ impl State {
 
     #[inline]
     fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let foreground_color = self.compute_fg_color(square);
-        let background_color = self.compute_bg_color(square);
+        let fg_color = self.compute_fg_color(square);
+        let bg_color = self.compute_bg_color(square);
 
         let media = &square.graphics().unwrap()[0].texture;
         Sugar {
             content: ' ',
-            foreground_color,
-            background_color,
-            style: None,
-            decoration: None,
+            fg_color,
+            bg_color,
             media: Some(SugarGraphic {
                 id: media.id,
                 width: media.width,
                 height: media.height,
             }),
+            ..Default::default()
         }
     }
 
