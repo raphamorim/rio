@@ -37,6 +37,7 @@ pub struct Database;
 /// A little helper struct which contains some additional information about a sugar.
 #[derive(Copy, Clone, PartialEq)]
 pub struct TextInfo {
+    pub font_id: FontId,
     pub px_scale: PxScale,
 }
 
@@ -273,7 +274,7 @@ impl Sugarloaf {
                 FontId(_) => PxScale::from(self.layout.scaled_sugarheight),
             };
 
-            TextInfo { px_scale }
+            TextInfo { font_id, px_scale }
         })
     }
 
@@ -293,8 +294,8 @@ impl Sugarloaf {
 
             {
                 let owned_text = {
-                    let scale = self.get_text_info(&text).px_scale;
-                    crate::components::text::OwnedText::from((&text, scale))
+                    let text_info = self.get_text_info(&text);
+                    crate::components::text::OwnedText::from((&text, text_info))
                 };
 
                 let section = crate::components::text::OwnedSection {

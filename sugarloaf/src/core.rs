@@ -2,9 +2,9 @@ use std::iter::Peekable;
 
 use crate::components::rect::Rect;
 use crate::font::{FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR};
-use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
 use crate::graphics::SugarGraphic;
+use crate::sugarloaf::TextInfo;
 use ab_glyph::Point;
 use serde::Deserialize;
 use unicode_width::UnicodeWidthChar;
@@ -24,7 +24,6 @@ pub struct Text {
     pub content: char,
     pub quantity: usize,
 
-    pub font_id: FontId,
     pub fg_color: [f32; 4],
     pub bg_color: [f32; 4],
 
@@ -41,8 +40,6 @@ impl Text {
         pos: &Point,
     ) -> Self {
         let sugar = iterator.next().unwrap();
-
-        let font_id = FontId::from(&sugar.style);
 
         let Sugar {
             content,
@@ -77,7 +74,6 @@ impl Text {
         Self {
             content,
             quantity,
-            font_id,
             fg_color,
             bg_color,
             style,
@@ -93,14 +89,14 @@ impl Text {
     }
 }
 
-impl From<(&Text, PxScale)> for crate::components::text::OwnedText {
-    fn from((text, scale): (&Text, PxScale)) -> Self {
+impl From<(&Text, TextInfo)> for crate::components::text::OwnedText {
+    fn from((text, info): (&Text, TextInfo)) -> Self {
         let text_content = String::from(text.content).repeat(text.quantity);
 
         Self {
             text: text_content,
-            scale,
-            font_id: text.font_id,
+            scale: info.px_scale,
+            font_id: info.font_id,
             extra: crate::components::text::Extra {
                 color: text.fg_color,
                 z: 0.0,
