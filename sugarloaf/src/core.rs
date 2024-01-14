@@ -115,7 +115,7 @@ impl BuildRectFor<&Text> for RectBuilder {
         let text_rect = {
             let pos = Point {
                 x: text.pos.x / self.scale,
-                y: text.pos.y / self.scale / 5.0,
+                y: (text.pos.y - self.sugarheight) / self.scale,
             };
 
             Rect {
