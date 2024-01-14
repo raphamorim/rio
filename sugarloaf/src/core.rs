@@ -1,6 +1,8 @@
 use std::iter::Peekable;
 
 use crate::components::rect::Rect;
+use crate::font::{FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR};
+use crate::glyph::FontId;
 use crate::graphics::SugarGraphic;
 use crate::sugarloaf::TextInfo;
 use ab_glyph::Point;
@@ -91,10 +93,21 @@ impl From<(&Text, TextInfo)> for crate::components::text::OwnedText {
     fn from((text, info): (&Text, TextInfo)) -> Self {
         let text_content = String::from(text.content).repeat(text.quantity);
 
+        let mut font_id = info.font_id;
+        if info.font_id == FontId(FONT_ID_REGULAR) {
+            if text.style.bold && text.style.italic {
+                font_id = FontId(FONT_ID_BOLD_ITALIC);
+            } else if text.style.bold {
+                font_id = FontId(FONT_ID_BOLD);
+            } else if text.style.italic {
+                font_id = FontId(FONT_ID_ITALIC);
+            }
+        }
+
         Self {
             text: text_content,
             scale: info.px_scale,
-            font_id: info.font_id,
+            font_id,
             extra: crate::components::text::Extra {
                 color: text.fg_color,
                 z: 0.0,
