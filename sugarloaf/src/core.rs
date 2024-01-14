@@ -1,8 +1,6 @@
 use std::iter::Peekable;
 
 use crate::components::rect::Rect;
-use crate::font::{FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR};
-use crate::glyph::FontId;
 use crate::graphics::SugarGraphic;
 use crate::sugarloaf::TextInfo;
 use ab_glyph::Point;
@@ -162,20 +160,6 @@ pub trait BuildRectFor<T> {
 pub struct SugarStyle {
     pub italic: bool,
     pub bold: bool,
-}
-
-impl From<&SugarStyle> for FontId {
-    fn from(style: &SugarStyle) -> Self {
-        if style.italic && style.bold {
-            FontId(FONT_ID_BOLD_ITALIC)
-        } else if style.italic {
-            FontId(FONT_ID_ITALIC)
-        } else if style.bold {
-            FontId(FONT_ID_BOLD)
-        } else {
-            FontId(FONT_ID_REGULAR)
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

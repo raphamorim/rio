@@ -1,7 +1,7 @@
 extern crate tokio;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::{
-    core::{Sugar, SugarDecoration, SugarStyle},
+    core::{Sugar, SugarDecoration},
     layout::SugarloafLayout,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
