@@ -153,18 +153,10 @@ impl State {
             square.c
         };
 
-        let mut style: Option<SugarStyle> = None;
-        let is_italic = flags.contains(Flags::ITALIC);
-        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            style = Some(SugarStyle {
-                italic: is_italic,
-                is_bold_italic,
-                bold: is_bold,
-            });
-        }
+        let style = SugarStyle {
+            italic: flags.contains(Flags::ITALIC | Flags::BOLD_ITALIC),
+            bold: flags.contains(Flags::BOLD | Flags::BOLD_ITALIC),
+        };
 
         if flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
@@ -290,7 +282,7 @@ impl State {
                         self.named_colors.selection_foreground
                     },
                     bg_color: self.named_colors.selection_background,
-                    style: None,
+                    style: SugarStyle::default(),
                     decoration: None,
                     media: None,
                 };
@@ -488,7 +480,7 @@ impl State {
             content: ' ',
             fg_color: foreground_color,
             bg_color: background_color,
-            style: None,
+            style: SugarStyle::default(),
             decoration: None,
             media: Some(SugarGraphic {
                 id: media.id,
@@ -500,26 +492,19 @@ impl State {
 
     #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
+        let style = SugarStyle {
+            italic: square.flags.contains(Flags::ITALIC | Flags::BOLD_ITALIC),
+            bold: square.flags.contains(Flags::BOLD | Flags::BOLD_ITALIC),
+        };
+
         let mut sugar = Sugar {
             content: square.c,
             fg_color: self.compute_fg_color(square),
             bg_color: self.compute_bg_color(square),
-            style: None,
+            style,
             decoration: None,
             media: None,
         };
-
-        let is_italic = square.flags.contains(Flags::ITALIC);
-        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = square.flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            sugar.style = Some(SugarStyle {
-                italic: is_italic,
-                is_bold_italic,
-                bold: is_bold,
-            });
-        }
 
         if square.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut sugar.bg_color, &mut sugar.fg_color);
