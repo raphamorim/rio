@@ -69,57 +69,43 @@ async fn main() {
                 content: 'S',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'u',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'g',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'a',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'r',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'g',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 0.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '|',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
         ];
 
@@ -128,49 +114,37 @@ async fn main() {
                 content: 'l',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'o',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'a',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'f',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 0.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'g',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 0.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '|',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
         ];
 
@@ -185,57 +159,44 @@ async fn main() {
                 content: ' ',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'r',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 0.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                media: None,
-                decoration: Some(underline),
+                ..Default::default()
             },
             Sugar {
                 content: 'i',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                media: None,
-                decoration: Some(underline),
+                ..Default::default()
             },
             Sugar {
                 content: 'o',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                media: None,
                 decoration: Some(underline),
+                ..Default::default()
             },
             Sugar {
                 content: 'g',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 1.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '¼',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '¬',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 1.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
         ];
 
@@ -245,44 +206,34 @@ async fn main() {
                 content: '㏑',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             // Font Symbol (apple symbols font)
             Sugar {
                 content: '⫹',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             // Font Regular (firamono)
             Sugar {
                 content: 'λ',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             // Font Emojis
             Sugar {
                 content: '🥇',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '👷',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 0.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
         ];
 
@@ -292,41 +243,31 @@ async fn main() {
                 content: 'a',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '％',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [0.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.5, 0.5, 0.5, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: 'a',
                 fg_color: [0.0, 0.0, 0.0, 1.0],
                 bg_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
             Sugar {
                 content: '',
                 fg_color: [1.0, 1.0, 1.0, 1.0],
                 bg_color: [0.0, 0.0, 0.0, 1.0],
-                style: SugarStyle::default(),
-                decoration: None,
-                media: None,
+                ..Default::default()
             },
         ];
 
@@ -357,10 +298,10 @@ async fn main() {
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
                     sugarloaf.stack(sugar);
-                    sugarloaf.stack(loaf);
-                    sugarloaf.stack(special_2);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(special);
+                    // sugarloaf.stack(loaf);
+                    // sugarloaf.stack(special_2);
+                    // sugarloaf.stack(rio);
+                    // sugarloaf.stack(special);
                     sugarloaf.render();
                 }
                 _ => (),

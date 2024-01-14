@@ -270,10 +270,7 @@ impl Sugarloaf {
                 //     y: self.layout.scaled_sugarheight,
                 // })
                 // }
-                FontId(_) => PxScale {
-                    x: self.layout.scaled_sugarwidth,
-                    y: self.layout.scaled_sugarheight,
-                },
+                FontId(_) => PxScale::from(self.layout.scaled_sugarheight),
             };
 
             TextInfo { px_scale }
@@ -284,15 +281,15 @@ impl Sugarloaf {
     pub fn stack(&mut self, stack: SugarStack) {
         let mut next_text_pos = Point {
             x: self.layout.style.screen_position.0,
-            y: self.layout.style.screen_position.1
+            y: self.layout.scaled_sugarheight
                 + self.text_y
-                + self.layout.scaled_sugarheight,
+                + self.layout.style.screen_position.1,
         };
 
         let mut iterator = stack.into_iter().peekable();
         while iterator.peek().is_some() {
             let text = Text::build_from(&mut iterator, &next_text_pos);
-            next_text_pos.x += text.quantity as f32 * self.layout.scaled_sugarwidth;
+            next_text_pos.x += text.width() as f32 * self.layout.scaled_sugarwidth;
 
             {
                 let owned_text = {
@@ -350,231 +347,6 @@ impl Sugarloaf {
 
         self.current_row += 1;
         self.text_y += self.layout.scaled_sugarheight * self.layout.line_height;
-
-        // -----
-
-        // let size = stack.len();
-        // for i in 0..size {
-        //     let mut add_pos_x = sugar_x;
-        //     let mut sugar_char_width = 1.;
-        //     let rect_pos_x = self.layout.style.screen_position.0 + x;
-
-        //     // let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-        //     // if stack[i].content != ' ' {
-        //     //     println!("{:?} {:?} {:?}", stack[i].content, cached_sugar.char_width, cached_sugar.font_id);
-        //     // }
-        //     // if i < size - 1
-        //     //     && cached_sugar.char_width <= 1.
-        //     //     && stack[i].content == stack[i + 1].content
-        //     //     && stack[i].foreground_color == stack[i + 1].foreground_color
-        //     //     && stack[i].background_color == stack[i + 1].background_color
-        //     //     && stack[i].decoration.is_none()
-        //     //     && stack[i + 1].decoration.is_none()
-        //     //     && stack[i].media.is_none()
-        //     // {
-        //     //     repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
-        //     //     x += add_pos_x;
-        //     //     continue;
-        //     // }
-
-        //     // repeated.set_reset_on_next();
-
-        //     // let mut font_id = cached_sugar.font_id;
-        //     // let mut is_text_font = false;
-        //     // if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-        //     //     if let Some(style) = &stack[i].style {
-        //     //         if style.is_bold_italic {
-        //     //             font_id = FontId(FONT_ID_BOLD_ITALIC);
-        //     //         } else if style.is_bold {
-        //     //             font_id = FontId(FONT_ID_BOLD);
-        //     //         } else if style.is_italic {
-        //     //             font_id = FontId(FONT_ID_ITALIC);
-        //     //         }
-        //     //     }
-        //     //     is_text_font = true;
-        //     // }
-
-        //     if cached_sugar.char_width > 1. {
-        //         sugar_char_width = cached_sugar.char_width;
-        //         add_pos_x += sugar_x;
-        //     }
-
-        //     let mut scale = PxScale {
-        //         x: self.layout.scaled_sugarheight,
-        //         y: self.layout.scaled_sugarheight,
-        //     };
-        //     if let Some(new_scale) = cached_sugar.px_scale {
-        //         scale = new_scale;
-        //     }
-
-        //     let rect_pos_y = self.text_y + mod_pos_y;
-        //     let width_bound = sugar_width * sugar_char_width;
-
-        //     let quantity = if repeated.count() > 0 {
-        //         1 + repeated.count()
-        //     } else {
-        //         1
-        //     };
-
-        //     let sugar_str: String = if quantity > 1 {
-        //         repeated.content_str.to_owned()
-        //     } else {
-        //         stack[i].content.to_string()
-        //     };
-
-        //     let section_pos_x = if quantity > 1 {
-        //         repeated.pos_x
-        //     } else {
-        //         rect_pos_x
-        //     };
-
-        //     let section_pos_y = if quantity > 1 {
-        //         repeated.pos_y
-        //     } else {
-        //         mod_text_y + self.text_y + mod_pos_y
-        //     };
-
-        //     let is_last = i == size - 1;
-        //     let has_different_color_font = text_builder.has_initialized
-        //         && (text_builder.font_id != font_id
-        //             || text_builder.fg_color != stack[i].fg_color);
-
-        //     // If the font_id is different from TextBuilder, OR is the last item of the stack,
-        //     // OR does the text builder color is different than current sugar needs to wrap up
-        //     // the text builder and also queue the current stack item.
-        //     //
-        //     // TODO: Accept diferent colors
-        //     if !is_text_font || is_last || has_different_color_font {
-        //         if text_builder.has_initialized {
-        //             let text = crate::components::text::OwnedText {
-        //                 text: text_builder.content.to_owned(),
-        //                 scale: text_builder.scale,
-        //                 font_id: text_builder.font_id,
-        //                 extra: crate::components::text::Extra {
-        //                     color: text_builder.fg_color,
-        //                     z: 0.0,
-        //                 },
-        //             };
-
-        //             let section = crate::components::text::OwnedSection {
-        //                 screen_position: (text_builder.pos_x, section_pos_y),
-        //                 bounds: (self.layout.width, self.layout.height),
-        //                 text: vec![text],
-        //                 layout: crate::glyph::Layout::default_single_line()
-        //                     .v_align(crate::glyph::VerticalAlign::Bottom)
-        //                     .h_align(crate::glyph::HorizontalAlign::Left),
-        //             };
-
-        //             self.text_brush.queue(&section);
-        //             text_builder.reset();
-        //         }
-
-        //         let text = crate::components::text::OwnedText {
-        //             text: sugar_str,
-        //             scale,
-        //             font_id,
-        //             extra: crate::components::text::Extra {
-        //                 color: stack[i].fg_color,
-        //                 z: 0.0,
-        //             },
-        //         };
-
-        //         let section = crate::components::text::OwnedSection {
-        //             screen_position: (section_pos_x, section_pos_y),
-        //             bounds: (self.layout.width, self.layout.height),
-        //             text: vec![text],
-        //             layout: crate::glyph::Layout::default_single_line()
-        //                 .v_align(crate::glyph::VerticalAlign::Bottom)
-        //                 .h_align(crate::glyph::HorizontalAlign::Left),
-        //         };
-
-        //         self.text_brush.queue(&section);
-        //     } else {
-        //         text_builder.add(
-        //             &sugar_str,
-        //             scale,
-        //             stack[i].fg_color,
-        //             section_pos_x,
-        //             font_id,
-        //         );
-        //     }
-
-        //     let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
-        //     let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
-
-        //     // The decoration cannot be added before the rect otherwise can lead
-        //     // to issues in the renderer, therefore we need check if decoration does exists
-        //     if let Some(decoration) = &stack[i].decoration {
-        //         if rect_builder.quantity >= 1 {
-        //             self.rects.push(rect_builder.build());
-        //         }
-
-        //         self.rects.push(Rect {
-        //             position: [scaled_rect_pos_x, scaled_rect_pos_y],
-        //             color: stack[i].bg_color,
-        //             size: [width_bound * quantity as f32, self.layout.sugarheight],
-        //         });
-
-        //         let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
-        //         self.rects.push(Rect {
-        //             position: [
-        //                 (scaled_rect_pos_x
-        //                     + (add_pos_x * decoration.relative_position.0)
-        //                         / self.ctx.scale),
-        //                 dec_pos_y,
-        //             ],
-        //             color: decoration.color,
-        //             size: [
-        //                 (width_bound * decoration.size.0),
-        //                 (self.layout.sugarheight) * decoration.size.1,
-        //             ],
-        //         });
-        //     } else {
-        //         rect_builder.add(
-        //             scaled_rect_pos_x,
-        //             scaled_rect_pos_y,
-        //             stack[i].bg_color,
-        //             width_bound * quantity as f32,
-        //             self.layout.sugarheight * self.layout.line_height,
-        //         );
-
-        //         // If the next rect background color is different the push rect
-        //         if is_last || rect_builder.color != stack[i + 1].bg_color {
-        //             self.rects.push(rect_builder.build());
-        //         }
-        //     }
-
-        //     if let Some(sugar_media) = &stack[i].media {
-        //         if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
-        //             rect.columns += 1.0;
-        //             rect.end_row = self.current_row.into();
-        //         } else {
-        //             // println!("miss {:?}", sugar_media.id);
-        //             self.graphic_rects.insert(
-        //                 sugar_media.id,
-        //                 GraphicRect {
-        //                     id: sugar_media.id,
-        //                     height: sugar_media.height,
-        //                     width: sugar_media.width,
-        //                     pos_x: scaled_rect_pos_x,
-        //                     pos_y: scaled_rect_pos_y,
-        //                     columns: 1.0,
-        //                     start_row: 1.0,
-        //                     end_row: 1.0,
-        //                 },
-        //             );
-        //         }
-        //     }
-
-        //     if repeated.reset_on_next() {
-        //         repeated.reset();
-        //     }
-
-        //     x += add_pos_x;
-        // }
-
-        // self.current_row += 1;
-        // self.text_y += self.layout.scaled_sugarheight * self.layout.line_height;
     }
 
     #[inline]

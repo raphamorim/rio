@@ -1,3 +1,5 @@
+use std::iter::Peekable;
+
 use crate::components::rect::Rect;
 use crate::font::{FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR};
 use crate::glyph::ab_glyph::PxScale;
@@ -34,7 +36,10 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn build_from(iterator: &mut impl Iterator<Item = Sugar>, pos: &Point) -> Self {
+    pub fn build_from(
+        iterator: &mut Peekable<impl Iterator<Item = Sugar>>,
+        pos: &Point,
+    ) -> Self {
         let sugar = iterator.next().unwrap();
 
         let font_id = FontId::from(&sugar.style);
@@ -51,15 +56,22 @@ impl Text {
         let quantity = if decoration.is_some() || media.is_some() {
             1
         } else {
-            1 + iterator
-                .take_while(|next_sugar| {
+            let mut counter = 1;
+
+            while iterator
+                .next_if(|next_sugar| {
                     next_sugar.content == sugar.content
                         && next_sugar.fg_color == sugar.fg_color
                         && next_sugar.bg_color == sugar.bg_color
                         && next_sugar.decoration == sugar.decoration
                         && next_sugar.media == sugar.media
                 })
-                .count()
+                .is_some()
+            {
+                counter += 1;
+            }
+
+            counter
         };
 
         Self {
