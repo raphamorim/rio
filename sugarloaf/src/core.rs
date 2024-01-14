@@ -120,7 +120,6 @@ impl From<(&Text, TextInfo)> for crate::components::text::OwnedText {
 pub struct RectBuilder {
     pub sugarwidth: f32,
     pub sugarheight: f32,
-    pub rect_pos_y: f32,
     pub line_height: f32,
     pub scale: f32,
 }
