@@ -84,6 +84,33 @@ impl Sequencer {
                                 route.redraw();
                             }
                         }
+                        RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                let mut terminal =
+                                    route.window.screen.ctx().current().terminal.lock();
+                                let graphics = terminal.graphics_take_queues();
+                                drop(terminal);
+                                if let Some(graphic_queues) = graphics {
+                                    for graphic_data in graphic_queues.pending {
+                                        route
+                                            .window
+                                            .screen
+                                            .sugarloaf
+                                            .graphics
+                                            .add(graphic_data);
+                                    }
+
+                                    for graphic_data in graphic_queues.remove_queue {
+                                        route
+                                            .window
+                                            .screen
+                                            .sugarloaf
+                                            .graphics
+                                            .remove(&graphic_data);
+                                    }
+                                }
+                            }
+                        }
                         RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
                                 route.report_error(&error);
