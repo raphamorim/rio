@@ -327,7 +327,6 @@ impl RectBrush {
                 // rpass.pop_debug_group();
                 // rpass.insert_debug_marker("Draw!");
                 rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-                drop(rpass);
             }
 
             i += MAX_INSTANCES;

@@ -121,7 +121,7 @@ impl BuildRectFor<&Text> for RectBuilder {
             Rect {
                 position: [pos.x, pos.y],
                 color: text.bg_color,
-                size: [text.width() as f32 * self.sugarwidth * 2., self.sugarheight],
+                size: [text.width() as f32 * self.sugarwidth, self.sugarheight],
             }
         };
 
