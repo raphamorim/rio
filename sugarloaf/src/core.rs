@@ -105,7 +105,7 @@ impl From<(&Text, TextInfo)> for crate::components::text::OwnedText {
 
 #[derive(Debug)]
 pub struct RectBuilder {
-    pub sugar_char_width: f32,
+    pub sugarwidth: f32,
     pub sugarheight: f32,
     pub scale: f32,
 }
@@ -115,16 +115,13 @@ impl BuildRectFor<&Text> for RectBuilder {
         let text_rect = {
             let pos = Point {
                 x: text.pos.x / self.scale,
-                y: text.pos.y / self.scale,
+                y: text.pos.y / self.scale / 5.0,
             };
 
             Rect {
                 position: [pos.x, pos.y],
                 color: text.bg_color,
-                size: [
-                    text.width() as f32 * self.sugar_char_width,
-                    self.sugarheight,
-                ],
+                size: [text.width() as f32 * self.sugarwidth * 2., self.sugarheight],
             }
         };
 
@@ -142,7 +139,7 @@ impl BuildRectFor<&Text> for RectBuilder {
                 position: [pos.x, pos.y],
                 color: decoration.color,
                 size: [
-                    text.width() as f32 * self.sugar_char_width * decoration.size.0,
+                    text.width() as f32 * self.sugarwidth * decoration.size.0,
                     self.sugarheight * decoration.size.1,
                 ],
             });

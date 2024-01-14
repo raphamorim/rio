@@ -310,15 +310,15 @@ impl Sugarloaf {
                 self.text_brush.queue(&section);
             }
 
-            // {
-            //     let rect_builder = RectBuilder {
-            //         sugar_char_width: 1.,
-            //         sugarheight: self.layout.sugarheight,
-            //         scale: self.ctx.scale,
-            //     };
+            {
+                let rect_builder = RectBuilder {
+                    sugarwidth: self.layout.sugarwidth,
+                    sugarheight: self.layout.sugarheight,
+                    scale: self.ctx.scale,
+                };
 
-            //     self.rects.extend(rect_builder.build_for(&text));
-            // }
+                self.rects.extend(rect_builder.build_for(&text));
+            }
 
             // if let Some(media) = &text.media {
             //     self.graphic_rects
@@ -511,8 +511,6 @@ impl Sugarloaf {
 
     #[inline]
     pub fn render(&mut self) {
-        self.reset_state();
-
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
                 let mut encoder = self.ctx.device.create_command_encoder(
@@ -596,8 +594,6 @@ impl Sugarloaf {
                     &mut self.ctx,
                 );
 
-                self.reset_state();
-
                 let _ = self
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
@@ -607,11 +603,15 @@ impl Sugarloaf {
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                panic!(
+                    "Swapchain error: {}. Rendering cannot continue.",
+                    wgpu::SurfaceError::OutOfMemory
+                )
             }
+            Err(_) => {}
         }
+
+        self.reset_state();
     }
 }
