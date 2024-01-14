@@ -71,27 +71,21 @@ fn bench_sugar_pile(c: &mut Criterion) {
                     content: ' ',
                     fg_color: [0.0, 0.0, 0.0, 1.0],
                     bg_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Default::default()
                 });
 
                 pile2.push(Sugar {
                     content: '«',
                     fg_color: [0.0, 0.0, 0.0, 1.0],
                     bg_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Default::default()
                 });
 
                 pile3.push(Sugar {
                     content: '≥',
                     fg_color: [0.0, 0.0, 0.0, 1.0],
                     bg_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Default::default()
                 });
             }
 
