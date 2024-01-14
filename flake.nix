@@ -134,7 +134,7 @@
 
         apps.default = {
           type = "app";
-          program = self'.packages.rio;
+          program = self'.packages.default;
         };
         packages.rio = pkgs.callPackage mkRio {};
 
