@@ -768,8 +768,9 @@ impl Sugarloaf {
                         .render_with_encoder(0, view, &mut encoder, None);
                 }
 
-                self.rect_brush
-                    .render(&mut encoder, view, &self.rects, &mut self.ctx);
+                self.layer_brush.end_frame();
+
+                self.rect_brush.render(&mut encoder, view, &self.rects, &mut self.ctx);
 
                 self.rects = vec![];
                 self.current_row = 0;
@@ -778,11 +779,8 @@ impl Sugarloaf {
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                let _ = self
-                    .rich_text_brush
+                self.rich_text_brush
                     .render(&mut self.ctx, &mut encoder, view);
-
-                self.layer_brush.end_frame();
 
                 for entry_render in
                     &self.graphic_rects.keys().cloned().collect::<Vec<_>>()

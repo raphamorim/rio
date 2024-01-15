@@ -2,13 +2,19 @@ use crate::components::rich_text::color::Color;
 use crate::components::rich_text::image_cache::TextureId;
 
 /// Batch geometry vertex.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct Vertex {
     pub pos: [f32; 4],
     pub color: Color,
     pub uv: [f32; 2],
 }
+
+#[allow(unsafe_code)]
+unsafe impl bytemuck::Zeroable for Vertex {}
+
+#[allow(unsafe_code)]
+unsafe impl bytemuck::Pod for Vertex {}
 
 /// Rectangle with floating point coordinates.
 #[derive(Copy, Clone, Default, Debug)]
@@ -37,7 +43,7 @@ impl From<[f32; 4]> for Rect {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Batch {
     image: Option<TextureId>,
     mask: Option<TextureId>,
@@ -333,7 +339,7 @@ impl BatchManager {
 }
 
 /// Resources and commands for drawing a composition.
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct DisplayList {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
@@ -347,21 +353,25 @@ impl DisplayList {
     }
 
     /// Returns the buffered vertices for the display list.
+    #[inline]
     pub fn vertices(&self) -> &[Vertex] {
         &self.vertices
     }
 
     /// Returns the buffered indices for the display list.
+    #[inline]
     pub fn indices(&self) -> &[u32] {
         &self.indices
     }
 
     /// Returns the sequence of display commands.
+    #[inline]
     pub fn commands(&self) -> &[Command] {
         &self.commands
     }
 
     /// Clears the display list.
+    #[inline]
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
