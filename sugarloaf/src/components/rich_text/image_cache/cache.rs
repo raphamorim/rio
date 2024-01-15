@@ -108,7 +108,16 @@ impl ImageCache {
         entry.epoch = epoch.0;
         if let Some(data) = request.data() {
             let atlas = self.atlases.get_mut(atlas_index)?;
-            fill(x, y, width, height, data, self.max_texture_size, &mut atlas.buffer, 4);
+            fill(
+                x,
+                y,
+                width,
+                height,
+                data,
+                self.max_texture_size,
+                &mut atlas.buffer,
+                4,
+            );
             atlas.dirty = true;
         }
         ImageId::new(entry.generation, entry_index as u32, request.has_alpha)
@@ -124,7 +133,8 @@ impl ImageCache {
             let standalone = self.images.get_mut(entry.owner as usize)?;
             standalone.next = self.free_images;
             self.free_images = entry.owner as u32;
-            self.events.push(Event::DestroyTexture(standalone.texture_id));
+            self.events
+                .push(Event::DestroyTexture(standalone.texture_id));
         } else {
             let atlas = self.atlases.get_mut(entry.owner as usize)?;
             atlas.alloc.deallocate(entry.x, entry.y, entry.width);
@@ -233,7 +243,7 @@ impl ImageCache {
                                 self.buffered_data.get(*start..*end).unwrap_or(&[])
                             }
                             None => &[],
-                        }
+                        },
                     })
                 }
                 Event::DestroyTexture(id) => {
@@ -295,7 +305,12 @@ impl ImageCache {
         count
     }
 
-    fn alloc_from_atlases(&mut self, format: PixelFormat, width: u16, height: u16) -> Option<(usize, u16, u16)> {
+    fn alloc_from_atlases(
+        &mut self,
+        format: PixelFormat,
+        width: u16,
+        height: u16,
+    ) -> Option<(usize, u16, u16)> {
         for (i, atlas) in self.atlases.iter_mut().enumerate() {
             if atlas.format != format {
                 continue;
@@ -355,7 +370,13 @@ impl ImageCache {
         let image = self.images.get_mut(index)?;
         image.texture_id = texture_id;
         image.used = true;
-        self.events.push(Event::CreateTexture(texture_id, format, width, height, pending_data));
+        self.events.push(Event::CreateTexture(
+            texture_id,
+            format,
+            width,
+            height,
+            pending_data,
+        ));
         Some(index)
     }
 }

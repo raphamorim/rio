@@ -1,5 +1,5 @@
-use crate::components::rich_text::util::{atomic::AtomicCounter, string::SmallString};
 use super::types::{FamilyKey, GenericFamily};
+use crate::components::rich_text::util::{atomic::AtomicCounter, string::SmallString};
 
 /// Ordered sequence of family names for font selection.
 #[derive(Clone, Debug)]
@@ -58,7 +58,9 @@ impl From<&str> for FamilyList {
     }
 }
 
-pub fn parse_families<'a>(families: &'a str) -> impl Iterator<Item = FamilyKey<'a>> + Clone {
+pub fn parse_families<'a>(
+    families: &'a str,
+) -> impl Iterator<Item = FamilyKey<'a>> + Clone {
     FamilyParser {
         source: families.as_bytes(),
         cur: 0,

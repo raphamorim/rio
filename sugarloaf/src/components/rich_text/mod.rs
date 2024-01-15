@@ -1,20 +1,24 @@
-pub mod doc;
-pub mod util;
-pub mod layout;
-pub mod color;
-pub mod text;
-mod image_cache;
 mod batch;
+pub mod color;
 mod compositor;
+pub mod doc;
+mod image_cache;
+pub mod layout;
+pub mod text;
+pub mod util;
 
+use crate::components::rich_text::compositor::Rect;
+use crate::components::rich_text::compositor::{Compositor, DisplayList};
+use crate::components::rich_text::compositor::{TextureEvent, TextureId};
 use crate::components::rich_text::layout::Direction;
 use crate::components::rich_text::layout::LayoutContext;
-use crate::components::rich_text::compositor::Rect;
-use crate::components::rich_text::text::UnderlineStyle;
-use crate::components::rich_text::text::TextRunStyle;
-use crate::components::rich_text::layout::Glyph;
+use std::collections::HashMap;
+use wgpu::Texture;
+// use crate::components::rich_text::text::UnderlineStyle;
+// use crate::components::rich_text::text::TextRunStyle;
+// use crate::components::rich_text::layout::Glyph;
 use crate::components::rich_text::color::Color;
-use crate::components::core::orthographic_projection;
+
 use crate::components::rich_text::layout::Paragraph;
 use crate::context::Context;
 use bytemuck::{Pod, Zeroable};
@@ -62,6 +66,7 @@ fn create_view_proj(width: f32, height: f32) -> [f32; 16] {
     ]
 }
 
+const INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
 impl Uniforms {
     fn new(transformation: [f32; 16], width: f32, height: f32, scale: f32) -> Uniforms {
@@ -102,17 +107,6 @@ fn vertex(pos: [f32; 2]) -> Vertex {
     }
 }
 
-// const QUAD_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
-
-// #[derive(Debug, Default, Clone, Copy)]
-// #[repr(C)]
-// pub struct Rect {
-//     /// The position of the [`Rect`].
-//     pub position: [f32; 2],
-//     pub color: [f32; 4],
-//     pub size: [f32; 2],
-// }
-
 #[allow(unsafe_code)]
 unsafe impl bytemuck::Zeroable for Rect {}
 
@@ -121,14 +115,14 @@ unsafe impl bytemuck::Pod for Rect {}
 
 // TODO: Implement square
 fn create_vertices_rect() -> Vec<Vertex> {
-    let vertex_data = [
-        vertex([0.0, 0.0]),
-        vertex([0.5, 0.0]),
-        vertex([0.5, 1.0]),
-        vertex([0.0, 1.0]),
-    ];
-
-    vertex_data.to_vec()
+    // let vertex_data = [
+    //     vertex([0.0, 0.0]),
+    //     vertex([0.5, 0.0]),
+    //     vertex([0.5, 1.0]),
+    //     vertex([0.0, 1.0]),
+    // ];
+    vec![]
+    // vertex_data.to_vec()
 }
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
@@ -150,8 +144,13 @@ pub struct RichTextBrush {
     bind_group: wgpu::BindGroup,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
+    textures: HashMap<TextureId, Texture>,
+    index_buf: wgpu::Buffer,
+    index_count: usize,
     current_transform: [f32; 16],
     scale: f32,
+    comp: Compositor,
+    dlist: DisplayList,
     document: doc::Document,
     rich_text_layout: Paragraph,
     rich_text_layout_context: LayoutContext,
@@ -173,6 +172,12 @@ impl RichTextBrush {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertex_data),
             usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(&INDICES),
+            usage: wgpu::BufferUsages::INDEX,
         });
 
         // Create pipeline layout
@@ -215,7 +220,9 @@ impl RichTextBrush {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("rich_text.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "rich_text.wgsl"
+            ))),
         });
 
         let vertex_buffers = [
@@ -280,6 +287,11 @@ impl RichTextBrush {
 
         // Done
         RichTextBrush {
+            index_buf,
+            index_count: 0,
+            textures: HashMap::default(),
+            comp: Compositor::new(2048),
+            dlist: DisplayList::new(),
             rich_text_layout,
             rich_text_layout_context,
             document,
@@ -295,11 +307,9 @@ impl RichTextBrush {
 
     pub fn render(
         &mut self,
+        ctx: &mut Context,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
-        dimensions: (u32, u32),
-        instances: &[Rect],
-        ctx: &mut Context,
     ) {
         // let cur_time = Instant::now();
         // let dt = cur_time.duration_since(last_time).as_secs_f32();
@@ -327,20 +337,23 @@ impl RichTextBrush {
         //     needs_update = true;
         // }
         // if needs_update {
-            let mut lb = self.rich_text_layout_context.builder(Direction::LeftToRight, None, ctx.scale);
-            self.document.layout(&mut lb);
-            self.rich_text_layout.clear();
-            lb.build_into(&mut self.rich_text_layout);
-            // if first_run {
-            //     selection = Selection::from_point(&layout, 0., 0.);
-            // }
-            // first_run = false;
-            //layout.build_new_clusters();
-            // needs_update = false;
-            // size_changed = true;
-            // selection_changed = true;
+        let mut lb = self.rich_text_layout_context.builder(
+            Direction::LeftToRight,
+            None,
+            ctx.scale,
+        );
+        self.document.layout(&mut lb);
+        self.rich_text_layout.clear();
+        lb.build_into(&mut self.rich_text_layout);
+        // if first_run {
+        //     selection = Selection::from_point(&layout, 0., 0.);
         // }
-
+        // first_run = false;
+        //layout.build_new_clusters();
+        // needs_update = false;
+        // size_changed = true;
+        // selection_changed = true;
+        // }
 
         // if size_changed {
         //     let lw = w as f32 - margin * 2.;
@@ -367,9 +380,18 @@ impl RichTextBrush {
         //     (color::BLACK, color::WHITE)
         // };
 
+        let margin = 12. * ctx.scale;
+
         // Render
-        // self.compositor.begin();
-        // draw_layout(&mut self.compositor, &layout, margin, margin, 512., fg);
+        self.comp.begin();
+        draw_layout(
+            &mut self.comp,
+            &self.rich_text_layout,
+            margin,
+            margin,
+            512.,
+            color::WHITE_SMOKE,
+        );
 
         // for r in &selection_rects {
         //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
@@ -385,8 +407,8 @@ impl RichTextBrush {
         //     let rect = [pt[0].round() + margin, pt[1].round() + margin, 1. * dpi, ch];
         //     comp.draw_rect(rect, 0.1, fg);
         // }
-        // dlist.clear();
-        // device.finish_composition(&mut comp, &mut dlist);
+        self.dlist.clear();
+        self.finish_composition();
 
         // unsafe {
         //     gl::Viewport(0, 0, w as i32, h as i32);
@@ -402,6 +424,74 @@ impl RichTextBrush {
         // }
         // windowed_context.swap_buffers().unwrap();
     }
+
+    fn handle_texture_event(&mut self, event: &TextureEvent) {
+        match event {
+            TextureEvent::CreateTexture {
+                id,
+                format,
+                width,
+                height,
+                data,
+            } => {
+                // let tex = Texture::new(*width as u32, *height as u32);
+                // if let Some(data) = data {
+                //     tex.update(data);
+                // }
+                // self.textures.insert(*id, tex);
+            }
+            TextureEvent::UpdateTexture {
+                id,
+                x,
+                y,
+                width,
+                height,
+                data,
+            } => {
+                // if let Some(tex) = self.textures.get(&id) {
+                //     tex.update(data);
+                // }
+            }
+            TextureEvent::DestroyTexture(id) => {
+                self.textures.remove(id);
+            }
+        }
+    }
+
+    fn finish_composition(&mut self) {
+        self.comp.finish(&mut self.dlist, |event| {
+            match event {
+                TextureEvent::CreateTexture {
+                    id,
+                    format,
+                    width,
+                    height,
+                    data,
+                } => {
+                    // let tex = Texture::new(*width as u32, *height as u32);
+                    // if let Some(data) = data {
+                    //     tex.update(data);
+                    // }
+                    // self.textures.insert(*id, tex);
+                }
+                TextureEvent::UpdateTexture {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
+                    data,
+                } => {
+                    // if let Some(tex) = self.textures.get(&id) {
+                    //     tex.update(data);
+                    // }
+                }
+                TextureEvent::DestroyTexture(id) => {
+                    self.textures.remove(&id);
+                }
+            }
+        });
+    }
 }
 
 fn draw_layout(
@@ -416,8 +506,8 @@ fn draw_layout(
     for line in layout.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
-            use text::*;
             use compositor::*;
+            use text::*;
             let font = run.font();
             let py = line.baseline() + y;
             let run_x = px;
@@ -503,7 +593,9 @@ fn build_document() -> doc::Document {
     db.leave_span();
     db.add_text(WIKI_TYPOGRAPHY_REST);
     db.enter_span(&[S::LineSpacing(1.)]);
-    db.add_text(" Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n");
+    db.add_text(
+        " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
+    );
     db.leave_span();
     db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
     db.add_text("A true ");
@@ -518,4 +610,3 @@ fn build_document() -> doc::Document {
 }
 
 const WIKI_TYPOGRAPHY_REST: &'static str = " when displayed. The arrangement of type involves selecting typefaces, point sizes, line lengths, line-spacing (leading), and letter-spacing (tracking), and adjusting the space between pairs of letters (kerning). The term typography is also applied to the style, arrangement, and appearance of the letters, numbers, and symbols created by the process.";
-

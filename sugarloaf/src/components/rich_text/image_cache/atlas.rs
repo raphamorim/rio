@@ -70,14 +70,10 @@ impl AtlasAllocator {
             None => {
                 let line_index = self.allocate_line(padded_height)?;
                 (line_index, FreeSlot::Direct(0))
-            }            
+            }
         };
         let line = self.lines.get_mut(line_index)?;
-        let y = if line.y == 0 {
-            0
-        } else {
-            line.y + 1
-        };        
+        let y = if line.y == 0 { 0 } else { line.y + 1 };
         match slot {
             FreeSlot::Direct(x) => {
                 line.state = (x as u32 + padded_width as u32).min(self.width as u32);
@@ -105,11 +101,11 @@ impl AtlasAllocator {
                         }
                     }
                     self.free_slot(slot_index);
-                }                
+                }
                 return Some((x, y));
             }
         }
-    } 
+    }
 
     /// Deallocates the slot with the specified coordinates and width.
     pub fn deallocate(&mut self, x: u16, y: u16, width: u16) -> bool {
@@ -119,14 +115,20 @@ impl AtlasAllocator {
             self.y = line.y;
         }
         res
-    }  
+    }
 
     fn deallocate_impl(&mut self, x: u16, y: u16, width: u16) -> Option<()> {
         let (line_index, &line) = if y == 0 {
-            self.lines.iter().enumerate().find(|(_, line)| line.y == y)?
+            self.lines
+                .iter()
+                .enumerate()
+                .find(|(_, line)| line.y == y)?
         } else {
             let y = y - 1;
-            self.lines.iter().enumerate().find(|(_, line)| line.y == y)?
+            self.lines
+                .iter()
+                .enumerate()
+                .find(|(_, line)| line.y == y)?
         };
         let end = (x as u32 + width as u32 + 1).min(self.width as u32);
         let actual_width = (end - x as u32) as u16;
@@ -142,7 +144,8 @@ impl AtlasAllocator {
             let slot_index = self.allocate_slot(x, actual_width)?;
             let remaining = self.width() - offset as u16;
             if remaining != 0 {
-                let remaining_slot_index = self.allocate_slot(offset as u16, remaining)?;
+                let remaining_slot_index =
+                    self.allocate_slot(offset as u16, remaining)?;
                 self.slots[slot_index as usize].next = remaining_slot_index;
             }
             self.lines[line_index].state = FRAGMENTED_BIT | slot_index;
@@ -163,7 +166,8 @@ impl AtlasAllocator {
             match prev_index {
                 Some(prev_index) => {
                     let merge_prev = self.slots[prev_index as usize].end() == x as u32;
-                    let merge_next = next_index != !0 && self.slots[next_index as usize].x == end as u16;
+                    let merge_next = next_index != !0
+                        && self.slots[next_index as usize].x == end as u16;
                     match (merge_prev, merge_next) {
                         (true, true) => {
                             let next = self.slots[next_index as usize];
@@ -175,7 +179,7 @@ impl AtlasAllocator {
                         (true, false) => {
                             let prev = &mut self.slots[prev_index as usize];
                             prev.width += actual_width;
-                        }                        
+                        }
                         (false, true) => {
                             let next = &mut self.slots[next_index as usize];
                             next.width = (next.end() - x as u32) as u16;
@@ -184,7 +188,7 @@ impl AtlasAllocator {
                         (false, false) => {
                             let slot_index = self.allocate_slot(x, end as u16 - x)?;
                             self.slots[slot_index as usize].next = next_index;
-                            self.slots[prev_index as usize].next = slot_index;  
+                            self.slots[prev_index as usize].next = slot_index;
                         }
                     }
                 }
@@ -221,7 +225,7 @@ impl AtlasAllocator {
             height: padded_height,
             state: 0,
         });
-        self.y = bottom;        
+        self.y = bottom;
         Some(line_index)
     }
 
@@ -244,7 +248,7 @@ impl AtlasAllocator {
         self.slots[index as usize].next = self.free_slot;
         self.free_slot = index;
     }
-    
+
     fn check_width(&self, line: &Line, width: u16) -> Option<FreeSlot> {
         if line.state & FRAGMENTED_BIT == 0 {
             let x = (line.state & LOW_BITS) as u16;
@@ -258,21 +262,25 @@ impl AtlasAllocator {
             let mut best_slot = None;
             while cur_slot_index != !0 {
                 let slot = self.slots.get(cur_slot_index as usize)?;
-                if slot.width >= width || (slot.end() == self.width as u32 && slot.width >= (width - 1)) {
+                if slot.width >= width
+                    || (slot.end() == self.width as u32 && slot.width >= (width - 1))
+                {
                     match best_slot {
                         Some((_, _, best_width)) => {
                             if slot.width < best_width {
-                                best_slot = Some((prev_slot_index, cur_slot_index, slot.width));
+                                best_slot =
+                                    Some((prev_slot_index, cur_slot_index, slot.width));
                             }
                         }
                         None => {
-                            best_slot = Some((prev_slot_index, cur_slot_index, slot.width));
+                            best_slot =
+                                Some((prev_slot_index, cur_slot_index, slot.width));
                         }
                     }
                 }
                 prev_slot_index = Some(cur_slot_index);
                 cur_slot_index = slot.next;
-            }           
+            }
             let (prev, index, _) = best_slot?;
             return Some(FreeSlot::Node(prev, index));
         }
@@ -308,7 +316,7 @@ struct Line {
     /// This field encodes the current state of the line. If there
     /// have been no evictions, then the high bit will be clear and
     /// the remaining bits will contain the x-offset of the next
-    /// available region (bump pointer allocation). If the high bit 
+    /// available region (bump pointer allocation). If the high bit
     /// is set, then the low bits are an index into the free node
     /// list.    
     state: u32,

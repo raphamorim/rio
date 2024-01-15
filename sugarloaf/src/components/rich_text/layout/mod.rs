@@ -23,12 +23,12 @@ pub mod iter {
     pub use super::layout::{Clusters, Glyphs, Lines, Runs};
 }
 
+pub use builder::{LayoutContext, ParagraphBuilder};
 #[doc(inline)]
 pub use font::{Font, FontLibrary, FontLibraryBuilder};
-pub use builder::{ParagraphBuilder, LayoutContext};
 pub use layout::{Cluster, Glyph, Line, Run};
 pub use line_breaker::{Alignment, BreakLines};
-pub use nav::{Selection, Erase, ExtendTo};
+pub use nav::{Erase, ExtendTo, Selection};
 pub use span_style::*;
 
 use layout_data::{LayoutData, LineLayoutData};

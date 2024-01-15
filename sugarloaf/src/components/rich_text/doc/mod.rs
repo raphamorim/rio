@@ -1,6 +1,6 @@
+use crate::components::rich_text::layout::*;
 use core::borrow::Borrow;
 use core::ops::Range;
-use crate::components::rich_text::layout::*;
 
 #[derive(Clone, Default)]
 pub struct Document {

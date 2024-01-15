@@ -1,6 +1,6 @@
 pub use super::font::FamilyList;
 pub use swash::text::Language;
-use swash::{Stretch, Style, Setting, Weight};
+use swash::{Setting, Stretch, Style, Weight};
 
 use std::borrow::Cow;
 
@@ -93,7 +93,7 @@ impl<'a> SpanStyle<'a> {
             Self::LineSpacing(v) => S::LineSpacing(v),
             Self::Underline(v) => S::Underline(v),
             Self::UnderlineOffset(v) => S::UnderlineOffset(v),
-            Self::UnderlineSize(v) => S::UnderlineSize(v),            
+            Self::UnderlineSize(v) => S::UnderlineSize(v),
             Self::TextTransform(v) => S::TextTransform(v),
         }
     }

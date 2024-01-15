@@ -58,8 +58,11 @@ impl StaticIndex {
                 self.cjk[Simplified as usize] =
                     self.find_fallbacks(&["microsoft yahei", "simsun", "simsun-extb"]);
                 // Traditional Chinese
-                self.cjk[Traditional as usize] =
-                    self.find_fallbacks(&["microsoft jhenghei", "pmingliu", "pmingliu-extb"]);
+                self.cjk[Traditional as usize] = self.find_fallbacks(&[
+                    "microsoft jhenghei",
+                    "pmingliu",
+                    "pmingliu-extb",
+                ]);
                 self.cjk[Cjk::None as usize] = self.cjk[Traditional as usize];
                 // Japanese
                 self.cjk[Japanese as usize] = self.find_fallbacks(&[
@@ -179,7 +182,10 @@ impl StaticIndex {
                     Devanagari,
                     &["noto sans devanagari", "noto serif devanagari"],
                 );
-                self.map_script(Malayalam, &["noto sans malayalam", "noto serif malayalam"]);
+                self.map_script(
+                    Malayalam,
+                    &["noto sans malayalam", "noto serif malayalam"],
+                );
                 self.map_script(Myanmar, &["noto sans myanmar", "noto serif myanmar"]);
             }
         }
@@ -204,7 +210,8 @@ impl StaticIndex {
                 self.generic[Monospace as usize] = self.find_family(&["courier"]);
                 self.generic[Fantasy as usize] = self.find_family(&["papyrus"]);
                 self.generic[Cursive as usize] = self.find_family(&["apple chancery"]);
-                self.generic[SystemUI as usize] = self.find_family(&["system font", "helvetica"]);
+                self.generic[SystemUI as usize] =
+                    self.find_family(&["system font", "helvetica"]);
                 self.generic[Emoji as usize] = self.find_family(&["apple color emoji"]);
             }
             Os::Ios => {
@@ -213,12 +220,14 @@ impl StaticIndex {
                 self.generic[Monospace as usize] = self.find_family(&["courier"]);
                 self.generic[Fantasy as usize] = self.find_family(&["papyrus"]);
                 self.generic[Cursive as usize] = self.find_family(&["snell roundhand"]);
-                self.generic[SystemUI as usize] = self.find_family(&["system font", "helvetica"]);
+                self.generic[SystemUI as usize] =
+                    self.find_family(&["system font", "helvetica"]);
                 self.generic[Emoji as usize] = self.find_family(&["apple color emoji"]);
             }
             Os::Android => {
                 self.generic[SansSerif as usize] = self.find_family(&["roboto"]);
-                self.generic[Serif as usize] = self.find_family(&["noto serif", "droid serif"]);
+                self.generic[Serif as usize] =
+                    self.find_family(&["noto serif", "droid serif"]);
                 self.generic[Monospace as usize] = self.find_family(&["droid sans mono"]);
                 self.generic[Fantasy as usize] = self.find_family(&["noto serif"]);
                 self.generic[Cursive as usize] = self.find_family(&["dancing script"]);
@@ -234,14 +243,16 @@ impl StaticIndex {
                     "noto serif",
                     "times new roman",
                 ]);
-                self.generic[Monospace as usize] = self.find_family(&["dejavu sans mono"]);
+                self.generic[Monospace as usize] =
+                    self.find_family(&["dejavu sans mono"]);
                 self.generic[Fantasy as usize] =
                     self.find_family(&["liberation serif", "dejavu serif"]);
                 self.generic[Cursive as usize] =
                     self.find_family(&["liberation serif", "dejavu serif"]);
                 self.generic[SystemUI as usize] =
                     self.find_family(&["liberation sans", "dejavu sans"]);
-                self.generic[Emoji as usize] = self.find_family(&["noto color emoji", "emoji one"]);
+                self.generic[Emoji as usize] =
+                    self.find_family(&["noto color emoji", "emoji one"]);
             }
         }
     }
@@ -307,7 +318,10 @@ impl StaticIndex {
     }
 
     /// Returns a font family entry for the specified family key.
-    pub fn family_by_key<'a>(&'a self, key: impl Into<FamilyKey<'a>>) -> Option<FamilyEntry<'a>> {
+    pub fn family_by_key<'a>(
+        &'a self,
+        key: impl Into<FamilyKey<'a>>,
+    ) -> Option<FamilyEntry<'a>> {
         match key.into() {
             FamilyKey::Id(id) => self.family_by_id(id),
             FamilyKey::Name(name) => self.family_by_name(name),

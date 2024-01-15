@@ -23,9 +23,9 @@ pub use builder::{FontLibraryBuilder, MmapHint};
 pub use family::FamilyList;
 pub use index::{FamilyEntry, FontEntry, SourceEntry};
 pub use library::FontLibrary;
-pub use types::{FamilyId, FontId, SourceId, FontKey, FamilyKey};
+pub use types::{FamilyId, FamilyKey, FontId, FontKey, SourceId};
 
-use swash::{CacheKey, iter::*, *};
+use swash::{iter::*, CacheKey, *};
 
 /// Shared reference to a font.
 #[derive(Clone)]
@@ -80,7 +80,10 @@ impl Font {
 
     /// Returns glyph metrics for the font and the specified normalized
     /// variation coordinates.
-    pub fn glyph_metrics<'a>(&'a self, coords: &'a [NormalizedCoord]) -> GlyphMetrics<'a> {
+    pub fn glyph_metrics<'a>(
+        &'a self,
+        coords: &'a [NormalizedCoord],
+    ) -> GlyphMetrics<'a> {
         self.as_ref().glyph_metrics(coords)
     }
 

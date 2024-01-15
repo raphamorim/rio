@@ -285,7 +285,9 @@ impl<'a> ParagraphBuilder<'a> {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
-        self.s.span_stack.push(SpanId(self.s.spans.len() as u32 - 1));
+        self.s
+            .span_stack
+            .push(SpanId(self.s.spans.len() as u32 - 1));
         self.add_text(" ");
         for _ in 0..self.dir_depth {
             const PDI: char = '\u{2069}';
@@ -364,7 +366,9 @@ impl<'a> ParagraphBuilder<'a> {
                 last_features = frag.features;
                 last_vars = frag.vars;
                 let range = frag.start..frag.end;
-                for (&props, &level) in self.s.text_info[range.clone()].iter().zip(&levels[range]) {
+                for (&props, &level) in
+                    self.s.text_info[range.clone()].iter().zip(&levels[range])
+                {
                     let script = props.script();
                     let real = real_script(script);
                     if (script != last_script && real) || level != last_level {
@@ -582,7 +586,13 @@ where
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            layout.push_run(&state.state.spans, state.font.clone().unwrap(), state.size, state.level, shaper);
+            layout.push_run(
+                &state.state.spans,
+                state.font.clone().unwrap(),
+                state.size,
+                state.level,
+                shaper,
+            );
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -596,7 +606,13 @@ where
         }
         let next_font = fcx.map_cluster(cluster, &mut synth);
         if next_font != state.font || synth != state.synth {
-            layout.push_run(&state.state.spans, state.font.clone().unwrap(), state.size, state.level, shaper);
+            layout.push_run(
+                &state.state.spans,
+                state.font.clone().unwrap(),
+                state.size,
+                state.level,
+                shaper,
+            );
             state.font = next_font;
             state.synth = synth;
             return true;

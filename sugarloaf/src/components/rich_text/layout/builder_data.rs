@@ -5,7 +5,7 @@ use super::{
 };
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
-use swash::{Stretch, Style, Setting, Weight};
+use swash::{Setting, Stretch, Style, Weight};
 
 /// Data that describes a fragment.
 #[derive(Copy, Clone)]

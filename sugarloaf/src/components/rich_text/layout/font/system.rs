@@ -32,4 +32,3 @@ pub const OS: Os = Os::Android;
 
 #[cfg(not(any(unix, windows)))]
 pub const OS: Os = Os::Other;
-

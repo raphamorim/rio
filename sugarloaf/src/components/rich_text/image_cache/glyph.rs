@@ -1,12 +1,15 @@
-use super::{Epoch, ImageId, ImageLocation, AddImage, ImageData};
 use super::cache::ImageCache;
 use super::PixelFormat;
-use swash::FontRef;
-use swash::scale::{*, image::{Content, Image as GlyphImage}};
-use swash::zeno::{Format, Vector};
-use std::collections::HashMap;
+use super::{AddImage, Epoch, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
+use std::collections::HashMap;
+use swash::scale::{
+    image::{Content, Image as GlyphImage},
+    *,
+};
+use swash::zeno::{Format, Vector};
+use swash::FontRef;
 
 const IS_MACOS: bool = cfg!(target_os = "macos");
 
@@ -43,7 +46,9 @@ impl GlyphCache {
         let quant_size = (size * 32.) as u16;
         let entry = get_entry(&mut self.fonts, font.key.value(), coords);
         entry.epoch = epoch;
-        let scaler = self.scx.builder(font)
+        let scaler = self
+            .scx
+            .builder(font)
             .hint(!IS_MACOS)
             .size(size)
             .normalized_coords(coords)
@@ -55,7 +60,7 @@ impl GlyphCache {
             scaler,
             scaled_image: &mut self.img,
             quant_size,
-        }        
+        }
     }
 
     pub fn prune(&mut self, epoch: Epoch, images: &mut ImageCache) {
@@ -69,7 +74,7 @@ impl GlyphCache {
                 } else {
                     true
                 }
-            });    
+            });
         }
     }
 
@@ -81,7 +86,11 @@ impl GlyphCache {
     }
 }
 
-fn get_entry<'a>(fonts: &'a mut HashMap<FontKey, FontEntry>, id: u64, coords: &[i16]) -> &'a mut FontEntry {
+fn get_entry<'a>(
+    fonts: &'a mut HashMap<FontKey, FontEntry>,
+    id: u64,
+    coords: &[i16],
+) -> &'a mut FontEntry {
     let key = (id, Coords::Ref(coords));
     if let Some(entry) = fonts.get_mut(&key) {
         // Remove this unsafe when Rust learns that early returns should not
@@ -91,8 +100,8 @@ fn get_entry<'a>(fonts: &'a mut HashMap<FontKey, FontEntry>, id: u64, coords: &[
         return unsafe { core::mem::transmute(entry) };
     }
     let key = FontKey {
-        key: (id, Coords::new(coords)), 
-    };        
+        key: (id, Coords::new(coords)),
+    };
     fonts.entry(key).or_default()
 }
 
@@ -102,14 +111,14 @@ pub struct GlyphCacheSession<'a> {
     images: &'a mut ImageCache,
     scaler: Scaler<'a>,
     scaled_image: &'a mut GlyphImage,
-    quant_size: u16,    
+    quant_size: u16,
 }
 
 impl<'a> GlyphCacheSession<'a> {
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
         self.images.get(self.epoch, image)
     }
-  
+
     pub fn get(&mut self, id: u16, x: f32, y: f32) -> Option<GlyphEntry> {
         let subpx = [SubpixelOffset::quantize(x), SubpixelOffset::quantize(y)];
         let key = GlyphKey {
@@ -128,7 +137,7 @@ impl<'a> GlyphCacheSession<'a> {
             .format(Format::CustomSubpixel([0.3, 0., -0.3]))
             .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
             .embolden(embolden)
-            .render_into(&mut self.scaler, id, self.scaled_image) 
+            .render_into(&mut self.scaler, id, self.scaled_image)
         {
             let p = self.scaled_image.placement;
             let w = p.width as u16;
@@ -161,7 +170,7 @@ impl<'a> GlyphCacheSession<'a> {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct FontKey {
-    key: (u64, Coords<'static>)
+    key: (u64, Coords<'static>),
 }
 
 impl<'a> Borrow<(u64, Coords<'a>)> for FontKey {
@@ -182,7 +191,7 @@ enum Coords<'a> {
     None,
     Inline(u8, [i16; 8]),
     Heap(Vec<i16>),
-    Ref(&'a [i16])
+    Ref(&'a [i16]),
 }
 
 impl Coords<'static> {
@@ -263,7 +272,7 @@ impl DescenderRegion {
             if image.content == Content::Mask {
                 for y in y1..y2 {
                     let mut has_ink = false;
-                    let mut in_ink = false;                    
+                    let mut in_ink = false;
                     let offset = y * w;
                     if let Some(row) = image.data.get(offset..offset + w) {
                         for (i, alpha) in row.iter().enumerate() {
@@ -281,7 +290,7 @@ impl DescenderRegion {
                     }
                     if in_ink {
                         end = w as u16;
-                    }                    
+                    }
                 }
             } else {
                 for y in y1..y2 {
@@ -290,7 +299,11 @@ impl DescenderRegion {
                     let offset = y * w * 4;
                     if let Some(row) = image.data.get(offset..offset + w * 4) {
                         for (i, rgba) in row.chunks_exact(4).enumerate() {
-                            if rgba[0] != 0 || rgba[1] != 0 || rgba[2] != 0 || rgba[3] != 0 {
+                            if rgba[0] != 0
+                                || rgba[1] != 0
+                                || rgba[2] != 0
+                                || rgba[3] != 0
+                            {
                                 if !has_ink {
                                     has_ink = true;
                                     start = start.min(i as u16);

@@ -8,7 +8,7 @@ use crate::components::rich_text::util::string::SmallString;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::SystemTime;
-use swash::{CacheKey, Attributes, Stretch, Style, Weight};
+use swash::{Attributes, CacheKey, Stretch, Style, Weight};
 
 #[derive(Clone)]
 pub struct FamilyData {
@@ -142,7 +142,9 @@ impl FamilyData {
             // followed by weights less than the target weight in descending
             // order
             for font in self.fonts.iter().rev().filter(|f| {
-                f.stretch == matching_stretch && f.style == matching_style && f.weight < weight
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight < weight
             }) {
                 return Some(font.id);
             }
@@ -162,7 +164,9 @@ impl FamilyData {
             // weights less than or equal to the desired weight are checked in
             // descending order
             for font in self.fonts.iter().rev().filter(|f| {
-                f.stretch == matching_stretch && f.style == matching_style && f.weight <= weight
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight <= weight
             }) {
                 return Some(font.id);
             }
@@ -172,7 +176,9 @@ impl FamilyData {
                 .fonts
                 .iter()
                 .filter(|f| {
-                    f.stretch == matching_stretch && f.style == matching_style && f.weight > weight
+                    f.stretch == matching_stretch
+                        && f.style == matching_style
+                        && f.weight > weight
                 })
                 .map(|f| f.id)
                 .next();
@@ -181,7 +187,9 @@ impl FamilyData {
             // weights greater than or equal to the desired weight are checked
             // in ascending order
             for font in self.fonts.iter().filter(|f| {
-                f.stretch == matching_stretch && f.style == matching_style && f.weight >= weight
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight >= weight
             }) {
                 return Some(font.id);
             }
@@ -192,7 +200,9 @@ impl FamilyData {
                 .iter()
                 .rev()
                 .filter(|f| {
-                    f.stretch == matching_stretch && f.style == matching_style && f.weight < weight
+                    f.stretch == matching_stretch
+                        && f.style == matching_style
+                        && f.weight < weight
                 })
                 .map(|f| f.id)
                 .next();
@@ -244,7 +254,9 @@ impl FileData {
             }
             _ => {}
         }
-        if let Ok(data) = SharedData::from_file(&self.path, self.mmap, Some(self.timestamp)) {
+        if let Ok(data) =
+            SharedData::from_file(&self.path, self.mmap, Some(self.timestamp))
+        {
             *status = FileDataStatus::Present(data.downgrade());
             Some(data)
         } else {
