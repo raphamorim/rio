@@ -1,6 +1,8 @@
-pub use crate::components::rich_text::batch::{Command, DisplayList, Rect, Vertex, Pipeline};
+pub use crate::components::rich_text::batch::{
+    Command, DisplayList, Pipeline, Rect, Vertex,
+};
 pub use crate::components::rich_text::image_cache::{
-    Epoch, AddImage, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
+    AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 
 use crate::components::rich_text::batch::BatchManager;
@@ -71,7 +73,13 @@ impl Compositor {
     }
 
     /// Draws an image with the specified rectangle, depth and color.
-    pub fn draw_image(&mut self, rect: impl Into<Rect>, depth: f32, color: Color, image: ImageId) {
+    pub fn draw_image(
+        &mut self,
+        rect: impl Into<Rect>,
+        depth: f32,
+        color: Color,
+        image: ImageId,
+    ) {
         if let Some(img) = self.images.get(self.epoch, image) {
             self.batches.add_image_rect(
                 &rect.into(),
@@ -85,18 +93,27 @@ impl Compositor {
     }
 
     /// Draws a text run.
-    pub fn draw_glyphs<I>(&mut self, rect: impl Into<Rect>, depth: f32, style: &TextRunStyle, glyphs: I)
-    where
+    pub fn draw_glyphs<I>(
+        &mut self,
+        rect: impl Into<Rect>,
+        depth: f32,
+        style: &TextRunStyle,
+        glyphs: I,
+    ) where
         I: Iterator,
         I::Item: Borrow<Glyph>,
     {
         let rect = rect.into();
-        let (underline, underline_offset, underline_size, underline_color) = match style.underline {
-            Some(underline) => {
-                (true, underline.offset.round() as i32, underline.size.round().max(1.), underline.color)
-            }
-            _ => (false, 0, 0., Color::default())
-        };
+        let (underline, underline_offset, underline_size, underline_color) =
+            match style.underline {
+                Some(underline) => (
+                    true,
+                    underline.offset.round() as i32,
+                    underline.size.round().max(1.),
+                    underline.color,
+                ),
+                _ => (false, 0, 0., Color::default()),
+            };
         if underline {
             self.intercepts.clear();
         }
@@ -106,11 +123,11 @@ impl Compositor {
             style.font,
             style.font_coords,
             style.font_size,
-        );        
-        let subpx_bias = (0.125, 0.);    
-        let color = style.color;    
+        );
+        let subpx_bias = (0.125, 0.);
+        let color = style.color;
         let x = rect.x;
-        for g in glyphs {           
+        for g in glyphs {
             let glyph = g.borrow();
             let entry = session.get(glyph.id, glyph.x, glyph.y);
             if let Some(entry) = entry {
@@ -144,7 +161,7 @@ impl Compositor {
                                 self.intercepts.push(desc_ink);
                             }
                         }
-                    }                                
+                    }
                 }
             }
         }
@@ -157,15 +174,22 @@ impl Compositor {
             let uy = style.baseline - underline_offset as f32;
             for range in self.intercepts.iter() {
                 if ux < range.0 {
-                    self.batches.add_rect(&Rect::new(ux, uy, range.0 - ux, underline_size as f32), depth, underline_color);
+                    self.batches.add_rect(
+                        &Rect::new(ux, uy, range.0 - ux, underline_size as f32),
+                        depth,
+                        underline_color,
+                    );
                 }
                 ux = range.1;
             }
             let end = x + rect.width;
             if ux < end {
-                self.draw_rect(Rect::new(ux, uy, end - ux, underline_size), depth, underline_color);
+                self.draw_rect(
+                    Rect::new(ux, uy, end - ux, underline_size),
+                    depth,
+                    underline_color,
+                );
             }
-        }        
+        }
     }
 }
-

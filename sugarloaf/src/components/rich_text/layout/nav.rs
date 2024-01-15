@@ -93,7 +93,9 @@ impl Selection {
                 let prev = i.saturating_sub(1).min(layout.data.clusters.len() - 1) as u32;
                 let after = offset != 0 && !layout.line_data.is_rtl(prev);
                 let visual = layout.line_data.logical_to_visual(prev);
-                return Self::from_focus(Node::from_visual_cluster(layout, visual, after));
+                return Self::from_focus(Node::from_visual_cluster(
+                    layout, visual, after,
+                ));
             }
         }
         Self::from_focus(Node::from_visual_cluster(
@@ -110,7 +112,8 @@ impl Selection {
 
     /// Returns the visual geometry of the focus.
     pub fn cursor(&self, layout: &Paragraph) -> ([f32; 2], f32, bool) {
-        let node = Node::from_visual_cluster(layout, self.focus.cluster, self.focus.after);
+        let node =
+            Node::from_visual_cluster(layout, self.focus.cluster, self.focus.after);
         let line = Line::new(layout, node.line as usize);
         ([node.edge, above(&line)], line.size(), node.rtl)
     }
@@ -124,7 +127,7 @@ impl Selection {
     /// Returns the current source offset for the anchor of the selection.
     pub fn anchor_offset(&self, layout: &Paragraph) -> usize {
         self.anchor.text_offset(layout)
-    }    
+    }
 
     /// Returns the source range for the currently selected text. Note that
     /// the ordering of this range is dependent on the direction in which
@@ -145,7 +148,7 @@ impl Selection {
             core::mem::swap(&mut start, &mut end);
         }
         start..end
-    }    
+    }
 
     /// Returns the range of text that should be erased based on the
     /// current selection. This operation implements the action of the
@@ -154,7 +157,10 @@ impl Selection {
         if !self.is_collapsed() {
             return Some(Erase::Full(self.normalized_range(layout)));
         }
-        let cluster = layout.data.clusters.get(self.focus.logical_index(layout) as usize)?;
+        let cluster = layout
+            .data
+            .clusters
+            .get(self.focus.logical_index(layout) as usize)?;
         let start = cluster.offset as usize;
         let end = start + cluster.len as usize;
         Some(Erase::Full(start..end))
@@ -170,7 +176,7 @@ impl Selection {
         let logical_index = self.focus.logical_index(layout) as usize;
         if logical_index == 0 {
             return None;
-        }        
+        }
         let prev_logical = logical_index - 1;
         let cluster = layout.data.clusters.get(prev_logical)?;
         let start = cluster.offset as usize;
@@ -187,8 +193,12 @@ impl Selection {
     pub fn extend_to(&self, layout: &Paragraph, x: f32, y: f32, to: ExtendTo) -> Self {
         match to {
             ExtendTo::Point => self.extend(layout, Node::from_point(layout, x, y)),
-            ExtendTo::Word => self.extend_word(layout, Self::word_from_point(layout, x, y)),
-            ExtendTo::Line => self.extend_full(layout, Self::line_from_point(layout, x, y)),
+            ExtendTo::Word => {
+                self.extend_word(layout, Self::word_from_point(layout, x, y))
+            }
+            ExtendTo::Line => {
+                self.extend_full(layout, Self::line_from_point(layout, x, y))
+            }
         }
     }
 
@@ -292,7 +302,11 @@ impl Selection {
 
     /// Invokes the specified function with a series of rectangles that define
     /// the visual state of the selection.
-    pub fn regions_with(&self, layout: &Paragraph, mut f: impl FnMut([f32; 4])) -> Option<()> {
+    pub fn regions_with(
+        &self,
+        layout: &Paragraph,
+        mut f: impl FnMut([f32; 4]),
+    ) -> Option<()> {
         if self.is_collapsed() {
             return Some(());
         }
@@ -355,7 +369,9 @@ impl Selection {
 
     fn extend(&self, layout: &Paragraph, focus: Node) -> Self {
         let mut anchor = self.anchor;
-        if anchor.line < focus.line || (anchor.line == focus.line && anchor.edge < focus.edge) {
+        if anchor.line < focus.line
+            || (anchor.line == focus.line && anchor.edge < focus.edge)
+        {
             // If the anchor precedes focus in visual order, ensure that it is in the
             // 'before' state.
             if anchor.after {
@@ -380,12 +396,12 @@ impl Selection {
     }
 
     fn extend_word(&self, layout: &Paragraph, other: Selection) -> Self {
-        let fudge = if self.anchor.after {
-            -0.01
-        } else {
-            0.01
-        };
-        let initial_word = Self::word_from_point(layout, self.anchor.edge + fudge, layout.line_data.lines[self.anchor.line as usize].baseline - 0.001);
+        let fudge = if self.anchor.after { -0.01 } else { 0.01 };
+        let initial_word = Self::word_from_point(
+            layout,
+            self.anchor.edge + fudge,
+            layout.line_data.lines[self.anchor.line as usize].baseline - 0.001,
+        );
         let mut anchor = initial_word.anchor;
         let mut focus = other.focus;
         if anchor > focus {
@@ -396,7 +412,9 @@ impl Selection {
                 focus = other.anchor;
             }
         }
-        if anchor.line < focus.line || (anchor.line == focus.line && anchor.edge < focus.edge) {
+        if anchor.line < focus.line
+            || (anchor.line == focus.line && anchor.edge < focus.edge)
+        {
             // If the anchor precedes focus in visual order, ensure that it is in the
             // 'before' state.
             if anchor.after {
@@ -418,9 +436,9 @@ impl Selection {
             focus,
             move_state: None,
         }
-    }     
+    }
 
-    fn extend_full(&self, layout: &Paragraph, other: Selection) -> Self {                
+    fn extend_full(&self, layout: &Paragraph, other: Selection) -> Self {
         let mut anchor = self.anchor;
         let mut focus = other.focus;
         if anchor > focus {
@@ -431,7 +449,9 @@ impl Selection {
                 focus = other.anchor;
             }
         }
-        if anchor.line < focus.line || (anchor.line == focus.line && anchor.edge < focus.edge) {
+        if anchor.line < focus.line
+            || (anchor.line == focus.line && anchor.edge < focus.edge)
+        {
             // If the anchor precedes focus in visual order, ensure that it is in the
             // 'before' state.
             if anchor.after {
@@ -453,7 +473,7 @@ impl Selection {
             focus,
             move_state: None,
         }
-    }    
+    }
 
     fn collapse(&self, layout: &Paragraph, prev: bool) -> Self {
         let node = if prev {
@@ -503,7 +523,8 @@ impl Node {
                 let mut last_edge = f32::MIN;
                 for (i, &(_, edge)) in clusters.iter().enumerate() {
                     if x >= last_edge {
-                        let far_edge = clusters.get(i + 1).map(|x| x.1).unwrap_or(line_end);
+                        let far_edge =
+                            clusters.get(i + 1).map(|x| x.1).unwrap_or(line_end);
                         if x < far_edge {
                             this.after = true;
                             let middle = (edge + far_edge) * 0.5;
@@ -514,7 +535,10 @@ impl Node {
                                 this.after = true;
                                 this.edge = far_edge;
                             }
-                            this.setup_from_visual(layout, line_data.clusters.0 + i as u32);
+                            this.setup_from_visual(
+                                layout,
+                                line_data.clusters.0 + i as u32,
+                            );
                             return this;
                         }
                         last_edge = edge;
@@ -550,10 +574,14 @@ impl Node {
                 let clusters = &layout.line_data.clusters[make_range(line_data.clusters)];
                 for (i, &(_, edge)) in clusters.iter().enumerate() {
                     if x >= edge || x < line_start {
-                        let far_edge = clusters.get(i + 1).map(|x| x.1).unwrap_or(line_end);
+                        let far_edge =
+                            clusters.get(i + 1).map(|x| x.1).unwrap_or(line_end);
                         if x < far_edge {
                             this.edge = edge;
-                            this.setup_from_visual(layout, line_data.clusters.0 + i as u32);
+                            this.setup_from_visual(
+                                layout,
+                                line_data.clusters.0 + i as u32,
+                            );
                             return this;
                         }
                     }
@@ -600,7 +628,7 @@ impl Node {
         } else {
             this.edge = line.offset() + line.advance();
         }
-        this.after = after;// && !this.nl;
+        this.after = after; // && !this.nl;
         this
     }
 

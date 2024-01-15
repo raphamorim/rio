@@ -3,14 +3,16 @@ use super::index_data::*;
 use super::library::FontLibrary;
 use super::system::{Os, OS};
 use super::types::*;
-use crate::components::rich_text::util::{string::SmallString};
+use crate::components::rich_text::util::string::SmallString;
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::RwLock,
     time::SystemTime,
 };
-use swash::{CacheKey, Attributes, FontDataRef, FontRef, Stretch, StringId, Style, Weight};
+use swash::{
+    Attributes, CacheKey, FontDataRef, FontRef, Stretch, StringId, Style, Weight,
+};
 
 /// Hint for specifying whether font files should be memory mapped.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -205,28 +207,29 @@ impl ScannerSink for Inner {
         self.lowercase_name
             .extend(font.name.chars().map(|c| c.to_lowercase()).flatten());
         let index = &mut self.index;
-        let family =
-            if let Some(family_id) = index.base.family_map.get(self.lowercase_name.as_str()) {
-                let family = &mut index.families[family_id.to_usize()];
-                if family.contains(font.stretch, font.weight, font.style) {
-                    return;
-                }
-                family
-            } else {
-                let family_id = FamilyId(index.families.len() as u32);
-                let family = FamilyData {
-                    id: family_id,
-                    name: SmallString::new(&font.name),
-                    fonts: Vec::new(),
-                    has_stretch: true,
-                };
-                index.families.push(family);
-                index
-                    .base
-                    .family_map
-                    .insert(SmallString::new(&self.lowercase_name), family_id);
-                &mut index.families[family_id.to_usize()]
+        let family = if let Some(family_id) =
+            index.base.family_map.get(self.lowercase_name.as_str())
+        {
+            let family = &mut index.families[family_id.to_usize()];
+            if family.contains(font.stretch, font.weight, font.style) {
+                return;
+            }
+            family
+        } else {
+            let family_id = FamilyId(index.families.len() as u32);
+            let family = FamilyData {
+                id: family_id,
+                name: SmallString::new(&font.name),
+                fonts: Vec::new(),
+                has_stretch: true,
             };
+            index.families.push(family);
+            index
+                .base
+                .family_map
+                .insert(SmallString::new(&self.lowercase_name), family_id);
+            &mut index.families[family_id.to_usize()]
+        };
         if !self.file_added {
             self.file_added = true;
             let mut path2 = PathBuf::new();
@@ -384,7 +387,9 @@ impl Scanner {
                             if let Ok(timestamp) = metadata.modified() {
                                 if let Ok(data) = unsafe { memmap2::Mmap::map(&file) } {
                                     sink.enter_file(path, timestamp, metadata.len());
-                                    self.scan_data(&*data, all_names, |f| sink.add_font(f));
+                                    self.scan_data(&*data, all_names, |f| {
+                                        sink.add_font(f)
+                                    });
                                 }
                             }
                         }

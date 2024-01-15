@@ -1,5 +1,5 @@
-use crate::components::rich_text::image_cache::TextureId;
 use crate::components::rich_text::color::Color;
+use crate::components::rich_text::image_cache::TextureId;
 
 /// Batch geometry vertex.
 #[derive(Copy, Clone)]
@@ -55,7 +55,16 @@ impl Batch {
         self.subpix = false;
     }
 
-    fn add_rect(&mut self, rect: &Rect, depth: f32, color: Color, coords: Option<&[f32; 4]>, image: Option<TextureId>, mask: Option<TextureId>, subpix: bool) -> bool {
+    fn add_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: Color,
+        coords: Option<&[f32; 4]>,
+        image: Option<TextureId>,
+        mask: Option<TextureId>,
+        subpix: bool,
+    ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
@@ -69,7 +78,7 @@ impl Batch {
         if has_mask {
             if self.mask.is_some() && self.mask != mask {
                 return false;
-            }            
+            }
         }
         self.subpix = subpix;
         let flags = match (has_image, has_mask) {
@@ -86,13 +95,20 @@ impl Batch {
                 self.mask = mask;
                 2.
             }
-            _ => 0.
+            _ => 0.,
         };
         self.push_rect(rect, depth, flags, color, coords);
         true
     }
 
-    fn push_rect(&mut self, rect: &Rect, depth: f32, flags: f32, color: Color, coords: Option<&[f32; 4]>) {
+    fn push_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        flags: f32,
+        color: Color,
+        coords: Option<&[f32; 4]>,
+    ) {
         let x = rect.x;
         let y = rect.y;
         let w = rect.width;
@@ -107,41 +123,52 @@ impl Batch {
             Vertex {
                 pos: [x, y, depth, flags],
                 color,
-                uv: [l, t]
+                uv: [l, t],
             },
             Vertex {
                 pos: [x, y + h, depth, flags],
                 color,
-                uv: [l, b]
+                uv: [l, b],
             },
             Vertex {
                 pos: [x + w, y + h, depth, flags],
                 color,
-                uv: [r, b]
+                uv: [r, b],
             },
             Vertex {
                 pos: [x + w, y, depth, flags],
                 color,
-                uv: [r, t]
-            },                                    
+                uv: [r, t],
+            },
         ];
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&verts);
-        self.indices.extend_from_slice(&[base + 0, base + 1, base + 2, base + 2, base + 0, base + 3]);        
+        self.indices.extend_from_slice(&[
+            base + 0,
+            base + 1,
+            base + 2,
+            base + 2,
+            base + 0,
+            base + 3,
+        ]);
     }
 
     fn build_display_list(&self, list: &mut DisplayList) {
         let first_vertex = list.vertices.len() as u32;
         let first_index = list.indices.len() as u32;
         list.vertices.extend_from_slice(&self.vertices);
-        list.indices.extend(self.indices.iter().map(|i| *i + first_vertex));
+        list.indices
+            .extend(self.indices.iter().map(|i| *i + first_vertex));
         if let Some(tex) = self.mask {
             list.commands.push(Command::BindTexture(0, tex));
         }
         if let Some(tex) = self.image {
             list.commands.push(Command::BindTexture(1, tex));
         }
-        list.commands.push(Command::Draw { start: first_index, count: self.indices.len() as u32 });        
+        list.commands.push(Command::Draw {
+            start: first_index,
+            count: self.indices.len() as u32,
+        });
     }
 }
 
@@ -168,31 +195,80 @@ impl BatchManager {
         }
     }
 
-    pub fn add_mask_rect(&mut self, rect: &Rect, depth: f32, color: Color, coords: &[f32; 4], mask: TextureId, subpix: bool) {
+    pub fn add_mask_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: Color,
+        coords: &[f32; 4],
+        mask: TextureId,
+        subpix: bool,
+    ) {
         for batch in &mut self.transparent {
-            if batch.add_rect(rect, depth, color, Some(coords), None, Some(mask), subpix) {
+            if batch.add_rect(rect, depth, color, Some(coords), None, Some(mask), subpix)
+            {
                 return;
             }
         }
-        self.alloc_batch(true).add_rect(rect, depth, color, Some(coords), None, Some(mask), subpix);
+        self.alloc_batch(true).add_rect(
+            rect,
+            depth,
+            color,
+            Some(coords),
+            None,
+            Some(mask),
+            subpix,
+        );
     }
 
-    pub fn add_image_rect(&mut self, rect: &Rect, depth: f32, color: Color, coords: &[f32; 4], image: TextureId, has_alpha: bool) {
+    pub fn add_image_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: Color,
+        coords: &[f32; 4],
+        image: TextureId,
+        has_alpha: bool,
+    ) {
         let transparent = has_alpha || color.a != 255;
         if transparent {
             for batch in &mut self.transparent {
-                if batch.add_rect(rect, depth, color, Some(coords), Some(image), None, false) {
+                if batch.add_rect(
+                    rect,
+                    depth,
+                    color,
+                    Some(coords),
+                    Some(image),
+                    None,
+                    false,
+                ) {
                     return;
                 }
             }
         } else {
             for batch in &mut self.opaque {
-                if batch.add_rect(rect, depth, color, Some(coords), Some(image), None, false) {
+                if batch.add_rect(
+                    rect,
+                    depth,
+                    color,
+                    Some(coords),
+                    Some(image),
+                    None,
+                    false,
+                ) {
                     return;
                 }
             }
         }
-        self.alloc_batch(transparent).add_rect(rect, depth, color, Some(coords), Some(image), None, false);
+        self.alloc_batch(transparent).add_rect(
+            rect,
+            depth,
+            color,
+            Some(coords),
+            Some(image),
+            None,
+            false,
+        );
     }
 
     pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: Color) {
@@ -210,9 +286,10 @@ impl BatchManager {
                 }
             }
         }
-        self.alloc_batch(transparent).add_rect(rect, depth, color, None, None, None, false);
-    }    
-    
+        self.alloc_batch(transparent)
+            .add_rect(rect, depth, color, None, None, None, false);
+    }
+
     pub fn build_display_list(&self, list: &mut DisplayList) {
         list.commands.push(Command::BindPipeline(Pipeline::Opaque));
         for batch in &self.opaque {
@@ -220,14 +297,14 @@ impl BatchManager {
                 continue;
             }
             batch.build_display_list(list);
-        } 
+        }
         let mut mode = Pipeline::Opaque;
         for batch in &self.transparent {
             if batch.vertices.is_empty() {
                 continue;
             }
             let batch_mode = if batch.subpix {
-                Pipeline::Subpixel 
+                Pipeline::Subpixel
             } else {
                 Pipeline::Transparent
             };
@@ -236,7 +313,7 @@ impl BatchManager {
                 list.commands.push(Command::BindPipeline(batch_mode));
             }
             batch.build_display_list(list);
-        }        
+        }
     }
 
     fn alloc_batch(&mut self, transparent: bool) -> &mut Batch {
@@ -260,7 +337,7 @@ impl BatchManager {
 pub struct DisplayList {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
-    commands: Vec<Command>,    
+    commands: Vec<Command>,
 }
 
 impl DisplayList {
@@ -300,10 +377,7 @@ pub enum Command {
     /// Switch to the specified render mode.
     BindPipeline(Pipeline),
     /// Draw the specified range of indexed triangles.
-    Draw {
-        start: u32,
-        count: u32,
-    }
+    Draw { start: u32, count: u32 },
 }
 
 /// Pipelines used by a display list.

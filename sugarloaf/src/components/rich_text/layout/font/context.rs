@@ -53,7 +53,12 @@ impl FontContext {
     }
 
     /// Registers a font group.
-    pub fn register_group(&mut self, families: &str, key: u64, attrs: Attributes) -> FontGroupId {
+    pub fn register_group(
+        &mut self,
+        families: &str,
+        key: u64,
+        attrs: Attributes,
+    ) -> FontGroupId {
         self.groups.get(&self.fonts, families, key, attrs)
     }
 
@@ -94,7 +99,12 @@ impl FontContext {
         // fallback fonts.
         if cluster.info().is_emoji() {
             if let Some(entry) = self.groups.emoji(&self.fonts, attrs) {
-                match entry.map_cluster(&mut self.fonts, cluster, synthesis, best.is_none()) {
+                match entry.map_cluster(
+                    &mut self.fonts,
+                    cluster,
+                    synthesis,
+                    best.is_none(),
+                ) {
                     Some((font, status)) => {
                         if status == Status::Complete {
                             return Some(font);
@@ -297,7 +307,13 @@ impl GroupCacheState {
 
 impl GroupCache {
     /// Returns a font group identifier for the specified families and attributes.
-    fn get(&mut self, fonts: &FontCache, names: &str, key: u64, attrs: Attributes) -> FontGroupId {
+    fn get(
+        &mut self,
+        fonts: &FontCache,
+        names: &str,
+        key: u64,
+        attrs: Attributes,
+    ) -> FontGroupId {
         use std::collections::hash_map::Entry;
         let key = (key, attrs);
         // Fast path for a descriptor we've already seen.
@@ -365,7 +381,8 @@ impl GroupCache {
         // Insert a new entry.
         let id = FontGroupId(self.next_id);
         self.next_id += 1;
-        let mut data = GroupData::Inline(0, [(FontId(0), Attributes::default()); MAX_INLINE]);
+        let mut data =
+            GroupData::Inline(0, [(FontId(0), Attributes::default()); MAX_INLINE]);
         for font in &self.tmp {
             data.push(font.0, font.1);
         }

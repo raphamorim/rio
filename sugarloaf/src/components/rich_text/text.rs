@@ -1,5 +1,5 @@
-use swash::{FontRef, GlyphId, NormalizedCoord};
 use crate::components::rich_text::color::Color;
+use swash::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
 #[derive(Copy, Clone)]
