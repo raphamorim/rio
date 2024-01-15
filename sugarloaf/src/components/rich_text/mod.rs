@@ -10,7 +10,9 @@ pub mod util;
 use crate::context::Context;
 use bytemuck::{Pod, Zeroable};
 use color::Color;
-use compositor::{Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex};
+use compositor::{
+    Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
+};
 use layout::*;
 use layout::{Direction, LayoutContext, Paragraph, Selection};
 use std::collections::HashMap;
@@ -155,18 +157,42 @@ impl RichTextBrush {
         let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            mem::size_of::<Uniforms>() as wgpu::BufferAddress,
-                        ),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(
+                                mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+                            ),
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    // wgpu::BindGroupLayoutEntry {
+                    //     binding: 1,
+                    //     visibility: wgpu::ShaderStages::FRAGMENT,
+                    //     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    //     count: None,
+                    // },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(
+                            wgpu::SamplerBindingType::Filtering,
+                        ),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(
+                            wgpu::SamplerBindingType::Filtering,
+                        ),
+                        count: None,
+                    },
+                ],
             });
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -175,17 +201,46 @@ impl RichTextBrush {
                 push_constant_ranges: &[],
             });
 
+        let tex = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let mask = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &transform,
-                    offset: 0,
-                    size: None,
-                }),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &transform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&tex),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&mask),
+                },
+            ],
             label: Some("rich_text::Pipeline uniforms"),
         });
 
@@ -210,7 +265,7 @@ impl RichTextBrush {
                 array_stride: mem::size_of::<Rect>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array!(
-                    1 => Float32x2,
+                    1 => Float32x4,
                     2 => Float32x4,
                     3 => Float32x2,
                 ),
@@ -351,20 +406,7 @@ impl RichTextBrush {
             self.size_changed = false;
             self.selection_changed = true;
         }
-        // println!("first_run {:?}", self.first_run);
-        // first_run = false;
-        //layout.build_new_clusters();
-        // needs_update = false;
-        // size_changed = true;
-        // selection_changed = true;
-        // }
 
-        // if size_changed {
-        //     let lw = w as f32 - margin * 2.;
-        //     layout.break_lines().break_remaining(lw, align);
-        //     size_changed = false;
-        //     selection_changed = true;
-        // }
         // if let Some(offs) = inserted {
         //     selection = Selection::from_offset(&layout, offs);
         // }
@@ -377,12 +419,6 @@ impl RichTextBrush {
         //     });
         //     selection_changed = false;
         // }
-
-        // let (fg, bg) = if dark_mode {
-        //     (color::WHITE_SMOKE, Color::new(20, 20, 20, 255))
-        // } else {
-        //     (color::BLACK, color::WHITE)
-        // };
 
         // Render
         self.comp.begin();
@@ -406,21 +442,7 @@ impl RichTextBrush {
         //     comp.draw_rect(rect, 0.1, fg);
         // }
         self.dlist.clear();
-        self.finish_composition();
-
-        // unsafe {
-        //     gl::Viewport(0, 0, w as i32, h as i32);
-        //     let cc = bg.to_rgba_f32();
-        //     gl::ClearColor(cc[0], cc[1], cc[2], 1.0);
-        //     gl::ClearDepth(1.0);
-        //     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-        //     gl::Enable(gl::DEPTH_TEST);
-        //     gl::DepthFunc(gl::LESS);
-        //     gl::DepthMask(1);
-        //     device.render(w, h, &dlist);
-        //     gl::Flush();
-        // }
-        // windowed_context.swap_buffers().unwrap();
+        self.finish_composition(ctx);
 
         println!("{:?}", self.dlist);
 
@@ -467,9 +489,65 @@ impl RichTextBrush {
 
         //     i += MAX_INSTANCES;
         // }
+
+        for command in self.dlist.commands() {
+            match command {
+                Command::BindPipeline(pipeline) => {
+                    // match pipeline {
+                    //     Pipeline::Opaque => {
+                    //         unsafe {
+                    //             gl::DepthMask(1);
+                    //             gl::Disable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //             gl::BlendEquation(gl::FUNC_ADD);
+                    //         }
+                    //         self.base_shader.activate();
+                    //         self.base_shader.bind_attribs();
+                    //         self.base_shader.set_view_proj(&view_proj);
+                    //     }
+                    //     Pipeline::Transparent => {
+                    //         unsafe {
+                    //             gl::DepthMask(0);
+                    //             gl::Enable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //         }
+                    //         self.base_shader.activate();
+                    //         self.base_shader.bind_attribs();
+                    //         self.base_shader.set_view_proj(&view_proj);
+                    //     }
+                    //     Pipeline::Subpixel => {
+                    //         unsafe {
+                    //             gl::DepthMask(0);
+                    //             gl::Enable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
+                    //         }
+                    //         self.subpx_shader.activate();
+                    //         self.subpx_shader.bind_attribs();
+                    //         self.subpx_shader.set_view_proj(&view_proj);
+                    //     }
+
+                    // }
+                }
+                Command::BindTexture(unit, id) => {
+                    // if let Some(tex) = self.textures.get(&id) {
+                    //     tex.bind(*unit);
+                    // }
+                }
+                Command::Draw { start, count } => {
+                    // unsafe {
+                    //     gl::DrawElements(
+                    //         gl::TRIANGLES,
+                    //         *count as _,
+                    //         gl::UNSIGNED_INT,
+                    //         (*start as usize * 4) as *const _,
+                    //     );
+                    // }
+                }
+            }
+        }
     }
 
-    fn finish_composition(&mut self) {
+    fn finish_composition(&mut self, ctx: &mut Context) {
         self.comp.finish(&mut self.dlist, |event| {
             match event {
                 TextureEvent::CreateTexture {
@@ -479,12 +557,57 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
-                    println!("CreateTexture");
-                    // let tex = Texture::new(*width as u32, *height as u32);
-                    // if let Some(data) = data {
-                    //     tex.update(data);
-                    // }
-                    // self.textures.insert(*id, tex);
+                    let texture_size = wgpu::Extent3d {
+                        width: width.into(),
+                        height: height.into(),
+                        depth_or_array_layers: 1,
+                    };
+                    let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                        // All textures are stored as 3D, we represent our 2D texture
+                        // by setting depth to 1.
+                        size: texture_size,
+                        mip_level_count: 1, // We'll talk about this a little later
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        // Most images are stored using sRGB, so we need to reflect that here.
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        // TEXTURE_BINDING tells wgpu that we want to use this texture in shaders
+                        // COPY_DST means that we want to copy data to this texture
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_DST,
+                        label: Some("diffuse_texture"),
+                        // This is the same as with the SurfaceConfig. It
+                        // specifies what texture formats can be used to
+                        // create TextureViews for this texture. The base
+                        // texture format (Rgba8UnormSrgb in this case) is
+                        // always supported. Note that using a different
+                        // texture format is not supported on the WebGL2
+                        // backend.
+                        view_formats: &[],
+                    });
+
+                    if let Some(data) = data {
+                        ctx.queue.write_texture(
+                            // Tells wgpu where to copy the pixel data
+                            wgpu::ImageCopyTexture {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            // The actual pixel data
+                            &data,
+                            // The layout of the texture
+                            wgpu::ImageDataLayout {
+                                offset: 0,
+                                bytes_per_row: Some((4 * width).into()),
+                                rows_per_image: Some(height.into()),
+                            },
+                            texture_size,
+                        );
+                    }
+
+                    self.textures.insert(id, texture);
                 }
                 TextureEvent::UpdateTexture {
                     id,
@@ -494,10 +617,32 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
-                    println!("UpdateTexture");
-                    // if let Some(tex) = self.textures.get(&id) {
-                    //     tex.update(data);
-                    // }
+                    if let Some(texture) = self.textures.get(&id) {
+                        let texture_size = wgpu::Extent3d {
+                            width: width.into(),
+                            height: height.into(),
+                            depth_or_array_layers: 1,
+                        };
+
+                        ctx.queue.write_texture(
+                            // Tells wgpu where to copy the pixel data
+                            wgpu::ImageCopyTexture {
+                                texture: &texture,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            // The actual pixel data
+                            &data,
+                            // The layout of the texture
+                            wgpu::ImageDataLayout {
+                                offset: 0,
+                                bytes_per_row: Some((4 * width).into()),
+                                rows_per_image: Some(height.into()),
+                            },
+                            texture_size,
+                        );
+                    }
                 }
                 TextureEvent::DestroyTexture(id) => {
                     self.textures.remove(&id);
