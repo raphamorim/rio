@@ -45,7 +45,14 @@ impl Paragraph {
 }
 
 impl Paragraph {
-    pub(super) fn push_run<'a>(&mut self, spans: &[SpanData], font: Font, size: f32, level: u8, shaper: Shaper<'a>) {
+    pub(super) fn push_run<'a>(
+        &mut self,
+        spans: &[SpanData],
+        font: Font,
+        size: f32,
+        level: u8,
+        shaper: Shaper<'a>,
+    ) {
         let coords_start = self.data.coords.len() as u32;
         self.data
             .coords
@@ -83,8 +90,12 @@ impl Paragraph {
                         descent: metrics.descent * span_data.line_spacing,
                         leading: metrics.leading * span_data.line_spacing,
                         underline: span_data.underline,
-                        underline_offset: span_data.underline_offset.unwrap_or(metrics.underline_offset),
-                        underline_size: span_data.underline_size.unwrap_or(metrics.stroke_size),
+                        underline_offset: span_data
+                            .underline_offset
+                            .unwrap_or(metrics.underline_offset),
+                        underline_size: span_data
+                            .underline_size
+                            .unwrap_or(metrics.stroke_size),
                         strikeout_offset: metrics.strikeout_offset,
                         strikeout_size: metrics.stroke_size,
                         advance,
@@ -174,7 +185,9 @@ impl Paragraph {
             descent: metrics.descent * span_data.line_spacing,
             leading: metrics.leading * span_data.line_spacing,
             underline: span_data.underline,
-            underline_offset: span_data.underline_offset.unwrap_or(metrics.underline_offset),
+            underline_offset: span_data
+                .underline_offset
+                .unwrap_or(metrics.underline_offset),
             underline_size: span_data.underline_size.unwrap_or(metrics.stroke_size),
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
@@ -217,8 +230,8 @@ impl Paragraph {
                 if word == 0. && letter == 0. {
                     continue;
                 }
-                let clusters =
-                    &mut self.data.clusters[run.clusters.0 as usize..run.clusters.1 as usize];
+                let clusters = &mut self.data.clusters
+                    [run.clusters.0 as usize..run.clusters.1 as usize];
                 for cluster in clusters {
                     let mut spacing = letter;
                     if word != 0. && cluster.info.whitespace().is_space_or_nbsp() {
@@ -227,12 +240,17 @@ impl Paragraph {
                     if spacing != 0. {
                         let detailed_glyphs = &mut self.data.detailed_glyphs[..];
                         if cluster.is_detailed() && !cluster.is_ligature() {
-                            self.data.detailed_clusters[cluster.glyphs as usize].advance += spacing;
+                            self.data.detailed_clusters[cluster.glyphs as usize]
+                                .advance += spacing;
                         } else if cluster.is_last_continuation() {
-                            cluster.glyphs = (f32::from_bits(cluster.glyphs) + spacing).to_bits();
+                            cluster.glyphs =
+                                (f32::from_bits(cluster.glyphs) + spacing).to_bits();
                         }
                         cluster
-                            .glyphs_mut(&self.data.detailed_clusters, &mut self.data.glyphs)
+                            .glyphs_mut(
+                                &self.data.detailed_clusters,
+                                &mut self.data.glyphs,
+                            )
                             .last_mut()
                             .map(|g| {
                                 if g.is_simple() {

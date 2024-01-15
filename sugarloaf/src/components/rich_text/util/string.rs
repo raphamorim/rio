@@ -73,11 +73,9 @@ impl Clone for SmallString {
         if !self.is_inline() {
             let arc = self.as_arc();
             core::mem::forget(Arc::clone(&arc));
-            core::mem::forget(arc);            
+            core::mem::forget(arc);
         }
-        Self {
-            bytes: self.bytes,
-        }        
+        Self { bytes: self.bytes }
     }
 }
 

@@ -1,6 +1,6 @@
 //! Unicode bidirectional algorithm.
 
-use swash::text::{BidiClass, Codepoint as _,};
+use swash::text::{BidiClass, Codepoint as _};
 use BidiClass::*;
 
 /// Type alias for a bidirectional level.
@@ -58,7 +58,12 @@ impl BidiResolver {
 
     /// Resolves a paragraph with the specified base direction and
     /// precomputed types.
-    pub fn resolve_with_types(&mut self, chars: &[char], types: impl Iterator<Item = BidiClass>, dir: Option<BidiDirection>) {
+    pub fn resolve_with_types(
+        &mut self,
+        chars: &[char],
+        types: impl Iterator<Item = BidiClass>,
+        dir: Option<BidiDirection>,
+    ) {
         self.clear();
         let len = chars.len();
         if len == 0 {
@@ -227,7 +232,9 @@ impl BidiResolver {
                 } else {
                     (stack.embedding_level() + 2) & !1
                 };
-                if new_level <= MAX_STACK as u8 && overflow_isolates == 0 && overflow_embedding == 0
+                if new_level <= MAX_STACK as u8
+                    && overflow_isolates == 0
+                    && overflow_embedding == 0
                 {
                     if is_isolate {
                         valid_isolates += 1;

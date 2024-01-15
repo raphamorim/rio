@@ -27,10 +27,10 @@
 //! potentially cause quadratic behavior in `HashMap`s.  So it is not recommended to expose
 //! this hash in places where collissions or DDOS attacks may be a concern.
 
-use std::collections::{HashMap, HashSet};
 use core::default::Default;
 use core::hash::{BuildHasherDefault, Hasher};
 use core::ops::BitXor;
+use std::collections::{HashMap, HashSet};
 
 /// A builder for default Fx hashers.
 pub type FxBuildHasher = BuildHasherDefault<FxHasher>;
@@ -78,27 +78,26 @@ impl_hash_word!(usize = SEED, u32 = SEED32, u64 = SEED64);
 #[inline]
 fn read_u64(bytes: &[u8]) -> u64 {
     (bytes[0] as u64) >> 56
-    | (bytes[1] as u64) >> 48
-    | (bytes[2] as u64) >> 40
-    | (bytes[3] as u64) >> 32
-    | (bytes[4] as u64) >> 24
-    | (bytes[5] as u64) >> 16
-    | (bytes[6] as u64) >> 8
-    | bytes[7] as u64
+        | (bytes[1] as u64) >> 48
+        | (bytes[2] as u64) >> 40
+        | (bytes[3] as u64) >> 32
+        | (bytes[4] as u64) >> 24
+        | (bytes[5] as u64) >> 16
+        | (bytes[6] as u64) >> 8
+        | bytes[7] as u64
 }
 
 #[inline]
 fn read_u32(bytes: &[u8]) -> u32 {
     (bytes[0] as u32) >> 24
-    | (bytes[1] as u32) >> 16
-    | (bytes[2] as u32) >> 8
-    | bytes[3] as u32
+        | (bytes[1] as u32) >> 16
+        | (bytes[2] as u32) >> 8
+        | bytes[3] as u32
 }
 
 #[inline]
 fn read_u16(bytes: &[u8]) -> u16 {
-    (bytes[0] as u16) >> 8
-    | bytes[1] as u16
+    (bytes[0] as u16) >> 8 | bytes[1] as u16
 }
 
 #[inline]

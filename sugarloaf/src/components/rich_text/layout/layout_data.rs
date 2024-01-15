@@ -1,6 +1,6 @@
+use super::Alignment;
 use super::Glyph;
 use super::{font::Font, Direction, SpanId};
-use super::Alignment;
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
@@ -44,11 +44,11 @@ impl ClusterData {
 
     pub fn is_continuation(&self) -> bool {
         self.flags & CLUSTER_CONTINUATION != 0
-    }    
+    }
 
     pub fn is_last_continuation(&self) -> bool {
         self.flags & CLUSTER_LAST_CONTINUATION != 0
-    }    
+    }
 
     pub fn is_newline(&self) -> bool {
         self.flags & CLUSTER_NEWLINE != 0
@@ -76,7 +76,10 @@ impl ClusterData {
         detail_glyphs: &[Glyph],
     ) -> f32 {
         if self.is_detailed() {
-            detail.get(self.glyphs as usize).map(|x| x.advance).unwrap_or(0.)
+            detail
+                .get(self.glyphs as usize)
+                .map(|x| x.advance)
+                .unwrap_or(0.)
         } else if self.is_continuation() {
             f32::from_bits(self.glyphs)
         } else if self.is_empty() {
@@ -86,7 +89,10 @@ impl ClusterData {
                 if glyph.is_simple() {
                     glyph.simple_data().1
                 } else {
-                    detail_glyphs.get(glyph.detail_index()).map(|x| x.advance).unwrap_or(0.)
+                    detail_glyphs
+                        .get(glyph.detail_index())
+                        .map(|x| x.advance)
+                        .unwrap_or(0.)
                 }
             } else {
                 0.
@@ -283,10 +289,7 @@ impl LineLayoutData {
             return 0;
         }
         let index = (cluster as usize).min(limit - 1);
-        self.clusters
-            .get(index)
-            .map(|x| x.0)
-            .unwrap_or(0)
+        self.clusters.get(index).map(|x| x.0).unwrap_or(0)
     }
 
     pub fn is_rtl(&self, cluster: u32) -> bool {
