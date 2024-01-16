@@ -72,7 +72,7 @@ Linux with X11:
 
 ```sh
 # Build for X11
-cargo build --release --no-default-features --features=x11
+cargo build -p rioterm --release --no-default-features --features=x11
 
 # Running it
 target/release/rio
@@ -82,7 +82,7 @@ Linux with Wayland:
 
 ```sh
 # Build for Wayland
-cargo build --release --no-default-features --features=wayland
+cargo build -p rioterm --release --no-default-features --features=wayland
 
 # Running it
 target/release/rio
@@ -99,7 +99,7 @@ After the command execution an application called "Rio.app" will be created insi
 Windows:
 
 ```sh
-cargo build --release
+cargo build -p rioterm --release
 ```
 
 After the command execution an executable will be created called Rio.exe inside of "target/release"
