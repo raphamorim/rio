@@ -3,9 +3,8 @@ struct Globals {
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
-@group(0) @binding(1) var tex: texture_2d<f32>;
-@group(0) @binding(2) var mask: texture_2d<f32>;
-// @group(0) @binding(2) var<uniform> mask: sampler;
+@group(0) @binding(1) var font_sampler: sampler;
+@group(0) @binding(2) var font_tex: texture_2d<f32>;
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
@@ -16,17 +15,17 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) uv: vec2<f32>,
-    @location(2) use_tex: i32,
-    @location(3) use_mask: i32,
+    @location(0) f_color: vec4<f32>,
+    @location(1) f_uv: vec2<f32>,
+    @location(2) f_use_tex: i32,
+    @location(3) f_use_mask: i32,
 }
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.color = input.v_color;
-    out.uv = input.v_uv;
+    out.f_color = input.v_color;
+    out.f_uv = input.v_uv;
 
     var use_tex: i32 = 0;
     var use_mask: i32 = 0;
@@ -39,29 +38,41 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         use_tex = 1;
         use_mask = 1;
     }
-    out.use_tex = use_tex;
-    out.use_mask = use_mask;
-    out.position = vec4<f32>(input.v_pos.xyz, 1.0) * globals.transform;
+
+    out.f_use_tex = use_tex;
+    out.f_use_mask = use_mask;
+    out.position = globals.transform * vec4<f32>(input.v_pos.xy, 0.0, 1.0);
     return out;
 }
 
 @fragment
-fn base_fs_shader(input: VertexOutput) -> @location(0) vec4<f32> {
-    switch input.use_tex {
-        case 0: {
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    /*
+    var alpha: f32 = textureSample(tex, mask, input.uv).r;
+
+    if (alpha <= 0.0) {
+        discard;
+    }
+
+    return input.color * vec4<f32>(1.0, 1.0, 1.0, alpha);
+    */
+
+    //switch input.use_tex {
+      //  case 0: {
             //return textureSampleLevel(tex, input.uv);
-            return input.color;
-        }
+          //  return input.color;
+        //}
         // if (use_mask > 0) {
         // frag.a *= texture(mask, uv).a;
         // }
-        case 1: {
-            return input.color;
-        }
-        default: {
-            return input.color;
-        }
-    }
+        //case 1: {
+          //  return input.color;
+        //}
+        //default: {
+          //  return input.color;
+        //}
+    //}
 }
 
 //@fragment

@@ -14,7 +14,6 @@ pub struct Region {
 
 use pipeline::{Instance, Pipeline};
 
-use crate::components::core::orthographic_projection;
 pub use crate::glyph::ab_glyph;
 pub use crate::glyph::{
     BuiltInLineBreaker, Extra, FontId, GlyphCruncher, GlyphPositioner, HorizontalAlign,
@@ -23,6 +22,7 @@ pub use crate::glyph::{
 };
 pub use builder::GlyphBrushBuilder;
 
+use crate::components::core::orthographic_projection;
 use ab_glyph::{Font, Rect};
 use core::hash::BuildHasher;
 use std::borrow::Cow;

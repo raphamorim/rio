@@ -1,20 +1,15 @@
+use bytemuck::{Zeroable, Pod};
 use crate::components::rich_text::color::Color;
 use crate::components::rich_text::image_cache::TextureId;
 
 /// Batch geometry vertex.
-#[derive(Copy, Clone, Debug)]
 #[repr(C)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct Vertex {
     pub pos: [f32; 4],
-    pub color: Color,
+    pub color: [f32; 4],
     pub uv: [f32; 2],
 }
-
-#[allow(unsafe_code)]
-unsafe impl bytemuck::Zeroable for Vertex {}
-
-#[allow(unsafe_code)]
-unsafe impl bytemuck::Pod for Vertex {}
 
 /// Rectangle with floating point coordinates.
 #[derive(Copy, Clone, Default, Debug)]
@@ -128,22 +123,22 @@ impl Batch {
         let verts = [
             Vertex {
                 pos: [x, y, depth, flags],
-                color,
+                color: color.to_rgba_f32(),
                 uv: [l, t],
             },
             Vertex {
                 pos: [x, y + h, depth, flags],
-                color,
+                color: color.to_rgba_f32(),
                 uv: [l, b],
             },
             Vertex {
                 pos: [x + w, y + h, depth, flags],
-                color,
+                color: color.to_rgba_f32(),
                 uv: [r, b],
             },
             Vertex {
                 pos: [x + w, y, depth, flags],
-                color,
+                color: color.to_rgba_f32(),
                 uv: [r, t],
             },
         ];

@@ -770,8 +770,8 @@ impl Sugarloaf {
 
                 self.layer_brush.end_frame();
 
-                self.rect_brush.render(&mut encoder, view, &self.rects, &mut self.ctx);
-
+                self.rect_brush
+                    .render(&mut encoder, view, &self.rects, &mut self.ctx);
                 self.rects = vec![];
                 self.current_row = 0;
 
@@ -779,20 +779,12 @@ impl Sugarloaf {
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                self.rich_text_brush
-                    .render(&mut self.ctx, &mut encoder, view);
-
                 for entry_render in
                     &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
                 {
                     if let Some(entry) = self.graphic_rects.get(entry_render) {
                         if let Some(graphic_data) = self.graphics.get(&entry.id) {
                             let rows = entry.end_row - entry.start_row;
-                            println!("{:?}", entry.columns);
-                            println!("{:?}", rows);
-                            println!("{:?}", self.current_row);
-                            println!("{:?}", (rows) * self.layout.scaled_sugarheight);
-
                             let height = (rows - 2.) * self.layout.scaled_sugarheight;
 
                             let a = layer::types::Image::Raster {
@@ -821,6 +813,9 @@ impl Sugarloaf {
                     }
                 }
                 self.graphic_rects = FnvHashMap::default();
+
+                self.rich_text_brush
+                    .render(&mut self.ctx, &mut encoder, view);
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
