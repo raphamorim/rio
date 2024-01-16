@@ -34,7 +34,7 @@ use crate::screen::{
     bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
     context::ContextManager,
     mouse::{calculate_mouse_position, Mouse},
-    touch::TouchPurpose
+    touch::TouchPurpose,
 };
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
