@@ -7,8 +7,8 @@ pub mod layout;
 pub mod text;
 pub mod util;
 
+use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use bytemuck::{Pod, Zeroable};
 use color::Color;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
@@ -21,75 +21,9 @@ use text::{Glyph, TextRunStyle, UnderlineStyle};
 use wgpu::util::DeviceExt;
 use wgpu::Texture;
 
-const MAX_INSTANCES: usize = 1_000;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-struct Uniforms {
-    transform: [f32; 16],
-    scale: f32,
-    _padding: [f32; 3],
-}
-
-#[inline]
-fn create_view_proj(width: f32, height: f32) -> [f32; 16] {
-    let r = width;
-    let l = 0.;
-    let t = 0.;
-    let b = height;
-    let n = 0.1;
-    let f = 1024.;
-    [
-        2. / (r - l),
-        0.,
-        0.,
-        (l + r) / (l - r),
-        //
-        0.,
-        2. / (t - b),
-        0.,
-        (t + b) / (b - t),
-        //
-        0.,
-        0.,
-        2. / (f - n),
-        -(f + n) / (f - n),
-        //
-        0.,
-        0.,
-        0.,
-        1.,
-    ]
-}
-
-const INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
-
-impl Uniforms {
-    fn new(transformation: [f32; 16], width: f32, height: f32, scale: f32) -> Uniforms {
-        Self {
-            transform: create_view_proj(width, height),
-            scale,
-            // Ref: https://github.com/iced-rs/iced/blob/bc62013b6cde52174bf4c4286939cf170bfa7760/wgpu/src/quad.rs#LL295C6-L296C68
-            // Uniforms must be aligned to their largest member,
-            // this uses a mat4x4<f32> which aligns to 16, so align to that
-            _padding: [0.0; 3],
-        }
-    }
-}
-
-impl Default for Uniforms {
-    fn default() -> Self {
-        let identity_matrix: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-            1.0,
-        ];
-        Self {
-            transform: identity_matrix,
-            scale: 1.0,
-            _padding: [0.0; 3],
-        }
-    }
-}
+const IDENTITY_MATRIX: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -105,15 +39,14 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 });
 
 pub struct RichTextBrush {
-    vertex_buf: wgpu::Buffer,
-    instances: wgpu::Buffer,
+    vertex_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     textures: HashMap<TextureId, Texture>,
-    index_buf: wgpu::Buffer,
-    index_count: usize,
-    scale: f32,
+    index_buffer: wgpu::Buffer,
+    index_buffer_size: u64,
+    current_transform: [f32;16],
     comp: Compositor,
     dlist: DisplayList,
     document: doc::Document,
@@ -122,10 +55,12 @@ pub struct RichTextBrush {
     needs_update: bool,
     size_changed: bool,
     first_run: bool,
+    acc: f32,
     selection: Selection,
     selection_rects: Vec<[f32; 4]>,
     selecting: bool,
     selection_changed: bool,
+    supported_vertex_buffer: usize,
     align: Alignment,
 }
 
@@ -133,28 +68,16 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
+        let supported_vertex_buffer = 1_000;
 
-        let transform = device.create_buffer(&wgpu::BufferDescriptor {
+        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&dlist.vertices()),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&dlist.indices()),
-            usage: wgpu::BufferUsages::INDEX,
         });
 
         // Create pipeline layout
-        let bind_group_layout =
+        let uniform_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[
@@ -164,18 +87,14 @@ impl RichTextBrush {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                mem::size_of::<Uniforms>() as wgpu::BufferAddress,
-                            ),
+                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<
+                                [f32; 16],
+                            >(
+                            )
+                                as u64),
                         },
                         count: None,
                     },
-                    // wgpu::BindGroupLayoutEntry {
-                    //     binding: 1,
-                    //     visibility: wgpu::ShaderStages::FRAGMENT,
-                    //     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    //     count: None,
-                    // },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -187,29 +106,41 @@ impl RichTextBrush {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(
-                            wgpu::SamplerBindingType::Filtering,
-                        ),
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
                         count: None,
                     },
                 ],
             });
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
 
-        let tex = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            push_constant_ranges: &[],
+            bind_group_layouts: &[&uniform_layout],
         });
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("texture view"),
+            size: wgpu::Extent3d {
+                width: context.size.width,
+                height: context.size.height,
+                depth_or_array_layers: 1,
+            },
+            view_formats: &[],
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            mip_level_count: 1,
+            sample_count: 1,
+        });
+
+        let tex = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let mask = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -222,7 +153,7 @@ impl RichTextBrush {
 
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
+            layout: &uniform_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -234,11 +165,11 @@ impl RichTextBrush {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&tex),
+                    resource: wgpu::BindingResource::Sampler(&mask),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&mask),
+                    resource: wgpu::BindingResource::TextureView(&tex),
                 },
             ],
             label: Some("rich_text::Pipeline uniforms"),
@@ -251,58 +182,64 @@ impl RichTextBrush {
             ))),
         });
 
-        let vertex_buffers = [
-            wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<Vertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &[wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 0,
-                    shader_location: 0,
-                }],
-            },
-            wgpu::VertexBufferLayout {
-                array_stride: mem::size_of::<Rect>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array!(
-                    1 => Float32x4,
-                    2 => Float32x4,
-                    3 => Float32x2,
-                ),
-            },
-        ];
-
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &vertex_buffers,
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array!(
+                        0 => Float32x4,
+                        1 => Float32x4,
+                        2 => Float32x2,
+                    ),
+                }],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "base_fs_shader",
+                entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: BLEND,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Cw,
-                ..Default::default()
-            },
+            // primitive: wgpu::PrimitiveState {
+            //     topology: wgpu::PrimitiveTopology::TriangleList,
+            //     strip_index_format: None,
+            //     front_face: wgpu::FrontFace::Ccw,
+            //     cull_mode: None,
+            //     polygon_mode: wgpu::PolygonMode::Fill,
+            //     unclipped_depth: false,
+            //     conservative: false,
+            // },
+            // primitive: wgpu::PrimitiveState {
+            //     topology: wgpu::PrimitiveTopology::TriangleStrip,
+            //     front_face: wgpu::FrontFace::Cw,
+            //     strip_index_format: Some(wgpu::IndexFormat::Uint32),
+            //     ..Default::default()
+            // },
+            primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
 
-        let instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instances Buffer"),
-            size: mem::size_of::<Rect>() as u64 * MAX_INSTANCES as u64,
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rich_text::Instances Buffer"),
+            size: mem::size_of::<Vertex>() as u64 * supported_vertex_buffer as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let index_buffer_size = 50;
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rich_text::Indices Buffer"),
+            size: index_buffer_size,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -311,22 +248,19 @@ impl RichTextBrush {
         let fonts = layout::FontLibrary::default();
         let rich_text_layout_context = LayoutContext::new(&fonts);
 
-        // Done
         RichTextBrush {
-            index_buf,
-            index_count: 0,
+            index_buffer_size,
+            index_buffer,
             textures: HashMap::default(),
             comp: Compositor::new(2048),
             dlist,
             rich_text_layout,
             rich_text_layout_context,
             document,
-            scale: context.scale,
-            vertex_buf,
             bind_group,
             transform,
             pipeline,
-            instances,
+            vertex_buffer,
             needs_update: false,
             size_changed: false,
             first_run: true,
@@ -335,33 +269,19 @@ impl RichTextBrush {
             selecting: false,
             selection_changed: false,
             align: Alignment::Start,
+            supported_vertex_buffer,
+            current_transform: IDENTITY_MATRIX,
+            acc: 0.0,
         }
     }
 
     pub fn render(
         &mut self,
         ctx: &mut Context,
-        _encoder: &mut wgpu::CommandEncoder,
-        _view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
     ) {
-        // let cur_time = Instant::now();
-        // let dt = cur_time.duration_since(last_time).as_secs_f32();
-        // last_time = cur_time;
-        // frame_count += 1;
-
-        // cursor_time += dt;
-        // if cursor_on {
-        //     if cursor_time > 0.5 {
-        //         cursor_time = 0.;
-        //         cursor_on = false;
-        //     }
-        // } else {
-        //     if cursor_time > 0.5 {
-        //         cursor_time = 0.;
-        //         cursor_on = true;
-        //     }
-        // }
-        let margin = 12. * ctx.scale;
+        let margin = 0. * ctx.scale;
 
         if self.first_run {
             self.needs_update = true;
@@ -369,17 +289,6 @@ impl RichTextBrush {
         let w = ctx.size.width;
         let _h = ctx.size.height;
         if self.needs_update {
-            // let mut lb = lcx.builder(Direction::LeftToRight, None, dpi);
-            // doc.layout(&mut lb);
-            // layout.clear();
-            // lb.build_into(&mut layout);
-            // if first_run {
-            //     selection = Selection::from_point(&layout, 0., 0.);
-            // }
-            // first_run = false;
-            // //layout.build_new_clusters();
-            // needs_update = false;
-
             let mut lb = self.rich_text_layout_context.builder(
                 Direction::LeftToRight,
                 None,
@@ -399,7 +308,7 @@ impl RichTextBrush {
         }
 
         if self.size_changed {
-            let lw = w as f32 - margin * 2.;
+            let lw = w as f32 - margin * ctx.scale;
             self.rich_text_layout
                 .break_lines()
                 .break_remaining(lw, self.align);
@@ -407,144 +316,194 @@ impl RichTextBrush {
             self.selection_changed = true;
         }
 
-        // if let Some(offs) = inserted {
-        //     selection = Selection::from_offset(&layout, offs);
-        // }
+        let inserted = None;
+        if let Some(offs) = inserted {
+            self.selection = Selection::from_offset(&self.rich_text_layout, offs);
+        }
         // inserted = None;
 
-        // if selection_changed {
-        //     selection_rects.clear();
-        //     selection.regions_with(&layout, |r| {
-        //         selection_rects.push(r);
-        //     });
-        //     selection_changed = false;
-        // }
+        if self.selection_changed {
+            self.selection_rects.clear();
+            self.selection.regions_with(&self.rich_text_layout, |r| {
+                self.selection_rects.push(r);
+            });
+            self.selection_changed = false;
+        }
 
         // Render
         self.comp.begin();
+        let depth = 0.0;
         draw_layout(
             &mut self.comp,
             &self.rich_text_layout,
             margin,
             margin,
-            512.,
-            color::WHITE_SMOKE,
+            depth,
+            color::WHITE,
         );
 
-        // for r in &selection_rects {
-        //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
-        //     self.comp.draw_rect(rect, 600., Color::new(38, 79, 120, 255));
-        // }
+        for r in &self.selection_rects {
+            let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
+            self.comp
+                .draw_rect(rect, 600., Color::new(38, 79, 120, 255));
+        }
 
-        // let (pt, ch, rtl) = selection.cursor(&layout);
-        // if ch != 0. && cursor_on {
-        //     let rect = [pt[0].round() + margin, pt[1].round() + margin, 1. * dpi, ch];
-        //     comp.draw_rect(rect, 0.1, fg);
-        // }
+        let (pt, ch, _rtl) = self.selection.cursor(&self.rich_text_layout);
+        if ch != 0. {
+            let rect = [
+                pt[0].round() + margin,
+                pt[1].round() + margin,
+                1. * ctx.scale,
+                ch,
+            ];
+            self.comp
+                .draw_rect(rect, 0.1, Color::new(255, 255, 255, 255));
+        }
         self.dlist.clear();
         self.finish_composition(ctx);
 
-        println!("{:?}", self.dlist);
+        let vertices: &[Vertex] = self.dlist.vertices();
+        let indices: &[u32] = self.dlist.indices();
+        // let indices: &[Vertex] = self.dlist.indices();
+        // println!("{:?}", vertices);
+        // let vertices = [
+        //     Vertex { pos: [0.0 - self.acc, 0.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
+        //     Vertex { pos: [1.0 - self.acc, 4.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
+        //     Vertex { pos: [2.0 + self.acc, self.acc, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
+        //     Vertex { pos: [2.0, 0.0 + self.acc, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
+        //     Vertex { pos: [2.0 + 0.0 - self.acc, 3.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
+        // ];
 
-        // let mut i = 0;
-        // let total = self.instances;
+        // self.acc += 0.5;
 
-        // while i < total {
-        //     let end = (i + MAX_INSTANCES).min(total);
-        //     let amount = end - i;
+        if vertices.len() > self.supported_vertex_buffer {
+            self.supported_vertex_buffer = vertices.len();
+            self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::rich_text::Pipeline instances"),
+                size: mem::size_of::<Vertex>() as u64 * self.supported_vertex_buffer as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
 
-        //     let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
+        let vertices_bytes = bytemuck::cast_slice(&vertices);
+        if !vertices_bytes.is_empty() {
+            let vertices_buffer =
+                ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("sugarloaf::rich_text::Pipeline vertices"),
+                    contents: vertices_bytes,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+                });
 
-        //     queue.write_buffer(&self.instances, 0, instance_bytes);
+            encoder.copy_buffer_to_buffer(
+                &vertices_buffer,
+                0,
+                &self.vertex_buffer,
+                0,
+                mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
+            );
+        }
 
-        //     {
-        //         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //             label: None,
-        //             timestamp_writes: None,
-        //             occlusion_query_set: None,
-        //             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //                 view,
-        //                 resolve_target: None,
-        //                 ops: wgpu::Operations {
-        //                     load: wgpu::LoadOp::Load,
-        //                     store: wgpu::StoreOp::Store,
-        //                 },
-        //             })],
-        //             depth_stencil_attachment: None,
-        //         });
-        //         // rpass.push_debug_group("Prepare data for draw.");
-        //         rpass.set_pipeline(&self.pipeline);
-        //         rpass.set_bind_group(0, &self.bind_group, &[]);
-        //         rpass.set_index_buffer(
-        //             self.index_buf.slice(..),
-        //             wgpu::IndexFormat::Uint16,
-        //         );
-        //         rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-        //         rpass.set_vertex_buffer(1, self.instances.slice(..));
-        //         // rpass.pop_debug_group();
-        //         // rpass.insert_debug_marker("Draw!");
-        //         rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-        //         drop(rpass);
+        let queue = &mut ctx.queue;
+
+        println!("{:?} {:?}", indices.len() as u64, self.index_buffer_size);
+        if indices.len() as u64 > self.index_buffer_size {
+            let indices_raw = unsafe {
+                std::slice::from_raw_parts(
+                    indices as *const _ as *const u8,
+                    std::mem::size_of_val(indices),
+                )
+            };
+
+            queue.write_buffer(&self.index_buffer, 0, indices_raw);
+        }
+
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        if transform != self.current_transform {
+            queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&transform));
+
+            self.current_transform = transform;
+        }
+
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    // load: wgpu::LoadOp::Clear(wgpu::Color::RED),
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+
+        println!("{:?} {:?} {:?}", vertices, vertices.len(), self.dlist.indices());
+
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        rpass.draw_indexed(0..(vertices.len() as u32), 0, 0..1);
+
+        // rpass.set_blend_constant
+
+        // for command in self.dlist.commands() {
+        //     match command {
+        //         Command::BindPipeline(pipeline) => {
+        //             println!("BindPipeline {:?}",pipeline);
+        //             // match pipeline {
+        //             //     Pipeline::Opaque => {
+        //             //         unsafe {
+        //             //             gl::DepthMask(1);
+        //             //             gl::Disable(gl::BLEND);
+        //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+        //             //             gl::BlendEquation(gl::FUNC_ADD);
+        //             //         }
+        //             //         self.base_shader.activate();
+        //             //         self.base_shader.bind_attribs();
+        //             //         self.base_shader.set_view_proj(&view_proj);
+        //             //     }
+        //             //     Pipeline::Transparent => {
+        //             //         unsafe {
+        //             //             gl::DepthMask(0);
+        //             //             gl::Enable(gl::BLEND);
+        //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+        //             //         }
+        //             //         self.base_shader.activate();
+        //             //         self.base_shader.bind_attribs();
+        //             //         self.base_shader.set_view_proj(&view_proj);
+        //             //     }
+        //             //     Pipeline::Subpixel => {
+        //             //         unsafe {
+        //             //             gl::DepthMask(0);
+        //             //             gl::Enable(gl::BLEND);
+        //             //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
+        //             //         }
+        //             //         self.subpx_shader.activate();
+        //             //         self.subpx_shader.bind_attribs();
+        //             //         self.subpx_shader.set_view_proj(&view_proj);
+        //             //     }
+
+        //             // }
+        //         }
+        //         Command::BindTexture(unit, id) => {
+        //             println!("BindTexture {:?} {:?}",unit, id);
+        //             // if let Some(tex) = self.textures.get(&id) {
+        //             //     tex.bind(*unit);
+        //             // }
+        //         }
+        //         Command::Draw { start, count } => {
+        //             let end = start + count;
+        //             rpass.draw(*start..end, 0..(vertices.len() as u32));
+        //         }
         //     }
-
-        //     i += MAX_INSTANCES;
         // }
 
-        for command in self.dlist.commands() {
-            match command {
-                Command::BindPipeline(pipeline) => {
-                    // match pipeline {
-                    //     Pipeline::Opaque => {
-                    //         unsafe {
-                    //             gl::DepthMask(1);
-                    //             gl::Disable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //             gl::BlendEquation(gl::FUNC_ADD);
-                    //         }
-                    //         self.base_shader.activate();
-                    //         self.base_shader.bind_attribs();
-                    //         self.base_shader.set_view_proj(&view_proj);
-                    //     }
-                    //     Pipeline::Transparent => {
-                    //         unsafe {
-                    //             gl::DepthMask(0);
-                    //             gl::Enable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //         }
-                    //         self.base_shader.activate();
-                    //         self.base_shader.bind_attribs();
-                    //         self.base_shader.set_view_proj(&view_proj);
-                    //     }
-                    //     Pipeline::Subpixel => {
-                    //         unsafe {
-                    //             gl::DepthMask(0);
-                    //             gl::Enable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
-                    //         }
-                    //         self.subpx_shader.activate();
-                    //         self.subpx_shader.bind_attribs();
-                    //         self.subpx_shader.set_view_proj(&view_proj);
-                    //     }
-
-                    // }
-                }
-                Command::BindTexture(unit, id) => {
-                    // if let Some(tex) = self.textures.get(&id) {
-                    //     tex.bind(*unit);
-                    // }
-                }
-                Command::Draw { start, count } => {
-                    // unsafe {
-                    //     gl::DrawElements(
-                    //         gl::TRIANGLES,
-                    //         *count as _,
-                    //         gl::UNSIGNED_INT,
-                    //         (*start as usize * 4) as *const _,
-                    //     );
-                    // }
-                }
-            }
-        }
+        drop(rpass);
     }
 
     fn finish_composition(&mut self, ctx: &mut Context) {
@@ -552,7 +511,7 @@ impl RichTextBrush {
             match event {
                 TextureEvent::CreateTexture {
                     id,
-                    format,
+                    format: _,
                     width,
                     height,
                     data,
@@ -563,26 +522,14 @@ impl RichTextBrush {
                         depth_or_array_layers: 1,
                     };
                     let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
-                        // All textures are stored as 3D, we represent our 2D texture
-                        // by setting depth to 1.
                         size: texture_size,
-                        mip_level_count: 1, // We'll talk about this a little later
+                        mip_level_count: 1,
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
-                        // Most images are stored using sRGB, so we need to reflect that here.
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                        // TEXTURE_BINDING tells wgpu that we want to use this texture in shaders
-                        // COPY_DST means that we want to copy data to this texture
+                        format: wgpu::TextureFormat::R8Unorm,
                         usage: wgpu::TextureUsages::TEXTURE_BINDING
                             | wgpu::TextureUsages::COPY_DST,
-                        label: Some("diffuse_texture"),
-                        // This is the same as with the SurfaceConfig. It
-                        // specifies what texture formats can be used to
-                        // create TextureViews for this texture. The base
-                        // texture format (Rgba8UnormSrgb in this case) is
-                        // always supported. Note that using a different
-                        // texture format is not supported on the WebGL2
-                        // backend.
+                        label: Some("rich_text::Cache"),
                         view_formats: &[],
                     });
 
@@ -629,7 +576,11 @@ impl RichTextBrush {
                             wgpu::ImageCopyTexture {
                                 texture: &texture,
                                 mip_level: 0,
-                                origin: wgpu::Origin3d::ZERO,
+                                origin: wgpu::Origin3d {
+                                    x: u32::from(x),
+                                    y: u32::from(y),
+                                    z: 0,
+                                },
                                 aspect: wgpu::TextureAspect::All,
                             },
                             // The actual pixel data
@@ -704,65 +655,63 @@ fn draw_layout(
 }
 
 fn build_document() -> doc::Document {
-    use layout::*;
+    // use layout::*;
     let mut db = doc::Document::builder();
 
-    use SpanStyle as S;
+    // use SpanStyle as S;
 
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
+    // let underline = &[
+    //     S::Underline(true),
+    //     S::UnderlineOffset(Some(-1.)),
+    //     S::UnderlineSize(Some(1.)),
+    // ];
 
-    db.enter_span(&[
-        S::family_list("Victor Mono, times, georgia, serif"),
-        S::Size(18.),
-        S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-    ]);
-    db.enter_span(&[S::LineSpacing(1.2)]);
-    db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
-    db.add_text("According to Wikipedia, the foremost expert on any subject,\n\n");
-    db.leave_span();
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.add_text("Typography");
-    db.leave_span();
-    db.add_text(" is the ");
-    db.enter_span(&[S::Style(Style::Italic)]);
-    db.add_text("art and technique");
-    db.leave_span();
-    db.add_text(" of arranging type to make ");
-    db.enter_span(underline);
-    db.add_text("written language");
-    db.leave_span();
-    db.add_text(" ");
-    db.enter_span(underline);
-    db.add_text("legible");
-    db.leave_span();
-    db.add_text(", ");
-    db.enter_span(underline);
-    db.add_text("readable");
-    db.leave_span();
-    db.add_text(" and ");
-    db.enter_span(underline);
-    db.add_text("appealing");
-    db.leave_span();
-    db.add_text(WIKI_TYPOGRAPHY_REST);
-    db.enter_span(&[S::LineSpacing(1.)]);
-    db.add_text(
-        " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
-    );
-    db.leave_span();
-    db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
-    db.add_text("A true ");
-    db.enter_span(&[S::Size(48.)]);
-    db.add_text("🕵🏽‍♀️");
-    db.leave_span();
-    db.add_text(" will spot the tricky selection in this BiDi text: ");
-    db.enter_span(&[S::Size(22.)]);
-    db.add_text("ניפגש ב09:35 בחוף הים");
-    db.leave_span();
+    // db.enter_span(&[
+    //     S::family_list("Victor Mono, times, georgia, serif"),
+    //     S::Size(18.),
+    //     S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+    // ]);
+    db.add_text("rio");
+    // db.enter_span(&[S::LineSpacing(1.2)]);
+    // db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
+    // db.add_text("According to Wikipedia, the foremost expert on any subject,\n\n");
+    // db.leave_span();
+    // db.enter_span(&[S::Weight(Weight::BOLD)]);
+    // db.add_text("Typography");
+    // db.leave_span();
+    // db.add_text(" is the ");
+    // db.enter_span(&[S::Style(Style::Italic)]);
+    // db.add_text("art and technique");
+    // db.leave_span();
+    // db.add_text(" of arranging type to make ");
+    // db.enter_span(underline);
+    // db.add_text("written language");
+    // db.leave_span();
+    // db.add_text(" ");
+    // db.enter_span(underline);
+    // db.add_text("legible");
+    // db.leave_span();
+    // db.add_text(", ");
+    // db.enter_span(underline);
+    // db.add_text("readable");
+    // db.leave_span();
+    // db.add_text(" and ");
+    // db.enter_span(underline);
+    // db.add_text("appealing");
+    // db.leave_span();
+    // db.enter_span(&[S::LineSpacing(1.)]);
+    // db.add_text(
+    //     " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
+    // );
+    // db.leave_span();
+    // db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
+    // db.add_text("A true ");
+    // db.enter_span(&[S::Size(48.)]);
+    // db.add_text("🕵🏽‍♀️");
+    // db.leave_span();
+    // db.add_text(" will spot the tricky selection in this BiDi text: ");
+    // db.enter_span(&[S::Size(22.)]);
+    // db.add_text("ניפגש ב09:35 בחוף הים");
+    // db.leave_span();
     db.build()
 }
-
-const WIKI_TYPOGRAPHY_REST: &'static str = " when displayed. The arrangement of type involves selecting typefaces, point sizes, line lengths, line-spacing (leading), and letter-spacing (tracking), and adjusting the space between pairs of letters (kerning). The term typography is also applied to the style, arrangement, and appearance of the letters, numbers, and symbols created by the process.";
