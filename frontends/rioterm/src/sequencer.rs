@@ -3,6 +3,7 @@ use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType}
 use crate::ime::Preedit;
 use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use crate::screen::touch::on_touch;
 use crate::watch::watch;
 use rio_backend::config::colors::ColorRgb;
 use std::error::Error;
@@ -82,6 +83,33 @@ impl Sequencer {
                                     return;
                                 }
                                 route.redraw();
+                            }
+                        }
+                        RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                let mut terminal =
+                                    route.window.screen.ctx().current().terminal.lock();
+                                let graphics = terminal.graphics_take_queues();
+                                drop(terminal);
+                                if let Some(graphic_queues) = graphics {
+                                    for graphic_data in graphic_queues.pending {
+                                        route
+                                            .window
+                                            .screen
+                                            .sugarloaf
+                                            .graphics
+                                            .add(graphic_data);
+                                    }
+
+                                    for graphic_data in graphic_queues.remove_queue {
+                                        route
+                                            .window
+                                            .screen
+                                            .sugarloaf
+                                            .graphics
+                                            .remove(&graphic_data);
+                                    }
+                                }
                             }
                         }
                         RioEventType::Rio(RioEvent::ReportToAssistant(error)) => {
@@ -868,6 +896,15 @@ impl Sequencer {
                                 route.window.screen.ime.set_enabled(false);
                             }
                         }
+                    }
+                }
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::Touch(touch),
+                    window_id,
+                    ..
+                } => {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        on_touch(route, touch);
                     }
                 }
 
