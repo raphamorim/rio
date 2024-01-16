@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
 - Vertical text alignment is now `Bottom` as default instead of `Center`.
 - Partial support to `line-height` configuration.
 - Update ttf-parser and memmap2 on sugarloaf.
