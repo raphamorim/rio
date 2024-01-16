@@ -1,6 +1,6 @@
 use super::Alignment;
 use super::Glyph;
-use super::{font::Font, Direction, SpanId};
+use super::{font::Font, SpanId};
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
