@@ -907,7 +907,7 @@ impl Sequencer {
                         on_touch(route, touch);
                     }
                 }
-                
+
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::Focused(focused),
                     window_id,
