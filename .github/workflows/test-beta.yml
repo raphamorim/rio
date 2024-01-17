@@ -24,4 +24,7 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo clippy -p rioterm-beta -- -D warnings
-      - run: cargo test -p rioterm-beta
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run tests
+        run: cargo nextest run -p rioterm-beta

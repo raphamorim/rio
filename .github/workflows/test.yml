@@ -32,7 +32,10 @@ jobs:
             make lint
           fi
         shell: bash
-      - run: cargo test --workspace --release --exclude rioterm-beta
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run tests
+        run: cargo nextest run --workspace --release --exclude rioterm-beta
 
   # cli:
   #   strategy:
