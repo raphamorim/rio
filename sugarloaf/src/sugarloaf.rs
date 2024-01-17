@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -80,9 +81,9 @@ pub struct SugarloafWindowSize {
     pub height: u32,
 }
 
-pub struct SugarloafWindow {
-    pub handle: raw_window_handle::RawWindowHandle,
-    pub display: raw_window_handle::RawDisplayHandle,
+pub struct SugarloafWindow<'a> {
+    pub handle: raw_window_handle::WindowHandle<'a>,
+    pub display: raw_window_handle::DisplayHandle<'a>,
     pub size: SugarloafWindowSize,
     pub scale: f32,
 }
@@ -106,21 +107,21 @@ impl Default for SugarloafRenderer {
     }
 }
 
-unsafe impl raw_window_handle::HasRawWindowHandle for SugarloafWindow {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.handle
+impl raw_window_handle::HasWindowHandle for SugarloafWindow<'_> {
+    fn window_handle(&self) -> std::result::Result<raw_window_handle::WindowHandle, raw_window_handle::HandleError> {
+        Ok(self.handle)
     }
 }
 
-unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        self.display
+impl raw_window_handle::HasDisplayHandle for SugarloafWindow<'_> {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle, raw_window_handle::HandleError> {
+        Ok(self.display)
     }
 }
 
-impl Sugarloaf {
+impl<'a> Sugarloaf {
     pub async fn new(
-        raw_window_handle: &SugarloafWindow,
+        raw_window_handle: &SugarloafWindow<'a>,
         renderer: SugarloafRenderer,
         fonts: SugarloafFonts,
         layout: SugarloafLayout,
