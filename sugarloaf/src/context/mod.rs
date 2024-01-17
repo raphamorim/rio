@@ -87,7 +87,7 @@ impl Context {
         let size = &sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(&sugarloaf_window).unwrap() };
+        let surface = instance.create_surface(sugarloaf_window);
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -120,8 +120,8 @@ impl Context {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
-                                features: wgpu::Features::empty(),
-                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                                required_features: wgpu::Features::empty(),
+                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
                             },
                             None,
                         )
@@ -156,6 +156,10 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                #[cfg(target_os = "macos")]
+                desired_maximum_frame_latency: 1,
+                #[cfg(not(target_os = "macos"))]
+                desired_maximum_frame_latency: 2
             },
         );
 
@@ -187,6 +191,10 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                #[cfg(target_os = "macos")]
+                desired_maximum_frame_latency: 1,
+                #[cfg(not(target_os = "macos"))]
+                desired_maximum_frame_latency: 2
             },
         );
     }
