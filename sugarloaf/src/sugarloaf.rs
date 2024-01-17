@@ -312,7 +312,7 @@ impl Sugarloaf {
 
             {
                 let rect_builder = RectBuilder {
-                    sugarwidth: self.layout.sugarwidth * 2., // "* 2." because we want some space to the left and right which sums up to one sugarwidth
+                    sugarwidth: self.layout.scaled_sugarwidth * 2., // "* 2." because we want some space to the left and right which sums up to one sugarwidth
                     sugarheight: self.layout.sugarheight,
                     line_height: self.layout.line_height,
                     scale: self.ctx.scale,

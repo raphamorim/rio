@@ -53,7 +53,7 @@ impl Text {
         let quantity = if decoration.is_some() || media.is_some() {
             1
         } else {
-            let mut counter = 1;
+            let mut quantity = 1;
 
             while iterator
                 .next_if(|next_sugar| {
@@ -65,10 +65,10 @@ impl Text {
                 })
                 .is_some()
             {
-                counter += 1;
+                quantity += 1;
             }
 
-            counter
+            quantity
         };
 
         Self {
