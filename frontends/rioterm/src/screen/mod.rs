@@ -21,10 +21,9 @@ use crate::crosswords::{
     pos::{Column, Pos, Side},
     square::Hyperlink,
     vi_mode::ViMotion,
-    Crosswords, Mode, MIN_COLUMNS, MIN_LINES,
+    Mode, MIN_COLUMNS, MIN_LINES,
 };
 use crate::ime::Ime;
-use crate::messenger::Messenger;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;

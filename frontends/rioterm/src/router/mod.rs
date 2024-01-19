@@ -2,7 +2,7 @@ mod window;
 
 use crate::event::{EventPayload, EventProxy};
 use crate::router::window::{configure_window, create_window_builder};
-use crate::routes::{assistant, dialog, welcome};
+use crate::routes::{assistant, RoutePath};
 use crate::screen::Screen;
 use assistant::Assistant;
 use rio_backend::config::Config as RioConfig;
@@ -152,14 +152,6 @@ impl Route {
             }
         }
     }
-}
-
-#[derive(PartialEq)]
-pub enum RoutePath {
-    Assistant,
-    Terminal,
-    Welcome,
-    ConfirmQuit,
 }
 
 pub struct Router {
