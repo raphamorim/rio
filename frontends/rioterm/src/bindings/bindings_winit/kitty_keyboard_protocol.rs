@@ -1,13 +1,12 @@
 // build_key_sequence was originally taken from alacritty
 // which is licensed under Apache 2.0 license.
 
-use crate::screen::ElementState;
-use crate::screen::Mode;
-use crate::screen::ModifiersState;
+use rio_backend::crosswords::Mode;
 use std::borrow::Cow;
-use winit::event::KeyEvent;
+use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::Key;
 use winit::keyboard::KeyLocation;
+use winit::keyboard::ModifiersState;
 use winit::keyboard::NamedKey::*;
 
 #[inline(never)]

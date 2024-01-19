@@ -14,7 +14,6 @@ pub mod touch;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
 };
-use crate::clipboard::{Clipboard, ClipboardType};
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::crosswords::{
@@ -33,6 +32,7 @@ use crate::screen::{context::ContextManager, touch::TouchPurpose};
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
     colors::{term::List, ColorWGPU},
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
@@ -94,7 +94,7 @@ pub struct Screen {
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub modifiers: Modifiers,
-    pub mouse: crate::Mouse,
+    pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
@@ -222,7 +222,7 @@ impl Screen {
             context_manager,
             ime,
             sugarloaf,
-            mouse: crate::Mouse::new(config.scroll.multiplier, config.scroll.divider),
+            mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
             state,
             bindings,
@@ -1212,20 +1212,20 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_assistant(&mut self, assistant: &router::assistant::Assistant) {
+    pub fn render_assistant(&mut self, assistant: &routes::assistant::Assistant) {
         crate::router::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_welcome(&mut self) {
-        crate::router::welcome::screen(&mut self.sugarloaf);
+        crate::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_dialog(&mut self, content: &str) {
-        crate::router::dialog::screen(&mut self.sugarloaf, content);
+        crate::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
 
