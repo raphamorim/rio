@@ -24,7 +24,7 @@ use crate::crosswords::{
 use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::selection::{Selection, SelectionType};
-use crate::state::{self, navigation};
+use crate::state;
 use core::fmt::Debug;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};

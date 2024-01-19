@@ -337,11 +337,13 @@ impl State {
     }
 
     #[inline]
+    #[cfg(target_os = "macos")]
     pub fn decrease_foreground_opacity(&mut self, acc: f32) {
         self.foreground_opacity -= acc;
     }
 
     #[inline]
+    #[cfg(target_os = "macos")]
     pub fn increase_foreground_opacity(&mut self, acc: f32) {
         self.foreground_opacity += acc;
     }
