@@ -10,6 +10,8 @@
 
 ## Unreleased
 
+- Updated wgpu to 0.19.0.
+- Removed support to DX11.
 - Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
 - Vertical text alignment is now `Bottom` as default instead of `Center`.
 - Partial support to `line-height` configuration.

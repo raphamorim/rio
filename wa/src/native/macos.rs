@@ -14,8 +14,9 @@ use crate::native::macos::NSEventType::NSApplicationDefined;
 use crate::FairMutex;
 use crate::{AppHandler, Appearance};
 use objc::rc::StrongPtr;
-use raw_window_handle::HasRawDisplayHandle;
-use raw_window_handle::HasRawWindowHandle;
+use raw_window_handle::{
+    AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
 use std::sync::OnceLock;
 
 use {
@@ -153,21 +154,34 @@ pub struct MacosDisplay {
     modifiers: Modifiers,
 }
 
-unsafe impl raw_window_handle::HasRawWindowHandle for MacosDisplay {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        let mut window_handle = raw_window_handle::AppKitWindowHandle::empty();
-        window_handle.ns_window = self.window as *mut _;
-        window_handle.ns_view = self.view as *mut _;
-        raw_window_handle::RawWindowHandle::AppKit(window_handle)
+impl MacosDisplay {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        let window_handle =
+            AppKitWindowHandle::new(NonNull::new(self.view as *mut _).unwrap());
+        // window_handle.ns_window = self.window as *mut _;
+        // window_handle.ns_view = self.view as *mut _;
+        RawWindowHandle::AppKit(window_handle)
+    }
+
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        let handle = AppKitDisplayHandle::new();
+        RawDisplayHandle::AppKit(handle)
     }
 }
 
-unsafe impl raw_window_handle::HasRawDisplayHandle for MacosDisplay {
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        let handle = raw_window_handle::AppKitDisplayHandle::empty();
-        raw_window_handle::RawDisplayHandle::AppKit(handle)
-    }
-}
+// impl HasWindowHandle for SugarloafWindow {
+//     fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+//         let raw = self.raw_window_handle();
+//         Ok(unsafe { WindowHandle::borrow_raw(raw) })
+//     }
+// }
+
+// impl HasDisplayHandle for SugarloafWindow {
+//     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+//         let raw = self.raw_display_handle();
+//         Ok(unsafe { DisplayHandle::borrow_raw(raw)})
+//     }
+// }
 
 impl MacosDisplay {
     pub fn set_cursor_grab(&mut self, grab: bool) {

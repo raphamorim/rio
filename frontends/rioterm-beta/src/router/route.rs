@@ -123,7 +123,6 @@ impl Route {
             RendererBackend::Vulkan => wgpu::Backends::VULKAN,
             RendererBackend::GL => wgpu::Backends::GL,
             RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX11 => wgpu::Backends::DX11,
             RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
@@ -159,7 +158,7 @@ impl Route {
         };
 
         let mut sugarloaf = match futures::executor::block_on(Sugarloaf::new(
-            &sugarloaf_window,
+            sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout.clone(),

@@ -39,7 +39,7 @@ use crate::screen::{
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use messenger::Messenger;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::{
     colors::{term::List, ColorWGPU},
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
@@ -118,8 +118,8 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
-        let raw_window_handle = winit_window.raw_window_handle();
-        let raw_display_handle = winit_window.raw_display_handle();
+        let raw_window_handle = winit_window.window_handle().unwrap();
+        let raw_display_handle = winit_window.display_handle().unwrap();
         let window_id = winit_window.id();
 
         let padding_y_bottom = padding_bottom_from_config(config);
@@ -138,8 +138,8 @@ impl Screen {
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
         let sugarloaf_window = SugarloafWindow {
-            handle: raw_window_handle,
-            display: raw_display_handle,
+            handle: raw_window_handle.into(),
+            display: raw_display_handle.into(),
             scale: scale as f32,
             size: SugarloafWindowSize {
                 width: size.width,
@@ -164,7 +164,6 @@ impl Screen {
             RendererBackend::Vulkan => wgpu::Backends::VULKAN,
             RendererBackend::GL => wgpu::Backends::GL,
             RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX11 => wgpu::Backends::DX11,
             RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
@@ -174,7 +173,7 @@ impl Screen {
         };
 
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
-            &sugarloaf_window,
+            sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout,
@@ -191,7 +190,7 @@ impl Screen {
 
         let state = State::new(config, winit_window.theme());
 
-        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
+        let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
 
         let bindings = bindings::default_key_bindings(
             config.bindings.keys.to_owned(),

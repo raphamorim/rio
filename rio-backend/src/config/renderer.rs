@@ -42,8 +42,6 @@ pub enum Backend {
     Vulkan,
     // Supported on Windows 10
     DX12,
-    // Supported on Windows 7+
-    DX11,
     // Supported on macOS/iOS
     Metal,
 }
@@ -65,9 +63,6 @@ impl Display for Backend {
             }
             Backend::DX12 => {
                 write!(f, "DX12")
-            }
-            Backend::DX11 => {
-                write!(f, "DX11")
             }
         }
     }

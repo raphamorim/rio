@@ -8,7 +8,7 @@ use winit::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowBuilder,
 };
 
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
@@ -42,8 +42,8 @@ async fn main() {
 
     let size = window.inner_size();
     let sugarloaf_window = SugarloafWindow {
-        handle: window.raw_window_handle(),
-        display: window.raw_display_handle(),
+        handle: window.window_handle().unwrap().into(),
+        display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
             width: size.width,
@@ -52,7 +52,7 @@ async fn main() {
     };
 
     let mut sugarloaf = Sugarloaf::new(
-        &sugarloaf_window,
+        sugarloaf_window,
         sugarloaf::SugarloafRenderer::default(),
         sugarloaf::font::fonts::SugarloafFonts::default(),
         sugarloaf_layout,
