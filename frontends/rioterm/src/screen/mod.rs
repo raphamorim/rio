@@ -206,11 +206,11 @@ impl Screen {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            sugarloaf.layout.clone(),
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
             context_manager_config,
+            sugarloaf.layout.clone(),
             sugarloaf_errors,
         )?;
 
