@@ -1,11 +1,11 @@
-use std::fs::File;
-use std::io::Write;
-
 #[cfg(target_os = "macos")]
 pub mod macos;
 
 #[cfg(target_os = "macos")]
 pub fn create_config_file() {
+    use std::fs::File;
+    use std::io::Write;
+
     let default_file_path = rio_backend::config::config_file_path();
     if default_file_path.exists() {
         return;
