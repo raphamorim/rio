@@ -6,8 +6,6 @@
 // were retired from https://github.com/alacritty/alacritty/blob/c39c3c97f1a1213418c3629cc59a1d46e34070e0/alacritty/src/input.rs
 // which is licensed under Apache 2.0 license.
 
-mod navigation;
-mod state;
 pub mod touch;
 
 use crate::bindings::{
@@ -26,6 +24,7 @@ use crate::crosswords::{
 use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::selection::{Selection, SelectionType};
+use crate::state::{self, navigation};
 use core::fmt::Debug;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
