@@ -1,28 +1,29 @@
 use crate::ansi::CursorShape;
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
-use crate::event::{EventListener, RioEvent};
+use crate::event::RioEvent;
+use crate::messenger::Messenger;
 use crate::performer::Machine;
-use crate::screen::Crosswords;
-use crate::screen::Messenger;
-use crate::screen::SugarloafLayout;
 use rio_backend::config::Shell;
-use rio_backend::crosswords::{CrosswordsSize, MIN_COLUMNS, MIN_LINES};
+use rio_backend::crosswords::CrosswordsSize;
+use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_backend::event::EventListener;
+use rio_backend::event::WindowId;
+use rio_backend::sugarloaf::layout::SugarloafLayout;
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use winit::window::WindowId;
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
-const DEFAULT_CONTEXT_CAPACITY: usize = 20;
+const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
 pub struct Context<T: EventListener> {
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
@@ -66,6 +67,7 @@ impl ContextManagerTitles {
         }
     }
 
+    #[inline]
     pub fn set_key_val(
         &mut self,
         idx: usize,
@@ -76,6 +78,7 @@ impl ContextManagerTitles {
         self.titles.insert(idx, [program, terminal_title, path]);
     }
 
+    #[inline]
     pub fn set_key(&mut self, key: String) {
         self.key = key;
     }
@@ -84,6 +87,7 @@ impl ContextManagerTitles {
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
     current_index: usize,
+    #[allow(unused)]
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,
@@ -111,17 +115,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn create_context(
-        size: SugarloafLayout,
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
+        size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        let columns: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
-        let lines: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
-        let event_proxy_clone = event_proxy.clone();
         let mut terminal =
-            Crosswords::new(size, cursor_state.0.content, event_proxy, window_id);
+            Crosswords::new(size, cursor_state.0.content, event_proxy.clone(), window_id);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -132,8 +133,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 log::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
-                    columns,
-                    lines,
+                    2,
+                    1,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -147,8 +148,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
                     &config.working_dir,
-                    columns,
-                    lines,
+                    2,
+                    1,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -176,7 +177,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let machine =
-            Machine::new(Arc::clone(&terminal), pty, event_proxy_clone, window_id)?;
+            Machine::new(Arc::clone(&terminal), pty, event_proxy.clone(), window_id)?;
         let channel = machine.channel();
         if config.spawn_performer {
             machine.spawn();
@@ -195,18 +196,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn start(
-        size: SugarloafLayout,
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
         ctx_config: ContextManagerConfig,
+        size: SugarloafLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
-            size,
             cursor_state,
             event_proxy.clone(),
             window_id,
+            size,
             &ctx_config,
         ) {
             Ok(context) => context,
@@ -280,10 +281,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             use_current_path: false,
         };
         let initial_context = ContextManager::create_context(
-            SugarloafLayout::default(),
             (&CursorState::new('_'), false),
             event_proxy.clone(),
             window_id,
+            SugarloafLayout::default(),
             &config,
         )?;
 
@@ -302,13 +303,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn schedule_render(&self, scheduled_time: u64) {
+    pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
             .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
     }
 
     #[inline]
-    pub fn report_error_fonts_not_found(&self, fonts_not_found: Vec<SugarloafFont>) {
+    pub fn report_error_fonts_not_found(&mut self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
                 RioEvent::ReportToAssistant({
@@ -323,13 +324,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn create_new_window(&self) {
+    pub fn create_new_window(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CreateWindow, self.window_id);
     }
 
     #[inline]
-    pub fn close_current_window(&self) {
+    #[allow(unused)]
+    pub fn close_current_window(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CloseWindow, self.window_id);
     }
@@ -363,8 +365,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn quit(&mut self) {
-        self.event_proxy.send_event(RioEvent::Exit, self.window_id);
+        self.event_proxy.send_event(RioEvent::Quit, self.window_id);
     }
 
     #[cfg(target_os = "macos")]
@@ -386,7 +389,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn switch_to_settings(&self) {
+    pub fn switch_to_settings(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CreateConfigEditor, self.window_id);
     }
@@ -442,8 +445,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        self.event_proxy
-                            .send_event(RioEvent::Title(window_title), self.window_id);
+                        self.event_proxy.send_event(
+                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
+                            self.window_id,
+                        );
                     }
 
                     id =
@@ -461,15 +466,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    let terminal_title = String::from("");
+                    let empty_string = String::from("");
 
-                    id =
-                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
-
-                    // TODO: get path on Windows
-                    let path = String::new();
-
-                    self.titles.set_key_val(i, program, terminal_title, path);
+                    id = id.to_owned() + &(format!("{}{}{};", i, program, empty_string));
+                    self.titles.set_key_val(
+                        i,
+                        program,
+                        empty_string.clone(),
+                        empty_string,
+                    );
                 }
                 self.titles.set_key(id);
             }
@@ -622,11 +627,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        // Native tabs do not use Context tabbing API, instead it will
-        // ask winit to create a window with a tab id
         if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::CreateNativeTab(working_dir), self.window_id);
+            self.event_proxy.send_event_with_high_priority(
+                RioEvent::CreateNativeTab(working_dir),
+                self.window_id,
+            );
             return;
         }
 
@@ -640,10 +645,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
 
             match ContextManager::create_context(
-                layout,
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
+                layout,
                 &cloned_config,
             ) {
                 Ok(new_context) => {
@@ -667,23 +672,32 @@ pub mod test {
 
     #[test]
     fn test_capacity() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
 
     #[test]
     fn test_add_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -708,9 +722,14 @@ pub mod test {
 
     #[test]
     fn test_add_context_start_with_capacity_limit() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -741,9 +760,14 @@ pub mod test {
 
     #[test]
     fn test_set_current() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(8, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(8, VoidListener {}, window_id).unwrap();
         let should_redirect = true;
 
         context_manager.add_context(
@@ -777,9 +801,14 @@ pub mod test {
 
     #[test]
     fn test_close_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -807,9 +836,14 @@ pub mod test {
 
     #[test]
     fn test_close_context_upcoming_ids() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -857,9 +891,14 @@ pub mod test {
 
     #[test]
     fn test_close_last_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(2, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(2, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -885,9 +924,14 @@ pub mod test {
 
     #[test]
     fn test_switch_to_next() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
-                .unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(

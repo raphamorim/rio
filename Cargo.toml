@@ -7,8 +7,7 @@ members = [
   "rio-proc-macros",
   "rio-backend",
   "wa",
-  "frontends/rioterm",
-  "frontends/rioterm-beta"
+  "frontends/rioterm"
 ]
 resolver = "2"
 
@@ -36,7 +35,7 @@ teletypewriter = { path = "teletypewriter", version = "0.0.35" }
 rio-backend = { path = "rio-backend", version = "0.0.35" }
 wa = { path = "wa", version = "0.0.35" }
 
-raw-window-handle = "0.5"
+raw-window-handle = "0.6"
 parking_lot = "0.12.1"
 unicode-width = "0.1.11"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
@@ -44,8 +43,8 @@ regex = "1.10.2"
 bytemuck = { version = "1.14.0", features = [ "derive" ] }
 log = "0.4.20"
 serde = { version = "1.0.188", features = ["derive"] }
-tokio = { version = "1.35.1", features = ["rt", "rt-multi-thread", "macros"] }
-wgpu = "0.18.0"
+tokio = { version = "1.35.1", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
+wgpu = "0.19.0"
 libc = "0.2.148"
 futures = "0.3.29"
 wasm-bindgen = "0.2.87"
@@ -54,7 +53,7 @@ wasm-bindgen-test = "0.3"
 env_logger = "0.10"
 console_log = "0.2"
 console_error_panic_hook = "0.1.7"
-winit = { version = "0.29.9", default-features = false, features = ["rwh_05"] }
+winit = { version = "0.29.10", default-features = false, features = ["rwh_06"] }
 
 [profile.release]
 opt-level = 3

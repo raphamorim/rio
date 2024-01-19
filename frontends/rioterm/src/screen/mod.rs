@@ -6,42 +6,33 @@
 // were retired from https://github.com/alacritty/alacritty/blob/c39c3c97f1a1213418c3629cc59a1d46e34070e0/alacritty/src/input.rs
 // which is licensed under Apache 2.0 license.
 
-mod bindings;
-mod constants;
-mod context;
-mod messenger;
-mod mouse;
-mod navigation;
-mod state;
+pub mod touch;
 
-use crate::clipboard::{Clipboard, ClipboardType};
+use crate::bindings::{
+    Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
+};
+#[cfg(target_os = "macos")]
+use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
+use crate::context::{self, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
     square::Hyperlink,
     vi_mode::ViMotion,
-    Crosswords, Mode, MIN_COLUMNS, MIN_LINES,
+    Mode, MIN_COLUMNS, MIN_LINES,
 };
-use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
-use crate::router;
-use crate::screen::bindings::MouseBinding;
-use crate::screen::bindings::ViAction;
-#[cfg(target_os = "macos")]
-use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
-use crate::screen::{
-    bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
-    context::ContextManager,
-    mouse::{calculate_mouse_position, Mouse},
-};
+use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::selection::{Selection, SelectionType};
+use crate::state;
 use core::fmt::Debug;
-use messenger::Messenger;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
     colors::{term::List, ColorWGPU},
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
+use rio_backend::event::{ClickState, EventProxy};
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
@@ -52,6 +43,7 @@ use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::rc::Rc;
+use touch::TouchPurpose;
 use winit::event::ElementState;
 use winit::event::Modifiers;
 use winit::event::MouseButton;
@@ -71,7 +63,7 @@ fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
     #[cfg(not(target_os = "macos"))]
     {
         if config.navigation.is_placed_on_top() {
-            return constants::PADDING_Y_WITH_TAB_ON_TOP;
+            return crate::constants::PADDING_Y_WITH_TAB_ON_TOP;
         }
     }
 
@@ -82,7 +74,7 @@ fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
         }
     }
 
-    constants::PADDING_Y
+    crate::constants::PADDING_Y
 }
 
 #[inline]
@@ -95,11 +87,12 @@ fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
 }
 
 pub struct Screen {
-    bindings: bindings::KeyBindings,
+    bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub modifiers: Modifiers,
     pub mouse: Mouse,
+    pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
     pub sugarloaf: Sugarloaf,
@@ -115,8 +108,8 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
-        let raw_window_handle = winit_window.raw_window_handle();
-        let raw_display_handle = winit_window.raw_display_handle();
+        let raw_window_handle = winit_window.window_handle().unwrap();
+        let raw_display_handle = winit_window.display_handle().unwrap();
         let window_id = winit_window.id();
 
         let padding_y_bottom = padding_bottom_from_config(config);
@@ -135,8 +128,8 @@ impl Screen {
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
         let sugarloaf_window = SugarloafWindow {
-            handle: raw_window_handle,
-            display: raw_display_handle,
+            handle: raw_window_handle.into(),
+            display: raw_display_handle.into(),
             scale: scale as f32,
             size: SugarloafWindowSize {
                 width: size.width,
@@ -161,7 +154,6 @@ impl Screen {
             RendererBackend::Vulkan => wgpu::Backends::VULKAN,
             RendererBackend::GL => wgpu::Backends::GL,
             RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX11 => wgpu::Backends::DX11,
             RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
@@ -171,7 +163,7 @@ impl Screen {
         };
 
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
-            &sugarloaf_window,
+            sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout,
@@ -188,9 +180,9 @@ impl Screen {
 
         let state = State::new(config, winit_window.theme());
 
-        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
+        let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
 
-        let bindings = bindings::default_key_bindings(
+        let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
             config.keyboard,
@@ -213,21 +205,22 @@ impl Screen {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            sugarloaf.layout.clone(),
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
             context_manager_config,
+            sugarloaf.layout.clone(),
             sugarloaf_errors,
         )?;
 
         Ok(Screen {
-            mouse_bindings: bindings::default_mouse_bindings(),
+            mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
             ime,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
+            touchpurpose: TouchPurpose::default(),
             state,
             bindings,
             clipboard,
@@ -251,7 +244,7 @@ impl Screen {
 
     #[inline]
     pub fn reset_mouse(&mut self) {
-        self.mouse.accumulated_scroll = mouse::AccumulatedScroll::default();
+        self.mouse.accumulated_scroll = crate::mouse::AccumulatedScroll::default();
     }
 
     #[inline]
@@ -269,6 +262,10 @@ impl Screen {
                     * self.sugarloaf.layout.line_height,
             ),
         )
+    }
+
+    pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
+        &mut self.touchpurpose
     }
 
     #[inline]
@@ -493,7 +490,7 @@ impl Screen {
                     Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                     Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
                     Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                    _ => bindings::kitty_keyboard_protocol::build_key_sequence(
+                    _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
                         key, mods, mode,
                     )
                     .into(),
@@ -804,7 +801,9 @@ impl Screen {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode)
+                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
+                    key, mods, mode,
+                )
             }
         };
 
@@ -1057,8 +1056,8 @@ impl Screen {
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
-        let end_top = max(min_height, constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (constants::PADDING_Y
+        let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
+        let text_area_bottom = (crate::constants::PADDING_Y
             + self.sugarloaf.layout.lines as f32)
             * self.sugarloaf.layout.font_size;
         let start_bottom = min(
@@ -1210,20 +1209,20 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_assistant(&mut self, assistant: &router::assistant::Assistant) {
-        crate::router::assistant::screen(&mut self.sugarloaf, assistant);
+    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_welcome(&mut self) {
-        crate::router::welcome::screen(&mut self.sugarloaf);
+        crate::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_dialog(&mut self, content: &str) {
-        crate::router::dialog::screen(&mut self.sugarloaf, content);
+        crate::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
 

@@ -1,11 +1,12 @@
 // scheduler.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/scheduler.rs
 // which is licensed under Apache 2.0 license.
 
+#![cfg(not(target_os = "macos"))]
+
+use crate::event::EventPayload;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use winit::event_loop::EventLoopProxy;
-
-use crate::event::EventPayload;
 
 /// ID uniquely identifying a timer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

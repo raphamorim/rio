@@ -1,12 +1,13 @@
+pub mod navigation;
+
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
-use crate::screen::navigation::ScreenNavigation;
-use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
+use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
@@ -14,9 +15,11 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+#[cfg(target_os = "macos")]
+use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
+#[cfg(not(target_os = "macos"))]
 use winit::window::Theme;
 
 struct Cursor {
@@ -47,20 +50,45 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(config: &Rc<Config>, current_theme: Option<Theme>) -> State {
+    pub fn new(
+        #[cfg(not(target_os = "macos"))] config: &std::rc::Rc<Config>,
+        #[cfg(target_os = "macos")] config: &Config,
+        #[cfg(not(target_os = "macos"))] current_theme: Option<Theme>,
+        #[cfg(target_os = "macos")] appearance: wa::Appearance,
+    ) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        if let Some(theme) = current_theme {
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(theme) = current_theme {
+                if let Some(adaptive_colors) = &config.adaptive_colors {
+                    match theme {
+                        Theme::Light => {
+                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
+                        }
+                        Theme::Dark => {
+                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
             if let Some(adaptive_colors) = &config.adaptive_colors {
-                match theme {
-                    Theme::Light => {
+                match appearance {
+                    wa::Appearance::Light => {
                         named_colors = adaptive_colors.light.unwrap_or(named_colors);
                     }
-                    Theme::Dark => {
+                    wa::Appearance::Dark => {
                         named_colors = adaptive_colors.dark.unwrap_or(named_colors);
                     }
+                    // TODO
+                    wa::Appearance::LightHighContrast => {}
+                    wa::Appearance::DarkHighContrast => {}
                 }
             }
         }
@@ -297,6 +325,18 @@ impl State {
         }
 
         stack
+    }
+
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity -= acc;
+    }
+
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn increase_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity += acc;
     }
 
     #[inline]
@@ -554,7 +594,12 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &context::ContextManager<EventProxy>,
+        #[cfg(not(target_os = "macos"))] context_manager: &crate::context::ContextManager<
+            rio_backend::event::EventProxy,
+        >,
+        #[cfg(target_os = "macos")] context_manager: &crate::context::ContextManager<
+            Superloop,
+        >,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
