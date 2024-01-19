@@ -673,13 +673,11 @@ pub mod test {
     #[test]
     fn test_capacity() {
         let context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
@@ -687,8 +685,7 @@ pub mod test {
     #[test]
     fn test_add_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -714,8 +711,7 @@ pub mod test {
     #[test]
     fn test_add_context_start_with_capacity_limit() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(3, Superloop::new(), 0).unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -747,8 +743,7 @@ pub mod test {
     #[test]
     fn test_set_current() {
         let mut context_manager =
-            ContextManager::start_with_capacity(8, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(8, Superloop::new(), 0).unwrap();
         let should_redirect = true;
 
         context_manager.add_context(
@@ -783,8 +778,7 @@ pub mod test {
     #[test]
     fn test_close_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(3, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(3, Superloop::new(), 0).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -813,8 +807,7 @@ pub mod test {
     #[test]
     fn test_close_context_upcoming_ids() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -863,8 +856,7 @@ pub mod test {
     #[test]
     fn test_close_last_context() {
         let mut context_manager =
-            ContextManager::start_with_capacity(2, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(2, Superloop::new(), 0).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -891,8 +883,7 @@ pub mod test {
     #[test]
     fn test_switch_to_next() {
         let mut context_manager =
-            ContextManager::start_with_capacity(5, Superloop::new(), 0_u16.into())
-                .unwrap();
+            ContextManager::start_with_capacity(5, Superloop::new(), 0).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(

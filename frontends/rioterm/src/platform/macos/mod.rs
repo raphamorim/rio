@@ -1,4 +1,5 @@
-// Retired from https://github.com/alacritty/alacritty/blob/6e7f466c68b387f41726757eed4f3e70d05479d2/alacritty/src/macos/locale.rs
+// set_locale_environment and nsstring_as_str were originally taken from alacritty
+// https://github.com/alacritty/alacritty/blob/94ede16ee4af8869fd6415b3530c7e12c8681578/alacritty/src/macos/locale.rs#L50
 // which is licensed under Apache 2.0 license.
 
 use std::ffi::{CStr, CString};
@@ -7,8 +8,9 @@ use std::{env, slice, str};
 
 use libc::{setlocale, LC_ALL, LC_CTYPE};
 use log::debug;
-use objc2::runtime::{Class, Object};
-use objc2::{msg_send, sel};
+use objc::runtime::{Class, Object};
+use objc::{msg_send, sel, sel_impl};
+
 const FALLBACK_LOCALE: &str = "UTF-8";
 
 pub fn set_locale_environment() {

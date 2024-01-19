@@ -6,16 +6,17 @@
 // were retired from https://github.com/alacritty/alacritty/blob/c39c3c97f1a1213418c3629cc59a1d46e34070e0/alacritty/src/input.rs
 // which is licensed under Apache 2.0 license.
 
-mod bindings;
-mod constants;
 mod context;
-mod messenger;
-mod mouse;
 mod navigation;
 mod state;
 pub mod touch;
 
+use crate::bindings::{
+    Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
+};
 use crate::clipboard::{Clipboard, ClipboardType};
+#[cfg(target_os = "macos")]
+use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -25,20 +26,12 @@ use crate::crosswords::{
 };
 use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
+use crate::messenger::Messenger;
+use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::router;
-use crate::screen::bindings::MouseBinding;
-use crate::screen::bindings::ViAction;
-#[cfg(target_os = "macos")]
-use crate::screen::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
-use crate::screen::{
-    bindings::{Action as Act, BindingKey, BindingMode, FontSizeAction},
-    context::ContextManager,
-    mouse::{calculate_mouse_position, Mouse},
-    touch::TouchPurpose,
-};
+use crate::screen::{context::ContextManager, touch::TouchPurpose};
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
-use messenger::Messenger;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::{
     colors::{term::List, ColorWGPU},
@@ -73,7 +66,7 @@ fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
     #[cfg(not(target_os = "macos"))]
     {
         if config.navigation.is_placed_on_top() {
-            return constants::PADDING_Y_WITH_TAB_ON_TOP;
+            return crate::constants::PADDING_Y_WITH_TAB_ON_TOP;
         }
     }
 
@@ -84,7 +77,7 @@ fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
         }
     }
 
-    constants::PADDING_Y
+    crate::constants::PADDING_Y
 }
 
 #[inline]
@@ -97,11 +90,11 @@ fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
 }
 
 pub struct Screen {
-    bindings: bindings::KeyBindings,
+    bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub modifiers: Modifiers,
-    pub mouse: Mouse,
+    pub mouse: crate::Mouse,
     pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
@@ -192,7 +185,7 @@ impl Screen {
 
         let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
 
-        let bindings = bindings::default_key_bindings(
+        let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
             config.keyboard,
@@ -224,12 +217,12 @@ impl Screen {
         )?;
 
         Ok(Screen {
-            mouse_bindings: bindings::default_mouse_bindings(),
+            mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
             ime,
             sugarloaf,
-            mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
+            mouse: crate::Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
             state,
             bindings,
@@ -254,7 +247,7 @@ impl Screen {
 
     #[inline]
     pub fn reset_mouse(&mut self) {
-        self.mouse.accumulated_scroll = mouse::AccumulatedScroll::default();
+        self.mouse.accumulated_scroll = crate::mouse::AccumulatedScroll::default();
     }
 
     #[inline]
@@ -500,7 +493,7 @@ impl Screen {
                     Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                     Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
                     Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                    _ => bindings::kitty_keyboard_protocol::build_key_sequence(
+                    _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
                         key, mods, mode,
                     )
                     .into(),
@@ -811,7 +804,9 @@ impl Screen {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode)
+                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
+                    key, mods, mode,
+                )
             }
         };
 
@@ -1064,8 +1059,8 @@ impl Screen {
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
-        let end_top = max(min_height, constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (constants::PADDING_Y
+        let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
+        let text_area_bottom = (crate::constants::PADDING_Y
             + self.sugarloaf.layout.lines as f32)
             * self.sugarloaf.layout.font_size;
         let start_bottom = min(

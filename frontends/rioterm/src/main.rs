@@ -4,25 +4,37 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
+#[cfg(target_os = "macos")]
+mod app;
+mod bindings;
 mod cli;
+mod constants;
+mod context;
 mod ime;
 mod logger;
+mod messenger;
+mod mouse;
 #[cfg(windows)]
 mod panic;
 mod platform;
+#[cfg(target_os = "macos")]
+mod renderer;
+#[cfg(not(target_os = "macos"))]
 mod router;
+mod routes;
+#[cfg(not(target_os = "macos"))]
 mod scheduler;
+#[cfg(not(target_os = "macos"))]
 mod screen;
+#[cfg(not(target_os = "macos"))]
 mod sequencer;
-mod ui;
-mod watch;
+mod state;
+mod watcher;
 
-use crate::event::EventPayload;
-use crate::sequencer::Sequencer;
 use clap::Parser;
 use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
-use rio_backend::{ansi, clipboard, crosswords, event, performer, selection};
+use rio_backend::{ansi, crosswords, event, performer, selection};
 use std::str::FromStr;
 
 #[cfg(windows)]
@@ -129,13 +141,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     setup_environment_variables(&config);
 
-    let window_event_loop =
-        winit::event_loop::EventLoopBuilder::<EventPayload>::with_user_event()
-            .build()
-            .unwrap();
+    #[cfg(not(target_os = "macos"))]
+    {
+        let window_event_loop = winit::event_loop::EventLoopBuilder::<
+            crate::event::EventPayload,
+        >::with_user_event()
+        .build()
+        .unwrap();
 
-    let mut sequencer = Sequencer::new(config, config_error);
-    let _ = sequencer.run(window_event_loop).await;
+        let mut sequencer = crate::sequencer::Sequencer::new(config, config_error);
+        let _ = sequencer.run(window_event_loop).await;
+    }
+
+    #[cfg(target_os = "macos")]
+    let _ = app::run(config, config_error).await;
 
     #[cfg(windows)]
     unsafe {
