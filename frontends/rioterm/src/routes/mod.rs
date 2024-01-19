@@ -8,5 +8,6 @@ pub enum RoutePath {
     Assistant,
     Terminal,
     Welcome,
-    // ConfirmQuit,
+    #[cfg(not(target_os = "macos"))]
+    ConfirmQuit,
 }
