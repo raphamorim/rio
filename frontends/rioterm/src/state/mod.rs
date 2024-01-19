@@ -609,7 +609,7 @@ impl State {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         #[cfg(not(target_os = "macos"))] context_manager: &crate::context::ContextManager<
-            crate::screen::EventProxy,
+            rio_backend::event::EventProxy,
         >,
         #[cfg(target_os = "macos")] context_manager: &crate::context::ContextManager<
             Superloop,
