@@ -670,28 +670,34 @@ pub mod test {
     use super::*;
     use crate::event::VoidListener;
 
-    #[cfg(target_os = "macos")]
-    const WINDOW_ID: WindowId = 0;
-
-    #[cfg(not(target_os = "macos"))]
-    const WINDOW_ID: WindowId = WindowId::from(0);
-
     #[test]
     fn test_capacity() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
 
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         context_manager.increase_capacity(3);
         assert_eq!(context_manager.capacity, 8);
     }
 
     #[test]
     fn test_add_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
@@ -716,8 +722,14 @@ pub mod test {
 
     #[test]
     fn test_add_context_start_with_capacity_limit() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
@@ -748,8 +760,14 @@ pub mod test {
 
     #[test]
     fn test_set_current() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(8, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(8, VoidListener {}, window_id).unwrap();
         let should_redirect = true;
 
         context_manager.add_context(
@@ -783,8 +801,14 @@ pub mod test {
 
     #[test]
     fn test_close_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(3, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -812,8 +836,14 @@ pub mod test {
 
     #[test]
     fn test_close_context_upcoming_ids() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -861,8 +891,14 @@ pub mod test {
 
     #[test]
     fn test_close_last_context() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(2, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(2, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
@@ -888,8 +924,14 @@ pub mod test {
 
     #[test]
     fn test_switch_to_next() {
+        #[cfg(target_os = "macos")]
+        let window_id: WindowId = 0;
+
+        #[cfg(not(target_os = "macos"))]
+        let window_id: WindowId = WindowId::from(0);
+
         let mut context_manager =
-            ContextManager::start_with_capacity(5, VoidListener {}, WINDOW_ID).unwrap();
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
         context_manager.add_context(
