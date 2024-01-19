@@ -15,6 +15,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+#[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};

@@ -8,9 +8,9 @@ use std::{collections::HashSet, mem};
 
 use winit::event::{ElementState, MouseButton, Touch, TouchPhase};
 
+use crate::bindings::FontSizeAction;
 use crate::event::ClickState;
 use crate::router::Route;
-use crate::screen::bindings::FontSizeAction;
 
 #[derive(Debug)]
 pub enum TouchPurpose {
