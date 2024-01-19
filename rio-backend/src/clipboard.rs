@@ -2,7 +2,6 @@
 // which is licensed under Apache 2.0 license.
 
 use log::warn;
-
 use raw_window_handle::RawDisplayHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +32,9 @@ impl Clipboard {
             #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
             RawDisplayHandle::Wayland(display) => {
                 let (selection, clipboard) =
-                    wayland_clipboard::create_clipboards_from_external(display.display);
+                    wayland_clipboard::create_clipboards_from_external(
+                        display.display.as_ptr(),
+                    );
                 Self {
                     clipboard: Box::new(clipboard),
                     selection: Some(Box::new(selection)),
