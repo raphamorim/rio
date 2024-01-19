@@ -1,4 +1,4 @@
-mod navigation;
+pub mod navigation;
 
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
