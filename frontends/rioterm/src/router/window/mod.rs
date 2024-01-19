@@ -1,13 +1,13 @@
-#[cfg(target_os = "macos")]
-use {
-    cocoa::base::{id, NO, YES},
-    objc::{msg_send, sel, sel_impl},
-};
+// #[cfg(target_os = "macos")]
+// use {
+//     cocoa::base::{id, NO, YES},
+//     objc::{msg_send, sel, sel_impl},
+// };
 
-#[cfg(target_os = "macos")]
-use raw_window_handle::HasRawWindowHandle;
-#[cfg(target_os = "macos")]
-use raw_window_handle::RawWindowHandle;
+// #[cfg(target_os = "macos")]
+// use raw_window_handle::HasRawWindowHandle;
+// #[cfg(target_os = "macos")]
+// use raw_window_handle::RawWindowHandle;
 use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
 use std::rc::Rc;
@@ -18,18 +18,18 @@ pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
 
-#[cfg(target_os = "macos")]
-fn set_has_shadow(window: &Window, has_shadows: bool) {
-    let raw_window = match window.raw_window_handle() {
-        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
-        _ => return,
-    };
+// #[cfg(target_os = "macos")]
+// fn set_has_shadow(window: &Window, has_shadows: bool) {
+//     let raw_window = match window.raw_window_handle().unwrap() {
+//         RawWindowHandle::AppKit(handle) => NonNull::from(handle.ns_view).cast() as id,
+//         _ => return,
+//     };
 
-    let value = if has_shadows { YES } else { NO };
-    unsafe {
-        let _: id = msg_send![raw_window, setHasShadow: value];
-    }
-}
+//     let value = if has_shadows { YES } else { NO };
+//     unsafe {
+//         let _: id = msg_send![raw_window, setHasShadow: value];
+//     }
+// }
 
 #[cfg(all(
     any(feature = "wayland", feature = "x11"),
@@ -165,8 +165,8 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
 
     let is_transparent = config.window.background_opacity < 1.;
     winit_window.set_transparent(is_transparent);
-    #[cfg(target_os = "macos")]
-    set_has_shadow(&winit_window, !is_transparent);
+    // #[cfg(target_os = "macos")]
+    // set_has_shadow(&winit_window, !is_transparent);
 
     winit_window.set_blur(config.window.blur);
 
