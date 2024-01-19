@@ -1,5 +1,4 @@
-pub mod context;
-pub mod navigation;
+mod navigation;
 
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
@@ -8,19 +7,19 @@ use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::selection::SelectionRange;
-use crate::state::navigation::ScreenNavigation;
-use rio_backend::superloop::Superloop;
-// use rio_backend::ansi::graphics::UpdateQueues;
+use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
-use rio_backend::sugarloaf::SugarGraphic;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+#[cfg(not(target_os = "macos"))]
+use winit::window::Theme;
 
 struct Cursor {
     state: CursorState,
@@ -50,22 +49,46 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(config: &Config, appearance: wa::Appearance) -> State {
+    pub fn new(
+        #[cfg(not(target_os = "macos"))] config: &std::rc::Rc<Config>,
+        #[cfg(target_os = "macos")] config: &Config,
+        #[cfg(not(target_os = "macos"))] current_theme: Option<Theme>,
+        #[cfg(target_os = "macos")] appearance: wa::Appearance,
+    ) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        if let Some(adaptive_colors) = &config.adaptive_colors {
-            match appearance {
-                wa::Appearance::Light => {
-                    named_colors = adaptive_colors.light.unwrap_or(named_colors);
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(theme) = current_theme {
+                if let Some(adaptive_colors) = &config.adaptive_colors {
+                    match theme {
+                        Theme::Light => {
+                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
+                        }
+                        Theme::Dark => {
+                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                        }
+                    }
                 }
-                wa::Appearance::Dark => {
-                    named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(adaptive_colors) = &config.adaptive_colors {
+                match appearance {
+                    wa::Appearance::Light => {
+                        named_colors = adaptive_colors.light.unwrap_or(named_colors);
+                    }
+                    wa::Appearance::Dark => {
+                        named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                    }
+                    // TODO
+                    wa::Appearance::LightHighContrast => {}
+                    wa::Appearance::DarkHighContrast => {}
                 }
-                // TODO
-                wa::Appearance::LightHighContrast => {}
-                wa::Appearance::DarkHighContrast => {}
             }
         }
 
@@ -313,6 +336,16 @@ impl State {
     }
 
     #[inline]
+    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity -= acc;
+    }
+
+    #[inline]
+    pub fn increase_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity += acc;
+    }
+
+    #[inline]
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
@@ -389,16 +422,6 @@ impl State {
     }
 
     #[inline]
-    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity -= acc;
-    }
-
-    #[inline]
-    pub fn increase_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity += acc;
-    }
-
-    #[inline]
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
@@ -468,12 +491,12 @@ impl State {
         for column in 0..columns {
             let square = &row.inner[column];
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                stack.push(self.create_graphic_sugar(square));
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
 
-            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            if square.flags.contains(Flags::GRAPHICS) {
+                stack.push(self.create_graphic_sugar(square));
                 continue;
             }
 
@@ -490,6 +513,26 @@ impl State {
         }
 
         stack
+    }
+
+    #[inline]
+    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
+        let foreground_color = self.compute_fg_color(square);
+        let background_color = self.compute_bg_color(square);
+
+        let media = &square.graphics().unwrap()[0].texture;
+        Sugar {
+            content: ' ',
+            foreground_color,
+            background_color,
+            style: None,
+            decoration: None,
+            media: Some(SugarGraphic {
+                id: media.id,
+                width: media.width,
+                height: media.height,
+            }),
+        }
     }
 
     #[inline]
@@ -535,26 +578,6 @@ impl State {
     }
 
     #[inline]
-    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let foreground_color = self.compute_fg_color(square);
-        let background_color = self.compute_bg_color(square);
-
-        let media = &square.graphics().unwrap()[0].texture;
-        Sugar {
-            content: ' ',
-            foreground_color,
-            background_color,
-            style: None,
-            decoration: None,
-            media: Some(SugarGraphic {
-                id: media.id,
-                width: media.width,
-                height: media.height,
-            }),
-        }
-    }
-
-    #[inline]
     pub fn set_ime(&mut self, ime_preedit: Option<&Preedit>) {
         if let Some(preedit) = ime_preedit {
             if let Some(content) = preedit.text.chars().next() {
@@ -584,7 +607,12 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &context::ContextManager<Superloop>,
+        #[cfg(not(target_os = "macos"))] context_manager: &crate::context::ContextManager<
+            crate::screen::EventProxy,
+        >,
+        #[cfg(target_os = "macos")] context_manager: &crate::context::ContextManager<
+            Superloop,
+        >,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {

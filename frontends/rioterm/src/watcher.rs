@@ -2,11 +2,11 @@ use crate::event::{EventListener, RioEvent};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
-use winit::window::WindowId;
 
 const POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 
-pub fn watch<
+#[allow(unused)]
+pub fn configuration_file_updates<
     P: AsRef<Path> + std::marker::Send + 'static,
     T: EventListener + std::marker::Send + 'static,
 >(
@@ -39,8 +39,13 @@ pub fn watch<
                     | EventKind::Modify(_)
                     | EventKind::Other => {
                         log::info!("config directory has dispatched an event {event:?}");
-                        // TODO: Refactor to send_global_event
-                        event_proxy.send_event(RioEvent::UpdateConfig, WindowId::from(0));
+                        #[cfg(target_os = "macos")]
+                        event_proxy.send_event(RioEvent::UpdateConfig, 0);
+                        #[cfg(not(target_os = "macos"))]
+                        event_proxy.send_event(
+                            RioEvent::UpdateConfig,
+                            rio_backend::event::WindowId::from(0),
+                        );
                     }
                     _ => (),
                 },

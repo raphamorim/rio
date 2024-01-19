@@ -7,8 +7,7 @@ members = [
   "rio-proc-macros",
   "rio-backend",
   "wa",
-  "frontends/rioterm",
-  "frontends/rioterm-beta"
+  "frontends/rioterm"
 ]
 resolver = "2"
 

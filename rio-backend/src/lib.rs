@@ -7,7 +7,7 @@ pub mod event;
 pub mod performer;
 pub mod selection;
 
-#[cfg(not(feature = "winit"))]
+#[cfg(target_os = "macos")]
 pub mod superloop;
 
 pub use sugarloaf;
