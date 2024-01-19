@@ -6,7 +6,6 @@
 // were retired from https://github.com/alacritty/alacritty/blob/c39c3c97f1a1213418c3629cc59a1d46e34070e0/alacritty/src/input.rs
 // which is licensed under Apache 2.0 license.
 
-mod context;
 mod navigation;
 mod state;
 pub mod touch;
@@ -16,6 +15,7 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
+use crate::context::{self, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -23,12 +23,9 @@ use crate::crosswords::{
     vi_mode::ViMotion,
     Crosswords, Mode, MIN_COLUMNS, MIN_LINES,
 };
-use crate::event::{ClickState, EventProxy};
 use crate::ime::Ime;
 use crate::messenger::Messenger;
 use crate::mouse::{calculate_mouse_position, Mouse};
-use crate::router;
-use crate::screen::{context::ContextManager, touch::TouchPurpose};
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -37,6 +34,7 @@ use rio_backend::config::{
     colors::{term::List, ColorWGPU},
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
+use rio_backend::event::{ClickState, EventProxy};
 use rio_backend::sugarloaf::{
     self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
@@ -47,6 +45,7 @@ use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::rc::Rc;
+use touch::TouchPurpose;
 use winit::event::ElementState;
 use winit::event::Modifiers;
 use winit::event::MouseButton;
@@ -1212,8 +1211,8 @@ impl Screen {
     }
 
     #[inline]
-    pub fn render_assistant(&mut self, assistant: &routes::assistant::Assistant) {
-        crate::router::assistant::screen(&mut self.sugarloaf, assistant);
+    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 

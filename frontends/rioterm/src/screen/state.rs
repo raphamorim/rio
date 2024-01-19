@@ -1,17 +1,18 @@
 use crate::ansi::CursorShape;
+use crate::context;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::screen::navigation::ScreenNavigation;
-use crate::screen::{context, EventProxy};
 use crate::selection::SelectionRange;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
+use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 use std::collections::HashMap;

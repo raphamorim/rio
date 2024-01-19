@@ -1,10 +1,10 @@
-use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
+use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;

@@ -21,6 +21,18 @@ impl Assistant {
     pub fn clear(&mut self) {
         self.inner = None;
     }
+
+    #[inline]
+    #[allow(unused)]
+    pub fn is_warning(&self) -> bool {
+        if let Some(report) = &self.inner {
+            if report.level == RioErrorLevel::Error {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[inline]
