@@ -292,6 +292,27 @@ impl RectBrush {
         let mut i = 0;
         let total = instances.len();
 
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+        rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+        rpass.set_vertex_buffer(1, self.instances.slice(..));
+
         while i < total {
             let end = (i + MAX_INSTANCES).min(total);
             let amount = end - i;
@@ -300,73 +321,15 @@ impl RectBrush {
 
             queue.write_buffer(&self.instances, 0, instance_bytes);
 
-            {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-                // rpass.push_debug_group("Prepare data for draw.");
-                rpass.set_pipeline(&self.pipeline);
-                rpass.set_bind_group(0, &self.bind_group, &[]);
-                rpass.set_index_buffer(
-                    self.index_buf.slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-                rpass.set_vertex_buffer(1, self.instances.slice(..));
-                // rpass.pop_debug_group();
-                // rpass.insert_debug_marker("Draw!");
-                rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-                drop(rpass);
-            }
+            // rpass.push_debug_group("Prepare data for draw.");
+            // rpass.pop_debug_group();
+            // rpass.insert_debug_marker("Draw!");
+            rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
 
             i += MAX_INSTANCES;
         }
 
+        drop(rpass);
         // queue.submit(Some(encoder.finish()));
     }
 }
-
-// fn main() {
-// framework::run::<Example>("cube");
-// }
-
-// wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-
-// #[test]
-// #[wasm_bindgen_test::wasm_bindgen_test]
-// fn cube() {
-//     framework::test::<Example>(framework::FrameworkRefTest {
-//         image_path: "/examples/cube/screenshot.png",
-//         width: 1024,
-//         height: 768,
-//         optional_features: wgpu::Features::default(),
-//         base_test_parameters: framework::test_common::TestParameters::default(),
-//         tolerance: 1,
-//         max_outliers: 1225, // Bounded by swiftshader
-//     });
-// }
-
-// #[test]
-// #[wasm_bindgen_test::wasm_bindgen_test]
-// fn cube_lines() {
-//     framework::test::<Example>(framework::FrameworkRefTest {
-//         image_path: "/examples/cube/screenshot-lines.png",
-//         width: 1024,
-//         height: 768,
-//         optional_features: wgpu::Features::POLYGON_MODE_LINE,
-//         base_test_parameters: framework::test_common::TestParameters::default(),
-//         tolerance: 2,
-//         max_outliers: 1250, // Bounded by swiftshader
-//     });
-// }
