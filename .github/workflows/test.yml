@@ -27,12 +27,12 @@ jobs:
       - name: cargo clippy
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            cargo clippy --workspace --exclude rioterm-beta --all-targets --all-features
+            cargo clippy --all-targets --all-features
           else
             make lint
           fi
         shell: bash
-      - run: cargo test --workspace --release --exclude rioterm-beta
+      - run: cargo test --release
 
   # cli:
   #   strategy:

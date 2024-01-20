@@ -16,9 +16,9 @@ name = "rio"
 path = "src/main.rs"
 
 [dependencies]
-winit = { workspace = true }
 log = { workspace = true }
-rio-backend = { workspace = true, features = ["winit"] }
+wgpu = { workspace = true }
+rio-backend = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = "2.4.1"
@@ -37,13 +37,14 @@ teletypewriter = { workspace = true }
 tokio = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
-wgpu = { workspace = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+winit = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2.2"
-cocoa = "0.25.0"
-objc2 = { version = "=0.3.0-beta.0" }
-objc2-foundation = { version = "=0.2.0-alpha.5" }
+objc = "0.2.7"
+smol_str = "0.2.0"
+wa = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }

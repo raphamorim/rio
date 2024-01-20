@@ -2,7 +2,7 @@ pub mod handler;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-#[cfg(feature = "winit")]
+#[cfg(not(target_os = "macos"))]
 use crate::event::RioEvent;
 use crate::event::{EventListener, Msg, WindowId};
 use corcovado::channel;
@@ -190,10 +190,10 @@ where
 
         // Queue terminal redraw unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            #[cfg(not(feature = "winit"))]
+            #[cfg(target_os = "macos")]
             self.event_proxy.send_redraw(self.window_id);
 
-            #[cfg(feature = "winit")]
+            #[cfg(not(target_os = "macos"))]
             self.event_proxy
                 .send_event(RioEvent::Wakeup, self.window_id);
         }
@@ -310,10 +310,10 @@ where
                 // Handle synchronized update timeout.
                 if events.is_empty() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
-                    #[cfg(not(feature = "winit"))]
+                    #[cfg(target_os = "macos")]
                     self.event_proxy.send_redraw(self.window_id);
 
-                    #[cfg(feature = "winit")]
+                    #[cfg(not(target_os = "macos"))]
                     self.event_proxy
                         .send_event(RioEvent::Wakeup, self.window_id);
 
@@ -345,10 +345,10 @@ where
                                 // self.event_proxy
                                 //     .send_event(RioEvent::Wakeup, self.window_id);
 
-                                #[cfg(not(feature = "winit"))]
+                                #[cfg(target_os = "macos")]
                                 self.event_proxy.send_redraw(self.window_id);
 
-                                #[cfg(feature = "winit")]
+                                #[cfg(not(target_os = "macos"))]
                                 self.event_proxy
                                     .send_event(RioEvent::Wakeup, self.window_id);
 
