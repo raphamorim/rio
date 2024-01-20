@@ -958,7 +958,7 @@ impl DrawCache {
     /// glyph that is deemed close enough to the requested glyph as specified by
     /// the cache tolerance parameters.
     ///
-    /// A sucessful result is `Some` if the glyph is not an empty glyph (no
+    /// A successful result is `Some` if the glyph is not an empty glyph (no
     /// shape, and thus no rect to return).
     ///
     /// Ensure that `font_id` matches the `font_id` that was passed to
