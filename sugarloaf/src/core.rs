@@ -50,7 +50,9 @@ impl Text {
             media,
         } = sugar;
 
-        let quantity = if decoration.is_some() || media.is_some() {
+        let sugar_width = content.width().unwrap_or(1);
+
+        let quantity = if decoration.is_some() || media.is_some() || sugar_width > 1 {
             1
         } else {
             let mut quantity = 1;
