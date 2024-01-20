@@ -8,23 +8,19 @@
 //
 // A router is a window, but it can contain a sub route that is a panel
 // For example /:window-id/:panel-one
-
-use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
-use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
-use crate::router::bindings::{
+use crate::bindings::{
     self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
-use crate::router::loader;
-use crate::router::mouse::{calculate_mouse_position, Mouse};
-use crate::router::routes::{
+use crate::context::{self, ContextManager};
+use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
+use crate::ime::Ime;
+use crate::mouse::{calculate_mouse_position, Mouse};
+use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
+use crate::routes::{
     assistant::{self, Assistant},
     welcome, RoutePath,
 };
-use crate::router::{constants, Ime, RioEvent, Superloop};
-use crate::state::{
-    context::{self, ContextManager},
-    State,
-};
+use crate::state::State;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::renderer::{
     Backend as RendererBackend, Performance as RendererPerformance,
@@ -34,11 +30,14 @@ use rio_backend::crosswords::{
 };
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventListener;
+use rio_backend::event::RioEvent;
 use rio_backend::selection::SelectionType;
+use rio_backend::sugarloaf::font::loader;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
+use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
@@ -123,7 +122,6 @@ impl Route {
             RendererBackend::Vulkan => wgpu::Backends::VULKAN,
             RendererBackend::GL => wgpu::Backends::GL,
             RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX11 => wgpu::Backends::DX11,
             RendererBackend::DX12 => wgpu::Backends::DX12,
         };
 
@@ -159,7 +157,7 @@ impl Route {
         };
 
         let mut sugarloaf = match futures::executor::block_on(Sugarloaf::new(
-            &sugarloaf_window,
+            sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
             sugarloaf_layout.clone(),
@@ -553,8 +551,9 @@ impl Route {
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
-        let end_top = std::cmp::min(min_height, constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (constants::PADDING_Y
+        let end_top =
+            std::cmp::min(min_height, crate::constants::PADDING_Y as i32) as f64;
+        let text_area_bottom = (crate::constants::PADDING_Y
             + self.sugarloaf.layout.lines as f32)
             * self.sugarloaf.layout.font_size;
         let start_bottom = std::cmp::min(

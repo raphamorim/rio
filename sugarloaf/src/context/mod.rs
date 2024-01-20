@@ -2,7 +2,7 @@ use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 
 pub struct Context {
     pub device: wgpu::Device,
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'static>,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
@@ -52,7 +52,7 @@ fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureF
 
 impl Context {
     pub async fn new(
-        sugarloaf_window: &SugarloafWindow,
+        sugarloaf_window: SugarloafWindow,
         renderer_config: &crate::sugarloaf::SugarloafRenderer,
     ) -> Context {
         // The backend can be configured using the `WGPU_BACKEND`
@@ -84,11 +84,11 @@ impl Context {
 
         log::info!("initializing the surface");
 
-        let size = &sugarloaf_window.size;
+        let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(&sugarloaf_window).unwrap() };
-
+        let surface: wgpu::Surface<'static> =
+            instance.create_surface(sugarloaf_window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: renderer_config.power_preference,
@@ -120,8 +120,9 @@ impl Context {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
-                                features: wgpu::Features::empty(),
-                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                                required_features: wgpu::Features::empty(),
+                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
+                                ),
                             },
                             None,
                         )
@@ -156,6 +157,10 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                #[cfg(target_os = "macos")]
+                desired_maximum_frame_latency: 1,
+                #[cfg(not(target_os = "macos"))]
+                desired_maximum_frame_latency: 2,
             },
         );
 
@@ -187,6 +192,10 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                #[cfg(target_os = "macos")]
+                desired_maximum_frame_latency: 1,
+                #[cfg(not(target_os = "macos"))]
+                desired_maximum_frame_latency: 2,
             },
         );
     }

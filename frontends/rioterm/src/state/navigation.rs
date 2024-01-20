@@ -1,4 +1,4 @@
-use crate::screen::constants::*;
+use crate::constants::*;
 use rio_backend::config::navigation::NavigationMode;
 use rio_backend::sugarloaf::components::rect::Rect;
 use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
@@ -440,7 +440,7 @@ fn get_color_overwrite<'a>(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::screen::navigation::get_color_overwrite;
+    use crate::state::navigation::get_color_overwrite;
 
     #[test]
     fn test_get_color_overwrite() {

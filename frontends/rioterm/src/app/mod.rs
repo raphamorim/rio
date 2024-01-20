@@ -1,14 +1,10 @@
-pub mod bindings;
-pub mod constants;
 mod menu;
-pub mod mouse;
 mod route;
-mod routes;
 
 use crate::event::RioEvent;
-use crate::ime::{Ime, Preedit};
+use crate::ime::Preedit;
+use crate::routes::RoutePath;
 // use crate::scheduler::{Scheduler, TimerId, Topic};
-use crate::watcher;
 use rio_backend::error::RioError;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::font::loader;
@@ -178,7 +174,7 @@ impl EventHandler for Router {
                 RioEvent::MouseCursorDirty => {
                     if let Some(current) = &mut self.route {
                         current.mouse.accumulated_scroll =
-                            mouse::AccumulatedScroll::default();
+                            crate::mouse::AccumulatedScroll::default();
                     }
                 }
                 RioEvent::Scroll(scroll) => {
@@ -286,7 +282,7 @@ impl EventHandler for Router {
 
     fn ime_event(&mut self, ime_state: ImeState) {
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -352,7 +348,7 @@ impl EventHandler for Router {
     }
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -396,7 +392,7 @@ impl EventHandler for Router {
     }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -430,7 +426,7 @@ impl EventHandler for Router {
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -443,7 +439,7 @@ impl EventHandler for Router {
     }
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -497,7 +493,7 @@ impl EventHandler for Router {
         }
 
         if let Some(current) = &mut self.route {
-            if current.path != routes::RoutePath::Terminal {
+            if current.path != RoutePath::Terminal {
                 return;
             }
 
@@ -551,9 +547,9 @@ pub async fn run(
     config: rio_backend::config::Config,
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    let superloop = Superloop::new();
+    // let superloop = Superloop::new();
     let app_loop = Looper::new(config);
-    let _ = watcher::configuration_file_updates(superloop.clone());
+    // let _ = crate::watcher::configuration_file_updates(superloop.clone());
 
     // let scheduler = Scheduler::new(superloop.clone());
 

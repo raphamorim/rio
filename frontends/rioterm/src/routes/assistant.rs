@@ -23,6 +23,7 @@ impl Assistant {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn is_warning(&self) -> bool {
         if let Some(report) = &self.inner {
             if report.level == RioErrorLevel::Error {

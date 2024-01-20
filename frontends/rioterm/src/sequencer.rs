@@ -1,10 +1,11 @@
-use crate::clipboard::ClipboardType;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
-use crate::router::{RoutePath, RouteWindow, Router};
+use crate::router::{RouteWindow, Router};
+use crate::routes::RoutePath;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
-use crate::watch::watch;
+use crate::watcher::configuration_file_updates;
+use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::colors::ColorRgb;
 use std::error::Error;
 use std::rc::Rc;
@@ -51,7 +52,7 @@ impl Sequencer {
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
-        let _ = watch(
+        let _ = configuration_file_updates(
             rio_backend::config::config_dir_path(),
             self.event_proxy.clone().unwrap(),
         );
@@ -405,10 +406,7 @@ impl Sequencer {
                 }
 
                 Event::NewEvents(StartCause::Init) => {
-                    #[cfg(target_os = "macos")]
-                    {
-                        crate::ui::appkit::create_toolbar();
-                    }
+                    // noop
                 }
 
                 Event::Resumed => {

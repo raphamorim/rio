@@ -4,6 +4,13 @@ use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use rio_backend::crosswords::pos::Pos;
 use std::time::Instant;
+
+#[cfg(not(target_os = "macos"))]
+use winit::event::ElementState;
+#[cfg(not(target_os = "macos"))]
+use winit::event::MouseButton;
+
+#[cfg(target_os = "macos")]
 use wa::MouseButton;
 
 #[derive(Default, Debug)]
@@ -19,8 +26,17 @@ pub struct AccumulatedScroll {
 pub struct Mouse {
     pub multiplier: f64,
     pub divider: f64,
+    #[cfg(not(target_os = "macos"))]
+    pub left_button_state: ElementState,
+    #[cfg(not(target_os = "macos"))]
+    pub middle_button_state: ElementState,
+    #[cfg(not(target_os = "macos"))]
+    pub right_button_state: ElementState,
+    #[cfg(target_os = "macos")]
     pub left_button_state: bool,
+    #[cfg(target_os = "macos")]
     pub middle_button_state: bool,
+    #[cfg(target_os = "macos")]
     pub right_button_state: bool,
     pub last_click_timestamp: Instant,
     pub last_click_button: MouseButton,
@@ -40,8 +56,17 @@ impl Default for Mouse {
             divider: 1.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
+            #[cfg(not(target_os = "macos"))]
+            left_button_state: ElementState::Released,
+            #[cfg(not(target_os = "macos"))]
+            middle_button_state: ElementState::Released,
+            #[cfg(not(target_os = "macos"))]
+            right_button_state: ElementState::Released,
+            #[cfg(target_os = "macos")]
             left_button_state: false,
+            #[cfg(target_os = "macos")]
             middle_button_state: false,
+            #[cfg(target_os = "macos")]
             right_button_state: false,
             click_state: ClickState::None,
             square_side: Side::Left,
