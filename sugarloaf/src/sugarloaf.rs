@@ -764,13 +764,8 @@ impl Sugarloaf {
                         .render_with_encoder(0, view, &mut encoder, None);
                 }
 
-                self.rect_brush.render(
-                    &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                    &self.rects,
-                    &mut self.ctx,
-                );
+                self.rect_brush
+                    .render(&mut encoder, view, &self.rects, &mut self.ctx);
 
                 self.rects = vec![];
                 self.current_row = 0;
