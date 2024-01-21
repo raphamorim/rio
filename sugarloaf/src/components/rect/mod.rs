@@ -260,11 +260,11 @@ impl RectBrush {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
-        dimensions: (u32, u32),
         instances: &[Rect],
         ctx: &mut Context,
     ) {
-        let transform: [f32; 16] = orthographic_projection(dimensions.0, dimensions.1);
+        let transform: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
         // let device = &ctx.device;
