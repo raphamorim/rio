@@ -14,6 +14,7 @@ pub struct Region {
 
 use pipeline::{Instance, Pipeline};
 
+use crate::components::core::orthographic_projection;
 pub use crate::glyph::ab_glyph;
 pub use crate::glyph::{
     BuiltInLineBreaker, Extra, FontId, GlyphCruncher, GlyphPositioner, HorizontalAlign,
@@ -418,28 +419,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
 
         Ok(())
     }
-}
-
-/// Helper function to generate a generate a transform matrix.
-pub fn orthographic_projection(width: u32, height: u32) -> [f32; 16] {
-    [
-        2.0 / width as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        -2.0 / height as f32,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        -1.0,
-        1.0,
-        0.0,
-        1.0,
-    ]
 }
 
 impl<D, F: Font, H: BuildHasher> GlyphCruncher<F> for GlyphBrush<D, F, H> {
