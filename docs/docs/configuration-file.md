@@ -57,8 +57,6 @@ blinking-cursor = false
 
 ## Hide cursor when typing
 
-Hide the cursor while typing
-
 Default is `false`
 
 ```toml
@@ -94,7 +92,7 @@ padding-x = 10
 
 ## Option as Alt
 
-This config only works on MacOs.
+This config only works on MacOS.
 
 Possible choices: `both`, `left` and `right`.
 
@@ -106,15 +104,13 @@ option-as-alt = 'left'
 
 Directory the shell is started in. If this is unset the working directory of the parent process will be used.
 
-This configuration only works if `use-fork` is disabled.
+This configuration only works if [`use-fork`](#use-fork) is disabled.
 
 ```toml
 working-dir = "/Users/raphael/Documents/"
 ```
 
 ## Environment variables
-
-The example below sets fish as the default SHELL using env vars, please do not copy this if you do not need it.
 
 ```toml
 env-vars = []
@@ -143,7 +139,11 @@ confirm-before-quit = true
 
 - `width` - define the initial window width.
 
+  - Default: `600`
+
 - `height` - define the initial window height.
+
+  - Default: `400`
 
 - `mode` - define how the window will be created
 
@@ -241,7 +241,7 @@ disable-unfocused-render = false
 
 ## Fonts
 
-Configure fonts used by the terminal
+Configure fonts used by the terminal.
 
 Note: You can set different font families but Rio terminal
 will always look for regular font bounds whene
@@ -308,7 +308,7 @@ You can change how many lines are scrolled each time by setting this option. Scr
 
 If you want a quicker scroll, keep increasing the multiplier. If you want to reduce scroll speed you will need to increase the divider.
 
-You can use both properties also to find the best scroll for you.
+You can combine both properties to find the best scroll for you.
 
 - Multiplier default is `3.0`.
 - Divider default is `1.0`.
@@ -325,7 +325,7 @@ divider = 1.0
 
 - `mode` - Define navigation mode
 
-  - `NativeTab` (MacOs only)
+  - `NativeTab` (MacOS only)
   - `CollapsedTab`
   - `BottomTab`
   - `TopTab`
@@ -420,7 +420,7 @@ You can create custom key bindings for Rio terminal, [more information](/docs/ke
 keys = [
   { key = "q", with = "super", action = "Quit" },
   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] },
 ]
 ```
 

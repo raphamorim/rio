@@ -3,17 +3,17 @@ title: 'Hyperlinks'
 language: 'en'
 ---
 
-Rio terminal support open hyperlinks from the terminal.
+Rio terminal supports opening hyperlinks from the terminal.
 
 ## MacOS
 
-For activate hyperlink feature hold `Command` key whenever hovering a link:
+To activate hyperlink feature hold `Command` key when hovering a link:
 
 ![Demo macos hyperlink](/assets/features/demo-hyperlink-macos.gif)
 
 ## Windows / Linux / BSD
 
-For activate hyperlink feature hold `alt` key whenever hovering a link:
+To activate hyperlink feature hold `alt` key when hovering a link:
 
 ![Demo windows hyperlink](/assets/features/demo-hyperlink-windows.png)
 

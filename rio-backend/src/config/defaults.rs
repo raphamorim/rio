@@ -162,7 +162,7 @@ blinking-cursor = false
 
 # Option as Alt
 #
-# This config only works on MacOs.
+# This config only works on MacOS.
 # Possible choices: 'both', 'left' and 'right'.
 #
 # Example:
@@ -188,9 +188,6 @@ blinking-cursor = false
 
 # Environment variables
 #
-# The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need
-#
 # Example:
 # env-vars = []
 
@@ -202,7 +199,6 @@ blinking-cursor = false
 #
 # Example:
 # use-fork = false
-
 
 # Confirm before exiting Rio
 # Default is `true`
@@ -332,7 +328,7 @@ blinking-cursor = false
 # Navigation
 #
 # "mode" - Define navigation mode
-#   • NativeTab (MacOs only)
+#   • NativeTab (MacOS only)
 #   • CollapsedTab
 #   • BottomTab
 #   • TopTab
