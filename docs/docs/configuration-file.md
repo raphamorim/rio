@@ -106,7 +106,7 @@ option-as-alt = 'left'
 
 Directory the shell is started in. If this is unset the working directory of the parent process will be used.
 
-This configuration only works if `use-fork` is disabled
+This configuration only works if `use-fork` is disabled.
 
 ```toml
 working-dir = "/Users/raphael/Documents/"
@@ -218,7 +218,6 @@ y = -100.0
   - `GL`: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
   - `Vulkan`: Supported on Windows, Linux/Android
   - `DX12`: Supported on Windows 10
-  - `DX11`: Supported on Windows 7+
   - `Metal`: Supported on macOS/iOS
 
 - `disable-unfocused-render` - This property disable renderer processes while Rio is unfocused.

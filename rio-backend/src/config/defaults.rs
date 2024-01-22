@@ -239,7 +239,6 @@ blinking-cursor = false
 #   - GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
 #   - Vulkan: Supported on Windows, Linux/Android
 #   - DX12: Supported on Windows 10
-#   - DX11: Supported on Windows 7+
 #   - Metal: Supported on macOS/iOS
 #
 # • disable-unfocused-render: This property disable renderer processes while Rio is unfocused.
