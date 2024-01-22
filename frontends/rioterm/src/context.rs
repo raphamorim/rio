@@ -322,6 +322,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
             .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
