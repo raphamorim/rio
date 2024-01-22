@@ -131,6 +131,12 @@ cursor = '▇'
 #
 blinking-cursor = false
 
+# Hide the cursor while typing
+#
+# Default is `false`
+#
+# hide-cursor-when-typing = false
+
 # Ignore theme selection foreground color
 #
 # Default is false

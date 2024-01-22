@@ -59,7 +59,7 @@ blinking-cursor = false
 
 Hide the cursor while typing
 
-Default is `true`
+Default is `false`
 
 ```toml
 hide-cursor-when-typing = false
