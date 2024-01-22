@@ -242,13 +242,13 @@ blinking-cursor = false
 #   - DX11: Supported on Windows 7+
 #   - Metal: Supported on macOS/iOS
 #
-# • disable-renderer-when-unfocused: This property disable renderer processes while Rio is unfocused.
+# • disable-unfocused-render: This property disable renderer processes while Rio is unfocused.
 #
 # Example:
 # [renderer]
 # performance = "High"
 # backend = "Automatic"
-# disable-renderer-when-unfocused = false
+# disable-unfocused-render = false
 
 # Keyboard
 #
