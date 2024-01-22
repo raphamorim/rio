@@ -7,6 +7,8 @@ pub mod layout;
 pub mod text;
 pub mod util;
 
+use bytemuck::Zeroable;
+use bytemuck::Pod;
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use color::Color;
@@ -24,6 +26,34 @@ use wgpu::Texture;
 const IDENTITY_MATRIX: [f32; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+struct Uniforms {
+    transform: [f32; 16],
+    _padding: [f32; 3],
+}
+
+impl Uniforms {
+    fn new(transformation: [f32; 16]) -> Uniforms {
+        Self {
+            transform: transformation,
+            // Ref: https://github.com/iced-rs/iced/blob/bc62013b6cde52174bf4c4286939cf170bfa7760/wgpu/src/quad.rs#LL295C6-L296C68
+            // Uniforms must be aligned to their largest member,
+            // this uses a mat4x4<f32> which aligns to 16, so align to that
+            _padding: [0.0; 3],
+        }
+    }
+}
+
+impl Default for Uniforms {
+    fn default() -> Self {
+        Self {
+            transform: IDENTITY_MATRIX,
+            _padding: [0.0; 3],
+        }
+    }
+}
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -70,10 +100,11 @@ impl RichTextBrush {
         let dlist = DisplayList::new();
         let supported_vertex_buffer = 1_000;
 
-        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let transform = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&IDENTITY_MATRIX),
+            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         // Create pipeline layout
@@ -87,11 +118,9 @@ impl RichTextBrush {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<
-                                [f32; 16],
-                            >(
-                            )
-                                as u64),
+                            min_binding_size: wgpu::BufferSize::new(
+                                mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+                            ),
                         },
                         count: None,
                     },
@@ -133,7 +162,7 @@ impl RichTextBrush {
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
@@ -235,7 +264,8 @@ impl RichTextBrush {
             mapped_at_creation: false,
         });
 
-        let index_buffer_size = 50;
+        let index_buffer_size: &[u32] = bytemuck::cast_slice(dlist.indices());
+        let index_buffer_size = index_buffer_size.len() as u64;
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Indices Buffer"),
             size: index_buffer_size,
@@ -364,19 +394,20 @@ impl RichTextBrush {
 
         let vertices: &[Vertex] = self.dlist.vertices();
         let indices: &[u32] = self.dlist.indices();
-        // let indices: &[Vertex] = self.dlist.indices();
-        // println!("{:?}", vertices);
-        // let vertices = [
-        //     Vertex { pos: [0.0 - self.acc, 0.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
-        //     Vertex { pos: [1.0 - self.acc, 4.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
-        //     Vertex { pos: [2.0 + self.acc, self.acc, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
-        //     Vertex { pos: [2.0, 0.0 + self.acc, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
-        //     Vertex { pos: [2.0 + 0.0 - self.acc, 3.0, 0.0, 0.0], color: [1.0, 1.0, 1.0, 1.0], uv: [0.0, 0.0] },
-        // ];
 
-        // self.acc += 0.5;
+        let queue = &mut ctx.queue;
+
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        if transform != self.current_transform {
+            let uniforms = Uniforms::new(transform);
+            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
+
+            self.current_transform = transform;
+        }
 
         if vertices.len() > self.supported_vertex_buffer {
+            self.vertex_buffer.destroy();
+
             self.supported_vertex_buffer = vertices.len();
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rich_text::Pipeline instances"),
@@ -386,43 +417,46 @@ impl RichTextBrush {
             });
         }
 
-        let vertices_bytes = bytemuck::cast_slice(&vertices);
+        let vertices_bytes: &[u8] = bytemuck::cast_slice(&vertices);
         if !vertices_bytes.is_empty() {
-            let vertices_buffer =
+            self.vertex_buffer =
                 ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("sugarloaf::rich_text::Pipeline vertices"),
                     contents: vertices_bytes,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
 
-            encoder.copy_buffer_to_buffer(
-                &vertices_buffer,
-                0,
-                &self.vertex_buffer,
-                0,
-                mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
-            );
+            queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
+
+            // encoder.copy_buffer_to_buffer(
+            //     &vertices_buffer,
+            //     0,
+            //     &self.vertex_buffer,
+            //     0,
+            //     mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
+            // );
         }
 
-        let queue = &mut ctx.queue;
+        let indices_raw: &[u8] = bytemuck::cast_slice(indices);
+        let indices_raw_size = indices_raw.len() as u64;
 
-        println!("{:?} {:?}", indices.len() as u64, self.index_buffer_size);
-        if indices.len() as u64 > self.index_buffer_size {
-            let indices_raw = unsafe {
-                std::slice::from_raw_parts(
-                    indices as *const _ as *const u8,
-                    std::mem::size_of_val(indices),
-                )
-            };
-
+        if self.index_buffer_size >= indices_raw_size {
             queue.write_buffer(&self.index_buffer, 0, indices_raw);
-        }
+        } else {
+            self.index_buffer.destroy();
 
-        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
-        if transform != self.current_transform {
-            queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&transform));
+            let size = next_copy_buffer_size(indices_raw_size);
+            let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rich_text::Indices"),
+                size,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: true,
+            });
+            buffer.slice(..).get_mapped_range_mut()[..indices_raw.len()].copy_from_slice(indices_raw);
+            buffer.unmap();
 
-            self.current_transform = transform;
+            self.index_buffer = buffer;
+            self.index_buffer_size = size;
         }
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -511,7 +545,7 @@ impl RichTextBrush {
             match event {
                 TextureEvent::CreateTexture {
                     id,
-                    format: _,
+                    format,
                     width,
                     height,
                     data,
@@ -526,7 +560,10 @@ impl RichTextBrush {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
-                        format: wgpu::TextureFormat::R8Unorm,
+                        format: match format {
+                            image_cache::PixelFormat::A8 => wgpu::TextureFormat::R8Unorm,
+                            image_cache::PixelFormat::Rgba8 => wgpu::TextureFormat::Rgba8Unorm,
+                        },
                         usage: wgpu::TextureUsages::TEXTURE_BINDING
                             | wgpu::TextureUsages::COPY_DST,
                         label: Some("rich_text::Cache"),
@@ -655,10 +692,10 @@ fn draw_layout(
 }
 
 fn build_document() -> doc::Document {
-    // use layout::*;
+    use layout::*;
     let mut db = doc::Document::builder();
 
-    // use SpanStyle as S;
+    use SpanStyle as S;
 
     // let underline = &[
     //     S::Underline(true),
@@ -671,7 +708,9 @@ fn build_document() -> doc::Document {
     //     S::Size(18.),
     //     S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
     // ]);
+    db.enter_span(&[S::Size(48.)]);
     db.add_text("rio");
+    db.leave_span();
     // db.enter_span(&[S::LineSpacing(1.2)]);
     // db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
     // db.add_text("According to Wikipedia, the foremost expert on any subject,\n\n");
@@ -714,4 +753,9 @@ fn build_document() -> doc::Document {
     // db.add_text("ניפגש ב09:35 בחוף הים");
     // db.leave_span();
     db.build()
+}
+
+fn next_copy_buffer_size(size: u64) -> u64 {
+    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
+    ((size.next_power_of_two() + align_mask) & !align_mask).max(wgpu::COPY_BUFFER_ALIGNMENT)
 }
