@@ -121,6 +121,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
+        #[cfg(target_os = "windows")]
+        let width = size.width_u32;
+
+        #[cfg(target_os = "windows")]
+        let height = size.height_u32;
+
+        let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
+        let rows: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
+
         let mut terminal =
             Crosswords::new(size, cursor_state.0.content, event_proxy.clone(), window_id);
         terminal.blinking_cursor = cursor_state.1;
@@ -133,8 +142,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 log::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
-                    2,
-                    1,
+                    cols,
+                    rows,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -148,8 +157,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
                     &config.working_dir,
-                    2,
-                    1,
+                    cols,
+                    rows,
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
@@ -182,7 +191,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if config.spawn_performer {
             machine.spawn();
         }
+
         let messenger = Messenger::new(channel);
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(resize_error) =
+                messenger.send_resize(width as u16, height as u16, cols, rows)
+            {
+                log::error!("{resize_error:?}");
+            }
+        };
 
         Ok(Context {
             #[cfg(not(target_os = "windows"))]
