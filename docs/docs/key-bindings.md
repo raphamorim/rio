@@ -7,118 +7,96 @@ language: 'en'
 
 ### MacOS
 
-Open configuration: `Command + Comma (,)`
-
-Toggle VI Mode: `Alt + Shift + Space`
-
-Copy: `Command + C`
-
-Paste: `Command + V`
-
-Create new window: `Command + N`
-
-Create new tab: `Command + T`
-
-Move to next tab: `Control + Tab` or `Command + Shift + RightBracket (])`
-
-Move to previous tab: `Control + Shift + Tab` or `Command + Shift + LeftBracket ([)`
-
-Increase font size: `Command + Plus (+)`
-
-Decrease font size: `Command + Minus (-)`
-
-Reset font size: `Command + 0`
-
-Minimize window: `Command + M`
-
-Quit: `Command + Q`
-
-Close tab: `Command + W`
-
-Select the first tab: `Command + 1`
-
-Select the second tab: `Command + 2`
-
-Select the third tab: `Command + 3`
-
-Select the fourth tab: `Command + 4`
-
-Select the fifth tab: `Command + 5`
-
-Select the sixth tab: `Command + 6`
-
-Select the seventh tab: `Command + 7`
-
-Select the eighth tab: `Command + 8`
-
-Select the last tab: `Command + 9`
+| Action                 | Key                                                            |
+| ---------------------- | -------------------------------------------------------------- |
+| Open configuration     | `Command + Comma (,)`                                          |
+| Toggle VI Mode         | `Alt + Shift + Space`                                          |
+| Copy                   | `Command + C`                                                  |
+| Paste                  | `Command + V`                                                  |
+| Create new window      | `Command + N`                                                  |
+| Create new tab         | `Command + T`                                                  |
+| Move to next tab       | `Control + Tab` or `Command + Shift + RightBracket (])`        |
+| Move to previous tab   | `Control + Shift + Tab` or `Command + Shift + LeftBracket ([)` |
+| Increase font size     | `Command + Plus (+)`                                           |
+| Decrease font size     | `Command + Minus (-)`                                          |
+| Reset font size        | `Command + 0`                                                  |
+| Minimize window        | `Command + M`                                                  |
+| Quit                   | `Command + Q`                                                  |
+| Close tab              | `Command + W`                                                  |
+| Select the first tab   | `Command + 1`                                                  |
+| Select the second tab  | `Command + 2`                                                  |
+| Select the third tab   | `Command + 3`                                                  |
+| Select the fourth tab  | `Command + 4`                                                  |
+| Select the fifth tab   | `Command + 5`                                                  |
+| Select the sixth tab   | `Command + 6`                                                  |
+| Select the seventh tab | `Command + 7`                                                  |
+| Select the eighth tab  | `Command + 8`                                                  |
+| Select the last tab    | `Command + 9`                                                  |
 
 ### Windows
 
-Open configuration: `Control + Shift + Comma (,)`
-
-Toggle VI Mode: `Alt + Shift + Space`
-
-Copy: `Control + Shift + C`
-
-Paste: `Control + Shift + V`
-
-Create new window: `Control + Shift + N`
-
-Create new tab: `Control + Shift + T`
-
-Move to next tab: `Control + Tab` or `Control + Shift + RightBracket (])`
-
-Move to previous tab: `Control + Shift + Tab` `Control + Shift + LeftBracket ([)`
-
-Increase font size: `Control + Plus (+)`
-
-Decrease font size: `Control + Minus (-)`
-
-Reset font size: `Control + 0`
-
-Close tab or quit: `Control + Shift + W`
+| Action               | Key                                                         |
+| -------------------- | ----------------------------------------------------------- |
+| Open configuration   | `Control + Shift + Comma (,)`                               |
+| Toggle VI Mode       | `Alt + Shift + Space`                                       |
+| Copy                 | `Control + Shift + C`                                       |
+| Paste                | `Control + Shift + V`                                       |
+| Create new window    | `Control + Shift + N`                                       |
+| Create new tab       | `Control + Shift + T`                                       |
+| Move to next tab     | `Control + Tab` or `Control + Shift + RightBracket (])`     |
+| Move to previous tab | `Control + Shift + Tab` `Control + Shift + LeftBracket ([)` |
+| Increase font size   | `Control + Plus (+)`                                        |
+| Decrease font size   | `Control + Minus (-)`                                       |
+| Reset font size      | `Control + 0`                                               |
+| Close tab or quit    | `Control + Shift + W`                                       |
 
 ### Linux and BSD
 
-Open configuration: `Control + Shift + Comma (,)`
-
-Toggle VI Mode: `Alt + Shift + Space`
-
-Copy: `Control + Shift + C`
-
-Paste: `Control + Shift + V`
-
-Create new window: `Control + Shift + N`
-
-Create new tab: `Control + Shift + T`
-
-Move to next tab:`Control + Tab` or `Control + Shift + RightBracket (])`
-
-Move to previous tab: `Control + Shift + Tab` or `Control + Shift + LeftBracket ([)`
-
-Increase font size: `Control + Plus (+)`
-
-Decrease font size: `Control + Minus (-)`
-
-Reset font size: `Control + 0`
-
-Close tab or quit: `Control + Shift + W`
+| Action               | Key                                                            |
+| -------------------- | -------------------------------------------------------------- |
+| Open configuration   | `Control + Shift + Comma (,)`                                  |
+| Toggle VI Mode       | `Alt + Shift + Space`                                          |
+| Copy                 | `Control + Shift + C`                                          |
+| Paste                | `Control + Shift + V`                                          |
+| Create new window    | `Control + Shift + N`                                          |
+| Create new tab       | `Control + Shift + T`                                          |
+| Move to next tab     | `Control + Tab` or `Control + Shift + RightBracket (])`        |
+| Move to previous tab | `Control + Shift + Tab` or `Control + Shift + LeftBracket ([)` |
+| Increase font size   | `Control + Plus (+)`                                           |
+| Decrease font size   | `Control + Minus (-)`                                          |
+| Reset font size      | `Control + 0`                                                  |
+| Close tab or quit    | `Control + Shift + W`                                          |
 
 <br/>
 
 ## [Custom key bindings](#custom-key-bindings)
 
-Rio also allow you to add key bindings per configuration or ovewritte any default key bindings listed above.
+Rio allows you to add new keybindings and overwrite any default key bindings.
 
-To achieve it you will need to change your configuration file with the key binding rules.
+Keybinds are built using the following trigger fields:
+
+| Name          | Description     |
+| ------------- | --------------- |
+| [key](#key)   | The key pressed |
+| [with](#with) | Modifier keys   |
+| [mode](#mode) | Terminal mode   |
+
+Whom can be be combined with the following effect fields:
+
+| Name              | Description            |
+| ----------------- | ---------------------- |
+| [action](#action) | Predefined Rio actions |
+| [bytes](#bytes)   | Write byte sequence    |
+| [text](#text)     | Write text sequence    |
 
 ```toml
 [bindings]
 keys = [
-  { key = "q", with = "super", action = "Quit" }
+  { key = "q", with = "super", action = "Quit" },
   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] },
+  # Remove existing keybind
+  { key = "v", with = "control | shift", action = "none" },
 ]
 ```
 
@@ -229,6 +207,37 @@ with = "control | shift"
     - Alt
     A `~` operator can be used before a mode to apply the binding whenever
     the mode is *not* active, e.g. `~Alt`. -->
+
+### [Mode](#mode)
+
+There is currently four different modes:
+
+- `vi`
+- `alt` (Alt screen)
+- `appcursor`
+- `appkeypad`
+
+`~` can be prefixed to disable the keybind while in that mode.
+
+```toml
+[bindings]
+keys = [
+  # Enable VI mode on escape, when not in VI mode.
+  { key = "esc", mode = "~vi", action = "ToggleVIMode" },
+]
+```
+
+### [Text](#text)
+
+`text` can be used to write specific text on key press:
+
+```toml
+[bindings]
+keys = [
+  # Write `Rio is awesome!` on `Control + r`
+  { key = "r", with = "control", text = "Rio is awesome!" },
+]
+```
 
 ### [Overwriting](#overwriting)
 
