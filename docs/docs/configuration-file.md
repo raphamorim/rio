@@ -131,6 +131,14 @@ Defaults for POSIX-based systems (Windows is not configurable):
 use-fork = false
 ```
 
+## Confirm before quitting
+
+Require confirmation before quitting (Default: `true`).
+
+```toml
+confirm-before-quit = true
+```
+
 ## Window
 
 - `width` - define the initial window width.

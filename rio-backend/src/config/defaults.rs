@@ -175,7 +175,7 @@ blinking-cursor = false
 # Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
 #
-# This configuration only has effect if use-fork is disabled
+# This configuration only has effect if use-fork is disabled.
 #
 # Example:
 # working-dir = "/Users/raphael/Documents/"
@@ -196,6 +196,12 @@ blinking-cursor = false
 #
 # Example:
 # use-fork = false
+
+
+# Confirm before exiting Rio
+# Default is `true`
+#
+# confirm-before-quit = false
 
 # Window configuration
 #
