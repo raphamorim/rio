@@ -339,7 +339,8 @@ impl Route {
 
         if (lmb_pressed || rmb_pressed) && (self.modifiers.shift || !self.mouse_mode()) {
             self.update_selection(point, square_side);
-            self.ctx.schedule_render(60);
+            // self.ctx.schedule_render(60);
+            self.render();
         } else if square_changed && self.has_mouse_motion_and_drag() {
             if lmb_pressed {
                 self.mouse_report(32, true);

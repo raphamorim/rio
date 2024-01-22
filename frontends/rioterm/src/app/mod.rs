@@ -359,8 +359,6 @@ impl EventHandler for Router {
             if let Some(cursor) = current.process_motion_event(x, y) {
                 window::set_mouse_cursor(current.id, cursor);
             }
-
-            current.render();
         }
     }
     fn appearance_change_event(&mut self, appearance: Appearance) {
