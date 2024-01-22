@@ -174,8 +174,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                cols,
-                rows,
+                2,
+                1,
             );
         }
 
