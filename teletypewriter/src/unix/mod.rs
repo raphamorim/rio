@@ -599,7 +599,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
     };
 
     if shell.is_empty() {
-        log::info!("shell configuration is empty, will retrive from env");
+        log::info!("shell configuration is empty, will retrieve from env");
         shell_program = &user.shell;
     }
 
