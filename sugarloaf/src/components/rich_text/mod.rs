@@ -528,47 +528,42 @@ impl RichTextBrush {
         });
 
         rpass.set_pipeline(&self.pipeline);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-        // rpass.set_blend_constant
+        let mut ranges = vec![];
 
         for command in self.dlist.commands() {
             match command {
-                Command::BindPipeline(pipeline) => {
-                    println!("BindPipeline {:?}", pipeline);
-                    //             // match pipeline {
-                    //             //     Pipeline::Opaque => {
-                    //             //         unsafe {
-                    //             //             gl::DepthMask(1);
-                    //             //             gl::Disable(gl::BLEND);
-                    //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //             //             gl::BlendEquation(gl::FUNC_ADD);
-                    //             //         }
-                    //             //         self.base_shader.activate();
-                    //             //         self.base_shader.bind_attribs();
-                    //             //         self.base_shader.set_view_proj(&view_proj);
-                    //             //     }
-                    //             //     Pipeline::Transparent => {
-                    //             //         unsafe {
-                    //             //             gl::DepthMask(0);
-                    //             //             gl::Enable(gl::BLEND);
-                    //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //             //         }
-                    //             //         self.base_shader.activate();
-                    //             //         self.base_shader.bind_attribs();
-                    //             //         self.base_shader.set_view_proj(&view_proj);
-                    //             //     }
-                    //             //     Pipeline::Subpixel => {
-                    //             //         unsafe {
-                    //             //             gl::DepthMask(0);
-                    //             //             gl::Enable(gl::BLEND);
-                    //             //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
-                    //             //         }
-                    //             //         self.subpx_shader.activate();
-                    //             //         self.subpx_shader.bind_attribs();
-                    //             //         self.subpx_shader.set_view_proj(&view_proj);
-                    //             //     }
+                Command::BindPipeline(_pipeline) => {
+                    // println!("BindPipeline {:?}", pipeline);
+                    // TODO:
+                    // rpass.set_blend_constant
 
-                    //             // }
+                    // match pipeline {
+                    //     Pipeline::Opaque => {
+                    //         unsafe {
+                    //             gl::DepthMask(1);
+                    //             gl::Disable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //             gl::BlendEquation(gl::FUNC_ADD);
+                    //         }
+                    //     }
+                    //     Pipeline::Transparent => {
+                    //         unsafe {
+                    //             gl::DepthMask(0);
+                    //             gl::Enable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //         }
+                    //     }
+                    //     Pipeline::Subpixel => {
+                    //         unsafe {
+                    //             gl::DepthMask(0);
+                    //             gl::Enable(gl::BLEND);
+                    //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
+                    //         }
+                    //     }
+                    // }
                 }
                 Command::BindTexture(unit, id) => {
                     match unit {
@@ -592,13 +587,10 @@ impl RichTextBrush {
                             // Noop
                         }
                     };
-                    //             // if let Some(tex) = self.textures.get(&id) {
-                    //             //     tex.bind(*unit);
-                    //             // }
                 }
                 Command::Draw { start, count } => {
-                    //             let end = start + count;
-                    //             rpass.draw(*start..end, 0..(vertices.len() as u32));
+                    let end = start + count;
+                    ranges.push((*start, end));
                 }
             }
         }
@@ -633,11 +625,9 @@ impl RichTextBrush {
         });
 
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        // indices, base_vertex, instances
-        rpass.draw_indexed(0..(vertices.len() as u32), 0, 0..1);
+        for items in ranges {
+            rpass.draw_indexed(items.0..items.1, 0, 0..1);
+        }
 
         drop(rpass);
     }
@@ -837,7 +827,7 @@ fn build_document() -> doc::Document {
     db.leave_span();
     db.enter_span(&[S::LineSpacing(1.2)]);
     db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
-    db.add_text("🐕 According >= to Wikipedia, the foremost expert on any subject,\n\n");
+    db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
     db.leave_span();
     db.enter_span(&[S::Weight(Weight::BOLD)]);
     db.add_text("Typography");
@@ -875,6 +865,7 @@ fn build_document() -> doc::Document {
     db.add_text(" will spot the tricky selection in this BiDi text: ");
     db.enter_span(&[S::Size(22.)]);
     db.add_text("ניפגש ב09:35 בחוף הים");
+    db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
     db.leave_span();
     db.build()
 }
