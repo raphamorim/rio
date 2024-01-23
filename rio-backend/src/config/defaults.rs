@@ -131,6 +131,12 @@ cursor = '▇'
 #
 blinking-cursor = false
 
+# Hide the cursor while typing
+#
+# Default is `false`
+#
+# hide-cursor-when-typing = false
+
 # Ignore theme selection foreground color
 #
 # Default is false
@@ -156,7 +162,7 @@ blinking-cursor = false
 
 # Option as Alt
 #
-# This config only works on MacOs.
+# This config only works on MacOS.
 # Possible choices: 'both', 'left' and 'right'.
 #
 # Example:
@@ -175,15 +181,12 @@ blinking-cursor = false
 # Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
 #
-# This configuration only has effect if use-fork is disabled
+# This configuration only has effect if use-fork is disabled.
 #
 # Example:
 # working-dir = "/Users/raphael/Documents/"
 
 # Environment variables
-#
-# The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need
 #
 # Example:
 # env-vars = []
@@ -196,6 +199,11 @@ blinking-cursor = false
 #
 # Example:
 # use-fork = false
+
+# Confirm before exiting Rio
+# Default is `true`
+#
+# confirm-before-quit = false
 
 # Window configuration
 #
@@ -239,16 +247,15 @@ blinking-cursor = false
 #   - GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
 #   - Vulkan: Supported on Windows, Linux/Android
 #   - DX12: Supported on Windows 10
-#   - DX11: Supported on Windows 7+
 #   - Metal: Supported on macOS/iOS
 #
-# • disable-renderer-when-unfocused: This property disable renderer processes while Rio is unfocused.
+# • disable-unfocused-render: This property disable renderer processes while Rio is unfocused.
 #
 # Example:
 # [renderer]
 # performance = "High"
 # backend = "Automatic"
-# disable-renderer-when-unfocused = false
+# disable-unfocused-render = false
 
 # Keyboard
 #
@@ -321,7 +328,7 @@ blinking-cursor = false
 # Navigation
 #
 # "mode" - Define navigation mode
-#   • NativeTab (MacOs only)
+#   • NativeTab (MacOS only)
 #   • CollapsedTab
 #   • BottomTab
 #   • TopTab

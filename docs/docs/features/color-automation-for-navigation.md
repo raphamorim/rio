@@ -3,9 +3,9 @@ title: 'Color automation for navigation'
 language: 'en'
 ---
 
-Rio allows to specify color overwrites for tabs based on program and path contexts, using the `program` and `path` options.
+Rio allows specifying color for tabs based on program and path contexts, using the `program` and `path` options.
 
-It is possible to use `program` and `path` at the same time.
+It is possible to combine `program` and `path`.
 
 Note: `path` is only available for MacOS, BSD and Linux.
 
@@ -51,7 +51,7 @@ color-automation = [
 
 #### Program and path
 
-It is also possible to use both `path` and `program` at the same time.
+It is possible to combine `path` and `program`.
 
 The example below sets `#FFFF00` as color background when in the `/home` path and `nvim` is open.
 
