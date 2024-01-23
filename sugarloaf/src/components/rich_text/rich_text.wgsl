@@ -3,8 +3,9 @@ struct Globals {
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
-@group(0) @binding(1) var font_sampler: sampler;
-@group(0) @binding(2) var font_tex: texture_2d<f32>;
+@group(0) @binding(1) var font_color_tex: texture_2d<f32>;
+@group(0) @binding(2) var font_mask_tex: texture_2d<f32>;
+@group(0) @binding(3) var font_sampler: sampler;
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
@@ -48,47 +49,18 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    
     /*
-    var alpha: f32 = textureSample(tex, mask, input.uv).r;
-
-    if (alpha <= 0.0) {
-        discard;
+    switch input.use_tex {
+        case 0: {
+            return textureSampleLevel(font_color_tex, font_sampler, input.f_uv, 0.0);
+        }
+        case 1: {
+            return vec4<f32>(input.f_color.xyz, textureSample(font_mask_tex, font_sampler, input.f_uv, 0.0).x);
+        }
+        default: {
+            return vec4<f32>(0.0);
+        }
     }
-
-    return input.color * vec4<f32>(1.0, 1.0, 1.0, alpha);
     */
-
-    //switch input.use_tex {
-      //  case 0: {
-            //return textureSampleLevel(tex, input.uv);
-          //  return input.color;
-        //}
-        // if (use_mask > 0) {
-        // frag.a *= texture(mask, uv).a;
-        // }
-        //case 1: {
-          //  return input.color;
-        //}
-        //default: {
-          //  return input.color;
-        //}
-    //}
 }
-
-//@fragment
-//fn subpixel_fs_shader(input: VertexOutput) -> @location(0) vec4<f32> {
-    //switch input.use_tex {
-        //case 0: {
-            //return textureSampleLevel(tex, input.uv);
-        //}
-        // if (use_mask > 0) {
-        // frag.a *= texture(mask, uv).a;
-        // }
-        //case 1: {
-            //return input.color;
-        //}
-        //default: {
-            //return input.color;
-        //}
-    //}
-//}
