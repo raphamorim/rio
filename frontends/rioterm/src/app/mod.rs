@@ -455,6 +455,7 @@ impl EventHandler for Router {
                 current
                     .sugarloaf
                     .resize(w.try_into().unwrap(), h.try_into().unwrap());
+                current.sugarloaf.calculate_bounds();
             } else {
                 current
                     .sugarloaf
