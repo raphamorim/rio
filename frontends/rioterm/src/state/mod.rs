@@ -15,6 +15,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+use rio_backend::sugarloaf::layout::{SpanStyle};
 #[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
@@ -487,7 +488,7 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
+    fn create_sugar_stack(&mut self, sugarloaf: &mut Sugarloaf, row: &Row<Square>, has_cursor: bool) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
 
@@ -506,11 +507,13 @@ impl State {
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else {
-                stack.push(self.create_sugar(square));
+                sugarloaf.content.add_text(&square.c.to_string());
+                // stack.push(self.create_sugar(square));
             }
 
             // Render last column and break row
             if column == (columns - 1) {
+                sugarloaf.content.add_text("\n");
                 break;
             }
         }
@@ -640,21 +643,30 @@ impl State {
             }
         }
 
-        if has_selection || self.hyperlink_range.is_some() {
-            for (i, row) in rows.iter().enumerate() {
-                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_rich_sugar_stack(
-                    row,
-                    has_cursor,
-                    pos::Line((i as i32) - display_offset),
-                ));
-            }
-        } else {
-            for (i, row) in rows.iter().enumerate() {
-                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
-            }
+        // if has_selection || self.hyperlink_range.is_some() {
+        //     for (i, row) in rows.iter().enumerate() {
+        //         let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+        //         sugarloaf.stack(self.create_rich_sugar_stack(
+        //             row,
+        //             has_cursor,
+        //             pos::Line((i as i32) - display_offset),
+        //         ));
+        //     }
+        // } else {
+
+        sugarloaf.content.enter_span(&[
+            SpanStyle::family_list("Victor mono, times, georgia, serif"),
+            SpanStyle::Size(18.),
+            SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+        ]);
+
+        for (i, row) in rows.iter().enumerate() {
+            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+            self.create_sugar_stack(sugarloaf, row, has_cursor);
         }
+
+        sugarloaf.content.leave_span();
+        // }
 
         self.navigation.content(
             (sugarloaf.layout.width, sugarloaf.layout.height),

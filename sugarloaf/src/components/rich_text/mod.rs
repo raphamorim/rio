@@ -1,9 +1,7 @@
 mod batch;
 pub mod color;
 mod compositor;
-pub mod doc;
 mod image_cache;
-pub mod layout;
 pub mod text;
 pub mod util;
 
@@ -15,8 +13,7 @@ use color::Color;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
-use layout::*;
-use layout::{Direction, LayoutContext, Paragraph, Selection};
+use crate::layout::{Alignment, Direction, LayoutContext, Paragraph, Selection};
 use std::collections::HashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle, UnderlineStyle};
@@ -88,7 +85,6 @@ pub struct RichTextBrush {
     current_transform: [f32; 16],
     comp: Compositor,
     dlist: DisplayList,
-    document: doc::Document,
     rich_text_layout: Paragraph,
     rich_text_layout_context: LayoutContext,
     needs_update: bool,
@@ -321,8 +317,7 @@ impl RichTextBrush {
         });
 
         let rich_text_layout = Paragraph::new();
-        let document = build_document();
-        let fonts = layout::FontLibrary::default();
+        let fonts = crate::layout::FontLibrary::default();
         let rich_text_layout_context = LayoutContext::new(&fonts);
 
         RichTextBrush {
@@ -337,7 +332,6 @@ impl RichTextBrush {
             dlist,
             rich_text_layout,
             rich_text_layout_context,
-            document,
             bind_group,
             transform,
             pipeline,
@@ -357,10 +351,12 @@ impl RichTextBrush {
 
     pub fn render(
         &mut self,
+        document: &crate::content::Content,
         ctx: &mut Context,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
+        // let document = document.build();
         let margin = 12. * ctx.scale;
 
         if self.first_run {
@@ -374,7 +370,7 @@ impl RichTextBrush {
                 None,
                 ctx.scale,
             );
-            self.document.layout(&mut lb);
+            document.layout(&mut lb);
             self.rich_text_layout.clear();
             lb.build_into(&mut self.rich_text_layout);
 
@@ -805,70 +801,70 @@ fn draw_layout(
     }
 }
 
-fn build_document() -> doc::Document {
-    use layout::*;
-    let mut db = doc::Document::builder();
+// fn build_document() -> doc::Document {
+//     use layout::*;
+//     let mut db = doc::Document::builder();
 
-    use SpanStyle as S;
+//     use SpanStyle as S;
 
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
+//     let underline = &[
+//         S::Underline(true),
+//         S::UnderlineOffset(Some(-1.)),
+//         S::UnderlineSize(Some(1.)),
+//     ];
 
-    db.enter_span(&[
-        S::family_list("Victor Mono, times, georgia, serif"),
-        S::Size(18.),
-        S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-    ]);
-    db.enter_span(&[S::Size(20.)]);
-    db.add_text("Rio terminal -> is back\n");
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.2)]);
-    db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
-    db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
-    db.leave_span();
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.add_text("Typography");
-    db.leave_span();
-    db.add_text(" is the ");
-    db.enter_span(&[S::Style(Style::Italic)]);
-    db.add_text("art and technique");
-    db.leave_span();
-    db.add_text(" of arranging type to make ");
-    db.enter_span(underline);
-    db.add_text("written language");
-    db.leave_span();
-    db.add_text(" ");
-    db.enter_span(underline);
-    db.add_text("legible");
-    db.leave_span();
-    db.add_text(", ");
-    db.enter_span(underline);
-    db.add_text("readable");
-    db.leave_span();
-    db.add_text(" and ");
-    db.enter_span(underline);
-    db.add_text("appealing");
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.)]);
-    db.add_text(
-        " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
-    );
-    db.leave_span();
-    db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
-    db.add_text("A true ");
-    db.enter_span(&[S::Size(48.)]);
-    db.add_text("🕵🏽‍♀️");
-    db.leave_span();
-    db.add_text(" will spot the tricky selection in this BiDi text: ");
-    db.enter_span(&[S::Size(22.)]);
-    db.add_text("ניפגש ב09:35 בחוף הים");
-    db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
-    db.leave_span();
-    db.build()
-}
+//     db.enter_span(&[
+//         S::family_list("Victor Mono, times, georgia, serif"),
+//         S::Size(18.),
+//         S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+//     ]);
+//     db.enter_span(&[S::Size(20.)]);
+//     db.add_text("Rio terminal -> is back\n");
+//     db.leave_span();
+//     db.enter_span(&[S::LineSpacing(1.2)]);
+//     db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
+//     db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
+//     db.leave_span();
+//     db.enter_span(&[S::Weight(Weight::BOLD)]);
+//     db.add_text("Typography");
+//     db.leave_span();
+//     db.add_text(" is the ");
+//     db.enter_span(&[S::Style(Style::Italic)]);
+//     db.add_text("art and technique");
+//     db.leave_span();
+//     db.add_text(" of arranging type to make ");
+//     db.enter_span(underline);
+//     db.add_text("written language");
+//     db.leave_span();
+//     db.add_text(" ");
+//     db.enter_span(underline);
+//     db.add_text("legible");
+//     db.leave_span();
+//     db.add_text(", ");
+//     db.enter_span(underline);
+//     db.add_text("readable");
+//     db.leave_span();
+//     db.add_text(" and ");
+//     db.enter_span(underline);
+//     db.add_text("appealing");
+//     db.leave_span();
+//     db.enter_span(&[S::LineSpacing(1.)]);
+//     db.add_text(
+//         " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
+//     );
+//     db.leave_span();
+//     db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
+//     db.add_text("A true ");
+//     db.enter_span(&[S::Size(48.)]);
+//     db.add_text("🕵🏽‍♀️");
+//     db.leave_span();
+//     db.add_text(" will spot the tricky selection in this BiDi text: ");
+//     db.enter_span(&[S::Size(22.)]);
+//     db.add_text("ניפגש ב09:35 בחוף הים");
+//     db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
+//     db.leave_span();
+//     db.build()
+// }
 
 fn next_copy_buffer_size(size: u64) -> u64 {
     let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
