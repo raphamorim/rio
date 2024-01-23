@@ -14,8 +14,8 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
-use rio_backend::sugarloaf::layout::{SpanStyle};
 #[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
@@ -488,7 +488,12 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, sugarloaf: &mut Sugarloaf, row: &Row<Square>, has_cursor: bool) -> SugarStack {
+    fn create_sugar_stack(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        row: &Row<Square>,
+        has_cursor: bool,
+    ) -> SugarStack {
         let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
 
@@ -507,6 +512,7 @@ impl State {
             if has_cursor && column == self.cursor.state.pos.col {
                 stack.push(self.create_cursor(square));
             } else {
+                sugarloaf.content.add_text("asdiasdioasjdaosij 🕵🏽‍♀️");
                 sugarloaf.content.add_text(&square.c.to_string());
                 // stack.push(self.create_sugar(square));
             }
