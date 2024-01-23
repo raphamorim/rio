@@ -358,7 +358,7 @@ impl RichTextBrush {
     ) {
         // Used for quick testings
         // let content = build_simple_content();
-        let margin = 12. * ctx.scale;
+        let margin = 2. * ctx.scale;
 
         if self.first_run {
             self.needs_update = true;
@@ -418,7 +418,7 @@ impl RichTextBrush {
             margin,
             margin,
             depth,
-            color::ORANGE,
+            color::WHITE,
         );
 
         for r in &self.selection_rects {
@@ -530,7 +530,7 @@ impl RichTextBrush {
         for command in self.dlist.commands() {
             match command {
                 Command::BindPipeline(pipeline) => {
-                    println!("BindPipeline {:?}", pipeline);
+                    log::info!("BindPipeline {:?}", pipeline);
                     // TODO:
                     // rpass.set_blend_constant
 
@@ -560,13 +560,13 @@ impl RichTextBrush {
                     // }
                 }
                 Command::BindTexture(unit, id) => {
-                    println!("BindTexture {:?} {:?}", unit, id);
+                    log::info!("BindTexture {:?} {:?}", unit, id);
                     match unit {
                         // color_texture
                         0 => {
                             if color_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
-                                    println!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
+                                    log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
                                     self.color_texture_view = texture.create_view(
                                         &wgpu::TextureViewDescriptor::default(),
                                     );
@@ -578,7 +578,7 @@ impl RichTextBrush {
                         1 => {
                             if mask_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
-                                    println!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
+                                    log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
                                     self.mask_texture_view = texture.create_view(
                                         &wgpu::TextureViewDescriptor::default(),
                                     );
@@ -665,9 +665,10 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
-                    println!(
+                    log::info!(
                         "rich_text::CreateTexture with id ({:?}) and format {:?}",
-                        id, format
+                        id,
+                        format
                     );
                     let texture_size = wgpu::Extent3d {
                         width: width.into(),
@@ -729,7 +730,7 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
-                    println!("rich_text::UpdateTexture id ({:?})", id);
+                    log::info!("rich_text::UpdateTexture id ({:?})", id);
                     if let Some(texture) = self.textures.get(&id) {
                         let texture_size = wgpu::Extent3d {
                             width: width.into(),
@@ -769,7 +770,7 @@ impl RichTextBrush {
                     }
                 }
                 TextureEvent::DestroyTexture(id) => {
-                    println!("rich_text::DestroyTexture id ({:?})", id);
+                    log::info!("rich_text::DestroyTexture id ({:?})", id);
                     self.textures.remove(&id);
                 }
             }
@@ -777,6 +778,7 @@ impl RichTextBrush {
     }
 }
 
+#[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
     layout: &Paragraph,
