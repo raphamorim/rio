@@ -30,6 +30,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     var use_tex: i32 = 0;
     var use_mask: i32 = 0;
+
     var flags: i32 = i32(input.v_pos.w);
     if (flags == 1) {
         use_tex = 1;
