@@ -97,8 +97,10 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+#[derive(Default)]
 pub enum SugarloafRendererFeatures {
     Disabled,
+    #[default]
     Enabled,
 }
 
@@ -118,7 +120,7 @@ impl Default for SugarloafRenderer {
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
-            features: SugarloafRendererFeatures::Disabled,
+            features: SugarloafRendererFeatures::default(),
         }
     }
 }
@@ -347,20 +349,45 @@ impl Sugarloaf {
 
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
-        self.stack_text(&mut stack);
-        // self.stack_rich_text(&mut stack);
+        match self.kind {
+            SugarloafRendererFeatures::Disabled => {
+                self.stack_text(&mut stack);
+            }
+            SugarloafRendererFeatures::Enabled => {
+                self.stack_rich_text(&mut stack);
+            }
+        }
     }
 
     #[inline]
     fn stack_rich_text(&mut self, stack: &mut SugarStack) {
         self.content.enter_span(&[
+            SpanStyle::family_list("Fira Code, Apple Symbols, Arial Unicode MS, Fira Code Nerd Font, georgia, serif"),
             SpanStyle::Size(self.layout.font_size),
             SpanStyle::LineSpacing(self.layout.line_height),
+            SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         ]);
         let size = stack.len();
+        let mut content = String::from("");
         for i in 0..size {
-            self.content.add_text(&stack[i].content.to_string());
+            if i < size - 1
+                && stack[i].foreground_color == stack[i + 1].foreground_color
+                && stack[i].background_color == stack[i + 1].background_color
+                && stack[i].decoration.is_none()
+                && stack[i + 1].decoration.is_none()
+                && stack[i].media.is_none()
+            {
+                content.push_str(&stack[i].content.to_string());
+            } else {
+                if content.len() > 0 {
+                    self.content.add_text(&content);
+                    content = String::from("");
+                }
+
+                self.content.add_text(&stack[i].content.to_string());
+            }
         }
+        self.content.add_text("\n");
         self.content.leave_span();
     }
 
