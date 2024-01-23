@@ -102,7 +102,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 1_000;
+        let supported_vertex_buffer = 64;
 
         let transform = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -356,7 +356,6 @@ impl RichTextBrush {
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
-        println!("{:?}", content.text.len());
         // Used for quick testings
         // let content = build_simple_content();
         let margin = 12. * ctx.scale;
@@ -829,6 +828,8 @@ fn draw_layout(
     }
 }
 
+#[cfg(test)]
+#[allow(unused)]
 fn build_simple_content() -> crate::content::Content {
     use crate::layout::*;
     let mut db = crate::content::Content::builder();
@@ -842,6 +843,8 @@ fn build_simple_content() -> crate::content::Content {
     db.build()
 }
 
+#[cfg(test)]
+#[allow(unused)]
 fn build_complex_content() -> crate::content::Content {
     use crate::layout::*;
     let mut db = crate::content::Content::builder();

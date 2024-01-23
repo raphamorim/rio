@@ -18,6 +18,7 @@ use crate::font::{
 };
 use crate::glyph::{FontId, GlyphCruncher};
 use crate::graphics::SugarloafGraphics;
+use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
@@ -62,6 +63,7 @@ pub struct Sugarloaf {
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
     fonts: SugarloafFonts,
+    kind: SugarloafRendererFeatures,
     text_y: f32,
     current_row: u16,
 }
@@ -95,9 +97,15 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+pub enum SugarloafRendererFeatures {
+    Disabled,
+    Enabled,
+}
+
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
+    pub features: SugarloafRendererFeatures,
 }
 
 impl Default for SugarloafRenderer {
@@ -110,6 +118,7 @@ impl Default for SugarloafRenderer {
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
+            features: SugarloafRendererFeatures::Disabled,
         }
     }
 }
@@ -185,6 +194,7 @@ impl Sugarloaf {
             layout,
             text_y: 0.0,
             current_row: 0,
+            kind: renderer.features,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -337,6 +347,25 @@ impl Sugarloaf {
 
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
+        self.stack_text(&mut stack);
+        // self.stack_rich_text(&mut stack);
+    }
+
+    #[inline]
+    fn stack_rich_text(&mut self, stack: &mut SugarStack) {
+        self.content.enter_span(&[
+            SpanStyle::Size(self.layout.font_size),
+            SpanStyle::LineSpacing(self.layout.line_height),
+        ]);
+        let size = stack.len();
+        for i in 0..size {
+            self.content.add_text(&stack[i].content.to_string());
+        }
+        self.content.leave_span();
+    }
+
+    #[inline]
+    fn stack_text(&mut self, stack: &mut SugarStack) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.scaled_sugarheight;
@@ -728,6 +757,22 @@ impl Sugarloaf {
     }
 
     #[inline]
+    fn reset_state(&mut self) {
+        match self.kind {
+            SugarloafRendererFeatures::Disabled => {
+                self.text_y = 0.0;
+                self.rects = vec![];
+                self.current_row = 0;
+            }
+            SugarloafRendererFeatures::Enabled => {
+                self.content = Content::builder();
+            }
+        }
+
+        self.graphic_rects = FnvHashMap::default();
+    }
+
+    #[inline]
     pub fn render(&mut self) {
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -767,8 +812,6 @@ impl Sugarloaf {
 
                 self.rect_brush
                     .render(&mut encoder, view, &self.rects, &mut self.ctx);
-                self.rects = vec![];
-                self.current_row = 0;
 
                 let _ = self
                     .text_brush
@@ -807,7 +850,6 @@ impl Sugarloaf {
                         }
                     }
                 }
-                self.graphic_rects = FnvHashMap::default();
 
                 self.rich_text_brush.render(
                     &self.content.build_ref(),
@@ -827,6 +869,7 @@ impl Sugarloaf {
                 }
             }
         }
-        self.content = Content::builder();
+
+        self.reset_state();
     }
 }
