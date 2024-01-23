@@ -26,7 +26,7 @@ If you want to change the default shell to the new PowerShell platform, change t
 shell = { program = "pwsh", args = ["--login"] }
 ```
 
-You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware accelaration and improve performance of the application.
+You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware acceleration and improve performance of the application.
 To make Windows utilize a GPU for a specific application through Windows display settings, follow the instructions:
 
 1. Simultaneously press the Windows key and the letter "i" on your keyboard to open Windows Settings.

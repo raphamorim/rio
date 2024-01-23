@@ -5,7 +5,7 @@ language: 'en'
 
 **Note: iTerm Image Protocol is still under development**
 
-Rio implements support for the iTerm2 inline images protocol.
+Rio implements support for the iTerm2 inline image protocol.
 
 To render an image inline in your terminal, you can use `imgcat` provided as a script by iTerm2 in [iterm2.com/utilities/imgcat](https://iterm2.com/utilities/imgcat) or from other sources like:
 

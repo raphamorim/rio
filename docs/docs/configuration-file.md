@@ -57,9 +57,7 @@ blinking-cursor = false
 
 ## Hide cursor when typing
 
-Hide the cursor while typing
-
-Default is `true`
+Default is `false`
 
 ```toml
 hide-cursor-when-typing = false
@@ -94,7 +92,7 @@ padding-x = 10
 
 ## Option as Alt
 
-This config only works on MacOs.
+This config only works on MacOS.
 
 Possible choices: `both`, `left` and `right`.
 
@@ -106,15 +104,13 @@ option-as-alt = 'left'
 
 Directory the shell is started in. If this is unset the working directory of the parent process will be used.
 
-This configuration only works if `use-fork` is disabled
+This configuration only works if [`use-fork`](#use-fork) is disabled.
 
 ```toml
 working-dir = "/Users/raphael/Documents/"
 ```
 
 ## Environment variables
-
-The example below sets fish as the default SHELL using env vars, please do not copy this if you do not need it.
 
 ```toml
 env-vars = []
@@ -131,36 +127,51 @@ Defaults for POSIX-based systems (Windows is not configurable):
 use-fork = false
 ```
 
+## Confirm before quitting
+
+Require confirmation before quitting (Default: `true`).
+
+```toml
+confirm-before-quit = true
+```
+
 ## Window
 
-- `width` - define the intial window width.
-	- Default: `600`
+- `width` - define the initial window width.
 
-- `height` - define the inital window height.
-	- Default: `400`
+  - Default: `600`
+
+- `height` - define the initial window height.
+
+  - Default: `400`
 
 - `mode` - define how the window will be created
+
   - `Windowed` (default) is based on width and height
   - `Maximized` window is created with maximized
   - `Fullscreen` window is created with fullscreen
 
 - `foreground-opacity` Set text opacity.
-	- Default: `1.0`.
+
+  - Default: `1.0`.
 
 - `background-opacity` Set background opacity.
-	- Default: `1.0`.
+
+  - Default: `1.0`.
 
 - `blur` Set blur on the window background. Changing this config requires restarting Rio to take effect.
-	- Default: `false`.
+
+  - Default: `false`.
 
 - `background-image` Set an image as background.
-	- Default: `None`
+
+  - Default: `None`
 
 - `decorations` - Set window decorations
-	- `Enabled` (default) enable window decorations.
-	- `Disabled` disable all window decorations.
-	- `Transparent` window decorations with transparency.
-	- `Buttonless` remove buttons from window decorations.
+  - `Enabled` (default) enable window decorations.
+  - `Disabled` disable all window decorations.
+  - `Transparent` window decorations with transparency.
+  - `Buttonless` remove buttons from window decorations.
 
 Example:
 
@@ -205,18 +216,19 @@ y = -100.0
 ## Renderer
 
 - `Performance` - Set WGPU rendering performance
-	- `High`: Adapter that has the highest performance. This is often a discrete GPU.
-	- `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
+
+  - `High`: Adapter that has the highest performance. This is often a discrete GPU.
+  - `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
 
 - `Backend` - Set WGPU rendering backend
+
   - `Automatic`: Leave Sugarloaf/WGPU to decide
   - `GL`: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
   - `Vulkan`: Supported on Windows, Linux/Android
   - `DX12`: Supported on Windows 10
-  - `DX11`: Supported on Windows 7+
   - `Metal`: Supported on macOS/iOS
 
-- `disable-renderer-when-unfocused` - This property disable renderer processes while Rio is unfocused.
+- `disable-unfocused-render` - This property disable renderer processes while Rio is unfocused.
 
 Example:
 
@@ -224,12 +236,12 @@ Example:
 [renderer]
 performance = "High"
 backend = "Automatic"
-disable-renderer-when-unfocused = false
+disable-unfocused-render = false
 ```
 
 ## Fonts
 
-Configure fonts used by the terminal
+Configure fonts used by the terminal.
 
 Note: You can set different font families but Rio terminal
 will always look for regular font bounds whene
@@ -280,7 +292,7 @@ weight = 800
 - `use-kitty-keyboard-protocol` - Enable Kitty Keyboard protocol
 
 - `disable-ctlseqs-alt` - Disable ctlseqs with ALT keys
-	- Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
+  - Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
 
 Example:
 
@@ -296,7 +308,7 @@ You can change how many lines are scrolled each time by setting this option. Scr
 
 If you want a quicker scroll, keep increasing the multiplier. If you want to reduce scroll speed you will need to increase the divider.
 
-You can use both properties also to find the best scroll for you.
+You can combine both properties to find the best scroll for you.
 
 - Multiplier default is `3.0`.
 - Divider default is `1.0`.
@@ -312,12 +324,13 @@ divider = 1.0
 ## Navigation
 
 - `mode` - Define navigation mode
-	- `NativeTab` (MacOs only)
-	- `CollapsedTab`
-	- `BottomTab`
-	- `TopTab`
-	- `Breadcrumb`
-	- `Plain`
+
+  - `NativeTab` (MacOS only)
+  - `CollapsedTab`
+  - `BottomTab`
+  - `TopTab`
+  - `Breadcrumb`
+  - `Plain`
 
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/configuration-file/#use-fork) to be set to false).
@@ -338,9 +351,10 @@ You can set `shell.program` to the path of your favorite shell, e.g. `/bin/fish`
 Entries in `shell.args` are passed unmodified as arguments to the shell.
 
 Default:
-	- (macOS) user login shell
-	- (Linux/BSD) user login shell
-	- (Windows) powershell
+
+- (macOS) user login shell
+- (Linux/BSD) user login shell
+- (Windows) powershell
 
 ### Shell Examples
 
@@ -406,7 +420,7 @@ You can create custom key bindings for Rio terminal, [more information](/docs/ke
 keys = [
   { key = "q", with = "super", action = "Quit" },
   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] },
 ]
 ```
 
