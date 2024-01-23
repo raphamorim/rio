@@ -351,17 +351,21 @@ impl RichTextBrush {
 
     pub fn render(
         &mut self,
-        _content: &crate::content::Content,
+        content: &crate::content::Content,
         ctx: &mut Context,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
-        let content = build_test_content();
+        println!("{:?}", content.text.len());
+        // Used for quick testings
+        // let content = build_simple_content();
         let margin = 12. * ctx.scale;
 
         if self.first_run {
             self.needs_update = true;
         }
+
+        self.needs_update = true;
         let w = ctx.size.width;
         let _h = ctx.size.height;
         if self.needs_update {
@@ -825,7 +829,20 @@ fn draw_layout(
     }
 }
 
-fn build_test_content() -> crate::content::Content {
+fn build_simple_content() -> crate::content::Content {
+    use crate::layout::*;
+    let mut db = crate::content::Content::builder();
+
+    use SpanStyle as S;
+
+    db.enter_span(&[S::Size(14.)]);
+    db.add_text("Rio terminal -> is back\n");
+    db.add_text("Second paragraph\n");
+    db.leave_span();
+    db.build()
+}
+
+fn build_complex_content() -> crate::content::Content {
     use crate::layout::*;
     let mut db = crate::content::Content::builder();
 
