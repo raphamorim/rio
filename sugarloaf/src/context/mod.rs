@@ -157,9 +157,6 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
-                #[cfg(target_os = "macos")]
-                desired_maximum_frame_latency: 1,
-                #[cfg(not(target_os = "macos"))]
                 desired_maximum_frame_latency: 2,
             },
         );
@@ -192,9 +189,6 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
-                #[cfg(target_os = "macos")]
-                desired_maximum_frame_latency: 1,
-                #[cfg(not(target_os = "macos"))]
                 desired_maximum_frame_latency: 2,
             },
         );

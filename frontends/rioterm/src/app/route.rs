@@ -128,6 +128,7 @@ impl Route {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
+            ..SugarloafRenderer::default()
         };
 
         let padding_y_bottom = padding_bottom_from_config(&config);
@@ -191,6 +192,7 @@ impl Route {
         }
         // TODO: Bug sugarloaf is not starting with right width/height
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
+        sugarloaf.calculate_bounds();
         sugarloaf.render();
 
         Ok(Route {
@@ -1100,6 +1102,7 @@ impl Route {
             self.sugarloaf.set_background_image(image);
         }
 
+        self.sugarloaf.calculate_bounds();
         self.render();
     }
 

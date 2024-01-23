@@ -237,6 +237,8 @@ impl EventHandler for Router {
                         // so basically it updates with the new font-size, then compute the bounds
                         // and then updates again with correct bounds
                         current.sugarloaf.layout.update();
+                        current.sugarloaf.calculate_bounds();
+                        current.sugarloaf.layout.update();
 
                         current.resize_all_contexts();
 
