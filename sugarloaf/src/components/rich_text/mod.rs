@@ -76,7 +76,11 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 pub struct RichTextBrush {
     vertex_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
+    sampler: wgpu::Sampler,
+    color_texture_view: wgpu::TextureView,
+    mask_texture_view: wgpu::TextureView,
     transform: wgpu::Buffer,
+    bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     textures: HashMap<TextureId, Texture>,
     index_buffer: wgpu::Buffer,
@@ -112,7 +116,7 @@ impl RichTextBrush {
         });
 
         // Create pipeline layout
-        let uniform_layout =
+        let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[
@@ -170,11 +174,11 @@ impl RichTextBrush {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
                 push_constant_ranges: &[],
-                bind_group_layouts: &[&uniform_layout],
+                bind_group_layouts: &[&bind_group_layout],
             });
 
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("texture view"),
+            label: Some("rich_text create color_texture"),
             size: wgpu::Extent3d {
                 width: context.size.width,
                 height: context.size.height,
@@ -191,7 +195,7 @@ impl RichTextBrush {
             color_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("texture view"),
+            label: Some("rich_text create mask_texture"),
             size: wgpu::Extent3d {
                 width: context.size.width,
                 height: context.size.height,
@@ -220,7 +224,7 @@ impl RichTextBrush {
 
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_layout,
+            layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -322,8 +326,12 @@ impl RichTextBrush {
         let rich_text_layout_context = LayoutContext::new(&fonts);
 
         RichTextBrush {
+            bind_group_layout,
             index_buffer_size,
             index_buffer,
+            color_texture_view,
+            mask_texture_view,
+            sampler,
             textures: HashMap::default(),
             comp: Compositor::new(2048),
             dlist,
@@ -411,7 +419,7 @@ impl RichTextBrush {
             margin,
             margin,
             depth,
-            color::WHITE,
+            color::BLUE,
         );
 
         for r in &self.selection_rects {
@@ -520,66 +528,116 @@ impl RichTextBrush {
         });
 
         rpass.set_pipeline(&self.pipeline);
+
+        // rpass.set_blend_constant
+
+        for command in self.dlist.commands() {
+            match command {
+                Command::BindPipeline(pipeline) => {
+                    println!("BindPipeline {:?}", pipeline);
+                    //             // match pipeline {
+                    //             //     Pipeline::Opaque => {
+                    //             //         unsafe {
+                    //             //             gl::DepthMask(1);
+                    //             //             gl::Disable(gl::BLEND);
+                    //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //             //             gl::BlendEquation(gl::FUNC_ADD);
+                    //             //         }
+                    //             //         self.base_shader.activate();
+                    //             //         self.base_shader.bind_attribs();
+                    //             //         self.base_shader.set_view_proj(&view_proj);
+                    //             //     }
+                    //             //     Pipeline::Transparent => {
+                    //             //         unsafe {
+                    //             //             gl::DepthMask(0);
+                    //             //             gl::Enable(gl::BLEND);
+                    //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    //             //         }
+                    //             //         self.base_shader.activate();
+                    //             //         self.base_shader.bind_attribs();
+                    //             //         self.base_shader.set_view_proj(&view_proj);
+                    //             //     }
+                    //             //     Pipeline::Subpixel => {
+                    //             //         unsafe {
+                    //             //             gl::DepthMask(0);
+                    //             //             gl::Enable(gl::BLEND);
+                    //             //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
+                    //             //         }
+                    //             //         self.subpx_shader.activate();
+                    //             //         self.subpx_shader.bind_attribs();
+                    //             //         self.subpx_shader.set_view_proj(&view_proj);
+                    //             //     }
+
+                    //             // }
+                }
+                Command::BindTexture(unit, id) => {
+                    match unit {
+                        // color_texture
+                        0 => {
+                            if let Some(texture) = self.textures.get(id) {
+                                println!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
+                                self.color_texture_view = texture
+                                    .create_view(&wgpu::TextureViewDescriptor::default());
+                            }
+                        }
+                        // mask_texture
+                        1 => {
+                            if let Some(texture) = self.textures.get(id) {
+                                println!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
+                                self.mask_texture_view = texture
+                                    .create_view(&wgpu::TextureViewDescriptor::default());
+                            }
+                        }
+                        _ => {
+                            // Noop
+                        }
+                    };
+                    //             // if let Some(tex) = self.textures.get(&id) {
+                    //             //     tex.bind(*unit);
+                    //             // }
+                }
+                Command::Draw { start, count } => {
+                    //             let end = start + count;
+                    //             rpass.draw(*start..end, 0..(vertices.len() as u32));
+                }
+            }
+        }
+
+        self.bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.transform,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self.color_texture_view,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&self.mask_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+            label: Some("rich_text::Pipeline uniforms"),
+        });
+
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         // indices, base_vertex, instances
         rpass.draw_indexed(0..(vertices.len() as u32), 0, 0..1);
-
-        // rpass.set_blend_constant
-
-        // for command in self.dlist.commands() {
-        //     match command {
-        //         Command::BindPipeline(pipeline) => {
-        //             println!("BindPipeline {:?}",pipeline);
-        //             // match pipeline {
-        //             //     Pipeline::Opaque => {
-        //             //         unsafe {
-        //             //             gl::DepthMask(1);
-        //             //             gl::Disable(gl::BLEND);
-        //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-        //             //             gl::BlendEquation(gl::FUNC_ADD);
-        //             //         }
-        //             //         self.base_shader.activate();
-        //             //         self.base_shader.bind_attribs();
-        //             //         self.base_shader.set_view_proj(&view_proj);
-        //             //     }
-        //             //     Pipeline::Transparent => {
-        //             //         unsafe {
-        //             //             gl::DepthMask(0);
-        //             //             gl::Enable(gl::BLEND);
-        //             //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-        //             //         }
-        //             //         self.base_shader.activate();
-        //             //         self.base_shader.bind_attribs();
-        //             //         self.base_shader.set_view_proj(&view_proj);
-        //             //     }
-        //             //     Pipeline::Subpixel => {
-        //             //         unsafe {
-        //             //             gl::DepthMask(0);
-        //             //             gl::Enable(gl::BLEND);
-        //             //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
-        //             //         }
-        //             //         self.subpx_shader.activate();
-        //             //         self.subpx_shader.bind_attribs();
-        //             //         self.subpx_shader.set_view_proj(&view_proj);
-        //             //     }
-
-        //             // }
-        //         }
-        //         Command::BindTexture(unit, id) => {
-        //             println!("BindTexture {:?} {:?}",unit, id);
-        //             // if let Some(tex) = self.textures.get(&id) {
-        //             //     tex.bind(*unit);
-        //             // }
-        //         }
-        //         Command::Draw { start, count } => {
-        //             let end = start + count;
-        //             rpass.draw(*start..end, 0..(vertices.len() as u32));
-        //         }
-        //     }
-        // }
 
         drop(rpass);
     }
@@ -594,6 +652,10 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
+                    println!(
+                        "rich_text::CreateTexture with id ({:?}) and format {:?}",
+                        id, format
+                    );
                     let texture_size = wgpu::Extent3d {
                         width: width.into(),
                         height: height.into(),
@@ -654,6 +716,7 @@ impl RichTextBrush {
                     height,
                     data,
                 } => {
+                    println!("rich_text::UpdateTexture id ({:?})", id);
                     if let Some(texture) = self.textures.get(&id) {
                         let texture_size = wgpu::Extent3d {
                             width: width.into(),
@@ -693,6 +756,7 @@ impl RichTextBrush {
                     }
                 }
                 TextureEvent::DestroyTexture(id) => {
+                    println!("rich_text::DestroyTexture id ({:?})", id);
                     self.textures.remove(&id);
                 }
             }
