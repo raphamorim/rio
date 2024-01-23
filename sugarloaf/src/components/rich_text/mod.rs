@@ -521,6 +521,9 @@ impl RichTextBrush {
 
         let mut ranges = vec![];
 
+        let mut color_texture_updated: Option<&TextureId> = None;
+        let mut mask_texture_updated: Option<&TextureId> = None;
+
         for command in self.dlist.commands() {
             match command {
                 Command::BindPipeline(pipeline) => {
@@ -558,18 +561,26 @@ impl RichTextBrush {
                     match unit {
                         // color_texture
                         0 => {
-                            if let Some(texture) = self.textures.get(id) {
-                                println!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                self.color_texture_view = texture
-                                    .create_view(&wgpu::TextureViewDescriptor::default());
+                            if color_texture_updated.is_none() {
+                                if let Some(texture) = self.textures.get(id) {
+                                    println!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
+                                    self.color_texture_view = texture.create_view(
+                                        &wgpu::TextureViewDescriptor::default(),
+                                    );
+                                    color_texture_updated = Some(id);
+                                }
                             }
                         }
                         // mask_texture
                         1 => {
-                            if let Some(texture) = self.textures.get(id) {
-                                println!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                self.mask_texture_view = texture
-                                    .create_view(&wgpu::TextureViewDescriptor::default());
+                            if mask_texture_updated.is_none() {
+                                if let Some(texture) = self.textures.get(id) {
+                                    println!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
+                                    self.mask_texture_view = texture.create_view(
+                                        &wgpu::TextureViewDescriptor::default(),
+                                    );
+                                    mask_texture_updated = Some(id);
+                                }
                             }
                         }
                         _ => {
@@ -581,6 +592,26 @@ impl RichTextBrush {
                     let end = start + count;
                     ranges.push((*start, end));
                 }
+            }
+        }
+
+        // Ensure texture views are not empty
+        if mask_texture_updated.is_none() {
+            if let Some(texture) = self
+                .textures
+                .get(color_texture_updated.unwrap_or_else(|| &TextureId(0)))
+            {
+                self.mask_texture_view =
+                    texture.create_view(&wgpu::TextureViewDescriptor::default());
+            }
+        }
+        if color_texture_updated.is_none() {
+            if let Some(texture) = self
+                .textures
+                .get(mask_texture_updated.unwrap_or_else(|| &TextureId(0)))
+            {
+                self.color_texture_view =
+                    texture.create_view(&wgpu::TextureViewDescriptor::default());
             }
         }
 
