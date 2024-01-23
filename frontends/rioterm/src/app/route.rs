@@ -191,7 +191,6 @@ impl Route {
         }
         // TODO: Bug sugarloaf is not starting with right width/height
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
-        sugarloaf.calculate_bounds();
         sugarloaf.render();
 
         Ok(Route {
@@ -1101,7 +1100,6 @@ impl Route {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.sugarloaf.calculate_bounds();
         self.render();
     }
 

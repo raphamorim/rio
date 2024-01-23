@@ -1,18 +1,18 @@
-use crate::components::rich_text::layout::*;
+use crate::layout::*;
 use core::borrow::Borrow;
 use core::ops::Range;
 
 #[derive(Clone, Default)]
-pub struct Document {
+pub struct Content {
     pub spans: Vec<Span>,
     pub fragments: Vec<(u32, u32)>,
     pub text: String,
     pub roots: Vec<u32>,
 }
 
-impl Document {
-    pub fn builder() -> DocumentBuilder {
-        DocumentBuilder::default()
+impl Content {
+    pub fn builder() -> ContentBuilder {
+        ContentBuilder::default()
     }
 
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
@@ -154,12 +154,12 @@ pub enum SpanElement {
 }
 
 #[derive(Default)]
-pub struct DocumentBuilder {
-    doc: Document,
+pub struct ContentBuilder {
+    content: Content,
     spans: Vec<u32>,
 }
 
-impl DocumentBuilder {
+impl ContentBuilder {
     pub fn enter_span<'p, I>(&mut self, properties: I) -> u32
     where
         I: IntoIterator,
@@ -172,14 +172,14 @@ impl DocumentBuilder {
                 .collect(),
             elements: Vec::new(),
         };
-        let index = self.doc.spans.len() as u32;
-        self.doc.spans.push(span);
+        let index = self.content.spans.len() as u32;
+        self.content.spans.push(span);
         if let Some(parent) = self.spans.last() {
-            self.doc.spans[*parent as usize]
+            self.content.spans[*parent as usize]
                 .elements
                 .push(SpanElement::Span(index));
         } else {
-            self.doc.roots.push(index);
+            self.content.roots.push(index);
         }
         self.spans.push(index);
         index
@@ -191,18 +191,22 @@ impl DocumentBuilder {
 
     pub fn add_text(&mut self, text: &str) {
         if let Some(span) = self.spans.last() {
-            let index = self.doc.fragments.len() as u32;
-            let start = self.doc.text.len() as u32;
-            self.doc.text.push_str(text);
-            let end = self.doc.text.len() as u32;
-            self.doc.fragments.push((start, end));
-            self.doc.spans[*span as usize]
+            let index = self.content.fragments.len() as u32;
+            let start = self.content.text.len() as u32;
+            self.content.text.push_str(text);
+            let end = self.content.text.len() as u32;
+            self.content.fragments.push((start, end));
+            self.content.spans[*span as usize]
                 .elements
                 .push(SpanElement::Fragment(index));
         }
     }
 
-    pub fn build(self) -> Document {
-        self.doc
+    pub fn build_ref(&self) -> &Content {
+        &self.content
+    }
+
+    pub fn build(self) -> Content {
+        self.content
     }
 }
