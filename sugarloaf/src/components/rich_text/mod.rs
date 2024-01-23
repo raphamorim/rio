@@ -475,14 +475,6 @@ impl RichTextBrush {
                     });
 
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
-
-            // encoder.copy_buffer_to_buffer(
-            //     &vertices_buffer,
-            //     0,
-            //     &self.vertex_buffer,
-            //     0,
-            //     mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
-            // );
         }
 
         let indices_raw: &[u8] = bytemuck::cast_slice(indices);
@@ -531,8 +523,8 @@ impl RichTextBrush {
 
         for command in self.dlist.commands() {
             match command {
-                Command::BindPipeline(_pipeline) => {
-                    // println!("BindPipeline {:?}", pipeline);
+                Command::BindPipeline(pipeline) => {
+                    println!("BindPipeline {:?}", pipeline);
                     // TODO:
                     // rpass.set_blend_constant
 
@@ -562,6 +554,7 @@ impl RichTextBrush {
                     // }
                 }
                 Command::BindTexture(unit, id) => {
+                    println!("BindTexture {:?} {:?}", unit, id);
                     match unit {
                         // color_texture
                         0 => {
