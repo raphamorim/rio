@@ -301,7 +301,7 @@ impl ImageCache {
                 }
             }
         }
-        println!("Evicted {}", count);
+        log::info!("rich_text::atlases::cache: evicted {}", count);
         count
     }
 
