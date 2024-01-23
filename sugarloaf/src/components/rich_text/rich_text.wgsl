@@ -48,18 +48,16 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(input.f_color.xyz, 1.0);
-    /*
-    switch input.f_use_tex {
-        case 0: {
-            return textureSampleLevel(font_color_tex, font_sampler, input.f_uv, 0.0);
-        }
-        case 1: {
-            return vec4<f32>(input.f_color.xyz, textureSampleLevel(font_mask_tex, font_sampler, input.f_uv, 0.0).x);
-        }
-        default: {
-            return vec4<f32>(0.0);
-        }
+    // return vec4<f32>(input.f_color.xyz, 1.0);
+    var out: vec4<f32> = input.f_color;
+
+    if input.f_use_tex > 0 {
+        out = textureSampleLevel(font_color_tex, font_sampler, input.f_uv, 0.0);
     }
-    */
+
+    if input.f_use_mask > 0 {
+        out = vec4<f32>(out.xyz, textureSampleLevel(font_mask_tex, font_sampler, input.f_uv, 0.0).x);
+    }
+
+    return out;
 }

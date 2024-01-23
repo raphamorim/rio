@@ -419,7 +419,7 @@ impl RichTextBrush {
             margin,
             margin,
             depth,
-            color::BLUE,
+            color::ORANGE,
         );
 
         for r in &self.selection_rects {
@@ -832,12 +832,12 @@ fn build_document() -> doc::Document {
         S::Size(18.),
         S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
     ]);
-    db.enter_span(&[S::Size(48.)]);
-    db.add_text("rio");
+    db.enter_span(&[S::Size(20.)]);
+    db.add_text("Rio terminal -> is back\n");
     db.leave_span();
     db.enter_span(&[S::LineSpacing(1.2)]);
     db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
-    db.add_text("According to Wikipedia, the foremost expert on any subject,\n\n");
+    db.add_text("🐕 According >= to Wikipedia, the foremost expert on any subject,\n\n");
     db.leave_span();
     db.enter_span(&[S::Weight(Weight::BOLD)]);
     db.add_text("Typography");
