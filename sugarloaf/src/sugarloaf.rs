@@ -1,9 +1,9 @@
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
-use crate::content::{ContentBuilder, Content};
-use crate::components::rich_text::{RichTextBrush};
+use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
+use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
 use crate::core::{
     ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack, TextBuilder,
@@ -805,8 +805,12 @@ impl Sugarloaf {
                 }
                 self.graphic_rects = FnvHashMap::default();
 
-                self.rich_text_brush
-                    .render(&self.content.build_ref(), &mut self.ctx, &mut encoder, view);
+                self.rich_text_brush.render(
+                    &self.content.build_ref(),
+                    &mut self.ctx,
+                    &mut encoder,
+                    view,
+                );
 
                 self.layer_brush.end_frame();
 

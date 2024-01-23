@@ -54,7 +54,6 @@ impl SpanId {
     }
 }
 
-
 use crate::components::layer::types;
 use crate::core::SugarloafStyle;
 
