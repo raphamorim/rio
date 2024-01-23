@@ -79,41 +79,41 @@ jobs:
             release/macos-unsigned.zip
             LICENSE
 
-  # nightly-release-deb:
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: write
-  #     discussions: write
+  nightly-release-deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
 
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #       with:
-  #         fetch-depth: 0
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-  #     - name: rust cache
-  #       uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-all-crates: true
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
 
-  #     - run: sudo apt install rename
-  #     - run: rustup toolchain install stable --profile minimal
-  #     - run: cargo install cargo-deb
-  #     - run: mkdir -p release
+      - run: sudo apt install rename
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo install cargo-deb
+      - run: mkdir -p release
 
-  #     - run: make release-debian-x11
-  #     - run: make release-debian-wayland
+      - run: make release-debian-x11
+      - run: make release-debian-wayland
 
-  #     - name: Release nightly
-  #       uses: softprops/action-gh-release@v1
-  #       with:
-  #         name: Nightly
-  #         tag_name: ${{ env.NIGHTLY_TAG }}
-  #         prerelease: true
-  #         append_body: true
-  #         token: ${{ secrets.GITHUB_TOKEN }}
-  #         files: |
-  #           release/debian/x11/*
-  #           release/debian/wayland/*
+      - name: Release nightly
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            release/debian/x11/*
+            release/debian/wayland/*
 
   nightly-release-windows:
     needs: create_tag
