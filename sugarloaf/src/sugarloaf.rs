@@ -418,12 +418,12 @@ impl Sugarloaf {
             // self.content.leave_span();
             // println!("{:?}", span_counter);
             // while span_counter > 0 {
-                // println!("removeu");
+            // println!("removeu");
 
             if is_underlined {
                 self.content.leave_span();
             }
-                // span_counter -= 1;
+            // span_counter -= 1;
             // }
         }
         self.content.break_line();
@@ -896,7 +896,10 @@ impl Sugarloaf {
                     );
                 }
                 let duration = start.elapsed();
-                println!("Time elapsed in rich_text_brush.render() is: {:?}", duration);
+                println!(
+                    "Time elapsed in rich_text_brush.render() is: {:?}",
+                    duration
+                );
 
                 if !self.graphic_rects.is_empty() {
                     for entry_render in

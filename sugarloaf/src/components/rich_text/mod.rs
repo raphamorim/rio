@@ -358,7 +358,7 @@ impl RichTextBrush {
     ) {
         // Used for quick testings
         // let content = build_simple_content();
-        let content = build_complex_content();
+        // let content = build_complex_content();
         let margin = 2. * ctx.scale;
 
         if self.first_run {
@@ -435,8 +435,7 @@ impl RichTextBrush {
                 1. * ctx.scale,
                 ch,
             ];
-            self.comp
-                .draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
+            self.comp.draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
         }
         self.dlist.clear();
         self.finish_composition(ctx);
@@ -802,24 +801,24 @@ fn draw_layout(
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
+            let color = run.color();
             let style = TextRunStyle {
                 font: font.as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
-                color: run.color(),
+                color,
                 baseline: py,
                 advance: px - run_x,
                 underline: if run.underline() {
                     Some(UnderlineStyle {
                         offset: run.underline_offset(),
                         size: run.underline_size(),
-                        color: color::WHITE,
+                        color,
                     })
                 } else {
                     None
                 },
             };
-            println!("{:?}", style.color);
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
