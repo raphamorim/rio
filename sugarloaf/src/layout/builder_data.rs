@@ -84,6 +84,8 @@ pub struct SpanData {
     pub word_spacing: f32,
     /// Multiplicative line spacing factor.
     pub line_spacing: f32,
+    /// Enable strikethrough decoration.
+    pub strikethrough: bool,
     /// Enable underline decoration.
     pub underline: bool,
     /// Offset of an underline.
@@ -162,6 +164,7 @@ impl BuilderState {
             word_spacing: 0.,
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
+            strikethrough: false,
             underline: false,
             underline_offset: None,
             underline_size: None,
@@ -265,6 +268,9 @@ impl BuilderState {
                 }
                 S::LineSpacing(spacing) => {
                     span.line_spacing = *spacing;
+                }
+                S::Strikethrough(enable) => {
+                    span.strikethrough = *enable;
                 }
                 S::Underline(enable) => {
                     span.underline = *enable;

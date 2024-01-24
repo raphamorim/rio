@@ -13,7 +13,9 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::core::{
+    Sugar, SugarCustomDecoration, SugarDecoration, SugarStack, SugarStyle,
+};
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 #[cfg(target_os = "macos")]
@@ -186,14 +188,12 @@ impl State {
         let is_italic = flags.contains(Flags::ITALIC);
         let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
         let is_bold = flags.contains(Flags::BOLD);
-        let is_underlined = flags.contains(Flags::UNDERLINE);
 
-        if is_bold || is_bold_italic || is_italic || is_underlined {
+        if is_bold || is_bold_italic || is_italic {
             style = Some(SugarStyle {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                is_underlined,
             });
         }
 
@@ -201,15 +201,18 @@ impl State {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
+        let mut custom_decoration = None;
         let mut decoration = None;
-        if is_underlined {
-            decoration = Some(SugarDecoration {
+        if flags.contains(Flags::UNDERLINE) {
+            decoration = Some(SugarDecoration::Underline);
+            custom_decoration = Some(SugarCustomDecoration {
                 relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });
         } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(SugarDecoration {
+            decoration = Some(SugarDecoration::Strikethrough);
+            custom_decoration = Some(SugarCustomDecoration {
                 relative_position: (0.0, self.font_size / 2.),
                 size: (1.0, 0.025),
                 color: self.named_colors.foreground,
@@ -222,13 +225,14 @@ impl State {
             background_color,
             style,
             decoration,
+            custom_decoration,
             media: None,
         }
     }
 
     #[inline]
     fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.decoration = Some(SugarDecoration {
+        sugar.custom_decoration = Some(SugarCustomDecoration {
             relative_position: (0.0, self.font_size - 1.),
             size: (1.0, 0.005),
             color: self.named_colors.foreground,
@@ -238,7 +242,7 @@ impl State {
     }
 
     #[inline]
-    fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
+    fn cursor_to_decoration(&self) -> Option<SugarCustomDecoration> {
         let color = if !self.is_vi_mode_enabled {
             self.named_colors.cursor
         } else {
@@ -246,17 +250,17 @@ impl State {
         };
 
         match self.cursor.state.content {
-            CursorShape::Block => Some(SugarDecoration {
+            CursorShape::Block => Some(SugarCustomDecoration {
                 relative_position: (0.0, 0.0),
                 size: (1.0, 1.0),
                 color,
             }),
-            CursorShape::Underline => Some(SugarDecoration {
+            CursorShape::Underline => Some(SugarCustomDecoration {
                 relative_position: (0.0, self.font_size - 2.5),
                 size: (1.0, 0.08),
                 color,
             }),
-            CursorShape::Beam => Some(SugarDecoration {
+            CursorShape::Beam => Some(SugarCustomDecoration {
                 relative_position: (0.0, 0.0),
                 size: (0.1, 1.0),
                 color,
@@ -323,6 +327,7 @@ impl State {
                     background_color: self.named_colors.selection_background,
                     style: None,
                     decoration: None,
+                    custom_decoration: None,
                     media: None,
                 };
                 stack.push(selected_sugar);
@@ -533,6 +538,7 @@ impl State {
             background_color,
             style: None,
             decoration: None,
+            custom_decoration: None,
             media: Some(SugarGraphic {
                 id: media.id,
                 width: media.width,
@@ -549,6 +555,7 @@ impl State {
             background_color: self.compute_bg_color(square),
             style: None,
             decoration: None,
+            custom_decoration: None,
             media: None,
         };
 
@@ -561,7 +568,6 @@ impl State {
                 is_italic,
                 is_bold_italic,
                 is_bold,
-                is_underlined: false,
             });
         }
 
@@ -580,7 +586,7 @@ impl State {
             sugar.foreground_color = self.named_colors.background.0;
         }
 
-        sugar.decoration = self.cursor_to_decoration();
+        sugar.custom_decoration = self.cursor_to_decoration();
         sugar
     }
 
