@@ -368,6 +368,8 @@ impl Sugarloaf {
 
     #[inline]
     fn stack_rich_text(&mut self, stack: &mut SugarStack) {
+        return;
+
         let size = stack.len();
         let underline = &[
             SpanStyle::Underline(true),
@@ -413,9 +415,9 @@ impl Sugarloaf {
                 }
             }
 
-            // self.content.enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
+            self.content.enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
             self.content.add_char(stack[i].content);
-            // self.content.leave_span();
+            self.content.leave_span();
             // println!("{:?}", span_counter);
             // while span_counter > 0 {
             // println!("removeu");
@@ -829,12 +831,12 @@ impl Sugarloaf {
 
         if self.level.is_advanced() {
             self.content = Content::builder();
-            self.content.enter_span(&[
-                SpanStyle::family_list("Fira Code"),
-                SpanStyle::Size(self.layout.font_size),
-                SpanStyle::LineSpacing(self.layout.line_height),
-                SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-            ]);
+            // self.content.enter_span(&[
+            //     SpanStyle::family_list("Fira Code"),
+            //     SpanStyle::Size(self.layout.font_size),
+            //     SpanStyle::LineSpacing(self.layout.line_height),
+            //     SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+            // ]);
         } else {
             self.text_y = 0.0;
             self.current_row = 0;
