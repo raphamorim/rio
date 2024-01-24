@@ -211,8 +211,8 @@ impl RichTextBrush {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            // mag_filter: wgpu::FilterMode::Linear,
-            mag_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            // mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
@@ -359,6 +359,7 @@ impl RichTextBrush {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
+        let content = build_terminal_content();
         let margin = 2. * ctx.scale;
 
         if self.first_run {
@@ -914,6 +915,79 @@ fn build_complex_content() -> crate::content::Content {
     db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
     db.leave_span();
     db.build()
+}
+
+#[allow(unused)]
+fn build_terminal_content() -> crate::content::Content {
+    use crate::layout::*;
+    let mut db = crate::content::Content::builder();
+
+    use SpanStyle as S;
+
+    let underline = &[
+        S::Underline(true),
+        S::UnderlineOffset(Some(-1.)),
+        S::UnderlineSize(Some(1.)),
+    ];
+
+    for i in 0..20 {
+        db.enter_span(&[
+            S::family_list("Fira code, times, georgia, serif"),
+            S::Size(24.),
+            // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+        ]);
+        db.enter_span(&[
+            S::Weight(Weight::BOLD),
+            S::Color([1.0, 0.5, 0.5, 1.0])
+        ]);
+        db.add_char('R');
+        db.leave_span();
+        // should return to span
+        db.enter_span(&[
+            S::Color([0.0, 1.0, 0.0, 1.0])
+        ]);
+        db.add_char('i');
+        db.leave_span();
+        db.enter_span(&[
+            S::Weight(Weight::NORMAL),
+            S::Style(Style::Italic),
+            S::Color([0.0, 1.0, 1.0, 1.0]),
+            // S::Size(20.),
+        ]);
+        db.add_char('o');
+        db.add_char(' ');
+        for x in 0..5 {
+            db.add_char('🌊');
+        }
+        for x in 0..5 {
+            db.add_char(' ');
+        }
+        db.add_text("---> ->");
+        db.add_text("-> 🥶");
+        db.break_line();
+        db.leave_span();
+        db.leave_span();
+    }
+    // db.break_line();
+    // db.enter_span(&[S::Color([1.0, 1.0, 1.0, 1.0])]);
+    // db.add_text("terminal");
+    // db.leave_span();
+    // db.add_text("\n");
+    // db.enter_span(&[S::Weight(Weight::BOLD)]);
+    // db.add_text("t");
+    // db.add_text("e");
+    // db.add_text("r");
+    // db.add_text("m");
+    // db.add_text(" ");
+    // db.enter_span(underline);
+    // db.add_text("\n");
+    // db.enter_span(&[S::Color([0.0, 1.0, 1.0, 1.0])]);
+    // db.add_text("n");
+    db.build()
+}
+
+fn test_rich_text_content_build() {
+
 }
 
 #[inline]
