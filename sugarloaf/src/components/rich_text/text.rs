@@ -11,7 +11,7 @@ pub struct TextRunStyle<'a> {
     /// Font size.
     pub font_size: f32,
     /// Color of the text.
-    pub color: Color,
+    pub color: [f32;4],
     /// Baseline of the run.
     pub baseline: f32,
     /// Total advance of the run.

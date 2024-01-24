@@ -454,6 +454,7 @@ struct ShapeState<'a> {
     font_id: FontGroupId,
     font: Option<Font>,
     size: f32,
+    color: [f32; 4],
 }
 
 fn shape_item(
@@ -485,6 +486,7 @@ fn shape_item(
         span,
         font_id: span.font,
         font: None,
+        color: span.color,
         size: span.font_size,
     };
     fcx.select_group(shape_state.font_id);
@@ -590,6 +592,7 @@ where
                 &state.state.spans,
                 state.font.clone().unwrap(),
                 state.size,
+                state.color,
                 state.level,
                 shaper,
             );
@@ -610,6 +613,7 @@ where
                 &state.state.spans,
                 state.font.clone().unwrap(),
                 state.size,
+                state.color,
                 state.level,
                 shaper,
             );

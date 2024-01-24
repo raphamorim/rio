@@ -15,6 +15,8 @@ pub enum SpanStyle<'a> {
     Stretch(Stretch),
     /// Font weight.
     Weight(Weight),
+    /// Font color.
+    Color([f32; 4]),
     /// Font style.
     Style(Style),
     /// Font feature settings.
@@ -61,6 +63,7 @@ impl<'a> SpanStyle<'a> {
             Self::Size(v) => S::Size(*v),
             Self::Stretch(v) => S::Stretch(*v),
             Self::Weight(v) => S::Weight(*v),
+            Self::Color(v) => S::Color(*v),
             Self::Style(v) => S::Style(*v),
             Self::Features(v) => S::Features(Cow::Owned(v.clone().into_owned())),
             Self::Variations(v) => S::Variations(Cow::Owned(v.clone().into_owned())),
@@ -83,6 +86,7 @@ impl<'a> SpanStyle<'a> {
             Self::Size(v) => S::Size(v),
             Self::Stretch(v) => S::Stretch(v),
             Self::Weight(v) => S::Weight(v),
+            Self::Color(v) => S::Color(v),
             Self::Style(v) => S::Style(v),
             Self::Features(v) => S::Features(Cow::Owned(v.into_owned())),
             Self::Variations(v) => S::Variations(Cow::Owned(v.into_owned())),

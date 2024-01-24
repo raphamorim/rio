@@ -16,9 +16,12 @@ impl Content {
     }
 
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
+        // let start = std::time::Instant::now();
         for root in &self.roots {
             self.layout_span(*root, lcx);
         }
+        // let duration = start.elapsed();
+        // println!("Time elapsed in content.layout() is: {:?}", duration);
     }
 
     pub fn get_selection_into(&self, range: Range<usize>, buf: &mut String) {
@@ -68,7 +71,7 @@ impl Content {
         let range = match erase {
             Erase::Full(range) => range,
             Erase::Last(range) => {
-                let start = range.start;
+                let _start = range.start;
                 let end = range.end;
                 let last_char = self.text.get(range)?.chars().last()?;
                 let len = last_char.len_utf8();
@@ -185,10 +188,12 @@ impl ContentBuilder {
         index
     }
 
+    #[inline]
     pub fn leave_span(&mut self) {
         self.spans.pop();
     }
 
+    #[inline]
     pub fn add_text(&mut self, text: &str) {
         if let Some(span) = self.spans.last() {
             let index = self.content.fragments.len() as u32;
@@ -202,10 +207,40 @@ impl ContentBuilder {
         }
     }
 
+    #[inline]
+    pub fn add_char(&mut self, text: char) {
+        if let Some(span) = self.spans.last() {
+            let index = self.content.fragments.len() as u32;
+            let start = self.content.text.len() as u32;
+            self.content.text.push(text);
+            let end = self.content.text.len() as u32;
+            self.content.fragments.push((start, end));
+            self.content.spans[*span as usize]
+                .elements
+                .push(SpanElement::Fragment(index));
+        }
+    }
+
+    #[inline]
+    pub fn break_line(&mut self) {
+        if let Some(span) = self.spans.last() {
+            let index = self.content.fragments.len() as u32;
+            let start = self.content.text.len() as u32;
+            self.content.text.push('\n');
+            let end = self.content.text.len() as u32;
+            self.content.fragments.push((start, end));
+            self.content.spans[*span as usize]
+                .elements
+                .push(SpanElement::Fragment(index));
+        }
+    }
+
+    #[inline]
     pub fn build_ref(&self) -> &Content {
         &self.content
     }
 
+    #[inline]
     pub fn build(self) -> Content {
         self.content
     }

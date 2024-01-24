@@ -186,12 +186,14 @@ impl State {
         let is_italic = flags.contains(Flags::ITALIC);
         let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
         let is_bold = flags.contains(Flags::BOLD);
+        let is_underlined = flags.contains(Flags::UNDERLINE);
 
-        if is_bold || is_bold_italic || is_italic {
+        if is_bold || is_bold_italic || is_italic || is_underlined {
             style = Some(SugarStyle {
                 is_italic,
                 is_bold_italic,
                 is_bold,
+                is_underlined,
             });
         }
 
@@ -200,7 +202,7 @@ impl State {
         }
 
         let mut decoration = None;
-        if flags.contains(Flags::UNDERLINE) {
+        if is_underlined {
             decoration = Some(SugarDecoration {
                 relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
@@ -559,6 +561,7 @@ impl State {
                 is_italic,
                 is_bold_italic,
                 is_bold,
+                is_underlined: false,
             });
         }
 
