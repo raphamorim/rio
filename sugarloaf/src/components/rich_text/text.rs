@@ -11,7 +11,7 @@ pub struct TextRunStyle<'a> {
     /// Font size.
     pub font_size: f32,
     /// Color of the text.
-    pub color: [f32;4],
+    pub color: [f32; 4],
     /// Baseline of the run.
     pub baseline: f32,
     /// Total advance of the run.
@@ -28,7 +28,7 @@ pub struct UnderlineStyle {
     /// Thickness of the underline stroke.
     pub size: f32,
     /// Color of the underline.
-    pub color: Color,
+    pub color: [f32; 4],
 }
 
 /// Positioned glyph in a text run.
