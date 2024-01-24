@@ -358,6 +358,7 @@ impl RichTextBrush {
     ) {
         // Used for quick testings
         // let content = build_simple_content();
+        let content = build_complex_content();
         let margin = 2. * ctx.scale;
 
         if self.first_run {
@@ -418,13 +419,12 @@ impl RichTextBrush {
             margin,
             margin,
             depth,
-            color::WHITE,
         );
 
         for r in &self.selection_rects {
             let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
             self.comp
-                .draw_rect(rect, 600., Color::new(38, 79, 120, 255));
+                .draw_rect(rect, 600., &Color::new(38, 79, 120, 255).to_rgba_f32());
         }
 
         let (pt, ch, _rtl) = self.selection.cursor(&self.rich_text_layout);
@@ -436,7 +436,7 @@ impl RichTextBrush {
                 ch,
             ];
             self.comp
-                .draw_rect(rect, 0.1, Color::new(255, 255, 255, 255));
+                .draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
         }
         self.dlist.clear();
         self.finish_composition(ctx);
@@ -785,7 +785,6 @@ fn draw_layout(
     x: f32,
     y: f32,
     depth: f32,
-    color: Color,
 ) {
     let mut glyphs = Vec::new();
     for line in layout.lines() {
@@ -807,19 +806,20 @@ fn draw_layout(
                 font: font.as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
-                color,
+                color: run.color(),
                 baseline: py,
                 advance: px - run_x,
                 underline: if run.underline() {
                     Some(UnderlineStyle {
                         offset: run.underline_offset(),
                         size: run.underline_size(),
-                        color,
+                        color: color::WHITE,
                     })
                 } else {
                     None
                 },
             };
+            println!("{:?}", style.color);
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
@@ -830,7 +830,6 @@ fn draw_layout(
     }
 }
 
-#[cfg(test)]
 #[allow(unused)]
 fn build_simple_content() -> crate::content::Content {
     use crate::layout::*;
@@ -845,7 +844,6 @@ fn build_simple_content() -> crate::content::Content {
     db.build()
 }
 
-#[cfg(test)]
 #[allow(unused)]
 fn build_complex_content() -> crate::content::Content {
     use crate::layout::*;
@@ -861,11 +859,18 @@ fn build_complex_content() -> crate::content::Content {
 
     db.enter_span(&[
         S::family_list("Victor Mono, times, georgia, serif"),
-        S::Size(18.),
+        S::Size(14.),
         S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
     ]);
+    db.enter_span(&[S::Weight(Weight::BOLD)]);
     db.enter_span(&[S::Size(20.)]);
-    db.add_text("Rio terminal -> is back\n");
+    db.enter_span(&[S::Color([0.5, 0.5, 0.5, 1.0])]);
+    db.add_text("Rio is back");
+    db.leave_span();
+    db.leave_span();
+    db.enter_span(&[S::Size(40.), S::Color([0.5, 1.0, 0.5, 1.0])]);
+    db.add_text("Rio terminal\n");
+    db.leave_span();
     db.leave_span();
     db.enter_span(&[S::LineSpacing(1.2)]);
     db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);

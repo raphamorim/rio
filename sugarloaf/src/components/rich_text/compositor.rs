@@ -68,7 +68,7 @@ impl Compositor {
 /// Drawing.
 impl Compositor {
     /// Draws a rectangle with the specified depth and color.
-    pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: Color) {
+    pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: &[f32;4]) {
         self.batches.add_rect(&rect.into(), depth, color);
     }
 
@@ -77,7 +77,7 @@ impl Compositor {
         &mut self,
         rect: impl Into<Rect>,
         depth: f32,
-        color: Color,
+        color: &[f32; 4],
         image: ImageId,
     ) {
         if let Some(img) = self.images.get(self.epoch, image) {
@@ -138,7 +138,7 @@ impl Compositor {
                         self.batches.add_image_rect(
                             &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
                             depth,
-                            color::WHITE,
+                            &[1.0,1.0,1.0,1.0],
                             &[img.min.0, img.min.1, img.max.0, img.max.1],
                             img.texture_id,
                             entry.image.has_alpha(),
@@ -147,7 +147,7 @@ impl Compositor {
                         self.batches.add_mask_rect(
                             &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
                             depth,
-                            color,
+                            &[1.0,1.0,1.0,1.0],
                             &[img.min.0, img.min.1, img.max.0, img.max.1],
                             img.texture_id,
                             true,
@@ -177,7 +177,7 @@ impl Compositor {
                     self.batches.add_rect(
                         &Rect::new(ux, uy, range.0 - ux, underline_size as f32),
                         depth,
-                        underline_color,
+                        &underline_color.to_rgba_f32(),
                     );
                 }
                 ux = range.1;
@@ -187,7 +187,7 @@ impl Compositor {
                 self.draw_rect(
                     Rect::new(ux, uy, end - ux, underline_size),
                     depth,
-                    underline_color,
+                    &underline_color.to_rgba_f32(),
                 );
             }
         }

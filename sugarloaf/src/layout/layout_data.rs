@@ -168,6 +168,7 @@ impl GlyphData {
 pub struct RunData {
     pub span: SpanId,
     pub line: u32,
+    pub color: [f32;4],
     pub font: Font,
     pub coords: (u32, u32),
     pub size: f32,
