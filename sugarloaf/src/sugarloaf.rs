@@ -6,7 +6,8 @@ use crate::components::text;
 use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
 use crate::core::{
-    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack, TextBuilder,
+    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarDecoration, SugarStack,
+    TextBuilder,
 };
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
@@ -368,14 +369,14 @@ impl Sugarloaf {
 
     #[inline]
     fn stack_rich_text(&mut self, stack: &mut SugarStack) {
-        return;
-
         let size = stack.len();
         let underline = &[
             SpanStyle::Underline(true),
             SpanStyle::UnderlineOffset(Some(-1.)),
             SpanStyle::UnderlineSize(Some(1.)),
         ];
+
+        let strikethrough = &[SpanStyle::Strikethrough(true)];
 
         // let mut content = String::from("");
         for i in 0..size {
@@ -396,37 +397,48 @@ impl Sugarloaf {
             //     self.content.add_char(stack[i].content);
             // }
 
-            let mut is_underlined = false;
+            let mut span_counter = 0;
             if let Some(style) = &stack[i].style {
                 if style.is_bold_italic {
-                    // self.content.enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD), SpanStyle::Style(crate::layout::Style::Italic)]);
-                    // span_counter += 2;
+                    self.content.enter_span(&[
+                        SpanStyle::Weight(crate::layout::Weight::BOLD),
+                        SpanStyle::Style(crate::layout::Style::Italic),
+                    ]);
+                    span_counter += 1;
                 } else if style.is_bold {
-                    // self.content.enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
-                    // span_counter += 1;
+                    self.content
+                        .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
+                    span_counter += 1;
                 } else if style.is_italic {
-                    // self.content.enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
-                    // span_counter += 1;
-                }
-
-                if style.is_underlined {
-                    self.content.enter_span(underline);
-                    is_underlined = true;
+                    self.content
+                        .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
+                    span_counter += 1;
                 }
             }
 
-            self.content.enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
+            if let Some(decoration) = &stack[i].decoration {
+                match decoration {
+                    SugarDecoration::Underline => {
+                        self.content.enter_span(underline);
+                        span_counter += 1;
+                    }
+                    SugarDecoration::Strikethrough => {
+                        self.content.enter_span(strikethrough);
+                        span_counter += 1;
+                    }
+                }
+            }
+
+            self.content
+                .enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
+
             self.content.add_char(stack[i].content);
             self.content.leave_span();
-            // println!("{:?}", span_counter);
-            // while span_counter > 0 {
-            // println!("removeu");
 
-            if is_underlined {
+            while span_counter > 0 {
                 self.content.leave_span();
+                span_counter -= 1;
             }
-            // span_counter -= 1;
-            // }
         }
         self.content.break_line();
     }
@@ -596,7 +608,7 @@ impl Sugarloaf {
 
             // The decoration cannot be added before the rect otherwise can lead
             // to issues in the renderer, therefore we need check if decoration does exists
-            if let Some(decoration) = &stack[i].decoration {
+            if let Some(decoration) = &stack[i].custom_decoration {
                 if rect_builder.quantity >= 1 {
                     self.rects.push(rect_builder.build());
                 }
@@ -831,12 +843,11 @@ impl Sugarloaf {
 
         if self.level.is_advanced() {
             self.content = Content::builder();
-            // self.content.enter_span(&[
-            //     SpanStyle::family_list("Fira Code"),
-            //     SpanStyle::Size(self.layout.font_size),
-            //     SpanStyle::LineSpacing(self.layout.line_height),
-            //     SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-            // ]);
+            self.content.enter_span(&[
+                SpanStyle::family_list("Victor mono"),
+                SpanStyle::Size(self.layout.font_size),
+                // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+            ]);
         } else {
             self.text_y = 0.0;
             self.current_row = 0;

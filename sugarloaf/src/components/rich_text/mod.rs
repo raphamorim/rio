@@ -359,8 +359,10 @@ impl RichTextBrush {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
-        let content = build_terminal_content();
+        // let content = build_terminal_content();
         let margin = 2. * ctx.scale;
+
+        self.rich_text_layout = Paragraph::new();
 
         if self.first_run {
             self.needs_update = true;
@@ -936,16 +938,11 @@ fn build_terminal_content() -> crate::content::Content {
             S::Size(24.),
             // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         ]);
-        db.enter_span(&[
-            S::Weight(Weight::BOLD),
-            S::Color([1.0, 0.5, 0.5, 1.0])
-        ]);
+        db.enter_span(&[S::Weight(Weight::BOLD), S::Color([1.0, 0.5, 0.5, 1.0])]);
         db.add_char('R');
         db.leave_span();
         // should return to span
-        db.enter_span(&[
-            S::Color([0.0, 1.0, 0.0, 1.0])
-        ]);
+        db.enter_span(&[S::Color([0.0, 1.0, 0.0, 1.0])]);
         db.add_char('i');
         db.leave_span();
         db.enter_span(&[
@@ -986,9 +983,7 @@ fn build_terminal_content() -> crate::content::Content {
     db.build()
 }
 
-fn test_rich_text_content_build() {
-
-}
+fn test_rich_text_content_build() {}
 
 #[inline]
 fn next_copy_buffer_size(size: u64) -> u64 {
