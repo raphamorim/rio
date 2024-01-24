@@ -50,7 +50,6 @@ impl Paragraph {
         spans: &[SpanData],
         font: Font,
         size: f32,
-        color: [f32; 4],
         level: u8,
         shaper: Shaper<'a>,
     ) {
@@ -82,7 +81,7 @@ impl Paragraph {
                         line: 0,
                         font: font.clone(),
                         coords: (coords_start, coords_end),
-                        color,
+                        color: span_data.color,
                         size,
                         level,
                         whitespace: false,
@@ -178,7 +177,6 @@ impl Paragraph {
             line: 0,
             font,
             coords: (coords_start, coords_end),
-            color,
             size,
             level,
             whitespace: false,
@@ -187,7 +185,7 @@ impl Paragraph {
             ascent: metrics.ascent * span_data.line_spacing,
             descent: metrics.descent * span_data.line_spacing,
             leading: metrics.leading * span_data.line_spacing,
-            // color: span_data,
+            color: span_data.color,
             underline: span_data.underline,
             underline_offset: span_data
                 .underline_offset

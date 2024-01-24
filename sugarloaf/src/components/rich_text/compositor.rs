@@ -6,7 +6,6 @@ pub use crate::components::rich_text::image_cache::{
 };
 
 use crate::components::rich_text::batch::BatchManager;
-use crate::components::rich_text::color::{self, Color};
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text::*;
 
