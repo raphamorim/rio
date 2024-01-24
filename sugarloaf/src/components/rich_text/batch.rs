@@ -107,7 +107,7 @@ impl Batch {
         rect: &Rect,
         depth: f32,
         flags: f32,
-        color: &[f32;4],
+        color: &[f32; 4],
         coords: Option<&[f32; 4]>,
     ) {
         let x = rect.x;
@@ -272,7 +272,7 @@ impl BatchManager {
         );
     }
 
-    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32;4]) {
+    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
         let transparent = color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {

@@ -161,7 +161,7 @@ impl BuilderState {
             letter_spacing: 0.,
             word_spacing: 0.,
             line_spacing: 1.,
-            color: [0.0,0.0,0.0,1.0,],
+            color: [1.0, 1.0, 1.0, 1.0],
             underline: false,
             underline_offset: None,
             underline_size: None,

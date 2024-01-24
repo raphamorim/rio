@@ -303,7 +303,7 @@ impl<'a> Run<'a> {
     }
 
     /// Returns the color for the run.
-    pub fn color(&self) -> [f32;4] {
+    pub fn color(&self) -> [f32; 4] {
         self.run.color
     }
 
