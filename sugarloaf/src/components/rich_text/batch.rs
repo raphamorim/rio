@@ -60,7 +60,7 @@ impl Batch {
         &mut self,
         rect: &Rect,
         depth: f32,
-        color: Color,
+        color: &[f32; 4],
         coords: Option<&[f32; 4]>,
         image: Option<TextureId>,
         mask: Option<TextureId>,
@@ -107,7 +107,7 @@ impl Batch {
         rect: &Rect,
         depth: f32,
         flags: f32,
-        color: Color,
+        color: &[f32;4],
         coords: Option<&[f32; 4]>,
     ) {
         let x = rect.x;
@@ -123,22 +123,22 @@ impl Batch {
         let verts = [
             Vertex {
                 pos: [x, y, depth, flags],
-                color: color.to_rgba_f32(),
+                color: *color,
                 uv: [l, t],
             },
             Vertex {
                 pos: [x, y + h, depth, flags],
-                color: color.to_rgba_f32(),
+                color: *color,
                 uv: [l, b],
             },
             Vertex {
                 pos: [x + w, y + h, depth, flags],
-                color: color.to_rgba_f32(),
+                color: *color,
                 uv: [r, b],
             },
             Vertex {
                 pos: [x + w, y, depth, flags],
-                color: color.to_rgba_f32(),
+                color: *color,
                 uv: [r, t],
             },
         ];
@@ -200,7 +200,7 @@ impl BatchManager {
         &mut self,
         rect: &Rect,
         depth: f32,
-        color: Color,
+        color: &[f32; 4],
         coords: &[f32; 4],
         mask: TextureId,
         subpix: bool,
@@ -226,12 +226,12 @@ impl BatchManager {
         &mut self,
         rect: &Rect,
         depth: f32,
-        color: Color,
+        color: &[f32; 4],
         coords: &[f32; 4],
         image: TextureId,
         has_alpha: bool,
     ) {
-        let transparent = has_alpha || color.a != 255;
+        let transparent = has_alpha || color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
                 if batch.add_rect(
@@ -272,8 +272,8 @@ impl BatchManager {
         );
     }
 
-    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: Color) {
-        let transparent = color.a != 255;
+    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32;4]) {
+        let transparent = color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
                 if batch.add_rect(rect, depth, color, None, None, None, false) {

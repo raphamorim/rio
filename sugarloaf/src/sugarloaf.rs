@@ -63,7 +63,7 @@ pub struct Sugarloaf {
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
     fonts: SugarloafFonts,
-    kind: SugarloafRendererFeatures,
+    level: SugarloafRendererLevel,
     text_y: f32,
     current_row: u16,
 }
@@ -97,17 +97,24 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
-#[derive(Default)]
-pub enum SugarloafRendererFeatures {
-    Disabled,
+#[derive(PartialEq, Default)]
+pub enum SugarloafRendererLevel {
+    Basic,
     #[default]
-    Enabled,
+    Advanced,
+}
+
+impl SugarloafRendererLevel {
+    #[inline]
+    pub fn is_advanced(&self) -> bool {
+        self == &SugarloafRendererLevel::Advanced
+    }
 }
 
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
-    pub features: SugarloafRendererFeatures,
+    pub level: SugarloafRendererLevel,
 }
 
 impl Default for SugarloafRenderer {
@@ -120,7 +127,7 @@ impl Default for SugarloafRenderer {
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
-            features: SugarloafRendererFeatures::default(),
+            level: SugarloafRendererLevel::default(),
         }
     }
 }
@@ -196,7 +203,7 @@ impl Sugarloaf {
             layout,
             text_y: 0.0,
             current_row: 0,
-            kind: renderer.features,
+            level: renderer.level,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -349,11 +356,11 @@ impl Sugarloaf {
 
     #[inline]
     pub fn stack(&mut self, mut stack: SugarStack) {
-        match self.kind {
-            SugarloafRendererFeatures::Disabled => {
+        match self.level {
+            SugarloafRendererLevel::Basic => {
                 self.stack_text(&mut stack);
             }
-            SugarloafRendererFeatures::Enabled => {
+            SugarloafRendererLevel::Advanced => {
                 self.stack_rich_text(&mut stack);
             }
         }
@@ -361,34 +368,65 @@ impl Sugarloaf {
 
     #[inline]
     fn stack_rich_text(&mut self, stack: &mut SugarStack) {
-        self.content.enter_span(&[
-            SpanStyle::family_list("Fira Code, Apple Symbols, Arial Unicode MS, Fira Code Nerd Font, georgia, serif"),
-            SpanStyle::Size(self.layout.font_size),
-            SpanStyle::LineSpacing(self.layout.line_height),
-            SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        ]);
         let size = stack.len();
-        let mut content = String::from("");
+        let underline = &[
+            SpanStyle::Underline(true),
+            SpanStyle::UnderlineOffset(Some(-1.)),
+            SpanStyle::UnderlineSize(Some(1.)),
+        ];
+
+        // let mut content = String::from("");
         for i in 0..size {
-            if i < size - 1
-                && stack[i].foreground_color == stack[i + 1].foreground_color
-                && stack[i].background_color == stack[i + 1].background_color
-                && stack[i].decoration.is_none()
-                && stack[i + 1].decoration.is_none()
-                && stack[i].media.is_none()
-            {
-                content.push_str(&stack[i].content.to_string());
-            } else {
-                if content.len() > 0 {
-                    self.content.add_text(&content);
-                    content = String::from("");
+            // if i < size - 1
+            //     && stack[i].foreground_color == stack[i + 1].foreground_color
+            //     && stack[i].background_color == stack[i + 1].background_color
+            //     && stack[i].decoration.is_none()
+            //     && stack[i + 1].decoration.is_none()
+            //     && stack[i].media.is_none()
+            // {
+            //     content.push(&stack[i].content);
+            // } else {
+            //     if content.len() > 0 {
+            //         self.content.add_text(&content);
+            //         content = String::from("");
+            //     }
+
+            //     self.content.add_char(stack[i].content);
+            // }
+
+            let mut is_underlined = false;
+            if let Some(style) = &stack[i].style {
+                if style.is_bold_italic {
+                    // self.content.enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD), SpanStyle::Style(crate::layout::Style::Italic)]);
+                    // span_counter += 2;
+                } else if style.is_bold {
+                    // self.content.enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
+                    // span_counter += 1;
+                } else if style.is_italic {
+                    // self.content.enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
+                    // span_counter += 1;
                 }
 
-                self.content.add_text(&stack[i].content.to_string());
+                if style.is_underlined {
+                    self.content.enter_span(underline);
+                    is_underlined = true;
+                }
             }
+
+            // self.content.enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
+            self.content.add_char(stack[i].content);
+            // self.content.leave_span();
+            // println!("{:?}", span_counter);
+            // while span_counter > 0 {
+                // println!("removeu");
+
+            if is_underlined {
+                self.content.leave_span();
+            }
+                // span_counter -= 1;
+            // }
         }
-        self.content.add_text("\n");
-        self.content.leave_span();
+        self.content.break_line();
     }
 
     #[inline]
@@ -415,9 +453,6 @@ impl Sugarloaf {
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
             let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-            // if stack[i].content != ' ' {
-            //     println!("{:?} {:?} {:?}", stack[i].content, cached_sugar.char_width, cached_sugar.font_id);
-            // }
             if i < size - 1
                 && cached_sugar.char_width <= 1.
                 && stack[i].content == stack[i + 1].content
@@ -709,6 +744,10 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
+        if self.level.is_advanced() {
+            return;
+        }
+
         // Every time a font size change the cached bounds also changes
         self.sugar_cache = FnvHashMap::default();
 
@@ -785,18 +824,21 @@ impl Sugarloaf {
 
     #[inline]
     fn reset_state(&mut self) {
-        match self.kind {
-            SugarloafRendererFeatures::Disabled => {
-                self.text_y = 0.0;
-                self.rects = vec![];
-                self.current_row = 0;
-            }
-            SugarloafRendererFeatures::Enabled => {
-                self.content = Content::builder();
-            }
-        }
-
+        self.rects = vec![];
         self.graphic_rects = FnvHashMap::default();
+
+        if self.level.is_advanced() {
+            self.content = Content::builder();
+            self.content.enter_span(&[
+                SpanStyle::family_list("Fira Code"),
+                SpanStyle::Size(self.layout.font_size),
+                SpanStyle::LineSpacing(self.layout.line_height),
+                SpanStyle::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+            ]);
+        } else {
+            self.text_y = 0.0;
+            self.current_row = 0;
+        }
     }
 
     #[inline]
@@ -844,46 +886,53 @@ impl Sugarloaf {
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                for entry_render in
-                    &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
-                {
-                    if let Some(entry) = self.graphic_rects.get(entry_render) {
-                        if let Some(graphic_data) = self.graphics.get(&entry.id) {
-                            let rows = entry.end_row - entry.start_row;
-                            let height = (rows - 2.) * self.layout.scaled_sugarheight;
+                let start = std::time::Instant::now();
+                if self.level.is_advanced() {
+                    self.rich_text_brush.render(
+                        &self.content.build_ref(),
+                        &mut self.ctx,
+                        &mut encoder,
+                        view,
+                    );
+                }
+                let duration = start.elapsed();
+                println!("Time elapsed in rich_text_brush.render() is: {:?}", duration);
 
-                            let a = layer::types::Image::Raster {
-                                handle: graphic_data.handle.clone(),
-                                bounds: Rectangle {
-                                    x: entry.pos_x,
-                                    y: entry.pos_y,
-                                    width: entry.width as f32,
-                                    height,
-                                },
-                            };
+                if !self.graphic_rects.is_empty() {
+                    for entry_render in
+                        &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
+                    {
+                        if let Some(entry) = self.graphic_rects.get(entry_render) {
+                            if let Some(graphic_data) = self.graphics.get(&entry.id) {
+                                let rows = entry.end_row - entry.start_row;
+                                let height = (rows - 2.) * self.layout.scaled_sugarheight;
 
-                            self.layer_brush.prepare_ref(
-                                &mut encoder,
-                                &mut self.ctx,
-                                &[&a],
-                            );
+                                let a = layer::types::Image::Raster {
+                                    handle: graphic_data.handle.clone(),
+                                    bounds: Rectangle {
+                                        x: entry.pos_x,
+                                        y: entry.pos_y,
+                                        width: entry.width as f32,
+                                        height,
+                                    },
+                                };
 
-                            self.layer_brush.render_with_encoder(
-                                0,
-                                view,
-                                &mut encoder,
-                                None,
-                            );
+                                self.layer_brush.prepare_ref(
+                                    &mut encoder,
+                                    &mut self.ctx,
+                                    &[&a],
+                                );
+
+                                self.layer_brush.render_with_encoder(
+                                    0,
+                                    view,
+                                    &mut encoder,
+                                    None,
+                                );
+                            }
                         }
                     }
                 }
-
-                self.rich_text_brush.render(
-                    &self.content.build_ref(),
-                    &mut self.ctx,
-                    &mut encoder,
-                    view,
-                );
 
                 self.layer_brush.end_frame();
 
