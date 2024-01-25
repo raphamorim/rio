@@ -8,7 +8,6 @@ pub mod util;
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph, Selection};
-use color::Color;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -298,7 +297,7 @@ impl RichTextBrush {
             mask_texture_view,
             sampler,
             textures: HashMap::default(),
-            comp: Compositor::new(2048),
+            comp: Compositor::new(4096),
             dlist,
             rich_text_layout,
             rich_text_layout_context,
@@ -320,18 +319,21 @@ impl RichTextBrush {
         }
     }
 
+    #[inline]
     pub fn render(
         &mut self,
         content: &crate::content::Content,
         ctx: &mut Context,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
+        layout: &crate::layout::SugarloafLayout
     ) {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
         // let content = build_terminal_content();
-        let margin = 2. * ctx.scale;
+        let margin_x = layout.style.screen_position.0;
+        let margin_y = layout.style.screen_position.1;
 
         self.rich_text_layout = Paragraph::new();
 
@@ -340,7 +342,7 @@ impl RichTextBrush {
         }
 
         self.needs_update = true;
-        let w = ctx.size.width;
+        let w = ctx.size.width * 2;
         let _h = ctx.size.height;
         if self.needs_update {
             let mut lb = self.rich_text_layout_context.builder(
@@ -352,65 +354,63 @@ impl RichTextBrush {
             self.rich_text_layout.clear();
             lb.build_into(&mut self.rich_text_layout);
 
-            if self.first_run {
-                self.selection = Selection::from_point(&self.rich_text_layout, 0., 0.);
-            }
+            // if self.first_run {
+            //     self.selection = Selection::from_point(&self.rich_text_layout, 0., 0.);
+            // }
 
             self.first_run = false;
             self.needs_update = false;
             self.size_changed = true;
         }
 
-        if self.size_changed {
-            let lw = w as f32 - margin * ctx.scale;
+        // if self.size_changed {
+            let lw = w as f32 - margin_x;
             self.rich_text_layout
                 .break_lines()
                 .break_remaining(lw, self.align);
-            self.size_changed = false;
-            self.selection_changed = true;
-        }
+            // self.size_changed = false;
+            // self.selection_changed = true;
+        // }
 
-        let inserted = None;
-        if let Some(offs) = inserted {
-            self.selection = Selection::from_offset(&self.rich_text_layout, offs);
-        }
+        // let inserted = None;
+        // if let Some(offs) = inserted {
+        //     self.selection = Selection::from_offset(&self.rich_text_layout, offs);
+        // }
         // inserted = None;
 
-        if self.selection_changed {
-            self.selection_rects.clear();
-            self.selection.regions_with(&self.rich_text_layout, |r| {
-                self.selection_rects.push(r);
-            });
-            self.selection_changed = false;
-        }
+        // if self.selection_changed {
+        //     self.selection_rects.clear();
+        //     self.selection.regions_with(&self.rich_text_layout, |r| {
+        //         self.selection_rects.push(r);
+        //     });
+        //     self.selection_changed = false;
+        // }
 
         // Render
         self.comp.begin();
-        let depth = 0.0;
         draw_layout(
             &mut self.comp,
             &self.rich_text_layout,
-            margin,
-            margin,
-            depth,
+            margin_x,
+            margin_y,
         );
 
-        for r in &self.selection_rects {
-            let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
-            self.comp
-                .draw_rect(rect, 600., &Color::new(38, 79, 120, 255).to_rgba_f32());
-        }
+        // for r in &self.selection_rects {
+        //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
+        //     self.comp
+        //         .draw_rect(rect, 600., &Color::new(38, 79, 120, 255).to_rgba_f32());
+        // }
 
-        let (pt, ch, _rtl) = self.selection.cursor(&self.rich_text_layout);
-        if ch != 0. {
-            let rect = [
-                pt[0].round() + margin,
-                pt[1].round() + margin,
-                1. * ctx.scale,
-                ch,
-            ];
-            self.comp.draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
-        }
+        // let (pt, ch, _rtl) = self.selection.cursor(&self.rich_text_layout);
+        // if ch != 0. {
+        //     let rect = [
+        //         pt[0].round() + margin,
+        //         pt[1].round() + margin,
+        //         1. * ctx.scale,
+        //         ch,
+        //     ];
+        //     self.comp.draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
+        // }
         self.dlist.clear();
         self.finish_composition(ctx);
 
@@ -473,25 +473,6 @@ impl RichTextBrush {
             self.index_buffer = buffer;
             self.index_buffer_size = size;
         }
-
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
-
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         let mut ranges = vec![];
 
@@ -623,12 +604,29 @@ impl RichTextBrush {
             });
         }
 
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         for items in ranges {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
-        // drop(rpass);
+        drop(rpass);
         self.bind_group_needs_update = false;
     }
 
@@ -764,8 +762,8 @@ fn draw_layout(
     layout: &Paragraph,
     x: f32,
     y: f32,
-    depth: f32,
 ) {
+    let depth = 0.0;
     let mut glyphs = Vec::new();
     for line in layout.lines() {
         let mut px = x + line.offset();
@@ -960,8 +958,6 @@ fn build_terminal_content() -> crate::content::Content {
     // db.add_text("n");
     db.build()
 }
-
-fn test_rich_text_content_build() {}
 
 #[inline]
 fn next_copy_buffer_size(size: u64) -> u64 {
