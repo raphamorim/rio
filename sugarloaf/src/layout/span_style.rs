@@ -33,8 +33,6 @@ pub enum SpanStyle<'a> {
     WordSpacing(f32),
     /// Multiplicative line spacing factor.
     LineSpacing(f32),
-    /// Strikethrough decoration.
-    Strikethrough(bool),
     /// Underline decoration.
     Underline(bool),
     /// Offset of an underline. Set to `None` to use the font value.
@@ -74,7 +72,6 @@ impl<'a> SpanStyle<'a> {
             Self::LetterSpacing(v) => S::LetterSpacing(*v),
             Self::WordSpacing(v) => S::WordSpacing(*v),
             Self::LineSpacing(v) => S::LineSpacing(*v),
-            Self::Strikethrough(v) => S::Strikethrough(*v),
             Self::Underline(v) => S::Underline(*v),
             Self::UnderlineOffset(v) => S::UnderlineOffset(*v),
             Self::UnderlineSize(v) => S::UnderlineSize(*v),
@@ -98,7 +95,6 @@ impl<'a> SpanStyle<'a> {
             Self::LetterSpacing(v) => S::LetterSpacing(v),
             Self::WordSpacing(v) => S::WordSpacing(v),
             Self::LineSpacing(v) => S::LineSpacing(v),
-            Self::Strikethrough(v) => S::Strikethrough(v),
             Self::Underline(v) => S::Underline(v),
             Self::UnderlineOffset(v) => S::UnderlineOffset(v),
             Self::UnderlineSize(v) => S::UnderlineSize(v),

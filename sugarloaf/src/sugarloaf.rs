@@ -376,7 +376,12 @@ impl Sugarloaf {
             SpanStyle::UnderlineSize(Some(1.)),
         ];
 
-        let strikethrough = &[SpanStyle::Strikethrough(true)];
+        // let strikethrough = &[SpanStyle::Strikethrough(true)];
+        let strikethrough = &[
+            SpanStyle::Underline(true),
+            SpanStyle::UnderlineOffset(Some(6.)),
+            SpanStyle::UnderlineSize(Some(2.)),
+        ];
 
         // let mut content = String::from("");
         for i in 0..size {
@@ -844,7 +849,7 @@ impl Sugarloaf {
         if self.level.is_advanced() {
             self.content = Content::builder();
             self.content.enter_span(&[
-                SpanStyle::family_list("Victor mono"),
+                SpanStyle::family_list("fira code, Victor mono"),
                 SpanStyle::Size(self.layout.font_size),
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
