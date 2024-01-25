@@ -8,8 +8,6 @@ pub mod util;
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph, Selection};
-use bytemuck::Pod;
-use bytemuck::Zeroable;
 use color::Color;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
@@ -24,38 +22,6 @@ use wgpu::Texture;
 // evaluate if would make sense move to instance drawing instead
 // https://math.hws.edu/graphicsbook/c9/s2.html
 // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-
-const IDENTITY_MATRIX: [f32; 16] = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-];
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-struct Uniforms {
-    transform: [f32; 16],
-    _padding: [f32; 3],
-}
-
-impl Uniforms {
-    fn new(transformation: [f32; 16]) -> Uniforms {
-        Self {
-            transform: transformation,
-            // Ref: https://github.com/iced-rs/iced/blob/bc62013b6cde52174bf4c4286939cf170bfa7760/wgpu/src/quad.rs#LL295C6-L296C68
-            // Uniforms must be aligned to their largest member,
-            // this uses a mat4x4<f32> which aligns to 16, so align to that
-            _padding: [0.0; 3],
-        }
-    }
-}
-
-impl Default for Uniforms {
-    fn default() -> Self {
-        Self {
-            transform: IDENTITY_MATRIX,
-            _padding: [0.0; 3],
-        }
-    }
-}
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -87,6 +53,7 @@ pub struct RichTextBrush {
     dlist: DisplayList,
     rich_text_layout: Paragraph,
     rich_text_layout_context: LayoutContext,
+    bind_group_needs_update: bool,
     needs_update: bool,
     size_changed: bool,
     first_run: bool,
@@ -104,11 +71,12 @@ impl RichTextBrush {
         let dlist = DisplayList::new();
         let supported_vertex_buffer = 64;
 
-        let transform = device.create_buffer(&wgpu::BufferDescriptor {
+        let current_transform =
+            orthographic_projection(context.size.width, context.size.height);
+        let transform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            contents: bytemuck::cast_slice(&current_transform),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
         });
 
         // Create pipeline layout
@@ -122,9 +90,11 @@ impl RichTextBrush {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                mem::size_of::<Uniforms>() as wgpu::BufferAddress,
-                            ),
+                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<
+                                [f32; 16],
+                            >(
+                            )
+                                as wgpu::BufferAddress),
                         },
                         count: None,
                     },
@@ -339,13 +309,14 @@ impl RichTextBrush {
             needs_update: false,
             size_changed: false,
             first_run: true,
+            bind_group_needs_update: true,
             selection: Selection::default(),
             selection_rects: Vec::new(),
             selecting: false,
             selection_changed: false,
             align: Alignment::Start,
             supported_vertex_buffer,
-            current_transform: IDENTITY_MATRIX,
+            current_transform,
         }
     }
 
@@ -450,9 +421,7 @@ impl RichTextBrush {
 
         let transform = orthographic_projection(ctx.size.width, ctx.size.height);
         if transform != self.current_transform {
-            let uniforms = Uniforms::new(transform);
-            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
-
+            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&transform));
             self.current_transform = transform;
         }
 
@@ -562,34 +531,35 @@ impl RichTextBrush {
                     // }
                 }
                 Command::BindTexture(unit, id) => {
-                    log::info!("BindTexture {:?} {:?}", unit, id);
-                    match unit {
-                        // color_texture
-                        0 => {
-                            if color_texture_updated.is_none() {
-                                if let Some(texture) = self.textures.get(id) {
-                                    log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                    self.color_texture_view = texture.create_view(
-                                        &wgpu::TextureViewDescriptor::default(),
-                                    );
-                                    color_texture_updated = Some(id);
+                    if self.bind_group_needs_update {
+                        match unit {
+                            // color_texture
+                            0 => {
+                                if color_texture_updated.is_none() {
+                                    if let Some(texture) = self.textures.get(id) {
+                                        log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
+                                        self.color_texture_view = texture.create_view(
+                                            &wgpu::TextureViewDescriptor::default(),
+                                        );
+                                        color_texture_updated = Some(id);
+                                    }
                                 }
                             }
-                        }
-                        // mask_texture
-                        1 => {
-                            if mask_texture_updated.is_none() {
-                                if let Some(texture) = self.textures.get(id) {
-                                    log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                    self.mask_texture_view = texture.create_view(
-                                        &wgpu::TextureViewDescriptor::default(),
-                                    );
-                                    mask_texture_updated = Some(id);
+                            // mask_texture
+                            1 => {
+                                if mask_texture_updated.is_none() {
+                                    if let Some(texture) = self.textures.get(id) {
+                                        log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
+                                        self.mask_texture_view = texture.create_view(
+                                            &wgpu::TextureViewDescriptor::default(),
+                                        );
+                                        mask_texture_updated = Some(id);
+                                    }
                                 }
                             }
-                        }
-                        _ => {
-                            // Noop
+                            _ => {
+                                // Noop
+                            }
                         }
                     };
                 }
@@ -600,8 +570,8 @@ impl RichTextBrush {
             }
         }
 
-        // Ensure texture views are not empty
-        if mask_texture_updated.is_none() {
+        // Ensure texture views are not empty in the first run
+        if self.first_run && mask_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
                 .get(color_texture_updated.unwrap_or_else(|| &TextureId(0)))
@@ -610,7 +580,7 @@ impl RichTextBrush {
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
             }
         }
-        if color_texture_updated.is_none() {
+        if self.first_run && color_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
                 .get(mask_texture_updated.unwrap_or_else(|| &TextureId(0)))
@@ -620,43 +590,49 @@ impl RichTextBrush {
             }
         }
 
-        self.bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.transform,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &self.color_texture_view,
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.mask_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-            label: Some("rich_text::Pipeline uniforms"),
-        });
+        if self.bind_group_needs_update {
+            self.bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &self.transform,
+                            offset: 0,
+                            size: None,
+                        }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(
+                            &self.color_texture_view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(
+                            &self.mask_texture_view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+                label: Some("rich_text::Pipeline uniforms"),
+            });
+        }
 
         rpass.set_bind_group(0, &self.bind_group, &[]);
         for items in ranges {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
-        drop(rpass);
+        // drop(rpass);
+        self.bind_group_needs_update = false;
     }
 
+    #[inline]
     fn finish_composition(&mut self, ctx: &mut Context) {
         self.comp.finish(&mut self.dlist, |event| {
             match event {
@@ -695,6 +671,7 @@ impl RichTextBrush {
                     });
 
                     if let Some(data) = data {
+                        self.bind_group_needs_update = true;
                         let channels = match format {
                             // Mask
                             image_cache::PixelFormat::A8 => 1,
@@ -734,6 +711,7 @@ impl RichTextBrush {
                 } => {
                     log::info!("rich_text::UpdateTexture id ({:?})", id);
                     if let Some(texture) = self.textures.get(&id) {
+                        self.bind_group_needs_update = true;
                         let texture_size = wgpu::Extent3d {
                             width: width.into(),
                             height: height.into(),
