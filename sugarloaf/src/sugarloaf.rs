@@ -911,6 +911,7 @@ impl Sugarloaf {
                         &mut self.ctx,
                         &mut encoder,
                         view,
+                        &self.layout,
                     );
                 }
                 let duration = start.elapsed();
