@@ -1098,7 +1098,11 @@ impl<U: EventListener> Crosswords<U> {
 
         // If is not using app cursor then use default
         if content != CursorShape::Hidden && !self.mode.contains(Mode::APP_CURSOR) {
-            content = self.default_cursor_shape;
+            content = if content == CursorShape::Beam {
+                CursorShape::Beam
+            } else {
+                self.default_cursor_shape
+            };
         }
 
         CursorState { pos, content }
