@@ -318,11 +318,7 @@ impl BatchManager {
     }
 
     fn alloc_batch(&mut self, transparent: bool) -> &mut Batch {
-        let batch = if let Some(batch) = self.batches.pop() {
-            batch
-        } else {
-            Batch::default()
-        };
+        let batch = self.batches.pop().unwrap_or_default();
         if transparent {
             self.transparent.push(batch);
             self.transparent.last_mut().unwrap()
