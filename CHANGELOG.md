@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- Report focus change https://terminalguide.namepad.de/mode/p1004/.
 - Updated wgpu to 0.19.0.
 - Removed support to DX11.
 - Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)

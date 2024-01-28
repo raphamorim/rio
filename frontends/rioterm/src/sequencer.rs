@@ -922,6 +922,8 @@ impl Sequencer {
                         if has_regained_focus {
                             route.redraw();
                         }
+
+                        route.window.screen.on_focus_change(focused);
                     }
                 }
 
