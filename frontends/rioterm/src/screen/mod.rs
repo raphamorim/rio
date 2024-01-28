@@ -1353,6 +1353,19 @@ impl Screen {
     }
 
     #[inline]
+    pub fn on_focus_change(&mut self, is_focused: bool) {
+        if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
+            let chr = if is_focused { "I" } else { "O" };
+
+            let msg = format!("\x1b[{}", chr);
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(msg.into_bytes());
+        }
+    }
+
+    #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
         let width = self.sugarloaf.layout.scaled_sugarwidth as f64;
         let height = self.sugarloaf.layout.scaled_sugarheight as f64;
