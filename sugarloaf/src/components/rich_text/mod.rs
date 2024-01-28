@@ -363,12 +363,16 @@ impl RichTextBrush {
             self.size_changed = true;
         }
 
-        // if self.size_changed {
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        let transform_has_changed = transform != self.current_transform;
+
+        // if transform_has_changed {
             let lw = w as f32 - margin_x;
+            println!("lw {:?}", lw);
             self.rich_text_layout
                 .break_lines()
                 .break_remaining(lw, self.align);
-            // self.size_changed = false;
+            self.size_changed = false;
             // self.selection_changed = true;
         // }
 
@@ -419,8 +423,7 @@ impl RichTextBrush {
 
         let queue = &mut ctx.queue;
 
-        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
-        if transform != self.current_transform {
+        if transform_has_changed {
             queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&transform));
             self.current_transform = transform;
         }
