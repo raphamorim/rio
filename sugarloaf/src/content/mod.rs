@@ -95,7 +95,7 @@ impl Content {
     }
 
     pub fn erase2(&mut self, offset: usize) -> Option<usize> {
-        let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
+        let _frag_index = self.fragment_from_offset(offset).unwrap_or(0);
         if self.text.is_char_boundary(offset) {
             self.text.remove(offset);
             return Some(offset);
