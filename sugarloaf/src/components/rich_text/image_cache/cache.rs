@@ -34,7 +34,7 @@ impl ImageCache {
         let format = request.format;
         let width = request.width;
         let height = request.height;
-        let req_data_size = request.format.buffer_size(width as u32, height as u32)?;
+        let _req_data_size = request.format.buffer_size(width as u32, height as u32)?;
         let use_atlas = width <= self.max_texture_size
             && height <= (self.max_texture_size / 4)
             && (format == PixelFormat::Rgba8 || format == PixelFormat::A8);
@@ -464,7 +464,7 @@ fn fill(
     x: u16,
     y: u16,
     width: u16,
-    height: u16,
+    _height: u16,
     image: &[u8],
     target_width: u16,
     target: &mut [u8],

@@ -159,7 +159,7 @@ impl GlyphData {
     }
 
     pub fn clear_advance(&mut self) {
-        let (id, advance) = self.simple_data();
+        let (id, _advance) = self.simple_data();
         *self = Self::simple(id, 0., self.span);
     }
 }

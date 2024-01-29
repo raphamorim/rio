@@ -1,4 +1,4 @@
-use crate::components::rich_text::color::Color;
+
 use crate::components::rich_text::image_cache::TextureId;
 use bytemuck::{Pod, Zeroable};
 
