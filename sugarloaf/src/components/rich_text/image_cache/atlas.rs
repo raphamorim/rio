@@ -237,7 +237,6 @@ impl AtlasAllocator {
             self.slots[index] = slot;
             Some(index as u32)
         } else {
-            use std::convert::TryFrom;
             let index = u32::try_from(self.slots.len()).ok()?;
             self.slots.push(slot);
             Some(index)

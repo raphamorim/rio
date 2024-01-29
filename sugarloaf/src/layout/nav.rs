@@ -475,7 +475,7 @@ impl Selection {
         }
     }
 
-    fn collapse(&self, layout: &Paragraph, prev: bool) -> Self {
+    fn collapse(&self, _layout: &Paragraph, prev: bool) -> Self {
         let node = if prev {
             if self.focus < self.anchor {
                 &self.focus

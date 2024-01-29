@@ -1,5 +1,4 @@
 mod batch;
-pub mod color;
 mod compositor;
 mod image_cache;
 pub mod text;
