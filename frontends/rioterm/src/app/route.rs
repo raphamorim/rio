@@ -1530,7 +1530,11 @@ impl Route {
 
                 // In this case the configuration of blinking cursor is enabled
                 // and the terminal also have instructions of blinking enabled
-                if self.state.has_blinking_enabled && has_blinking_enabled {
+                // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
+                if self.state.has_blinking_enabled
+                    && has_blinking_enabled
+                    && self.selection_is_empty()
+                {
                     self.superloop
                         .send_event(RioEvent::PrepareRender(800), self.id);
                 }
