@@ -621,9 +621,9 @@ impl RichTextBrush {
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
         for items in ranges {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
