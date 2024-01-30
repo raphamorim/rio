@@ -445,7 +445,7 @@ impl Sugarloaf {
                 span_counter -= 1;
             }
         }
-        self.content.break_line();
+        self.content.add_char('\n');
     }
 
     #[inline]
