@@ -892,10 +892,20 @@ impl Sugarloaf {
     #[inline]
     pub fn render(&mut self) {
         let start = std::time::Instant::now();
-        self.rich_text_brush.prepare(
+        let (sugarwidth, sugarheight) = self.rich_text_brush.prepare(
             &mut self.ctx,
             &self.content.build_ref(),
             &self.layout);
+
+        if sugarwidth > 0.0 {
+            println!("setou {:?}", sugarwidth);
+            self.layout.scaled_sugarwidth = sugarwidth;
+            self.layout.scaled_sugarheight = sugarheight;
+
+            self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
+            self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+        }
+
         let duration = start.elapsed();
         println!(
             "Time elapsed in rich_text_brush.prepare() is: {:?}",
