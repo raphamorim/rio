@@ -53,12 +53,11 @@ pub struct RichTextBrush {
     rich_text_layout_context: LayoutContext,
     bind_group_needs_update: bool,
     needs_update: bool,
-    size_changed: bool,
     first_run: bool,
-    selection: Selection,
-    selection_rects: Vec<[f32; 4]>,
-    selecting: bool,
-    selection_changed: bool,
+    // selection: Selection,
+    // selection_rects: Vec<[f32; 4]>,
+    // selecting: bool,
+    // selection_changed: bool,
     supported_vertex_buffer: usize,
     align: Alignment,
 }
@@ -67,7 +66,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 64;
+        let supported_vertex_buffer = 10_000;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -296,7 +295,7 @@ impl RichTextBrush {
             mask_texture_view,
             sampler,
             textures: HashMap::default(),
-            comp: Compositor::new(4096),
+            comp: Compositor::new(2048),
             dlist,
             rich_text_layout,
             rich_text_layout_context,
@@ -305,26 +304,22 @@ impl RichTextBrush {
             pipeline,
             vertex_buffer,
             needs_update: false,
-            size_changed: false,
             first_run: true,
             bind_group_needs_update: true,
-            selection: Selection::default(),
-            selection_rects: Vec::new(),
-            selecting: false,
-            selection_changed: false,
+            // selection: Selection::default(),
+            // selection_rects: Vec::new(),
+            // selecting: false,
+            // selection_changed: false,
             align: Alignment::Start,
             supported_vertex_buffer,
             current_transform,
         }
     }
 
-    #[inline]
-    pub fn render(
+    pub fn prepare(
         &mut self,
-        content: &crate::content::Content,
         ctx: &mut Context,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
+        content: &crate::content::Content,
         layout: &crate::layout::SugarloafLayout,
     ) {
         // Used for quick testings
@@ -359,17 +354,12 @@ impl RichTextBrush {
 
             self.first_run = false;
             self.needs_update = false;
-            self.size_changed = true;
         }
-
-        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
-        let transform_has_changed = transform != self.current_transform;
 
         // if transform_has_changed {
         self.rich_text_layout
             .break_lines()
             .break_remaining(ctx.size.width as f32 - margin_x, self.align);
-        self.size_changed = false;
         // self.selection_changed = true;
         // }
 
@@ -409,11 +399,22 @@ impl RichTextBrush {
         // }
         self.dlist.clear();
         self.finish_composition(ctx);
+    }
 
+    #[inline]
+    pub fn render(
+        &mut self,
+        ctx: &mut Context,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
         let vertices: &[Vertex] = self.dlist.vertices();
         let indices: &[u32] = self.dlist.indices();
 
         let queue = &mut ctx.queue;
+
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        let transform_has_changed = transform != self.current_transform;
 
         if transform_has_changed {
             queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&transform));
@@ -435,14 +436,23 @@ impl RichTextBrush {
 
         let vertices_bytes: &[u8] = bytemuck::cast_slice(&vertices);
         if !vertices_bytes.is_empty() {
-            self.vertex_buffer =
-                ctx.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("sugarloaf::rich_text::Pipeline vertices"),
-                        contents: vertices_bytes,
-                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    });
+            // self.vertices_buffer =
+            // let vertices_buffer =
+            //     ctx.device
+            //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            //             label: Some("sugarloaf::rich_text::Pipeline vertices"),
+            //             contents: vertices_bytes,
+            //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            //             // usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+            //         });
 
+            // encoder.copy_buffer_to_buffer(
+            //     &vertices_buffer,
+            //     0,
+            //     &self.vertex_buffer,
+            //     0,
+            //     mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
+            // );
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
         }
 
