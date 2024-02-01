@@ -72,8 +72,10 @@ pub struct SpanData {
     pub font_attrs: (Stretch, Weight, Style),
     /// Font size in ppem.
     pub font_size: f32,
-    /// Font size in ppem.
+    /// Font color.
     pub color: [f32; 4],
+    /// Background color.
+    pub background_color: Option<[f32; 4]>,
     /// Font features.
     pub font_features: FontSettingKey,
     /// Font variations.
@@ -162,6 +164,7 @@ impl BuilderState {
             word_spacing: 0.,
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
             underline: false,
             underline_offset: None,
             underline_size: None,
@@ -250,6 +253,9 @@ impl BuilderState {
                 }
                 S::Color(color) => {
                     span.color = *color;
+                }
+                S::BackgroundColor(color) => {
+                    span.background_color = Some(*color);
                 }
                 S::Features(features) => {
                     span.font_features = self.features.add(features.iter().copied());

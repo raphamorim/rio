@@ -1,4 +1,3 @@
-
 use swash::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
@@ -12,8 +11,14 @@ pub struct TextRunStyle<'a> {
     pub font_size: f32,
     /// Color of the text.
     pub color: [f32; 4],
+    /// Background of the text.
+    pub background_color: Option<[f32; 4]>,
     /// Baseline of the run.
     pub baseline: f32,
+    /// Topline of the run (basically y axis).
+    pub topline: f32,
+    /// Absolute line height of the run.
+    pub line_height: f32,
     /// Total advance of the run.
     pub advance: f32,
     /// Underline style.

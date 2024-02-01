@@ -179,6 +179,7 @@ pub struct RunData {
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
+    pub background_color: Option<[f32; 4]>,
     pub underline: bool,
     pub underline_offset: f32,
     pub underline_size: f32,

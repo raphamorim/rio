@@ -30,7 +30,7 @@
 use core::default::Default;
 use core::hash::{BuildHasherDefault, Hasher};
 use core::ops::BitXor;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 /// A builder for default Fx hashers.
 pub type FxBuildHasher = BuildHasherDefault<FxHasher>;
