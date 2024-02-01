@@ -14,7 +14,8 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::core::{
-    Sugar, SugarCustomDecoration, SugarDecoration, SugarStack, SugarStyle,
+    Sugar, SugarCursor, SugarCursorStyle, SugarCustomDecoration, SugarDecoration,
+    SugarStack, SugarStyle,
 };
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
@@ -227,6 +228,7 @@ impl State {
             decoration,
             custom_decoration,
             media: None,
+            cursor: None,
         }
     }
 
@@ -329,6 +331,7 @@ impl State {
                     decoration: None,
                     custom_decoration: None,
                     media: None,
+                    cursor: None,
                 };
                 stack.push(selected_sugar);
             } else {
@@ -544,6 +547,32 @@ impl State {
                 width: media.width,
                 height: media.height,
             }),
+            cursor: None,
+        }
+    }
+
+    #[inline]
+    fn create_sugar_cursor(&self) -> Option<SugarCursor> {
+        let color = if !self.is_vi_mode_enabled {
+            self.named_colors.cursor
+        } else {
+            self.named_colors.vi_cursor
+        };
+
+        match self.cursor.state.content {
+            CursorShape::Block => Some(SugarCursor {
+                style: SugarCursorStyle::Block,
+                color,
+            }),
+            CursorShape::Underline => Some(SugarCursor {
+                style: SugarCursorStyle::Underline,
+                color,
+            }),
+            CursorShape::Beam => Some(SugarCursor {
+                style: SugarCursorStyle::Caret,
+                color,
+            }),
+            CursorShape::Hidden => None,
         }
     }
 
@@ -557,6 +586,7 @@ impl State {
             decoration: None,
             custom_decoration: None,
             media: None,
+            cursor: self.create_sugar_cursor(),
         };
 
         let is_italic = square.flags.contains(Flags::ITALIC);

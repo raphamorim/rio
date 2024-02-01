@@ -11,8 +11,22 @@ pub struct Sugar {
     pub background_color: [f32; 4],
     pub style: Option<SugarStyle>,
     pub decoration: Option<SugarDecoration>,
+    pub cursor: Option<SugarCursor>,
     pub custom_decoration: Option<SugarCustomDecoration>,
     pub media: Option<SugarGraphic>,
+}
+
+#[derive(Debug)]
+pub enum SugarCursorStyle {
+    Block,
+    Caret,
+    Underline,
+}
+
+#[derive(Debug)]
+pub struct SugarCursor {
+    pub color: [f32; 4],
+    pub style: SugarCursorStyle,
 }
 
 #[derive(Debug)]
