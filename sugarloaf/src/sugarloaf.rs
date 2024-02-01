@@ -791,8 +791,10 @@ impl Sugarloaf {
     pub fn calculate_bounds(&mut self) {
         let text_scale = self.layout.style.text_scale;
         if self.level.is_advanced() {
-            self.layout.lines =
-                ((self.layout.height * self.ctx.scale) / (text_scale - 2.0)) as usize;
+            // let (cols, lines) = self.rich_text_brush.calculate_bounds();
+            // self.layout.lines = 4;
+            // self.layout.columns = 4;
+
             return;
         }
 
@@ -889,6 +891,17 @@ impl Sugarloaf {
 
     #[inline]
     pub fn render(&mut self) {
+        let start = std::time::Instant::now();
+        self.rich_text_brush.prepare(
+            &mut self.ctx,
+            &self.content.build_ref(),
+            &self.layout);
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() is: {:?}",
+            duration
+        );
+
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
                 let mut encoder = self.ctx.device.create_command_encoder(
@@ -935,11 +948,9 @@ impl Sugarloaf {
                 let start = std::time::Instant::now();
                 if self.level.is_advanced() {
                     self.rich_text_brush.render(
-                        &self.content.build_ref(),
                         &mut self.ctx,
                         &mut encoder,
                         view,
-                        &self.layout,
                     );
                 }
                 let duration = start.elapsed();
