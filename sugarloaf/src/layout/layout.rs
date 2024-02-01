@@ -4,6 +4,7 @@ use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
 use super::{builder_data::SpanData, font::Font, Paragraph, SpanId};
+use crate::core::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
@@ -91,7 +92,11 @@ impl Paragraph {
                         ascent: metrics.ascent * span_data.line_spacing,
                         descent: metrics.descent * span_data.line_spacing,
                         leading: metrics.leading * span_data.line_spacing,
+                        cursor: span_data.cursor,
                         underline: span_data.underline,
+                        underline_color: span_data
+                            .underline_color
+                            .unwrap_or(span_data.color),
                         underline_offset: span_data
                             .underline_offset
                             .unwrap_or(metrics.underline_offset),
@@ -188,7 +193,9 @@ impl Paragraph {
             leading: metrics.leading * span_data.line_spacing,
             color: span_data.color,
             background_color: span_data.background_color,
+            cursor: span_data.cursor,
             underline: span_data.underline,
+            underline_color: span_data.underline_color.unwrap_or(span_data.color),
             underline_offset: span_data
                 .underline_offset
                 .unwrap_or(metrics.underline_offset),
@@ -312,6 +319,11 @@ impl<'a> Run<'a> {
         self.run.level
     }
 
+    /// Returns the cursor
+    pub fn cursor(&self) -> Option<SugarCursor> {
+        self.run.cursor
+    }
+
     /// Returns the direction of the run.
     pub fn direction(&self) -> Direction {
         if self.run.level & 1 != 0 {
@@ -347,6 +359,11 @@ impl<'a> Run<'a> {
     /// Returns the underline offset for the run.
     pub fn underline_offset(&self) -> f32 {
         self.run.underline_offset
+    }
+
+    /// Returns the underline color for the run.
+    pub fn underline_color(&self) -> [f32; 4] {
+        self.run.underline_color
     }
 
     /// Returns the underline size for the run.

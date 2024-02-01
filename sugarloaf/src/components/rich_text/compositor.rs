@@ -4,6 +4,7 @@ pub use crate::components::rich_text::batch::{
 pub use crate::components::rich_text::image_cache::{
     AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
+use crate::core::SugarCursorStyle;
 
 use crate::components::rich_text::batch::BatchManager;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
@@ -164,6 +165,36 @@ impl Compositor {
                             depth,
                             &bg_color,
                         );
+                    }
+
+                    if let Some(cursor) = style.cursor {
+                        match cursor.style {
+                            SugarCursorStyle::Block => {
+                                self.batches.add_rect(
+                                    &Rect::new(
+                                        rect.x,
+                                        style.topline,
+                                        rect.width,
+                                        style.line_height,
+                                    ),
+                                    depth - 1.0,
+                                    &cursor.color,
+                                );
+                            }
+                            SugarCursorStyle::Caret => {
+                                self.batches.add_rect(
+                                    &Rect::new(
+                                        rect.x,
+                                        style.topline,
+                                        3.0,
+                                        style.line_height,
+                                    ),
+                                    depth - 1.0,
+                                    &cursor.color,
+                                );
+                            }
+                            _ => {}
+                        }
                     }
 
                     if underline {

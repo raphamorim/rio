@@ -1,3 +1,4 @@
+use crate::core::SugarCursor;
 use swash::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
@@ -23,6 +24,8 @@ pub struct TextRunStyle<'a> {
     pub advance: f32,
     /// Underline style.
     pub underline: Option<UnderlineStyle>,
+    /// Cursor style.
+    pub cursor: Option<SugarCursor>,
 }
 
 /// Underline decoration style.
