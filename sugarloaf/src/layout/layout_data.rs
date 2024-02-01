@@ -1,6 +1,7 @@
 use super::Alignment;
 use super::Glyph;
 use super::{font::Font, SpanId};
+use crate::core::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
@@ -183,9 +184,11 @@ pub struct RunData {
     pub underline: bool,
     pub underline_offset: f32,
     pub underline_size: f32,
+    pub underline_color: [f32; 4],
     pub strikeout_offset: f32,
     pub strikeout_size: f32,
     pub advance: f32,
+    pub cursor: Option<SugarCursor>,
 }
 
 #[derive(Clone, Default)]

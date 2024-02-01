@@ -421,29 +421,34 @@ impl Sugarloaf {
                 }
             }
 
-            // let mut has_underline_cursor = false;
-            // if let Some(cursor) = &stack[i].cursor {
-            //     match cursor.style {
-            //         SugarCursorStyle::Underline => {
-            //             let underline_cursor = &[
-            //                 SpanStyle::UnderlineColor(cursor.color),
-            //                 SpanStyle::Underline(true),
-            //                 SpanStyle::UnderlineOffset(Some(-1.)),
-            //                 SpanStyle::UnderlineSize(Some(1.)),
-            //             ];
-            //             self.content.enter_span(underline_cursor);
-            //             span_counter += 1;
-            //             has_underline_cursor = true;
-            //         },
-            //         _ => {}
-            //     }
-            // }
+            let mut has_underline_cursor = false;
+            if let Some(cursor) = &stack[i].cursor {
+                match cursor.style {
+                    SugarCursorStyle::Underline => {
+                        let underline_cursor = &[
+                            SpanStyle::UnderlineColor(cursor.color),
+                            SpanStyle::Underline(true),
+                            SpanStyle::UnderlineOffset(Some(-1.)),
+                            SpanStyle::UnderlineSize(Some(2.)),
+                        ];
+                        self.content.enter_span(underline_cursor);
+                        span_counter += 1;
+                        has_underline_cursor = true;
+                    }
+                    SugarCursorStyle::Block | SugarCursorStyle::Caret => {
+                        self.content.enter_span(&[SpanStyle::Cursor(*cursor)]);
+                        span_counter += 1;
+                    }
+                }
+            }
 
             if let Some(decoration) = &stack[i].decoration {
                 match decoration {
                     SugarDecoration::Underline => {
-                        self.content.enter_span(underline);
-                        span_counter += 1;
+                        if !has_underline_cursor {
+                            self.content.enter_span(underline);
+                            span_counter += 1;
+                        }
                     }
                     SugarDecoration::Strikethrough => {
                         self.content.enter_span(strikethrough);

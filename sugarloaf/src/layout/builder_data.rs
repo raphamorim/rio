@@ -3,6 +3,7 @@ use super::{
     font::internal::{FontContext, FontGroupId},
     SpanId, MAX_ID,
 };
+use crate::core::SugarCursor;
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
 use swash::{Setting, Stretch, Style, Weight};
@@ -90,10 +91,14 @@ pub struct SpanData {
     pub underline: bool,
     /// Offset of an underline.
     pub underline_offset: Option<f32>,
+    /// Color of an underline.
+    pub underline_color: Option<[f32; 4]>,
     /// Thickness of an underline.
     pub underline_size: Option<f32>,
     /// Text case transformation.
     pub text_transform: TextTransform,
+    /// Cursor
+    pub cursor: Option<SugarCursor>,
 }
 
 /// Builder state.
@@ -165,8 +170,10 @@ impl BuilderState {
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
+            cursor: None,
             underline: false,
             underline_offset: None,
+            underline_color: None,
             underline_size: None,
             text_transform: TextTransform::None,
         });
@@ -251,6 +258,9 @@ impl BuilderState {
                 S::Size(size) => {
                     span.font_size = *size * scale;
                 }
+                S::Cursor(cursor) => {
+                    span.cursor = Some(*cursor);
+                }
                 S::Color(color) => {
                     span.color = *color;
                 }
@@ -277,6 +287,9 @@ impl BuilderState {
                 }
                 S::UnderlineOffset(offset) => {
                     span.underline_offset = (*offset).map(|o| o * scale);
+                }
+                S::UnderlineColor(color) => {
+                    span.underline_color = Some(*color);
                 }
                 S::UnderlineSize(size) => {
                     span.underline_size = (*size).map(|s| s * scale)

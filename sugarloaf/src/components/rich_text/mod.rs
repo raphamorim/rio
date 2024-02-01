@@ -777,6 +777,7 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
+                cursor: run.cursor(),
                 background_color: run.background_color(),
                 baseline: py,
                 topline: py - line.ascent(),
@@ -786,7 +787,7 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
                     Some(UnderlineStyle {
                         offset: run.underline_offset(),
                         size: run.underline_size(),
-                        color,
+                        color: run.underline_color(),
                     })
                 } else {
                     None

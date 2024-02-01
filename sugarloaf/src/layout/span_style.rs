@@ -1,4 +1,5 @@
 pub use super::font::FamilyList;
+use crate::core::SugarCursor;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};
 
@@ -21,6 +22,8 @@ pub enum SpanStyle<'a> {
     BackgroundColor([f32; 4]),
     /// Font style.
     Style(Style),
+    /// Cursor.
+    Cursor(SugarCursor),
     /// Font feature settings.
     Features(Cow<'a, [Setting<u16>]>),
     /// Font variation settings.
@@ -37,6 +40,8 @@ pub enum SpanStyle<'a> {
     LineSpacing(f32),
     /// Underline decoration.
     Underline(bool),
+    /// Underline color.
+    UnderlineColor([f32; 4]),
     /// Offset of an underline. Set to `None` to use the font value.
     UnderlineOffset(Option<f32>),
     /// Thickness of an underline. Set to `None` to use the font value.
@@ -77,8 +82,10 @@ impl<'a> SpanStyle<'a> {
             Self::LineSpacing(v) => S::LineSpacing(*v),
             Self::Underline(v) => S::Underline(*v),
             Self::UnderlineOffset(v) => S::UnderlineOffset(*v),
+            Self::UnderlineColor(v) => S::UnderlineColor(*v),
             Self::UnderlineSize(v) => S::UnderlineSize(*v),
             Self::TextTransform(v) => S::TextTransform(*v),
+            Self::Cursor(v) => S::Cursor(*v),
         }
     }
 
@@ -101,8 +108,10 @@ impl<'a> SpanStyle<'a> {
             Self::LineSpacing(v) => S::LineSpacing(v),
             Self::Underline(v) => S::Underline(v),
             Self::UnderlineOffset(v) => S::UnderlineOffset(v),
+            Self::UnderlineColor(v) => S::UnderlineColor(v),
             Self::UnderlineSize(v) => S::UnderlineSize(v),
             Self::TextTransform(v) => S::TextTransform(v),
+            Self::Cursor(v) => S::Cursor(v),
         }
     }
 
