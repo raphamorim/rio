@@ -28,7 +28,7 @@ pub use types::{FamilyId, FamilyKey, FontId, FontKey, SourceId};
 use swash::{iter::*, CacheKey, *};
 
 /// Shared reference to a font.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Font {
     data: shared_data::SharedData,
     offset: u32,

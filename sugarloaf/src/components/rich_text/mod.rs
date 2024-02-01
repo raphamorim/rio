@@ -321,7 +321,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         content: &crate::content::Content,
         layout: &crate::layout::SugarloafLayout,
-    ) {
+    ) -> (f32, f32) {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
@@ -331,9 +331,9 @@ impl RichTextBrush {
 
         self.rich_text_layout = Paragraph::new();
 
-        if self.first_run {
-            self.needs_update = true;
-        }
+        // if self.first_run {
+        //     self.needs_update = true;
+        // }
 
         self.needs_update = true;
         // let w = ctx.size.width;
@@ -353,7 +353,7 @@ impl RichTextBrush {
             // }
 
             self.first_run = false;
-            self.needs_update = false;
+            // self.needs_update = false;
         }
 
         // if transform_has_changed {
@@ -379,7 +379,7 @@ impl RichTextBrush {
 
         // Render
         self.comp.begin();
-        draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
+        let dimensions = draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
 
         // for r in &self.selection_rects {
         //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
@@ -399,6 +399,8 @@ impl RichTextBrush {
         // }
         self.dlist.clear();
         self.finish_composition(ctx);
+
+        dimensions
     }
 
     #[inline]
@@ -762,8 +764,10 @@ impl RichTextBrush {
 }
 
 #[inline]
-fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y: f32) {
+fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y: f32) -> (f32, f32) {
     let depth = 0.0;
+    let mut sugarwidth = 0.0;
+    let mut sugarheight = 0.0;
     let mut glyphs = Vec::new();
     for line in layout.lines() {
         let mut px = x + line.offset();
@@ -803,6 +807,13 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
                     None
                 },
             };
+
+            if style.advance > 0. {
+                sugarwidth = style.advance;
+            }
+            if style.line_height > 0. {
+                sugarheight = style.line_height;
+            }
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
@@ -811,6 +822,9 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
             );
         }
     }
+
+    println!("{:?}", sugarwidth);
+    (sugarwidth, sugarheight)
 }
 
 #[allow(unused)]
