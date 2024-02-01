@@ -2,18 +2,13 @@ use super::layout::*;
 use super::layout_data::*;
 
 /// Alignment of a paragraph.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Default, Clone, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Alignment {
+    #[default]
     Start,
     Middle,
     End,
-}
-
-impl Default for Alignment {
-    fn default() -> Self {
-        Self::Start
-    }
 }
 
 /// Line breaking support for a paragraph.

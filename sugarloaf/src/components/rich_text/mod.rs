@@ -325,7 +325,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
-        layout: &crate::layout::SugarloafLayout
+        layout: &crate::layout::SugarloafLayout,
     ) {
         // Used for quick testings
         // let content = build_simple_content();
@@ -341,8 +341,8 @@ impl RichTextBrush {
         }
 
         self.needs_update = true;
-        let w = ctx.size.width * 2;
-        let _h = ctx.size.height;
+        // let w = ctx.size.width;
+        // let _h = ctx.size.height;
         if self.needs_update {
             let mut lb = self.rich_text_layout_context.builder(
                 Direction::LeftToRight,
@@ -366,13 +366,11 @@ impl RichTextBrush {
         let transform_has_changed = transform != self.current_transform;
 
         // if transform_has_changed {
-            let lw = w as f32 - margin_x;
-            println!("lw {:?}", lw);
-            self.rich_text_layout
-                .break_lines()
-                .break_remaining(lw, self.align);
-            self.size_changed = false;
-            // self.selection_changed = true;
+        self.rich_text_layout
+            .break_lines()
+            .break_remaining(ctx.size.width as f32 - margin_x, self.align);
+        self.size_changed = false;
+        // self.selection_changed = true;
         // }
 
         // let inserted = None;
@@ -391,12 +389,7 @@ impl RichTextBrush {
 
         // Render
         self.comp.begin();
-        draw_layout(
-            &mut self.comp,
-            &self.rich_text_layout,
-            margin_x,
-            margin_y,
-        );
+        draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
 
         // for r in &self.selection_rects {
         //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
@@ -759,12 +752,7 @@ impl RichTextBrush {
 }
 
 #[inline]
-fn draw_layout(
-    comp: &mut compositor::Compositor,
-    layout: &Paragraph,
-    x: f32,
-    y: f32,
-) {
+fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y: f32) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
     for line in layout.lines() {
@@ -783,12 +771,16 @@ fn draw_layout(
                 }
             }
             let color = run.color();
+
             let style = TextRunStyle {
                 font: font.as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
+                background_color: run.background_color(),
                 baseline: py,
+                topline: py - line.ascent(),
+                line_height: line.ascent() + line.descent(),
                 advance: px - run_x,
                 underline: if run.underline() {
                     Some(UnderlineStyle {
@@ -916,11 +908,18 @@ fn build_terminal_content() -> crate::content::Content {
             S::Size(24.),
             // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         ]);
-        db.enter_span(&[S::Weight(Weight::BOLD), S::Color([1.0, 0.5, 0.5, 1.0])]);
+        db.enter_span(&[
+            S::Weight(Weight::BOLD),
+            S::BackgroundColor([0.0, 1.0, 1.0, 1.0]),
+            S::Color([1.0, 0.5, 0.5, 1.0]),
+        ]);
         db.add_char('R');
         db.leave_span();
         // should return to span
-        db.enter_span(&[S::Color([0.0, 1.0, 0.0, 1.0])]);
+        db.enter_span(&[
+            S::Color([0.0, 1.0, 0.0, 1.0]),
+            S::BackgroundColor([1.0, 1.0, 0.0, 1.0]),
+        ]);
         db.add_char('i');
         db.leave_span();
         db.enter_span(&[
@@ -930,6 +929,8 @@ fn build_terminal_content() -> crate::content::Content {
             // S::Size(20.),
         ]);
         db.add_char('o');
+        db.leave_span();
+        db.add_char('+');
         db.add_char(' ');
         for x in 0..5 {
             db.add_char('🌊');

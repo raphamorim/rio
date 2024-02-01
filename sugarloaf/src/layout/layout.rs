@@ -82,6 +82,7 @@ impl Paragraph {
                         font: font.clone(),
                         coords: (coords_start, coords_end),
                         color: span_data.color,
+                        background_color: span_data.background_color,
                         size,
                         level,
                         whitespace: false,
@@ -186,6 +187,7 @@ impl Paragraph {
             descent: metrics.descent * span_data.line_spacing,
             leading: metrics.leading * span_data.line_spacing,
             color: span_data.color,
+            background_color: span_data.background_color,
             underline: span_data.underline,
             underline_offset: span_data
                 .underline_offset
@@ -330,6 +332,11 @@ impl<'a> Run<'a> {
     /// Returns the advance of the run.
     pub fn advance(&self) -> f32 {
         self.run.advance
+    }
+
+    /// Returns true if the run has an background color
+    pub fn background_color(&self) -> Option<[f32; 4]> {
+        self.run.background_color
     }
 
     /// Returns true if the run has an underline decoration.

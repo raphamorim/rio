@@ -152,6 +152,20 @@ impl Compositor {
                             true,
                         );
                     }
+
+                    if let Some(bg_color) = style.background_color {
+                        self.batches.add_rect(
+                            &Rect::new(
+                                rect.x,
+                                style.topline,
+                                rect.width,
+                                style.line_height,
+                            ),
+                            depth,
+                            &bg_color,
+                        );
+                    }
+
                     if underline {
                         if entry.top - underline_offset < entry.height as i32 {
                             if let Some(mut desc_ink) = entry.desc.range() {

@@ -6,8 +6,8 @@ use crate::components::text;
 use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
 use crate::core::{
-    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarDecoration, SugarStack,
-    TextBuilder,
+    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
+    SugarDecoration, SugarStack, TextBuilder,
 };
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
@@ -421,6 +421,24 @@ impl Sugarloaf {
                 }
             }
 
+            // let mut has_underline_cursor = false;
+            // if let Some(cursor) = &stack[i].cursor {
+            //     match cursor.style {
+            //         SugarCursorStyle::Underline => {
+            //             let underline_cursor = &[
+            //                 SpanStyle::UnderlineColor(cursor.color),
+            //                 SpanStyle::Underline(true),
+            //                 SpanStyle::UnderlineOffset(Some(-1.)),
+            //                 SpanStyle::UnderlineSize(Some(1.)),
+            //             ];
+            //             self.content.enter_span(underline_cursor);
+            //             span_counter += 1;
+            //             has_underline_cursor = true;
+            //         },
+            //         _ => {}
+            //     }
+            // }
+
             if let Some(decoration) = &stack[i].decoration {
                 match decoration {
                     SugarDecoration::Underline => {
@@ -434,8 +452,10 @@ impl Sugarloaf {
                 }
             }
 
-            self.content
-                .enter_span(&[SpanStyle::Color(stack[i].foreground_color)]);
+            self.content.enter_span(&[
+                SpanStyle::Color(stack[i].foreground_color),
+                SpanStyle::BackgroundColor(stack[i].background_color),
+            ]);
 
             self.content.add_char(stack[i].content);
             self.content.leave_span();
@@ -446,6 +466,7 @@ impl Sugarloaf {
             }
         }
         self.content.add_char('\n');
+        self.current_row += 1;
     }
 
     #[inline]
@@ -763,14 +784,16 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
+        let text_scale = self.layout.style.text_scale;
         if self.level.is_advanced() {
+            self.layout.lines =
+                ((self.layout.height * self.ctx.scale) / (text_scale - 2.0)) as usize;
             return;
         }
 
         // Every time a font size change the cached bounds also changes
         self.sugar_cache = FnvHashMap::default();
 
-        let text_scale = self.layout.style.text_scale;
         // Bounds are defined in runtime
         let font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
 
@@ -845,6 +868,7 @@ impl Sugarloaf {
     fn reset_state(&mut self) {
         self.rects = vec![];
         self.graphic_rects = FnvHashMap::default();
+        self.current_row = 0;
 
         if self.level.is_advanced() {
             self.content = Content::builder();
@@ -855,7 +879,6 @@ impl Sugarloaf {
             ]);
         } else {
             self.text_y = 0.0;
-            self.current_row = 0;
         }
     }
 
