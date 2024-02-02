@@ -67,6 +67,7 @@ pub struct Sugarloaf {
     level: SugarloafRendererLevel,
     text_y: f32,
     current_row: u16,
+    has_updates: bool,
 }
 
 #[derive(Debug)]
@@ -205,6 +206,7 @@ impl Sugarloaf {
             text_y: 0.0,
             current_row: 0,
             level: renderer.level,
+            has_updates: false,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -789,14 +791,11 @@ impl Sugarloaf {
     ///
     #[inline]
     pub fn calculate_bounds(&mut self) {
-        let text_scale = self.layout.style.text_scale;
         if self.level.is_advanced() {
-            // let (cols, lines) = self.rich_text_brush.calculate_bounds();
-            // self.layout.lines = 4;
-            // self.layout.columns = 4;
-
             return;
         }
+
+        let text_scale = self.layout.style.text_scale;
 
         // Every time a font size change the cached bounds also changes
         self.sugar_cache = FnvHashMap::default();
@@ -889,21 +888,33 @@ impl Sugarloaf {
         }
     }
 
-    #[inline]
-    pub fn render(&mut self) {
+    fn prepare_render(&mut self) {
         let start = std::time::Instant::now();
-        let (sugarwidth, sugarheight) = self.rich_text_brush.prepare(
+        if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
             &mut self.ctx,
             &self.content.build_ref(),
-            &self.layout);
+            &self.layout,
+        ) {
+            let mut has_pending_updates = false;
+            if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
+                self.layout.scaled_sugarheight = sugarheight;
+                self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+                println!("changed sugarheight... {}", sugarheight);
+                has_pending_updates = true;
+            }
 
-        if sugarwidth > 0.0 {
-            println!("setou {:?}", sugarwidth);
-            self.layout.scaled_sugarwidth = sugarwidth;
-            self.layout.scaled_sugarheight = sugarheight;
+            if sugarwidth > 0. && sugarwidth != self.layout.scaled_sugarwidth {
+                self.layout.scaled_sugarwidth = sugarwidth;
+                self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
+                self.layout.update_columns_per_font_width();
+                println!("changed sugarwidth... {}", sugarwidth);
+                has_pending_updates = true;
+            }
 
-            self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
-            self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+            if has_pending_updates {
+                self.layout.update();
+                self.has_updates = has_pending_updates
+            }
         }
 
         let duration = start.elapsed();
@@ -911,6 +922,18 @@ impl Sugarloaf {
             "Time elapsed in rich_text_brush.prepare() is: {:?}",
             duration
         );
+    }
+
+    #[inline]
+    pub fn has_pending_updates(&mut self) -> bool {
+        let has_pending_updates = self.has_updates;
+        self.has_updates = false;
+        has_pending_updates
+    }
+
+    #[inline]
+    pub fn render(&mut self) {
+        self.prepare_render();
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -957,11 +980,8 @@ impl Sugarloaf {
 
                 let start = std::time::Instant::now();
                 if self.level.is_advanced() {
-                    self.rich_text_brush.render(
-                        &mut self.ctx,
-                        &mut encoder,
-                        view,
-                    );
+                    self.rich_text_brush
+                        .render(&mut self.ctx, &mut encoder, view);
                 }
                 let duration = start.elapsed();
                 println!(

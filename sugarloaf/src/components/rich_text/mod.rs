@@ -321,7 +321,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         content: &crate::content::Content,
         layout: &crate::layout::SugarloafLayout,
-    ) -> (f32, f32) {
+    ) -> Option<(f32, f32)> {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
@@ -379,7 +379,8 @@ impl RichTextBrush {
 
         // Render
         self.comp.begin();
-        let dimensions = draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
+        let dimensions =
+            draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
 
         // for r in &self.selection_rects {
         //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
@@ -400,7 +401,7 @@ impl RichTextBrush {
         self.dlist.clear();
         self.finish_composition(ctx);
 
-        dimensions
+        Some(dimensions)
     }
 
     #[inline]
@@ -764,7 +765,12 @@ impl RichTextBrush {
 }
 
 #[inline]
-fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y: f32) -> (f32, f32) {
+fn draw_layout(
+    comp: &mut compositor::Compositor,
+    layout: &Paragraph,
+    x: f32,
+    y: f32,
+) -> (f32, f32) {
     let depth = 0.0;
     let mut sugarwidth = 0.0;
     let mut sugarheight = 0.0;
@@ -808,10 +814,10 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
                 },
             };
 
-            if style.advance > 0. {
+            if sugarwidth == 0. && style.advance > 0. {
                 sugarwidth = style.advance;
             }
-            if style.line_height > 0. {
+            if sugarheight == 0. && style.line_height > 0. {
                 sugarheight = style.line_height;
             }
             comp.draw_glyphs(
@@ -823,7 +829,6 @@ fn draw_layout(comp: &mut compositor::Compositor, layout: &Paragraph, x: f32, y:
         }
     }
 
-    println!("{:?}", sugarwidth);
     (sugarwidth, sugarheight)
 }
 
