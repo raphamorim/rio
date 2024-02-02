@@ -1502,6 +1502,10 @@ impl Route {
 
     #[inline]
     pub fn render(&mut self) {
+        if self.sugarloaf.has_pending_updates() {
+            self.resize_all_contexts();
+        };
+
         // let start = std::time::Instant::now();
         match self.path {
             RoutePath::Assistant => {
