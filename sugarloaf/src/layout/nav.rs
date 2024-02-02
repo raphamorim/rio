@@ -390,10 +390,8 @@ impl Selection {
             }
         } else if anchor.line > focus.line || anchor.edge > focus.edge {
             // Otherwise, set it to 'after' state.
-            if !anchor.after {
-                if anchor.cluster > 0 {
-                    anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
-                }
+            if !anchor.after && anchor.cluster > 0 {
+                anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
             }
         }
         Self {

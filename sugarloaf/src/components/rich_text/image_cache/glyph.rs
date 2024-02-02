@@ -13,7 +13,7 @@ use swash::FontRef;
 
 const IS_MACOS: bool = cfg!(target_os = "macos");
 
-const SOURCES: &'static [Source] = &[
+const SOURCES: &[Source] = &[
     Source::ColorBitmap(StrikeWith::BestFit),
     Source::ColorOutline(0),
     //Source::Bitmap(Strike::ExactSize),
@@ -78,6 +78,7 @@ impl GlyphCache {
         }
     }
 
+    #[allow(unused)]
     pub fn clear_evicted(&mut self, images: &mut ImageCache) {
         self.fonts.retain(|_, entry| {
             entry.glyphs.retain(|_, g| images.is_valid(g.image));

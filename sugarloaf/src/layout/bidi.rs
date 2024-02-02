@@ -258,14 +258,10 @@ impl BidiResolver {
                         },
                         is_isolate,
                     );
-                } else {
-                    if is_isolate {
-                        overflow_isolates += 1;
-                    } else {
-                        if overflow_isolates == 0 {
-                            overflow_embedding += 1;
-                        }
-                    }
+                } else if is_isolate {
+                    overflow_isolates += 1;
+                } else if overflow_isolates == 0 {
+                    overflow_embedding += 1;
                 }
             } else if t == PDI {
                 if overflow_isolates > 0 {
