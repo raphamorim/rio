@@ -101,8 +101,8 @@ pub struct SugarloafWindow {
 
 #[derive(PartialEq, Default)]
 pub enum SugarloafRendererLevel {
-    Basic,
     #[default]
+    Basic,
     Advanced,
 }
 
@@ -888,32 +888,37 @@ impl Sugarloaf {
         }
     }
 
+    #[inline]
     fn prepare_render(&mut self) {
         // let start = std::time::Instant::now();
-        if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
-            &mut self.ctx,
-            &self.content.build_ref(),
-            &self.layout,
-        ) {
-            let mut has_pending_updates = false;
-            if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
-                self.layout.scaled_sugarheight = sugarheight;
-                self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
-                log::info!("prepare_render: changed sugarheight... {}", sugarheight);
-                has_pending_updates = true;
-            }
+        if self.level.is_advanced() {
+            if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
+                &mut self.ctx,
+                &self.content.build_ref(),
+                &self.layout,
+            ) {
+                let mut has_pending_updates = false;
+                if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
+                    self.layout.scaled_sugarheight = sugarheight;
+                    self.layout.sugarheight =
+                        self.layout.scaled_sugarheight / self.ctx.scale;
+                    log::info!("prepare_render: changed sugarheight... {}", sugarheight);
+                    has_pending_updates = true;
+                }
 
-            if sugarwidth > 0. && sugarwidth != self.layout.scaled_sugarwidth {
-                self.layout.scaled_sugarwidth = sugarwidth;
-                self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
-                self.layout.update_columns_per_font_width();
-                log::info!("prepare_render: changed sugarwidth... {}", sugarwidth);
-                has_pending_updates = true;
-            }
+                if sugarwidth > 0. && sugarwidth != self.layout.scaled_sugarwidth {
+                    self.layout.scaled_sugarwidth = sugarwidth;
+                    self.layout.sugarwidth =
+                        self.layout.scaled_sugarwidth / self.ctx.scale;
+                    self.layout.update_columns_per_font_width();
+                    log::info!("prepare_render: changed sugarwidth... {}", sugarwidth);
+                    has_pending_updates = true;
+                }
 
-            if has_pending_updates {
-                self.layout.update();
-                self.has_updates = has_pending_updates
+                if has_pending_updates {
+                    self.layout.update();
+                    self.has_updates = has_pending_updates
+                }
             }
         }
 

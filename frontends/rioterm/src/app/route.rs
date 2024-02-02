@@ -1502,8 +1502,11 @@ impl Route {
 
     #[inline]
     pub fn render(&mut self) {
+        // If sugarloaf does have pending updates to process then
+        // should abort current render
         if self.sugarloaf.has_pending_updates() {
             self.resize_all_contexts();
+            return;
         };
 
         // let start = std::time::Instant::now();
