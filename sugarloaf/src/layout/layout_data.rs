@@ -93,19 +93,17 @@ impl ClusterData {
             f32::from_bits(self.glyphs)
         } else if self.is_empty() {
             0.
-        } else {
-            if let Some(glyph) = glyphs.get(self.glyphs as usize) {
-                if glyph.is_simple() {
-                    glyph.simple_data().1
-                } else {
-                    detail_glyphs
-                        .get(glyph.detail_index())
-                        .map(|x| x.advance)
-                        .unwrap_or(0.)
-                }
+        } else if let Some(glyph) = glyphs.get(self.glyphs as usize) {
+            if glyph.is_simple() {
+                glyph.simple_data().1
             } else {
-                0.
+                detail_glyphs
+                    .get(glyph.detail_index())
+                    .map(|x| x.advance)
+                    .unwrap_or(0.)
             }
+        } else {
+            0.
         }
     }
 

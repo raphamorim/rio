@@ -81,15 +81,11 @@ impl Batch {
         }
         let has_image = image.is_some();
         let has_mask = mask.is_some();
-        if has_image {
-            if self.image.is_some() && self.image != image {
-                return false;
-            }
+        if has_image && self.image.is_some() && self.image != image {
+            return false;
         }
-        if has_mask {
-            if self.mask.is_some() && self.mask != mask {
-                return false;
-            }
+        if has_mask && self.mask.is_some() && self.mask != mask {
+            return false;
         }
         self.subpix = subpix;
         let flags = match (has_image, has_mask) {
