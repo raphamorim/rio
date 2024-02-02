@@ -473,7 +473,6 @@ impl Sugarloaf {
             }
         }
         self.content.add_char('\n');
-        self.current_row += 1;
     }
 
     #[inline]
