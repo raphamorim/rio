@@ -678,7 +678,7 @@ impl Node {
                 return Some(2);
             }
         }
-        return None;
+        None
     }
 
     // fn previous_text_location(&self, layout: &Paragraph) -> (FragmentId, usize) {

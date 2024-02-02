@@ -107,19 +107,13 @@ impl FontContext {
         // fallback fonts.
         if cluster.info().is_emoji() {
             if let Some(entry) = self.groups.emoji(&self.fonts, attrs) {
-                match entry.map_cluster(
-                    &mut self.fonts,
-                    cluster,
-                    synthesis,
-                    best.is_none(),
-                ) {
-                    Some((font, status)) => {
-                        if status == Status::Complete {
-                            return Some(font);
-                        }
-                        best = Some(font);
+                if let Some((font, status)) =
+                    entry.map_cluster(&mut self.fonts, cluster, synthesis, best.is_none())
+                {
+                    if status == Status::Complete {
+                        return Some(font);
                     }
-                    None => {}
+                    best = Some(font);
                 }
             }
         }
@@ -203,19 +197,16 @@ impl FontCache {
             }
         };
         let epoch = self.epoch;
-        match self.sources.get_mut(&source_id) {
-            Some(data) => {
-                return data.as_mut().map(|d| {
-                    d.1 = epoch;
-                    Font {
-                        data: d.0.clone(),
-                        offset,
-                        attributes,
-                        key,
-                    }
-                })
-            }
-            _ => {}
+        if let Some(data) = self.sources.get_mut(&source_id) {
+            return data.as_mut().map(|d| {
+                d.1 = epoch;
+                Font {
+                    data: d.0.clone(),
+                    offset,
+                    attributes,
+                    key,
+                }
+            });
         }
         let source = self.index.base.sources.get(source_id.to_usize())?;
         match source.get() {
@@ -325,30 +316,27 @@ impl GroupCache {
         use std::collections::hash_map::Entry;
         let key = (key, attrs);
         // Fast path for a descriptor we've already seen.
-        match self.key_map.get_mut(&key) {
-            Some(item) => {
-                item.epoch = fonts.epoch;
-                match self.font_map.entry(item.id) {
-                    Entry::Occupied(..) => {}
-                    Entry::Vacant(e) => {
-                        let start = self.fonts.len();
-                        self.fonts.extend(
-                            item.data
-                                .get()
-                                .iter()
-                                .map(|&sel| (sel.0, sel.1, attrs).into()),
-                        );
-                        let end = self.fonts.len();
-                        e.insert(CachedFontList {
-                            attributes: attrs,
-                            start,
-                            end,
-                        });
-                    }
+        if let Some(item) = self.key_map.get_mut(&key) {
+            item.epoch = fonts.epoch;
+            match self.font_map.entry(item.id) {
+                Entry::Occupied(..) => {}
+                Entry::Vacant(e) => {
+                    let start = self.fonts.len();
+                    self.fonts.extend(
+                        item.data
+                            .get()
+                            .iter()
+                            .map(|&sel| (sel.0, sel.1, attrs).into()),
+                    );
+                    let end = self.fonts.len();
+                    e.insert(CachedFontList {
+                        attributes: attrs,
+                        start,
+                        end,
+                    });
                 }
-                return item.id;
             }
-            _ => {}
+            return item.id;
         }
         // Parse the descriptor and collect the font identifiers.
         self.tmp.clear();
@@ -439,13 +427,10 @@ impl GroupCache {
     fn fill_fallbacks(&mut self, fonts: &FontCache) {
         self.state.fallbacks.clear();
         self.state.fallbacks_ready = true;
-        match self.state.fallback {
-            Some((script, cjk)) => {
-                self.state
-                    .fallbacks
-                    .extend_from_slice(fonts.index.fallbacks(script, cjk));
-            }
-            _ => {}
+        if let Some((script, cjk)) = self.state.fallback {
+            self.state
+                .fallbacks
+                .extend_from_slice(fonts.index.fallbacks(script, cjk));
         }
     }
 
@@ -537,7 +522,7 @@ impl GroupData {
     fn get(&self) -> &[(FontId, Attributes)] {
         match self {
             Self::Inline(len, ids) => &ids[..*len as usize],
-            Self::Heap(vec) => &vec,
+            Self::Heap(vec) => vec,
         }
     }
 }
