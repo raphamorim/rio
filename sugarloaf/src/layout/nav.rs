@@ -1,3 +1,11 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// Nav.rs was originally retired from dfrg/swash_demo licensed under MIT
+// https://github.com/dfrg/swash_demo/blob/master/LICENSE
+
 //! Support for navigating a layout.
 
 use super::layout::{make_range, Line};

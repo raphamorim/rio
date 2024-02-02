@@ -1,3 +1,11 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// line_breaker.rs was originally retired from dfrg/swash_demo licensed under MIT
+// https://github.com/dfrg/swash_demo/blob/master/LICENSE
+
 use super::layout::*;
 use super::layout_data::*;
 

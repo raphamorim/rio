@@ -1,3 +1,14 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
+// https://github.com/dfrg/swash_demo/blob/master/LICENSE
+//
+// This file had updates to support color, underline_color, background_color
+// and other functionalities
+
 use super::span_style::*;
 use super::{
     font::internal::{FontContext, FontGroupId},

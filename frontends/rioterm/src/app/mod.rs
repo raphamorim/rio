@@ -461,10 +461,6 @@ impl EventHandler for Router {
                     .sugarloaf
                     .resize(w.try_into().unwrap(), h.try_into().unwrap());
             }
-            println!(
-                "columns {:?} lines {:?}",
-                current.sugarloaf.layout.columns, current.sugarloaf.layout.lines
-            );
             current.resize_all_contexts();
         }
     }
