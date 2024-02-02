@@ -314,7 +314,7 @@ impl<'a> BreakLines<'a> {
             //     }
             // }
             for run in self.lines.runs[make_range(line.runs)].iter() {
-                let r = Run::new(self.layout, &run);
+                let r = Run::new(self.layout, run);
                 let rtl = run.level & 1 != 0;
                 let mut clusters = r.visual_clusters();
                 let mut pos = 0;

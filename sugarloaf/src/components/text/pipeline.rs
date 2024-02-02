@@ -163,7 +163,7 @@ impl<Depth> Pipeline<Depth> {
             self.supported_instances = instances.len();
         }
 
-        let instances_bytes = bytemuck::cast_slice(&instances);
+        let instances_bytes = bytemuck::cast_slice(instances);
 
         if !instances_bytes.is_empty() {
             let instances_buffer =

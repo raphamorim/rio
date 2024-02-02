@@ -22,8 +22,8 @@ enum Inner {
 impl Inner {
     fn data(&self) -> &[u8] {
         match self {
-            Self::Mapped(mmap) => &*mmap,
-            Self::Memory(vec) => &vec,
+            Self::Mapped(mmap) => mmap,
+            Self::Memory(vec) => vec,
         }
     }
 }

@@ -893,7 +893,7 @@ impl Sugarloaf {
         if self.level.is_advanced() {
             if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
                 &mut self.ctx,
-                &self.content.build_ref(),
+                self.content.build_ref(),
                 &self.layout,
             ) {
                 let mut has_pending_updates = false;

@@ -437,7 +437,7 @@ impl RichTextBrush {
             });
         }
 
-        let vertices_bytes: &[u8] = bytemuck::cast_slice(&vertices);
+        let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
         if !vertices_bytes.is_empty() {
             // self.vertices_buffer =
             // let vertices_buffer =
@@ -563,7 +563,7 @@ impl RichTextBrush {
         if self.first_run && mask_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(color_texture_updated.unwrap_or_else(|| &TextureId(0)))
+                .get(color_texture_updated.unwrap_or(&TextureId(0)))
             {
                 self.mask_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -572,7 +572,7 @@ impl RichTextBrush {
         if self.first_run && color_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(mask_texture_updated.unwrap_or_else(|| &TextureId(0)))
+                .get(mask_texture_updated.unwrap_or(&TextureId(0)))
             {
                 self.color_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -694,7 +694,7 @@ impl RichTextBrush {
                                 aspect: wgpu::TextureAspect::All,
                             },
                             // The actual pixel data
-                            &data,
+                            data,
                             // The layout of the texture
                             wgpu::ImageDataLayout {
                                 offset: 0,
@@ -734,7 +734,7 @@ impl RichTextBrush {
                         ctx.queue.write_texture(
                             // Tells wgpu where to copy the pixel data
                             wgpu::ImageCopyTexture {
-                                texture: &texture,
+                                texture,
                                 mip_level: 0,
                                 origin: wgpu::Origin3d {
                                     x: u32::from(x),
@@ -744,7 +744,7 @@ impl RichTextBrush {
                                 aspect: wgpu::TextureAspect::All,
                             },
                             // The actual pixel data
-                            &data,
+                            data,
                             // The layout of the texture
                             wgpu::ImageDataLayout {
                                 offset: 0,

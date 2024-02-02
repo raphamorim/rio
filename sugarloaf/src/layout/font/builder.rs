@@ -213,7 +213,7 @@ impl ScannerSink for Inner {
     fn add_font(&mut self, font: &FontInfo) {
         self.lowercase_name.clear();
         self.lowercase_name
-            .extend(font.name.chars().map(|c| c.to_lowercase()).flatten());
+            .extend(font.name.chars().flat_map(|c| c.to_lowercase()));
         let index = &mut self.index;
         let family = if let Some(family_id) =
             index.base.family_map.get(self.lowercase_name.as_str())
@@ -245,7 +245,7 @@ impl ScannerSink for Inner {
             index.base.sources.push(SourceData {
                 id: self.source,
                 kind: SourceKind::File(FileData {
-                    path: path2.into(),
+                    path: path2,
                     mmap: self.mmap,
                     timestamp: self.timestamp,
                     status: RwLock::new(FileDataStatus::Empty),
@@ -336,7 +336,7 @@ impl Scanner {
         let size = metadata.len();
         let data = unsafe { memmap2::Mmap::map(&file).ok()? };
         sink.enter_file(path.as_ref().into(), timestamp, size);
-        self.scan_data(&*data, all_names, |f| sink.add_font(f))
+        self.scan_data(&data, all_names, |f| sink.add_font(f))
     }
 
     pub fn scan_data(
@@ -371,7 +371,7 @@ impl Scanner {
                 let path = entry.path();
                 if path.is_file() {
                     let mut is_dfont = false;
-                    match path.extension().map(|e| e.to_str()).flatten() {
+                    match path.extension().and_then(|e| e.to_str()) {
                         Some("dfont") => is_dfont = true,
                         Some(ext) => {
                             let ext = ext.as_bytes();
@@ -395,7 +395,7 @@ impl Scanner {
                             if let Ok(timestamp) = metadata.modified() {
                                 if let Ok(data) = unsafe { memmap2::Mmap::map(&file) } {
                                     sink.enter_file(path, timestamp, metadata.len());
-                                    self.scan_data(&*data, all_names, |f| {
+                                    self.scan_data(&data, all_names, |f| {
                                         sink.add_font(f)
                                     });
                                 }
@@ -468,10 +468,7 @@ impl Scanner {
         self.font.offset = font.offset;
         let mut count = 0;
         if all_names {
-            for name in strings
-                .clone()
-                .filter(|name| name.id() == nid && name.is_unicode())
-            {
+            for name in strings.filter(|name| name.id() == nid && name.is_unicode()) {
                 if count >= self.font.all_names.len() {
                     self.font.all_names.push(String::default());
                 }
