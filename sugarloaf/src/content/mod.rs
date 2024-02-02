@@ -1,3 +1,11 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// content.rs was originally retired from dfrg/swash_demo licensed under MIT
+// https://github.com/dfrg/swash_demo/blob/master/LICENSE
+
 use crate::layout::*;
 use core::borrow::Borrow;
 use core::ops::Range;
@@ -16,12 +24,9 @@ impl Content {
     }
 
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
-        // let start = std::time::Instant::now();
         for root in &self.roots {
             self.layout_span(*root, lcx);
         }
-        // let duration = start.elapsed();
-        // println!("Time elapsed in content.layout() is: {:?}", duration);
     }
 
     pub fn get_selection_into(&self, range: Range<usize>, buf: &mut String) {

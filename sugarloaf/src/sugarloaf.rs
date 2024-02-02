@@ -889,7 +889,7 @@ impl Sugarloaf {
     }
 
     fn prepare_render(&mut self) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
             &mut self.ctx,
             &self.content.build_ref(),
@@ -899,7 +899,7 @@ impl Sugarloaf {
             if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
                 self.layout.scaled_sugarheight = sugarheight;
                 self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
-                println!("changed sugarheight... {}", sugarheight);
+                log::info!("prepare_render: changed sugarheight... {}", sugarheight);
                 has_pending_updates = true;
             }
 
@@ -907,7 +907,7 @@ impl Sugarloaf {
                 self.layout.scaled_sugarwidth = sugarwidth;
                 self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
                 self.layout.update_columns_per_font_width();
-                println!("changed sugarwidth... {}", sugarwidth);
+                log::info!("prepare_render: changed sugarwidth... {}", sugarwidth);
                 has_pending_updates = true;
             }
 
@@ -917,11 +917,11 @@ impl Sugarloaf {
             }
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in rich_text_brush.prepare() is: {:?}",
+        //     duration
+        // );
     }
 
     #[inline]
@@ -978,16 +978,10 @@ impl Sugarloaf {
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                let start = std::time::Instant::now();
                 if self.level.is_advanced() {
                     self.rich_text_brush
                         .render(&mut self.ctx, &mut encoder, view);
                 }
-                let duration = start.elapsed();
-                println!(
-                    "Time elapsed in rich_text_brush.render() is: {:?}",
-                    duration
-                );
 
                 if !self.graphic_rects.is_empty() {
                     for entry_render in
