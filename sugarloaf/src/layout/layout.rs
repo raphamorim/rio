@@ -242,7 +242,7 @@ impl Paragraph {
     }
 
     pub(super) fn apply_spacing(&mut self, spans: &[SpanData]) {
-        if spans.len() == 0 {
+        if spans.is_empty() {
             return;
         }
         for run in &mut self.data.runs {
