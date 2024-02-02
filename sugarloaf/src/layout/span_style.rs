@@ -1,3 +1,14 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// span_style.rs suffered alterations but was originally retired from dfrg/swash_demo
+// which is licensed under MIT https://github.com/dfrg/swash_demo/blob/master/LICENSE
+//
+// This file however suffered updates made by Raphael Amorim to support
+// underline_color, background_color, text color and other functionalities
+
 pub use super::font::FamilyList;
 use crate::core::SugarCursor;
 pub use swash::text::Language;
