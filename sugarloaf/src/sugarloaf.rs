@@ -504,8 +504,8 @@ impl Sugarloaf {
                 && stack[i].content == stack[i + 1].content
                 && stack[i].foreground_color == stack[i + 1].foreground_color
                 && stack[i].background_color == stack[i + 1].background_color
-                && stack[i].decoration.is_none()
-                && stack[i + 1].decoration.is_none()
+                && stack[i].custom_decoration.is_none()
+                && stack[i + 1].custom_decoration.is_none()
                 && stack[i].media.is_none()
             {
                 repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
