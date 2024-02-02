@@ -101,8 +101,8 @@ pub struct SugarloafWindow {
 
 #[derive(PartialEq, Default)]
 pub enum SugarloafRendererLevel {
-    #[default]
     Basic,
+    #[default]
     Advanced,
 }
 

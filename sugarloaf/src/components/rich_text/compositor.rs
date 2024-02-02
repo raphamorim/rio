@@ -208,13 +208,11 @@ impl Compositor {
                         }
                     }
 
-                    if underline {
-                        if entry.top - underline_offset < entry.height as i32 {
-                            if let Some(mut desc_ink) = entry.desc.range() {
-                                desc_ink.0 += gx;
-                                desc_ink.1 += gx;
-                                self.intercepts.push(desc_ink);
-                            }
+                    if underline && entry.top - underline_offset < entry.height as i32 {
+                        if let Some(mut desc_ink) = entry.desc.range() {
+                            desc_ink.0 += gx;
+                            desc_ink.1 += gx;
+                            self.intercepts.push(desc_ink);
                         }
                     }
                 }
