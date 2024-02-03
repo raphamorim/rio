@@ -905,7 +905,7 @@ impl Sugarloaf {
                 &mut self.ctx,
                 self.content.build_ref(),
                 &self.layout,
-                true
+                has_content_updates
             ) {
                 let mut has_pending_updates = false;
                 if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
