@@ -1,10 +1,10 @@
-use std::ops::Index;
 use crate::components::rect::Rect;
 use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
+use crate::sugarloaf::constants::{create_sugar_line, LINE_MAX_CHARACTERS};
 use crate::sugarloaf::graphics::SugarGraphic;
 use serde::Deserialize;
-use std::mem::MaybeUninit;
+use std::ops::Index;
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Sugar {
@@ -276,8 +276,6 @@ pub struct ImageProperties {
     pub y: f32,
 }
 
-const LINE_MAX_CHARACTERS: usize = 400;
-
 /// Contains a line representation that is hashable and comparable
 #[derive(Debug, Copy, Clone)]
 pub struct SugarLine {
@@ -286,6 +284,7 @@ pub struct SugarLine {
     // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
     inner: [Sugar; LINE_MAX_CHARACTERS],
     pub len: usize,
+    first_non_default: usize,
     last_non_default: usize,
     default_sugar: Sugar,
 }
@@ -293,9 +292,16 @@ pub struct SugarLine {
 impl PartialEq for SugarLine {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        if self.len != other.len {
+        if self.len != other.len
+            || self.first_non_default != self.first_non_default
+            || self.last_non_default != self.last_non_default
+        {
             return false;
         } else {
+            if self.is_empty() && other.is_empty() {
+                return true;
+            }
+
             for i in 0..self.len {
                 if self.inner[i] != other.inner[i] {
                     return false;
@@ -309,22 +315,11 @@ impl PartialEq for SugarLine {
 
 impl Default for SugarLine {
     fn default() -> Self {
-        let inner = {
-            // Create an array of uninitialized values.
-            let mut array: [MaybeUninit<Sugar>; LINE_MAX_CHARACTERS] =
-                unsafe { MaybeUninit::uninit().assume_init() };
-
-            for element in array.iter_mut() {
-                *element = MaybeUninit::new(Sugar::default());
-            }
-
-            unsafe { std::mem::transmute::<_, [Sugar; LINE_MAX_CHARACTERS]>(array) }
-        };
-
         Self {
             // hash: 00000000000000,
             last_non_default: 0,
-            inner,
+            first_non_default: 0,
+            inner: create_sugar_line(),
             default_sugar: Sugar::default(),
             len: 0,
         }
@@ -336,10 +331,13 @@ impl SugarLine {
     pub fn insert(&mut self, sugar: Sugar) {
         self.inner[self.len] = sugar;
         if sugar != self.default_sugar {
-            self.last_non_default = self.len;
+            if self.first_non_default == 0 {
+                self.first_non_default = self.len;
+                self.last_non_default = self.len;
+            } else {
+                self.last_non_default = self.len;
+            }
         }
-
-        self.compute_hash();
         self.len += 1;
     }
 
@@ -349,13 +347,13 @@ impl SugarLine {
         self.len += 1;
     }
 
-    #[inline]
-    fn compute_hash(&mut self) {
-        // 00000000000000
-        // 00000000000000 -> first non-default apparison position
-        // 00000000000000 -> last non-default apparison position
-        // 00000000000000 -> 
-    }
+    // #[inline]
+    // fn compute_hash(&mut self) {
+    // 00000000000000
+    // 00000000000000 -> first non-default apparison position
+    // 00000000000000 -> last non-default apparison position
+    // 00000000000000 ->
+    // }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -397,10 +395,22 @@ pub mod test {
     fn test_sugarline_from_vector() {
         let mut line_a = SugarLine::default();
         let vector = vec![
-            Sugar { content: 't', ..Sugar::default() },
-            Sugar { content: 'e', ..Sugar::default() },
-            Sugar { content: 'r', ..Sugar::default() },
-            Sugar { content: 'm', ..Sugar::default() },
+            Sugar {
+                content: 't',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'e',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'r',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'm',
+                ..Sugar::default()
+            },
         ];
 
         line_a.from_vec(&vector);
