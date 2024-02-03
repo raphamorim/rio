@@ -1,7 +1,7 @@
 extern crate tokio;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::{layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarStyle};
+use sugarloaf::{layout::SugarloafLayout, SugarLine, Sugar, SugarCustomDecoration, SugarStyle};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -89,26 +89,22 @@ async fn main() {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
                 ..Sugar::default()
             },
             Sugar {
@@ -127,25 +123,22 @@ async fn main() {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
+                },
                 media: None,
                 ..Sugar::default()
             },
@@ -310,7 +303,6 @@ async fn main() {
                 content: '✔',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
                 custom_decoration: Some(underline),
                 ..Sugar::default()
             },
@@ -393,9 +385,18 @@ async fn main() {
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.stack(sugar);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(special);
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&sugar);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&rio);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&special);
+                    sugarloaf.stack(sugarline);
+
                     sugarloaf.render();
                 }
                 _ => (),

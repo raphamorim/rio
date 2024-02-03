@@ -1,7 +1,6 @@
 extern crate tokio;
 
-use sugarloaf::{layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarStyle};
-
+use sugarloaf::{layout::SugarloafLayout, SugarLine, Sugar, SugarCustomDecoration, SugarStyle};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
@@ -204,121 +203,121 @@ async fn main() {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'c',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.5, 0.5, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'o',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
+                },
                 ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
+                },
                 ..Sugar::default()
             },
         ];
@@ -485,7 +484,6 @@ async fn main() {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
                 ..Sugar::default()
             },
             Sugar {
@@ -524,11 +522,26 @@ async fn main() {
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.stack(sugar);
-                    sugarloaf.stack(italic_and_bold);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(strike);
-                    sugarloaf.stack(cursors);
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&sugar);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&italic_and_bold);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&rio);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&strike);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&cursors);
+                    sugarloaf.stack(sugarline);
+
                     sugarloaf.render();
                 }
                 _ => (),

@@ -1,3 +1,4 @@
+use std::ops::Index;
 use crate::components::rect::Rect;
 use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
@@ -10,11 +11,21 @@ pub struct Sugar {
     pub content: char,
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
-    pub style: Option<SugarStyle>,
-    pub decoration: Option<SugarDecoration>,
+    pub style: SugarStyle,
+    pub decoration: SugarDecoration,
     pub cursor: Option<SugarCursor>,
     pub custom_decoration: Option<SugarCustomDecoration>,
     pub media: Option<SugarGraphic>,
+}
+
+impl PartialEq for Sugar {
+    fn eq(&self, other: &Self) -> bool {
+        self.content == other.content
+            && self.foreground_color == other.foreground_color
+            && self.background_color == other.background_color
+            && self.style == other.style
+            && self.decoration == other.decoration
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -30,10 +41,12 @@ pub struct SugarCursor {
     pub style: SugarCursorStyle,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, PartialEq, Default, Clone)]
 pub enum SugarDecoration {
     Underline,
     Strikethrough,
+    #[default]
+    Disabled,
 }
 
 #[derive(Debug)]
@@ -226,7 +239,7 @@ impl RepeatedSugar {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, PartialEq, Default, Copy, Clone)]
 pub struct SugarStyle {
     pub is_italic: bool,
     pub is_bold: bool,
@@ -241,8 +254,6 @@ pub struct SugarCustomDecoration {
     pub size: (f32, f32),
     pub color: [f32; 4],
 }
-
-pub type SugarStack = Vec<Sugar>;
 
 #[derive(Copy, Default, Debug, Clone)]
 pub struct SugarloafStyle {
@@ -270,16 +281,29 @@ const LINE_MAX_CHARACTERS: usize = 400;
 /// Contains a line representation that is hashable and comparable
 #[derive(Debug, Copy, Clone)]
 pub struct SugarLine {
-    hash: u64,
+    // hash: u64,
     // Sized arrays can take up to half of time to execute
     // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
     inner: [Sugar; LINE_MAX_CHARACTERS],
     pub len: usize,
+    last_non_default: usize,
+    default_sugar: Sugar,
 }
 
 impl PartialEq for SugarLine {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash && self.len == other.len
+        if self.len != other.len {
+            return false;
+        } else {
+            for i in 0..self.len {
+                if self.inner[i] != other.inner[i] {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 }
 
@@ -298,8 +322,10 @@ impl Default for SugarLine {
         };
 
         Self {
-            hash: 0,
+            // hash: 00000000000000,
+            last_non_default: 0,
             inner,
+            default_sugar: Sugar::default(),
             len: 0,
         }
     }
@@ -309,12 +335,47 @@ impl SugarLine {
     #[inline]
     pub fn insert(&mut self, sugar: Sugar) {
         self.inner[self.len] = sugar;
+        if sugar != self.default_sugar {
+            self.last_non_default = self.len;
+        }
+
+        self.compute_hash();
         self.len += 1;
     }
 
     #[inline]
-    pub fn is_empty_line() -> bool {
-        false
+    pub fn insert_empty(&mut self) {
+        self.inner[self.len] = self.default_sugar;
+        self.len += 1;
+    }
+
+    #[inline]
+    fn compute_hash(&mut self) {
+        // 00000000000000
+        // 00000000000000 -> first non-default apparison position
+        // 00000000000000 -> last non-default apparison position
+        // 00000000000000 -> 
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        // if first digits are zero
+        self.last_non_default == 0
+    }
+
+    #[inline]
+    pub fn from_vec(&mut self, vector: &Vec<Sugar>) {
+        for element in vector.into_iter() {
+            self.insert(*element)
+        }
+    }
+}
+
+impl Index<usize> for SugarLine {
+    type Output = Sugar;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.inner[index]
     }
 }
 
@@ -327,6 +388,127 @@ pub mod test {
         let line_a = SugarLine::default();
         let line_b = SugarLine::default();
 
+        assert!(line_a.is_empty());
+        assert!(line_b.is_empty());
         assert_eq!(line_a, line_b);
+    }
+
+    #[test]
+    fn test_sugarline_from_vector() {
+        let mut line_a = SugarLine::default();
+        let vector = vec![
+            Sugar { content: 't', ..Sugar::default() },
+            Sugar { content: 'e', ..Sugar::default() },
+            Sugar { content: 'r', ..Sugar::default() },
+            Sugar { content: 'm', ..Sugar::default() },
+        ];
+
+        line_a.from_vec(&vector);
+
+        assert!(!line_a.is_empty());
+        assert_eq!(line_a.len, 4);
+    }
+
+    #[test]
+    fn test_sugarline_empty_checks() {
+        let mut line_a = SugarLine::default();
+        line_a.insert_empty();
+        line_a.insert_empty();
+        line_a.insert_empty();
+
+        assert!(line_a.is_empty());
+
+        let mut line_a = SugarLine::default();
+        line_a.insert(Sugar::default());
+
+        assert!(line_a.is_empty());
+
+        let mut line_a = SugarLine::default();
+        line_a.insert(Sugar {
+            content: ' ',
+            ..Sugar::default()
+        });
+
+        assert!(line_a.is_empty());
+    }
+
+    #[test]
+    fn test_sugarline_comparisson_different_len() {
+        let mut line_a = SugarLine::default();
+        line_a.insert_empty();
+        line_a.insert(Sugar {
+            content: 'r',
+            ..Sugar::default()
+        });
+        let line_b = SugarLine::default();
+
+        assert!(!line_a.is_empty());
+        assert!(line_b.is_empty());
+        assert!(line_a != line_b);
+
+        let mut line_a = SugarLine::default();
+        line_a.insert(Sugar {
+            content: ' ',
+            ..Sugar::default()
+        });
+        line_a.insert(Sugar {
+            content: 'r',
+            ..Sugar::default()
+        });
+        let mut line_b = SugarLine::default();
+        line_b.insert(Sugar {
+            content: 'r',
+            ..Sugar::default()
+        });
+        line_b.insert(Sugar {
+            content: ' ',
+            ..Sugar::default()
+        });
+        line_b.insert(Sugar {
+            content: 'i',
+            ..Sugar::default()
+        });
+        line_b.insert(Sugar {
+            content: 'o',
+            ..Sugar::default()
+        });
+
+        assert!(!line_a.is_empty());
+        assert!(!line_b.is_empty());
+        assert!(line_a != line_b);
+    }
+
+    #[test]
+    fn test_sugarline_comparisson_different_match_with_same_len() {
+        let mut line_a = SugarLine::default();
+        line_a.insert(Sugar {
+            content: 'o',
+            ..Sugar::default()
+        });
+        line_a.insert(Sugar {
+            content: 'i',
+            ..Sugar::default()
+        });
+        line_a.insert(Sugar {
+            content: 'r',
+            ..Sugar::default()
+        });
+        let mut line_b = SugarLine::default();
+        line_b.insert(Sugar {
+            content: 'r',
+            ..Sugar::default()
+        });
+        line_b.insert(Sugar {
+            content: 'i',
+            ..Sugar::default()
+        });
+        line_b.insert(Sugar {
+            content: 'o',
+            ..Sugar::default()
+        });
+
+        assert!(!line_a.is_empty());
+        assert!(!line_b.is_empty());
+        assert!(line_a != line_b);
     }
 }
