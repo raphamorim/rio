@@ -1,7 +1,9 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize,
-    layout::SugarloafLayout, SugarLine, Sugar, SugarCustomDecoration};
+use sugarloaf::{
+    layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarLine, Sugarloaf,
+    SugarloafWindow, SugarloafWindowSize,
+};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
