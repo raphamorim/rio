@@ -26,7 +26,7 @@ use fnv::FnvHashMap;
 use graphics::SugarloafGraphics;
 use primitives::{
     ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
-    SugarDecoration, SugarStack, TextBuilder,
+    SugarDecoration, SugarLine, TextBuilder,
 };
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
@@ -292,7 +292,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn get_font_id(&mut self, sugar: &mut Sugar) -> CachedSugar {
+    pub fn get_font_id(&mut self, sugar: &Sugar) -> CachedSugar {
         if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
             return *cached_sugar;
         }
@@ -365,7 +365,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn stack(&mut self, mut stack: SugarStack) {
+    pub fn stack(&mut self, mut stack: SugarLine) {
         match self.level {
             SugarloafRendererLevel::Basic => {
                 self.stack_text(&mut stack);
@@ -377,8 +377,8 @@ impl Sugarloaf {
     }
 
     #[inline]
-    fn stack_rich_text(&mut self, stack: &mut SugarStack) {
-        let size = stack.len();
+    fn stack_rich_text(&mut self, stack: &mut SugarLine) {
+        let size = stack.len;
         let underline = &[
             SpanStyle::Underline(true),
             SpanStyle::UnderlineOffset(Some(-1.)),
@@ -412,22 +412,20 @@ impl Sugarloaf {
             // }
 
             let mut span_counter = 0;
-            if let Some(style) = &stack[i].style {
-                if style.is_bold_italic {
-                    self.content.enter_span(&[
-                        SpanStyle::Weight(crate::layout::Weight::BOLD),
-                        SpanStyle::Style(crate::layout::Style::Italic),
-                    ]);
-                    span_counter += 1;
-                } else if style.is_bold {
-                    self.content
-                        .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
-                    span_counter += 1;
-                } else if style.is_italic {
-                    self.content
-                        .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
-                    span_counter += 1;
-                }
+            if stack[i].style.is_bold_italic {
+                self.content.enter_span(&[
+                    SpanStyle::Weight(crate::layout::Weight::BOLD),
+                    SpanStyle::Style(crate::layout::Style::Italic),
+                ]);
+                span_counter += 1;
+            } else if stack[i].style.is_bold {
+                self.content
+                    .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
+                span_counter += 1;
+            } else if stack[i].style.is_italic {
+                self.content
+                    .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
+                span_counter += 1;
             }
 
             let mut has_underline_cursor = false;
@@ -451,19 +449,18 @@ impl Sugarloaf {
                 }
             }
 
-            if let Some(decoration) = &stack[i].decoration {
-                match decoration {
-                    SugarDecoration::Underline => {
-                        if !has_underline_cursor {
-                            self.content.enter_span(underline);
-                            span_counter += 1;
-                        }
-                    }
-                    SugarDecoration::Strikethrough => {
-                        self.content.enter_span(strikethrough);
+            match &stack[i].decoration {
+                SugarDecoration::Underline => {
+                    if !has_underline_cursor {
+                        self.content.enter_span(underline);
                         span_counter += 1;
                     }
                 }
+                SugarDecoration::Strikethrough => {
+                    self.content.enter_span(strikethrough);
+                    span_counter += 1;
+                }
+                _ => {}
             }
 
             self.content.enter_span(&[
@@ -483,7 +480,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    fn stack_text(&mut self, stack: &mut SugarStack) {
+    fn stack_text(&mut self, stack: &mut SugarLine) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.scaled_sugarheight;
@@ -499,13 +496,13 @@ impl Sugarloaf {
             self.text_y = self.layout.style.screen_position.1;
         }
 
-        let size = stack.len();
+        let size = stack.len;
         for i in 0..size {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
-            let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
+            let cached_sugar: CachedSugar = self.get_font_id(&stack[i]);
             if i < size - 1
                 && cached_sugar.char_width <= 1.
                 && stack[i].content == stack[i + 1].content
@@ -525,14 +522,12 @@ impl Sugarloaf {
             let mut font_id = cached_sugar.font_id;
             let mut is_text_font = false;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-                if let Some(style) = &stack[i].style {
-                    if style.is_bold_italic {
-                        font_id = FontId(FONT_ID_BOLD_ITALIC);
-                    } else if style.is_bold {
-                        font_id = FontId(FONT_ID_BOLD);
-                    } else if style.is_italic {
-                        font_id = FontId(FONT_ID_ITALIC);
-                    }
+                if stack[i].style.is_bold_italic {
+                    font_id = FontId(FONT_ID_BOLD_ITALIC);
+                } else if stack[i].style.is_bold {
+                    font_id = FontId(FONT_ID_BOLD);
+                } else if stack[i].style.is_italic {
+                    font_id = FontId(FONT_ID_ITALIC);
                 }
                 is_text_font = true;
             }

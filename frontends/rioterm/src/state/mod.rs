@@ -15,7 +15,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
     Sugar, SugarCursor, SugarCursorStyle, SugarCustomDecoration, SugarDecoration,
-    SugarStack, SugarStyle,
+    SugarLine, SugarStyle,
 };
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
@@ -185,34 +185,27 @@ impl State {
             square.c
         };
 
-        let mut style: Option<SugarStyle> = None;
-        let is_italic = flags.contains(Flags::ITALIC);
-        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
+        let style = SugarStyle {
+            is_italic: flags.contains(Flags::ITALIC),
+            is_bold_italic: flags.contains(Flags::BOLD_ITALIC),
+            is_bold: flags.contains(Flags::BOLD),
+        };
 
         if flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
         let mut custom_decoration = None;
-        let mut decoration = None;
+        let mut decoration = SugarDecoration::Disabled;
         if flags.contains(Flags::UNDERLINE) {
-            decoration = Some(SugarDecoration::Underline);
+            decoration = SugarDecoration::Underline;
             custom_decoration = Some(SugarCustomDecoration {
                 relative_position: (0.0, self.font_size - 1.),
                 size: (1.0, 0.005),
                 color: self.named_colors.foreground,
             });
         } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(SugarDecoration::Strikethrough);
+            decoration = SugarDecoration::Strikethrough;
             custom_decoration = Some(SugarCustomDecoration {
                 relative_position: (0.0, self.font_size / 2.),
                 size: (1.0, 0.025),
@@ -280,8 +273,9 @@ impl State {
         row: &Row<Square>,
         has_cursor: bool,
         line: pos::Line,
-    ) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
+    ) -> SugarLine {
+        let mut sugar_line = SugarLine::default();
+
         let columns: usize = row.len();
         for column in 0..columns {
             let square = &row.inner[column];
@@ -291,12 +285,12 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                stack.push(self.create_graphic_sugar(square));
+                sugar_line.insert(self.create_graphic_sugar(square));
                 continue;
             }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                stack.push(self.create_cursor(square));
+                sugar_line.insert(self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -305,7 +299,7 @@ impl State {
                     .contains(pos::Pos::new(line, pos::Column(column)))
             {
                 let sugar = self.create_sugar(square);
-                stack.push(self.set_hyperlink_in_sugar(sugar));
+                sugar_line.insert(self.set_hyperlink_in_sugar(sugar));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
@@ -327,15 +321,11 @@ impl State {
                         self.named_colors.selection_foreground
                     },
                     background_color: self.named_colors.selection_background,
-                    style: None,
-                    decoration: None,
-                    custom_decoration: None,
-                    media: None,
-                    cursor: None,
+                    ..Sugar::default()
                 };
-                stack.push(selected_sugar);
+                sugar_line.insert(selected_sugar);
             } else {
-                stack.push(self.create_sugar(square));
+                sugar_line.insert(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -344,7 +334,7 @@ impl State {
             }
         }
 
-        stack
+        sugar_line
     }
 
     #[inline]
@@ -498,8 +488,8 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
+    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarLine {
+        let mut sugar_line = SugarLine::default();
         let columns: usize = row.len();
 
         for column in 0..columns {
@@ -510,14 +500,14 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                stack.push(self.create_graphic_sugar(square));
+                sugar_line.insert(self.create_graphic_sugar(square));
                 continue;
             }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                stack.push(self.create_cursor(square));
+                sugar_line.insert(self.create_cursor(square));
             } else {
-                stack.push(self.create_sugar(square));
+                sugar_line.insert(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -526,28 +516,19 @@ impl State {
             }
         }
 
-        stack
+        sugar_line
     }
 
     #[inline]
     fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let foreground_color = self.compute_fg_color(square);
-        let background_color = self.compute_bg_color(square);
-
         let media = &square.graphics().unwrap()[0].texture;
         Sugar {
-            content: ' ',
-            foreground_color,
-            background_color,
-            style: None,
-            decoration: None,
-            custom_decoration: None,
             media: Some(SugarGraphic {
                 id: media.id,
                 width: media.width,
                 height: media.height,
             }),
-            cursor: None,
+            ..Sugar::default()
         }
     }
 
@@ -582,24 +563,14 @@ impl State {
             content: square.c,
             foreground_color: self.compute_fg_color(square),
             background_color: self.compute_bg_color(square),
-            style: None,
-            decoration: None,
-            custom_decoration: None,
-            media: None,
             cursor: self.create_sugar_cursor(),
+            style: SugarStyle {
+                is_italic: square.flags.contains(Flags::ITALIC),
+                is_bold_italic: square.flags.contains(Flags::BOLD_ITALIC),
+                is_bold: square.flags.contains(Flags::BOLD),
+            },
+            ..Sugar::default()
         };
-
-        let is_italic = square.flags.contains(Flags::ITALIC);
-        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = square.flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            sugar.style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
 
         if square.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
