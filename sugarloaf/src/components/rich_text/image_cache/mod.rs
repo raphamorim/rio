@@ -84,7 +84,7 @@ pub struct ImageLocation {
 }
 
 /// Data describing a request for caching an image.
-    #[derive(Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct AddImage<'a> {
     /// Format of the image data.
     pub format: PixelFormat,

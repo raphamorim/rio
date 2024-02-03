@@ -8,8 +8,10 @@ mod sugarloaf;
 pub mod tools;
 
 pub use crate::content::{Content, ContentBuilder};
-pub use crate::sugarloaf::{
-    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
-    SugarloafWithErrors, primitives::*,
+pub use crate::sugarloaf::graphics::{
+    ColorType, SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics,
 };
-pub use crate::sugarloaf::graphics::{ColorType, SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics};
+pub use crate::sugarloaf::{
+    primitives::*, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
+    SugarloafWindowSize, SugarloafWithErrors,
+};

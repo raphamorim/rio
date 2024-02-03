@@ -28,7 +28,7 @@ impl AtlasAllocator {
 
     /// Returns the height of the atlas.
     // pub fn height(&self) -> u16 {
-        // self.height
+    // self.height
     // }
 
     /// Allocates a rectangle in the atlas if possible. Returns the x and y
