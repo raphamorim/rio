@@ -61,7 +61,7 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    sugarloaf.set_background_image(&sugarloaf::core::ImageProperties {
+    sugarloaf.set_background_image(&sugarloaf::ImageProperties {
         path: String::from("resources/rio-colors.png"),
         width: 400.,
         height: 400.,

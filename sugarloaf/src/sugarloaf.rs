@@ -1,6 +1,6 @@
-mod tree;
-pub mod primitives;
 pub mod graphics;
+pub mod primitives;
+mod tree;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
@@ -9,10 +9,6 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
-use primitives::{
-    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
-    SugarDecoration, SugarStack, TextBuilder,
-};
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
@@ -22,12 +18,16 @@ use crate::font::{
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
 use crate::glyph::{FontId, GlyphCruncher};
-use graphics::SugarloafGraphics;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
 use fnv::FnvHashMap;
+use graphics::SugarloafGraphics;
+use primitives::{
+    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
+    SugarDecoration, SugarStack, TextBuilder,
+};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -910,7 +910,7 @@ impl Sugarloaf {
                 &mut self.ctx,
                 self.content.build_ref(),
                 &self.layout,
-                has_content_updates
+                has_content_updates,
             ) {
                 let mut has_pending_updates = false;
                 if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
