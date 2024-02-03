@@ -1,10 +1,11 @@
+use std::mem::MaybeUninit;
 use crate::components::rect::Rect;
 use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
-use crate::graphics::SugarGraphic;
+use crate::sugarloaf::graphics::SugarGraphic;
 use serde::Deserialize;
 
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Sugar {
     pub content: char,
     pub foreground_color: [f32; 4],
@@ -29,7 +30,7 @@ pub struct SugarCursor {
     pub style: SugarCursorStyle,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SugarDecoration {
     Underline,
     Strikethrough,
@@ -225,7 +226,7 @@ impl RepeatedSugar {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct SugarStyle {
     pub is_italic: bool,
     pub is_bold: bool,
@@ -236,41 +237,18 @@ pub struct SugarStyle {
 /// Sugar decoration
 /// color, size and position
 pub struct SugarCustomDecoration {
-    // pub position: SugarCustomDecorationPosition,
     pub relative_position: (f32, f32),
     pub size: (f32, f32),
     pub color: [f32; 4],
 }
 
-// pub type SugarDecorationPosition = (SugarDecorationPositionX, SugarDecorationPositionY);
-
-// #[derive(Debug, Copy, Clone)]
-// /// Sugar decoration position in x axis
-// pub enum SugarDecorationPositionX {
-//     Left(f32),
-//     Right(f32),
-// }
-
-// #[derive(Debug, Copy, Clone)]
-// /// Sugar decoration position in y axis
-// pub enum SugarDecorationPositionY {
-//     Top(f32),
-//     Middle(f32),
-//     Bottom(f32),
-// }
-
 pub type SugarStack = Vec<Sugar>;
-pub type SugarPile = Vec<SugarStack>;
 
 #[derive(Copy, Default, Debug, Clone)]
 pub struct SugarloafStyle {
     pub screen_position: (f32, f32),
     pub line_height: f32,
     pub text_scale: f32,
-}
-
-pub fn empty_sugar_pile() -> SugarPile {
-    vec![vec![]]
 }
 
 #[derive(Default, Clone, Deserialize, Debug, PartialEq)]
@@ -285,4 +263,52 @@ pub struct ImageProperties {
     pub x: f32,
     #[serde(default = "f32::default")]
     pub y: f32,
+}
+
+const LINE_MAX_CHARACTERS: usize = 400;
+
+/// Contains a line representation that is hashable and comparable
+#[derive(Debug, Copy, Clone)]
+pub struct SugarLine {
+    hash: u64,
+    // Sized arrays can take up to half of time to execute
+    // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
+    inner: [Sugar; LINE_MAX_CHARACTERS],
+    pub len: usize,
+}
+
+impl Default for SugarLine {
+    fn default() -> Self {
+        let iter = std::iter::repeat(Sugar::default()).take(LINE_MAX_CHARACTERS);
+
+        let inner = {
+            // Create an array of uninitialized values.
+            let mut array: [MaybeUninit<Sugar>; LINE_MAX_CHARACTERS] = unsafe { MaybeUninit::uninit().assume_init() };
+
+            for (i, element) in array.iter_mut().enumerate() {
+                *element = MaybeUninit::new(Sugar::default());
+            }
+
+            unsafe { std::mem::transmute::<_, [Sugar; LINE_MAX_CHARACTERS]>(array) }
+        };
+
+        Self {
+            hash: 0,
+            inner,
+            len: 0,
+        }
+    }
+}
+
+impl SugarLine {
+    #[inline]
+    pub fn insert(&mut self, sugar: Sugar) {
+        self.inner[self.len] = sugar;
+        self.len += 1;
+    }
+
+    #[inline]
+    pub fn is_empty_line() -> bool{
+        false
+    } 
 }

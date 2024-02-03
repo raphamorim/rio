@@ -4,7 +4,7 @@
 
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
-use crate::sugarloaf::graphics::{SugarGraphicData, SugarGraphicId};
+use crate::sugarloaf::{SugarGraphicData, SugarGraphicId};
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::mem;

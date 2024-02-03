@@ -27,7 +27,7 @@ use std::{fmt, mem};
 
 use crate::ansi::graphics::MAX_GRAPHIC_DIMENSIONS;
 use crate::config::colors::ColorRgb;
-use sugarloaf::graphics::{ColorType, SugarGraphicData, SugarGraphicId};
+use sugarloaf::{ColorType, SugarGraphicData, SugarGraphicId};
 
 use copa::Params;
 use log::trace;
