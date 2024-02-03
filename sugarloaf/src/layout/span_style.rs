@@ -10,7 +10,7 @@
 // underline_color, background_color, text color and other functionalities
 
 pub use super::font::FamilyList;
-use crate::core::SugarCursor;
+use crate::sugarloaf::primitives::SugarCursor;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};
 

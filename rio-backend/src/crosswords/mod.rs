@@ -57,7 +57,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use sugarloaf::graphics::SugarGraphicData;
+use sugarloaf::SugarGraphicData;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 

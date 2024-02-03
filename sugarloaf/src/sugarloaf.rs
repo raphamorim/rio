@@ -1,3 +1,7 @@
+mod tree;
+pub mod primitives;
+pub mod graphics;
+
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -5,7 +9,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
-use crate::core::{
+use primitives::{
     ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
     SugarDecoration, SugarStack, TextBuilder,
 };
@@ -18,7 +22,7 @@ use crate::font::{
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
 use crate::glyph::{FontId, GlyphCruncher};
-use crate::graphics::SugarloafGraphics;
+use graphics::SugarloafGraphics;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
@@ -40,7 +44,7 @@ pub struct CachedSugar {
 }
 
 struct GraphicRect {
-    id: crate::graphics::SugarGraphicId,
+    id: graphics::SugarGraphicId,
     #[allow(unused)]
     height: u16,
     width: u16,
@@ -62,6 +66,7 @@ pub struct Sugarloaf {
     rich_text_brush: RichTextBrush,
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
+    // state: tree::SugarloafTree,
     fonts: SugarloafFonts,
     level: SugarloafRendererLevel,
     text_y: f32,
@@ -881,7 +886,7 @@ impl Sugarloaf {
             self.previous_content = Some(self.content.clone());
             self.content = Content::builder();
             self.content.enter_span(&[
-                SpanStyle::family_list("fira code, Victor mono"),
+                SpanStyle::family_list("Fira code"),
                 SpanStyle::Size(self.layout.font_size),
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
@@ -892,7 +897,7 @@ impl Sugarloaf {
 
     #[inline]
     fn prepare_render(&mut self) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         if self.level.is_advanced() {
             let mut has_content_updates = true;
             if let Some(previous_content) = &self.previous_content {
@@ -932,11 +937,11 @@ impl Sugarloaf {
             }
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
+        //     duration
+        // );
     }
 
     #[inline]

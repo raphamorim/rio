@@ -341,57 +341,49 @@ impl RichTextBrush {
                     .builder(Direction::LeftToRight, None, ctx.scale);
             content.layout(&mut lb);
             self.paragraph.clear();
-            let start = std::time::Instant::now();
+            // let start = std::time::Instant::now();
             lb.build_into(&mut self.paragraph);
-            let duration = start.elapsed();
-            println!(
-                "has_content_updates: {has_content_updates:?} Time elapsed in rich_text_brush.prepare() build_into is: {:?}",
-                duration
-            );
-
-            // if self.first_run {
-            //     self.selection = Selection::from_point(&self.paragraph, 0., 0.);
-            // }
+            // let duration = start.elapsed();
+            // println!(
+            //     "has_content_updates: {has_content_updates:?} Time elapsed in rich_text_brush.prepare() build_into is: {:?}",
+            //     duration
+            // );
 
             self.first_run = false;
-            // self.needs_update = false;
         }
 
         let transform = orthographic_projection(ctx.size.width, ctx.size.height);
         let transform_has_changed = transform != self.current_transform;
         if has_content_updates || transform_has_changed {
-            let start = std::time::Instant::now();
+            // let start = std::time::Instant::now();
             self.paragraph
                 .break_lines()
                 .break_remaining(ctx.size.width as f32 - margin_x, self.align);
-            let duration = start.elapsed();
-            println!(
-                "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-                duration
-            );
+            // let duration = start.elapsed();
+            // println!(
+            //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
+            //     duration
+            // );
         }
 
-        // self.selection_changed = true;
-        // }
-
         // Render
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         self.comp.begin();
         let dimensions = draw_layout(&mut self.comp, &self.paragraph, margin_x, margin_y);
         self.dlist.clear();
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() self.comp.begin and draw_layout is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in rich_text_brush.prepare() self.comp.begin and draw_layout is: {:?}",
+        //     duration
+        // );
 
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         self.finish_composition(ctx);
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() finish_composition is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in rich_text_brush.prepare() finish_composition is: {:?}",
+        //     duration
+        // );
 
         Some(dimensions)
     }
