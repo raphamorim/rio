@@ -15,8 +15,8 @@ pub struct ImageCache {
 
 impl ImageCache {
     /// Creates a new image cache.
-    pub fn new(max_texture_size: u16) -> Self {
-        let max_texture_size = max_texture_size.min(4096).max(1024);
+    pub fn new(_max_texture_size: u16) -> Self {
+        // let max_texture_size = max_texture_size.min(4096).max(1024);
         Self {
             entries: Vec::new(),
             atlases: Vec::new(),
@@ -25,7 +25,7 @@ impl ImageCache {
             events: Vec::new(),
             free_entries: END_OF_LIST,
             free_images: END_OF_LIST,
-            max_texture_size,
+            max_texture_size: 4096,
         }
     }
 

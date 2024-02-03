@@ -150,7 +150,7 @@ impl RichTextBrush {
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
@@ -179,10 +179,12 @@ impl RichTextBrush {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            // mag_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Nearest,
+            // mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0f32,
+            lod_max_clamp: 0f32,
             ..Default::default()
         });
 
@@ -355,16 +357,19 @@ impl RichTextBrush {
             // self.needs_update = false;
         }
 
-        // if transform_has_changed {
-        let start = std::time::Instant::now();
-        self.paragraph
-            .break_lines()
-            .break_remaining(ctx.size.width as f32 - margin_x, self.align);
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-            duration
-        );
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        let transform_has_changed = transform != self.current_transform;
+        if has_content_updates || transform_has_changed {
+            let start = std::time::Instant::now();
+            self.paragraph
+                .break_lines()
+                .break_remaining(ctx.size.width as f32 - margin_x, self.align);
+            let duration = start.elapsed();
+            println!(
+                "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
+                duration
+            );
+        }
 
         // self.selection_changed = true;
         // }
