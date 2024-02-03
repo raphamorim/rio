@@ -1,10 +1,6 @@
 extern crate tokio;
 
-use sugarloaf::core::SugarStyle;
-use sugarloaf::{
-    core::{Sugar, SugarDecoration},
-    layout::SugarloafLayout,
-};
+use sugarloaf::{layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarStyle};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
@@ -72,149 +68,134 @@ async fn main() {
                 content: 'u',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.050),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: '!',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 86.),
                     size: (1.0, 0.025),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -228,8 +209,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 't',
@@ -240,8 +220,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
@@ -252,8 +231,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
@@ -264,8 +242,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
@@ -276,8 +253,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'c',
@@ -288,8 +264,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: false,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
@@ -300,8 +275,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: true,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'b',
@@ -312,8 +286,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: true,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'o',
@@ -324,8 +297,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: true,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
@@ -336,8 +308,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: true,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'd',
@@ -348,8 +319,7 @@ async fn main() {
                     is_bold_italic: false,
                     is_bold: true,
                 }),
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -358,61 +328,48 @@ async fn main() {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.92),
                     size: (1.0, 0.05),
                     color: [0.0, 0.0, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'u',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -421,89 +378,83 @@ async fn main() {
                 content: 's',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 85.),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'k',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.5),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
+                custom_decoration: Some(SugarCustomDecoration {
                     relative_position: (0.0, 0.85),
                     size: (1.0, 0.025),
                     color: [0.5, 0.5, 0.0, 1.0],
                 }),
+                ..Sugar::default()
             },
         ];
 
-        let block = Some(SugarDecoration {
+        let block = Some(SugarCustomDecoration {
             relative_position: (0.0, 0.0),
             size: (1.0, 1.0),
             color: [1.0, 0.4, 1.0, 1.0],
         });
 
-        let underline = Some(SugarDecoration {
+        let underline = Some(SugarCustomDecoration {
             relative_position: (0.0, 85.),
             size: (1.0, 0.05),
             color: [1.0, 0.4, 1.0, 1.0],
         });
 
-        let beam = Some(SugarDecoration {
+        let beam = Some(SugarCustomDecoration {
             relative_position: (0.0, 0.0),
             size: (0.1, 1.0),
             color: [1.0, 0.4, 1.0, 1.0],
@@ -514,41 +465,35 @@ async fn main() {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: block,
+                custom_decoration: block,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: underline,
+                custom_decoration: underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
                 style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: beam,
+                custom_decoration: beam,
+                ..Sugar::default()
             },
         ];
 

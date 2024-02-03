@@ -437,10 +437,7 @@ impl<'a> ParagraphBuilder<'a> {
         }
         layout.apply_spacing(&self.s.spans);
         let duration = start.elapsed();
-            println!(
-                "Time elapsed in shape is: {:?}",
-                duration
-            );
+        println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 

@@ -1,9 +1,9 @@
-use std::mem::MaybeUninit;
 use crate::components::rect::Rect;
 use crate::glyph::ab_glyph::PxScale;
 use crate::glyph::FontId;
 use crate::sugarloaf::graphics::SugarGraphic;
 use serde::Deserialize;
+use std::mem::MaybeUninit;
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Sugar {
@@ -277,15 +277,20 @@ pub struct SugarLine {
     pub len: usize,
 }
 
+impl PartialEq for SugarLine {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash && self.len == other.len
+    }
+}
+
 impl Default for SugarLine {
     fn default() -> Self {
-        let iter = std::iter::repeat(Sugar::default()).take(LINE_MAX_CHARACTERS);
-
         let inner = {
             // Create an array of uninitialized values.
-            let mut array: [MaybeUninit<Sugar>; LINE_MAX_CHARACTERS] = unsafe { MaybeUninit::uninit().assume_init() };
+            let mut array: [MaybeUninit<Sugar>; LINE_MAX_CHARACTERS] =
+                unsafe { MaybeUninit::uninit().assume_init() };
 
-            for (i, element) in array.iter_mut().enumerate() {
+            for element in array.iter_mut() {
                 *element = MaybeUninit::new(Sugar::default());
             }
 
@@ -308,7 +313,20 @@ impl SugarLine {
     }
 
     #[inline]
-    pub fn is_empty_line() -> bool{
+    pub fn is_empty_line() -> bool {
         false
-    } 
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    #[test]
+    fn test_sugarline_comparisson_exact_match() {
+        let line_a = SugarLine::default();
+        let line_b = SugarLine::default();
+
+        assert_eq!(line_a, line_b);
+    }
 }
