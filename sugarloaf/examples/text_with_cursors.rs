@@ -1,7 +1,9 @@
 extern crate tokio;
 
-use sugarloaf::{layout::SugarloafLayout, SugarLine, Sugar, SugarCustomDecoration, SugarStyle};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use sugarloaf::{
+    layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarLine, SugarStyle,
+};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
     dpi::LogicalSize,
