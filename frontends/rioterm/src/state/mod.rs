@@ -13,7 +13,7 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::core::{
+use rio_backend::sugarloaf::{
     Sugar, SugarCursor, SugarCursorStyle, SugarCustomDecoration, SugarDecoration,
     SugarStack, SugarStyle,
 };

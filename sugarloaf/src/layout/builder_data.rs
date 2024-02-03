@@ -14,7 +14,7 @@ use super::{
     font::internal::{FontContext, FontGroupId},
     SpanId, MAX_ID,
 };
-use crate::core::SugarCursor;
+use crate::sugarloaf::primitives::SugarCursor;
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
 use swash::{Setting, Stretch, Style, Weight};

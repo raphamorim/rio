@@ -9,7 +9,7 @@
 use super::Alignment;
 use super::Glyph;
 use super::{font::Font, SpanId};
-use crate::core::SugarCursor;
+use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.

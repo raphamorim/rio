@@ -15,7 +15,7 @@ pub use crate::components::rich_text::batch::{
 pub use crate::components::rich_text::image_cache::{
     AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
-use crate::core::SugarCursorStyle;
+use crate::sugarloaf::primitives::SugarCursorStyle;
 
 use crate::components::rich_text::batch::BatchManager;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};

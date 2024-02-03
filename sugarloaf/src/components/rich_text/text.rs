@@ -9,7 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::core::SugarCursor;
+use crate::sugarloaf::primitives::SugarCursor;
 use swash::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
