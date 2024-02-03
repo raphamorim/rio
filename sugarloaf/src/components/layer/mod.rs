@@ -185,7 +185,7 @@ impl LayerBrush {
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("iced_wgpu image shader"),
+            label: Some("layer image shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
                 "image.wgsl"
             ))),

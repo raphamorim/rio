@@ -6,7 +6,8 @@ pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use crate::layout::{Alignment, Direction, LayoutContext, Paragraph, Selection};
+use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
+// use crate::layout::Selection;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -49,8 +50,8 @@ pub struct RichTextBrush {
     current_transform: [f32; 16],
     comp: Compositor,
     dlist: DisplayList,
-    rich_text_layout: Paragraph,
-    rich_text_layout_context: LayoutContext,
+    paragraph: Paragraph,
+    layout_context: LayoutContext,
     bind_group_needs_update: bool,
     needs_update: bool,
     first_run: bool,
@@ -283,9 +284,9 @@ impl RichTextBrush {
             mapped_at_creation: false,
         });
 
-        let rich_text_layout = Paragraph::new();
+        let paragraph = Paragraph::new();
         let fonts = crate::layout::FontLibrary::default();
-        let rich_text_layout_context = LayoutContext::new(&fonts);
+        let layout_context = LayoutContext::new(&fonts);
 
         RichTextBrush {
             bind_group_layout,
@@ -295,15 +296,15 @@ impl RichTextBrush {
             mask_texture_view,
             sampler,
             textures: HashMap::default(),
-            comp: Compositor::new(2048),
+            comp: Compositor::new(4096),
             dlist,
-            rich_text_layout,
-            rich_text_layout_context,
+            paragraph,
+            layout_context,
             bind_group,
             transform,
             pipeline,
             vertex_buffer,
-            needs_update: false,
+            needs_update: true,
             first_run: true,
             bind_group_needs_update: true,
             // selection: Selection::default(),
@@ -321,6 +322,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         content: &crate::content::Content,
         layout: &crate::layout::SugarloafLayout,
+        has_content_updates: bool,
     ) -> Option<(f32, f32)> {
         // Used for quick testings
         // let content = build_simple_content();
@@ -329,27 +331,24 @@ impl RichTextBrush {
         let margin_x = layout.style.screen_position.0;
         let margin_y = layout.style.screen_position.1;
 
-        self.rich_text_layout = Paragraph::new();
-
-        // if self.first_run {
-        //     self.needs_update = true;
-        // }
-
-        self.needs_update = true;
-        // let w = ctx.size.width;
-        // let _h = ctx.size.height;
+        self.needs_update = has_content_updates;
         if self.needs_update {
-            let mut lb = self.rich_text_layout_context.builder(
-                Direction::LeftToRight,
-                None,
-                ctx.scale,
-            );
+            self.paragraph = Paragraph::default();
+            let mut lb =
+                self.layout_context
+                    .builder(Direction::LeftToRight, None, ctx.scale);
             content.layout(&mut lb);
-            self.rich_text_layout.clear();
-            lb.build_into(&mut self.rich_text_layout);
+            self.paragraph.clear();
+            let start = std::time::Instant::now();
+            lb.build_into(&mut self.paragraph);
+            let duration = start.elapsed();
+            println!(
+                "has_content_updates: {has_content_updates:?} Time elapsed in rich_text_brush.prepare() build_into is: {:?}",
+                duration
+            );
 
             // if self.first_run {
-            //     self.selection = Selection::from_point(&self.rich_text_layout, 0., 0.);
+            //     self.selection = Selection::from_point(&self.paragraph, 0., 0.);
             // }
 
             self.first_run = false;
@@ -357,49 +356,37 @@ impl RichTextBrush {
         }
 
         // if transform_has_changed {
-        self.rich_text_layout
+        let start = std::time::Instant::now();
+        self.paragraph
             .break_lines()
             .break_remaining(ctx.size.width as f32 - margin_x, self.align);
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
+            duration
+        );
+
         // self.selection_changed = true;
         // }
 
-        // let inserted = None;
-        // if let Some(offs) = inserted {
-        //     self.selection = Selection::from_offset(&self.rich_text_layout, offs);
-        // }
-        // inserted = None;
-
-        // if self.selection_changed {
-        //     self.selection_rects.clear();
-        //     self.selection.regions_with(&self.rich_text_layout, |r| {
-        //         self.selection_rects.push(r);
-        //     });
-        //     self.selection_changed = false;
-        // }
-
         // Render
+        let start = std::time::Instant::now();
         self.comp.begin();
-        let dimensions =
-            draw_layout(&mut self.comp, &self.rich_text_layout, margin_x, margin_y);
-
-        // for r in &self.selection_rects {
-        //     let rect = [r[0] + margin, r[1] + margin, r[2], r[3]];
-        //     self.comp
-        //         .draw_rect(rect, 600., &Color::new(38, 79, 120, 255).to_rgba_f32());
-        // }
-
-        // let (pt, ch, _rtl) = self.selection.cursor(&self.rich_text_layout);
-        // if ch != 0. {
-        //     let rect = [
-        //         pt[0].round() + margin,
-        //         pt[1].round() + margin,
-        //         1. * ctx.scale,
-        //         ch,
-        //     ];
-        //     self.comp.draw_rect(rect, 0.1, &[1.0, 1.0, 1.0, 1.0]);
-        // }
+        let dimensions = draw_layout(&mut self.comp, &self.paragraph, margin_x, margin_y);
         self.dlist.clear();
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() self.comp.begin and draw_layout is: {:?}",
+            duration
+        );
+
+        let start = std::time::Instant::now();
         self.finish_composition(ctx);
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() finish_composition is: {:?}",
+            duration
+        );
 
         Some(dimensions)
     }

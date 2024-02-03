@@ -17,7 +17,7 @@ use swash::{Setting, Stretch, Style, Weight};
 use std::borrow::Cow;
 
 /// Style that can be applied to a range of text.
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SpanStyle<'a> {
     /// Prioritized list of font families.
     FamilyList(FamilyList),
