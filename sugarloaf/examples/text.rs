@@ -1,7 +1,7 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::{layout::SugarloafLayout, Sugar, SugarCustomDecoration};
-use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, SugarLine, Sugar, SugarCustomDecoration};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
@@ -296,11 +296,31 @@ async fn main() {
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.stack(sugar);
-                    sugarloaf.stack(loaf);
-                    sugarloaf.stack(special_2);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(special);
+                    // SugarLine is not optimal to be recreated all time
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&sugar);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&loaf);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&loaf);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&special_2);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&rio);
+                    sugarloaf.stack(sugarline);
+                    sugarloaf.stack(sugarline);
+
+                    let mut sugarline = SugarLine::default();
+                    sugarline.from_vec(&special);
+                    sugarloaf.stack(sugarline);
                     sugarloaf.render();
                 }
                 _ => (),
