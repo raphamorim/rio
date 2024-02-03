@@ -57,7 +57,6 @@ pub struct Sugarloaf {
     pub layout: SugarloafLayout,
     pub graphics: SugarloafGraphics,
     text_brush: text::GlyphBrush<()>,
-    pub content: ContentBuilder,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
     rich_text_brush: RichTextBrush,
@@ -68,6 +67,8 @@ pub struct Sugarloaf {
     text_y: f32,
     current_row: u16,
     has_updates: bool,
+    pub content: ContentBuilder,
+    previous_content: Option<ContentBuilder>,
 }
 
 #[derive(Debug)]
@@ -194,6 +195,7 @@ impl Sugarloaf {
             sugar_cache: FnvHashMap::default(),
             graphics: SugarloafGraphics::new(),
             content,
+            previous_content: None,
             layer_brush,
             fonts,
             ctx,
@@ -876,6 +878,7 @@ impl Sugarloaf {
         self.current_row = 0;
 
         if self.level.is_advanced() {
+            self.previous_content = Some(self.content.clone());
             self.content = Content::builder();
             self.content.enter_span(&[
                 SpanStyle::family_list("fira code, Victor mono"),
@@ -889,12 +892,20 @@ impl Sugarloaf {
 
     #[inline]
     fn prepare_render(&mut self) {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         if self.level.is_advanced() {
+            let mut has_content_updates = true;
+            if let Some(previous_content) = &self.previous_content {
+                if &self.content == previous_content {
+                    has_content_updates = false;
+                }
+            }
+
             if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
                 &mut self.ctx,
                 self.content.build_ref(),
                 &self.layout,
+                true
             ) {
                 let mut has_pending_updates = false;
                 if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
@@ -921,11 +932,11 @@ impl Sugarloaf {
             }
         }
 
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() is: {:?}",
-        //     duration
-        // );
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
+            duration
+        );
     }
 
     #[inline]

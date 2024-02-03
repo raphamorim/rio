@@ -16,14 +16,14 @@ pub struct Sugar {
     pub media: Option<SugarGraphic>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SugarCursorStyle {
     Block,
     Caret,
     Underline,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct SugarCursor {
     pub color: [f32; 4],
     pub style: SugarCursorStyle,

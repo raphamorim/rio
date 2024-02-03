@@ -26,6 +26,7 @@ pub struct LayoutContext {
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
+    char_cluster: CharCluster,
 }
 
 impl LayoutContext {
@@ -36,6 +37,7 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
+            char_cluster: CharCluster::new(),
         }
     }
 
@@ -53,6 +55,7 @@ impl LayoutContext {
         ParagraphBuilder {
             fcx: &mut self.fcx,
             bidi: &mut self.bidi,
+            char_cluster: &mut self.char_cluster,
             needs_bidi: false,
             dir: direction,
             scale,
@@ -68,6 +71,7 @@ impl LayoutContext {
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
     bidi: &'a mut BidiResolver,
+    char_cluster: &'a mut CharCluster,
     needs_bidi: bool,
     dir: Direction,
     scale: f32,
@@ -420,18 +424,23 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn shape(&mut self, layout: &mut Paragraph) {
-        let mut cluster = CharCluster::new();
+        let start = std::time::Instant::now();
         for item in &self.s.items {
             shape_item(
                 &mut self.fcx,
                 &mut self.scx,
                 &self.s,
                 item,
-                &mut cluster,
+                &mut self.char_cluster,
                 layout,
             );
         }
         layout.apply_spacing(&self.s.spans);
+        let duration = start.elapsed();
+            println!(
+                "Time elapsed in shape is: {:?}",
+                duration
+            );
     }
 }
 
@@ -464,6 +473,7 @@ struct ShapeState<'a> {
     size: f32,
 }
 
+#[inline]
 fn shape_item(
     fcx: &mut FontContext,
     scx: &mut ShapeContext,
@@ -565,6 +575,7 @@ fn shape_item(
     Some(())
 }
 
+#[inline]
 fn shape_clusters<I>(
     fcx: &mut FontContext,
     scx: &mut ShapeContext,
@@ -596,7 +607,7 @@ where
         if !parser.next(cluster) {
             layout.push_run(
                 &state.state.spans,
-                state.font.clone().unwrap(),
+                state.font.to_owned().unwrap(),
                 state.size,
                 state.level,
                 shaper,
@@ -616,7 +627,7 @@ where
         if next_font != state.font || synth != state.synth {
             layout.push_run(
                 &state.state.spans,
-                state.font.clone().unwrap(),
+                state.font.to_owned().unwrap(),
                 state.size,
                 state.level,
                 shaper,

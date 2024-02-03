@@ -16,7 +16,7 @@ const IS_MACOS: bool = cfg!(target_os = "macos");
 const SOURCES: &[Source] = &[
     Source::ColorBitmap(StrikeWith::BestFit),
     Source::ColorOutline(0),
-    //Source::Bitmap(Strike::ExactSize),
+    // Source::Bitmap(StrikeWith::ExactSize),
     Source::Outline,
 ];
 

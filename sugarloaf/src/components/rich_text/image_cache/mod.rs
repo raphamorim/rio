@@ -3,7 +3,7 @@ mod cache;
 mod glyph;
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+// use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PixelFormat {
@@ -84,7 +84,7 @@ pub struct ImageLocation {
 }
 
 /// Data describing a request for caching an image.
-#[derive(Clone)]
+    #[derive(Clone, Copy)]
 pub struct AddImage<'a> {
     /// Format of the image data.
     pub format: PixelFormat,
@@ -107,21 +107,22 @@ impl<'a> AddImage<'a> {
 }
 
 /// Representations of image data for submission to a cache.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ImageData<'a> {
-    None,
+    // None,
     Borrowed(&'a [u8]),
-    Owned(Vec<u8>),
-    Shared(Arc<Vec<u8>>),
+    // Owned(Vec<u8>),
+    // Shared(Arc<Vec<u8>>),
 }
 
 impl<'a> ImageData<'a> {
     fn data(&'a self) -> Option<&'a [u8]> {
         Some(match self {
-            Self::None => return None,
-            Self::Borrowed(data) => *data,
-            Self::Owned(data) => &data,
-            Self::Shared(data) => &*data,
+            // Self::None => return None,
+            // Self::Borrowed(data) => *data,
+            Self::Borrowed(data) => data,
+            // Self::Owned(data) => data,
+            // Self::Shared(data) => &*data,
         })
     }
 }
@@ -151,9 +152,11 @@ pub enum TextureEvent<'a> {
 }
 
 /// Limit on number of atlases before image allocation fails.
-const MAX_ATLASES: u16 = 128;
+const MAX_ATLASES: u16 = 256;
+
 /// Limit on number of standalone images.
-const MAX_IMAGES: u16 = i16::MAX as u16;
+// const MAX_IMAGES: u16 = i16::MAX as u16;
+
 /// Limit on total number of images.
 const MAX_ENTRIES: u32 = 0x007FFFFF;
 

@@ -27,9 +27,9 @@ impl AtlasAllocator {
     }
 
     /// Returns the height of the atlas.
-    pub fn height(&self) -> u16 {
-        self.height
-    }
+    // pub fn height(&self) -> u16 {
+        // self.height
+    // }
 
     /// Allocates a rectangle in the atlas if possible. Returns the x and y
     /// coordinates of the allocated slot.
@@ -284,23 +284,23 @@ impl AtlasAllocator {
         None
     }
 
-    pub fn dump_lines(&self) {
-        for (i, line) in self.lines.iter().enumerate() {
-            print!("[{}]", i);
-            let low_bits = line.state & LOW_BITS;
-            if line.state & FRAGMENTED_BIT == 0 {
-                println!(" offset {}", low_bits);
-            } else {
-                let mut itr = low_bits;
-                while itr != !0 {
-                    let slot = self.slots[itr as usize];
-                    print!(" ({}..={})", slot.x, slot.x + slot.width);
-                    itr = slot.next;
-                }
-                println!("");
-            }
-        }
-    }
+    // pub fn dump_lines(&self) {
+    //     for (i, line) in self.lines.iter().enumerate() {
+    //         print!("[{}]", i);
+    //         let low_bits = line.state & LOW_BITS;
+    //         if line.state & FRAGMENTED_BIT == 0 {
+    //             println!(" offset {}", low_bits);
+    //         } else {
+    //             let mut itr = low_bits;
+    //             while itr != !0 {
+    //                 let slot = self.slots[itr as usize];
+    //                 print!(" ({}..={})", slot.x, slot.x + slot.width);
+    //                 itr = slot.next;
+    //             }
+    //             println!("");
+    //         }
+    //     }
+    // }
 }
 
 const FRAGMENTED_BIT: u32 = 0x80000000;
@@ -319,11 +319,11 @@ struct Line {
     state: u32,
 }
 
-impl Line {
-    fn is_empty(&self) -> bool {
-        self.state == 0
-    }
-}
+// impl Line {
+//     fn is_empty(&self) -> bool {
+//         self.state == 0
+//     }
+// }
 
 enum FreeSlot {
     Direct(u16),

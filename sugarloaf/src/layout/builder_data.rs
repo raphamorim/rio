@@ -41,7 +41,7 @@ pub struct FragmentData {
 }
 
 /// Data that describes an item.
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct ItemData {
     /// Script of the item.
     pub script: Script,

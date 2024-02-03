@@ -18,6 +18,12 @@ pub struct Content {
     pub roots: Vec<u32>,
 }
 
+impl PartialEq for Content {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text && self.spans == other.spans
+    }
+}
+
 impl Content {
     pub fn builder() -> ContentBuilder {
         ContentBuilder::default()
@@ -137,7 +143,7 @@ impl Content {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, PartialEq, Default)]
 pub struct Span {
     pub properties: Vec<SpanStyle<'static>>,
     pub elements: Vec<SpanElement>,
@@ -155,13 +161,13 @@ impl Span {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, PartialEq, Clone)]
 pub enum SpanElement {
     Fragment(u32),
     Span(u32),
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, PartialEq)]
 pub struct ContentBuilder {
     content: Content,
     spans: Vec<u32>,
