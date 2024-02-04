@@ -286,26 +286,28 @@ pub struct SugarLine {
     pub len: usize,
     first_non_default: usize,
     last_non_default: usize,
+    default_count: usize,
     default_sugar: Sugar,
 }
 
 impl PartialEq for SugarLine {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
+        if self.is_empty() && other.is_empty() {
+            return true;
+        }
+
         if self.len != other.len
-            || self.first_non_default != self.first_non_default
-            || self.last_non_default != self.last_non_default
+            || self.first_non_default != other.first_non_default
+            || self.last_non_default != other.last_non_default
+            || self.default_count != other.default_count
         {
             return false;
-        } else {
-            if self.is_empty() && other.is_empty() {
-                return true;
-            }
+        }
 
-            for i in 0..self.len {
-                if self.inner[i] != other.inner[i] {
-                    return false;
-                }
+        for i in 0..self.len {
+            if self.inner[i] != other.inner[i] {
+                return false;
             }
         }
 
@@ -319,6 +321,7 @@ impl Default for SugarLine {
             // hash: 00000000000000,
             last_non_default: 0,
             first_non_default: 0,
+            default_count: 0,
             inner: create_sugar_line(),
             default_sugar: Sugar::default(),
             len: 0,
@@ -337,6 +340,8 @@ impl SugarLine {
             } else {
                 self.last_non_default = self.len;
             }
+
+            self.default_count += 1;
         }
         self.len += 1;
     }
@@ -358,7 +363,7 @@ impl SugarLine {
     #[inline]
     pub fn is_empty(&self) -> bool {
         // if first digits are zero
-        self.last_non_default == 0
+        self.last_non_default == 0 && self.default_count == 0
     }
 
     #[inline]
