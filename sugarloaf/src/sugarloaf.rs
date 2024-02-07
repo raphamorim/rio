@@ -32,6 +32,7 @@ use primitives::{
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
+use tree::SugarTree;
 use unicode_width::UnicodeWidthChar;
 
 #[cfg(target_arch = "wasm32")]
@@ -73,8 +74,9 @@ pub struct Sugarloaf {
     text_y: f32,
     current_row: u16,
     has_updates: bool,
-    pub content: ContentBuilder,
-    previous_content: Option<ContentBuilder>,
+
+    current_content: SugarTree,
+    next_content: SugarTree,
 }
 
 #[derive(Debug)]
@@ -201,7 +203,8 @@ impl Sugarloaf {
             sugar_cache: FnvHashMap::default(),
             graphics: SugarloafGraphics::new(),
             content,
-            previous_content: None,
+            next_content: SugarTree::default(),
+            current_content: SugarTree::default(),
             layer_brush,
             fonts,
             ctx,
