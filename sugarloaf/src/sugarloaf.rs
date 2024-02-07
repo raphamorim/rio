@@ -1,6 +1,7 @@
 mod constants;
 pub mod graphics;
 pub mod primitives;
+mod state;
 mod tree;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
@@ -26,13 +27,13 @@ use core::fmt::{Debug, Formatter};
 use fnv::FnvHashMap;
 use graphics::SugarloafGraphics;
 use primitives::{
-    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarCursorStyle,
-    SugarDecoration, SugarLine, TextBuilder,
+    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarLine, TextBuilder,
 };
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use tree::SugarTree;
+use state::SugarState;
+
 use unicode_width::UnicodeWidthChar;
 
 #[cfg(target_arch = "wasm32")]
@@ -68,15 +69,12 @@ pub struct Sugarloaf {
     rich_text_brush: RichTextBrush,
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
     rects: Vec<Rect>,
-    // state: tree::SugarloafTree,
+    state: state::SugarState,
     fonts: SugarloafFonts,
     level: SugarloafRendererLevel,
     text_y: f32,
     current_row: u16,
     has_updates: bool,
-
-    current_content: SugarTree,
-    next_content: SugarTree,
 }
 
 #[derive(Debug)]
@@ -198,13 +196,10 @@ impl Sugarloaf {
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
-        let content = Content::builder();
         let instance = Sugarloaf {
             sugar_cache: FnvHashMap::default(),
             graphics: SugarloafGraphics::new(),
-            content,
-            next_content: SugarTree::default(),
-            current_content: SugarTree::default(),
+            state: SugarState::default(),
             layer_brush,
             fonts,
             ctx,
@@ -369,122 +364,19 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn stack(&mut self, mut stack: SugarLine) {
+    pub fn stack(&mut self, mut line: SugarLine) {
         match self.level {
             SugarloafRendererLevel::Basic => {
-                self.stack_text(&mut stack);
+                self.process_line(&mut line);
             }
             SugarloafRendererLevel::Advanced => {
-                self.stack_rich_text(&mut stack);
+                self.state.process_line(&mut line);
             }
         }
     }
 
     #[inline]
-    fn stack_rich_text(&mut self, stack: &mut SugarLine) {
-        let size = stack.len;
-        let underline = &[
-            SpanStyle::Underline(true),
-            SpanStyle::UnderlineOffset(Some(-1.)),
-            SpanStyle::UnderlineSize(Some(1.)),
-        ];
-
-        // let strikethrough = &[SpanStyle::Strikethrough(true)];
-        let strikethrough = &[
-            SpanStyle::Underline(true),
-            SpanStyle::UnderlineOffset(Some(6.)),
-            SpanStyle::UnderlineSize(Some(2.)),
-        ];
-
-        // let mut content = String::from("");
-        for i in 0..size {
-            // if i < size - 1
-            //     && stack[i].foreground_color == stack[i + 1].foreground_color
-            //     && stack[i].background_color == stack[i + 1].background_color
-            //     && stack[i].decoration.is_none()
-            //     && stack[i + 1].decoration.is_none()
-            //     && stack[i].media.is_none()
-            // {
-            //     content.push(&stack[i].content);
-            // } else {
-            //     if content.len() > 0 {
-            //         self.content.add_text(&content);
-            //         content = String::from("");
-            //     }
-
-            //     self.content.add_char(stack[i].content);
-            // }
-
-            let mut span_counter = 0;
-            if stack[i].style.is_bold_italic {
-                self.content.enter_span(&[
-                    SpanStyle::Weight(crate::layout::Weight::BOLD),
-                    SpanStyle::Style(crate::layout::Style::Italic),
-                ]);
-                span_counter += 1;
-            } else if stack[i].style.is_bold {
-                self.content
-                    .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
-                span_counter += 1;
-            } else if stack[i].style.is_italic {
-                self.content
-                    .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
-                span_counter += 1;
-            }
-
-            let mut has_underline_cursor = false;
-            if let Some(cursor) = &stack[i].cursor {
-                match cursor.style {
-                    SugarCursorStyle::Underline => {
-                        let underline_cursor = &[
-                            SpanStyle::UnderlineColor(cursor.color),
-                            SpanStyle::Underline(true),
-                            SpanStyle::UnderlineOffset(Some(-1.)),
-                            SpanStyle::UnderlineSize(Some(2.)),
-                        ];
-                        self.content.enter_span(underline_cursor);
-                        span_counter += 1;
-                        has_underline_cursor = true;
-                    }
-                    SugarCursorStyle::Block | SugarCursorStyle::Caret => {
-                        self.content.enter_span(&[SpanStyle::Cursor(*cursor)]);
-                        span_counter += 1;
-                    }
-                }
-            }
-
-            match &stack[i].decoration {
-                SugarDecoration::Underline => {
-                    if !has_underline_cursor {
-                        self.content.enter_span(underline);
-                        span_counter += 1;
-                    }
-                }
-                SugarDecoration::Strikethrough => {
-                    self.content.enter_span(strikethrough);
-                    span_counter += 1;
-                }
-                _ => {}
-            }
-
-            self.content.enter_span(&[
-                SpanStyle::Color(stack[i].foreground_color),
-                SpanStyle::BackgroundColor(stack[i].background_color),
-            ]);
-
-            self.content.add_char(stack[i].content);
-            self.content.leave_span();
-
-            while span_counter > 0 {
-                self.content.leave_span();
-                span_counter -= 1;
-            }
-        }
-        self.content.add_char('\n');
-    }
-
-    #[inline]
-    fn stack_text(&mut self, stack: &mut SugarLine) {
+    fn process_line(&mut self, stack: &mut SugarLine) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.scaled_sugarheight;
@@ -881,15 +773,7 @@ impl Sugarloaf {
         self.graphic_rects = FnvHashMap::default();
         self.current_row = 0;
 
-        if self.level.is_advanced() {
-            self.previous_content = Some(self.content.clone());
-            self.content = Content::builder();
-            self.content.enter_span(&[
-                SpanStyle::family_list("Fira code"),
-                SpanStyle::Size(self.layout.font_size),
-                // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-            ]);
-        } else {
+        if !self.level.is_advanced() {
             self.text_y = 0.0;
         }
     }
@@ -899,15 +783,15 @@ impl Sugarloaf {
         // let start = std::time::Instant::now();
         if self.level.is_advanced() {
             let mut has_content_updates = true;
-            if let Some(previous_content) = &self.previous_content {
-                if &self.content == previous_content {
-                    has_content_updates = false;
-                }
-            }
+            // if let Some(previous_content) = &self.previous_content {
+            //     if &self.content == previous_content {
+            //         has_content_updates = false;
+            //     }
+            // }
 
             if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
                 &mut self.ctx,
-                self.content.build_ref(),
+                self.state.content(),
                 &self.layout,
                 has_content_updates,
             ) {

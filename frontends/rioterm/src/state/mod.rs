@@ -215,6 +215,7 @@ impl State {
 
         Sugar {
             content,
+            repeated: 0,
             foreground_color,
             background_color,
             style,
