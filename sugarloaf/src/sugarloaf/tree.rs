@@ -23,7 +23,7 @@ pub enum SugarTreeDiff {
 
 // const LINE_MAX_LINES: usize = 140;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SugarTree {
     inner: FnvHashMap<usize, SugarLine>,
     // cursor_position: (u16, u16), // (col, line)
@@ -108,6 +108,11 @@ impl SugarTree {
     }
 
     #[inline]
+    pub fn insert_last(&mut self, content: SugarLine) {
+        self.inner.insert(self.inner.len(), content);
+    }
+
+    #[inline]
     pub fn line_mut(&mut self, line_number: usize) -> Option<&mut SugarLine> {
         self.inner.get_mut(&line_number)
     }
@@ -160,6 +165,21 @@ pub mod test {
             sugartree_a.calculate_diff(&sugartree_b),
             SugarTreeDiff::Equal
         );
+    }
+
+    #[test]
+    fn test_sugartree_insert_last() {
+        let mut sugartree_a = SugarTree::default();
+
+        assert_eq!(sugartree_a.len(), 0);
+
+        sugartree_a.insert_last(SugarLine::default());
+
+        assert_eq!(sugartree_a.len(), 1);
+
+        sugartree_a.insert_last(SugarLine::default());
+
+        assert_eq!(sugartree_a.len(), 2);
     }
 
     #[test]
@@ -276,6 +296,7 @@ pub mod test {
                     is_bold: false,
                     is_bold_italic: false,
                 },
+                repeated: 0,
                 decoration: Disabled,
                 cursor: None,
                 custom_decoration: None,
@@ -290,6 +311,7 @@ pub mod test {
                     is_bold: false,
                     is_bold_italic: false,
                 },
+                repeated: 0,
                 decoration: Disabled,
                 cursor: None,
                 custom_decoration: None,
@@ -324,6 +346,7 @@ pub mod test {
                     is_bold: false,
                     is_bold_italic: false,
                 },
+                repeated: 0,
                 decoration: Disabled,
                 cursor: None,
                 custom_decoration: None,
@@ -338,6 +361,7 @@ pub mod test {
                     is_bold: false,
                     is_bold_italic: false,
                 },
+                repeated: 0,
                 decoration: Disabled,
                 cursor: None,
                 custom_decoration: None,

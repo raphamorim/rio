@@ -9,6 +9,7 @@ use std::ops::Index;
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Sugar {
     pub content: char,
+    pub repeated: u16,
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
     pub style: SugarStyle,
