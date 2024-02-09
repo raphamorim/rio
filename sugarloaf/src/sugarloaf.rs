@@ -109,7 +109,7 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
-#[derive(PartialEq, Default)]
+#[derive(PartialEq, Debug, Clone, Copy, Default)]
 pub enum SugarloafRendererLevel {
     Basic,
     #[default]
