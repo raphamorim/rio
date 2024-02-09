@@ -1,7 +1,7 @@
 mod constants;
 pub mod graphics;
 pub mod primitives;
-mod state;
+pub mod state;
 mod tree;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
@@ -9,7 +9,6 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
-use crate::content::{Content, ContentBuilder};
 use crate::context::Context;
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
@@ -771,9 +770,9 @@ impl Sugarloaf {
     fn reset_state(&mut self) {
         self.rects = vec![];
         self.graphic_rects = FnvHashMap::default();
-        self.current_row = 0;
 
         if !self.level.is_advanced() {
+            self.current_row = 0;
             self.text_y = 0.0;
         }
     }
@@ -782,18 +781,12 @@ impl Sugarloaf {
     fn prepare_render(&mut self) {
         // let start = std::time::Instant::now();
         if self.level.is_advanced() {
-            let mut has_content_updates = true;
-            // if let Some(previous_content) = &self.previous_content {
-            //     if &self.content == previous_content {
-            //         has_content_updates = false;
-            //     }
-            // }
+
+            self.state.compute_changes(&self.layout);
 
             if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
                 &mut self.ctx,
-                self.state.content(),
-                &self.layout,
-                has_content_updates,
+                &self.state,
             ) {
                 let mut has_pending_updates = false;
                 if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {

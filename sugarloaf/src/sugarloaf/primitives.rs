@@ -9,7 +9,7 @@ use std::ops::Index;
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Sugar {
     pub content: char,
-    pub repeated: u16,
+    pub repeated: usize,
     pub foreground_color: [f32; 4],
     pub background_color: [f32; 4],
     pub style: SugarStyle,
@@ -18,6 +18,22 @@ pub struct Sugar {
     pub custom_decoration: Option<SugarCustomDecoration>,
     pub media: Option<SugarGraphic>,
 }
+
+// impl Default for Sugar {
+//     fn default() -> Self {
+//         Self {
+//             content: ' ',
+//             repeated: 0,
+//             foreground_color: [0., 0., 0., 0.],
+//             background_color: [0., 0., 0., 0.],
+//             style: SugarStyle::default(),
+//             decoration: SugarDecoration::Disabled,
+//             cursor: None,
+//             custom_decoration: None,
+//             media: None,
+//         }
+//     }
+// }
 
 impl PartialEq for Sugar {
     fn eq(&self, other: &Self) -> bool {
@@ -333,7 +349,19 @@ impl Default for SugarLine {
 impl SugarLine {
     #[inline]
     pub fn insert(&mut self, sugar: Sugar) {
-        self.inner[self.len] = sugar;
+        let previous = if self.len > 0 {
+            self.len - 1
+        } else {
+            0
+        };
+        // let is_repeated = if self.inner[previous] == sugar {
+        //     self.inner[previous].repeated += 1;
+        //     true
+        // } else {
+            self.inner[self.len] = sugar;
+            // false
+        // };
+
         if sugar != self.default_sugar {
             if self.first_non_default == 0 {
                 self.first_non_default = self.len;
@@ -344,7 +372,10 @@ impl SugarLine {
 
             self.default_count += 1;
         }
-        self.len += 1;
+
+        // if !is_repeated {
+            self.len += 1;
+        // }
     }
 
     #[inline]
