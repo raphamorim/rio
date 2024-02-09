@@ -152,8 +152,8 @@ impl Context {
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format,
-                width: size.width,
-                height: size.height,
+                width: size.width as u32,
+                height: size.height as u32,
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
@@ -177,8 +177,8 @@ impl Context {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.size.width = width;
-        self.size.height = height;
+        self.size.width = width as f32;
+        self.size.height = height as f32;
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
