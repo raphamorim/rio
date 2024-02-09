@@ -308,7 +308,7 @@ impl LayerBrush {
         // transformation: [f32; 16],
         // _scale: f32,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
@@ -377,7 +377,7 @@ impl LayerBrush {
         // transformation: [f32; 16],
         // _scale: f32,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
         let device = &ctx.device;
         let queue = &ctx.queue;
 

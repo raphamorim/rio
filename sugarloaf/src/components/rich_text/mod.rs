@@ -9,7 +9,7 @@ use crate::context::Context;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle, UnderlineStyle};
 use wgpu::util::DeviceExt;
@@ -42,7 +42,7 @@ pub struct RichTextBrush {
     transform: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
-    textures: HashMap<TextureId, Texture>,
+    textures: FnvHashMap<TextureId, Texture>,
     index_buffer: wgpu::Buffer,
     index_buffer_size: u64,
     current_transform: [f32; 16],
@@ -138,8 +138,8 @@ impl RichTextBrush {
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create color_texture"),
             size: wgpu::Extent3d {
-                width: context.size.width,
-                height: context.size.height,
+                width: context.size.width as u32,
+                height: context.size.height as u32,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
@@ -155,8 +155,8 @@ impl RichTextBrush {
         let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create mask_texture"),
             size: wgpu::Extent3d {
-                width: context.size.width,
-                height: context.size.height,
+                width: context.size.width as u32,
+                height: context.size.height as u32,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
@@ -287,8 +287,8 @@ impl RichTextBrush {
             color_texture_view,
             mask_texture_view,
             sampler,
-            textures: HashMap::default(),
-            comp: Compositor::new(4096),
+            textures: FnvHashMap::default(),
+            comp: Compositor::new(2048),
             dlist,
             bind_group,
             transform,
@@ -309,16 +309,17 @@ impl RichTextBrush {
         &mut self,
         ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
-    ) -> Option<(f32, f32)> {
-        // Used for quick testings
-        // let content = build_simple_content();
-        // let content = build_complex_content();
-        // let content = build_terminal_content();
-
+    ) {
         // Render
         // let start = std::time::Instant::now();
         self.comp.begin();
-        let dimensions = draw_layout(&mut self.comp, &state.render_data, state.current.margin.x, state.current.margin.top_y);
+        // println!("{:?}", state);
+        draw_layout(
+            &mut self.comp,
+            &state.render_data,
+            state.current.layout.style.screen_position.0,
+            state.current.layout.style.screen_position.1,
+        );
         self.dlist.clear();
         // let duration = start.elapsed();
         // println!(
@@ -333,14 +334,32 @@ impl RichTextBrush {
         //     "Time elapsed in rich_text_brush.prepare() finish_composition is: {:?}",
         //     duration
         // );
+    }
 
-        Some(dimensions)
+    #[inline]
+    pub fn dimensions(
+        &mut self,
+        ctx: &mut Context,
+        state: &crate::sugarloaf::state::SugarState,
+    ) -> Option<(f32, f32)> {
+        self.comp.begin();
+
+        let dimensions =
+            get_sugar_dimensions(&mut self.comp, &state.render_data_sugar, 0.0, 0.0);
+        println!("dimensions: {:?}", dimensions);
+        self.finish_composition(ctx);
+        if dimensions.0 > 0. && dimensions.1 > 0. {
+            Some(dimensions)
+        } else {
+            None
+        }
     }
 
     #[inline]
     pub fn render(
         &mut self,
         ctx: &mut Context,
+        state: &crate::sugarloaf::state::SugarState,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) {
@@ -349,7 +368,10 @@ impl RichTextBrush {
 
         let queue = &mut ctx.queue;
 
-        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
+        let transform = orthographic_projection(
+            state.current.layout.width,
+            state.current.layout.height,
+        );
         let transform_has_changed = transform != self.current_transform;
 
         if transform_has_changed {
@@ -704,10 +726,8 @@ fn draw_layout(
     layout: &crate::layout::Paragraph,
     x: f32,
     y: f32,
-) -> (f32, f32) {
+) {
     let depth = 0.0;
-    let mut sugarwidth = 0.0;
-    let mut sugarheight = 0.0;
     let mut glyphs = Vec::new();
     for line in layout.lines() {
         let mut px = x + line.offset();
@@ -747,13 +767,68 @@ fn draw_layout(
                     None
                 },
             };
+            comp.draw_glyphs(
+                Rect::new(run_x, py, style.advance, 1.),
+                depth,
+                &style,
+                glyphs.iter(),
+            );
+        }
+    }
+}
 
-            if sugarwidth == 0. && style.advance > 0. {
-                sugarwidth = style.advance;
+#[inline]
+fn get_sugar_dimensions(
+    comp: &mut compositor::Compositor,
+    layout: &crate::layout::Paragraph,
+    x: f32,
+    y: f32,
+) -> (f32, f32) {
+    let depth = 0.0;
+    let mut glyphs = Vec::new();
+    let mut sugarwidth = 0.0;
+    let mut sugarheight = 0.0;
+    for line in layout.lines() {
+        let mut px = x + line.offset();
+        for run in line.runs() {
+            let font = run.font();
+            let py = line.baseline() + y;
+            let run_x = px;
+            glyphs.clear();
+            for cluster in run.visual_clusters() {
+                for glyph in cluster.glyphs() {
+                    let x = px + glyph.x;
+                    let y = py - glyph.y;
+                    px += glyph.advance;
+                    glyphs.push(Glyph { id: glyph.id, x, y });
+                }
             }
-            if sugarheight == 0. && style.line_height > 0. {
-                sugarheight = style.line_height;
-            }
+            let color = run.color();
+
+            let style = TextRunStyle {
+                font: font.as_ref(),
+                font_coords: run.normalized_coords(),
+                font_size: run.font_size(),
+                color,
+                cursor: run.cursor(),
+                background_color: run.background_color(),
+                baseline: py,
+                topline: py - line.ascent(),
+                line_height: line.ascent() + line.descent(),
+                advance: px - run_x,
+                underline: if run.underline() {
+                    Some(UnderlineStyle {
+                        offset: run.underline_offset(),
+                        size: run.underline_size(),
+                        color: run.underline_color(),
+                    })
+                } else {
+                    None
+                },
+            };
+
+            sugarwidth = style.advance;
+            sugarheight = style.line_height;
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
@@ -764,166 +839,6 @@ fn draw_layout(
     }
 
     (sugarwidth, sugarheight)
-}
-
-#[allow(unused)]
-fn build_simple_content() -> crate::content::Content {
-    use crate::layout::*;
-    let mut db = crate::content::Content::builder();
-
-    use SpanStyle as S;
-
-    db.enter_span(&[S::Size(14.)]);
-    db.add_text("Rio terminal -> is back\n");
-    db.add_text("Second paragraph\n");
-    db.leave_span();
-    db.build()
-}
-
-#[allow(unused)]
-fn build_complex_content() -> crate::content::Content {
-    use crate::layout::*;
-    let mut db = crate::content::Content::builder();
-
-    use SpanStyle as S;
-
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
-
-    db.enter_span(&[
-        S::family_list("Victor Mono, times, georgia, serif"),
-        S::Size(14.),
-        S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-    ]);
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.enter_span(&[S::Size(20.)]);
-    db.enter_span(&[S::Color([0.5, 0.5, 0.5, 1.0])]);
-    db.add_text("Rio is back");
-    db.leave_span();
-    db.leave_span();
-    db.enter_span(&[S::Size(40.), S::Color([0.5, 1.0, 0.5, 1.0])]);
-    db.add_text("Rio terminal\n");
-    db.leave_span();
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.2)]);
-    db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
-    db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
-    db.leave_span();
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.add_text("Typography");
-    db.leave_span();
-    db.add_text(" is the ");
-    db.enter_span(&[S::Style(Style::Italic)]);
-    db.add_text("art and technique");
-    db.leave_span();
-    db.add_text(" of arranging type to make ");
-    db.enter_span(underline);
-    db.add_text("written language");
-    db.leave_span();
-    db.add_text(" ");
-    db.enter_span(underline);
-    db.add_text("legible");
-    db.leave_span();
-    db.add_text(", ");
-    db.enter_span(underline);
-    db.add_text("readable");
-    db.leave_span();
-    db.add_text(" and ");
-    db.enter_span(underline);
-    db.add_text("appealing");
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.)]);
-    db.add_text(
-        " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
-    );
-    db.leave_span();
-    db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
-    db.add_text("A true ");
-    db.enter_span(&[S::Size(48.)]);
-    db.add_text("🕵🏽‍♀️");
-    db.leave_span();
-    db.add_text(" will spot the tricky selection in this BiDi text: ");
-    db.enter_span(&[S::Size(22.)]);
-    db.add_text("ניפגש ב09:35 בחוף הים");
-    db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
-    db.leave_span();
-    db.build()
-}
-
-#[allow(unused)]
-fn build_terminal_content() -> crate::content::Content {
-    use crate::layout::*;
-    let mut db = crate::content::Content::builder();
-
-    use SpanStyle as S;
-
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
-
-    for i in 0..20 {
-        db.enter_span(&[
-            S::family_list("Fira code, times, georgia, serif"),
-            S::Size(24.),
-            // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        ]);
-        db.enter_span(&[
-            S::Weight(Weight::BOLD),
-            S::BackgroundColor([0.0, 1.0, 1.0, 1.0]),
-            S::Color([1.0, 0.5, 0.5, 1.0]),
-        ]);
-        db.add_char('R');
-        db.leave_span();
-        // should return to span
-        db.enter_span(&[
-            S::Color([0.0, 1.0, 0.0, 1.0]),
-            S::BackgroundColor([1.0, 1.0, 0.0, 1.0]),
-        ]);
-        db.add_char('i');
-        db.leave_span();
-        db.enter_span(&[
-            S::Weight(Weight::NORMAL),
-            S::Style(Style::Italic),
-            S::Color([0.0, 1.0, 1.0, 1.0]),
-            // S::Size(20.),
-        ]);
-        db.add_char('o');
-        db.leave_span();
-        db.add_char('+');
-        db.add_char(' ');
-        for x in 0..5 {
-            db.add_char('🌊');
-        }
-        for x in 0..5 {
-            db.add_char(' ');
-        }
-        db.add_text("---> ->");
-        db.add_text("-> 🥶");
-        db.break_line();
-        db.leave_span();
-        db.leave_span();
-    }
-    // db.break_line();
-    // db.enter_span(&[S::Color([1.0, 1.0, 1.0, 1.0])]);
-    // db.add_text("terminal");
-    // db.leave_span();
-    // db.add_text("\n");
-    // db.enter_span(&[S::Weight(Weight::BOLD)]);
-    // db.add_text("t");
-    // db.add_text("e");
-    // db.add_text("r");
-    // db.add_text("m");
-    // db.add_text(" ");
-    // db.enter_span(underline);
-    // db.add_text("\n");
-    // db.enter_span(&[S::Color([0.0, 1.0, 1.0, 1.0])]);
-    // db.add_text("n");
-    db.build()
 }
 
 #[inline]

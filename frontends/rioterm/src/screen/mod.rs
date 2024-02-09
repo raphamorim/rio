@@ -122,7 +122,6 @@ impl Screen {
             scale as f32,
             config.fonts.size,
             config.line_height,
-            (MIN_COLUMNS, MIN_LINES),
         );
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
@@ -403,7 +402,7 @@ impl Screen {
     ) {
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout.clone());
+            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout);
             drop(terminal);
             let _ = context.messenger.send_resize(
                 width,

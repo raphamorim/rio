@@ -264,7 +264,7 @@ impl RectBrush {
         ctx: &mut Context,
     ) {
         let transform: [f32; 16] =
-            orthographic_projection(ctx.size.width, ctx.size.height);
+            orthographic_projection(ctx.size.width as f32, ctx.size.height as f32);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
         // let device = &ctx.device;
