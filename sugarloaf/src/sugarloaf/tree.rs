@@ -1,14 +1,15 @@
 // use std::ops::Range;
+use crate::layout::Delta;
 use crate::sugarloaf::SugarLine;
 use crate::Sugar;
 use fnv::FnvHashMap;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SugarTreeChange {
-    line: usize,
-    column: usize,
-    before: Sugar,
-    after: Sugar,
+    pub line: usize,
+    pub column: usize,
+    pub before: Sugar,
+    pub after: Sugar,
     // range: Range<usize>,
     // content: Vec<char>,
 }
@@ -18,6 +19,8 @@ pub enum SugarTreeDiff {
     Equal,
     LineLengthIsDifferent(i32),
     ColumnsLengthIsDifferent(i32),
+    WidthIsDifferent,
+    HeightIsDifferent,
     Changes(Vec<SugarTreeChange>),
 }
 
@@ -26,6 +29,10 @@ pub enum SugarTreeDiff {
 #[derive(Default, Clone)]
 pub struct SugarTree {
     inner: FnvHashMap<usize, SugarLine>,
+    pub height: f32,
+    pub width: f32,
+    pub scale: f32,
+    pub margin: Delta<f32>,
     // cursor_position: (u16, u16), // (col, line)
 }
 
@@ -59,6 +66,13 @@ pub struct SugarTree {
 impl SugarTree {
     #[inline]
     pub fn calculate_diff(&self, next: &SugarTree) -> SugarTreeDiff {
+        if self.width != next.width {
+            return SugarTreeDiff::WidthIsDifferent;
+        }
+        if self.height != next.height {
+            return SugarTreeDiff::HeightIsDifferent;
+        }
+
         let current_len = self.inner.len();
         let next_len = next.len();
         let mut changes: Vec<SugarTreeChange> = vec![];
@@ -164,6 +178,21 @@ pub mod test {
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
             SugarTreeDiff::Equal
+        );
+
+        sugartree_a.width = 300.0;
+
+        assert_eq!(
+            sugartree_a.calculate_diff(&sugartree_b),
+            SugarTreeDiff::WidthIsDifferent
+        );
+
+        sugartree_a.width = 0.0;
+        sugartree_a.height = 100.0;
+
+        assert_eq!(
+            sugartree_a.calculate_diff(&sugartree_b),
+            SugarTreeDiff::HeightIsDifferent
         );
     }
 

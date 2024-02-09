@@ -6,8 +6,6 @@ pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
-// use crate::layout::Selection;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -50,17 +48,13 @@ pub struct RichTextBrush {
     current_transform: [f32; 16],
     comp: Compositor,
     dlist: DisplayList,
-    paragraph: Paragraph,
-    layout_context: LayoutContext,
     bind_group_needs_update: bool,
-    needs_update: bool,
     first_run: bool,
     // selection: Selection,
     // selection_rects: Vec<[f32; 4]>,
     // selecting: bool,
     // selection_changed: bool,
     supported_vertex_buffer: usize,
-    align: Alignment,
 }
 
 impl RichTextBrush {
@@ -286,10 +280,6 @@ impl RichTextBrush {
             mapped_at_creation: false,
         });
 
-        let paragraph = Paragraph::new();
-        let fonts = crate::layout::FontLibrary::default();
-        let layout_context = LayoutContext::new(&fonts);
-
         RichTextBrush {
             bind_group_layout,
             index_buffer_size,
@@ -300,20 +290,16 @@ impl RichTextBrush {
             textures: HashMap::default(),
             comp: Compositor::new(4096),
             dlist,
-            paragraph,
-            layout_context,
             bind_group,
             transform,
             pipeline,
             vertex_buffer,
-            needs_update: true,
             first_run: true,
             bind_group_needs_update: true,
             // selection: Selection::default(),
             // selection_rects: Vec::new(),
             // selecting: false,
             // selection_changed: false,
-            align: Alignment::Start,
             supported_vertex_buffer,
             current_transform,
         }
@@ -322,54 +308,17 @@ impl RichTextBrush {
     pub fn prepare(
         &mut self,
         ctx: &mut Context,
-        content: &crate::content::Content,
-        layout: &crate::layout::SugarloafLayout,
-        has_content_updates: bool,
+        state: &crate::sugarloaf::state::SugarState,
     ) -> Option<(f32, f32)> {
         // Used for quick testings
         // let content = build_simple_content();
         // let content = build_complex_content();
         // let content = build_terminal_content();
-        let margin_x = layout.style.screen_position.0;
-        let margin_y = layout.style.screen_position.1;
-
-        self.needs_update = has_content_updates;
-        if self.needs_update {
-            self.paragraph = Paragraph::default();
-            let mut lb =
-                self.layout_context
-                    .builder(Direction::LeftToRight, None, ctx.scale);
-            content.layout(&mut lb);
-            self.paragraph.clear();
-            // let start = std::time::Instant::now();
-            lb.build_into(&mut self.paragraph);
-            // let duration = start.elapsed();
-            // println!(
-            //     "has_content_updates: {has_content_updates:?} Time elapsed in rich_text_brush.prepare() build_into is: {:?}",
-            //     duration
-            // );
-
-            self.first_run = false;
-        }
-
-        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
-        let transform_has_changed = transform != self.current_transform;
-        if has_content_updates || transform_has_changed {
-            // let start = std::time::Instant::now();
-            self.paragraph
-                .break_lines()
-                .break_remaining(ctx.size.width as f32 - margin_x, self.align);
-            // let duration = start.elapsed();
-            // println!(
-            //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-            //     duration
-            // );
-        }
 
         // Render
         // let start = std::time::Instant::now();
         self.comp.begin();
-        let dimensions = draw_layout(&mut self.comp, &self.paragraph, margin_x, margin_y);
+        let dimensions = draw_layout(&mut self.comp, &state.render_data, state.current.margin.x, state.current.margin.top_y);
         self.dlist.clear();
         // let duration = start.elapsed();
         // println!(
@@ -620,6 +569,7 @@ impl RichTextBrush {
 
         drop(rpass);
         self.bind_group_needs_update = false;
+        self.first_run = false;
     }
 
     #[inline]
@@ -751,7 +701,7 @@ impl RichTextBrush {
 #[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
-    layout: &Paragraph,
+    layout: &crate::layout::Paragraph,
     x: f32,
     y: f32,
 ) -> (f32, f32) {
