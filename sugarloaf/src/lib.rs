@@ -12,6 +12,6 @@ pub use crate::sugarloaf::graphics::{
     ColorType, SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics,
 };
 pub use crate::sugarloaf::{
-    primitives::*, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize, SugarloafWithErrors, SugarloafRendererLevel,
+    primitives::*, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafRendererLevel,
+    SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };
