@@ -26,7 +26,7 @@ use rio_backend::config::renderer::{
     Backend as RendererBackend, Performance as RendererPerformance,
 };
 use rio_backend::crosswords::{
-    grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink, MIN_COLUMNS, MIN_LINES,
+    grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink,
 };
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventListener;
@@ -35,7 +35,7 @@ use rio_backend::selection::SelectionType;
 use rio_backend::sugarloaf::font::loader;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
-    SugarloafWindow, SugarloafWindowSize,
+    SugarloafWindow, SugarloafRendererLevel, SugarloafWindowSize,
 };
 use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
@@ -128,7 +128,10 @@ impl Route {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
-            ..SugarloafRenderer::default()
+            level: match config.renderer.level {
+                0 => SugarloafRendererLevel::Basic,
+                _ => SugarloafRendererLevel::Advanced,
+            }
         };
 
         let padding_y_bottom = padding_bottom_from_config(&config);

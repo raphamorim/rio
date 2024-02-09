@@ -13,5 +13,5 @@ pub use crate::sugarloaf::graphics::{
 };
 pub use crate::sugarloaf::{
     primitives::*, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize, SugarloafWithErrors,
+    SugarloafWindowSize, SugarloafWithErrors, SugarloafRendererLevel,
 };
