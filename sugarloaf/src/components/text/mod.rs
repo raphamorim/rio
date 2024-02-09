@@ -234,7 +234,10 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
             queue,
             encoder,
             target,
-            orthographic_projection(context.size.width, context.size.height),
+            orthographic_projection(
+                context.size.width as f32,
+                context.size.height as f32,
+            ),
         )
     }
 
@@ -336,7 +339,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
-        w_h: (u32, u32),
+        w_h: (f32, f32),
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,

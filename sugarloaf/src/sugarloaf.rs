@@ -21,6 +21,8 @@ use crate::font::{
 use crate::glyph::{FontId, GlyphCruncher};
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
+use crate::sugarloaf::layer::types;
+use crate::sugarloaf::tree::SugarTreeDiff;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
 use fnv::FnvHashMap;
@@ -73,7 +75,9 @@ pub struct Sugarloaf {
     level: SugarloafRendererLevel,
     text_y: f32,
     current_row: u16,
-    has_updates: bool,
+    pub sugar_dimension_has_changed: bool,
+    pub background_color: wgpu::Color,
+    pub background_image: Option<types::Image>,
 }
 
 #[derive(Debug)]
@@ -94,8 +98,8 @@ impl Debug for SugarloafWithErrors {
 
 #[derive(Copy, Clone)]
 pub struct SugarloafWindowSize {
-    pub width: u32,
-    pub height: u32,
+    pub width: f32,
+    pub height: f32,
 }
 
 pub struct SugarloafWindow {
@@ -202,6 +206,8 @@ impl Sugarloaf {
             layer_brush,
             fonts,
             ctx,
+            background_color: wgpu::Color::BLACK,
+            background_image: None,
             rect_brush,
             rich_text_brush,
             rects: vec![],
@@ -211,7 +217,7 @@ impl Sugarloaf {
             text_y: 0.0,
             current_row: 0,
             level: renderer.level,
-            has_updates: false,
+            sugar_dimension_has_changed: false,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -241,7 +247,7 @@ impl Sugarloaf {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
+                            load: wgpu::LoadOp::Clear(self.background_color),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -314,31 +320,31 @@ impl Sugarloaf {
             // Icons will look for width 1
             FontId(FONT_ID_ICONS) => {
                 px_scale = Some(PxScale {
-                    x: self.layout.scaled_sugarwidth,
-                    y: self.layout.scaled_sugarheight,
+                    x: self.layout.dimensions.width,
+                    y: self.layout.dimensions.height,
                 });
             }
 
             FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
                 // println!("FONT_ID_UNICODE {:?}", char_width);
                 px_scale = Some(PxScale {
-                    x: self.layout.scaled_sugarwidth * char_width,
-                    y: self.layout.scaled_sugarheight,
+                    x: self.layout.dimensions.width * char_width,
+                    y: self.layout.dimensions.height,
                 });
             }
 
             FontId(FONT_ID_EMOJIS) => {
-                // scale_target = self.layout.sugarwidth * 2.0;
+                // scale_target = (self.layout.dimensions.width * self.layout.dimensions.scale) * 2.0;
                 px_scale = Some(PxScale {
-                    x: self.layout.scaled_sugarwidth * 2.0,
-                    y: self.layout.scaled_sugarheight,
+                    x: self.layout.dimensions.width * 2.0,
+                    y: self.layout.dimensions.height,
                 });
             }
 
             // FontId(FONT_ID_REGULAR) => {
             // px_scale = Some(PxScale {
-            //     x: self.layout.scaled_sugarwidth * 2.0,
-            //     y: self.layout.scaled_sugarheight,
+            //     x: self.layout.dimensions.width * 2.0,
+            //     y: self.layout.dimensions.height,
             // })
             // }
             FontId(_) => {}
@@ -378,10 +384,11 @@ impl Sugarloaf {
     fn process_line(&mut self, stack: &mut SugarLine) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
-        let mod_text_y = self.layout.scaled_sugarheight;
+        let mod_text_y = self.layout.dimensions.height;
 
-        let sugar_x = self.layout.scaled_sugarwidth;
-        let sugar_width = self.layout.sugarwidth * 2.;
+        let sugar_x = self.layout.dimensions.width;
+        let sugar_width =
+            (self.layout.dimensions.width * self.layout.dimensions.scale) * 2.;
 
         let mut rect_builder = RectBuilder::new(0);
         let mut text_builder = TextBuilder::new(FontId(FONT_ID_REGULAR));
@@ -433,8 +440,8 @@ impl Sugarloaf {
             }
 
             let mut scale = PxScale {
-                x: self.layout.scaled_sugarheight,
-                y: self.layout.scaled_sugarheight,
+                x: self.layout.dimensions.height,
+                y: self.layout.dimensions.height,
             };
             if let Some(new_scale) = cached_sugar.px_scale {
                 scale = new_scale;
@@ -545,7 +552,10 @@ impl Sugarloaf {
                 self.rects.push(Rect {
                     position: [scaled_rect_pos_x, scaled_rect_pos_y],
                     color: stack[i].background_color,
-                    size: [width_bound * quantity as f32, self.layout.sugarheight],
+                    size: [
+                        width_bound * quantity as f32,
+                        self.layout.dimensions.height / self.layout.dimensions.scale,
+                    ],
                 });
 
                 let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
@@ -559,7 +569,8 @@ impl Sugarloaf {
                     color: decoration.color,
                     size: [
                         (width_bound * decoration.size.0),
-                        (self.layout.sugarheight) * decoration.size.1,
+                        (self.layout.dimensions.height / self.layout.dimensions.scale)
+                            * decoration.size.1,
                     ],
                 });
             } else {
@@ -568,7 +579,8 @@ impl Sugarloaf {
                     scaled_rect_pos_y,
                     stack[i].background_color,
                     width_bound * quantity as f32,
-                    self.layout.sugarheight * self.layout.line_height,
+                    self.layout.dimensions.height / self.layout.dimensions.scale
+                        * self.layout.line_height,
                 );
 
                 // If the next rect background color is different the push rect
@@ -607,7 +619,7 @@ impl Sugarloaf {
         }
 
         self.current_row += 1;
-        self.text_y += self.layout.scaled_sugarheight * self.layout.line_height;
+        self.text_y += self.layout.dimensions.height * self.layout.line_height;
     }
 
     #[inline]
@@ -659,14 +671,14 @@ impl Sugarloaf {
 
     #[inline]
     pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
-        self.layout.background_color = color;
+        self.background_color = color;
         self
     }
 
     #[inline]
     pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
         let handle = Handle::from_path(image.path.to_owned());
-        self.layout.background_image = Some(layer::types::Image::Raster {
+        self.background_image = Some(layer::types::Image::Raster {
             handle,
             bounds: Rectangle {
                 width: image.width,
@@ -699,11 +711,8 @@ impl Sugarloaf {
         // Bounds are defined in runtime
         let font_bound = self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
 
-        self.layout.scaled_sugarwidth = font_bound.0;
-        self.layout.scaled_sugarheight = font_bound.1;
-
-        self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
-        self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+        self.layout.dimensions.width = font_bound.0;
+        self.layout.dimensions.height = font_bound.1;
 
         self.layout.update_columns_per_font_width();
     }
@@ -770,6 +779,7 @@ impl Sugarloaf {
     fn reset_state(&mut self) {
         self.rects = vec![];
         self.graphic_rects = FnvHashMap::default();
+        self.sugar_dimension_has_changed = false;
 
         if !self.level.is_advanced() {
             self.current_row = 0;
@@ -781,50 +791,44 @@ impl Sugarloaf {
     fn prepare_render(&mut self) {
         // let start = std::time::Instant::now();
         if self.level.is_advanced() {
+            self.state.compute_changes(self.layout);
 
-            self.state.compute_changes(&self.layout);
+            if self.state.latest_change == SugarTreeDiff::LayoutIsDifferent
+                || self.state.current_has_empty_dimensions()
+            {
+                if let Some((width, height)) =
+                    self.rich_text_brush.dimensions(&mut self.ctx, &self.state)
+                {
+                    let mut sugar_dimension_has_changed = false;
+                    if height != self.layout.dimensions.height {
+                        self.layout.dimensions.height = height;
+                        println!("prepare_render: changed height... {}", height);
+                        sugar_dimension_has_changed = true;
+                    }
 
-            if let Some((sugarwidth, sugarheight)) = self.rich_text_brush.prepare(
-                &mut self.ctx,
-                &self.state,
-            ) {
-                let mut has_pending_updates = false;
-                if sugarheight > 0. && sugarheight != self.layout.scaled_sugarheight {
-                    self.layout.scaled_sugarheight = sugarheight;
-                    self.layout.sugarheight =
-                        self.layout.scaled_sugarheight / self.ctx.scale;
-                    log::info!("prepare_render: changed sugarheight... {}", sugarheight);
-                    has_pending_updates = true;
-                }
+                    if width != self.layout.dimensions.width {
+                        self.layout.dimensions.width = width;
+                        self.layout.update_columns_per_font_width();
+                        println!("prepare_render: changed width... {}", width);
+                        sugar_dimension_has_changed = true;
+                    }
 
-                if sugarwidth > 0. && sugarwidth != self.layout.scaled_sugarwidth {
-                    self.layout.scaled_sugarwidth = sugarwidth;
-                    self.layout.sugarwidth =
-                        self.layout.scaled_sugarwidth / self.ctx.scale;
-                    self.layout.update_columns_per_font_width();
-                    log::info!("prepare_render: changed sugarwidth... {}", sugarwidth);
-                    has_pending_updates = true;
-                }
-
-                if has_pending_updates {
-                    self.layout.update();
-                    self.has_updates = has_pending_updates
+                    if sugar_dimension_has_changed {
+                        self.layout.update();
+                        self.sugar_dimension_has_changed = sugar_dimension_has_changed;
+                        println!("RECOMPUTE sugar_dimension_has_changed");
+                    }
                 }
             }
         }
+
+        self.rich_text_brush.prepare(&mut self.ctx, &self.state);
 
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
         //     duration
         // );
-    }
-
-    #[inline]
-    pub fn has_pending_updates(&mut self) -> bool {
-        let has_pending_updates = self.has_updates;
-        self.has_updates = false;
-        has_pending_updates
     }
 
     #[inline]
@@ -849,14 +853,14 @@ impl Sugarloaf {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
+                            load: wgpu::LoadOp::Clear(self.background_color),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
                 });
 
-                if let Some(bg_image) = &self.layout.background_image {
+                if let Some(bg_image) = &self.background_image {
                     self.layer_brush.prepare_ref(
                         &mut encoder,
                         &mut self.ctx,
@@ -875,8 +879,12 @@ impl Sugarloaf {
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
                 if self.level.is_advanced() {
-                    self.rich_text_brush
-                        .render(&mut self.ctx, &mut encoder, view);
+                    self.rich_text_brush.render(
+                        &mut self.ctx,
+                        &self.state,
+                        &mut encoder,
+                        view,
+                    );
                 }
 
                 if !self.graphic_rects.is_empty() {
@@ -886,7 +894,7 @@ impl Sugarloaf {
                         if let Some(entry) = self.graphic_rects.get(entry_render) {
                             if let Some(graphic_data) = self.graphics.get(&entry.id) {
                                 let rows = entry.end_row - entry.start_row;
-                                let height = (rows - 2.) * self.layout.scaled_sugarheight;
+                                let height = (rows - 2.) * self.layout.dimensions.height;
 
                                 let a = layer::types::Image::Raster {
                                     handle: graphic_data.handle.clone(),

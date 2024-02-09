@@ -7,7 +7,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
 
-    let width = sugarloaf.layout.width / sugarloaf.layout.scale_factor;
+    let width = sugarloaf.layout.width / sugarloaf.layout.dimensions.scale;
 
     let assistant_background = vec![
         Rect {

@@ -670,7 +670,7 @@ impl State {
 
         self.navigation.content(
             (sugarloaf.layout.width, sugarloaf.layout.height),
-            sugarloaf.layout.scale_factor,
+            sugarloaf.layout.dimensions.scale,
             context_manager.titles.key.as_str(),
             &context_manager.titles.titles,
             context_manager.current_index(),
