@@ -331,7 +331,7 @@ impl<'a> Run<'a> {
     }
 
     /// Returns the cursor
-    pub fn cursor(&self) -> Option<SugarCursor> {
+    pub fn cursor(&self) -> SugarCursor {
         self.run.cursor
     }
 

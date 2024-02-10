@@ -14,8 +14,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Sugar, SugarCursor, SugarCursorStyle, SugarCustomDecoration, SugarDecoration,
-    SugarLine, SugarStyle,
+    Sugar, SugarCursor, SugarCustomDecoration, SugarDecoration, SugarLine, SugarStyle,
 };
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
@@ -195,22 +194,11 @@ impl State {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
-        let mut custom_decoration = None;
         let mut decoration = SugarDecoration::Disabled;
         if flags.contains(Flags::UNDERLINE) {
             decoration = SugarDecoration::Underline;
-            custom_decoration = Some(SugarCustomDecoration {
-                relative_position: (0.0, self.font_size - 1.),
-                size: (1.0, 0.005),
-                color: self.named_colors.foreground,
-            });
         } else if flags.contains(Flags::STRIKEOUT) {
             decoration = SugarDecoration::Strikethrough;
-            custom_decoration = Some(SugarCustomDecoration {
-                relative_position: (0.0, self.font_size / 2.),
-                size: (1.0, 0.025),
-                color: self.named_colors.foreground,
-            });
         }
 
         Sugar {
@@ -220,20 +208,14 @@ impl State {
             background_color,
             style,
             decoration,
-            custom_decoration,
             media: None,
-            cursor: None,
+            cursor: SugarCursor::Disabled,
         }
     }
 
     #[inline]
     fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.custom_decoration = Some(SugarCustomDecoration {
-            relative_position: (0.0, self.font_size - 1.),
-            size: (1.0, 0.005),
-            color: self.named_colors.foreground,
-        });
-
+        sugar.decoration = SugarDecoration::Underline;
         sugar
     }
 
@@ -534,7 +516,7 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_cursor(&self) -> Option<SugarCursor> {
+    fn create_sugar_cursor(&self) -> SugarCursor {
         let color = if !self.is_vi_mode_enabled {
             self.named_colors.cursor
         } else {
@@ -542,19 +524,10 @@ impl State {
         };
 
         match self.cursor.state.content {
-            CursorShape::Block => Some(SugarCursor {
-                style: SugarCursorStyle::Block,
-                color,
-            }),
-            CursorShape::Underline => Some(SugarCursor {
-                style: SugarCursorStyle::Underline,
-                color,
-            }),
-            CursorShape::Beam => Some(SugarCursor {
-                style: SugarCursorStyle::Caret,
-                color,
-            }),
-            CursorShape::Hidden => None,
+            CursorShape::Block => SugarCursor::Block(color),
+            CursorShape::Underline => SugarCursor::Underline(color),
+            CursorShape::Beam => SugarCursor::Caret(color),
+            CursorShape::Hidden => SugarCursor::Disabled,
         }
     }
 
@@ -588,7 +561,6 @@ impl State {
             sugar.foreground_color = self.named_colors.background.0;
         }
 
-        sugar.custom_decoration = self.cursor_to_decoration();
         sugar
     }
 

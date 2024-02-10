@@ -440,7 +440,7 @@ impl Route {
             }
             self.process_mouse_bindings(button);
 
-            self.render();
+            // self.render();
         } else {
             if !self.modifiers.shift && self.mouse_mode() {
                 let code = match button {
