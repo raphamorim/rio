@@ -14,7 +14,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Sugar, SugarCursor, SugarCustomDecoration, SugarDecoration, SugarLine, SugarStyle,
+    Sugar, SugarCursor, SugarDecoration, SugarLine, SugarStyle,
 };
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
@@ -217,34 +217,6 @@ impl State {
     fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
         sugar.decoration = SugarDecoration::Underline;
         sugar
-    }
-
-    #[inline]
-    fn cursor_to_decoration(&self) -> Option<SugarCustomDecoration> {
-        let color = if !self.is_vi_mode_enabled {
-            self.named_colors.cursor
-        } else {
-            self.named_colors.vi_cursor
-        };
-
-        match self.cursor.state.content {
-            CursorShape::Block => Some(SugarCustomDecoration {
-                relative_position: (0.0, 0.0),
-                size: (1.0, 1.0),
-                color,
-            }),
-            CursorShape::Underline => Some(SugarCustomDecoration {
-                relative_position: (0.0, self.font_size - 2.5),
-                size: (1.0, 0.08),
-                color,
-            }),
-            CursorShape::Beam => Some(SugarCustomDecoration {
-                relative_position: (0.0, 0.0),
-                size: (0.1, 1.0),
-                color,
-            }),
-            CursorShape::Hidden => None,
-        }
     }
 
     // create_rich_sugar_stack is different than create_sugar_stack

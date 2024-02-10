@@ -76,15 +76,6 @@ pub struct SugarStyle {
     pub is_bold_italic: bool,
 }
 
-#[derive(Debug, Copy, Clone)]
-/// Sugar decoration
-/// color, size and position
-pub struct SugarCustomDecoration {
-    pub relative_position: (f32, f32),
-    pub size: (f32, f32),
-    pub color: [f32; 4],
-}
-
 #[derive(Copy, PartialEq, Default, Debug, Clone)]
 pub struct SugarloafStyle {
     pub screen_position: (f32, f32),

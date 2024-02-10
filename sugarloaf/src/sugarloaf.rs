@@ -387,6 +387,8 @@ impl Sugarloaf {
         let sugar_x = self.layout.dimensions.width;
         let sugar_width =
             (self.layout.dimensions.width * self.layout.dimensions.scale) * 2.;
+        let unscaled_sugar_height =
+            self.layout.dimensions.height / self.layout.dimensions.scale;
 
         if self.text_y == 0.0 {
             self.text_y = self.layout.style.screen_position.1;
@@ -466,58 +468,30 @@ impl Sugarloaf {
             self.rects.push(Rect {
                 position: [scaled_rect_pos_x, scaled_rect_pos_y],
                 color: stack[i].background_color,
-                size: [
-                    width_bound * quantity as f32,
-                    self.layout.dimensions.height / self.layout.dimensions.scale,
-                ],
+                size: [width_bound * quantity as f32, unscaled_sugar_height],
             });
 
             match &stack[i].cursor {
                 primitives::SugarCursor::Block(cursor_color) => {
                     self.rects.push(Rect {
-                        position: [
-                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
-                            scaled_rect_pos_y,
-                        ],
+                        position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
-                        size: [
-                            (width_bound * 1.0),
-                            (self.layout.dimensions.height
-                                / self.layout.dimensions.scale)
-                                * 1.0,
-                        ],
+                        size: [(width_bound * 1.0), unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Caret(cursor_color) => {
                     self.rects.push(Rect {
-                        position: [
-                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
-                            scaled_rect_pos_y,
-                        ],
+                        position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
-                        size: [
-                            (width_bound * 0.1),
-                            (self.layout.dimensions.height
-                                / self.layout.dimensions.scale)
-                                * 1.0,
-                        ],
+                        size: [(width_bound * 0.1), unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Underline(cursor_color) => {
-                    let dec_pos_y =
-                        (scaled_rect_pos_y) + self.layout.dimensions.height - 2.5;
+                    let dec_pos_y = (scaled_rect_pos_y) + self.layout.font_size - 2.5;
                     self.rects.push(Rect {
-                        position: [
-                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
-                            dec_pos_y,
-                        ],
+                        position: [scaled_rect_pos_x, dec_pos_y],
                         color: *cursor_color,
-                        size: [
-                            (width_bound * 0.1),
-                            (self.layout.dimensions.height
-                                / self.layout.dimensions.scale)
-                                * 1.0,
-                        ],
+                        size: [(width_bound * 0.1), unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Disabled => {}
@@ -525,37 +499,19 @@ impl Sugarloaf {
 
             match &stack[i].decoration {
                 primitives::SugarDecoration::Underline => {
-                    let dec_pos_y =
-                        (scaled_rect_pos_y) + self.layout.dimensions.height - 1.;
+                    let dec_pos_y = (scaled_rect_pos_y) + self.layout.font_size - 1.;
                     self.rects.push(Rect {
-                        position: [
-                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
-                            dec_pos_y,
-                        ],
+                        position: [scaled_rect_pos_x, dec_pos_y],
                         color: stack[i].foreground_color,
-                        size: [
-                            (width_bound * 1.0),
-                            (self.layout.dimensions.height
-                                / self.layout.dimensions.scale)
-                                * 0.005,
-                        ],
+                        size: [(width_bound * 1.0), unscaled_sugar_height * 0.025],
                     });
                 }
                 primitives::SugarDecoration::Strikethrough => {
-                    let dec_pos_y =
-                        (scaled_rect_pos_y) + self.layout.dimensions.height / 2.0;
+                    let dec_pos_y = (scaled_rect_pos_y) + self.layout.font_size / 2.0;
                     self.rects.push(Rect {
-                        position: [
-                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
-                            dec_pos_y,
-                        ],
+                        position: [scaled_rect_pos_x, dec_pos_y],
                         color: stack[i].foreground_color,
-                        size: [
-                            (width_bound * 1.0),
-                            (self.layout.dimensions.height
-                                / self.layout.dimensions.scale)
-                                * 0.025,
-                        ],
+                        size: [(width_bound * 1.0), unscaled_sugar_height * 0.025],
                     });
                 }
                 &primitives::SugarDecoration::Disabled => {}
@@ -573,7 +529,7 @@ impl Sugarloaf {
             //         color: decoration.color,
             //         size: [
             //             (width_bound * decoration.size.0),
-            //             (self.layout.dimensions.height / self.layout.dimensions.scale)
+            //             (unscaled_sugar_height)
             //                 * decoration.size.1,
             //         ],
             //     });
