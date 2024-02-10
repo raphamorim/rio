@@ -379,7 +379,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    fn process_line(&mut self, stack: &mut SugarLine) {
+    fn process_line(&mut self, line: &mut SugarLine) {
         let mut x = 0.;
         let mod_pos_y = self.layout.style.screen_position.1;
         let mod_text_y = self.layout.dimensions.height;
@@ -394,21 +394,20 @@ impl Sugarloaf {
             self.text_y = self.layout.style.screen_position.1;
         }
 
-        let size = stack.acc;
-        for i in 0..size {
+        for i in 0..line.acc {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
             let rect_pos_x = self.layout.style.screen_position.0 + x;
 
-            let cached_sugar: CachedSugar = self.get_font_id(&stack[i]);
+            let cached_sugar: CachedSugar = self.get_font_id(&line[i]);
 
             let mut font_id = cached_sugar.font_id;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-                if stack[i].style.is_bold_italic {
+                if line[i].style.is_bold_italic {
                     font_id = FontId(FONT_ID_BOLD_ITALIC);
-                } else if stack[i].style.is_bold {
+                } else if line[i].style.is_bold {
                     font_id = FontId(FONT_ID_BOLD);
-                } else if stack[i].style.is_italic {
+                } else if line[i].style.is_italic {
                     font_id = FontId(FONT_ID_ITALIC);
                 }
             }
@@ -417,8 +416,6 @@ impl Sugarloaf {
                 sugar_char_width = cached_sugar.char_width;
                 add_pos_x += sugar_x;
             }
-
-            let quantity = stack[i].repeated + 1;
 
             let mut scale = PxScale {
                 x: self.layout.dimensions.height,
@@ -431,11 +428,11 @@ impl Sugarloaf {
             let rect_pos_y = self.text_y + mod_pos_y;
             let width_bound = sugar_width * sugar_char_width;
 
-            let text = if quantity == 1 {
-                stack[i].content.to_string()
+            let text = if line[i].repeated == 0 {
+                line[i].content.to_string()
             } else {
-                std::iter::repeat(stack[i].content)
-                    .take(stack[i].repeated + 1)
+                std::iter::repeat(line[i].content)
+                    .take(line[i].repeated + 1)
                     .collect::<String>()
             };
             let section_pos_x = rect_pos_x;
@@ -446,7 +443,7 @@ impl Sugarloaf {
                 scale: scale,
                 font_id: font_id,
                 extra: crate::components::text::Extra {
-                    color: stack[i].foreground_color,
+                    color: line[i].foreground_color,
                     z: 0.0,
                 },
             };
@@ -465,25 +462,27 @@ impl Sugarloaf {
             let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
             let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
 
+            let quantity = (line[i].repeated + 1) as f32;
+
             self.rects.push(Rect {
                 position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                color: stack[i].background_color,
-                size: [width_bound * quantity as f32, unscaled_sugar_height],
+                color: line[i].background_color,
+                size: [width_bound * quantity, unscaled_sugar_height],
             });
 
-            match &stack[i].cursor {
+            match &line[i].cursor {
                 primitives::SugarCursor::Block(cursor_color) => {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
-                        size: [(width_bound * 1.0), unscaled_sugar_height],
+                        size: [width_bound * quantity, unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Caret(cursor_color) => {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
-                        size: [(width_bound * 0.1), unscaled_sugar_height],
+                        size: [(width_bound * 0.02) * quantity, unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Underline(cursor_color) => {
@@ -491,51 +490,33 @@ impl Sugarloaf {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
                         color: *cursor_color,
-                        size: [(width_bound * 0.1), unscaled_sugar_height],
+                        size: [(width_bound * 0.1) * quantity, unscaled_sugar_height],
                     });
                 }
                 primitives::SugarCursor::Disabled => {}
             }
 
-            match &stack[i].decoration {
+            match &line[i].decoration {
                 primitives::SugarDecoration::Underline => {
                     let dec_pos_y = (scaled_rect_pos_y) + self.layout.font_size - 1.;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
-                        color: stack[i].foreground_color,
-                        size: [(width_bound * 1.0), unscaled_sugar_height * 0.025],
+                        color: line[i].foreground_color,
+                        size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
                 primitives::SugarDecoration::Strikethrough => {
                     let dec_pos_y = (scaled_rect_pos_y) + self.layout.font_size / 2.0;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
-                        color: stack[i].foreground_color,
-                        size: [(width_bound * 1.0), unscaled_sugar_height * 0.025],
+                        color: line[i].foreground_color,
+                        size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
                 &primitives::SugarDecoration::Disabled => {}
             }
 
-            // if let Some(decoration) = &stack[i].custom_decoration {
-            //     let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
-            //     self.rects.push(Rect {
-            //         position: [
-            //             (scaled_rect_pos_x
-            //                 + (add_pos_x * decoration.relative_position.0)
-            //                     / self.ctx.scale),
-            //             dec_pos_y,
-            //         ],
-            //         color: decoration.color,
-            //         size: [
-            //             (width_bound * decoration.size.0),
-            //             (unscaled_sugar_height)
-            //                 * decoration.size.1,
-            //         ],
-            //     });
-            // }
-
-            if let Some(sugar_media) = &stack[i].media {
+            if let Some(sugar_media) = &line[i].media {
                 if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
                     rect.columns += 1.0;
                     rect.end_row = self.current_row.into();
@@ -557,7 +538,7 @@ impl Sugarloaf {
                 }
             }
 
-            x += add_pos_x * (quantity as f32);
+            x += add_pos_x * quantity;
         }
 
         self.current_row += 1;
