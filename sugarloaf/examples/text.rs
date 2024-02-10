@@ -1,7 +1,7 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarLine, Sugarloaf,
+    layout::SugarloafLayout, Sugar, SugarDecoration, SugarLine, Sugarloaf,
     SugarloafWindow, SugarloafWindowSize,
 };
 use winit::event_loop::ControlFlow;
@@ -36,7 +36,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         1.0,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -45,8 +44,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -147,12 +146,6 @@ async fn main() {
             },
         ];
 
-        let underline = SugarCustomDecoration {
-            relative_position: (0.0, 0.94),
-            size: (1.0, 0.03),
-            color: [1.0, 0.4, 1.0, 1.0],
-        };
-
         let rio = vec![
             Sugar {
                 content: ' ',
@@ -164,21 +157,21 @@ async fn main() {
                 content: 'r',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                custom_decoration: Some(underline),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(underline),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'o',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(underline),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {

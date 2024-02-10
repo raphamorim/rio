@@ -2,7 +2,7 @@ extern crate tokio;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, Sugar, SugarCustomDecoration, SugarLine, SugarStyle,
+    layout::SugarloafLayout, Sugar, SugarCursor, SugarDecoration, SugarLine, SugarStyle,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
@@ -35,7 +35,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         1.0,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -44,8 +43,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -69,66 +68,42 @@ async fn main() {
                 content: 'u',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.050),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
@@ -141,55 +116,35 @@ async fn main() {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
@@ -329,11 +284,7 @@ async fn main() {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.92),
-                    size: (1.0, 0.05),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
@@ -379,94 +330,52 @@ async fn main() {
                 content: 's',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'k',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: Some(SugarCustomDecoration {
-                    relative_position: (0.0, 0.85),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
         ];
-
-        let block = Some(SugarCustomDecoration {
-            relative_position: (0.0, 0.0),
-            size: (1.0, 1.0),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
-
-        let underline = Some(SugarCustomDecoration {
-            relative_position: (0.0, 85.),
-            size: (1.0, 0.05),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
-
-        let beam = Some(SugarCustomDecoration {
-            relative_position: (0.0, 0.0),
-            size: (0.1, 1.0),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
 
         let cursors = vec![
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                custom_decoration: block,
+                cursor: SugarCursor::Block([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
@@ -479,7 +388,7 @@ async fn main() {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                custom_decoration: underline,
+                decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
@@ -492,7 +401,7 @@ async fn main() {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                custom_decoration: beam,
+                cursor: SugarCursor::Caret([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
         ];
