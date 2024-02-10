@@ -11,8 +11,7 @@ pub struct Sugar {
     pub background_color: [f32; 4],
     pub style: SugarStyle,
     pub decoration: SugarDecoration,
-    pub cursor: Option<SugarCursor>,
-    pub custom_decoration: Option<SugarCustomDecoration>,
+    pub cursor: SugarCursor,
     pub media: Option<SugarGraphic>,
 }
 
@@ -25,8 +24,7 @@ impl Default for Sugar {
             background_color: [0., 0., 0., 0.],
             style: SugarStyle::default(),
             decoration: SugarDecoration::default(),
-            cursor: None,
-            custom_decoration: None,
+            cursor: SugarCursor::default(),
             media: None,
         }
     }
@@ -40,6 +38,7 @@ impl PartialEq for Sugar {
             && self.background_color == other.background_color
             && self.style == other.style
             && self.decoration == other.decoration
+            && self.cursor == other.cursor
     }
 }
 
@@ -50,19 +49,16 @@ fn equal_without_consider_repeat(sugar_a: &Sugar, sugar_b: &Sugar) -> bool {
         && sugar_a.background_color == sugar_b.background_color
         && sugar_a.style == sugar_b.style
         && sugar_a.decoration == sugar_b.decoration
+        && sugar_a.cursor == sugar_b.cursor
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum SugarCursorStyle {
-    Block,
-    Caret,
-    Underline,
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct SugarCursor {
-    pub color: [f32; 4],
-    pub style: SugarCursorStyle,
+#[derive(Debug, Default, PartialEq, Copy, Clone)]
+pub enum SugarCursor {
+    Block([f32; 4]),
+    Caret([f32; 4]),
+    Underline([f32; 4]),
+    #[default]
+    Disabled,
 }
 
 #[derive(Debug, Copy, PartialEq, Default, Clone)]

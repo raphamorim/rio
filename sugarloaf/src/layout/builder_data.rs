@@ -109,7 +109,7 @@ pub struct SpanData {
     /// Text case transformation.
     pub text_transform: TextTransform,
     /// Cursor
-    pub cursor: Option<SugarCursor>,
+    pub cursor: SugarCursor,
 }
 
 /// Builder state.
@@ -181,7 +181,7 @@ impl BuilderState {
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
-            cursor: None,
+            cursor: SugarCursor::Disabled,
             underline: false,
             underline_offset: None,
             underline_color: None,
@@ -270,7 +270,7 @@ impl BuilderState {
                     span.font_size = *size * scale;
                 }
                 S::Cursor(cursor) => {
-                    span.cursor = Some(*cursor);
+                    span.cursor = *cursor;
                 }
                 S::Color(color) => {
                     span.color = *color;

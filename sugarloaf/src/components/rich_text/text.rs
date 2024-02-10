@@ -36,7 +36,7 @@ pub struct TextRunStyle<'a> {
     /// Underline style.
     pub underline: Option<UnderlineStyle>,
     /// Cursor style.
-    pub cursor: Option<SugarCursor>,
+    pub cursor: SugarCursor,
 }
 
 /// Underline decoration style.

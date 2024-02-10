@@ -419,7 +419,7 @@ impl EventHandler for Router {
             }
 
             current.scroll(x.into(), y.into());
-            current.render();
+            // current.render();
         }
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {

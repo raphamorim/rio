@@ -472,23 +472,112 @@ impl Sugarloaf {
                 ],
             });
 
-            if let Some(decoration) = &stack[i].custom_decoration {
-                let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
-                self.rects.push(Rect {
-                    position: [
-                        (scaled_rect_pos_x
-                            + (add_pos_x * decoration.relative_position.0)
-                                / self.ctx.scale),
-                        dec_pos_y,
-                    ],
-                    color: decoration.color,
-                    size: [
-                        (width_bound * decoration.size.0),
-                        (self.layout.dimensions.height / self.layout.dimensions.scale)
-                            * decoration.size.1,
-                    ],
-                });
+            match &stack[i].cursor {
+                primitives::SugarCursor::Block(cursor_color) => {
+                    self.rects.push(Rect {
+                        position: [
+                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
+                            scaled_rect_pos_y,
+                        ],
+                        color: *cursor_color,
+                        size: [
+                            (width_bound * 1.0),
+                            (self.layout.dimensions.height
+                                / self.layout.dimensions.scale)
+                                * 1.0,
+                        ],
+                    });
+                }
+                primitives::SugarCursor::Caret(cursor_color) => {
+                    self.rects.push(Rect {
+                        position: [
+                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
+                            scaled_rect_pos_y,
+                        ],
+                        color: *cursor_color,
+                        size: [
+                            (width_bound * 0.1),
+                            (self.layout.dimensions.height
+                                / self.layout.dimensions.scale)
+                                * 1.0,
+                        ],
+                    });
+                }
+                primitives::SugarCursor::Underline(cursor_color) => {
+                    let dec_pos_y =
+                        (scaled_rect_pos_y) + self.layout.dimensions.height - 2.5;
+                    self.rects.push(Rect {
+                        position: [
+                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
+                            dec_pos_y,
+                        ],
+                        color: *cursor_color,
+                        size: [
+                            (width_bound * 0.1),
+                            (self.layout.dimensions.height
+                                / self.layout.dimensions.scale)
+                                * 1.0,
+                        ],
+                    });
+                }
+                primitives::SugarCursor::Disabled => {}
             }
+
+            match &stack[i].decoration {
+                primitives::SugarDecoration::Underline => {
+                    let dec_pos_y =
+                        (scaled_rect_pos_y) + self.layout.dimensions.height - 1.;
+                    self.rects.push(Rect {
+                        position: [
+                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
+                            dec_pos_y,
+                        ],
+                        color: stack[i].foreground_color,
+                        size: [
+                            (width_bound * 1.0),
+                            (self.layout.dimensions.height
+                                / self.layout.dimensions.scale)
+                                * 0.005,
+                        ],
+                    });
+                }
+                primitives::SugarDecoration::Strikethrough => {
+                    let dec_pos_y =
+                        (scaled_rect_pos_y) + self.layout.dimensions.height / 2.0;
+                    self.rects.push(Rect {
+                        position: [
+                            (scaled_rect_pos_x + (add_pos_x * 0.0) / self.ctx.scale),
+                            dec_pos_y,
+                        ],
+                        color: stack[i].foreground_color,
+                        size: [
+                            (width_bound * 1.0),
+                            (self.layout.dimensions.height
+                                / self.layout.dimensions.scale)
+                                * 0.025,
+                        ],
+                    });
+                }
+                &primitives::SugarDecoration::Disabled => {}
+            }
+
+            // if let Some(decoration) = &stack[i].custom_decoration {
+            //     let dec_pos_y = (scaled_rect_pos_y) + (decoration.relative_position.1);
+            //     self.rects.push(Rect {
+            //         position: [
+            //             (scaled_rect_pos_x
+            //                 + (add_pos_x * decoration.relative_position.0)
+            //                     / self.ctx.scale),
+            //             dec_pos_y,
+            //         ],
+            //         color: decoration.color,
+            //         size: [
+            //             (width_bound * decoration.size.0),
+            //             (self.layout.dimensions.height / self.layout.dimensions.scale)
+            //                 * decoration.size.1,
+            //         ],
+            //     });
+            // }
 
             if let Some(sugar_media) = &stack[i].media {
                 if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {

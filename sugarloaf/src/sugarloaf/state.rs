@@ -2,10 +2,8 @@ use super::tree::{SugarTree, SugarTreeDiff};
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::SpanStyle;
 use crate::sugarloaf::SugarloafLayout;
-use crate::SugarCursorStyle;
-use crate::SugarDecoration;
-use crate::SugarLine;
 use crate::{Content, ContentBuilder};
+use crate::{SugarCursor, SugarDecoration, SugarLine};
 
 pub struct SugarState {
     pub current: SugarTree,
@@ -225,25 +223,31 @@ impl SugarState {
             }
 
             let mut has_underline_cursor = false;
-            if let Some(cursor) = &line[i].cursor {
-                match cursor.style {
-                    SugarCursorStyle::Underline => {
-                        let underline_cursor = &[
-                            SpanStyle::UnderlineColor(cursor.color),
-                            SpanStyle::Underline(true),
-                            SpanStyle::UnderlineOffset(Some(-1.)),
-                            SpanStyle::UnderlineSize(Some(2.)),
-                        ];
-                        self.content_builder.enter_span(underline_cursor);
-                        span_counter += 1;
-                        has_underline_cursor = true;
-                    }
-                    SugarCursorStyle::Block | SugarCursorStyle::Caret => {
-                        self.content_builder
-                            .enter_span(&[SpanStyle::Cursor(*cursor)]);
-                        span_counter += 1;
-                    }
+            match line[i].cursor {
+                SugarCursor::Underline(cursor_color) => {
+                    let underline_cursor = &[
+                        SpanStyle::UnderlineColor(cursor_color),
+                        SpanStyle::Underline(true),
+                        SpanStyle::UnderlineOffset(Some(-1.)),
+                        SpanStyle::UnderlineSize(Some(2.)),
+                    ];
+                    self.content_builder.enter_span(underline_cursor);
+                    span_counter += 1;
+                    has_underline_cursor = true;
                 }
+                SugarCursor::Block(cursor_color) => {
+                    self.content_builder.enter_span(&[SpanStyle::Cursor(
+                        SugarCursor::Block(cursor_color),
+                    )]);
+                    span_counter += 1;
+                }
+                SugarCursor::Caret(cursor_color) => {
+                    self.content_builder.enter_span(&[SpanStyle::Cursor(
+                        SugarCursor::Caret(cursor_color),
+                    )]);
+                    span_counter += 1;
+                }
+                _ => {}
             }
 
             match &line[i].decoration {

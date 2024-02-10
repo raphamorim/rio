@@ -9,17 +9,16 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
     Command, DisplayList, Pipeline, Rect, Vertex,
 };
 pub use crate::components::rich_text::image_cache::{
     AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
-use crate::sugarloaf::primitives::SugarCursorStyle;
-
-use crate::components::rich_text::batch::BatchManager;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text::*;
+use crate::SugarCursor;
 
 use std::borrow::Borrow;
 
@@ -178,34 +177,27 @@ impl Compositor {
                         );
                     }
 
-                    if let Some(cursor) = style.cursor {
-                        match cursor.style {
-                            SugarCursorStyle::Block => {
-                                self.batches.add_rect(
-                                    &Rect::new(
-                                        rect.x,
-                                        style.topline,
-                                        rect.width,
-                                        style.line_height,
-                                    ),
-                                    depth - 1.0,
-                                    &cursor.color,
-                                );
-                            }
-                            SugarCursorStyle::Caret => {
-                                self.batches.add_rect(
-                                    &Rect::new(
-                                        rect.x,
-                                        style.topline,
-                                        3.0,
-                                        style.line_height,
-                                    ),
-                                    depth - 1.0,
-                                    &cursor.color,
-                                );
-                            }
-                            _ => {}
+                    match style.cursor {
+                        SugarCursor::Block(cursor_color) => {
+                            self.batches.add_rect(
+                                &Rect::new(
+                                    rect.x,
+                                    style.topline,
+                                    rect.width,
+                                    style.line_height,
+                                ),
+                                depth - 1.0,
+                                &cursor_color,
+                            );
                         }
+                        SugarCursor::Caret(cursor_color) => {
+                            self.batches.add_rect(
+                                &Rect::new(rect.x, style.topline, 3.0, style.line_height),
+                                depth - 1.0,
+                                &cursor_color,
+                            );
+                        }
+                        _ => {}
                     }
 
                     if underline && entry.top - underline_offset < entry.height as i32 {
