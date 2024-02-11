@@ -11,6 +11,7 @@ pub mod touch;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
 };
+use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::context::{self, ContextManager};
@@ -57,34 +58,6 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
-
-#[inline]
-fn padding_top_from_config(config: &rio_backend::config::Config) -> f32 {
-    #[cfg(not(target_os = "macos"))]
-    {
-        if config.navigation.is_placed_on_top() {
-            return crate::constants::PADDING_Y_WITH_TAB_ON_TOP;
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if config.navigation.is_native() {
-            return 0.0;
-        }
-    }
-
-    crate::constants::PADDING_Y
-}
-
-#[inline]
-fn padding_bottom_from_config(config: &rio_backend::config::Config) -> f32 {
-    if config.navigation.is_placed_on_bottom() {
-        config.fonts.size
-    } else {
-        0.0
-    }
-}
 
 pub struct Screen {
     bindings: crate::bindings::KeyBindings,

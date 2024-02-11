@@ -172,20 +172,20 @@ pub mod window {
         }
     }
     /// Get current OS clipboard value
-    pub fn clipboard_get(id: u16) -> Option<String> {
-        let mut d = get_handler().lock();
-        if let Some(d) = d.get_mut(id) {
-            d.clipboard.get()
-        } else {
+    pub fn clipboard_get(_id: u16) -> Option<String> {
+        // let mut d = get_handler().lock();
+        // if let Some(d) = d.get_mut(id) {
+        //     d.clipboard.get()
+        // } else {
             Some(String::from(""))
-        }
+        // }
     }
     /// Save value to OS clipboard
-    pub fn clipboard_set(id: u16, data: &str) {
-        let mut d = get_handler().lock();
-        if let Some(d) = d.get_mut(id) {
-            d.clipboard.set(data)
-        }
+    pub fn clipboard_set(_id: u16, _data: &str) {
+        // let mut d = get_handler().lock();
+        // if let Some(d) = d.get_mut(id) {
+        //     d.clipboard.set(data)
+        // }
     }
 }
 
