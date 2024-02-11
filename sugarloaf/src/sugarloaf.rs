@@ -308,7 +308,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    fn reset_state(&mut self) {
+    fn clean_state(&mut self) {
         self.rects.clear();
         self.state.clean_compositor();
     }
@@ -331,13 +331,19 @@ impl Sugarloaf {
     #[inline]
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
+        self.state.compute_changes();
         self.state.compute_dimensions(
             &mut self.rich_text_brush,
             &mut self.text_brush,
-            &mut self.ctx,
         );
 
-        self.state.compute_updates(&mut self.text_brush, &mut self.rects);
+        if self.state.last_diff_was_equal() {
+            self.clean_state();
+            return;
+        } else {
+            self.state.compute_updates(&mut self.rich_text_brush, &mut self.text_brush, &mut self.rects, &mut self.ctx,);
+        }
+
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
@@ -387,14 +393,12 @@ impl Sugarloaf {
                     .text_brush
                     .draw_queued(&mut self.ctx, &mut encoder, view);
 
-                // if self.level.is_advanced() {
                 self.rich_text_brush.render(
                     &mut self.ctx,
                     &self.state,
                     &mut encoder,
                     view,
                 );
-                // }
 
                 // if !self.graphic_rects.is_empty() {
                 //     for entry_render in
@@ -443,6 +447,6 @@ impl Sugarloaf {
                 }
             }
         }
-        self.reset_state();
+        self.clean_state();
     }
 }

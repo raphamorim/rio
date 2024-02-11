@@ -34,7 +34,7 @@ impl SugarState {
             current: SugarTree::default(),
             next,
             dimensions_changed: false,
-            latest_change: SugarTreeDiff::Equal,
+            latest_change: SugarTreeDiff::LayoutIsDifferent,
         }
     }
 
@@ -51,6 +51,11 @@ impl SugarState {
     #[inline]
     pub fn set_fonts(&mut self, fonts: Vec<FontArc>) {
         self.compositors.elementary.set_fonts(fonts);
+    }
+
+    #[inline]
+    pub fn last_diff_was_equal(&self) -> bool {
+        self.latest_change == SugarTreeDiff::Equal
     }
 
     #[inline]
@@ -88,8 +93,10 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_updates(&mut self, elementary_brush: &mut text::GlyphBrush<()>, rects_to_render: &mut Vec<Rect>) {
-        if !self.level.is_advanced() {
+    pub fn compute_updates(&mut self, advance_brush: &mut RichTextBrush, elementary_brush: &mut text::GlyphBrush<()>, rects_to_render: &mut Vec<Rect>, context: &mut super::Context,) {
+        if self.level.is_advanced() {
+            advance_brush.prepare(context, &self);
+        } else {
             let (sections, rects) = self.compositors.elementary.render_data();
             for section in sections {
                 elementary_brush.queue(section);
@@ -104,12 +111,10 @@ impl SugarState {
         &mut self,
         advance_brush: &mut RichTextBrush,
         elementary_brush: &mut text::GlyphBrush<()>,
-        context: &mut super::Context,
     ) {
         // If layout is different or current has empty dimensions
         // then current will flip with next and will try to obtain
         // the dimensions.
-        self.compute_changes();
         
         if self.latest_change == SugarTreeDiff::LayoutIsDifferent
                 || self.current_has_empty_dimensions() {
@@ -137,8 +142,6 @@ impl SugarState {
                         log::info!("sugar_state: dimensions has changed");
                     }
                 }
-
-                advance_brush.prepare(context, &self);
             } else {
                 let font_bound = self.compositors.elementary.calculate_dimensions(
                     ' ',
