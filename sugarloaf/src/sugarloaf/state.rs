@@ -54,11 +54,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn last_diff_was_equal(&self) -> bool {
-        self.latest_change == SugarTreeDiff::Equal
-    }
-
-    #[inline]
     pub fn process(&mut self, block: &mut SugarBlock) {
         match self.level {
             SugarCompositorLevel::Elementary => self
@@ -93,7 +88,11 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_updates(&mut self, advance_brush: &mut RichTextBrush, elementary_brush: &mut text::GlyphBrush<()>, rects_to_render: &mut Vec<Rect>, context: &mut super::Context,) {
+    pub fn compute_updates(&mut self, advance_brush: &mut RichTextBrush, elementary_brush: &mut text::GlyphBrush<()>, rects_to_render: &mut Vec<Rect>, context: &mut super::Context,) -> bool {
+        if self.latest_change == SugarTreeDiff::Equal {
+            return false;
+        }
+
         if self.level.is_advanced() {
             advance_brush.prepare(context, &self);
         } else {
@@ -104,6 +103,8 @@ impl SugarState {
 
             rects_to_render.extend(rects);
         }
+
+        true
     }
 
     #[inline]
@@ -116,58 +117,59 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
         
-        if self.latest_change == SugarTreeDiff::LayoutIsDifferent
-                || self.current_has_empty_dimensions() {
+        if self.latest_change != SugarTreeDiff::LayoutIsDifferent
+                || !self.current_has_empty_dimensions() {
+            return;
+        }
             
-            if self.level.is_advanced() {
-                if let Some((width, height)) = advance_brush.dimensions(&self) {
-                    let mut dimensions_changed = false;
-                    if height != self.current.layout.dimensions.height {
-                        self.current.layout.dimensions.height = height;
-                        log::info!("prepare_render: changed height... {}", height);
-                        dimensions_changed = true;
-                    }
-
-                    if width != self.current.layout.dimensions.width {
-                        self.current.layout.dimensions.width = width;
-                        self.current.layout.update_columns_per_font_width();
-                        log::info!("prepare_render: changed width... {}", width);
-                        dimensions_changed = true;
-                    }
-
-                    if dimensions_changed {
-                        self.current.layout.update();
-                        self.next.layout = self.current.layout;
-                        self.dimensions_changed = dimensions_changed;
-                        log::info!("sugar_state: dimensions has changed");
-                    }
-                }
-            } else {
-                let font_bound = self.compositors.elementary.calculate_dimensions(
-                    ' ',
-                    crate::font::FONT_ID_REGULAR,
-                    &self.current,
-                    elementary_brush,
-                );
-
+        if self.level.is_advanced() {
+            if let Some((width, height)) = advance_brush.dimensions(&self) {
                 let mut dimensions_changed = false;
-                if font_bound.0 != self.current.layout.dimensions.width {
+                if height != self.current.layout.dimensions.height {
+                    self.current.layout.dimensions.height = height;
+                    log::info!("prepare_render: changed height... {}", height);
                     dimensions_changed = true;
-                    self.current.layout.dimensions.width = font_bound.0;
-                    self.current.layout.update_columns_per_font_width();
                 }
 
-                if font_bound.1 != self.current.layout.dimensions.height {
+                if width != self.current.layout.dimensions.width {
+                    self.current.layout.dimensions.width = width;
+                    self.current.layout.update_columns_per_font_width();
+                    log::info!("prepare_render: changed width... {}", width);
                     dimensions_changed = true;
-                    self.current.layout.dimensions.height = font_bound.1;
                 }
 
                 if dimensions_changed {
                     self.current.layout.update();
                     self.next.layout = self.current.layout;
-                    self.dimensions_changed = true;
+                    self.dimensions_changed = dimensions_changed;
                     log::info!("sugar_state: dimensions has changed");
                 }
+            }
+        } else {
+            let font_bound = self.compositors.elementary.calculate_dimensions(
+                ' ',
+                crate::font::FONT_ID_REGULAR,
+                &self.current,
+                elementary_brush,
+            );
+
+            let mut dimensions_changed = false;
+            if font_bound.0 != self.current.layout.dimensions.width {
+                dimensions_changed = true;
+                self.current.layout.dimensions.width = font_bound.0;
+                self.current.layout.update_columns_per_font_width();
+            }
+
+            if font_bound.1 != self.current.layout.dimensions.height {
+                dimensions_changed = true;
+                self.current.layout.dimensions.height = font_bound.1;
+            }
+
+            if dimensions_changed {
+                self.current.layout.update();
+                self.next.layout = self.current.layout;
+                self.dimensions_changed = true;
+                log::info!("sugar_state: dimensions has changed");
             }
         }
     }
