@@ -10,8 +10,6 @@ mod extra;
 mod layout;
 mod section;
 
-pub mod legacy;
-
 pub use crate::glyph::{brush::*, calculator::*, extra::*, section::*};
 pub use cache::Rectangle;
 pub use layout::*;
