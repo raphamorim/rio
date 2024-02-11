@@ -276,11 +276,11 @@ impl Sugarloaf {
 
         let layout = if single_line {
             crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Bottom)
+                .v_align(crate::glyph::VerticalAlign::Center)
                 .h_align(crate::glyph::HorizontalAlign::Left)
         } else {
             crate::glyph::Layout::default()
-                .v_align(crate::glyph::VerticalAlign::Bottom)
+                .v_align(crate::glyph::VerticalAlign::Center)
                 .h_align(crate::glyph::HorizontalAlign::Left)
         };
 

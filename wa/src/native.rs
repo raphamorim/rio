@@ -62,7 +62,7 @@ pub(crate) struct NativeDisplayData {
     pub high_dpi: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
-    pub clipboard: Box<dyn Clipboard>,
+    // pub clipboard: Box<dyn Clipboard>,
 
     pub display_handle: Option<raw_window_handle::RawDisplayHandle>,
     pub window_handle: Option<raw_window_handle::RawWindowHandle>,
@@ -79,7 +79,7 @@ impl NativeDisplayData {
     pub fn new(
         screen_width: i32,
         screen_height: i32,
-        clipboard: Box<dyn Clipboard>,
+        // clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
             screen_width,
@@ -88,7 +88,7 @@ impl NativeDisplayData {
             high_dpi: false,
             quit_requested: false,
             quit_ordered: false,
-            clipboard,
+            // clipboard,
             display_handle: None,
             window_handle: None,
             #[cfg(target_vendor = "apple")]
