@@ -1,10 +1,10 @@
 use crate::Sugar;
 // use std::mem::MaybeUninit;
 
-pub const LINE_MAX_CHARACTERS: usize = 500;
+pub const SUGAR_BLOCK_MAX_CONTENT_SIZE: usize = 500;
 
 #[inline]
-pub fn create_sugar_line() -> [Sugar; LINE_MAX_CHARACTERS] {
+pub fn create_sugar_block() -> [Sugar; SUGAR_BLOCK_MAX_CONTENT_SIZE] {
     // let inner = {
     //     // Create an array of uninitialized values.
     //     let mut array: [MaybeUninit<Sugar>; LINE_MAX_CHARACTERS] =

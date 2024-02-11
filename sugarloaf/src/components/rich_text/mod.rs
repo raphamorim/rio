@@ -316,7 +316,7 @@ impl RichTextBrush {
         // println!("{:?}", state);
         draw_layout(
             &mut self.comp,
-            &state.render_data,
+            &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
             state.current.layout.style.screen_position.1,
         );
@@ -339,15 +339,17 @@ impl RichTextBrush {
     #[inline]
     pub fn dimensions(
         &mut self,
-        ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
     ) -> Option<(f32, f32)> {
         self.comp.begin();
 
-        let dimensions =
-            get_sugar_dimensions(&mut self.comp, &state.render_data_sugar, 0.0, 0.0);
+        let dimensions = get_sugar_dimensions(
+            &mut self.comp,
+            &state.compositors.advanced.render_data_sugar,
+            0.0,
+            0.0,
+        );
         println!("dimensions: {:?}", dimensions);
-        self.finish_composition(ctx);
         if dimensions.0 > 0. && dimensions.1 > 0. {
             Some(dimensions)
         } else {

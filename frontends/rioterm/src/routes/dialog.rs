@@ -7,27 +7,28 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
 
-    let height = sugarloaf.layout.height / sugarloaf.layout.scale_factor;
+    let layout = sugarloaf.layout();
+    let height = layout.height / layout.scale_factor;
 
     let assistant_background = vec![
         Rect {
             position: [0., 30.0],
             color: blue,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
         Rect {
-            position: [15., sugarloaf.layout.margin.top_y + 40.],
+            position: [15., layout.margin.top_y + 40.],
             color: yellow,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
         Rect {
-            position: [30., sugarloaf.layout.margin.top_y + 120.],
+            position: [30., layout.margin.top_y + 120.],
             color: red,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
     ];
 
-    sugarloaf.pile_rects(assistant_background);
+    sugarloaf.append_rects(assistant_background);
 
     let mid_screen = height / 2.;
 

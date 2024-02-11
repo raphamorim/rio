@@ -223,9 +223,9 @@ impl EventHandler for Router {
                 RioEvent::UpdateFontSize(action) => {
                     if let Some(current) = &mut self.route {
                         let should_update = match action {
-                            0 => current.sugarloaf.layout.reset_font_size(),
-                            2 => current.sugarloaf.layout.increase_font_size(),
-                            1 => current.sugarloaf.layout.decrease_font_size(),
+                            0 => current.sugarloaf.layout_next().reset_font_size(),
+                            2 => current.sugarloaf.layout_next().increase_font_size(),
+                            1 => current.sugarloaf.layout_next().decrease_font_size(),
                             _ => false,
                         };
 
@@ -236,10 +236,6 @@ impl EventHandler for Router {
                         // This is a hacky solution, sugarloaf compute bounds in runtime
                         // so basically it updates with the new font-size, then compute the bounds
                         // and then updates again with correct bounds
-                        current.sugarloaf.layout.update();
-                        current.sugarloaf.calculate_bounds();
-                        current.sugarloaf.layout.update();
-
                         current.resize_all_contexts();
 
                         current.render();
@@ -252,11 +248,11 @@ impl EventHandler for Router {
                         if let Some(graphic_queues) = graphics {
                             let renderer = &mut current.sugarloaf;
                             for graphic_data in graphic_queues.pending {
-                                renderer.graphics.add(graphic_data);
+                                renderer.add_graphic(graphic_data);
                             }
 
                             for graphic_data in graphic_queues.remove_queue {
-                                renderer.graphics.remove(&graphic_data);
+                                renderer.remove_graphic(&graphic_data);
                             }
                         }
                     }
@@ -455,7 +451,6 @@ impl EventHandler for Router {
                 current
                     .sugarloaf
                     .resize(w.try_into().unwrap(), h.try_into().unwrap());
-                current.sugarloaf.calculate_bounds();
             } else {
                 current
                     .sugarloaf
