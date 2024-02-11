@@ -105,6 +105,11 @@ pub fn calculate_mouse_position(
     margin_y_top: f32,
     cell_dimension: (f32, f32),
 ) -> Pos {
+    // In case sugarloaf hasn't obtained the dimensions
+    if cell_dimension.0 == 0.0 || cell_dimension.1 == 0.0 {
+        return Pos::default();
+    }
+
     let cell_width = cell_dimension.0.round() as usize;
     let cell_height = cell_dimension.1.round() as usize;
     let scaled_margin_x = (margin_x_left * scale_factor).round() as usize;

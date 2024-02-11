@@ -1,5 +1,5 @@
 // use std::ops::Range;
-use crate::sugarloaf::SugarLine;
+use crate::SugarBlock;
 use crate::sugarloaf::SugarloafLayout;
 use crate::Sugar;
 
@@ -31,9 +31,8 @@ pub enum SugarTreeDiff {
 
 #[derive(Clone)]
 pub struct SugarTree {
-    inner: Vec<SugarLine>,
+    pub inner: Vec<SugarBlock>,
     pub layout: SugarloafLayout,
-    // cursor_position: (u16, u16), // (col, line)
 }
 
 impl Default for SugarTree {
@@ -49,18 +48,18 @@ impl Default for SugarTree {
 //     fn default() -> Self {
 //         // let inner = {
 //         //     // Create an array of uninitialized values.
-//         //     let mut array: [MaybeUninit<SugarLine>; LINE_MAX_LINES] =
+//         //     let mut array: [MaybeUninit<SugarBlock>; LINE_MAX_LINES] =
 //         //         unsafe { MaybeUninit::uninit().assume_init() };
 
 //         //     for element in array.iter_mut() {
-//         //         *element = MaybeUninit::new(SugarLine::default());
+//         //         *element = MaybeUninit::new(SugarBlock::default());
 //         //     }
 
-//         //     unsafe { std::mem::transmute::<_, [SugarLine; LINE_MAX_LINES]>(array) }
+//         //     unsafe { std::mem::transmute::<_, [SugarBlock; LINE_MAX_LINES]>(array) }
 //         // };
-//         let mut inner_vec: Vec<SugarLine> = Vec::with_capacity(LINE_MAX_LINES);
+//         let mut inner_vec: Vec<SugarBlock> = Vec::with_capacity(LINE_MAX_LINES);
 //         for _i in 0..LINE_MAX_LINES {
-//             inner_vec.push(SugarLine::default());
+//             inner_vec.push(SugarBlock::default());
 //         }
 
 //         Self {
@@ -85,8 +84,8 @@ impl SugarTree {
 
         if current_len == next_len {
             for line_number in 0..current_len {
-                let line: SugarLine = self.inner[line_number];
-                let next_line: SugarLine = next.inner[line_number];
+                let line: SugarBlock = self.inner[line_number];
+                let next_line: SugarBlock = next.inner[line_number];
                 if line.len != next_line.len {
                     return SugarTreeDiff::ColumnsLengthIsDifferent(
                         line.len as i32 - next_line.len as i32,
@@ -123,17 +122,17 @@ impl SugarTree {
     }
 
     #[inline]
-    pub fn insert(&mut self, id: usize, content: SugarLine) {
+    pub fn insert(&mut self, id: usize, content: SugarBlock) {
         self.inner.insert(id, content);
     }
 
     #[inline]
-    pub fn insert_last(&mut self, content: SugarLine) {
+    pub fn insert_last(&mut self, content: SugarBlock) {
         self.inner.insert(self.inner.len(), content);
     }
 
     #[inline]
-    pub fn line_mut(&mut self, line_number: usize) -> &mut SugarLine {
+    pub fn line_mut(&mut self, line_number: usize) -> &mut SugarBlock {
         &mut self.inner[line_number]
     }
 
@@ -169,13 +168,13 @@ pub mod test {
             SugarTreeDiff::Equal
         );
 
-        sugartree_a.insert(0, SugarLine::default());
+        sugartree_a.insert(0, SugarBlock::default());
         sugartree_a.line_mut(0).insert(Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
-        sugartree_b.insert(0, SugarLine::default());
+        sugartree_b.insert(0, SugarBlock::default());
         sugartree_b.line_mut(0).insert(Sugar {
             content: 'b',
             ..Sugar::default()
@@ -208,11 +207,11 @@ pub mod test {
 
         assert_eq!(sugartree_a.len(), 0);
 
-        sugartree_a.insert_last(SugarLine::default());
+        sugartree_a.insert_last(SugarBlock::default());
 
         assert_eq!(sugartree_a.len(), 1);
 
-        sugartree_a.insert_last(SugarLine::default());
+        sugartree_a.insert_last(SugarBlock::default());
 
         assert_eq!(sugartree_a.len(), 2);
     }
@@ -222,23 +221,23 @@ pub mod test {
         let mut sugartree_a = SugarTree::default();
         let mut sugartree_b = SugarTree::default();
 
-        sugartree_a.insert(0, SugarLine::default());
+        sugartree_a.insert(0, SugarBlock::default());
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
             SugarTreeDiff::LineLengthIsDifferent(1)
         );
 
-        sugartree_a.insert(1, SugarLine::default());
+        sugartree_a.insert(1, SugarBlock::default());
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
             SugarTreeDiff::LineLengthIsDifferent(2)
         );
 
-        sugartree_b.insert(0, SugarLine::default());
-        sugartree_b.insert(1, SugarLine::default());
-        sugartree_b.insert(2, SugarLine::default());
+        sugartree_b.insert(0, SugarBlock::default());
+        sugartree_b.insert(1, SugarBlock::default());
+        sugartree_b.insert(2, SugarBlock::default());
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
@@ -251,13 +250,13 @@ pub mod test {
         let mut sugartree_a = SugarTree::default();
         let mut sugartree_b = SugarTree::default();
 
-        sugartree_a.insert(0, SugarLine::default());
+        sugartree_a.insert(0, SugarBlock::default());
         sugartree_a.line_mut(0).insert(Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
-        sugartree_b.insert(0, SugarLine::default());
+        sugartree_b.insert(0, SugarBlock::default());
         sugartree_b.line_mut(0).insert(Sugar {
             content: 'b',
             ..Sugar::default()
@@ -307,13 +306,13 @@ pub mod test {
         let mut sugartree_a = SugarTree::default();
         let mut sugartree_b = SugarTree::default();
 
-        sugartree_a.insert(0, SugarLine::default());
+        sugartree_a.insert(0, SugarBlock::default());
         sugartree_a.line_mut(0).insert(Sugar {
             content: 'a',
             ..Sugar::default()
         });
 
-        sugartree_b.insert(0, SugarLine::default());
+        sugartree_b.insert(0, SugarBlock::default());
         sugartree_b.line_mut(0).insert(Sugar {
             content: 'b',
             ..Sugar::default()
@@ -333,8 +332,7 @@ pub mod test {
                 },
                 repeated: 0,
                 decoration: Disabled,
-                cursor: None,
-                custom_decoration: None,
+                cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
@@ -348,8 +346,7 @@ pub mod test {
                 },
                 repeated: 0,
                 decoration: Disabled,
-                cursor: None,
-                custom_decoration: None,
+                cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
         }];
@@ -383,8 +380,7 @@ pub mod test {
                 },
                 repeated: 0,
                 decoration: Disabled,
-                cursor: None,
-                custom_decoration: None,
+                cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
@@ -398,8 +394,7 @@ pub mod test {
                 },
                 repeated: 0,
                 decoration: Disabled,
-                cursor: None,
-                custom_decoration: None,
+                cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
         });

@@ -72,14 +72,14 @@ pub struct Delta<T: Default> {
     pub bottom_y: T,
 }
 
-#[derive(Copy, Clone, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct SugarDimensions {
     pub width: f32,
     pub height: f32,
     pub scale: f32,
 }
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct SugarloafLayout {
     pub line_height: f32,
     pub width: f32,
@@ -91,6 +91,23 @@ pub struct SugarloafLayout {
     pub margin: Delta<f32>,
     pub style: SugarloafStyle,
     pub dimensions: SugarDimensions,
+}
+
+impl Default for SugarloafLayout {
+    fn default() -> Self {
+        Self {
+            line_height: 1.0,
+            width: 0.0,
+            height: 0.0,
+            font_size: 0.0,
+            original_font_size: 0.0,
+            columns: MIN_COLS,
+            lines: MIN_LINES,
+            margin: Delta::<f32>::default(),
+            style: SugarloafStyle::default(),
+            dimensions: SugarDimensions::default(),
+        }
+    }
 }
 
 #[inline]
@@ -107,6 +124,9 @@ fn update_styles(layout: &mut SugarloafLayout) {
     layout.style = new_styles;
 }
 
+const MIN_COLS: usize = 2;
+const MIN_LINES: usize = 1;
+
 // $ tput columns
 // $ tput lines
 #[inline]
@@ -122,17 +142,14 @@ fn compute(
 
     let mut lines = (height / dimensions.scale) - margin_spaces;
     lines /= (dimensions.height / dimensions.scale) * line_height;
-    let visible_lines = std::cmp::max(lines.floor() as usize, MIN_COLS);
+    let visible_lines = std::cmp::max(lines.floor() as usize, MIN_LINES);
 
     let mut visible_columns = (width / dimensions.scale) - margin_x;
     visible_columns /= dimensions.width / dimensions.scale;
-    let visible_columns = std::cmp::max(visible_columns as usize, MIN_LINES);
+    let visible_columns = std::cmp::max(visible_columns as usize, MIN_COLS);
 
     (visible_columns, visible_lines)
 }
-
-const MIN_COLS: usize = 2;
-const MIN_LINES: usize = 1;
 
 impl SugarloafLayout {
     pub fn new(
@@ -145,11 +162,18 @@ impl SugarloafLayout {
     ) -> SugarloafLayout {
         let style = SugarloafStyle::default();
 
+        // Line height can never be zero
+        let line_height = if line_height == 0.0 {
+            1.0
+        } else {
+            line_height
+        };
+
         let mut layout = SugarloafLayout {
             width,
             height,
-            columns: 2,
-            lines: 1,
+            columns: MIN_COLS,
+            lines: MIN_LINES,
             original_font_size: font_size,
             font_size,
             dimensions: SugarDimensions {
@@ -207,7 +231,7 @@ impl SugarloafLayout {
     }
 
     #[inline]
-    pub fn update(&mut self) -> &mut Self {
+    pub fn update(&mut self) {
         update_styles(self);
         let (columns, lines) = compute(
             self.width,
@@ -218,7 +242,6 @@ impl SugarloafLayout {
         );
         self.columns = columns;
         self.lines = lines;
-        self
     }
 
     #[inline]
