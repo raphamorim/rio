@@ -337,13 +337,10 @@ impl Sugarloaf {
             &mut self.text_brush,
         );
 
-        if self.state.last_diff_was_equal() {
+        if !self.state.compute_updates(&mut self.rich_text_brush, &mut self.text_brush, &mut self.rects, &mut self.ctx,) {
             self.clean_state();
             return;
-        } else {
-            self.state.compute_updates(&mut self.rich_text_brush, &mut self.text_brush, &mut self.rects, &mut self.ctx,);
         }
-
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
