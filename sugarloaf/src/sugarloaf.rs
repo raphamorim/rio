@@ -249,28 +249,6 @@ impl Sugarloaf {
         self
     }
 
-    // /// calculate_bounds is a fake render operation that defines font bounds
-    // /// is an important function to figure out the cursor dimensions and background color
-    // /// but should be used as minimal as possible.
-    // ///
-    // /// For example: It is used in Rio terminal only in the initialization and
-    // /// configuration updates that leads to layout recalculation.
-    // ///
-    // #[inline]
-    // pub fn calculate_bounds(&mut self) {
-    //     // let text_scale = self.layout.style.text_scale;
-
-    //     self.state.reset_compositor();
-
-    //     // // Bounds are defined in runtime
-    //     // let font_bound = self.get_font_bounds(' ', FontId(crate::font::FONT_ID_REGULAR), text_scale);
-
-    //     // self.layout.dimensions.width = font_bound.0;
-    //     // self.layout.dimensions.height = font_bound.1;
-
-    //     // self.layout.update_columns_per_font_width();
-    // }
-
     #[inline]
     pub fn append_rects(&mut self, mut instances: Vec<Rect>) -> &mut Self {
         self.rects.append(&mut instances);
@@ -331,7 +309,7 @@ impl Sugarloaf {
 
     #[inline]
     fn reset_state(&mut self) {
-        self.rects = vec![];
+        self.rects.clear();
         self.state.clean_compositor();
     }
 
@@ -353,11 +331,13 @@ impl Sugarloaf {
     #[inline]
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
-        self.state.compute(
+        self.state.compute_dimensions(
             &mut self.rich_text_brush,
             &mut self.text_brush,
             &mut self.ctx,
         );
+
+        self.state.compute_updates(&mut self.text_brush, &mut self.rects);
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
