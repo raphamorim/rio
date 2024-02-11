@@ -11,7 +11,6 @@ pub mod touch;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
 };
-use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
 use crate::context::{self, ContextManager};
@@ -24,6 +23,7 @@ use crate::crosswords::{
 };
 use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
+use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::selection::{Selection, SelectionType};
 use crate::state;
 use core::fmt::Debug;

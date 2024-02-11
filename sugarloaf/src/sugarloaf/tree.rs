@@ -1,7 +1,7 @@
 // use std::ops::Range;
-use crate::SugarBlock;
 use crate::sugarloaf::SugarloafLayout;
 use crate::Sugar;
+use crate::SugarBlock;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SugarTreeChange {
