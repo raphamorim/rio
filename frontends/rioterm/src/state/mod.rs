@@ -16,7 +16,6 @@ use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
     Sugar, SugarCursor, SugarDecoration, SugarBlock, SugarStyle,
 };
-// use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 #[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;

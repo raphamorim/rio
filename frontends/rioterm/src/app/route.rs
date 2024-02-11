@@ -62,8 +62,7 @@ pub struct Route {
     pub modifiers: ModifiersState,
     pub path: RoutePath,
     pub assistant: Assistant,
-    #[cfg(target_os = "macos")]
-    tab_identifier: String,
+    pub is_focused: bool,
 }
 
 impl Route {
@@ -190,11 +189,11 @@ impl Route {
         if let Some(image) = background_image {
             sugarloaf.set_background_image(&image);
         }
-        // TODO: Bug sugarloaf is not starting with right width/height
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
         sugarloaf.render();
 
         Ok(Route {
+            is_focused: true,
             sugarloaf,
             ime,
             id,
@@ -208,8 +207,6 @@ impl Route {
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
             modifiers: ModifiersState::empty(),
-            #[cfg(target_os = "macos")]
-            tab_identifier: format!("id-{id}"),
         })
     }
 
@@ -575,16 +572,18 @@ impl Route {
     }
 
     #[inline]
+    pub fn set_modifiers(&mut self,mods: ModifiersState) {
+        self.modifiers = mods;
+    }
+
+    #[inline]
     pub fn process_key_event(
         &mut self,
         key_code: KeyCode,
-        mods: ModifiersState,
         is_pressed: bool,
         repeated: bool,
         text_with_modifiers: Option<smol_str::SmolStr>,
     ) {
-        self.modifiers = mods;
-
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
         // 2. In case IME has preedit then also should drop the key processing
@@ -610,7 +609,7 @@ impl Route {
                     KeyCode::Escape => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        mods,
+                        self.modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -633,7 +632,7 @@ impl Route {
 
             let key = BindingKey::Keycode { key: key_code };
 
-            if binding.is_triggered_by(binding_mode.to_owned(), mods.into(), &key) {
+            if binding.is_triggered_by(binding_mode.to_owned(), self.modifiers.into(), &key) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -712,38 +711,30 @@ impl Route {
                         self.ctx.create_new_window();
                     }
                     Act::TabCreateNew => {
-                        self.superloop.send_event_with_high_priority(
-                            RioEvent::CreateNativeTab(Some(self.tab_identifier.clone())),
-                            self.id,
+                        let redirect = true;
+                        let layout = self.sugarloaf.layout();
+                        self.ctx.add_context(
+                            redirect,
+                            layout,
+                            (
+                                &self.state.get_cursor_state_from_ref(),
+                                self.state.has_blinking_enabled,
+                            ),
                         );
-                        // let redirect = true;
 
-                        // self.ctx.add_context(
-                        //     redirect,
-                        //     (
-                        //         layout.width_u32,
-                        //         layout.height_u32,
-                        //     ),
-                        //     (layout.columns, self.sugarloaf.layout.lines),
-                        //     (
-                        //         &self.state.get_cursor_state_from_ref(),
-                        //         self.state.has_blinking_enabled,
-                        //     ),
-                        // );
-
-                        // self.render();
+                        self.render();
                     }
-                    // Act::TabCloseCurrent => {
-                    //     self.clear_selection();
+                    Act::TabCloseCurrent => {
+                        self.clear_selection();
 
-                    //     if self.ctx.config.is_native {
-                    //         self.ctx.close_current_window();
-                    //     } else {
-                    //         // Kill current context will trigger terminal.exit
-                    //         // then RioEvent::Exit and eventually try_close_existent_tab
-                    //         self.ctx.kill_current_context();
-                    //     }
-                    // }
+                        if self.ctx.config.is_native {
+                            self.ctx.close_current_window();
+                        } else {
+                            // Kill current context will trigger terminal.exit
+                            // then RioEvent::Exit and eventually try_close_existent_tab
+                            self.ctx.kill_current_context();
+                        }
+                    }
                     Act::Quit => {
                         wa::window::request_quit();
                     }
@@ -828,7 +819,7 @@ impl Route {
                         let mut terminal = self.ctx.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        // self.render();
+                        self.render();
                     }
                     Act::ToggleFullscreen => self.ctx.toggle_full_screen(),
                     Act::Minimize => {
@@ -878,7 +869,7 @@ impl Route {
                 }
 
                 let mut bytes = Vec::with_capacity(text.len() + 1);
-                if self.alt_send_esc(&mods) && text.len() == 1 {
+                if self.alt_send_esc() && text.len() == 1 {
                     bytes.push(b'\x1b');
                 }
                 bytes.extend_from_slice(text.as_bytes());
@@ -894,7 +885,7 @@ impl Route {
                     && !text.is_empty()
                     && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
                         || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                            && (mods.is_empty() || mods.shift)
+                            && (self.modifiers.is_empty() || self.modifiers.shift)
                             // && key.location != KeyLocation::Numpad
                             // Special case escape here.
                             && key_code != wa::KeyCode::Escape));
@@ -902,7 +893,7 @@ impl Route {
                 // Handle legacy char writing.
                 if write_legacy {
                     let mut bytes = Vec::with_capacity(text.len() + 1);
-                    if self.alt_send_esc(&mods) && text.len() == 1 {
+                    if self.alt_send_esc() && text.len() == 1 {
                         bytes.push(b'\x1b');
                     }
 
@@ -912,7 +903,7 @@ impl Route {
                     // Otherwise we should build the key sequence for the given input.
                     bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        mods,
+                        self.modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -1193,7 +1184,19 @@ impl Route {
         };
     }
 
-    // /// Whether we should send `ESC` due to `Alt` being pressed.
+    #[inline]
+    pub fn on_focus_change(&mut self, is_focused: bool) {
+        if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
+            let chr = if is_focused { "I" } else { "O" };
+
+            let msg = format!("\x1b[{}", chr);
+            self.ctx.current_mut()
+                .messenger
+                .send_bytes(msg.into_bytes());
+        }
+    }
+
+    // Whether we should send `ESC` due to `Alt` being pressed.
     #[cfg(not(target_os = "macos"))]
     #[inline]
     fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
@@ -1202,8 +1205,8 @@ impl Route {
 
     #[cfg(target_os = "macos")]
     #[inline]
-    fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
-        mods.alt
+    fn alt_send_esc(&mut self) -> bool {
+        self.modifiers.alt
             && (self.state.option_as_alt == *"both"
                 || (self.state.option_as_alt == *"left")
                     // && false)

@@ -109,6 +109,12 @@ impl EventHandler for Router {
 
         if should_redraw {
             if let Some(current) = &mut self.route {
+                if self.config.renderer.disable_unfocused_render
+                    && !current.is_focused
+                {
+                    return;
+                }
+
                 current.render();
             }
         }
@@ -276,6 +282,13 @@ impl EventHandler for Router {
         }
     }
 
+    fn focus_event(&mut self, focused: bool) {
+        if let Some(current) = &mut self.route {
+            current.is_focused = focused;
+            current.on_focus_change(focused);
+        }
+    }
+
     fn ime_event(&mut self, ime_state: ImeState) {
         if let Some(current) = &mut self.route {
             if current.path != RoutePath::Terminal {
@@ -309,17 +322,13 @@ impl EventHandler for Router {
         }
     }
 
-    fn key_down_event(
+    fn modifiers_event(
         &mut self,
         keycode: KeyCode,
         mods: ModifiersState,
-        repeat: bool,
-        character: Option<smol_str::SmolStr>,
     ) {
         if let Some(current) = &mut self.route {
-            if current.has_key_wait(keycode) {
-                return;
-            }
+            current.set_modifiers(mods);
 
             if (keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper)
                 && current.search_nearest_hyperlink_from_pos()
@@ -328,17 +337,31 @@ impl EventHandler for Router {
                 current.render();
                 return;
             }
-
-            current.process_key_event(keycode, mods, true, repeat, character);
         }
     }
-    fn key_up_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
+
+    fn key_down_event(
+        &mut self,
+        keycode: KeyCode,
+        repeat: bool,
+        character: Option<smol_str::SmolStr>,
+    ) {
+        // FIX: Tab isn't being captured whenever other key is holding
         if let Some(current) = &mut self.route {
             if current.has_key_wait(keycode) {
                 return;
             }
 
-            current.process_key_event(keycode, mods, false, false, None);
+            current.process_key_event(keycode, true, repeat, character);
+        }
+    }
+    fn key_up_event(&mut self, keycode: KeyCode) {
+        if let Some(current) = &mut self.route {
+            if current.has_key_wait(keycode) {
+                return;
+            }
+
+            current.process_key_event(keycode, false, false, None);
             current.render();
         }
     }

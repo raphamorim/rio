@@ -333,12 +333,14 @@ pub trait EventHandler {
     fn key_down_event(
         &mut self,
         _keycode: KeyCode,
-        _mods: ModifiersState,
         _repeat: bool,
         _text: Option<SmolStr>,
     ) {
     }
-    fn key_up_event(&mut self, _keycode: KeyCode, _mods: ModifiersState) {}
+    fn key_up_event(&mut self, _keycode: KeyCode) {}
+    fn modifiers_event(&mut self, _keycode: KeyCode, _mods: ModifiersState) {}
+
+    fn focus_event(&mut self, _focused: bool) {}
 
     /// Default implementation emulates mouse clicks
     fn touch_event(&mut self, phase: TouchPhase, _id: u64, x: f32, y: f32) {
