@@ -941,8 +941,8 @@ pub fn platform_key_bindings(
             KeyCode::Tab, Modifiers::CONTROL; Action::SelectNextTab;
             KeyCode::Tab, Modifiers::CONTROL | Modifiers::SHIFT; Action::SelectPrevTab;
             KeyCode::W, Modifiers::SUPER; Action::TabCloseCurrent;
-            KeyCode::RightBracket, Modifiers::SUPER | Modifiers::SHIFT; Action::SelectPrevTab;
-            KeyCode::LeftBracket, Modifiers::SUPER | Modifiers::SHIFT; Action::SelectNextTab;
+            KeyCode::LeftBracket, Modifiers::SUPER | Modifiers::SHIFT; Action::SelectPrevTab;
+            KeyCode::RightBracket, Modifiers::SUPER | Modifiers::SHIFT; Action::SelectNextTab;
             KeyCode::Key1, Modifiers::SUPER; Action::SelectTab(0);
             KeyCode::Key2, Modifiers::SUPER; Action::SelectTab(1);
             KeyCode::Key3, Modifiers::SUPER; Action::SelectTab(2);

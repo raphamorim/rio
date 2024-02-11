@@ -109,9 +109,7 @@ impl EventHandler for Router {
 
         if should_redraw {
             if let Some(current) = &mut self.route {
-                if self.config.renderer.disable_unfocused_render
-                    && !current.is_focused
-                {
+                if self.config.renderer.disable_unfocused_render && !current.is_focused {
                     return;
                 }
 
@@ -322,11 +320,7 @@ impl EventHandler for Router {
         }
     }
 
-    fn modifiers_event(
-        &mut self,
-        keycode: KeyCode,
-        mods: ModifiersState,
-    ) {
+    fn modifiers_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
         if let Some(current) = &mut self.route {
             current.set_modifiers(mods);
 

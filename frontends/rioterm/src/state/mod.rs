@@ -14,7 +14,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Sugar, SugarCursor, SugarDecoration, SugarBlock, SugarStyle,
+    Sugar, SugarBlock, SugarCursor, SugarDecoration, SugarStyle,
 };
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 #[cfg(target_os = "macos")]

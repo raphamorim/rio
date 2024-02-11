@@ -1033,11 +1033,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             let unmod = nsstring_to_string(unmod);
             let chars = get_event_char(event);
 
-            log::info!(
-                "KEY_DOWN (chars={:?} unmod={:?}",
-                chars,
-                unmod,
-            );
+            log::info!("KEY_DOWN (chars={:?} unmod={:?}", chars, unmod,);
 
             let old_ime = &payload.ime;
             // unmod is differently depending of the keymap used, for example if you
@@ -1067,11 +1063,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if !had_ime_input {
                 if let Some(key) = get_event_keycode(event) {
                     if let Some(event_handler) = payload.context() {
-                        event_handler.key_down_event(
-                            key,
-                            repeat,
-                            get_event_char(event),
-                        );
+                        event_handler.key_down_event(key, repeat, get_event_char(event));
                     }
                 }
             }

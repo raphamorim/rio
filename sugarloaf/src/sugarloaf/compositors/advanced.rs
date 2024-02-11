@@ -1,6 +1,6 @@
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
-use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration, SugarBlock};
+use crate::{Content, ContentBuilder, SugarBlock, SugarCursor, SugarDecoration};
 
 pub struct Advanced {
     pub render_data: Paragraph,
@@ -99,7 +99,11 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_block(&mut self, block: &mut SugarBlock, tree: &mut SugarTree) {
+    pub fn update_tree_with_block(
+        &mut self,
+        block: &mut SugarBlock,
+        tree: &mut SugarTree,
+    ) {
         if tree.is_empty() {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[

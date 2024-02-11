@@ -188,7 +188,11 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn update_tree_with_block(&mut self, block: &mut SugarBlock, tree: &mut SugarTree) {
+    pub fn update_tree_with_block(
+        &mut self,
+        block: &mut SugarBlock,
+        tree: &mut SugarTree,
+    ) {
         tree.insert_last(*block);
 
         let mut x = 0.;

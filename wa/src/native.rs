@@ -63,7 +63,6 @@ pub(crate) struct NativeDisplayData {
     pub quit_requested: bool,
     pub quit_ordered: bool,
     // pub clipboard: Box<dyn Clipboard>,
-
     pub display_handle: Option<raw_window_handle::RawDisplayHandle>,
     pub window_handle: Option<raw_window_handle::RawWindowHandle>,
 

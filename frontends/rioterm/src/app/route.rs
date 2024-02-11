@@ -572,7 +572,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn set_modifiers(&mut self,mods: ModifiersState) {
+    pub fn set_modifiers(&mut self, mods: ModifiersState) {
         self.modifiers = mods;
     }
 
@@ -632,7 +632,11 @@ impl Route {
 
             let key = BindingKey::Keycode { key: key_code };
 
-            if binding.is_triggered_by(binding_mode.to_owned(), self.modifiers.into(), &key) {
+            if binding.is_triggered_by(
+                binding_mode.to_owned(),
+                self.modifiers.into(),
+                &key,
+            ) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -722,6 +726,7 @@ impl Route {
                             ),
                         );
 
+                        self.sugarloaf.force_redraw_on_next();
                         self.render();
                     }
                     Act::TabCloseCurrent => {
@@ -841,12 +846,14 @@ impl Route {
                     Act::SelectNextTab => {
                         self.clear_selection();
                         self.ctx.switch_to_next();
-                        // self.render();
+                        self.sugarloaf.force_redraw_on_next();
+                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.clear_selection();
                         self.ctx.switch_to_prev();
-                        // self.render();
+                        self.sugarloaf.force_redraw_on_next();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -1190,7 +1197,8 @@ impl Route {
             let chr = if is_focused { "I" } else { "O" };
 
             let msg = format!("\x1b[{}", chr);
-            self.ctx.current_mut()
+            self.ctx
+                .current_mut()
                 .messenger
                 .send_bytes(msg.into_bytes());
         }

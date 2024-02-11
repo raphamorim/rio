@@ -177,7 +177,7 @@ pub mod window {
         // if let Some(d) = d.get_mut(id) {
         //     d.clipboard.get()
         // } else {
-            Some(String::from(""))
+        Some(String::from(""))
         // }
     }
     /// Save value to OS clipboard
