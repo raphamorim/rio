@@ -41,6 +41,7 @@ pub struct Sugarloaf {
     fonts: SugarloafFonts,
     pub background_color: wgpu::Color,
     pub background_image: Option<types::Image>,
+    redraw_on_next: bool,
 }
 
 #[derive(Debug)]
@@ -162,6 +163,7 @@ impl Sugarloaf {
             rich_text_brush,
             rects: vec![],
             text_brush,
+            redraw_on_next: false,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -311,6 +313,16 @@ impl Sugarloaf {
     fn clean_state(&mut self) {
         self.rects.clear();
         self.state.clean_compositor();
+        self.redraw_on_next = false;
+    }
+
+    #[inline]
+    pub fn force_redraw_on_next(&mut self) {
+        // TODO: Find a better way of compute rect/text updates without
+        // having to have an external signal
+        // The best solution might be include text() and insert_rects()
+        // on self.state lifecycle
+        self.redraw_on_next = true;
     }
 
     #[inline]
@@ -332,12 +344,16 @@ impl Sugarloaf {
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
         self.state.compute_changes();
-        self.state.compute_dimensions(
+        self.state
+            .compute_dimensions(&mut self.rich_text_brush, &mut self.text_brush);
+
+        if !self.state.compute_updates(
             &mut self.rich_text_brush,
             &mut self.text_brush,
-        );
-
-        if !self.state.compute_updates(&mut self.rich_text_brush, &mut self.text_brush, &mut self.rects, &mut self.ctx,) {
+            &mut self.rects,
+            &mut self.ctx,
+            self.redraw_on_next,
+        ) {
             self.clean_state();
             return;
         }

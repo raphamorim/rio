@@ -1,8 +1,8 @@
-use crate::sugarloaf::Rect;
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
 use crate::sugarloaf::text;
+use crate::sugarloaf::Rect;
 use crate::sugarloaf::RichTextBrush;
 use crate::sugarloaf::SugarloafLayout;
 use crate::SugarBlock;
@@ -88,8 +88,15 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_updates(&mut self, advance_brush: &mut RichTextBrush, elementary_brush: &mut text::GlyphBrush<()>, rects_to_render: &mut Vec<Rect>, context: &mut super::Context,) -> bool {
-        if self.latest_change == SugarTreeDiff::Equal {
+    pub fn compute_updates(
+        &mut self,
+        advance_brush: &mut RichTextBrush,
+        elementary_brush: &mut text::GlyphBrush<()>,
+        rects_to_render: &mut Vec<Rect>,
+        context: &mut super::Context,
+        force_computation: bool,
+    ) -> bool {
+        if self.latest_change == SugarTreeDiff::Equal && !force_computation {
             return false;
         }
 
@@ -116,12 +123,13 @@ impl SugarState {
         // If layout is different or current has empty dimensions
         // then current will flip with next and will try to obtain
         // the dimensions.
-        
+
         if self.latest_change != SugarTreeDiff::LayoutIsDifferent
-                || !self.current_has_empty_dimensions() {
+            || !self.current_has_empty_dimensions()
+        {
             return;
         }
-            
+
         if self.level.is_advanced() {
             if let Some((width, height)) = advance_brush.dimensions(&self) {
                 let mut dimensions_changed = false;

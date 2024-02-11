@@ -163,11 +163,7 @@ impl SugarloafLayout {
         let style = SugarloafStyle::default();
 
         // Line height can never be zero
-        let line_height = if line_height == 0.0 {
-            1.0
-        } else {
-            line_height
-        };
+        let line_height = if line_height == 0.0 { 1.0 } else { line_height };
 
         let mut layout = SugarloafLayout {
             width,
