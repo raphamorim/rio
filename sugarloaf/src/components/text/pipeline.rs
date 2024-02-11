@@ -90,7 +90,6 @@ impl Pipeline<wgpu::DepthStencilState> {
         )
     }
 
-    #[allow(dead_code)]
     pub fn draw(
         &mut self,
         config: (
