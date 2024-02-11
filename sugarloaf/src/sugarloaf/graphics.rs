@@ -6,23 +6,12 @@ pub struct SugarGraphicEntry {
     pub handle: Handle,
 }
 
+#[derive(Default)]
 pub struct SugarloafGraphics {
     inner: FnvHashMap<SugarGraphicId, SugarGraphicEntry>,
 }
 
-impl Default for SugarloafGraphics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SugarloafGraphics {
-    pub fn new() -> Self {
-        SugarloafGraphics {
-            inner: FnvHashMap::default(),
-        }
-    }
-
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()

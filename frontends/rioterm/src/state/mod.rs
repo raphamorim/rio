@@ -14,7 +14,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Sugar, SugarCursor, SugarDecoration, SugarLine, SugarStyle,
+    Sugar, SugarCursor, SugarDecoration, SugarBlock, SugarStyle,
 };
 // use rio_backend::sugarloaf::layout::SpanStyle;
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
@@ -219,17 +219,17 @@ impl State {
         sugar
     }
 
-    // create_rich_sugar_stack is different than create_sugar_stack
+    // create_rich_sugar_block is different than create_sugar_block
     // it activates features like hyperlinks and text selection
     // this function is only called if state has either selection or hyperlink is some
     #[inline]
-    fn create_rich_sugar_stack(
+    fn create_rich_sugar_block(
         &mut self,
         row: &Row<Square>,
         has_cursor: bool,
         line: pos::Line,
-    ) -> SugarLine {
-        let mut sugar_line = SugarLine::default();
+    ) -> SugarBlock {
+        let mut sugar_block = SugarBlock::default();
 
         let columns: usize = row.len();
         for column in 0..columns {
@@ -240,12 +240,12 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                sugar_line.insert(self.create_graphic_sugar(square));
+                sugar_block.insert(self.create_graphic_sugar(square));
                 continue;
             }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                sugar_line.insert(self.create_cursor(square));
+                sugar_block.insert(self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -254,7 +254,7 @@ impl State {
                     .contains(pos::Pos::new(line, pos::Column(column)))
             {
                 let sugar = self.create_sugar(square);
-                sugar_line.insert(self.set_hyperlink_in_sugar(sugar));
+                sugar_block.insert(self.set_hyperlink_in_sugar(sugar));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
@@ -278,9 +278,9 @@ impl State {
                     background_color: self.named_colors.selection_background,
                     ..Sugar::default()
                 };
-                sugar_line.insert(selected_sugar);
+                sugar_block.insert(selected_sugar);
             } else {
-                sugar_line.insert(self.create_sugar(square));
+                sugar_block.insert(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -289,7 +289,7 @@ impl State {
             }
         }
 
-        sugar_line
+        sugar_block
     }
 
     #[inline]
@@ -443,8 +443,8 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarLine {
-        let mut sugar_line = SugarLine::default();
+    fn create_sugar_block(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarBlock {
+        let mut sugar_block = SugarBlock::default();
         let columns: usize = row.len();
 
         for column in 0..columns {
@@ -455,14 +455,14 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                sugar_line.insert(self.create_graphic_sugar(square));
+                sugar_block.insert(self.create_graphic_sugar(square));
                 continue;
             }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                sugar_line.insert(self.create_cursor(square));
+                sugar_block.insert(self.create_cursor(square));
             } else {
-                sugar_line.insert(self.create_sugar(square));
+                sugar_block.insert(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -471,7 +471,7 @@ impl State {
             }
         }
 
-        sugar_line
+        sugar_block
     }
 
     #[inline]
@@ -575,10 +575,11 @@ impl State {
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
+        let layout = sugarloaf.layout();
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
-        self.font_size = sugarloaf.layout.font_size;
+        self.font_size = layout.font_size;
 
         // Only blink cursor if does not contain selection
         let has_selection = self.selection_range.is_some();
@@ -599,7 +600,7 @@ impl State {
         if has_selection || self.hyperlink_range.is_some() {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_rich_sugar_stack(
+                sugarloaf.process(self.create_rich_sugar_block(
                     row,
                     has_cursor,
                     pos::Line((i as i32) - display_offset),
@@ -608,20 +609,20 @@ impl State {
         } else {
             for (i, row) in rows.iter().enumerate() {
                 let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
+                sugarloaf.process(self.create_sugar_block(row, has_cursor));
             }
         }
 
         self.navigation.content(
-            (sugarloaf.layout.width, sugarloaf.layout.height),
-            sugarloaf.layout.dimensions.scale,
+            (layout.width, layout.height),
+            layout.dimensions.scale,
             context_manager.titles.key.as_str(),
             &context_manager.titles.titles,
             context_manager.current_index(),
             context_manager.len(),
         );
 
-        sugarloaf.pile_rects(self.navigation.rects.to_owned());
+        sugarloaf.append_rects(self.navigation.rects.to_owned());
 
         for text in self.navigation.texts.iter() {
             sugarloaf.text(

@@ -7,31 +7,32 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
 
-    let width = sugarloaf.layout.width / sugarloaf.layout.dimensions.scale;
+    let layout = sugarloaf.layout();
+    let width = layout.width / layout.dimensions.scale;
 
     let assistant_background = vec![
         Rect {
             position: [0., 30.0],
             color: blue,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
         Rect {
-            position: [15., sugarloaf.layout.margin.top_y + 40.],
+            position: [15., layout.margin.top_y + 40.],
             color: yellow,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
         Rect {
-            position: [30., sugarloaf.layout.margin.top_y + 120.],
+            position: [30., layout.margin.top_y + 120.],
             color: red,
-            size: [30., sugarloaf.layout.height],
+            size: [30., layout.height],
         },
     ];
 
-    sugarloaf.pile_rects(assistant_background);
+    sugarloaf.append_rects(assistant_background);
 
     if width <= 440. {
         sugarloaf.text(
-            (70., sugarloaf.layout.margin.top_y + 50.),
+            (70., layout.margin.top_y + 50.),
             String::from("Welcome to\nRio Terminal"),
             8,
             28.,
@@ -40,7 +41,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         );
 
         sugarloaf.text(
-            (70., sugarloaf.layout.margin.top_y + 100.),
+            (70., layout.margin.top_y + 100.),
             String::from("(enter to continue)"),
             8,
             18.,
@@ -49,7 +50,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         );
 
         sugarloaf.text(
-            (width - 50., sugarloaf.layout.margin.top_y + 320.),
+            (width - 50., layout.margin.top_y + 320.),
             String::from("󰌑"),
             7,
             26.,
@@ -58,7 +59,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         );
 
         sugarloaf.text(
-            (width - 50., sugarloaf.layout.margin.top_y + 340.),
+            (width - 50., layout.margin.top_y + 340.),
             String::from("nice"),
             8,
             14.,
@@ -70,7 +71,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     }
 
     sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 50.),
+        (70., layout.margin.top_y + 50.),
         String::from("Welcome to Rio Terminal"),
         8,
         28.,
@@ -79,7 +80,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     );
 
     sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 80.),
+        (70., layout.margin.top_y + 80.),
         String::from("(press enter to continue)"),
         8,
         18.,
@@ -88,7 +89,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     );
 
     sugarloaf.text(
-        (70., sugarloaf.layout.margin.top_y + 220.),
+        (70., layout.margin.top_y + 220.),
         welcome_content(),
         8,
         18.,
@@ -97,7 +98,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     );
 
     sugarloaf.text(
-        (width - 50., sugarloaf.layout.margin.top_y + 320.),
+        (width - 50., layout.margin.top_y + 320.),
         String::from("󰌑"),
         7,
         26.,
@@ -106,7 +107,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     );
 
     sugarloaf.text(
-        (width - 50., sugarloaf.layout.margin.top_y + 340.),
+        (width - 50., layout.margin.top_y + 340.),
         String::from("nice"),
         8,
         14.,
