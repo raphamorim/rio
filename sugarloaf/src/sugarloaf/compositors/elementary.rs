@@ -1,6 +1,6 @@
 use crate::font::{
-    FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR, FONT_ID_SYMBOL,
-    FONT_ID_UNICODE,
+    FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
+    FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
 use crate::glyph::OwnedSection;
 use crate::glyph::{FontId, GlyphCruncher};
@@ -53,20 +53,25 @@ impl Elementary {
     }
 
     #[inline]
+    pub fn render_data(&self) -> (&Vec<OwnedSection>, &Vec<Rect>) {
+        (&self.sections, &self.rects)
+    }
+
+    #[inline]
     pub fn calculate_dimensions(
         &mut self,
         content: char,
-        font_id: FontId,
+        font_id: usize,
         tree: &SugarTree,
         brush: &mut text::GlyphBrush<()>,
     ) -> (f32, f32) {
         let text = crate::components::text::Text {
             text: &content.to_owned().to_string(),
             scale: PxScale {
-                x: tree.layout.font_size,
-                y: tree.layout.font_size,
+                x: tree.layout.style.text_scale,
+                y: tree.layout.style.text_scale,
             },
-            font_id,
+            font_id: crate::sugarloaf::FontId(font_id),
             extra: crate::components::text::Extra {
                 color: [0., 0., 0., 0.],
                 z: 0.0,
@@ -99,9 +104,9 @@ impl Elementary {
             return *cached_sugar;
         }
 
-        #[allow(clippy::unnecessary_to_owned)]
+        // #[allow(clippy::unnecessary_to_owned)]
         // let fonts: &[FontArc] = &self.text_brush.fonts().to_owned();
-        let mut font_id = FontId(FONT_ID_REGULAR);
+        let mut font_id: FontId = FontId(FONT_ID_REGULAR);
 
         for (idx, _font_arc) in self.fonts.iter().enumerate() {
             let found_glyph_id = self.fonts[idx].glyph_id(sugar.content);
@@ -169,14 +174,15 @@ impl Elementary {
     #[inline]
     pub fn reset(&mut self) {
         // Clean font cache per instance
-        self.sugar_cache = FnvHashMap::default();
+        self.sugar_cache.clear();
         self.clean();
     }
 
     #[inline]
     pub fn clean(&mut self) {
-        self.rects = vec![];
-        self.graphic_rects = FnvHashMap::default();
+        self.rects.clear();
+        self.sections.clear();
+        self.graphic_rects.clear();
         self.current_row = 0;
         self.text_y = 0.0;
     }
