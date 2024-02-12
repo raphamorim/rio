@@ -57,10 +57,10 @@ impl Pipeline<()> {
         )
     }
 
-    pub fn draw(
-        &mut self,
+    pub fn draw<'pass>(
+        &'pass mut self,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
         transform: [f32; 16],
         region: Option<Region>,
@@ -90,11 +90,11 @@ impl Pipeline<wgpu::DepthStencilState> {
         )
     }
 
-    pub fn draw(
-        &mut self,
+    pub fn draw<'pass>(
+        &'pass mut self,
         config: (
             &mut wgpu::Queue,
-            &mut wgpu::CommandEncoder,
+            &mut wgpu::RenderPass<'pass>,
             &wgpu::TextureView,
         ),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
@@ -326,38 +326,38 @@ fn build<D>(
     }
 }
 
-fn draw<D>(
-    pipeline: &mut Pipeline<D>,
+fn draw<'pass, D>(
+    pipeline: &'pass mut Pipeline<D>,
     config: (
         &mut wgpu::Queue,
-        &mut wgpu::CommandEncoder,
+        &mut wgpu::RenderPass<'pass>,
         &wgpu::TextureView,
     ),
     depth_stencil_attachment: Option<wgpu::RenderPassDepthStencilAttachment>,
     transform: [f32; 16],
     region: Option<Region>,
 ) {
-    let (queue, encoder, target) = config;
+    let (queue, render_pass, target) = config;
     if transform != pipeline.current_transform {
         queue.write_buffer(&pipeline.transform, 0, bytemuck::cast_slice(&transform));
 
         pipeline.current_transform = transform;
     }
 
-    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("text::pipeline render pass"),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment,
-    });
+    // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    //     label: Some("text::pipeline render pass"),
+    //     timestamp_writes: None,
+    //     occlusion_query_set: None,
+    //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+    //         view: target,
+    //         resolve_target: None,
+    //         ops: wgpu::Operations {
+    //             load: wgpu::LoadOp::Load,
+    //             store: wgpu::StoreOp::Store,
+    //         },
+    //     })],
+    //     depth_stencil_attachment,
+    // });
 
     render_pass.set_pipeline(&pipeline.raw);
     render_pass.set_bind_group(0, &pipeline.uniforms, &[]);
