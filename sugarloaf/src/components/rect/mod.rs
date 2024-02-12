@@ -263,7 +263,6 @@ impl RectBrush {
     pub fn render<'pass>(
         &'pass mut self,
         rpass: &mut wgpu::RenderPass<'pass>,
-        _view: &wgpu::TextureView,
         state: &crate::sugarloaf::state::SugarState,
         ctx: &mut Context,
     ) {

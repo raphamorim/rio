@@ -102,7 +102,7 @@ impl SugarState {
             return false;
         }
 
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         if self.level.is_advanced() {
             advance_brush.prepare(context, &self);
@@ -118,11 +118,11 @@ impl SugarState {
             elementary_brush.keep_cached(section);
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in state.compute_updates() is: {:?} \n",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in state.compute_updates() is: {:?} \n",
+        //     duration
+        // );
 
         // Elementary renderer is used for everything else in sugarloaf
         // like blocks rendering (created by .text() or .append_rects())

@@ -60,12 +60,11 @@ impl Pipeline<()> {
     pub fn draw<'pass>(
         &'pass mut self,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
+        rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        draw(self, (queue, encoder, target), None, transform, region);
+        draw(self, (queue, rpass), transform, region);
     }
 }
 
@@ -92,23 +91,12 @@ impl Pipeline<wgpu::DepthStencilState> {
 
     pub fn draw<'pass>(
         &'pass mut self,
-        config: (
-            &mut wgpu::Queue,
-            &mut wgpu::RenderPass<'pass>,
-            &wgpu::TextureView,
-        ),
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
+        config: (&mut wgpu::Queue, &mut wgpu::RenderPass<'pass>),
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        let (queue, encoder, target) = config;
-        draw(
-            self,
-            (queue, encoder, target),
-            Some(depth_stencil_attachment),
-            transform,
-            region,
-        );
+        let (queue, rpass) = config;
+        draw(self, (queue, rpass), transform, region);
     }
 }
 
@@ -328,16 +316,11 @@ fn build<D>(
 
 fn draw<'pass, D>(
     pipeline: &'pass mut Pipeline<D>,
-    config: (
-        &mut wgpu::Queue,
-        &mut wgpu::RenderPass<'pass>,
-        &wgpu::TextureView,
-    ),
-    depth_stencil_attachment: Option<wgpu::RenderPassDepthStencilAttachment>,
+    config: (&mut wgpu::Queue, &mut wgpu::RenderPass<'pass>),
     transform: [f32; 16],
     region: Option<Region>,
 ) {
-    let (queue, render_pass, target) = config;
+    let (queue, render_pass) = config;
     if transform != pipeline.current_transform {
         queue.write_buffer(&pipeline.transform, 0, bytemuck::cast_slice(&transform));
 

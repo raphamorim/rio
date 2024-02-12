@@ -243,21 +243,6 @@ impl RichTextBrush {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            // primitive: wgpu::PrimitiveState {
-            //     topology: wgpu::PrimitiveTopology::TriangleList,
-            //     strip_index_format: None,
-            //     front_face: wgpu::FrontFace::Ccw,
-            //     cull_mode: None,
-            //     polygon_mode: wgpu::PolygonMode::Fill,
-            //     unclipped_depth: false,
-            //     conservative: false,
-            // },
-            // primitive: wgpu::PrimitiveState {
-            //     topology: wgpu::PrimitiveTopology::TriangleStrip,
-            //     front_face: wgpu::FrontFace::Cw,
-            //     strip_index_format: Some(wgpu::IndexFormat::Uint32),
-            //     ..Default::default()
-            // },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
@@ -314,12 +299,12 @@ impl RichTextBrush {
         // Render
         // let start = std::time::Instant::now();
         self.comp.begin();
-        // println!("{:?}", state);
         draw_layout(
             &mut self.comp,
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
-            state.current.layout.style.screen_position.1,
+            // To confirm: should actually * 1.5?
+            state.current.layout.style.screen_position.1 * 1.5,
         );
         self.dlist.clear();
         // let duration = start.elapsed();
@@ -364,7 +349,6 @@ impl RichTextBrush {
         ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
         rpass: &mut wgpu::RenderPass<'pass>,
-        view: &wgpu::TextureView,
     ) {
         let vertices: &[Vertex] = self.dlist.vertices();
         let indices: &[u32] = self.dlist.indices();

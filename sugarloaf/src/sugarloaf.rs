@@ -377,16 +377,12 @@ impl Sugarloaf {
                     }
 
                     self.rect_brush
-                        .render(&mut rpass, view, &self.state, &mut self.ctx);
+                        .render(&mut rpass, &self.state, &mut self.ctx);
 
-                    self.text_brush.render(&mut self.ctx, &mut rpass, view);
+                    self.text_brush.render(&mut self.ctx, &mut rpass);
 
-                    self.rich_text_brush.render(
-                        &mut self.ctx,
-                        &self.state,
-                        &mut rpass,
-                        view,
-                    );
+                    self.rich_text_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
 
                     // if !self.graphic_rects.is_empty() {
                     //     for entry_render in
