@@ -161,6 +161,11 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn layout_was_updated(&self) -> bool {
+        self.latest_change == SugarTreeDiff::LayoutIsDifferent
+    }
+
+    #[inline]
     pub fn compute_dimensions(
         &mut self,
         advance_brush: &mut RichTextBrush,
