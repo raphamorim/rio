@@ -143,7 +143,7 @@ impl<Depth> Pipeline<Depth> {
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
+        queue: &mut wgpu::Queue,
         instances: &mut [Instance],
     ) {
         if instances.is_empty() {
@@ -165,21 +165,21 @@ impl<Depth> Pipeline<Depth> {
         let instances_bytes = bytemuck::cast_slice(instances);
 
         if !instances_bytes.is_empty() {
-            let instances_buffer =
-                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("sugarloaf::text::Pipeline instances"),
-                    contents: instances_bytes,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
-                });
+            // let instances_buffer =
+            //     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            //         label: Some("sugarloaf::text::Pipeline instances"),
+            //         contents: instances_bytes,
+            //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+            //     });
 
-            encoder.copy_buffer_to_buffer(
-                &instances_buffer,
-                0,
-                &self.instances,
-                0,
-                mem::size_of::<Instance>() as u64 * instances.len() as u64,
-            );
-            // queue.write_buffer(&self.instances, 0, instances_bytes);
+            // encoder.copy_buffer_to_buffer(
+            //     &instances_buffer,
+            //     0,
+            //     &self.instances,
+            //     0,
+            //     mem::size_of::<Instance>() as u64 * instances.len() as u64,
+            // );
+            queue.write_buffer(&self.instances, 0, instances_bytes);
         }
 
         self.current_instances = instances.len();
@@ -412,8 +412,9 @@ pub struct Instance {
 }
 
 impl Instance {
-    const INITIAL_AMOUNT: usize = 50_000;
+    const INITIAL_AMOUNT: usize = 64;
 
+    #[inline]
     pub fn from_vertex(
         crate::components::text::glyph::GlyphVertex {
             mut tex_coords,

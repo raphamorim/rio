@@ -232,8 +232,10 @@ impl<F: Font, H: BuildHasher> GlyphBrushBuilder<F, H> {
 
             keep_in_cache: <_>::default(),
 
-            cache_glyph_positioning: self.cache_glyph_positioning,
-            cache_redraws: self.cache_redraws && self.cache_glyph_positioning,
+            // cache_glyph_positioning: self.cache_glyph_positioning,
+            cache_glyph_positioning: true,
+            // cache_redraws: self.cache_redraws && self.cache_glyph_positioning,
+            cache_redraws: true,
 
             section_hasher: self.section_hasher,
 

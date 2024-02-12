@@ -41,11 +41,6 @@ pub struct GlyphBrush<Depth, F = ab_glyph::FontArc, H = DefaultSectionHasher> {
 }
 
 impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
-    /// Queues a section/layout to be drawn by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times to queue multiple sections for drawing.
-    ///
-    /// Benefits from caching, see [caching behaviour](#caching-behaviour).
     #[inline]
     pub fn queue<'a, S>(&mut self, section: S)
     where
@@ -54,15 +49,14 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
         self.glyph_brush.queue(section)
     }
 
-    /// Queues a section/layout to be drawn by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times to queue multiple sections for drawing.
-    ///
-    /// Used to provide custom `GlyphPositioner` logic, if using built-in
-    /// [`Layout`](enum.Layout.html) simply use
-    /// [`queue`](struct.GlyphBrush.html#method.queue)
-    ///
-    /// Benefits from caching, see [caching behaviour](#caching-behaviour).
+    #[inline]
+    pub fn keep_cached<'a, S>(&mut self, section: S)
+    where
+        S: Into<Cow<'a, Section<'a>>>,
+    {
+        self.glyph_brush.keep_cached(section)
+    }
+
     #[inline]
     pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
     where
@@ -141,7 +135,7 @@ where
 
         match brush_action.unwrap() {
             BrushAction::Draw(mut verts) => {
-                self.pipeline.upload(device, encoder, &mut verts);
+                self.pipeline.upload(device, queue, &mut verts);
             }
             BrushAction::ReDraw => {}
         };
@@ -182,15 +176,15 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued(
+    pub fn render(
         &mut self,
         context: &mut crate::context::Context,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
-    ) -> Result<(), String> {
+    ) {
         let device = &context.device;
         let queue = &mut context.queue;
-        self.draw_queued_with_transform(
+        let _ = self.draw_queued_with_transform(
             device,
             queue,
             encoder,
@@ -199,7 +193,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
                 context.size.width as f32,
                 context.size.height as f32,
             ),
-        )
+        );
     }
 
     /// Draws all queued sections onto a render target, applying a position
@@ -221,11 +215,9 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         transform: [f32; 16],
-    ) -> Result<(), String> {
+    ) {
         self.process_queued(device, queue, encoder);
         self.pipeline.draw(queue, encoder, target, transform, None);
-
-        Ok(())
     }
 
     /// Draws all queued sections onto a render target, applying a position

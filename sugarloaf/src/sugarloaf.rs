@@ -373,9 +373,7 @@ impl Sugarloaf {
                 self.rect_brush
                     .render(&mut encoder, view, &self.state, &mut self.ctx);
 
-                let _ = self
-                    .text_brush
-                    .draw_queued(&mut self.ctx, &mut encoder, view);
+                self.text_brush.render(&mut self.ctx, &mut encoder, view);
 
                 self.rich_text_brush.render(
                     &mut self.ctx,

@@ -24,10 +24,11 @@ impl Line {
     }
 
     /// Returns line glyphs positioned on the screen and aligned.
+    #[inline]
     pub fn aligned_on_screen(
         mut self,
         (screen_x, screen_y): (f32, f32),
-        h_align: HorizontalAlign,
+        _h_align: HorizontalAlign,
         v_align: VerticalAlign,
     ) -> Vec<SectionGlyph> {
         if self.glyphs.is_empty() {
@@ -35,20 +36,22 @@ impl Line {
         }
 
         // implement v-aligns when they're are supported
-        let screen_left = match h_align {
-            HorizontalAlign::Left => point(screen_x, screen_y),
-            // - Right alignment attained from left by shifting the line
-            //   leftwards by the rightmost x distance from render position
-            // - Central alignment is attained from left by shifting the line
-            //   leftwards by half the rightmost x distance from render position
-            HorizontalAlign::Center | HorizontalAlign::Right => {
-                let mut shift_left = self.rightmost;
-                if h_align == HorizontalAlign::Center {
-                    shift_left /= 2.0;
-                }
-                point(screen_x - shift_left, screen_y)
-            }
-        };
+        // let screen_left = match h_align {
+        //     HorizontalAlign::Left => point(screen_x, screen_y),
+        //     // - Right alignment attained from left by shifting the line
+        //     //   leftwards by the rightmost x distance from render position
+        //     // - Central alignment is attained from left by shifting the line
+        //     //   leftwards by half the rightmost x distance from render position
+        //     HorizontalAlign::Center | HorizontalAlign::Right => {
+        //         let mut shift_left = self.rightmost;
+        //         if h_align == HorizontalAlign::Center {
+        //             shift_left /= 2.0;
+        //         }
+        //         point(screen_x - shift_left, screen_y)
+        //     }
+        // };
+
+        let screen_left = point(screen_x, screen_y);
 
         let screen_pos = match v_align {
             VerticalAlign::Top => screen_left,
