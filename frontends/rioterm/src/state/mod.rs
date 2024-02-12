@@ -14,7 +14,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Sugar, SugarBlock, SugarCursor, SugarDecoration, SugarStyle,
+    Sugar, SugarCursor, SugarDecoration, SugarLine, SugarStyle,
 };
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 #[cfg(target_os = "macos")]
@@ -227,8 +227,8 @@ impl State {
         row: &Row<Square>,
         has_cursor: bool,
         line: pos::Line,
-    ) -> SugarBlock {
-        let mut sugar_block = SugarBlock::default();
+    ) -> SugarLine {
+        let mut sugar_block = SugarLine::default();
 
         let columns: usize = row.len();
         for column in 0..columns {
@@ -442,8 +442,8 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_block(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarBlock {
-        let mut sugar_block = SugarBlock::default();
+    fn create_sugar_block(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarLine {
+        let mut sugar_block = SugarLine::default();
         let columns: usize = row.len();
 
         for column in 0..columns {

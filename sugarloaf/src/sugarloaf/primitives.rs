@@ -1,5 +1,6 @@
-use crate::sugarloaf::constants::{create_sugar_block, SUGAR_BLOCK_MAX_CONTENT_SIZE};
+use crate::sugarloaf::constants::{create_sugar_line, SUGAR_LINE_MAX_CONTENT_SIZE};
 use crate::sugarloaf::graphics::SugarGraphic;
+use crate::sugarloaf::Rect;
 use serde::Deserialize;
 use std::ops::Index;
 
@@ -97,14 +98,30 @@ pub struct ImageProperties {
     pub y: f32,
 }
 
+#[derive(Default, PartialEq, Clone)]
+pub struct SugarText {
+    pub position: (f32, f32),
+    pub content: String,
+    pub font_id: usize,
+    pub font_size: f32,
+    pub color: [f32; 4],
+    pub single_line: bool,
+}
+
+#[derive(Clone, Default, PartialEq)]
+pub struct SugarBlock {
+    pub rects: Vec<Rect>,
+    pub text: Option<SugarText>,
+}
+
 /// Contains a visual representation that is hashable and comparable
 /// It often represents a line of text but can also be other elements like bitmap
 #[derive(Debug, Copy, Clone)]
-pub struct SugarBlock {
+pub struct SugarLine {
     // hash: u64,
     // Sized arrays can take up to half of time to execute
     // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
-    inner: [Sugar; SUGAR_BLOCK_MAX_CONTENT_SIZE],
+    inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
     pub len: usize,
     pub acc: usize,
     first_non_default: usize,
@@ -113,7 +130,7 @@ pub struct SugarBlock {
     default_sugar: Sugar,
 }
 
-impl PartialEq for SugarBlock {
+impl PartialEq for SugarLine {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         if self.is_empty() && other.is_empty() {
@@ -138,14 +155,14 @@ impl PartialEq for SugarBlock {
     }
 }
 
-impl Default for SugarBlock {
+impl Default for SugarLine {
     fn default() -> Self {
         Self {
             // hash: 00000000000000,
             last_non_default: 0,
             first_non_default: 0,
             non_default_count: 0,
-            inner: create_sugar_block(),
+            inner: create_sugar_line(),
             default_sugar: Sugar::default(),
             acc: 0,
             len: 0,
@@ -153,7 +170,7 @@ impl Default for SugarBlock {
     }
 }
 
-impl SugarBlock {
+impl SugarLine {
     #[inline]
     pub fn insert(&mut self, sugar: Sugar) {
         let previous = if self.acc > 0 { self.acc - 1 } else { 0 };
@@ -210,7 +227,7 @@ impl SugarBlock {
     }
 }
 
-impl Index<usize> for SugarBlock {
+impl Index<usize> for SugarLine {
     type Output = Sugar;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -224,8 +241,8 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_comparisson_exact_match() {
-        let line_a = SugarBlock::default();
-        let line_b = SugarBlock::default();
+        let line_a = SugarLine::default();
+        let line_b = SugarLine::default();
 
         assert!(line_a.is_empty());
         assert!(line_b.is_empty());
@@ -234,7 +251,7 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_from_vector() {
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         let vector = vec![
             Sugar {
                 content: 't',
@@ -262,7 +279,7 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_repetition() {
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         let vector = vec![
             Sugar {
                 content: 'a',
@@ -296,7 +313,7 @@ pub mod test {
         assert_eq!(line_a.len, 6);
         assert_eq!(line_a.acc, 4);
 
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         let vector = vec![
             Sugar {
                 content: 'a',
@@ -330,7 +347,7 @@ pub mod test {
         assert_eq!(line_a.len, 6);
         assert_eq!(line_a.acc, 6);
 
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         let vector = vec![
             Sugar {
                 content: ' ',
@@ -367,19 +384,19 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_empty_checks() {
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert_empty();
         line_a.insert_empty();
         line_a.insert_empty();
 
         assert!(line_a.is_empty());
 
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert(Sugar::default());
 
         assert!(line_a.is_empty());
 
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert(Sugar {
             content: ' ',
             ..Sugar::default()
@@ -390,19 +407,19 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_comparisson_different_len() {
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert_empty();
         line_a.insert(Sugar {
             content: 'r',
             ..Sugar::default()
         });
-        let line_b = SugarBlock::default();
+        let line_b = SugarLine::default();
 
         assert!(!line_a.is_empty());
         assert!(line_b.is_empty());
         assert!(line_a != line_b);
 
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert(Sugar {
             content: ' ',
             ..Sugar::default()
@@ -411,7 +428,7 @@ pub mod test {
             content: 'r',
             ..Sugar::default()
         });
-        let mut line_b = SugarBlock::default();
+        let mut line_b = SugarLine::default();
         line_b.insert(Sugar {
             content: 'r',
             ..Sugar::default()
@@ -436,7 +453,7 @@ pub mod test {
 
     #[test]
     fn test_sugarelement_comparisson_different_match_with_same_len() {
-        let mut line_a = SugarBlock::default();
+        let mut line_a = SugarLine::default();
         line_a.insert(Sugar {
             content: 'o',
             ..Sugar::default()
@@ -449,7 +466,7 @@ pub mod test {
             content: 'r',
             ..Sugar::default()
         });
-        let mut line_b = SugarBlock::default();
+        let mut line_b = SugarLine::default();
         line_b.insert(Sugar {
             content: 'r',
             ..Sugar::default()

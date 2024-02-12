@@ -305,6 +305,7 @@ impl RichTextBrush {
         }
     }
 
+    #[inline]
     pub fn prepare(
         &mut self,
         ctx: &mut Context,
@@ -367,6 +368,11 @@ impl RichTextBrush {
     ) {
         let vertices: &[Vertex] = self.dlist.vertices();
         let indices: &[u32] = self.dlist.indices();
+
+        // There's nothing to render
+        if vertices.is_empty() {
+            return;
+        }
 
         let queue = &mut ctx.queue;
 
