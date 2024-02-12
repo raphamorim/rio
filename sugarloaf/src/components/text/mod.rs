@@ -91,7 +91,7 @@ where
         &mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass,
     ) {
         let pipeline = &mut self.pipeline;
 
@@ -176,10 +176,10 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn render(
-        &mut self,
+    pub fn render<'pass>(
+        &'pass mut self,
         context: &mut crate::context::Context,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
     ) {
         let device = &context.device;
@@ -187,7 +187,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         let _ = self.draw_queued_with_transform(
             device,
             queue,
-            encoder,
+            rpass,
             target,
             orthographic_projection(
                 context.size.width as f32,
@@ -208,16 +208,16 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued_with_transform(
-        &mut self,
+    pub fn draw_queued_with_transform<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
         transform: [f32; 16],
     ) {
-        self.process_queued(device, queue, encoder);
-        self.pipeline.draw(queue, encoder, target, transform, None);
+        self.process_queued(device, queue, rpass);
+        self.pipeline.draw(queue, rpass, target, transform, None);
     }
 
     /// Draws all queued sections onto a render target, applying a position
@@ -232,18 +232,18 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued_with_transform_and_scissoring(
-        &mut self,
+    pub fn _draw_queued_with_transform_and_scissoring<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        self.process_queued(device, queue, encoder);
+        self.process_queued(device, queue, rpass);
         self.pipeline
-            .draw(queue, encoder, target, transform, Some(region));
+            .draw(queue, rpass, target, transform, Some(region));
 
         Ok(())
     }
@@ -285,11 +285,11 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued(
-        &mut self,
+    pub fn _draw_queued<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         w_h: (f32, f32),
@@ -297,7 +297,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         self.draw_queued_with_transform(
             device,
             queue,
-            encoder,
+            rpass,
             target,
             depth_stencil_attachment,
             orthographic_projection(w_h.0, w_h.1),
@@ -317,18 +317,18 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
     #[allow(dead_code)]
-    pub fn draw_queued_with_transform(
-        &mut self,
+    pub fn draw_queued_with_transform<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
     ) -> Result<(), String> {
-        self.process_queued(device, queue, encoder);
+        self.process_queued(device, queue, rpass);
         self.pipeline.draw(
-            (queue, encoder, target),
+            (queue, rpass, target),
             depth_stencil_attachment,
             transform,
             None,
@@ -349,13 +349,13 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued_with_transform_and_scissoring(
-        &mut self,
+    pub fn _draw_queued_with_transform_and_scissoring<'pass>(
+        &'pass mut self,
         // config: (device, staging_belt, encoder, target),
         config: (
             &wgpu::Device,
             &mut wgpu::Queue,
-            &mut wgpu::CommandEncoder,
+            &mut wgpu::RenderPass<'pass>,
             &wgpu::TextureView,
         ),
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,

@@ -359,11 +359,11 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn render(
-        &mut self,
+    pub fn render<'pass>(
+        &'pass mut self,
         ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
-        encoder: &mut wgpu::CommandEncoder,
+        rpass: &mut wgpu::RenderPass<'pass>,
         view: &wgpu::TextureView,
     ) {
         let vertices: &[Vertex] = self.dlist.vertices();
@@ -575,20 +575,20 @@ impl RichTextBrush {
             });
         }
 
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        // let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //     label: None,
+        //     timestamp_writes: None,
+        //     occlusion_query_set: None,
+        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        //         view,
+        //         resolve_target: None,
+        //         ops: wgpu::Operations {
+        //             load: wgpu::LoadOp::Load,
+        //             store: wgpu::StoreOp::Store,
+        //         },
+        //     })],
+        //     depth_stencil_attachment: None,
+        // });
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -597,7 +597,7 @@ impl RichTextBrush {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
-        drop(rpass);
+        // drop(rpass);
         self.bind_group_needs_update = false;
         self.first_run = false;
     }

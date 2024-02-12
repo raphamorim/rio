@@ -342,82 +342,91 @@ impl Sugarloaf {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    label: Some("sugarloaf::render -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.background_color),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
+                // let load = if self.state.layout_was_updated() {
+                //     wgpu::LoadOp::Clear(self.background_color)
+                // } else {
+                //     wgpu::LoadOp::Load
+                // };
 
-                if let Some(bg_image) = &self.background_image {
-                    self.layer_brush.prepare_ref(
-                        &mut encoder,
+                {
+                    let mut rpass =
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            label: Some("sugarloaf::render -> Clear frame"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(self.background_color),
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                        });
+
+                    // if let Some(bg_image) = &self.background_image {
+                    //     self.layer_brush.prepare_ref(
+                    //         &mut encoder,
+                    //         &mut self.ctx,
+                    //         &[bg_image],
+                    //     );
+
+                    //     self.layer_brush
+                    //         .render_with_encoder(0, view, &mut encoder, None);
+
+                    //     self.layer_brush.end_frame();
+                    // }
+
+                    self.rect_brush
+                        .render(&mut rpass, view, &self.state, &mut self.ctx);
+
+                    self.text_brush.render(&mut self.ctx, &mut rpass, view);
+
+                    self.rich_text_brush.render(
                         &mut self.ctx,
-                        &[bg_image],
+                        &self.state,
+                        &mut rpass,
+                        view,
                     );
 
-                    self.layer_brush
-                        .render_with_encoder(0, view, &mut encoder, None);
+                    // if !self.graphic_rects.is_empty() {
+                    //     for entry_render in
+                    //         &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
+                    //     {
+                    //         if let Some(entry) = self.graphic_rects.get(entry_render) {
+                    //             if let Some(graphic_data) = self.graphics.get(&entry.id) {
+                    //                 let rows = entry.end_row - entry.start_row;
+                    //                 let height = (rows - 2.) * self.layout.dimensions.height;
 
-                    self.layer_brush.end_frame();
+                    //                 let a = layer::types::Image::Raster {
+                    //                     handle: graphic_data.handle.clone(),
+                    //                     bounds: Rectangle {
+                    //                         x: entry.pos_x,
+                    //                         y: entry.pos_y,
+                    //                         width: entry.width as f32,
+                    //                         height,
+                    //                     },
+                    //                 };
+
+                    //                 self.layer_brush.prepare_ref(
+                    //                     &mut encoder,
+                    //                     &mut self.ctx,
+                    //                     &[&a],
+                    //                 );
+
+                    //                 self.layer_brush.render_with_encoder(
+                    //                     0,
+                    //                     view,
+                    //                     &mut encoder,
+                    //                     None,
+                    //                 );
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    // self.layer_brush.end_frame();
                 }
-
-                self.rect_brush
-                    .render(&mut encoder, view, &self.state, &mut self.ctx);
-
-                self.text_brush.render(&mut self.ctx, &mut encoder, view);
-
-                self.rich_text_brush.render(
-                    &mut self.ctx,
-                    &self.state,
-                    &mut encoder,
-                    view,
-                );
-
-                // if !self.graphic_rects.is_empty() {
-                //     for entry_render in
-                //         &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
-                //     {
-                //         if let Some(entry) = self.graphic_rects.get(entry_render) {
-                //             if let Some(graphic_data) = self.graphics.get(&entry.id) {
-                //                 let rows = entry.end_row - entry.start_row;
-                //                 let height = (rows - 2.) * self.layout.dimensions.height;
-
-                //                 let a = layer::types::Image::Raster {
-                //                     handle: graphic_data.handle.clone(),
-                //                     bounds: Rectangle {
-                //                         x: entry.pos_x,
-                //                         y: entry.pos_y,
-                //                         width: entry.width as f32,
-                //                         height,
-                //                     },
-                //                 };
-
-                //                 self.layer_brush.prepare_ref(
-                //                     &mut encoder,
-                //                     &mut self.ctx,
-                //                     &[&a],
-                //                 );
-
-                //                 self.layer_brush.render_with_encoder(
-                //                     0,
-                //                     view,
-                //                     &mut encoder,
-                //                     None,
-                //                 );
-                //             }
-                //         }
-                //     }
-                // }
-                // self.layer_brush.end_frame();
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
