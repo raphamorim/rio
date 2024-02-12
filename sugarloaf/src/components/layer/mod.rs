@@ -438,16 +438,24 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
+    #[inline]
     pub fn render<'a>(
         &'a self,
         layer: usize,
-        bounds: Rectangle<u32>,
         render_pass: &mut wgpu::RenderPass<'a>,
+        rect_bounds: Option<Rectangle<u32>>,
     ) {
         if let Some(layer) = self.layers.get(layer) {
             render_pass.set_pipeline(&self.pipeline);
 
-            render_pass.set_scissor_rect(bounds.x, bounds.y, bounds.width, bounds.height);
+            if let Some(bounds) = rect_bounds {
+                render_pass.set_scissor_rect(
+                    bounds.x,
+                    bounds.y,
+                    bounds.width,
+                    bounds.height,
+                );
+            }
 
             render_pass.set_bind_group(1, &self.texture, &[]);
             render_pass
