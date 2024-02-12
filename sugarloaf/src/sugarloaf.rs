@@ -10,12 +10,12 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
+use crate::components::text::glyph::FontId;
 use crate::context::Context;
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
 use crate::font::Font;
-use crate::glyph::FontId;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;

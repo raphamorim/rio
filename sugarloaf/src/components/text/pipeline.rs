@@ -4,7 +4,7 @@ use crate::components::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
 
-use crate::glyph::ab_glyph::{point, Rect};
+use crate::components::text::glyph::ab_glyph::{point, Rect};
 use bytemuck::{Pod, Zeroable};
 use std::marker::PhantomData;
 use std::mem;
@@ -415,12 +415,12 @@ impl Instance {
     const INITIAL_AMOUNT: usize = 50_000;
 
     pub fn from_vertex(
-        crate::glyph::GlyphVertex {
+        crate::components::text::glyph::GlyphVertex {
             mut tex_coords,
             pixel_coords,
             bounds,
             extra,
-        }: crate::glyph::GlyphVertex,
+        }: crate::components::text::glyph::GlyphVertex,
     ) -> Instance {
         let gl_bounds = bounds;
 
