@@ -180,7 +180,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         &'pass mut self,
         context: &mut crate::context::Context,
         rpass: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
     ) {
         let device = &context.device;
         let queue = &mut context.queue;
@@ -188,7 +187,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
             device,
             queue,
             rpass,
-            target,
             orthographic_projection(
                 context.size.width as f32,
                 context.size.height as f32,
@@ -213,11 +211,10 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
         transform: [f32; 16],
     ) {
         self.process_queued(device, queue, rpass);
-        self.pipeline.draw(queue, rpass, target, transform, None);
+        self.pipeline.draw(queue, rpass, transform, None);
     }
 
     /// Draws all queued sections onto a render target, applying a position
@@ -237,13 +234,11 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
         self.process_queued(device, queue, rpass);
-        self.pipeline
-            .draw(queue, rpass, target, transform, Some(region));
+        self.pipeline.draw(queue, rpass, transform, Some(region));
 
         Ok(())
     }
@@ -290,7 +285,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         w_h: (f32, f32),
     ) -> Result<(), String> {
@@ -298,7 +292,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
             device,
             queue,
             rpass,
-            target,
             depth_stencil_attachment,
             orthographic_projection(w_h.0, w_h.1),
         )
@@ -322,17 +315,11 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        target: &wgpu::TextureView,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
     ) -> Result<(), String> {
         self.process_queued(device, queue, rpass);
-        self.pipeline.draw(
-            (queue, rpass, target),
-            depth_stencil_attachment,
-            transform,
-            None,
-        );
+        self.pipeline.draw((queue, rpass), transform, None);
 
         Ok(())
     }
@@ -356,22 +343,16 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
             &wgpu::Device,
             &mut wgpu::Queue,
             &mut wgpu::RenderPass<'pass>,
-            &wgpu::TextureView,
         ),
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        let (device, queue, encoder, target) = config;
+        let (device, queue, encoder) = config;
 
         self.process_queued(device, queue, encoder);
 
-        self.pipeline.draw(
-            (queue, encoder, target),
-            depth_stencil_attachment,
-            transform,
-            Some(region),
-        );
+        self.pipeline
+            .draw((queue, encoder), transform, Some(region));
 
         Ok(())
     }
