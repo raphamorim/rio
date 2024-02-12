@@ -260,10 +260,10 @@ impl RectBrush {
     }
 
     #[inline]
-    pub fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
+    pub fn render<'pass>(
+        &'pass mut self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        _view: &wgpu::TextureView,
         state: &crate::sugarloaf::state::SugarState,
         ctx: &mut Context,
     ) {
