@@ -725,9 +725,6 @@ impl Route {
                                 self.state.has_blinking_enabled,
                             ),
                         );
-
-                        self.sugarloaf.force_redraw_on_next();
-                        self.render();
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
@@ -846,14 +843,10 @@ impl Route {
                     Act::SelectNextTab => {
                         self.clear_selection();
                         self.ctx.switch_to_next();
-                        self.sugarloaf.force_redraw_on_next();
-                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.clear_selection();
                         self.ctx.switch_to_prev();
-                        self.sugarloaf.force_redraw_on_next();
-                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),

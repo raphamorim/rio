@@ -69,48 +69,7 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     {
         self.glyph_brush.queue_custom_layout(section, custom_layout)
     }
-
-    /// Queues pre-positioned glyphs to be processed by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times.
-    // #[inline]
-    // pub fn queue_pre_positioned(
-    //     &mut self,
-    //     glyphs: Vec<SectionGlyph>,
-    //     extra: Vec<Extra>,
-    //     bounds: Rect,
-    // ) {
-    //     self.glyph_brush.queue_pre_positioned(glyphs, extra, bounds)
-    // }
-
-    /// Retains the section in the cache as if it had been used in the last
-    /// draw-frame.
-    ///
-    /// Should not be necessary unless using multiple draws per frame with
-    /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    // #[inline]
-    // pub fn keep_cached_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    // where
-    //     S: Into<Cow<'a, Section<'a>>>,
-    //     G: GlyphPositioner,
-    // {
-    //     self.glyph_brush
-    //         .keep_cached_custom_layout(section, custom_layout)
-    // }
-
-    /// Retains the section in the cache as if it had been used in the last
-    /// draw-frame.
-    ///
-    /// Should not be necessary unless using multiple draws per frame with
-    /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    // #[inline]
-    // pub fn keep_cached<'a, S>(&mut self, section: S)
-    // where
-    //     S: Into<Cow<'a, Section<'a>>>,
-    // {
-    //     self.glyph_brush.keep_cached(section)
-    // }
-
+ 
     /// Returns the available fonts.
     ///
     /// The `FontId` corresponds to the index of the font data.
