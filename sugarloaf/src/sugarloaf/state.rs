@@ -1,11 +1,8 @@
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
-use super::tree::{SugarTree, SugarTreeDiff};
-use crate::sugarloaf::text;
-use crate::sugarloaf::Rect;
-use crate::sugarloaf::RichTextBrush;
-use crate::sugarloaf::SugarloafLayout;
-use crate::SugarBlock;
+use super::tree::{self, SugarTree, SugarTreeDiff};
+use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
+use crate::{SugarBlock, SugarLine};
 use ab_glyph::FontArc;
 
 pub struct SugarState {
@@ -54,7 +51,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn process(&mut self, block: &mut SugarBlock) {
+    pub fn process(&mut self, block: &mut SugarLine) {
         match self.level {
             SugarCompositorLevel::Elementary => self
                 .compositors
@@ -65,6 +62,12 @@ impl SugarState {
                 .advanced
                 .update_tree_with_block(block, &mut self.next),
         }
+    }
+
+    #[inline]
+    pub fn process_block(&mut self, block: SugarBlock) {
+        // Block are used only with elementary renderer
+        self.next.blocks.push(block);
     }
 
     #[inline]
@@ -92,23 +95,56 @@ impl SugarState {
         &mut self,
         advance_brush: &mut RichTextBrush,
         elementary_brush: &mut text::GlyphBrush<()>,
-        rects_to_render: &mut Vec<Rect>,
+        rect_brush: &mut RectBrush,
         context: &mut super::Context,
-        force_computation: bool,
     ) -> bool {
-        if self.latest_change == SugarTreeDiff::Equal && !force_computation {
+        if self.latest_change == SugarTreeDiff::Equal {
             return false;
         }
 
         if self.level.is_advanced() {
             advance_brush.prepare(context, &self);
         } else {
-            let (sections, rects) = self.compositors.elementary.render_data();
-            for section in sections {
+            for section in &self.compositors.elementary.sections {
                 elementary_brush.queue(section);
             }
 
-            rects_to_render.extend(rects);
+            for section in &self.compositors.elementary.blocks_sections {
+                elementary_brush.queue(section);
+            }
+        }
+
+        // Elementary renderer is used for everything else in sugarloaf
+        // like blocks rendering (created by .text() or .append_rects())
+        // ...
+        // If current tree has blocks and compositor has empty blocks
+        // It means that's either the first render or blocks were erased on compute_diff() step
+        if !self.current.blocks.is_empty()
+            && self.compositors.elementary.blocks_are_empty()
+        {
+            for block in &self.current.blocks {
+                if let Some(text) = &block.text {
+                    elementary_brush.queue(
+                        self.compositors
+                            .elementary
+                            .create_section_from_text(&text, &self.current),
+                    );
+                }
+
+                if !block.rects.is_empty() {
+                    self.compositors.elementary.extend_block_rects(&block.rects);
+                }
+            }
+        }
+
+        // Add block rects to main rects
+        self.compositors
+            .elementary
+            .rects
+            .extend(&self.compositors.elementary.blocks_rects);
+
+        if self.compositors.elementary.should_resize {
+            rect_brush.resize(context);
         }
 
         true
@@ -189,8 +225,9 @@ impl SugarState {
 
     #[inline]
     pub fn reset_next(&mut self) {
-        self.next.inner.clear();
         self.next.layout = self.current.layout;
+        self.next.lines.clear();
+        self.next.blocks.clear();
     }
 
     #[inline]
@@ -204,6 +241,8 @@ impl SugarState {
                     .advanced
                     .calculate_dimensions(&self.current);
             }
+
+            self.compositors.elementary.set_should_resize();
             self.reset_next();
             return;
         }
@@ -224,22 +263,32 @@ impl SugarState {
                         self.compositors.advanced.update_layout(&self.current);
                         self.compositors.advanced.update_size(&self.current);
                     }
+                    // TODO: should only resize elementary rects if scale or width/height changes
+                    self.compositors.elementary.set_should_resize();
                 }
-                SugarTreeDiff::Changes(_changes) => {
-                    // for change in changes {
-                    //     // println!("change {:?}", change);
-                    //     if let Some(offs) = self.content.insert(0, change.after.content) {
-                    //         // inserted = Some(offs);
-                    //         println!("{:?}", offs);
-                    //     }
-                    // }
-                    // std::mem::swap(&mut self.current, &mut self.next);
+                SugarTreeDiff::Changes(changes) => {
+                    // Blocks updates are placed in the first position
+                    if changes.len() > 0 {
+                        match changes[0] {
+                            tree::Diff::Block => {
+                                self.compositors.elementary.clean_blocks();
+                            }
+                            _ => {}
+                        }
+                        //     // println!("change {:?}", change);
+                        //     if let Some(offs) = self.content.insert(0, change.after.content) {
+                        //         // inserted = Some(offs);
+                        //         println!("{:?}", offs);
+                        //     }
+                    }
+
                     std::mem::swap(&mut self.current, &mut self.next);
                     if self.level.is_advanced() {
                         self.compositors.advanced.update_data();
                         self.compositors.advanced.update_layout(&self.current);
                         self.compositors.advanced.update_size(&self.current);
                     }
+
                     // println!("changes: {:?}", changes);
                 }
                 _ => {

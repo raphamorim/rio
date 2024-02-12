@@ -19,9 +19,10 @@ use crate::glyph::FontId;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
+use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
-use primitives::{ImageProperties, SugarBlock};
+use primitives::{ImageProperties, SugarLine};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -36,12 +37,10 @@ pub struct Sugarloaf {
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
     rich_text_brush: RichTextBrush,
-    rects: Vec<Rect>,
     state: state::SugarState,
     fonts: SugarloafFonts,
     pub background_color: wgpu::Color,
     pub background_image: Option<types::Image>,
-    redraw_on_next: bool,
 }
 
 #[derive(Debug)]
@@ -161,9 +160,7 @@ impl Sugarloaf {
             background_image: None,
             rect_brush,
             rich_text_brush,
-            rects: vec![],
             text_brush,
-            redraw_on_next: false,
         };
 
         if let Some(errors) = sugarloaf_errors {
@@ -206,7 +203,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn process(&mut self, mut block: SugarBlock) {
+    pub fn process(&mut self, mut block: SugarLine) {
         self.state.process(&mut block);
     }
 
@@ -252,49 +249,32 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn append_rects(&mut self, mut instances: Vec<Rect>) -> &mut Self {
-        self.rects.append(&mut instances);
-        self
+    pub fn append_rects(&mut self, rects: Vec<Rect>) {
+        // self.rects.append(&mut instances);
+        self.state.process_block(SugarBlock { rects, text: None });
     }
 
     #[inline]
     pub fn text(
         &mut self,
-        pos: (f32, f32),
-        text_str: String,
-        font_id_usize: usize,
-        scale: f32,
+        position: (f32, f32),
+        content: String,
+        font_id: usize,
+        font_size: f32,
         color: [f32; 4],
         single_line: bool,
-    ) -> &mut Self {
-        let font_id = FontId(font_id_usize);
-
-        let text = crate::components::text::Text {
-            text: &text_str,
-            scale: PxScale::from(scale * self.ctx.scale),
-            font_id,
-            extra: crate::components::text::Extra { color, z: 0.0 },
-        };
-
-        let layout = if single_line {
-            crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
-        } else {
-            crate::glyph::Layout::default()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
-        };
-
-        let section = &crate::components::text::Section {
-            screen_position: (pos.0 * self.ctx.scale, pos.1 * self.ctx.scale),
-            bounds: (self.layout().width, self.layout().height),
-            text: vec![text],
-            layout,
-        };
-
-        self.text_brush.queue(section);
-        self
+    ) {
+        self.state.process_block(SugarBlock {
+            rects: vec![],
+            text: Some(SugarText {
+                position,
+                content,
+                font_id,
+                font_size,
+                color,
+                single_line,
+            }),
+        });
     }
 
     #[inline]
@@ -311,18 +291,8 @@ impl Sugarloaf {
 
     #[inline]
     fn clean_state(&mut self) {
-        self.rects.clear();
+        // self.rects.clear();
         self.state.clean_compositor();
-        self.redraw_on_next = false;
-    }
-
-    #[inline]
-    pub fn force_redraw_on_next(&mut self) {
-        // TODO: Find a better way of compute rect/text updates without
-        // having to have an external signal
-        // The best solution might be include text() and insert_rects()
-        // on self.state lifecycle
-        self.redraw_on_next = true;
     }
 
     #[inline]
@@ -350,9 +320,8 @@ impl Sugarloaf {
         if !self.state.compute_updates(
             &mut self.rich_text_brush,
             &mut self.text_brush,
-            &mut self.rects,
+            &mut self.rect_brush,
             &mut self.ctx,
-            self.redraw_on_next,
         ) {
             self.clean_state();
             return;
@@ -397,10 +366,12 @@ impl Sugarloaf {
 
                     self.layer_brush
                         .render_with_encoder(0, view, &mut encoder, None);
+
+                    self.layer_brush.end_frame();
                 }
 
                 self.rect_brush
-                    .render(&mut encoder, view, &self.rects, &mut self.ctx);
+                    .render(&mut encoder, view, &self.state, &mut self.ctx);
 
                 let _ = self
                     .text_brush
@@ -448,8 +419,7 @@ impl Sugarloaf {
                 //         }
                 //     }
                 // }
-
-                self.layer_brush.end_frame();
+                // self.layer_brush.end_frame();
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

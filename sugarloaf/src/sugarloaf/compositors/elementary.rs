@@ -10,7 +10,7 @@ use crate::sugarloaf::text;
 use crate::sugarloaf::tree::SugarTree;
 use crate::sugarloaf::PxScale;
 use crate::sugarloaf::Rect;
-use crate::SugarBlock;
+use crate::{SugarLine, SugarText};
 use ab_glyph::Font;
 use ab_glyph::FontArc;
 use fnv::FnvHashMap;
@@ -38,8 +38,11 @@ struct GraphicRect {
 #[derive(Default)]
 pub struct Elementary {
     sugar_cache: FnvHashMap<char, CachedSugar>,
-    rects: Vec<Rect>,
-    sections: Vec<OwnedSection>,
+    pub rects: Vec<Rect>,
+    pub blocks_rects: Vec<Rect>,
+    pub sections: Vec<OwnedSection>,
+    pub blocks_sections: Vec<OwnedSection>,
+    pub should_resize: bool,
     text_y: f32,
     current_row: u16,
     fonts: Vec<FontArc>,
@@ -53,8 +56,30 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn render_data(&self) -> (&Vec<OwnedSection>, &Vec<Rect>) {
-        (&self.sections, &self.rects)
+    pub fn rects(&mut self) -> &Vec<Rect> {
+        self.rects.extend(&self.blocks_rects);
+        &self.rects
+    }
+
+    #[inline]
+    pub fn clean_blocks(&mut self) {
+        self.blocks_sections.clear();
+        self.blocks_rects.clear();
+    }
+
+    #[inline]
+    pub fn blocks_are_empty(&self) -> bool {
+        self.blocks_sections.is_empty() && self.blocks_rects.is_empty()
+    }
+
+    #[inline]
+    pub fn set_should_resize(&mut self) {
+        self.should_resize = true;
+    }
+
+    #[inline]
+    pub fn extend_block_rects(&mut self, rects: &Vec<Rect>) {
+        self.blocks_rects.extend(rects);
     }
 
     #[inline]
@@ -185,12 +210,13 @@ impl Elementary {
         self.graphic_rects.clear();
         self.current_row = 0;
         self.text_y = 0.0;
+        self.should_resize = false;
     }
 
     #[inline]
     pub fn update_tree_with_block(
         &mut self,
-        block: &mut SugarBlock,
+        block: &mut SugarLine,
         tree: &mut SugarTree,
     ) {
         tree.insert_last(*block);
@@ -358,5 +384,48 @@ impl Elementary {
 
         self.current_row += 1;
         self.text_y += tree.layout.dimensions.height * tree.layout.line_height;
+    }
+
+    #[inline]
+    pub fn create_section_from_text(
+        &mut self,
+        sugar_text: &SugarText,
+        tree: &SugarTree,
+    ) -> &OwnedSection {
+        let font_id = FontId(sugar_text.font_id);
+
+        let text = crate::components::text::OwnedText {
+            text: sugar_text.content.to_owned(),
+            scale: PxScale::from(sugar_text.font_size * tree.layout.dimensions.scale),
+            font_id,
+            extra: crate::components::text::Extra {
+                color: sugar_text.color,
+                z: 0.0,
+            },
+        };
+
+        let layout = if sugar_text.single_line {
+            crate::glyph::Layout::default_single_line()
+                .v_align(crate::glyph::VerticalAlign::Center)
+                .h_align(crate::glyph::HorizontalAlign::Left)
+        } else {
+            crate::glyph::Layout::default()
+                .v_align(crate::glyph::VerticalAlign::Center)
+                .h_align(crate::glyph::HorizontalAlign::Left)
+        };
+
+        let section = crate::components::text::OwnedSection {
+            screen_position: (
+                sugar_text.position.0 * tree.layout.dimensions.scale,
+                sugar_text.position.1 * tree.layout.dimensions.scale,
+            ),
+            bounds: (tree.layout.width, tree.layout.height),
+            text: vec![text],
+            layout,
+        };
+
+        self.blocks_sections.push(section);
+
+        &self.blocks_sections[self.blocks_sections.len() - 1]
     }
 }
