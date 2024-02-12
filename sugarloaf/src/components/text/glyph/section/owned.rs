@@ -3,13 +3,13 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::extra::Color;
-use crate::glyph::extra::Extra;
-use crate::glyph::layout::Layout;
-use crate::glyph::section::Section;
-use crate::glyph::section::Text;
-use crate::glyph::BuiltInLineBreaker;
-use crate::glyph::FontId;
+use crate::components::text::glyph::extra::Color;
+use crate::components::text::glyph::extra::Extra;
+use crate::components::text::glyph::layout::Layout;
+use crate::components::text::glyph::section::Section;
+use crate::components::text::glyph::section::Text;
+use crate::components::text::glyph::BuiltInLineBreaker;
+use crate::components::text::glyph::FontId;
 use ab_glyph::PxScale;
 use std::{borrow::Cow, f32};
 

@@ -6,15 +6,15 @@
 mod builder;
 
 pub use self::builder::*;
-use crate::glyph::cache::{CachedBy, DrawCache};
-use crate::glyph::calculator::{GlyphCruncher, GlyphedSection};
-use crate::glyph::{
+use super::cache::{CachedBy, DrawCache};
+use super::calculator::{GlyphCruncher, GlyphedSection};
+use super::{
     DefaultSectionHasher, FontId, GlyphChange, GlyphPositioner, Rectangle, Section,
     SectionGeometry, SectionGlyph, SectionGlyphIter,
 };
 use ab_glyph::{point, Font, FontArc, Glyph, Rect};
 
-use crate::glyph::extra::Extra;
+use super::extra::Extra;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     borrow::Cow,
@@ -740,8 +740,8 @@ impl<V, X> Glyphed<V, X> {
 #[cfg(test)]
 mod hash_diff_test {
     use super::*;
-    use crate::glyph::layout::Layout;
-    use crate::glyph::{PxScale, Text};
+    use crate::components::text::glyph::layout::Layout;
+    use crate::components::text::glyph::{PxScale, Text};
 
     fn section() -> Section<'static> {
         Section {
@@ -828,16 +828,16 @@ mod hash_diff_test {
 
 #[cfg(test)]
 mod test {
-    use crate::glyph::*;
+    use crate::components::text::glyph::*;
 
     #[test]
     fn is_draw_cached() {
         let font_a = FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/DejaVuSans.ttf"
+            "../../../../resources/test-fonts/DejaVuSans.ttf"
         ))
         .unwrap();
         let font_b = FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/Exo2-Light.otf"
+            "../../../../resources/test-fonts/Exo2-Light.otf"
         ))
         .unwrap();
         let unqueued_glyph = font_a.glyph_id('c').with_scale(50.0);

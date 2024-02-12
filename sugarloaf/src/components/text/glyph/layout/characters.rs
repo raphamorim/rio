@@ -3,7 +3,7 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::layout::{
+use crate::components::text::glyph::layout::{
     linebreak::{EolLineBreak, LineBreak, LineBreaker},
     words::Words,
     FontId, SectionText,

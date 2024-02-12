@@ -3,9 +3,9 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::cache::*;
-use crate::glyph::layout::ab_glyph::*;
-use crate::glyph::{DefaultSectionHasher, Font, FontId, GlyphBrush};
+use crate::components::text::glyph::cache::*;
+use crate::components::text::glyph::layout::ab_glyph::*;
+use crate::components::text::glyph::{DefaultSectionHasher, Font, FontId, GlyphBrush};
 use std::hash::BuildHasher;
 
 /// Builder for a [`GlyphBrush`].

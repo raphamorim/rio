@@ -3,7 +3,7 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::*;
+use crate::components::text::glyph::*;
 use ordered_float::OrderedFloat;
 use std::{borrow::Cow, f32, hash::*};
 

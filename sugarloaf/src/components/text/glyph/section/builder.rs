@@ -3,8 +3,8 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::layout::{BuiltInLineBreaker, Layout};
-use crate::glyph::{OwnedSection, OwnedText, Section, Text};
+use super::{OwnedSection, OwnedText, Section, Text};
+use crate::components::text::glyph::layout::{BuiltInLineBreaker, Layout};
 
 /// [`Section`] builder.
 ///

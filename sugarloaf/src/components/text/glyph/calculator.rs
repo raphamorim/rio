@@ -3,7 +3,7 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::*;
+use super::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     borrow::Cow,
@@ -354,20 +354,20 @@ impl<X> GlyphedSection<X> {
 
 #[cfg(test)]
 mod test {
-    use crate::glyph::*;
+    use crate::components::text::glyph::*;
     use approx::*;
     use once_cell::sync::Lazy;
     use std::f32;
 
     static MONO_FONT: Lazy<FontArc> = Lazy::new(|| {
         FontArc::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/DejaVuSansMono.ttf"
+            "../../../../resources/test-fonts/DejaVuSansMono.ttf"
         ) as &[u8])
         .unwrap()
     });
     static OPEN_SANS_LIGHT: Lazy<FontArc> = Lazy::new(|| {
         FontArc::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/OpenSans-Light.ttf"
+            "../../../../resources/test-fonts/OpenSans-Light.ttf"
         ) as &[u8])
         .unwrap()
     });
