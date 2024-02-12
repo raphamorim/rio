@@ -347,6 +347,13 @@ impl Sugarloaf {
                 // } else {
                 //     wgpu::LoadOp::Load
                 // };
+                if let Some(bg_image) = &self.background_image {
+                    self.layer_brush.prepare_ref(
+                        &mut encoder,
+                        &mut self.ctx,
+                        &[bg_image],
+                    );
+                }
 
                 {
                     let mut rpass =
@@ -365,18 +372,9 @@ impl Sugarloaf {
                             depth_stencil_attachment: None,
                         });
 
-                    // if let Some(bg_image) = &self.background_image {
-                    //     self.layer_brush.prepare_ref(
-                    //         &mut encoder,
-                    //         &mut self.ctx,
-                    //         &[bg_image],
-                    //     );
-
-                    //     self.layer_brush
-                    //         .render_with_encoder(0, view, &mut encoder, None);
-
-                    //     self.layer_brush.end_frame();
-                    // }
+                    if self.background_image.is_some() {
+                        self.layer_brush.render(0, &mut rpass, None);
+                    }
 
                     self.rect_brush
                         .render(&mut rpass, view, &self.state, &mut self.ctx);
@@ -426,6 +424,10 @@ impl Sugarloaf {
                     //     }
                     // }
                     // self.layer_brush.end_frame();
+                }
+
+                if self.background_image.is_some() {
+                    self.layer_brush.end_frame();
                 }
 
                 self.ctx.queue.submit(Some(encoder.finish()));
