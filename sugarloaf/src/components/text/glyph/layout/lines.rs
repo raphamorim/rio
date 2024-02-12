@@ -4,7 +4,7 @@
 // and licensed under Apache-2.0 license.
 
 use super::{HorizontalAlign, SectionGlyph, SectionText, VerticalAlign};
-use crate::glyph::layout::{linebreak::LineBreaker, words::*};
+use crate::components::text::glyph::layout::{linebreak::LineBreaker, words::*};
 use ab_glyph::*;
 use std::iter::{FusedIterator, Iterator, Peekable};
 
