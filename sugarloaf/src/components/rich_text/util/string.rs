@@ -43,6 +43,10 @@ impl SmallString {
         self.as_str().len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.as_str().len() == 0
+    }
+
     pub fn as_str(&self) -> &str {
         if self.is_inline() {
             let len = (self.bytes[LEN_SLOT] & LEN_MASK) as usize;

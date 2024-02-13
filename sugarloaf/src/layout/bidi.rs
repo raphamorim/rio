@@ -457,8 +457,8 @@ impl BidiResolver {
                     t = if limit == len { eos } else { types[limit] };
                 }
                 if t == EN {
-                    for j in i..limit {
-                        types[j] = EN;
+                    for item in types.iter_mut().take(limit).skip(i) {
+                        *item = EN;
                     }
                 }
                 i = limit;
@@ -468,6 +468,7 @@ impl BidiResolver {
         // W6, W7
         const W6_MASK: u32 = ES.mask() | ET.mask() | CS.mask();
         prev_strong = sos;
+        #[allow(clippy::needless_range_loop)]
         for i in 0..len {
             let t = types[i];
             if t.mask() & W6_MASK != 0 {
@@ -485,8 +486,8 @@ impl BidiResolver {
         // N0
         let base_brackets = self.bracket_pairs.len();
         let mut bracket_stack = BracketStack::new();
-        for i in 0..len {
-            if types[i] != ON {
+        for (i, item) in types.iter().enumerate().take(len) {
+            if item != &ON {
                 continue;
             }
             let index = self.indices[i];
@@ -508,8 +509,9 @@ impl BidiResolver {
             bracket_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
             for pair in bracket_pairs {
                 let mut pair_dir = ON;
-                for i in pair.0 + 1..pair.1 {
-                    let dir = match types[i] {
+
+                for item in types.iter().take(pair.1).skip(pair.0 + 1) {
+                    let dir = match item {
                         EN | AN | AL | R => R,
                         L => L,
                         _ => ON,
@@ -546,18 +548,20 @@ impl BidiResolver {
                 }
                 types[pair.0] = pair_dir;
                 types[pair.1] = pair_dir;
-                for i in pair.0 + 1..pair.1 {
+                for (i, item) in
+                    types.iter_mut().enumerate().take(pair.1).skip(pair.0 + 1)
+                {
                     let index = self.indices[i];
                     if self.initial_types[index] == NSM {
-                        types[i] = pair_dir;
+                        *item = pair_dir;
                     } else {
                         break;
                     }
                 }
-                for i in pair.1 + 1..len {
+                for (i, item) in types.iter_mut().enumerate().take(len).skip(pair.1 + 1) {
                     let index = self.indices[i];
                     if self.initial_types[index] == NSM {
-                        types[i] = pair_dir;
+                        *item = pair_dir;
                     } else {
                         break;
                     }
@@ -610,8 +614,8 @@ impl BidiResolver {
                         L
                     }
                 };
-                for j in offset..limit {
-                    types[j] = resolved;
+                for item in types.iter_mut().take(limit).skip(offset) {
+                    *item = resolved;
                 }
                 i = limit - 1;
             }
@@ -620,12 +624,12 @@ impl BidiResolver {
         // Implicit levels
         if level & 1 == 0 {
             // I1
-            for i in 0..len {
+            for (i, item) in types.iter().enumerate().take(len) {
                 let index = self.indices[i];
-                let t = types[i];
-                if t == R {
+                let t = item;
+                if t == &R {
                     self.levels[index] = level + 1;
-                } else if t != L {
+                } else if t != &L {
                     self.levels[index] = level + 2;
                 } else {
                     self.levels[index] = level;
@@ -633,10 +637,10 @@ impl BidiResolver {
             }
         } else {
             // I2
-            for i in 0..len {
+            for (i, item) in types.iter().enumerate().take(len) {
                 let index = self.indices[i];
-                let t = types[i];
-                if t != R {
+                let t = item;
+                if t != &R {
                     self.levels[index] = level + 1;
                 } else {
                     self.levels[index] = level;

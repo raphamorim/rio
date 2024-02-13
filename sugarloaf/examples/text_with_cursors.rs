@@ -2,7 +2,7 @@ extern crate tokio;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, Sugar, SugarCursor, SugarDecoration, SugarLine, SugarStyle,
+    layout::SugarloafLayout, Sugar, SugarCursor, SugarDecoration, SugarStyle,
 };
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
@@ -57,8 +57,6 @@ async fn main() {
     )
     .await
     .expect("Sugarloaf instance should be created");
-
-    sugarloaf.calculate_bounds();
 
     let _ = event_loop.run(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
@@ -408,9 +406,7 @@ async fn main() {
 
         match event {
             Event::Resumed => {
-                sugarloaf
-                    .set_background_color(wgpu::Color::RED)
-                    .calculate_bounds();
+                sugarloaf.set_background_color(wgpu::Color::RED);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -424,34 +420,32 @@ async fn main() {
                     let new_inner_size = window.inner_size();
                     sugarloaf.rescale(scale_factor_f32);
                     sugarloaf.resize(new_inner_size.width, new_inner_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::Resized(new_size) => {
                     sugarloaf.resize(new_size.width, new_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    let mut sugarline = SugarLine::default();
-                    sugarline.from_vec(&sugar);
-                    sugarloaf.stack(sugarline);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&sugar);
+                    sugarloaf.finish_line();
 
-                    let mut sugarline = SugarLine::default();
-                    sugarline.from_vec(&italic_and_bold);
-                    sugarloaf.stack(sugarline);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&italic_and_bold);
+                    sugarloaf.finish_line();
 
-                    let mut sugarline = SugarLine::default();
-                    sugarline.from_vec(&rio);
-                    sugarloaf.stack(sugarline);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&rio);
+                    sugarloaf.finish_line();
 
-                    let mut sugarline = SugarLine::default();
-                    sugarline.from_vec(&strike);
-                    sugarloaf.stack(sugarline);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&strike);
+                    sugarloaf.finish_line();
 
-                    let mut sugarline = SugarLine::default();
-                    sugarline.from_vec(&cursors);
-                    sugarloaf.stack(sugarline);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&cursors);
+                    sugarloaf.finish_line();
 
                     sugarloaf.render();
                 }

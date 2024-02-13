@@ -9,6 +9,7 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
+    #[serde(default = "u8::default")]
     pub level: u8,
 }
 

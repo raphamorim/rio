@@ -66,6 +66,7 @@ impl Batch {
         self.subpix = false;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_rect(
         &mut self,
         rect: &Rect,

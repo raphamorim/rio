@@ -53,6 +53,7 @@ impl WeakSharedData {
 
 impl SharedData {
     /// Creates shared data from the specified bytes.
+    #[allow(unused)]
     pub fn new(data: Vec<u8>) -> Self {
         Self {
             inner: Arc::new(Inner::Memory(data)),
@@ -98,6 +99,7 @@ impl SharedData {
     }
 
     /// Returns the number of strong references to the data.
+    #[allow(unused)]
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.inner)
     }
