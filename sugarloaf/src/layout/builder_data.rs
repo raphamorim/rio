@@ -412,7 +412,7 @@ struct FontSettingList {
 }
 
 impl FontSettingList {
-    pub fn get<T>(self, elements: &Vec<T>) -> &[T] {
+    pub fn get<T>(self, elements: &[T]) -> &[T] {
         elements
             .get(self.start as usize..self.end as usize)
             .unwrap_or(&[])

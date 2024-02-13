@@ -244,7 +244,7 @@ impl RectBrush {
     #[inline]
     pub fn resize(&mut self, ctx: &mut Context) {
         let transform: [f32; 16] =
-            orthographic_projection(ctx.size.width as f32, ctx.size.height as f32);
+            orthographic_projection(ctx.size.width, ctx.size.height);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
         let queue = &mut ctx.queue;

@@ -220,8 +220,8 @@ impl SugarLine {
     }
 
     #[inline]
-    pub fn from_vec(&mut self, vector: &Vec<Sugar>) {
-        for element in vector.into_iter() {
+    pub fn from_vec(&mut self, vector: &[Sugar]) {
+        for element in vector.iter() {
             self.insert(*element)
         }
     }

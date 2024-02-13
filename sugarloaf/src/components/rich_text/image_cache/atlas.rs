@@ -77,7 +77,7 @@ impl AtlasAllocator {
         match slot {
             FreeSlot::Direct(x) => {
                 line.state = (x as u32 + padded_width as u32).min(self.width as u32);
-                return Some((x, y));
+                Some((x, y))
             }
             FreeSlot::Node(prev_index, slot_index) => {
                 let slot = self.slots.get_mut(slot_index as usize)?;
@@ -100,7 +100,7 @@ impl AtlasAllocator {
                     }
                     self.free_slot(slot_index);
                 }
-                return Some((x, y));
+                Some((x, y))
             }
         }
     }
