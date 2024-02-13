@@ -215,7 +215,7 @@ impl<'a> Coords<'a> {
         match self {
             Self::None => &[],
             Self::Inline(len, arr) => &arr[..*len as usize],
-            Self::Heap(vec) => &vec,
+            Self::Heap(vec) => vec,
             Self::Ref(slice) => slice,
         }
     }

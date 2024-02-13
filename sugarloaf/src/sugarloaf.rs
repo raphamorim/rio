@@ -19,10 +19,11 @@ use crate::font::Font;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
+use crate::Sugar;
 use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
-use primitives::{ImageProperties, SugarLine};
+use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -203,11 +204,6 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn process(&mut self, mut block: SugarLine) {
-        self.state.process(&mut block);
-    }
-
-    #[inline]
     pub fn get_context(&self) -> &Context {
         &self.ctx
     }
@@ -251,7 +247,32 @@ impl Sugarloaf {
     #[inline]
     pub fn append_rects(&mut self, rects: Vec<Rect>) {
         // self.rects.append(&mut instances);
-        self.state.process_block(SugarBlock { rects, text: None });
+        self.state.compute_block(SugarBlock { rects, text: None });
+    }
+
+    #[inline]
+    pub fn start_line(&mut self) {
+        self.state.compute_line_start();
+    }
+
+    #[inline]
+    pub fn insert_on_current_line(&mut self, sugar: &Sugar) {
+        self.state.insert_on_current_line(sugar);
+    }
+
+    #[inline]
+    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&Sugar>) {
+        self.state.insert_on_current_line_from_vec(sugar_vec);
+    }
+
+    #[inline]
+    pub fn insert_on_current_line_from_vec_owned(&mut self, sugar_vec: &Vec<Sugar>) {
+        self.state.insert_on_current_line_from_vec_owned(sugar_vec);
+    }
+
+    #[inline]
+    pub fn finish_line(&mut self) {
+        self.state.compute_line_end();
     }
 
     #[inline]
@@ -264,7 +285,7 @@ impl Sugarloaf {
         color: [f32; 4],
         single_line: bool,
     ) {
-        self.state.process_block(SugarBlock {
+        self.state.compute_block(SugarBlock {
             rects: vec![],
             text: Some(SugarText {
                 position,

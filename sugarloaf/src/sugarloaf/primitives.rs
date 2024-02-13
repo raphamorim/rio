@@ -1,3 +1,8 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 use crate::sugarloaf::constants::{create_sugar_line, SUGAR_LINE_MAX_CONTENT_SIZE};
 use crate::sugarloaf::graphics::SugarGraphic;
 use crate::sugarloaf::Rect;
@@ -172,18 +177,18 @@ impl Default for SugarLine {
 
 impl SugarLine {
     #[inline]
-    pub fn insert(&mut self, sugar: Sugar) {
+    pub fn insert(&mut self, sugar: &Sugar) {
         let previous = if self.acc > 0 { self.acc - 1 } else { 0 };
 
-        if equal_without_consider_repeat(&self.inner[previous], &sugar) {
+        if equal_without_consider_repeat(&self.inner[previous], sugar) {
             self.inner[previous].repeated += 1;
             self.len += 1;
             return;
         }
 
-        self.inner[self.acc] = sugar;
+        self.inner[self.acc] = *sugar;
 
-        if sugar != self.default_sugar {
+        if sugar != &self.default_sugar {
             if self.first_non_default == 0 {
                 self.first_non_default = self.acc;
                 self.last_non_default = self.acc;
@@ -222,7 +227,7 @@ impl SugarLine {
     #[inline]
     pub fn from_vec(&mut self, vector: &[Sugar]) {
         for element in vector.iter() {
-            self.insert(*element)
+            self.insert(element)
         }
     }
 }
@@ -392,12 +397,12 @@ pub mod test {
         assert!(line_a.is_empty());
 
         let mut line_a = SugarLine::default();
-        line_a.insert(Sugar::default());
+        line_a.insert(&Sugar::default());
 
         assert!(line_a.is_empty());
 
         let mut line_a = SugarLine::default();
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: ' ',
             ..Sugar::default()
         });
@@ -409,7 +414,7 @@ pub mod test {
     fn test_sugarelement_comparisson_different_len() {
         let mut line_a = SugarLine::default();
         line_a.insert_empty();
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: 'r',
             ..Sugar::default()
         });
@@ -420,28 +425,28 @@ pub mod test {
         assert!(line_a != line_b);
 
         let mut line_a = SugarLine::default();
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: ' ',
             ..Sugar::default()
         });
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: 'r',
             ..Sugar::default()
         });
         let mut line_b = SugarLine::default();
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'r',
             ..Sugar::default()
         });
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: ' ',
             ..Sugar::default()
         });
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'i',
             ..Sugar::default()
         });
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'o',
             ..Sugar::default()
         });
@@ -454,28 +459,28 @@ pub mod test {
     #[test]
     fn test_sugarelement_comparisson_different_match_with_same_len() {
         let mut line_a = SugarLine::default();
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: 'o',
             ..Sugar::default()
         });
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: 'i',
             ..Sugar::default()
         });
-        line_a.insert(Sugar {
+        line_a.insert(&Sugar {
             content: 'r',
             ..Sugar::default()
         });
         let mut line_b = SugarLine::default();
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'r',
             ..Sugar::default()
         });
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'i',
             ..Sugar::default()
         });
-        line_b.insert(Sugar {
+        line_b.insert(&Sugar {
             content: 'o',
             ..Sugar::default()
         });

@@ -666,9 +666,9 @@ mod tests {
         assert_eq!(result.window.foreground_opacity, 1.0);
         assert_eq!(
             result.window.background_image,
-            Some(sugarloaf::core::ImageProperties {
+            Some(sugarloaf::ImageProperties {
                 path: String::from("my-image-path.png"),
-                ..sugarloaf::core::ImageProperties::default()
+                ..sugarloaf::ImageProperties::default()
             })
         );
         // Colors

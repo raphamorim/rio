@@ -14,10 +14,10 @@ pub mod font;
 mod bidi;
 mod builder;
 mod builder_data;
-mod layout;
 mod layout_data;
 mod line_breaker;
 mod nav;
+mod render_data;
 mod span_style;
 
 pub use swash;
@@ -29,15 +29,15 @@ pub use swash::text::Language;
 
 /// Iterators over elements of a paragraph.
 pub mod iter {
-    pub use super::layout::{Clusters, Glyphs, Lines, Runs};
+    pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
 #[doc(inline)]
 pub use font::{Font, FontLibrary, FontLibraryBuilder};
-pub use layout::{Cluster, Glyph, Line, Run};
 pub use line_breaker::{Alignment, BreakLines};
 pub use nav::{Erase, ExtendTo, Selection};
+pub use render_data::{Cluster, Glyph, Line, Run};
 pub use span_style::*;
 
 use layout_data::{LayoutData, LineLayoutData};

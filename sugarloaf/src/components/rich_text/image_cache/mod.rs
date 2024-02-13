@@ -129,6 +129,7 @@ impl<'a> ImageData<'a> {
 
 /// Event that describes a change in an image cache.
 #[derive(Copy, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum TextureEvent<'a> {
     /// Texture creation event.
     CreateTexture {
