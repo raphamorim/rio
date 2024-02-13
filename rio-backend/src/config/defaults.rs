@@ -1,14 +1,4 @@
 #[inline]
-pub fn default_env_vars() -> Vec<String> {
-    vec![]
-}
-
-#[inline]
-pub fn default_padding_x() -> f32 {
-    0.
-}
-
-#[inline]
 pub fn default_bool_true() -> bool {
     true
 }
@@ -16,6 +6,11 @@ pub fn default_bool_true() -> bool {
 #[inline]
 pub fn default_line_height() -> f32 {
     1.0
+}
+
+#[inline]
+pub fn default_renderer_level() -> u8 {
+    1
 }
 
 #[inline]
@@ -251,11 +246,18 @@ blinking-cursor = false
 #
 # • disable-unfocused-render: This property disable renderer processes while Rio is unfocused.
 #
+# • level: Configure renderer level
+#   - Available options: 0 and 1.
+#       Higher the level more rendering features and computations
+#       will be done like enable font ligatures or emoji support.
+#       For more information please check the docs.
+# 
 # Example:
 # [renderer]
 # performance = "High"
 # backend = "Automatic"
 # disable-unfocused-render = false
+# level = 1
 
 # Keyboard
 #
