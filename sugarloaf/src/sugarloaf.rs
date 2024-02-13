@@ -302,7 +302,7 @@ impl Sugarloaf {
 
     #[inline]
     pub fn remove_graphic(&mut self, graphic_id: &crate::SugarGraphicId) {
-        self.state.graphics.remove(&graphic_id);
+        self.state.graphics.remove(graphic_id);
     }
 
     #[inline]

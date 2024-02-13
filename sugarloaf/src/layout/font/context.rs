@@ -50,6 +50,7 @@ impl FontContext {
     }
 
     /// Returns the underlying font library.
+    #[allow(unused)]
     pub fn library(&self) -> &FontLibrary {
         &self.library
     }
@@ -451,6 +452,7 @@ impl GroupCache {
         self.fonts.clear();
     }
 
+    #[allow(unused)]
     fn prune(&mut self, epoch: Epoch, target_size: usize) {
         if self.key_map.len() <= target_size {
             return;
@@ -490,6 +492,7 @@ enum GroupData {
 }
 
 impl GroupData {
+    #[allow(unused)]
     fn clear(&mut self) {
         match self {
             Self::Inline(len, _) => {

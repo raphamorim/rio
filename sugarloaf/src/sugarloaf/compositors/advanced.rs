@@ -6,7 +6,6 @@ pub struct Advanced {
     pub render_data: Paragraph,
     pub render_data_sugar: Paragraph,
     content_builder: ContentBuilder,
-    content: Content,
     layout_context: LayoutContext,
 }
 
@@ -17,7 +16,6 @@ impl Default for Advanced {
         Self {
             layout_context,
             content_builder: ContentBuilder::default(),
-            content: Content::default(),
             render_data: Paragraph::new(),
             render_data_sugar: Paragraph::new(),
         }

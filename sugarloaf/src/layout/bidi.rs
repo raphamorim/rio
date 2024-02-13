@@ -656,15 +656,15 @@ pub fn type_from_level(level: BidiLevel) -> BidiClass {
 }
 
 /// Computes an ordering for a sequence of bidi runs based on levels.
+#[allow(unused)]
 pub fn reorder<F>(order: &mut [usize], levels: F)
 where
     F: Fn(usize) -> BidiLevel,
 {
     let mut max_level = 0;
     let mut lowest_odd_level = 255;
-    let mut idx = 0;
     let len = order.len();
-    for i in 0..len {
+    for (idx, i) in (0..len).enumerate() {
         let level = levels(i);
         if level > max_level {
             max_level = level;
@@ -673,7 +673,6 @@ where
             lowest_odd_level = level;
         }
         order[idx] = idx;
-        idx += 1;
     }
     for level in (lowest_odd_level..=max_level).rev() {
         let mut i = 0;
@@ -686,9 +685,10 @@ where
                 let mut j = i;
                 let mut k = end - 1;
                 while j < k {
-                    let tmp = order[j];
-                    order[j] = order[k];
-                    order[k] = tmp;
+                    order.swap(j, k);
+                    // let tmp = order[j];
+                    // order[j] = order[k];
+                    // order[k] = tmp;
                     j += 1;
                     k -= 1;
                 }
