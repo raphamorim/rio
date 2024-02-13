@@ -246,7 +246,6 @@ impl Sugarloaf {
 
     #[inline]
     pub fn append_rects(&mut self, rects: Vec<Rect>) {
-        // self.rects.append(&mut instances);
         self.state.compute_block(SugarBlock { rects, text: None });
     }
 
@@ -312,7 +311,6 @@ impl Sugarloaf {
 
     #[inline]
     fn clean_state(&mut self) {
-        // self.rects.clear();
         self.state.clean_compositor();
     }
 
@@ -381,7 +379,7 @@ impl Sugarloaf {
                         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             timestamp_writes: None,
                             occlusion_query_set: None,
-                            label: Some("sugarloaf::render -> Clear frame"),
+                            label: None,
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view,
                                 resolve_target: None,

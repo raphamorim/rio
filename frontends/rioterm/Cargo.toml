@@ -78,7 +78,7 @@ wayland = [
 [package.metadata.deb]
 name = "rio"
 maintainer = "Raphael Amorim <rapha850@gmail.com>"
-copyright = "2023, Raphael Amorim <rapha850@gmail.com>"
+copyright = "2024, Raphael Amorim <rapha850@gmail.com>"
 depends = "$auto"
 section = "admin"
 priority = "optional"
