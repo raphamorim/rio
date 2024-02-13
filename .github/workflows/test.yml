@@ -57,20 +57,19 @@ jobs:
   #         fi
   #       shell: bash
 
-  # webassembly:
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     GECKODRIVER: chromedriver
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-all-crates: "true"
-  #     - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
-  #     - run: cargo fetch
-  #     - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
-  #     - run: cd ./sugarloaf && make install
-
+  webassembly:
+    runs-on: ubuntu-latest
+    env:
+      GECKODRIVER: chromedriver
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+      - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+      - run: cargo fetch
+      - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
+      - run: cd ./sugarloaf && make install
   #     - uses: nanasess/setup-chromedriver@v2
   #     - run: |
   #         export DISPLAY=:99
