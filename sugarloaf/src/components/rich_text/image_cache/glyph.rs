@@ -159,7 +159,7 @@ impl<'a> GlyphCacheSession<'a> {
                 height: h,
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
-                desc: DescenderRegion::new(&self.scaled_image),
+                desc: DescenderRegion::new(self.scaled_image),
             };
             self.entry.glyphs.insert(key, entry);
             return Some(entry);
@@ -202,7 +202,7 @@ impl Coords<'static> {
             Self::None
         } else if len <= 8 {
             let mut arr = [0i16; 8];
-            (&mut arr[..len]).copy_from_slice(coords);
+            arr[..len].copy_from_slice(coords);
             Self::Inline(len as u8, arr)
         } else {
             Self::Heap(coords.into())

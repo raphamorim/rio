@@ -35,7 +35,7 @@ impl Paragraph {
 
     /// Clears the current line state and returns a line breaker
     /// for the paragraph.
-    pub fn break_lines<'a>(&'a mut self) -> BreakLines<'a> {
+    pub fn break_lines(&mut self) -> BreakLines {
         self.line_data.clear();
         BreakLines::new(&mut self.data, &mut self.line_data)
     }

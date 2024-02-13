@@ -27,7 +27,7 @@ impl SmallString {
         let len = s.len();
         let mut bytes = [0; 24];
         if len <= MAX_SMALL_SIZE {
-            (&mut bytes[..len]).copy_from_slice(s.as_bytes());
+            (bytes[..len]).copy_from_slice(s.as_bytes());
             bytes[LEN_SLOT] = (len as u8) | INLINE_BIT;
         } else {
             let arc: Arc<str> = s.into();
@@ -140,6 +140,12 @@ impl fmt::Display for SmallString {
 pub struct LowercaseString {
     buf: [u8; 128],
     heap: String,
+}
+
+impl Default for LowercaseString {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LowercaseString {

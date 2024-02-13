@@ -151,11 +151,11 @@ impl Batch {
         let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&verts);
         self.indices.extend_from_slice(&[
-            base + 0,
+            base,
             base + 1,
             base + 2,
             base + 2,
-            base + 0,
+            base,
             base + 3,
         ]);
     }
@@ -195,8 +195,8 @@ impl BatchManager {
     }
 
     pub fn reset(&mut self) {
-        self.batches.extend(self.opaque.drain(..));
-        self.batches.extend(self.transparent.drain(..));
+        self.batches.append(&mut self.opaque);
+        self.batches.append(&mut self.transparent);
         for batch in &mut self.batches {
             batch.clear();
         }

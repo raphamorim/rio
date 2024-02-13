@@ -105,7 +105,7 @@ impl SugarState {
         // let start = std::time::Instant::now();
 
         if self.level.is_advanced() {
-            advance_brush.prepare(context, &self);
+            advance_brush.prepare(context, self);
         } else {
             for section in &self.compositors.elementary.sections {
                 elementary_brush.queue(section);
@@ -137,7 +137,7 @@ impl SugarState {
                     elementary_brush.queue(
                         self.compositors
                             .elementary
-                            .create_section_from_text(&text, &self.current),
+                            .create_section_from_text(text, &self.current),
                     );
                 }
 
@@ -182,7 +182,7 @@ impl SugarState {
         }
 
         if self.level.is_advanced() {
-            if let Some((width, height)) = advance_brush.dimensions(&self) {
+            if let Some((width, height)) = advance_brush.dimensions(self) {
                 let mut dimensions_changed = false;
                 if height != self.current.layout.dimensions.height {
                     self.current.layout.dimensions.height = height;
@@ -283,19 +283,14 @@ impl SugarState {
                 }
                 SugarTreeDiff::Changes(changes) => {
                     // Blocks updates are placed in the first position
-                    if changes.len() > 0 {
-                        match changes[0] {
-                            tree::Diff::Block => {
-                                self.compositors.elementary.clean_blocks();
-                            }
-                            _ => {}
-                        }
-                        //     // println!("change {:?}", change);
-                        //     if let Some(offs) = self.content.insert(0, change.after.content) {
-                        //         // inserted = Some(offs);
-                        //         println!("{:?}", offs);
-                        //     }
+                    if !changes.is_empty() && changes[0] == tree::Diff::Block {
+                        self.compositors.elementary.clean_blocks();
                     }
+                    //     // println!("change {:?}", change);
+                    //     if let Some(offs) = self.content.insert(0, change.after.content) {
+                    //         // inserted = Some(offs);
+                    //         println!("{:?}", offs);
+                    //     }
 
                     std::mem::swap(&mut self.current, &mut self.next);
                     if self.level.is_advanced() {

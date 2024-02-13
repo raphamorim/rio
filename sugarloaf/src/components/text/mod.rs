@@ -87,12 +87,7 @@ where
     F: Font + Sync,
     H: BuildHasher,
 {
-    fn process_queued(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &mut wgpu::Queue,
-        rpass: &mut wgpu::RenderPass,
-    ) {
+    fn process_queued(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue) {
         let pipeline = &mut self.pipeline;
 
         let mut brush_action;
@@ -183,14 +178,11 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     ) {
         let device = &context.device;
         let queue = &mut context.queue;
-        let _ = self.draw_queued_with_transform(
+        self.draw_queued_with_transform(
             device,
             queue,
             rpass,
-            orthographic_projection(
-                context.size.width as f32,
-                context.size.height as f32,
-            ),
+            orthographic_projection(context.size.width, context.size.height),
         );
     }
 
@@ -213,7 +205,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
     ) {
-        self.process_queued(device, queue, rpass);
+        self.process_queued(device, queue);
         self.pipeline.draw(queue, rpass, transform, None);
     }
 
@@ -237,7 +229,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        self.process_queued(device, queue, rpass);
+        self.process_queued(device, queue);
         self.pipeline.draw(queue, rpass, transform, Some(region));
 
         Ok(())
@@ -318,7 +310,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
     ) -> Result<(), String> {
-        self.process_queued(device, queue, rpass);
+        self.process_queued(device, queue);
         self.pipeline.draw((queue, rpass), transform, None);
 
         Ok(())
@@ -349,7 +341,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     ) -> Result<(), String> {
         let (device, queue, encoder) = config;
 
-        self.process_queued(device, queue, encoder);
+        self.process_queued(device, queue);
 
         self.pipeline
             .draw((queue, encoder), transform, Some(region));

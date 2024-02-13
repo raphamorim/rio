@@ -240,7 +240,7 @@ impl Elementary {
             let mut sugar_char_width = 1.;
             let rect_pos_x = tree.layout.style.screen_position.0 + x;
 
-            let cached_sugar: CachedSugar = self.get_font_id(&block[i], &tree);
+            let cached_sugar: CachedSugar = self.get_font_id(&block[i], tree);
 
             let mut font_id = cached_sugar.font_id;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {

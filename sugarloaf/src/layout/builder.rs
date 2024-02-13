@@ -43,12 +43,12 @@ impl LayoutContext {
 
     /// Creates a new builder for computing a paragraph layout with the
     /// specified direction, language and scaling factor.
-    pub fn builder<'a>(
-        &'a mut self,
+    pub fn builder(
+        &mut self,
         direction: Direction,
         language: Option<Language>,
         scale: f32,
-    ) -> ParagraphBuilder<'a> {
+    ) -> ParagraphBuilder {
         self.state.clear();
         self.state.begin(direction, language, scale);
         self.state.scale = scale;
@@ -189,10 +189,7 @@ impl<'a> ParagraphBuilder<'a> {
             }
             TextTransform::Capitalize => {
                 let is_turkic = if let Some(lang) = &span.lang {
-                    match lang.language() {
-                        "tr" | "az" | "crh" | "tt" | "ba" => true,
-                        _ => false,
-                    }
+                    matches!(lang.language(), "tr" | "az" | "crh" | "tt" | "ba")
                 } else {
                     false
                 };
@@ -426,14 +423,7 @@ impl<'a> ParagraphBuilder<'a> {
     fn shape(&mut self, layout: &mut Paragraph) {
         let start = std::time::Instant::now();
         for item in &self.s.items {
-            shape_item(
-                &mut self.fcx,
-                &mut self.scx,
-                &self.s,
-                item,
-                &mut self.char_cluster,
-                layout,
-            );
+            shape_item(self.fcx, self.scx, self.s, item, self.char_cluster, layout);
         }
         layout.apply_spacing(&self.s.spans);
         let duration = start.elapsed();
