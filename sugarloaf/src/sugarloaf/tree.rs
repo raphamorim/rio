@@ -1,22 +1,43 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 // use std::ops::Range;
 use crate::sugarloaf::SugarloafLayout;
 use crate::{Sugar, SugarBlock, SugarLine};
 // use smallvec::SmallVec;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Diff {
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub enum DiffKind {
     Block,
-    Sugar(SugarChange),
+    #[default]
+    Sugar,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SugarChange {
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct Diff {
+    pub kind: DiffKind,
     pub line: usize,
     pub column: usize,
     pub before: Sugar,
     pub after: Sugar,
     // range: Range<usize>,
     // content: Vec<char>,
+}
+
+impl Diff {
+    pub fn block() -> Self {
+        Diff {
+            kind: DiffKind::Block,
+            ..Diff::default()
+        }
+    }
+
+    #[inline]
+    pub fn is_block(&self) -> bool {
+        self.kind == DiffKind::Block
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -95,7 +116,7 @@ impl SugarTree {
 
         // TODO: Improve blocks comparisson
         if self.blocks != next.blocks {
-            changes.push(Diff::Block);
+            changes.push(Diff::block());
         }
 
         if current_len == next_len {
@@ -110,12 +131,13 @@ impl SugarTree {
 
                 for column in 0..line.acc {
                     if line[column] != next_line[column] {
-                        changes.push(Diff::Sugar(SugarChange {
+                        changes.push(Diff {
+                            kind: DiffKind::Sugar,
                             line: line_number,
-                            column: column,
+                            column,
                             before: line[column],
                             after: next_line[column],
-                        }));
+                        });
                     }
                 }
             }
@@ -185,13 +207,13 @@ pub mod test {
         );
 
         sugartree_a.insert(0, SugarLine::default());
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
         sugartree_b.insert(0, SugarLine::default());
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'b',
             ..Sugar::default()
         });
@@ -267,18 +289,18 @@ pub mod test {
         let mut sugartree_b = SugarTree::default();
 
         sugartree_a.insert(0, SugarLine::default());
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
         sugartree_b.insert(0, SugarLine::default());
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'a',
             ..Sugar::default()
         });
@@ -288,7 +310,7 @@ pub mod test {
             SugarTreeDiff::ColumnsLengthIsDifferent(-1)
         );
 
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'c',
             ..Sugar::default()
         });
@@ -298,15 +320,15 @@ pub mod test {
             SugarTreeDiff::ColumnsLengthIsDifferent(-2)
         );
 
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'z',
             ..Sugar::default()
         });
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 't',
             ..Sugar::default()
         });
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'o',
             ..Sugar::default()
         });
@@ -323,18 +345,19 @@ pub mod test {
         let mut sugartree_b = SugarTree::default();
 
         sugartree_a.insert(0, SugarLine::default());
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'a',
             ..Sugar::default()
         });
 
         sugartree_b.insert(0, SugarLine::default());
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'b',
             ..Sugar::default()
         });
 
-        let mut changes = vec![Diff::Sugar(SugarChange {
+        let mut changes = vec![Diff {
+            kind: DiffKind::Sugar,
             line: 0,
             column: 0,
             before: Sugar {
@@ -365,24 +388,25 @@ pub mod test {
                 cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
-        })];
+        }];
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
             SugarTreeDiff::Changes(changes.clone())
         );
 
-        sugartree_a.line_mut(0).insert(Sugar {
+        sugartree_a.line_mut(0).insert(&Sugar {
             content: 'k',
             ..Sugar::default()
         });
 
-        sugartree_b.line_mut(0).insert(Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'z',
             ..Sugar::default()
         });
 
-        changes.push(Diff::Sugar(SugarChange {
+        changes.push(Diff {
+            kind: DiffKind::Sugar,
             line: 0,
             column: 1,
             before: Sugar {
@@ -413,7 +437,7 @@ pub mod test {
                 cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
-        }));
+        });
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),

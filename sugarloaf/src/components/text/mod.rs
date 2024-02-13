@@ -242,7 +242,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        depth_stencil_state: wgpu::DepthStencilState,
         raw_builder: glyph::GlyphBrushBuilder<F, H>,
     ) -> Self {
         let glyph_brush = raw_builder.build();
@@ -253,7 +252,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
                 filter_mode,
                 multisample,
                 render_format,
-                depth_stencil_state,
                 cache_width,
                 cache_height,
             ),
@@ -277,14 +275,12 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         w_h: (f32, f32),
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
             queue,
             rpass,
-            depth_stencil_attachment,
             orthographic_projection(w_h.0, w_h.1),
         )
     }
@@ -307,7 +303,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
     ) -> Result<(), String> {
         self.process_queued(device, queue);

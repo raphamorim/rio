@@ -329,7 +329,6 @@ impl EventHandler for Router {
             {
                 window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
                 current.render();
-                return;
             }
         }
     }

@@ -8,7 +8,7 @@
 
 //! Support for navigating a layout.
 
-use super::layout::{make_range, Line};
+use super::render_data::{make_range, Line};
 use super::Paragraph;
 use core::ops::Range;
 
@@ -431,10 +431,8 @@ impl Selection {
             }
         } else if anchor.line > focus.line || anchor.edge > focus.edge {
             // Otherwise, set it to 'after' state.
-            if !anchor.after {
-                if anchor.cluster > 0 {
-                    anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
-                }
+            if !anchor.after && anchor.cluster > 0 {
+                anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
             }
         }
         Self {
@@ -468,10 +466,8 @@ impl Selection {
             }
         } else if anchor.line > focus.line || anchor.edge > focus.edge {
             // Otherwise, set it to 'after' state.
-            if !anchor.after {
-                if anchor.cluster > 0 {
-                    anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
-                }
+            if !anchor.after && anchor.cluster > 0 {
+                anchor = Node::from_visual_cluster(layout, anchor.cluster - 1, true);
             }
         }
         Self {
@@ -488,12 +484,10 @@ impl Selection {
             } else {
                 &self.anchor
             }
+        } else if self.focus > self.anchor {
+            &self.focus
         } else {
-            if self.focus > self.anchor {
-                &self.focus
-            } else {
-                &self.anchor
-            }
+            &self.anchor
         };
         Self::from_focus(*node)
     }
@@ -748,10 +742,8 @@ impl Node {
             if !self.after {
                 index += 1;
             }
-        } else {
-            if self.after {
-                index += 1;
-            }
+        } else if self.after {
+            index += 1;
         }
         index
     }
@@ -760,12 +752,10 @@ impl Node {
 impl PartialOrd for Node {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         use core::cmp::Ordering::*;
-        if self.line < other.line {
-            Some(Less)
-        } else if self.line > other.line {
-            Some(Greater)
-        } else {
-            self.edge.partial_cmp(&other.edge)
+        match self.line.cmp(&other.line) {
+            Greater => Some(Greater),
+            Less => Some(Less),
+            Equal => self.edge.partial_cmp(&other.edge),
         }
     }
 }

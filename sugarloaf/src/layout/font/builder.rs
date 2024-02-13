@@ -366,45 +366,41 @@ impl Scanner {
             return Some(());
         }
         let mut lower_ext = [0u8; 3];
-        for entry in fs::read_dir(path).ok()? {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    let mut is_dfont = false;
-                    match path.extension().and_then(|e| e.to_str()) {
-                        Some("dfont") => is_dfont = true,
-                        Some(ext) => {
-                            let ext = ext.as_bytes();
-                            if ext.len() != 3 {
-                                continue;
-                            }
-                            for i in 0..3 {
-                                lower_ext[i] = ext[i].to_ascii_lowercase();
-                            }
+        for entry in (fs::read_dir(path).ok()?).flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let mut is_dfont = false;
+                match path.extension().and_then(|e| e.to_str()) {
+                    Some("dfont") => is_dfont = true,
+                    Some(ext) => {
+                        let ext = ext.as_bytes();
+                        if ext.len() != 3 {
+                            continue;
                         }
-                        None => continue,
-                    };
-                    if !is_dfont {
-                        match &lower_ext {
-                            b"ttf" | b"otf" | b"ttc" | b"otc" => {}
-                            _ => continue,
+                        for i in 0..3 {
+                            lower_ext[i] = ext[i].to_ascii_lowercase();
                         }
                     }
-                    if let Ok(file) = fs::File::open(&path) {
-                        if let Ok(metadata) = entry.metadata() {
-                            if let Ok(timestamp) = metadata.modified() {
-                                if let Ok(data) = unsafe { memmap2::Mmap::map(&file) } {
-                                    sink.enter_file(path, timestamp, metadata.len());
-                                    self.scan_data(&data, all_names, |f| {
-                                        sink.add_font(f)
-                                    });
-                                }
-                            }
-                        }
+                    None => continue,
+                };
+                if !is_dfont {
+                    match &lower_ext {
+                        b"ttf" | b"otf" | b"ttc" | b"otc" => {}
+                        _ => continue,
                     }
-                } else if path.is_dir() {
-                    self.scan_dir_impl(&path, all_names, sink, recurse + 1);
                 }
+                if let Ok(file) = fs::File::open(&path) {
+                    if let Ok(metadata) = entry.metadata() {
+                        if let Ok(timestamp) = metadata.modified() {
+                            if let Ok(data) = unsafe { memmap2::Mmap::map(&file) } {
+                                sink.enter_file(path, timestamp, metadata.len());
+                                self.scan_data(&data, all_names, |f| sink.add_font(f));
+                            }
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                self.scan_dir_impl(&path, all_names, sink, recurse + 1);
             }
         }
         Some(())

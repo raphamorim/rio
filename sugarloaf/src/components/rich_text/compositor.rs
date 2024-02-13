@@ -60,16 +60,19 @@ impl Compositor {
 /// Image management.
 impl Compositor {
     /// Adds an image to the compositor.
+    #[allow(unused)]
     pub fn add_image(&mut self, request: AddImage) -> Option<ImageId> {
         self.images.allocate(self.epoch, request)
     }
 
     /// Returns the image associated with the specified identifier.
+    #[allow(unused)]
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
         self.images.get(self.epoch, image)
     }
 
     /// Removes the image from the compositor.
+    #[allow(unused)]
     pub fn remove_image(&mut self, image: ImageId) -> bool {
         self.images.deallocate(image).is_some()
     }
@@ -83,6 +86,7 @@ impl Compositor {
     }
 
     /// Draws an image with the specified rectangle, depth and color.
+    #[allow(unused)]
     pub fn draw_image(
         &mut self,
         rect: impl Into<Rect>,

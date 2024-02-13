@@ -51,7 +51,6 @@ impl Pipeline<()> {
             filter_mode,
             multisample,
             render_format,
-            None,
             cache_width,
             cache_height,
         )
@@ -74,7 +73,6 @@ impl Pipeline<wgpu::DepthStencilState> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        depth_stencil_state: wgpu::DepthStencilState,
         cache_width: u32,
         cache_height: u32,
     ) -> Pipeline<wgpu::DepthStencilState> {
@@ -83,7 +81,6 @@ impl Pipeline<wgpu::DepthStencilState> {
             filter_mode,
             multisample,
             render_format,
-            Some(depth_stencil_state),
             cache_width,
             cache_height,
         )
@@ -183,7 +180,6 @@ fn build<D>(
     filter_mode: wgpu::FilterMode,
     multisample: wgpu::MultisampleState,
     render_format: wgpu::TextureFormat,
-    depth_stencil: Option<wgpu::DepthStencilState>,
     cache_width: u32,
     cache_height: u32,
 ) -> Pipeline<D> {
@@ -286,7 +282,7 @@ fn build<D>(
             ..Default::default()
         },
         multisample,
-        depth_stencil,
+        depth_stencil: None,
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",

@@ -171,7 +171,7 @@ impl FontCache {
     }
 
     /// Returns a font entry for the specified identifier.
-    pub fn font_by_id<'a>(&'a self, id: FontId) -> Option<FontEntry<'a>> {
+    pub fn font_by_id(&self, id: FontId) -> Option<FontEntry<'_>> {
         self.index.font_by_id(id)
     }
 
@@ -342,9 +342,8 @@ impl GroupCache {
         // Parse the descriptor and collect the font identifiers.
         self.tmp.clear();
         for family in parse_families(names) {
-            match fonts.query(family, attrs).map(|f| f.selector(attrs)) {
-                Some(sel) => self.tmp.push((sel.0, sel.1)),
-                _ => {}
+            if let Some(sel) = fonts.query(family, attrs).map(|f| f.selector(attrs)) {
+                self.tmp.push((sel.0, sel.1))
             }
         }
         // Slow path: linear search.
@@ -353,7 +352,7 @@ impl GroupCache {
                 continue;
             }
             let existing = item.data.get();
-            if existing == &self.tmp {
+            if existing == self.tmp {
                 match self.font_map.entry(item.id) {
                     Entry::Occupied(..) => {}
                     Entry::Vacant(e) => {

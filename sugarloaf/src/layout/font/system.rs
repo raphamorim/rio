@@ -12,6 +12,7 @@
 #[allow(dead_code)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Os {
+    #[allow(clippy::enum_variant_names)]
     MacOs,
     Ios,
     Windows,

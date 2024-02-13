@@ -139,50 +139,38 @@ impl FamilyData {
         if weight >= Weight(400) && weight <= Weight(500) {
             // weights greater than or equal to the target weight are checked
             // in ascending order until 500 is hit and checked
-            if let Some(font) = self
-                .fonts
-                .iter()
-                .filter(|f| {
-                    f.stretch == matching_stretch
-                        && f.style == matching_style
-                        && f.weight >= weight
-                        && f.weight <= Weight(500)
-                })
-                .next()
-            {
+            if let Some(font) = self.fonts.iter().find(|f| {
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight >= weight
+                    && f.weight <= Weight(500)
+            }) {
                 return Some(font.id);
             }
             // followed by weights less than the target weight in descending
             // order
-            if let Some(font) = self
-                .fonts
-                .iter()
-                .rev()
-                .filter(|f| {
-                    f.stretch == matching_stretch
-                        && f.style == matching_style
-                        && f.weight < weight
-                })
-                .next()
-            {
+            if let Some(font) = self.fonts.iter().rev().find(|f| {
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight < weight
+            }) {
                 return Some(font.id);
             }
             // followed by weights greater than 500, until a match is found
             return self
                 .fonts
                 .iter()
-                .filter(|f| {
+                .find(|f| {
                     f.stretch == matching_stretch
                         && f.style == matching_style
                         && f.weight > Weight(500)
                 })
-                .map(|f| f.id)
-                .next();
+                .map(|f| f.id);
         // If the desired weight is less than 400
         } else if weight < Weight(400) {
             // weights less than or equal to the desired weight are checked in
             // descending order
-            for font in self.fonts.iter().rev().filter(|f| {
+            if let Some(font) = self.fonts.iter().rev().find(|f| {
                 f.stretch == matching_stretch
                     && f.style == matching_style
                     && f.weight <= weight
@@ -194,27 +182,21 @@ impl FamilyData {
             return self
                 .fonts
                 .iter()
-                .filter(|f| {
+                .find(|f| {
                     f.stretch == matching_stretch
                         && f.style == matching_style
                         && f.weight > weight
                 })
-                .map(|f| f.id)
-                .next();
+                .map(|f| f.id);
         // If the desired weight is greater than 500
         } else {
             // weights greater than or equal to the desired weight are checked
             // in ascending order
-            if let Some(font) = self
-                .fonts
-                .iter()
-                .filter(|f| {
-                    f.stretch == matching_stretch
-                        && f.style == matching_style
-                        && f.weight >= weight
-                })
-                .next()
-            {
+            if let Some(font) = self.fonts.iter().find(|f| {
+                f.stretch == matching_stretch
+                    && f.style == matching_style
+                    && f.weight >= weight
+            }) {
                 return Some(font.id);
             }
             // followed by weights below the desired weight in descending order
@@ -311,6 +293,7 @@ impl SourceData {
 }
 
 pub enum SourceKind {
+    #[allow(unused)]
     Memory(SharedData),
     File(FileData),
 }

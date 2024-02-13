@@ -38,7 +38,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         line_height,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -47,8 +46,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -79,66 +78,64 @@ async fn main() {
                     let new_inner_size = window.inner_size();
                     sugarloaf.rescale(scale_factor as f32);
                     sugarloaf.resize(new_inner_size.width, new_inner_size.height);
-                    sugarloaf
-                        .pile_rects(vec![
-                            Rect {
-                                position: [10.0, 10.0],
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                size: [1.0, 1.0],
-                            },
-                            Rect {
-                                position: [15.0, 10.0],
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                size: [10.0, 10.0],
-                            },
-                            Rect {
-                                position: [30.0, 20.0],
-                                color: [1.0, 1.0, 0.0, 1.0],
-                                size: [50.0, 50.0],
-                            },
-                            Rect {
-                                position: [200., 200.0],
-                                color: [0.0, 1.0, 0.0, 1.0],
-                                size: [100.0, 100.0],
-                            },
-                            Rect {
-                                position: [500.0, 200.0],
-                                color: [1.0, 1.0, 0.0, 1.0],
-                                size: [200.0, 200.0],
-                            },
-                        ])
-                        .render();
+                    sugarloaf.append_rects(vec![
+                        Rect {
+                            position: [10.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [1.0, 1.0],
+                        },
+                        Rect {
+                            position: [15.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [10.0, 10.0],
+                        },
+                        Rect {
+                            position: [30.0, 20.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [50.0, 50.0],
+                        },
+                        Rect {
+                            position: [200., 200.0],
+                            color: [0.0, 1.0, 0.0, 1.0],
+                            size: [100.0, 100.0],
+                        },
+                        Rect {
+                            position: [500.0, 200.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [200.0, 200.0],
+                        },
+                    ]);
+                    sugarloaf.render();
                 }
                 WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf
-                        .pile_rects(vec![
-                            Rect {
-                                position: [10.0, 10.0],
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                size: [1.0, 1.0],
-                            },
-                            Rect {
-                                position: [15.0, 10.0],
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                size: [10.0, 10.0],
-                            },
-                            Rect {
-                                position: [30.0, 20.0],
-                                color: [1.0, 1.0, 0.0, 1.0],
-                                size: [50.0, 50.0],
-                            },
-                            Rect {
-                                position: [200., 200.0],
-                                color: [0.0, 1.0, 0.0, 1.0],
-                                size: [100.0, 100.0],
-                            },
-                            Rect {
-                                position: [500.0, 200.0],
-                                color: [1.0, 1.0, 0.0, 1.0],
-                                size: [200.0, 200.0],
-                            },
-                        ])
-                        .render();
+                    sugarloaf.append_rects(vec![
+                        Rect {
+                            position: [10.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [1.0, 1.0],
+                        },
+                        Rect {
+                            position: [15.0, 10.0],
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            size: [10.0, 10.0],
+                        },
+                        Rect {
+                            position: [30.0, 20.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [50.0, 50.0],
+                        },
+                        Rect {
+                            position: [200., 200.0],
+                            color: [0.0, 1.0, 0.0, 1.0],
+                            size: [100.0, 100.0],
+                        },
+                        Rect {
+                            position: [500.0, 200.0],
+                            color: [1.0, 1.0, 0.0, 1.0],
+                            size: [200.0, 200.0],
+                        },
+                    ]);
+                    sugarloaf.render();
                 }
                 _ => (),
             },

@@ -1,3 +1,8 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 use crate::components::text::glyph::OwnedSection;
 use crate::components::text::glyph::{FontId, GlyphCruncher};
 use crate::font::{
@@ -23,9 +28,9 @@ pub struct CachedSugar {
     px_scale: Option<PxScale>,
 }
 
+#[allow(unused)]
 struct GraphicRect {
     id: graphics::SugarGraphicId,
-    #[allow(unused)]
     height: u16,
     width: u16,
     pos_x: f32,
@@ -214,13 +219,7 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn update_tree_with_block(
-        &mut self,
-        block: &mut SugarLine,
-        tree: &mut SugarTree,
-    ) {
-        tree.insert_last(*block);
-
+    pub fn update_tree_with_new_line(&mut self, line: &SugarLine, tree: &SugarTree) {
         let mut x = 0.;
         let mod_pos_y = tree.layout.style.screen_position.1;
         let mod_text_y = tree.layout.dimensions.height;
@@ -235,20 +234,20 @@ impl Elementary {
             self.text_y = tree.layout.style.screen_position.1;
         }
 
-        for i in 0..block.acc {
+        for i in 0..line.acc {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
             let rect_pos_x = tree.layout.style.screen_position.0 + x;
 
-            let cached_sugar: CachedSugar = self.get_font_id(&block[i], tree);
+            let cached_sugar: CachedSugar = self.get_font_id(&line[i], tree);
 
             let mut font_id = cached_sugar.font_id;
             if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-                if block[i].style.is_bold_italic {
+                if line[i].style.is_bold_italic {
                     font_id = FontId(FONT_ID_BOLD_ITALIC);
-                } else if block[i].style.is_bold {
+                } else if line[i].style.is_bold {
                     font_id = FontId(FONT_ID_BOLD);
-                } else if block[i].style.is_italic {
+                } else if line[i].style.is_italic {
                     font_id = FontId(FONT_ID_ITALIC);
                 }
             }
@@ -269,11 +268,11 @@ impl Elementary {
             let rect_pos_y = self.text_y + mod_pos_y;
             let width_bound = sugar_width * sugar_char_width;
 
-            let text = if block[i].repeated == 0 {
-                block[i].content.to_string()
+            let text = if line[i].repeated == 0 {
+                line[i].content.to_string()
             } else {
-                std::iter::repeat(block[i].content)
-                    .take(block[i].repeated + 1)
+                std::iter::repeat(line[i].content)
+                    .take(line[i].repeated + 1)
                     .collect::<String>()
             };
             let section_pos_x = rect_pos_x;
@@ -281,10 +280,10 @@ impl Elementary {
 
             let text = crate::components::text::OwnedText {
                 text,
-                scale: scale,
-                font_id: font_id,
+                scale,
+                font_id,
                 extra: crate::components::text::Extra {
-                    color: block[i].foreground_color,
+                    color: line[i].foreground_color,
                     z: 0.0,
                 },
             };
@@ -303,15 +302,15 @@ impl Elementary {
             let scaled_rect_pos_x = section_pos_x / tree.layout.dimensions.scale;
             let scaled_rect_pos_y = rect_pos_y / tree.layout.dimensions.scale;
 
-            let quantity = (block[i].repeated + 1) as f32;
+            let quantity = (line[i].repeated + 1) as f32;
 
             self.rects.push(Rect {
                 position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                color: block[i].background_color,
+                color: line[i].background_color,
                 size: [width_bound * quantity, unscaled_sugar_height],
             });
 
-            match &block[i].cursor {
+            match &line[i].cursor {
                 primitives::SugarCursor::Block(cursor_color) => {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, scaled_rect_pos_y],
@@ -337,12 +336,12 @@ impl Elementary {
                 primitives::SugarCursor::Disabled => {}
             }
 
-            match &block[i].decoration {
+            match &line[i].decoration {
                 primitives::SugarDecoration::Underline => {
                     let dec_pos_y = (scaled_rect_pos_y) + tree.layout.font_size - 1.;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
-                        color: block[i].foreground_color,
+                        color: line[i].foreground_color,
                         size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
@@ -350,14 +349,14 @@ impl Elementary {
                     let dec_pos_y = (scaled_rect_pos_y) + tree.layout.font_size / 2.0;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
-                        color: block[i].foreground_color,
+                        color: line[i].foreground_color,
                         size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
                 &primitives::SugarDecoration::Disabled => {}
             }
 
-            if let Some(sugar_media) = &block[i].media {
+            if let Some(sugar_media) = &line[i].media {
                 if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
                     rect.columns += 1.0;
                     rect.end_row = self.current_row.into();

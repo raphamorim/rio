@@ -61,15 +61,13 @@ impl ImageCache {
         }
         let mut atlas_data = self.alloc_from_atlases(format, width, height);
         if atlas_data.is_none() {
-            if epoch.0 > 1 {
-                if self.evict_from_atlases(epoch.0 - 1) > 0 {
-                    atlas_data = self.alloc_from_atlases(format, width, height);
-                }
+            if epoch.0 > 1 && self.evict_from_atlases(epoch.0 - 1) > 0 {
+                atlas_data = self.alloc_from_atlases(format, width, height);
             }
-            if atlas_data.is_none() && epoch.0 > 0 {
-                if self.evict_from_atlases(epoch.0) > 0 {
-                    atlas_data = self.alloc_from_atlases(format, width, height);
-                }
+
+            if atlas_data.is_none() && epoch.0 > 0 && self.evict_from_atlases(epoch.0) > 0
+            {
+                atlas_data = self.alloc_from_atlases(format, width, height);
             }
         }
         if atlas_data.is_none() {
@@ -418,24 +416,29 @@ struct Standalone {
     next: u32,
 }
 
+#[allow(clippy::enum_variant_names)]
 enum Event {
     CreateTexture(TextureId, PixelFormat, u16, u16, Option<PendingData>),
+    #[allow(unused)]
     UpdateTexture(TextureId, [u16; 4], Option<PendingData>),
     DestroyTexture(TextureId),
 }
 
 enum PendingData {
+    #[allow(unused)]
     Inline(ImageData<'static>),
     Buffered(usize, usize),
 }
 
 #[derive(Default)]
+#[allow(unused)]
 struct DirtyRect {
     min: (u16, u16),
     max: (u16, u16),
     empty: bool,
 }
 
+#[allow(unused)]
 impl DirtyRect {
     fn new() -> Self {
         let mut this = Self::default();
@@ -460,6 +463,7 @@ impl DirtyRect {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill(
     x: u16,
     y: u16,

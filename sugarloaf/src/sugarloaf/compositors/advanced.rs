@@ -1,3 +1,11 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// build_complex_content and update_layout was originally retired from dfrg/swash_demo licensed under MIT
+// https://github.com/dfrg/swash_demo/blob/master/LICENSE
+
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration, SugarLine};
@@ -97,11 +105,7 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_block(
-        &mut self,
-        block: &mut SugarLine,
-        tree: &mut SugarTree,
-    ) {
+    pub fn update_tree_with_new_line(&mut self, line: &SugarLine, tree: &SugarTree) {
         if tree.is_empty() {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
@@ -110,8 +114,6 @@ impl Advanced {
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
         }
-
-        tree.insert_last(*block);
 
         let underline = &[
             SpanStyle::Underline(true),
@@ -127,28 +129,28 @@ impl Advanced {
         ];
 
         // let mut content = String::from("");
-        for i in 0..block.acc {
-            // println!("char {:?} {:?}", block[i].content, block[i].repeated);
+        for i in 0..line.acc {
+            // println!("char {:?} {:?}", line[i].content, line[i].repeated);
 
             let mut span_counter = 0;
-            if block[i].style.is_bold_italic {
+            if line[i].style.is_bold_italic {
                 self.content_builder.enter_span(&[
                     SpanStyle::Weight(crate::layout::Weight::BOLD),
                     SpanStyle::Style(crate::layout::Style::Italic),
                 ]);
                 span_counter += 1;
-            } else if block[i].style.is_bold {
+            } else if line[i].style.is_bold {
                 self.content_builder
                     .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
                 span_counter += 1;
-            } else if block[i].style.is_italic {
+            } else if line[i].style.is_italic {
                 self.content_builder
                     .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
                 span_counter += 1;
             }
 
             let mut has_underline_cursor = false;
-            match block[i].cursor {
+            match line[i].cursor {
                 SugarCursor::Underline(cursor_color) => {
                     let underline_cursor = &[
                         SpanStyle::UnderlineColor(cursor_color),
@@ -175,7 +177,7 @@ impl Advanced {
                 _ => {}
             }
 
-            match &block[i].decoration {
+            match &line[i].decoration {
                 SugarDecoration::Underline => {
                     if !has_underline_cursor {
                         self.content_builder.enter_span(underline);
@@ -190,17 +192,17 @@ impl Advanced {
             }
 
             self.content_builder.enter_span(&[
-                SpanStyle::Color(block[i].foreground_color),
-                SpanStyle::BackgroundColor(block[i].background_color),
+                SpanStyle::Color(line[i].foreground_color),
+                SpanStyle::BackgroundColor(line[i].background_color),
             ]);
 
-            if block[i].repeated > 0 {
-                let text = std::iter::repeat(block[i].content)
-                    .take(block[i].repeated + 1)
+            if line[i].repeated > 0 {
+                let text = std::iter::repeat(line[i].content)
+                    .take(line[i].repeated + 1)
                     .collect::<String>();
                 self.content_builder.add_text(&text);
             } else {
-                self.content_builder.add_char(block[i].content);
+                self.content_builder.add_char(line[i].content);
             }
             self.content_builder.leave_span();
 

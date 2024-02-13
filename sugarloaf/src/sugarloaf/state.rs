@@ -1,6 +1,11 @@
+// Copyright (c) 2023-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
-use super::tree::{self, SugarTree, SugarTreeDiff};
+use super::tree::{SugarTree, SugarTreeDiff};
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 use ab_glyph::FontArc;
@@ -10,6 +15,7 @@ pub struct SugarState {
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
+    current_line: usize,
     pub compositors: SugarCompositors,
     level: SugarCompositorLevel,
     // TODO: Decide if graphics should be in SugarTree or SugarState
@@ -21,10 +27,13 @@ impl SugarState {
         level: SugarCompositorLevel,
         initial_layout: SugarloafLayout,
     ) -> SugarState {
-        let mut next = SugarTree::default();
         // First time computing changes should obtain dimensions
-        next.layout = initial_layout;
+        let next = SugarTree {
+            layout: initial_layout,
+            ..Default::default()
+        };
         SugarState {
+            current_line: 0,
             compositors: SugarCompositors::default(),
             level,
             graphics: SugarloafGraphics::default(),
@@ -46,26 +55,57 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn compute_line_start(&mut self) {
+        self.next.lines.push(SugarLine::default());
+        self.current_line = self.next.lines.len() - 1;
+    }
+
+    pub fn compute_line_end(&mut self) {
+        match self.level {
+            SugarCompositorLevel::Elementary => {
+                self.compositors.elementary.update_tree_with_new_line(
+                    &self.next.lines[self.current_line],
+                    &self.next,
+                )
+            }
+            SugarCompositorLevel::Advanced => {
+                self.compositors.advanced.update_tree_with_new_line(
+                    &self.next.lines[self.current_line],
+                    &self.next,
+                )
+            }
+        }
+    }
+
+    #[inline]
+    pub fn insert_on_current_line(&mut self, sugar: &crate::Sugar) {
+        self.next.lines[self.current_line].insert(sugar);
+    }
+
+    #[inline]
+    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&crate::Sugar>) {
+        for sugar in sugar_vec {
+            self.next.lines[self.current_line].insert(sugar);
+        }
+    }
+
+    #[inline]
+    pub fn insert_on_current_line_from_vec_owned(
+        &mut self,
+        sugar_vec: &Vec<crate::Sugar>,
+    ) {
+        for sugar in sugar_vec {
+            self.next.lines[self.current_line].insert(sugar);
+        }
+    }
+
+    #[inline]
     pub fn set_fonts(&mut self, fonts: Vec<FontArc>) {
         self.compositors.elementary.set_fonts(fonts);
     }
 
     #[inline]
-    pub fn process(&mut self, block: &mut SugarLine) {
-        match self.level {
-            SugarCompositorLevel::Elementary => self
-                .compositors
-                .elementary
-                .update_tree_with_block(block, &mut self.next),
-            SugarCompositorLevel::Advanced => self
-                .compositors
-                .advanced
-                .update_tree_with_block(block, &mut self.next),
-        }
-    }
-
-    #[inline]
-    pub fn process_block(&mut self, block: SugarBlock) {
+    pub fn compute_block(&mut self, block: SugarBlock) {
         // Block are used only with elementary renderer
         self.next.blocks.push(block);
     }
@@ -241,6 +281,7 @@ impl SugarState {
     #[inline]
     pub fn reset_next(&mut self) {
         self.next.layout = self.current.layout;
+        self.current_line = 0;
         self.next.lines.clear();
         self.next.blocks.clear();
     }
@@ -283,7 +324,7 @@ impl SugarState {
                 }
                 SugarTreeDiff::Changes(changes) => {
                     // Blocks updates are placed in the first position
-                    if !changes.is_empty() && changes[0] == tree::Diff::Block {
+                    if !changes.is_empty() && changes[0].is_block() {
                         self.compositors.elementary.clean_blocks();
                     }
                     //     // println!("change {:?}", change);

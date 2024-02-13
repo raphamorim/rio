@@ -151,7 +151,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrushBuilder<wgpu::DepthStencilState, 
             self.texture_filter_method,
             self.multisample_state,
             render_format,
-            self.depth,
             self.inner,
         )
     }

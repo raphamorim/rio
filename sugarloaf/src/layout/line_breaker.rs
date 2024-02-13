@@ -6,8 +6,8 @@
 // line_breaker.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use super::layout::*;
 use super::layout_data::*;
+use super::render_data::*;
 
 /// Alignment of a paragraph.
 #[derive(Copy, Default, Clone, PartialEq, Eq, Debug)]
@@ -318,6 +318,7 @@ impl<'a> BreakLines<'a> {
                 let rtl = run.level & 1 != 0;
                 let clusters = r.visual_clusters();
                 let mut pos = 0;
+                #[allow(clippy::explicit_counter_loop)]
                 for cluster in clusters {
                     let index = if rtl {
                         run.clusters.1.wrapping_sub(pos).wrapping_sub(1)
@@ -446,8 +447,8 @@ fn commit_line(
         runs: (runs_start, runs_end),
         clusters: state.clusters,
         width: state.x,
-        max_advance: max_advance,
-        alignment: alignment,
+        max_advance,
+        alignment,
         explicit_break: explicit,
         ..Default::default()
     };

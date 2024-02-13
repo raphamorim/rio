@@ -121,7 +121,7 @@ impl Font {
     }
 
     /// Returns a borrowed reference to the font.
-    pub fn as_ref<'a>(&'a self) -> FontRef<'a> {
+    pub fn as_ref(&self) -> FontRef<'_> {
         FontRef {
             data: self.data.as_bytes(),
             offset: self.offset,
