@@ -98,11 +98,11 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: String,
-    #[serde(rename = "padding-x", default = "default_padding_x")]
+    #[serde(rename = "padding-x", default = "f32::default")]
     pub padding_x: f32,
     #[serde(default = "default_cursor")]
     pub cursor: char,
-    #[serde(default = "default_env_vars", rename = "env-vars")]
+    #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
     pub option_as_alt: String,
@@ -354,12 +354,12 @@ impl Default for Config {
             scroll: Scroll::default(),
             keyboard: Keyboard::default(),
             developer: Developer::default(),
-            env_vars: default_env_vars(),
+            env_vars: vec![],
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
-            padding_x: default_padding_x(),
+            padding_x: f32::default(),
             renderer: Renderer::default(),
             shell: default_shell(),
             theme: String::default(),
@@ -449,7 +449,8 @@ mod tests {
             result.renderer.performance,
             renderer::Performance::default()
         );
-        assert_eq!(result.env_vars, default_env_vars());
+        let env_vars: Vec<String> = vec![];
+        assert_eq!(result.env_vars, env_vars);
         assert_eq!(result.cursor, default_cursor());
         assert_eq!(result.theme, String::default());
         assert_eq!(result.cursor, default_cursor());
