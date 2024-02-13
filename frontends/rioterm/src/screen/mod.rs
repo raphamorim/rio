@@ -329,8 +329,6 @@ impl Screen {
         // and then updates again with correct bounds
         // TODO: Refactor this logic
         self.sugarloaf.layout.update();
-        self.sugarloaf.calculate_bounds();
-        self.sugarloaf.layout.update();
 
         let width = self.sugarloaf.layout.width_u32 as u16;
         let height = self.sugarloaf.layout.height_u32 as u16;
@@ -360,7 +358,6 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.sugarloaf.calculate_bounds();
 
         self
     }
@@ -1168,8 +1165,6 @@ impl Screen {
         if let Some(image) = background_image {
             self.sugarloaf.set_background_image(image);
         }
-
-        self.sugarloaf.calculate_bounds();
 
         if self.sugarloaf.layout.columns != initial_columns {
             let width = self.sugarloaf.layout.width_u32 as u16;
