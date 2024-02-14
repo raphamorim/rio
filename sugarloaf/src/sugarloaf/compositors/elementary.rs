@@ -3,8 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::components::text::glyph::OwnedSection;
-use crate::components::text::glyph::{FontId, GlyphCruncher};
+use crate::components::text::glyph::{FontId, GlyphCruncher, OwnedSection};
 use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
@@ -13,11 +12,8 @@ use crate::sugarloaf::graphics;
 use crate::sugarloaf::primitives;
 use crate::sugarloaf::text;
 use crate::sugarloaf::tree::SugarTree;
-use crate::sugarloaf::PxScale;
-use crate::sugarloaf::Rect;
-use crate::{SugarLine, SugarText};
-use ab_glyph::Font;
-use ab_glyph::FontArc;
+use crate::sugarloaf::{PxScale, Rect, SugarText};
+use ab_glyph::{Font, FontArc};
 use fnv::FnvHashMap;
 use unicode_width::UnicodeWidthChar;
 
@@ -219,7 +215,8 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: &SugarLine, tree: &SugarTree) {
+    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
+        let line = &tree.lines[line];
         let mut x = 0.;
         let mod_pos_y = tree.layout.style.screen_position.1;
         let mod_text_y = tree.layout.dimensions.height;
