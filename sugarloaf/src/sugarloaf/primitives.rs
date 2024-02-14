@@ -121,14 +121,17 @@ pub struct SugarBlock {
 
 /// Contains a visual representation that is hashable and comparable
 /// It often represents a line of text but can also be other elements like bitmap
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct SugarLine {
     // hash: u64,
     // Sized arrays can take up to half of time to execute
     // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
-    inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
-    pub len: usize,
+
+    // inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
+    // pub len: usize,
     pub acc: usize,
+
+    inner: Vec<Sugar>,
     first_non_default: usize,
     last_non_default: usize,
     non_default_count: usize,
@@ -142,7 +145,9 @@ impl PartialEq for SugarLine {
             return true;
         }
 
-        if self.len != other.len
+        // if self.len != other.len
+        let len = self.inner.len();
+        if len != other.inner.len()
             || self.first_non_default != other.first_non_default
             || self.last_non_default != other.last_non_default
             || self.non_default_count != other.non_default_count
@@ -150,7 +155,7 @@ impl PartialEq for SugarLine {
             return false;
         }
 
-        for i in 0..self.len {
+        for i in 0..len {
             if self.inner[i] != other.inner[i] {
                 return false;
             }
@@ -167,26 +172,52 @@ impl Default for SugarLine {
             last_non_default: 0,
             first_non_default: 0,
             non_default_count: 0,
-            inner: create_sugar_line(),
+            inner: Vec::with_capacity(600),
             default_sugar: Sugar::default(),
             acc: 0,
-            len: 0,
+            // len: 0,
         }
     }
 }
 
 impl SugarLine {
+    // #[inline]
+    // pub fn insert(&mut self, sugar: &Sugar) {
+    //     let previous = if self.acc > 0 { self.acc - 1 } else { 0 };
+
+    //     if equal_without_consider_repeat(&self.inner[previous], sugar) {
+    //         self.inner[previous].repeated += 1;
+    //         self.len += 1;
+    //         return;
+    //     }
+
+    //     self.inner[self.acc] = *sugar;
+
+    //     if sugar != &self.default_sugar {
+    //         if self.first_non_default == 0 {
+    //             self.first_non_default = self.acc;
+    //             self.last_non_default = self.acc;
+    //         } else {
+    //             self.last_non_default = self.acc;
+    //         }
+
+    //         self.non_default_count += 1;
+    //     }
+
+    //     self.acc += 1;
+    //     self.len += 1;
+    // }
+
     #[inline]
     pub fn insert(&mut self, sugar: &Sugar) {
-        let previous = if self.acc > 0 { self.acc - 1 } else { 0 };
+        let len = self.inner.len();
 
-        if equal_without_consider_repeat(&self.inner[previous], sugar) {
-            self.inner[previous].repeated += 1;
-            self.len += 1;
+        if len > 0 && equal_without_consider_repeat(&self.inner[len - 1], sugar) {
+            self.inner[len - 1].repeated += 1;
             return;
         }
 
-        self.inner[self.acc] = *sugar;
+        self.inner.push(*sugar);
 
         if sugar != &self.default_sugar {
             if self.first_non_default == 0 {
@@ -200,14 +231,20 @@ impl SugarLine {
         }
 
         self.acc += 1;
-        self.len += 1;
     }
 
     #[inline]
     pub fn insert_empty(&mut self) {
-        self.inner[self.len] = self.default_sugar;
+        // self.inner[self.len] = self.default_sugar;
+        self.inner.push(self.default_sugar);
         self.acc += 1;
-        self.len += 1;
+        // self.len += 1;
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+        // self.len += 1;
     }
 
     // #[inline]
@@ -279,7 +316,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(!line_a.is_empty());
-        assert_eq!(line_a.len, 4);
+        assert_eq!(line_a.len(), 4);
     }
 
     #[test]
@@ -315,7 +352,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(!line_a.is_empty());
-        assert_eq!(line_a.len, 6);
+        assert_eq!(line_a.len(), 6);
         assert_eq!(line_a.acc, 4);
 
         let mut line_a = SugarLine::default();
@@ -349,7 +386,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(!line_a.is_empty());
-        assert_eq!(line_a.len, 6);
+        assert_eq!(line_a.len(), 6);
         assert_eq!(line_a.acc, 6);
 
         let mut line_a = SugarLine::default();
@@ -383,7 +420,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(line_a.is_empty());
-        assert_eq!(line_a.len, 6);
+        assert_eq!(line_a.len(), 6);
         assert_eq!(line_a.acc, 0);
     }
 
