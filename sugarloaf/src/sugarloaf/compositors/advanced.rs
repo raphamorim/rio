@@ -51,7 +51,7 @@ impl Advanced {
             None,
             tree.layout.dimensions.scale,
         );
-        let content = self.content_builder.clone().build();
+        let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
         // let start = std::time::Instant::now();
