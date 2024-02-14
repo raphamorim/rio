@@ -20,7 +20,7 @@ impl Default for Renderer {
             performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
-            level: default_renderer_level()
+            level: default_renderer_level(),
         }
     }
 }
