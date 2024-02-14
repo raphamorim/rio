@@ -1,5 +1,4 @@
 pub mod compositors;
-mod constants;
 pub mod graphics;
 pub mod primitives;
 pub mod state;

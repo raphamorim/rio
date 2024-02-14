@@ -3,7 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::sugarloaf::constants::{create_sugar_line, SUGAR_LINE_MAX_CONTENT_SIZE};
 use crate::sugarloaf::graphics::SugarGraphic;
 use crate::sugarloaf::Rect;
 use serde::Deserialize;
