@@ -8,7 +8,7 @@
 
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
-use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration, SugarLine};
+use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
 
 pub struct Advanced {
     pub render_data: Paragraph,
@@ -105,8 +105,8 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: &SugarLine, tree: &SugarTree) {
-        if tree.is_empty() {
+    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
+        if line == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
                 SpanStyle::family_list("Fira code"),
@@ -114,6 +114,8 @@ impl Advanced {
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
         }
+
+        let line = &tree.lines[line];
 
         let underline = &[
             SpanStyle::Underline(true),

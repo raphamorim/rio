@@ -60,20 +60,17 @@ impl SugarState {
         self.current_line = self.next.lines.len() - 1;
     }
 
+    #[inline]
     pub fn compute_line_end(&mut self) {
         match self.level {
-            SugarCompositorLevel::Elementary => {
-                self.compositors.elementary.update_tree_with_new_line(
-                    &self.next.lines[self.current_line],
-                    &self.next,
-                )
-            }
-            SugarCompositorLevel::Advanced => {
-                self.compositors.advanced.update_tree_with_new_line(
-                    &self.next.lines[self.current_line],
-                    &self.next,
-                )
-            }
+            SugarCompositorLevel::Elementary => self
+                .compositors
+                .elementary
+                .update_tree_with_new_line(self.current_line, &self.next),
+            SugarCompositorLevel::Advanced => self
+                .compositors
+                .advanced
+                .update_tree_with_new_line(self.current_line, &self.next),
         }
     }
 
@@ -149,7 +146,6 @@ impl SugarState {
         } else {
             for section in &self.compositors.elementary.sections {
                 elementary_brush.queue(section);
-                elementary_brush.keep_cached(section);
             }
         }
 
