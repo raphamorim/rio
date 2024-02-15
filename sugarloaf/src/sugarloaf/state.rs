@@ -9,7 +9,6 @@ use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
-use ab_glyph::FontArc;
 
 pub struct SugarState {
     pub current: SugarTree,

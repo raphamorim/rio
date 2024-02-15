@@ -11,11 +11,12 @@
 
 //! Paragraph.
 
+use crate::font::FontData;
+
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
 use super::{builder_data::SpanData, Paragraph, SpanId};
-use crate::font::FontData;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -288,7 +289,6 @@ impl Paragraph {
         }
     }
 
-    #[inline]
     pub(super) fn finish(&mut self) {
         // Zero out the advance for the extra trailing space.
         self.data.glyphs.last_mut().unwrap().clear_advance();
