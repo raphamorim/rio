@@ -63,10 +63,9 @@ impl FontLibrary {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
     ) -> usize {
-        let mut font_id = 0;
+        let mut font_id = FONT_ID_REGULAR;
 
         if cluster.info().is_emoji() {
-            println!("mudou");
             font_id = FONT_ID_EMOJIS_NATIVE;
         }
 
@@ -74,6 +73,7 @@ impl FontLibrary {
             .charmap_proxy()
             .materialize(&self.inner[font_id].as_ref());
         let status = cluster.map(|ch| charmap.map(ch));
+        println!("{:?}", status);
         if status != Status::Discard {
             *synth = self.inner[font_id].synth;
         }
@@ -133,7 +133,8 @@ impl FontData {
         // offset and key from the font reference
 
         let arc = FontArc::try_from_vec(data.clone()).unwrap();
-        let synth = font.attributes().synthesize(font.attributes());
+        let attributes = font.attributes();
+        let synth = attributes.synthesize(attributes);
 
         Ok(Self {
             data,
@@ -153,7 +154,8 @@ impl FontData {
         // offset and key from the font reference
 
         let arc = FontArc::try_from_vec(data.to_vec()).unwrap();
-        let synth = font.attributes().synthesize(font.attributes());
+        let attributes = font.attributes();
+        let synth = attributes.synthesize(attributes);
 
         Ok(Self {
             data: data.to_vec(),
@@ -194,6 +196,20 @@ impl FontData {
             key: self.key,
         }
     }
+
+    // #[inline]
+    // pub fn map_cluster(
+    //     &mut self,
+    //     cluster: &mut CharCluster,
+    //     synth: &mut Synthesis,
+    // ) {
+    //     let charmap = self.charmap_proxy
+    //         .materialize(&self.as_ref());
+    //     let status = cluster.map(|ch| charmap.map(ch));
+    //     if status != Status::Discard {
+    //         *synth = self.synth;
+    //     }
+    // }
 }
 
 pub type SugarloafFont = fonts::SugarloafFont;
