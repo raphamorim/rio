@@ -115,7 +115,6 @@ impl Advanced {
         if line == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
-                SpanStyle::FontId(0),
                 SpanStyle::Size(tree.layout.font_size),
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
@@ -138,7 +137,10 @@ impl Advanced {
 
         // let mut content = String::from("");
         for i in 0..line.acc {
-            // println!("char {:?} {:?}", line[i].content, line[i].repeated);
+            // let mut font_id = 0;
+            // if line[i].content == '🥶' {
+            //     font_id = 7;
+            // }
 
             let mut span_counter = 0;
             if line[i].style.is_bold_italic {
@@ -200,6 +202,7 @@ impl Advanced {
             }
 
             self.content_builder.enter_span(&[
+                // SpanStyle::FontId(font_id),
                 SpanStyle::Color(line[i].foreground_color),
                 SpanStyle::BackgroundColor(line[i].background_color),
             ]);

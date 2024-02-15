@@ -516,8 +516,8 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        // shape_state.font = fcx.map_cluster(cluster, &mut shape_state.synth);
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
+        // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
             scx,
@@ -548,6 +548,7 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
+        // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
@@ -607,13 +608,15 @@ where
         if cluster_span != state.span_index {
             state.span_index = cluster_span;
             state.span = state.state.spans.get(cluster_span as usize).unwrap();
-            if state.span.font != state.font_id {
-                state.font_id = state.span.font;
-                // fcx.select_group(state.font_id);
-            }
+            // if state.span.font != state.font_id {
+            // state.font_id = state.span.font;
+            // fcx.select_group(state.font_id);
+            // }
         }
         let next_font = fcx.map_cluster(cluster, &mut synth);
+        // fcx[state.font_id].map_cluster(cluster, &mut synth);
         if next_font != state.font_id || synth != state.synth {
+            // if synth != state.synth {
             layout.push_run(
                 &state.state.spans,
                 &fcx[state.font_id],
@@ -621,7 +624,7 @@ where
                 state.level,
                 shaper,
             );
-            // state.font_id = next_font;
+            state.font_id = next_font;
             state.synth = synth;
             return true;
         }

@@ -6,9 +6,7 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use super::Alignment;
-use super::Glyph;
-use super::SpanId;
+use super::{Alignment, Glyph, SpanId};
 use crate::font::FontData;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
