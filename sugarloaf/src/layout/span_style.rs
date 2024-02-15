@@ -19,8 +19,8 @@ use std::borrow::Cow;
 /// Style that can be applied to a range of text.
 #[derive(Debug, PartialEq, Clone)]
 pub enum SpanStyle<'a> {
-    /// Prioritized list of font families.
-    FamilyList(FamilyList),
+    /// Font Id
+    FontId(usize),
     /// Font size.
     Size(f32),
     /// Font stretch.
@@ -62,10 +62,6 @@ pub enum SpanStyle<'a> {
 }
 
 impl<'a> SpanStyle<'a> {
-    pub fn family_list(families: impl Into<FamilyList>) -> Self {
-        Self::FamilyList(families.into())
-    }
-
     pub fn features(features: impl Into<Cow<'a, [Setting<u16>]>>) -> Self {
         Self::Features(features.into())
     }
@@ -77,7 +73,7 @@ impl<'a> SpanStyle<'a> {
     pub fn to_owned(&self) -> SpanStyle<'static> {
         use SpanStyle as S;
         match self {
-            Self::FamilyList(v) => S::FamilyList(v.clone()),
+            Self::FontId(v) => S::FontId(*v),
             Self::Size(v) => S::Size(*v),
             Self::Stretch(v) => S::Stretch(*v),
             Self::Weight(v) => S::Weight(*v),
@@ -103,7 +99,7 @@ impl<'a> SpanStyle<'a> {
     pub fn into_owned(self) -> SpanStyle<'static> {
         use SpanStyle as S;
         match self {
-            Self::FamilyList(v) => S::FamilyList(v.clone()),
+            Self::FontId(v) => S::FontId(v),
             Self::Size(v) => S::Size(v),
             Self::Stretch(v) => S::Stretch(v),
             Self::Weight(v) => S::Weight(v),
@@ -164,11 +160,5 @@ pub enum TextTransform {
 impl From<TextTransform> for SpanStyle<'static> {
     fn from(value: TextTransform) -> Self {
         Self::TextTransform(value)
-    }
-}
-
-impl From<&str> for SpanStyle<'static> {
-    fn from(s: &str) -> Self {
-        Self::family_list(s)
     }
 }
