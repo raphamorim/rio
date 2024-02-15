@@ -26,7 +26,6 @@ pub struct LayoutContext {
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
-    char_cluster: CharCluster,
 }
 
 impl LayoutContext {
@@ -37,7 +36,6 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
-            char_cluster: CharCluster::new(),
         }
     }
 
@@ -55,7 +53,6 @@ impl LayoutContext {
         ParagraphBuilder {
             fcx: &mut self.fcx,
             bidi: &mut self.bidi,
-            char_cluster: &mut self.char_cluster,
             needs_bidi: false,
             dir: direction,
             scale,
@@ -71,7 +68,6 @@ impl LayoutContext {
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontLibrary,
     bidi: &'a mut BidiResolver,
-    char_cluster: &'a mut CharCluster,
     needs_bidi: bool,
     dir: Direction,
     scale: f32,
@@ -423,8 +419,9 @@ impl<'a> ParagraphBuilder<'a> {
 
     fn shape(&mut self, layout: &mut Paragraph) {
         let start = std::time::Instant::now();
+        let mut char_cluster = CharCluster::new();
         for item in &self.s.items {
-            shape_item(self.fcx, self.scx, self.s, item, self.char_cluster, layout);
+            shape_item(self.fcx, self.scx, self.s, item, &mut char_cluster, layout);
         }
         layout.apply_spacing(&self.s.spans);
         let duration = start.elapsed();

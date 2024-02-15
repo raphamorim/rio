@@ -17,11 +17,11 @@ pub const FONT_ID_BUILTIN: usize = 9;
 
 use crate::font::constants::*;
 use ab_glyph::FontArc;
+use fnv::FnvHashMap;
 use std::ops::Index;
 use std::ops::IndexMut;
 use swash::proxy::CharmapProxy;
-use swash::text::cluster::CharCluster;
-use swash::text::cluster::Status;
+use swash::text::cluster::{Char, CharCluster, Status};
 use swash::Attributes;
 use swash::CacheKey;
 use swash::Charmap;
@@ -31,6 +31,7 @@ use swash::Synthesis;
 #[derive(Default)]
 pub struct FontLibrary {
     pub inner: Vec<FontData>,
+    cache: FnvHashMap<char, usize>,
 }
 
 impl FontLibrary {
@@ -58,26 +59,57 @@ impl FontLibrary {
     }
 
     #[inline]
-    pub fn map_cluster(
+    pub fn lookup_for_best_font(
         &mut self,
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
     ) -> usize {
         let mut font_id = FONT_ID_REGULAR;
+        for (current_font_id, font) in self.inner.iter().enumerate().skip(0) {
+            let charmap = font.charmap_proxy().materialize(&font.as_ref());
+            let status = cluster.map(|ch| charmap.map(ch));
+            if status != Status::Discard {
+                *synth = self.inner[current_font_id].synth;
+                font_id = current_font_id;
+                break;
+            }
+        }
 
-        if cluster.info().is_emoji() {
-            font_id = FONT_ID_EMOJIS_NATIVE;
+        font_id
+    }
+
+    #[inline]
+    pub fn map_cluster(
+        &mut self,
+        cluster: &mut CharCluster,
+        synth: &mut Synthesis,
+    ) -> usize {
+        let chars = cluster.chars();
+        let mut font_id = FONT_ID_REGULAR;
+        if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
+            font_id = *cached_font_id;
+        } else {
+            if cluster.info().is_emoji() {
+                font_id = FONT_ID_EMOJIS_NATIVE;
+            }
         }
 
         let charmap = self.inner[font_id]
             .charmap_proxy()
             .materialize(&self.inner[font_id].as_ref());
         let status = cluster.map(|ch| charmap.map(ch));
-        println!("{:?}", status);
         if status != Status::Discard {
             *synth = self.inner[font_id].synth;
+        } else {
+            log::info!("looking up for best font match for {:?}", cluster.chars());
+            font_id = self.lookup_for_best_font(cluster, synth);
+            log::info!(" -> found best font id {}", font_id);
         }
 
+        let chars = cluster.chars();
+        if !chars.is_empty() {
+            self.cache.insert(chars[0].ch, font_id);
+        }
         font_id
     }
 }
@@ -179,12 +211,13 @@ impl FontData {
     }
 
     #[inline]
-    pub fn charmap_proxy(&mut self) -> CharmapProxy {
+    pub fn charmap_proxy(&self) -> CharmapProxy {
         self.charmap_proxy
     }
 
     // Create the transient font reference for accessing this crate's
     // functionality.
+    #[inline]
     pub fn as_ref(&self) -> FontRef {
         // Note that you'll want to initialize the struct directly here as
         // using any of the FontRef constructors will generate a new key which,
