@@ -24,7 +24,7 @@ mod system;
 mod types;
 
 pub(crate) mod internal {
-    pub use super::context::{FontContext, FontGroupId};
+    pub use super::context::FontContext;
 }
 
 pub use builder::{FontLibraryBuilder, MmapHint};

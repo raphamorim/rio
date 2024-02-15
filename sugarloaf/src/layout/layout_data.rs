@@ -8,7 +8,8 @@
 
 use super::Alignment;
 use super::Glyph;
-use super::{font::Font, SpanId};
+use super::SpanId;
+use crate::font::FontData;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
@@ -176,7 +177,7 @@ pub struct RunData {
     pub span: SpanId,
     pub line: u32,
     pub color: [f32; 4],
-    pub font: Font,
+    pub font: FontData,
     pub coords: (u32, u32),
     pub size: f32,
     pub level: u8,

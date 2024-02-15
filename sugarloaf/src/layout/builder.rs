@@ -10,10 +10,10 @@
 
 use super::bidi::*;
 use super::builder_data::*;
-use super::font::{internal::*, Font, FontLibrary};
 use super::span_style::*;
 use super::Paragraph;
 use super::{SpanId, MAX_ID};
+use crate::font::{FontData, FontLibrary};
 use core::borrow::Borrow;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -22,7 +22,7 @@ use swash::{Setting, Synthesis};
 
 /// Context for paragraph layout.
 pub struct LayoutContext {
-    fcx: FontContext,
+    fcx: FontLibrary,
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
@@ -31,9 +31,9 @@ pub struct LayoutContext {
 
 impl LayoutContext {
     /// Creates a new layout context with the specified font library.
-    pub fn new(fonts: &FontLibrary) -> Self {
+    pub fn new(fcx: FontLibrary) -> Self {
         Self {
-            fcx: FontContext::new(fonts.clone()),
+            fcx,
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
@@ -69,7 +69,7 @@ impl LayoutContext {
 
 /// Builder for computing the layout of a paragraph.
 pub struct ParagraphBuilder<'a> {
-    fcx: &'a mut FontContext,
+    fcx: &'a mut FontLibrary,
     bidi: &'a mut BidiResolver,
     char_cluster: &'a mut CharCluster,
     needs_bidi: bool,
@@ -88,7 +88,8 @@ impl<'a> ParagraphBuilder<'a> {
         I: IntoIterator,
         I::Item: Borrow<SpanStyle<'p>>,
     {
-        let (id, dir) = self.s.push(self.fcx, self.scale, styles)?;
+        // let (id, dir) = self.s.push(self.fcx, self.scale, styles)?;
+        let (id, dir) = self.s.push(self.scale, styles)?;
         if let Some(dir) = dir {
             const LRI: char = '\u{2066}';
             const RLI: char = '\u{2067}';
@@ -278,7 +279,7 @@ impl<'a> ParagraphBuilder<'a> {
     pub fn build_into(mut self, para: &mut Paragraph) {
         self.resolve(para);
         para.finish();
-        self.fcx.reset_group_state();
+        // self.fcx.reset_group_state();
     }
 
     /// Consumes the builder and returns the resulting paragraph.
@@ -455,14 +456,13 @@ struct ShapeState<'a> {
     level: u8,
     span_index: u32,
     span: &'a SpanData,
-    font_id: FontGroupId,
-    font: Option<Font>,
+    font_id: usize,
     size: f32,
 }
 
 #[inline]
 fn shape_item(
-    fcx: &mut FontContext,
+    fcx: &mut FontLibrary,
     scx: &mut ShapeContext,
     state: &BuilderState,
     item: &ItemData,
@@ -489,11 +489,10 @@ fn shape_item(
         span_index,
         span,
         font_id: span.font,
-        font: None,
         size: span.font_size,
     };
-    fcx.select_group(shape_state.font_id);
-    fcx.select_fallbacks(item.script, shape_state.span.lang.as_ref());
+    // fcx.select_group(shape_state.font_id);
+    // fcx.select_fallbacks(item.script, shape_state.span.lang.as_ref());
     if item.level & 1 != 0 {
         let chars = state.text[range.clone()]
             .iter()
@@ -517,7 +516,8 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        shape_state.font = fcx.map_cluster(cluster, &mut shape_state.synth);
+        // shape_state.font = fcx.map_cluster(cluster, &mut shape_state.synth);
+        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
             scx,
@@ -548,7 +548,7 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        shape_state.font = fcx.map_cluster(cluster, &mut shape_state.synth);
+        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
             scx,
@@ -564,7 +564,7 @@ fn shape_item(
 
 #[inline]
 fn shape_clusters<I>(
-    fcx: &mut FontContext,
+    fcx: &mut FontLibrary,
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
@@ -575,11 +575,12 @@ fn shape_clusters<I>(
 where
     I: Iterator<Item = Token> + Clone,
 {
-    if state.font.is_none() {
+    if state.font_id >= fcx.len() {
         return false;
     }
+    let font = fcx[state.font_id].clone();
     let mut shaper = scx
-        .builder(state.font.as_ref().unwrap().as_ref())
+        .builder(font.as_ref())
         .script(state.script)
         .language(state.span.lang)
         .direction(dir)
@@ -588,13 +589,14 @@ where
         .variations(state.synth.variations().iter().copied())
         .variations(state.vars.iter().copied())
         .build();
+
     let mut synth = Synthesis::default();
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
             layout.push_run(
                 &state.state.spans,
-                state.font.to_owned().unwrap(),
+                &fcx[state.font_id],
                 state.size,
                 state.level,
                 shaper,
@@ -607,19 +609,19 @@ where
             state.span = state.state.spans.get(cluster_span as usize).unwrap();
             if state.span.font != state.font_id {
                 state.font_id = state.span.font;
-                fcx.select_group(state.font_id);
+                // fcx.select_group(state.font_id);
             }
         }
         let next_font = fcx.map_cluster(cluster, &mut synth);
-        if next_font != state.font || synth != state.synth {
+        if next_font != state.font_id || synth != state.synth {
             layout.push_run(
                 &state.state.spans,
-                state.font.to_owned().unwrap(),
+                &fcx[state.font_id],
                 state.size,
                 state.level,
                 shaper,
             );
-            state.font = next_font;
+            // state.font_id = next_font;
             state.synth = synth;
             return true;
         }

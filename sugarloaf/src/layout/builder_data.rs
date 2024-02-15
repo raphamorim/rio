@@ -10,10 +10,8 @@
 // and other functionalities
 
 use super::span_style::*;
-use super::{
-    font::internal::{FontContext, FontGroupId},
-    SpanId, MAX_ID,
-};
+use super::{SpanId, MAX_ID};
+use crate::font::FontLibrary;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
@@ -33,7 +31,7 @@ pub struct FragmentData {
     /// End of the text.
     pub end: usize,
     /// Internal identifier for a list of font families and attributes.
-    pub font: FontGroupId,
+    pub font: usize,
     /// Font features.
     pub features: FontSettingKey,
     /// Font variations.
@@ -77,9 +75,7 @@ pub struct SpanData {
     /// Text language.
     pub lang: Option<Language>,
     /// Internal identifier for a list of font families and attributes.
-    pub font: FontGroupId,
-    /// Font family.
-    pub font_family: FamilyList,
+    pub font: usize,
     /// Font attributes.
     pub font_attrs: (Stretch, Weight, Style),
     /// Font size in ppem.
@@ -170,8 +166,7 @@ impl BuilderState {
             dir,
             dir_changed: false,
             lang,
-            font: FontGroupId(!0),
-            font_family: FamilyList::new(""),
+            font: 0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16. * scale,
             font_features: EMPTY_FONT_SETTINGS,
@@ -195,7 +190,7 @@ impl BuilderState {
     /// span identifier and a value indicating a new direction, if any.
     pub fn push<'a, I>(
         &mut self,
-        fcx: &mut FontContext,
+        // fcx: &mut FontLibrary,
         scale: f32,
         styles: I,
     ) -> Option<(SpanId, Option<Direction>)>
@@ -226,7 +221,7 @@ impl BuilderState {
         span.parent = Some(parent_id);
         span.dir_changed = false;
         let parent_dir = span.dir;
-        let mut font_changed = false;
+        // let mut font_changed = false;
         for s in styles {
             use SpanStyle as S;
             match s.borrow() {
@@ -242,28 +237,28 @@ impl BuilderState {
                 S::Language(lang) => {
                     span.lang = Some(*lang);
                 }
-                S::FamilyList(families) => {
-                    if families.key() != span.font_family.key() {
-                        span.font_family = families.clone();
-                        font_changed = true;
+                S::FontId(font_id) => {
+                    if font_id != &span.font {
+                        span.font = *font_id;
+                        // font_changed = true;
                     }
                 }
                 S::Stretch(value) => {
                     if *value != span.font_attrs.0 {
                         span.font_attrs.0 = *value;
-                        font_changed = true;
+                        // font_changed = true;
                     }
                 }
                 S::Weight(value) => {
                     if *value != span.font_attrs.1 {
                         span.font_attrs.1 = *value;
-                        font_changed = true;
+                        // font_changed = true;
                     }
                 }
                 S::Style(value) => {
                     if *value != span.font_attrs.2 {
                         span.font_attrs.2 = *value;
-                        font_changed = true;
+                        // font_changed = true;
                     }
                 }
                 S::Size(size) => {
@@ -310,13 +305,13 @@ impl BuilderState {
                 }
             }
         }
-        if font_changed {
-            span.font = fcx.register_group(
-                span.font_family.names(),
-                span.font_family.key(),
-                span.font_attrs.into(),
-            );
-        }
+        // if font_changed {
+        //     span.font = fcx.register_group(
+        //         span.font_family.names(),
+        //         span.font_family.key(),
+        //         span.font_attrs.into(),
+        //     );
+        // }
         let dir = if span.dir_changed {
             Some(span.dir)
         } else {

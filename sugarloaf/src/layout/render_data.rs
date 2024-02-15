@@ -14,7 +14,8 @@
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use super::{builder_data::SpanData, font::Font, Paragraph, SpanId};
+use super::{builder_data::SpanData, Paragraph, SpanId};
+use crate::font::FontData;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -60,7 +61,7 @@ impl Paragraph {
     pub(super) fn push_run(
         &mut self,
         spans: &[SpanData],
-        font: Font,
+        font: &FontData,
         size: f32,
         level: u8,
         shaper: Shaper<'_>,
@@ -191,7 +192,7 @@ impl Paragraph {
         self.data.runs.push(RunData {
             span: SpanId(last_span),
             line: 0,
-            font,
+            font: font.clone(),
             coords: (coords_start, coords_end),
             size,
             level,
@@ -287,6 +288,7 @@ impl Paragraph {
         }
     }
 
+    #[inline]
     pub(super) fn finish(&mut self) {
         // Zero out the advance for the extra trailing space.
         self.data.glyphs.last_mut().unwrap().clear_advance();
@@ -310,7 +312,7 @@ impl<'a> Run<'a> {
     }
 
     /// Returns the font for the run.
-    pub fn font(&self) -> &Font {
+    pub fn font(&self) -> &FontData {
         &self.run.font
     }
 

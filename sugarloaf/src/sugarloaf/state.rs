@@ -6,6 +6,7 @@
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
+use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 use ab_glyph::FontArc;
@@ -97,8 +98,9 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_fonts(&mut self, fonts: Vec<FontArc>) {
-        self.compositors.elementary.set_fonts(fonts);
+    pub fn set_fonts(&mut self, fonts: FontLibrary) {
+        self.compositors.elementary.set_fonts(fonts.font_arcs());
+        self.compositors.advanced.set_fonts(fonts);
     }
 
     #[inline]
