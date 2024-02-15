@@ -1010,6 +1010,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "font-types"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bd7f3ea17572640b606b35df42cfb6ecdf003704b062580e59918692190b73d"
+
+[[package]]
 name = "fontconfig-parser"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2313,6 +2319,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "read-fonts"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c044ab88c43e2eae05b34a17fc13598736679fdb03d71b49fcfe114443ec8a86"
+dependencies = [
+ "font-types",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2770,10 +2785,11 @@ checksum = "8fb1df15f412ee2e9dfc1c504260fa695c1c3f10fe9f4a6ee2d2184d7d6450e2"
 
 [[package]]
 name = "swash"
-version = "0.1.8"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b7c73c813353c347272919aa1af2885068b05e625e5532b43049e4f641ae77f"
+checksum = "d06ff4664af8923625604261c645f5c4cc610cc83c84bec74b50d76237089de7"
 dependencies = [
+ "read-fonts",
  "yazi",
  "zeno",
 ]
