@@ -6,6 +6,7 @@
 // build_complex_content and update_layout was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
+use crate::font::FontLibrary;
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
@@ -19,8 +20,8 @@ pub struct Advanced {
 
 impl Default for Advanced {
     fn default() -> Self {
-        let fonts = crate::layout::FontLibrary::default();
-        let layout_context = LayoutContext::new(&fonts);
+        // let fonts = crate::layout::FontLibrary::default();
+        let layout_context = LayoutContext::new(FontLibrary::default());
         Self {
             layout_context,
             content_builder: ContentBuilder::default(),
@@ -33,6 +34,11 @@ impl Default for Advanced {
 impl Advanced {
     pub fn reset(&mut self) {}
     pub fn clean(&mut self) {}
+
+    #[inline]
+    pub fn set_fonts(&mut self, fonts: FontLibrary) {
+        self.layout_context = LayoutContext::new(fonts);
+    }
 
     #[inline]
     pub fn update_data(&mut self) {
@@ -67,7 +73,7 @@ impl Advanced {
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = crate::content::Content::builder();
         content_builder.enter_span(&[
-            SpanStyle::family_list("Fira code"),
+            SpanStyle::FontId(0),
             SpanStyle::Size(tree.layout.font_size),
             // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         ]);
@@ -109,7 +115,7 @@ impl Advanced {
         if line == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
-                SpanStyle::family_list("Fira code"),
+                SpanStyle::FontId(0),
                 SpanStyle::Size(tree.layout.font_size),
                 // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
             ]);
@@ -245,7 +251,7 @@ fn build_complex_content() -> crate::content::Content {
     ];
 
     db.enter_span(&[
-        S::family_list("Victor Mono, times, georgia, serif"),
+        S::FontId(0),
         S::Size(14.),
         S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
     ]);
@@ -260,7 +266,7 @@ fn build_complex_content() -> crate::content::Content {
     db.leave_span();
     db.leave_span();
     db.enter_span(&[S::LineSpacing(1.2)]);
-    db.enter_span(&[S::family_list("fira code, serif"), S::Size(22.)]);
+    db.enter_span(&[S::FontId(0), S::Size(22.)]);
     db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
     db.leave_span();
     db.enter_span(&[S::Weight(Weight::BOLD)]);
@@ -291,7 +297,7 @@ fn build_complex_content() -> crate::content::Content {
         " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
     );
     db.leave_span();
-    db.enter_span(&[S::family_list("verdana, sans-serif"), S::LineSpacing(1.)]);
+    db.enter_span(&[S::FontId(0), S::LineSpacing(1.)]);
     db.add_text("A true ");
     db.enter_span(&[S::Size(48.)]);
     db.add_text("🕵🏽‍♀️");
@@ -319,7 +325,7 @@ fn build_terminal_content() -> crate::content::Content {
 
     for i in 0..20 {
         db.enter_span(&[
-            S::family_list("Fira code, times, georgia, serif"),
+            S::FontId(0),
             S::Size(24.),
             // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         ]);

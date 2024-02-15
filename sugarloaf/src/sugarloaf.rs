@@ -136,20 +136,20 @@ impl Sugarloaf {
         #[cfg(target_arch = "wasm32")]
         let loader = Font::load(fonts.to_owned());
 
-        let (loaded_fonts, fonts_not_found) = loader;
+        let (font_library, fonts_not_found) = loader;
 
         if !fonts_not_found.is_empty() {
             sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
         }
 
-        let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
+        let text_brush = text::GlyphBrushBuilder::using_fonts(font_library.font_arcs())
             .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
         let mut state = SugarState::new(renderer.level, layout);
-        state.set_fonts(text_brush.fonts().to_owned());
+        state.set_fonts(font_library);
 
         let instance = Sugarloaf {
             state,
@@ -184,19 +184,20 @@ impl Sugarloaf {
             #[cfg(target_arch = "wasm32")]
             let loader = Font::load(fonts.to_owned());
 
-            let (loaded_fonts, fonts_not_found) = loader;
+            let (font_library, fonts_not_found) = loader;
             if !fonts_not_found.is_empty() {
                 return Some(SugarloafErrors { fonts_not_found });
             }
 
-            let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
-                .build(&self.ctx.device, self.ctx.format);
+            let text_brush =
+                text::GlyphBrushBuilder::using_fonts(font_library.font_arcs())
+                    .build(&self.ctx.device, self.ctx.format);
 
             self.text_brush = text_brush;
             self.fonts = fonts;
 
             self.state.reset_compositor();
-            self.state.set_fonts(self.text_brush.fonts().to_owned());
+            self.state.set_fonts(font_library);
         }
 
         None
