@@ -62,7 +62,7 @@ impl Paragraph {
     pub(super) fn push_run(
         &mut self,
         spans: &[SpanData],
-        font: &FontData,
+        font: &usize,
         size: f32,
         level: u8,
         shaper: Shaper<'_>,
@@ -92,7 +92,7 @@ impl Paragraph {
                     self.data.runs.push(RunData {
                         span: SpanId(last_span),
                         line: 0,
-                        font: font.clone(),
+                        font: *font,
                         coords: (coords_start, coords_end),
                         color: span_data.color,
                         background_color: span_data.background_color,
@@ -193,7 +193,7 @@ impl Paragraph {
         self.data.runs.push(RunData {
             span: SpanId(last_span),
             line: 0,
-            font: font.clone(),
+            font: *font,
             coords: (coords_start, coords_end),
             size,
             level,
@@ -312,7 +312,7 @@ impl<'a> Run<'a> {
     }
 
     /// Returns the font for the run.
-    pub fn font(&self) -> &FontData {
+    pub fn font(&self) -> &usize {
         &self.run.font
     }
 

@@ -6,6 +6,7 @@ pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
+use crate::font::FontLibrary;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -297,7 +298,6 @@ impl RichTextBrush {
         state: &crate::sugarloaf::state::SugarState,
     ) {
         // Render
-        // let start = std::time::Instant::now();
         self.comp.begin();
         draw_layout(
             &mut self.comp,
@@ -305,21 +305,10 @@ impl RichTextBrush {
             state.current.layout.style.screen_position.0,
             // To confirm: should actually * 1.5?
             state.current.layout.style.screen_position.1 * 1.5,
+            state.compositors.advanced.font_library(),
         );
         self.dlist.clear();
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() self.comp.begin and draw_layout is: {:?}",
-        //     duration
-        // );
-
-        // let start = std::time::Instant::now();
         self.finish_composition(ctx);
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() finish_composition is: {:?}",
-        //     duration
-        // );
     }
 
     #[inline]
@@ -334,6 +323,7 @@ impl RichTextBrush {
             &state.compositors.advanced.render_data_sugar,
             0.0,
             0.0,
+            state.compositors.advanced.font_library(),
         );
         println!("dimensions: {:?}", dimensions);
         if dimensions.0 > 0. && dimensions.1 > 0. {
@@ -718,6 +708,7 @@ fn draw_layout(
     layout: &crate::layout::Paragraph,
     x: f32,
     y: f32,
+    font_library: &FontLibrary,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
@@ -739,7 +730,7 @@ fn draw_layout(
             let color = run.color();
 
             let style = TextRunStyle {
-                font: font.as_ref(),
+                font: font_library[*font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
@@ -775,6 +766,7 @@ fn get_sugar_dimensions(
     layout: &crate::layout::Paragraph,
     x: f32,
     y: f32,
+    font_library: &FontLibrary,
 ) -> (f32, f32) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
@@ -798,7 +790,7 @@ fn get_sugar_dimensions(
             let color = run.color();
 
             let style = TextRunStyle {
-                font: font.as_ref(),
+                font: font_library[*font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
