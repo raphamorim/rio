@@ -320,7 +320,7 @@ fn find_font(
                         if file.read_to_end(&mut font_data).is_ok() {
                             match FontData::from_data(font_data) {
                                 Ok(d) => {
-                                    println!(
+                                    log::info!(
                                         "Font '{}' found in {}",
                                         family,
                                         path.display()
@@ -328,7 +328,7 @@ fn find_font(
                                     return (d, false, None);
                                 }
                                 Err(err_message) => {
-                                    println!("Failed to load font '{family}' with style '{style}' and weight '{weight}', {err_message}");
+                                    log::info!("Failed to load font '{family}' with style '{style}' and weight '{weight}', {err_message}");
                                     return (
                                         FontData::from_slice(
                                             constants::FONT_CASCADIAMONO_REGULAR,
@@ -556,19 +556,18 @@ impl Font {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(_font_spec: SugarloafFonts) -> (FontLibrary, Vec<SugarloafFont>) {
-        (
-            vec![
-                FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-                FontData::from_slice(FONT_CASCADIAMONO_ITALIC).unwrap(),
-                FontData::from_slice(FONT_CASCADIAMONO_BOLD).unwrap(),
-                FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap(),
-                FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap(),
-                FontData::from_slice(FONT_DEJAVU_SANS).unwrap(),
-                FontData::from_slice(FONT_EMOJI).unwrap(),
-                FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-                FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-            ],
-            vec![],
-        )
+        let mut fonts: FontLibrary = FontLibrary::default();
+
+        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_ITALIC).unwrap());
+        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD).unwrap());
+        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap());
+        fonts.insert(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
+        fonts.insert(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
+        fonts.insert(FontData::from_slice(FONT_EMOJI).unwrap());
+        fonts.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+
+        (fonts, vec![])
     }
 }
