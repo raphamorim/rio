@@ -13,8 +13,7 @@ use super::builder_data::*;
 use super::span_style::*;
 use super::Paragraph;
 use super::{SpanId, MAX_ID};
-use crate::font::FontData;
-use crate::font::FontLibrary;
+use crate::font::{FontContext, FontLibrary};
 use core::borrow::Borrow;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -23,8 +22,8 @@ use swash::{Setting, Synthesis};
 
 /// Context for paragraph layout.
 pub struct LayoutContext {
-    fcx: FontLibrary,
-    fonts: Vec<FontData>,
+    fcx: FontContext,
+    fonts: FontLibrary,
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
@@ -34,9 +33,8 @@ impl LayoutContext {
     /// Creates a new layout context with the specified font library.
     pub fn new(fcx: FontLibrary) -> Self {
         Self {
-            // Lame solution since it duplicates fonts in memory
-            fonts: fcx.inner.clone(),
-            fcx,
+            fonts: fcx,
+            fcx: FontContext::default(),
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
@@ -45,7 +43,7 @@ impl LayoutContext {
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
-        &self.fcx
+        &self.fonts
     }
 
     /// Creates a new builder for computing a paragraph layout with the
@@ -76,9 +74,9 @@ impl LayoutContext {
 
 /// Builder for computing the layout of a paragraph.
 pub struct ParagraphBuilder<'a> {
-    fcx: &'a mut FontLibrary,
+    fcx: &'a mut FontContext,
     bidi: &'a mut BidiResolver,
-    fonts: &'a Vec<FontData>,
+    fonts: &'a FontLibrary,
     needs_bidi: bool,
     dir: Direction,
     scale: f32,
@@ -478,8 +476,8 @@ struct ShapeState<'a> {
 
 #[inline]
 fn shape_item(
-    fcx: &mut FontLibrary,
-    fonts: &Vec<FontData>,
+    fcx: &mut FontContext,
+    fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &BuilderState,
     item: &ItemData,
@@ -534,7 +532,7 @@ fn shape_item(
             return Some(());
         }
         // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
-        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
+        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
         while shape_clusters(
             fcx,
             fonts,
@@ -567,7 +565,7 @@ fn shape_item(
             return Some(());
         }
         // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
-        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
+        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
         while shape_clusters(
             fcx,
             fonts,
@@ -585,8 +583,8 @@ fn shape_item(
 #[inline]
 #[allow(clippy::too_many_arguments)]
 fn shape_clusters<I>(
-    fcx: &mut FontLibrary,
-    fonts: &[FontData],
+    fcx: &mut FontContext,
+    fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
@@ -637,7 +635,7 @@ where
             // fcx.select_group(state.font_id);
         }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
             layout.push_run(
                 &state.state.spans,
