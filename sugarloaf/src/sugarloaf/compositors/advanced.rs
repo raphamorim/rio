@@ -36,6 +36,11 @@ impl Advanced {
     pub fn clean(&mut self) {}
 
     #[inline]
+    pub fn font_library(&self) -> &FontLibrary {
+        &self.layout_context.font_library()
+    }
+
+    #[inline]
     pub fn set_fonts(&mut self, fonts: FontLibrary) {
         self.layout_context = LayoutContext::new(fonts);
     }

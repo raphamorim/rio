@@ -39,6 +39,11 @@ impl LayoutContext {
         }
     }
 
+    #[inline]
+    pub fn font_library(&self) -> &FontLibrary {
+        &self.fcx
+    }
+
     /// Creates a new builder for computing a paragraph layout with the
     /// specified direction, language and scaling factor.
     pub fn builder(
@@ -453,7 +458,7 @@ struct ShapeState<'a> {
     level: u8,
     span_index: u32,
     span: &'a SpanData,
-    font_id: usize,
+    font_id: Option<usize>,
     size: f32,
 }
 
@@ -485,7 +490,7 @@ fn shape_item(
         state,
         span_index,
         span,
-        font_id: span.font,
+        font_id: None,
         size: span.font_size,
     };
     // fcx.select_group(shape_state.font_id);
@@ -513,8 +518,8 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
+        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
             scx,
@@ -573,10 +578,12 @@ fn shape_clusters<I>(
 where
     I: Iterator<Item = Token> + Clone,
 {
-    if state.font_id >= fcx.len() {
+    if state.font_id.is_none() {
         return false;
     }
-    let font = fcx[state.font_id].clone();
+
+    let current_font_id = state.font_id.unwrap();
+    let font = fcx[current_font_id].clone();
     let mut shaper = scx
         .builder(font.as_ref())
         .script(state.script)
@@ -594,7 +601,7 @@ where
         if !parser.next(cluster) {
             layout.push_run(
                 &state.state.spans,
-                &fcx[state.font_id],
+                &current_font_id,
                 state.size,
                 state.level,
                 shaper,
@@ -605,18 +612,18 @@ where
         if cluster_span != state.span_index {
             state.span_index = cluster_span;
             state.span = state.state.spans.get(cluster_span as usize).unwrap();
-            // if state.span.font != state.font_id {
-            // state.font_id = state.span.font;
-            // fcx.select_group(state.font_id);
+            // TODO?: Fix state.span.font overwrite
+            // if state.span.font != current_font_id {
+            // state.font_id = Some(state.span.font);
             // }
+            // fcx.select_group(state.font_id);
         }
+
         let next_font = fcx.map_cluster(cluster, &mut synth);
-        // fcx[state.font_id].map_cluster(cluster, &mut synth);
         if next_font != state.font_id || synth != state.synth {
-            // if synth != state.synth {
             layout.push_run(
                 &state.state.spans,
-                &fcx[state.font_id],
+                &current_font_id,
                 state.size,
                 state.level,
                 shaper,
