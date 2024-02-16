@@ -7,6 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
+use crate::font::{Style, Weight};
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
@@ -37,7 +38,7 @@ impl Advanced {
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
-        &self.layout_context.font_library()
+        self.layout_context.font_library()
     }
 
     #[inline]
@@ -150,17 +151,17 @@ impl Advanced {
             let mut span_counter = 0;
             if line[i].style.is_bold_italic {
                 self.content_builder.enter_span(&[
-                    SpanStyle::Weight(crate::layout::Weight::BOLD),
-                    SpanStyle::Style(crate::layout::Style::Italic),
+                    SpanStyle::Weight(Weight::BOLD),
+                    SpanStyle::Style(Style::Italic),
                 ]);
                 span_counter += 1;
             } else if line[i].style.is_bold {
                 self.content_builder
-                    .enter_span(&[SpanStyle::Weight(crate::layout::Weight::BOLD)]);
+                    .enter_span(&[SpanStyle::Weight(Weight::BOLD)]);
                 span_counter += 1;
             } else if line[i].style.is_italic {
                 self.content_builder
-                    .enter_span(&[SpanStyle::Style(crate::layout::Style::Italic)]);
+                    .enter_span(&[SpanStyle::Style(Style::Italic)]);
                 span_counter += 1;
             }
 

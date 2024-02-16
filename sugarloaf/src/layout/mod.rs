@@ -9,8 +9,6 @@
 
 //! Experimental paragraph layout engine.
 
-pub mod font;
-
 mod bidi;
 mod builder;
 mod builder_data;
@@ -22,8 +20,6 @@ mod span_style;
 
 pub use swash;
 
-pub use font::prelude::*;
-
 #[doc(inline)]
 pub use swash::text::Language;
 
@@ -33,8 +29,6 @@ pub mod iter {
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
-#[doc(inline)]
-pub use font::{Font, FontLibrary, FontLibraryBuilder};
 pub use line_breaker::{Alignment, BreakLines};
 pub use nav::{Erase, ExtendTo, Selection};
 pub use render_data::{Cluster, Glyph, Line, Run};

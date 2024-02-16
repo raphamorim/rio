@@ -21,12 +21,10 @@ use fnv::FnvHashMap;
 use std::ops::Index;
 use std::ops::IndexMut;
 use swash::proxy::CharmapProxy;
-use swash::text::cluster::{Char, CharCluster, Status};
-use swash::Attributes;
-use swash::CacheKey;
-use swash::Charmap;
-use swash::FontRef;
-use swash::Synthesis;
+use swash::text::cluster::{CharCluster, Status};
+use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
+
+pub use swash::{Style, Weight};
 
 #[derive(Default)]
 pub struct FontLibrary {
@@ -59,6 +57,11 @@ impl FontLibrary {
     }
 
     #[inline]
+    pub fn font_by_id(&self, font_id: usize) -> FontRef {
+        self.inner[font_id].as_ref()
+    }
+
+    #[inline]
     pub fn lookup_for_best_font(
         &mut self,
         cluster: &mut CharCluster,
@@ -88,10 +91,8 @@ impl FontLibrary {
         let mut font_id = FONT_ID_REGULAR;
         if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
             font_id = *cached_font_id;
-        } else {
-            if cluster.info().is_emoji() {
-                font_id = FONT_ID_EMOJIS_NATIVE;
-            }
+        } else if cluster.info().is_emoji() {
+            font_id = FONT_ID_EMOJIS_NATIVE;
         }
 
         let charmap = self.inner[font_id]
@@ -184,7 +185,7 @@ impl FontData {
 
     #[inline]
     pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-        let font = FontRef::from_index(&data, 0).unwrap();
+        let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
