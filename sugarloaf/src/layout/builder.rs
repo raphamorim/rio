@@ -8,12 +8,12 @@
 
 //! Paragraph builder.
 
-use crate::font::FontData;
 use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
 use super::Paragraph;
 use super::{SpanId, MAX_ID};
+use crate::font::FontData;
 use crate::font::FontLibrary;
 use core::borrow::Borrow;
 use swash::shape::{self, ShapeContext};
@@ -432,7 +432,15 @@ impl<'a> ParagraphBuilder<'a> {
         let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         for item in &self.s.items {
-            shape_item(self.fcx, self.fonts, self.scx, self.s, item, &mut char_cluster, layout);
+            shape_item(
+                self.fcx,
+                self.fonts,
+                self.scx,
+                self.s,
+                item,
+                &mut char_cluster,
+                layout,
+            );
         }
         layout.apply_spacing(&self.s.spans);
         let duration = start.elapsed();
@@ -575,9 +583,10 @@ fn shape_item(
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn shape_clusters<I>(
     fcx: &mut FontLibrary,
-    fonts: &Vec<FontData>,
+    fonts: &[FontData],
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
