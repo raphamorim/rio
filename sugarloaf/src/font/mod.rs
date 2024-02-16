@@ -27,9 +27,76 @@ use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 pub use swash::{Style, Weight};
 
 #[derive(Default)]
+pub struct FontContext {
+    cache: FnvHashMap<char, usize>,
+}
+
+impl FontContext {
+    #[inline]
+    pub fn lookup_for_best_font(
+        &mut self,
+        cluster: &mut CharCluster,
+        synth: &mut Synthesis,
+        library: &FontLibrary,
+    ) -> Option<usize> {
+        let mut font_id = None;
+        for (current_font_id, font) in library.inner.iter().enumerate() {
+            let charmap = font.charmap_proxy().materialize(&font.as_ref());
+            let status = cluster.map(|ch| charmap.map(ch));
+            if status != Status::Discard {
+                *synth = library[current_font_id].synth;
+                font_id = Some(current_font_id);
+                break;
+            }
+        }
+
+        font_id
+    }
+
+    #[inline]
+    pub fn map_cluster(
+        &mut self,
+        cluster: &mut CharCluster,
+        synth: &mut Synthesis,
+        library: &FontLibrary,
+    ) -> Option<usize> {
+        let chars = cluster.chars();
+        let mut font_id = FONT_ID_REGULAR;
+        if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
+            font_id = *cached_font_id;
+        } else if cluster.info().is_emoji() {
+            font_id = FONT_ID_EMOJIS_NATIVE;
+        }
+
+        let charmap = library[font_id]
+            .charmap_proxy()
+            .materialize(&library[font_id].as_ref());
+        let status = cluster.map(|ch| charmap.map(ch));
+        if status != Status::Discard {
+            *synth = library[font_id].synth;
+        } else {
+            log::info!("looking up for best font match for {:?}", cluster.chars());
+            if let Some(found_font_id) =
+                self.lookup_for_best_font(cluster, synth, library)
+            {
+                log::info!(" -> found best font id {}", found_font_id);
+                font_id = found_font_id
+            } else {
+                return None;
+            }
+        }
+
+        let chars = cluster.chars();
+        if !chars.is_empty() {
+            self.cache.insert(chars[0].ch, font_id);
+        }
+        Some(font_id)
+    }
+}
+
+#[derive(Default)]
 pub struct FontLibrary {
     pub inner: Vec<FontData>,
-    cache: FnvHashMap<char, usize>,
 }
 
 impl FontLibrary {
@@ -37,7 +104,11 @@ impl FontLibrary {
     pub fn font_arcs(&self) -> Vec<ab_glyph::FontArc> {
         self.inner
             .iter()
-            .map(|x| x.arc.clone())
+            .map(|x| {
+                FontArc::try_from_vec(x.data.to_vec()).unwrap_or(
+                    FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+                )
+            })
             .collect::<Vec<ab_glyph::FontArc>>()
     }
 
@@ -59,63 +130,6 @@ impl FontLibrary {
     #[inline]
     pub fn font_by_id(&self, font_id: usize) -> FontRef {
         self.inner[font_id].as_ref()
-    }
-
-    #[inline]
-    pub fn lookup_for_best_font(
-        &mut self,
-        cluster: &mut CharCluster,
-        synth: &mut Synthesis,
-    ) -> Option<usize> {
-        let mut font_id = None;
-        for (current_font_id, font) in self.inner.iter().enumerate() {
-            let charmap = font.charmap_proxy().materialize(&font.as_ref());
-            let status = cluster.map(|ch| charmap.map(ch));
-            if status != Status::Discard {
-                *synth = self.inner[current_font_id].synth;
-                font_id = Some(current_font_id);
-                break;
-            }
-        }
-
-        font_id
-    }
-
-    #[inline]
-    pub fn map_cluster(
-        &mut self,
-        cluster: &mut CharCluster,
-        synth: &mut Synthesis,
-    ) -> Option<usize> {
-        let chars = cluster.chars();
-        let mut font_id = FONT_ID_REGULAR;
-        if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
-            font_id = *cached_font_id;
-        } else if cluster.info().is_emoji() {
-            font_id = FONT_ID_EMOJIS_NATIVE;
-        }
-
-        let charmap = self.inner[font_id]
-            .charmap_proxy()
-            .materialize(&self.inner[font_id].as_ref());
-        let status = cluster.map(|ch| charmap.map(ch));
-        if status != Status::Discard {
-            *synth = self.inner[font_id].synth;
-        } else {
-            log::info!("looking up for best font match for {:?}", cluster.chars());
-            if let Some(found_font_id) = self.lookup_for_best_font(cluster, synth) {
-                log::info!(" -> found best font id {}", found_font_id);
-                font_id = found_font_id
-            } else {
-                return None;
-            }
-        }
-
-        let chars = cluster.chars();
-        if !chars.is_empty() {
-            self.cache.insert(chars[0].ch, font_id);
-        }
-        Some(font_id)
     }
 }
 
@@ -141,8 +155,6 @@ pub struct FontData {
     offset: u32,
     // Cache key
     key: CacheKey,
-    // Arc
-    arc: ab_glyph::FontArc,
 
     charmap_proxy: CharmapProxy,
     pub synth: Synthesis,
@@ -166,10 +178,9 @@ impl FontData {
         let font = FontRef::from_index(&data, 0).unwrap();
         let charmap_proxy = CharmapProxy::from_font(&font.clone());
         let (offset, key) = (font.offset, font.key);
+
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
-
-        let arc = FontArc::try_from_vec(data.clone()).unwrap();
         let attributes = font.attributes();
         let synth = attributes.synthesize(attributes);
 
@@ -177,7 +188,6 @@ impl FontData {
             data,
             offset,
             key,
-            arc,
             charmap_proxy,
             synth,
         })
@@ -189,8 +199,6 @@ impl FontData {
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
-
-        let arc = FontArc::try_from_vec(data.to_vec()).unwrap();
         let attributes = font.attributes();
         let synth = attributes.synthesize(attributes);
 
@@ -198,7 +206,6 @@ impl FontData {
             data: data.to_vec(),
             offset,
             key,
-            arc,
             charmap_proxy: CharmapProxy::from_font(&font),
             synth,
         })
@@ -235,14 +242,14 @@ impl FontData {
         }
     }
 
-    #[inline]
-    pub fn map_cluster(&mut self, cluster: &mut CharCluster, synth: &mut Synthesis) {
-        let charmap = self.charmap_proxy.materialize(&self.as_ref());
-        let status = cluster.map(|ch| charmap.map(ch));
-        if status != Status::Discard {
-            *synth = self.synth;
-        }
-    }
+    // #[inline]
+    // pub fn map_cluster(&mut self, cluster: &mut CharCluster, synth: &mut Synthesis) {
+    //     let charmap = self.charmap_proxy.materialize(&self.as_ref());
+    //     let status = cluster.map(|ch| charmap.map(ch));
+    //     if status != Status::Discard {
+    //         *synth = self.synth;
+    //     }
+    // }
 }
 
 pub type SugarloafFont = fonts::SugarloafFont;
