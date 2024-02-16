@@ -7,7 +7,6 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use super::{Alignment, Glyph, SpanId};
-use crate::font::FontData;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
@@ -170,12 +169,12 @@ impl GlyphData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct RunData {
     pub span: SpanId,
     pub line: u32,
     pub color: [f32; 4],
-    pub font: FontData,
+    pub font: usize,
     pub coords: (u32, u32),
     pub size: f32,
     pub level: u8,

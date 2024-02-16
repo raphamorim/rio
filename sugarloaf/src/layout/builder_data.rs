@@ -56,7 +56,7 @@ pub struct ItemData {
 }
 
 /// Data that describes a span.
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct SpanData {
     /// Identifier of the span.
     pub id: SpanId,
