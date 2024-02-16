@@ -11,7 +11,6 @@
 
 use super::span_style::*;
 use super::{SpanId, MAX_ID};
-use crate::font::FontLibrary;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
@@ -204,7 +203,7 @@ impl BuilderState {
         }
         let parent_id = *self.span_stack.last()?;
         let parent = self.spans.get_mut(parent_id.to_usize())?;
-        let mut span = parent.clone();
+        let mut span = parent.to_owned();
         let last_child = if let Some(last_child) = parent.last_child {
             parent.last_child = Some(next_id);
             Some(last_child)

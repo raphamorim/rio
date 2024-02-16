@@ -13,7 +13,7 @@ use super::builder_data::*;
 use super::span_style::*;
 use super::Paragraph;
 use super::{SpanId, MAX_ID};
-use crate::font::{FontData, FontLibrary};
+use crate::font::FontLibrary;
 use core::borrow::Borrow;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -583,9 +583,9 @@ where
     }
 
     let current_font_id = state.font_id.unwrap();
-    let font = fcx[current_font_id].clone();
+    let font = fcx.inner[current_font_id].clone();
     let mut shaper = scx
-        .builder(font.as_ref())
+        .builder(&font)
         .script(state.script)
         .language(state.span.lang)
         .direction(dir)

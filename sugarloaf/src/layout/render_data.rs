@@ -11,8 +11,6 @@
 
 //! Paragraph.
 
-use crate::font::FontData;
-
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;

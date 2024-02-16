@@ -9,7 +9,6 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
-pub use super::font::FamilyList;
 use crate::sugarloaf::primitives::SugarCursor;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};

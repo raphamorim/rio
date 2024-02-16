@@ -434,7 +434,7 @@ fn commit_line(
         if cluster_range.0 >= cluster_range.1 {
             continue;
         }
-        let mut copy = run.clone();
+        let mut copy = run.to_owned();
         copy.clusters = cluster_range;
         copy.line = line_index;
         lines.runs.push(copy);
