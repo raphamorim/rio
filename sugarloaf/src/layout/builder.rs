@@ -8,6 +8,7 @@
 
 //! Paragraph builder.
 
+use crate::font::FontData;
 use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
@@ -23,6 +24,7 @@ use swash::{Setting, Synthesis};
 /// Context for paragraph layout.
 pub struct LayoutContext {
     fcx: FontLibrary,
+    fonts: Vec<FontData>,
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
@@ -32,6 +34,8 @@ impl LayoutContext {
     /// Creates a new layout context with the specified font library.
     pub fn new(fcx: FontLibrary) -> Self {
         Self {
+            // Lame solution since it duplicates fonts in memory
+            fonts: fcx.inner.clone(),
             fcx,
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
@@ -60,6 +64,7 @@ impl LayoutContext {
             bidi: &mut self.bidi,
             needs_bidi: false,
             dir: direction,
+            fonts: &self.fonts,
             scale,
             scx: &mut self.scx,
             dir_depth: 0,
@@ -73,6 +78,7 @@ impl LayoutContext {
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontLibrary,
     bidi: &'a mut BidiResolver,
+    fonts: &'a Vec<FontData>,
     needs_bidi: bool,
     dir: Direction,
     scale: f32,
@@ -426,7 +432,7 @@ impl<'a> ParagraphBuilder<'a> {
         let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         for item in &self.s.items {
-            shape_item(self.fcx, self.scx, self.s, item, &mut char_cluster, layout);
+            shape_item(self.fcx, self.fonts, self.scx, self.s, item, &mut char_cluster, layout);
         }
         layout.apply_spacing(&self.s.spans);
         let duration = start.elapsed();
@@ -465,6 +471,7 @@ struct ShapeState<'a> {
 #[inline]
 fn shape_item(
     fcx: &mut FontLibrary,
+    fonts: &Vec<FontData>,
     scx: &mut ShapeContext,
     state: &BuilderState,
     item: &ItemData,
@@ -522,6 +529,7 @@ fn shape_item(
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
+            fonts,
             scx,
             &mut shape_state,
             &mut parser,
@@ -554,6 +562,7 @@ fn shape_item(
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth);
         while shape_clusters(
             fcx,
+            fonts,
             scx,
             &mut shape_state,
             &mut parser,
@@ -568,6 +577,7 @@ fn shape_item(
 #[inline]
 fn shape_clusters<I>(
     fcx: &mut FontLibrary,
+    fonts: &Vec<FontData>,
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
@@ -583,9 +593,8 @@ where
     }
 
     let current_font_id = state.font_id.unwrap();
-    let font = fcx.inner[current_font_id].clone();
     let mut shaper = scx
-        .builder(&font)
+        .builder(fonts[current_font_id].as_ref())
         .script(state.script)
         .language(state.span.lang)
         .direction(dir)
