@@ -327,7 +327,7 @@ impl RouteWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let mut screen =
+        let screen =
             Screen::new(&winit_window, config, event_proxy, font_database).await?;
 
         Ok(Self {
@@ -364,7 +364,7 @@ impl RouteWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let mut screen = futures::executor::block_on(Screen::new(
+        let screen = futures::executor::block_on(Screen::new(
             &winit_window,
             config,
             event_proxy,

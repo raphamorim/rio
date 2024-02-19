@@ -98,8 +98,7 @@ impl Sequencer {
                                             .window
                                             .screen
                                             .sugarloaf
-                                            .graphics
-                                            .add(graphic_data);
+                                            .add_graphic(graphic_data);
                                     }
 
                                     for graphic_data in graphic_queues.remove_queue {
@@ -107,8 +106,7 @@ impl Sequencer {
                                             .window
                                             .screen
                                             .sugarloaf
-                                            .graphics
-                                            .remove(&graphic_data);
+                                            .remove_graphic(&graphic_data);
                                     }
                                 }
                             }

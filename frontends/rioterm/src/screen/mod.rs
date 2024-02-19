@@ -30,7 +30,7 @@ use core::fmt::Debug;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
-    colors::{term::List, ColorWGPU},
+    colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
 use rio_backend::event::{ClickState, EventProxy};
@@ -189,6 +189,10 @@ impl Screen {
             sugarloaf_errors,
         )?;
 
+        let mut bg_color = state.named_colors.background.1;
+        if config.window.background_opacity < 1. {
+            bg_color.a = config.window.background_opacity as f64;
+        }
         sugarloaf.set_background_color(bg_color);
         if let Some(image) = config.window.background_image {
             sugarloaf.set_background_image(&image);
