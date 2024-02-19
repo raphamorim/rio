@@ -130,7 +130,7 @@ impl Advanced {
 
         let underline = &[
             SpanStyle::Underline(true),
-            SpanStyle::UnderlineOffset(Some(-1.)),
+            SpanStyle::UnderlineOffset(Some(-2.)),
             SpanStyle::UnderlineSize(Some(1.)),
         ];
 

@@ -213,7 +213,7 @@ impl SugarState {
         // the dimensions.
 
         if self.latest_change != SugarTreeDiff::LayoutIsDifferent
-            || !self.current_has_empty_dimensions()
+            // || !self.current_has_empty_dimensions()
         {
             return;
         }
