@@ -17,7 +17,6 @@ mod mouse;
 #[cfg(windows)]
 mod panic;
 mod platform;
-#[cfg(target_os = "macos")]
 mod renderer;
 #[cfg(not(target_os = "macos"))]
 mod router;

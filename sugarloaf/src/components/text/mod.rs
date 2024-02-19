@@ -1,3 +1,5 @@
+pub mod glyph;
+
 #[allow(dead_code)]
 // From https://github.com/hecrj/wgpu_glyph
 // #[deny(unused_results)]
@@ -14,20 +16,20 @@ pub struct Region {
 
 use pipeline::{Instance, Pipeline};
 
-use crate::components::core::orthographic_projection;
-pub use crate::glyph::ab_glyph;
-pub use crate::glyph::{
+pub use builder::GlyphBrushBuilder;
+pub use glyph::ab_glyph;
+pub use glyph::{
     BuiltInLineBreaker, Extra, FontId, GlyphCruncher, GlyphPositioner, HorizontalAlign,
     Layout, LineBreak, LineBreaker, OwnedSection, OwnedText, Section, SectionGeometry,
     SectionGlyph, SectionGlyphIter, SectionText, Text, VerticalAlign,
 };
-pub use builder::GlyphBrushBuilder;
 
+use crate::components::core::orthographic_projection;
 use ab_glyph::{Font, Rect};
 use core::hash::BuildHasher;
 use std::borrow::Cow;
 
-use crate::glyph::{BrushAction, BrushError, DefaultSectionHasher};
+use glyph::{BrushAction, BrushError, DefaultSectionHasher};
 
 /// Object allowing glyph drawing, containing cache state. Manages glyph positioning cacheing,
 /// glyph draw caching & efficient GPU texture cache updating and re-sizing on demand.
@@ -35,15 +37,10 @@ use crate::glyph::{BrushAction, BrushError, DefaultSectionHasher};
 /// Build using a [`GlyphBrushBuilder`](struct.GlyphBrushBuilder.html).
 pub struct GlyphBrush<Depth, F = ab_glyph::FontArc, H = DefaultSectionHasher> {
     pipeline: Pipeline<Depth>,
-    glyph_brush: crate::glyph::GlyphBrush<Instance, Extra, F, H>,
+    glyph_brush: glyph::GlyphBrush<Instance, Extra, F, H>,
 }
 
 impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
-    /// Queues a section/layout to be drawn by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times to queue multiple sections for drawing.
-    ///
-    /// Benefits from caching, see [caching behaviour](#caching-behaviour).
     #[inline]
     pub fn queue<'a, S>(&mut self, section: S)
     where
@@ -52,15 +49,14 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
         self.glyph_brush.queue(section)
     }
 
-    /// Queues a section/layout to be drawn by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times to queue multiple sections for drawing.
-    ///
-    /// Used to provide custom `GlyphPositioner` logic, if using built-in
-    /// [`Layout`](enum.Layout.html) simply use
-    /// [`queue`](struct.GlyphBrush.html#method.queue)
-    ///
-    /// Benefits from caching, see [caching behaviour](#caching-behaviour).
+    #[inline]
+    pub fn keep_cached<'a, S>(&mut self, section: S)
+    where
+        S: Into<Cow<'a, Section<'a>>>,
+    {
+        self.glyph_brush.keep_cached(section)
+    }
+
     #[inline]
     pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
     where
@@ -69,47 +65,6 @@ impl<Depth, F: Font, H: BuildHasher> GlyphBrush<Depth, F, H> {
     {
         self.glyph_brush.queue_custom_layout(section, custom_layout)
     }
-
-    /// Queues pre-positioned glyphs to be processed by the next call of
-    /// [`draw_queued`](struct.GlyphBrush.html#method.draw_queued). Can be
-    /// called multiple times.
-    // #[inline]
-    // pub fn queue_pre_positioned(
-    //     &mut self,
-    //     glyphs: Vec<SectionGlyph>,
-    //     extra: Vec<Extra>,
-    //     bounds: Rect,
-    // ) {
-    //     self.glyph_brush.queue_pre_positioned(glyphs, extra, bounds)
-    // }
-
-    /// Retains the section in the cache as if it had been used in the last
-    /// draw-frame.
-    ///
-    /// Should not be necessary unless using multiple draws per frame with
-    /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    // #[inline]
-    // pub fn keep_cached_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
-    // where
-    //     S: Into<Cow<'a, Section<'a>>>,
-    //     G: GlyphPositioner,
-    // {
-    //     self.glyph_brush
-    //         .keep_cached_custom_layout(section, custom_layout)
-    // }
-
-    /// Retains the section in the cache as if it had been used in the last
-    /// draw-frame.
-    ///
-    /// Should not be necessary unless using multiple draws per frame with
-    /// distinct transforms, see [caching behaviour](#caching-behaviour).
-    // #[inline]
-    // pub fn keep_cached<'a, S>(&mut self, section: S)
-    // where
-    //     S: Into<Cow<'a, Section<'a>>>,
-    // {
-    //     self.glyph_brush.keep_cached(section)
-    // }
 
     /// Returns the available fonts.
     ///
@@ -132,12 +87,7 @@ where
     F: Font + Sync,
     H: BuildHasher,
 {
-    fn process_queued(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
+    fn process_queued(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue) {
         let pipeline = &mut self.pipeline;
 
         let mut brush_action;
@@ -180,7 +130,7 @@ where
 
         match brush_action.unwrap() {
             BrushAction::Draw(mut verts) => {
-                self.pipeline.upload(device, encoder, &mut verts);
+                self.pipeline.upload(device, queue, &mut verts);
             }
             BrushAction::ReDraw => {}
         };
@@ -193,7 +143,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        raw_builder: crate::glyph::GlyphBrushBuilder<F, H>,
+        raw_builder: glyph::GlyphBrushBuilder<F, H>,
     ) -> Self {
         let glyph_brush = raw_builder.build();
         let (cache_width, cache_height) = glyph_brush.texture_dimensions();
@@ -221,21 +171,19 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued(
-        &mut self,
+    pub fn render<'pass>(
+        &'pass mut self,
         context: &mut crate::context::Context,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-    ) -> Result<(), String> {
+        rpass: &mut wgpu::RenderPass<'pass>,
+    ) {
         let device = &context.device;
         let queue = &mut context.queue;
         self.draw_queued_with_transform(
             device,
             queue,
-            encoder,
-            target,
+            rpass,
             orthographic_projection(context.size.width, context.size.height),
-        )
+        );
     }
 
     /// Draws all queued sections onto a render target, applying a position
@@ -250,18 +198,15 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn draw_queued_with_transform(
-        &mut self,
+    pub fn draw_queued_with_transform<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
-    ) -> Result<(), String> {
-        self.process_queued(device, queue, encoder);
-        self.pipeline.draw(queue, encoder, target, transform, None);
-
-        Ok(())
+    ) {
+        self.process_queued(device, queue);
+        self.pipeline.draw(queue, rpass, transform, None);
     }
 
     /// Draws all queued sections onto a render target, applying a position
@@ -276,18 +221,16 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued_with_transform_and_scissoring(
-        &mut self,
+    pub fn _draw_queued_with_transform_and_scissoring<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        self.process_queued(device, queue, encoder);
-        self.pipeline
-            .draw(queue, encoder, target, transform, Some(region));
+        self.process_queued(device, queue);
+        self.pipeline.draw(queue, rpass, transform, Some(region));
 
         Ok(())
     }
@@ -299,8 +242,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        depth_stencil_state: wgpu::DepthStencilState,
-        raw_builder: crate::glyph::GlyphBrushBuilder<F, H>,
+        raw_builder: glyph::GlyphBrushBuilder<F, H>,
     ) -> Self {
         let glyph_brush = raw_builder.build();
         let (cache_width, cache_height) = glyph_brush.texture_dimensions();
@@ -310,7 +252,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
                 filter_mode,
                 multisample,
                 render_format,
-                depth_stencil_state,
                 cache_width,
                 cache_height,
             ),
@@ -329,21 +270,17 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued(
-        &mut self,
+    pub fn _draw_queued<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
-        w_h: (u32, u32),
+        rpass: &mut wgpu::RenderPass<'pass>,
+        w_h: (f32, f32),
     ) -> Result<(), String> {
         self.draw_queued_with_transform(
             device,
             queue,
-            encoder,
-            target,
-            depth_stencil_attachment,
+            rpass,
             orthographic_projection(w_h.0, w_h.1),
         )
     }
@@ -361,22 +298,15 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
     #[allow(dead_code)]
-    pub fn draw_queued_with_transform(
-        &mut self,
+    pub fn draw_queued_with_transform<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
+        rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
     ) -> Result<(), String> {
-        self.process_queued(device, queue, encoder);
-        self.pipeline.draw(
-            (queue, encoder, target),
-            depth_stencil_attachment,
-            transform,
-            None,
-        );
+        self.process_queued(device, queue);
+        self.pipeline.draw((queue, rpass), transform, None);
 
         Ok(())
     }
@@ -393,29 +323,23 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<wgpu::DepthStencilState, F, H> {
     /// Panics if the provided `target` has a texture format that does not match
     /// the `render_format` provided on creation of the `GlyphBrush`.
     #[inline]
-    pub fn _draw_queued_with_transform_and_scissoring(
-        &mut self,
+    pub fn _draw_queued_with_transform_and_scissoring<'pass>(
+        &'pass mut self,
         // config: (device, staging_belt, encoder, target),
         config: (
             &wgpu::Device,
             &mut wgpu::Queue,
-            &mut wgpu::CommandEncoder,
-            &wgpu::TextureView,
+            &mut wgpu::RenderPass<'pass>,
         ),
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         transform: [f32; 16],
         region: Region,
     ) -> Result<(), String> {
-        let (device, queue, encoder, target) = config;
+        let (device, queue, encoder) = config;
 
-        self.process_queued(device, queue, encoder);
+        self.process_queued(device, queue);
 
-        self.pipeline.draw(
-            (queue, encoder, target),
-            depth_stencil_attachment,
-            transform,
-            Some(region),
-        );
+        self.pipeline
+            .draw((queue, encoder), transform, Some(region));
 
         Ok(())
     }

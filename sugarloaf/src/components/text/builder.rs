@@ -1,21 +1,23 @@
 use core::hash::BuildHasher;
 
-use crate::glyph::ab_glyph::Font;
-// use crate::glyph::delegate_glyph_brush_builder_fns;
-use crate::glyph::DefaultSectionHasher;
+use crate::components::text::glyph::ab_glyph::Font;
+// use crate::components::text::glyph::delegate_glyph_brush_builder_fns;
+use crate::components::text::glyph::DefaultSectionHasher;
 
 use super::GlyphBrush;
 
 /// Builder for a [`GlyphBrush`](struct.GlyphBrush.html).
 pub struct GlyphBrushBuilder<D, F, H = DefaultSectionHasher> {
-    inner: crate::glyph::GlyphBrushBuilder<F, H>,
+    inner: crate::components::text::glyph::GlyphBrushBuilder<F, H>,
     texture_filter_method: wgpu::FilterMode,
     multisample_state: wgpu::MultisampleState,
     depth: D,
 }
 
-impl<F, H> From<crate::glyph::GlyphBrushBuilder<F, H>> for GlyphBrushBuilder<(), F, H> {
-    fn from(inner: crate::glyph::GlyphBrushBuilder<F, H>) -> Self {
+impl<F, H> From<crate::components::text::glyph::GlyphBrushBuilder<F, H>>
+    for GlyphBrushBuilder<(), F, H>
+{
+    fn from(inner: crate::components::text::glyph::GlyphBrushBuilder<F, H>) -> Self {
         GlyphBrushBuilder {
             inner,
             texture_filter_method: wgpu::FilterMode::Linear,
@@ -35,7 +37,7 @@ impl GlyphBrushBuilder<(), ()> {
 
     pub fn using_fonts<F: Font>(fonts: Vec<F>) -> GlyphBrushBuilder<(), F> {
         GlyphBrushBuilder {
-            inner: crate::glyph::GlyphBrushBuilder::using_fonts(fonts),
+            inner: crate::components::text::glyph::GlyphBrushBuilder::using_fonts(fonts),
             texture_filter_method: wgpu::FilterMode::Linear,
             multisample_state: wgpu::MultisampleState::default(),
             depth: (),
@@ -44,7 +46,7 @@ impl GlyphBrushBuilder<(), ()> {
 
     // pub fn using_scaled_fonts<F: Font>(fonts: Vec<PxScaleFont<FontArc>>) -> GlyphBrushBuilder<(), F> {
     //     GlyphBrushBuilder {
-    //         inner: crate::glyph::GlyphBrushBuilder::using_fonts(fonts),
+    //         inner: crate::components::text::glyph::GlyphBrushBuilder::using_fonts(fonts),
     //         texture_filter_method: wgpu::FilterMode::Linear,
     //         multisample_state: wgpu::MultisampleState::default(),
     //         depth: (),
@@ -149,7 +151,6 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrushBuilder<wgpu::DepthStencilState, 
             self.texture_filter_method,
             self.multisample_state,
             render_format,
-            self.depth,
             self.inner,
         )
     }

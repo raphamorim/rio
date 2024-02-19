@@ -13,7 +13,7 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 #[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;
@@ -181,98 +181,51 @@ impl State {
             square.c
         };
 
-        let mut style: Option<SugarStyle> = None;
-        let is_italic = flags.contains(Flags::ITALIC);
-        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
+        let style = SugarStyle {
+            is_italic: flags.contains(Flags::ITALIC),
+            is_bold_italic: flags.contains(Flags::BOLD_ITALIC),
+            is_bold: flags.contains(Flags::BOLD),
+        };
 
         if flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
-        let mut decoration = None;
+        let mut decoration = SugarDecoration::Disabled;
         if flags.contains(Flags::UNDERLINE) {
-            decoration = Some(SugarDecoration {
-                relative_position: (0.0, self.font_size - 1.),
-                size: (1.0, 0.005),
-                color: self.named_colors.foreground,
-            });
+            decoration = SugarDecoration::Underline;
         } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(SugarDecoration {
-                relative_position: (0.0, self.font_size / 2.),
-                size: (1.0, 0.025),
-                color: self.named_colors.foreground,
-            });
+            decoration = SugarDecoration::Strikethrough;
         }
 
         Sugar {
             content,
+            repeated: 0,
             foreground_color,
             background_color,
             style,
             decoration,
             media: None,
+            cursor: SugarCursor::Disabled,
         }
     }
 
     #[inline]
     fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.decoration = Some(SugarDecoration {
-            relative_position: (0.0, self.font_size - 1.),
-            size: (1.0, 0.005),
-            color: self.named_colors.foreground,
-        });
-
+        sugar.decoration = SugarDecoration::Underline;
         sugar
     }
 
     #[inline]
-    fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
-        let color = if !self.is_vi_mode_enabled {
-            self.named_colors.cursor
-        } else {
-            self.named_colors.vi_cursor
-        };
-
-        match self.cursor.state.content {
-            CursorShape::Block => Some(SugarDecoration {
-                relative_position: (0.0, 0.0),
-                size: (1.0, 1.0),
-                color,
-            }),
-            CursorShape::Underline => Some(SugarDecoration {
-                relative_position: (0.0, self.font_size - 2.5),
-                size: (1.0, 0.08),
-                color,
-            }),
-            CursorShape::Beam => Some(SugarDecoration {
-                relative_position: (0.0, 0.0),
-                size: (0.1, 1.0),
-                color,
-            }),
-            CursorShape::Hidden => None,
-        }
-    }
-
-    // create_rich_sugar_stack is different than create_sugar_stack
-    // it activates features like hyperlinks and text selection
-    // this function is only called if state has either selection or hyperlink is some
-    #[inline]
-    fn create_rich_sugar_stack(
+    fn create_sugar_line(
         &mut self,
+        sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
         has_cursor: bool,
-        line: pos::Line,
-    ) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
+        current_line: pos::Line,
+    ) {
+        sugarloaf.start_line();
+
         let columns: usize = row.len();
         for column in 0..columns {
             let square = &row.inner[column];
@@ -282,26 +235,26 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                stack.push(self.create_graphic_sugar(square));
+                sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
                 continue;
             }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                stack.push(self.create_cursor(square));
+                sugarloaf.insert_on_current_line(&self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
                     .hyperlink_range
                     .unwrap()
-                    .contains(pos::Pos::new(line, pos::Column(column)))
+                    .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
                 let sugar = self.create_sugar(square);
-                stack.push(self.set_hyperlink_in_sugar(sugar));
+                sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
                     .unwrap()
-                    .contains(pos::Pos::new(line, pos::Column(column)))
+                    .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
                 let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN)
                 {
@@ -318,13 +271,11 @@ impl State {
                         self.named_colors.selection_foreground
                     },
                     background_color: self.named_colors.selection_background,
-                    style: None,
-                    decoration: None,
-                    media: None,
+                    ..Sugar::default()
                 };
-                stack.push(selected_sugar);
+                sugarloaf.insert_on_current_line(&selected_sugar);
             } else {
-                stack.push(self.create_sugar(square));
+                sugarloaf.insert_on_current_line(&self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -333,7 +284,7 @@ impl State {
             }
         }
 
-        stack
+        sugarloaf.finish_line();
     }
 
     #[inline]
@@ -487,54 +438,31 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
-        let mut stack: Vec<Sugar> = vec![];
-        let columns: usize = row.len();
-
-        for column in 0..columns {
-            let square = &row.inner[column];
-
-            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                continue;
-            }
-
-            if square.flags.contains(Flags::GRAPHICS) {
-                stack.push(self.create_graphic_sugar(square));
-                continue;
-            }
-
-            if has_cursor && column == self.cursor.state.pos.col {
-                stack.push(self.create_cursor(square));
-            } else {
-                stack.push(self.create_sugar(square));
-            }
-
-            // Render last column and break row
-            if column == (columns - 1) {
-                break;
-            }
-        }
-
-        stack
-    }
-
-    #[inline]
     fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let foreground_color = self.compute_fg_color(square);
-        let background_color = self.compute_bg_color(square);
-
         let media = &square.graphics().unwrap()[0].texture;
         Sugar {
-            content: ' ',
-            foreground_color,
-            background_color,
-            style: None,
-            decoration: None,
             media: Some(SugarGraphic {
                 id: media.id,
                 width: media.width,
                 height: media.height,
             }),
+            ..Sugar::default()
+        }
+    }
+
+    #[inline]
+    fn create_sugar_cursor(&self) -> SugarCursor {
+        let color = if !self.is_vi_mode_enabled {
+            self.named_colors.cursor
+        } else {
+            self.named_colors.vi_cursor
+        };
+
+        match self.cursor.state.content {
+            CursorShape::Block => SugarCursor::Block(color),
+            CursorShape::Underline => SugarCursor::Underline(color),
+            CursorShape::Beam => SugarCursor::Caret(color),
+            CursorShape::Hidden => SugarCursor::Disabled,
         }
     }
 
@@ -544,22 +472,14 @@ impl State {
             content: square.c,
             foreground_color: self.compute_fg_color(square),
             background_color: self.compute_bg_color(square),
-            style: None,
-            decoration: None,
-            media: None,
+            cursor: self.create_sugar_cursor(),
+            style: SugarStyle {
+                is_italic: square.flags.contains(Flags::ITALIC),
+                is_bold_italic: square.flags.contains(Flags::BOLD_ITALIC),
+                is_bold: square.flags.contains(Flags::BOLD),
+            },
+            ..Sugar::default()
         };
-
-        let is_italic = square.flags.contains(Flags::ITALIC);
-        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
-        let is_bold = square.flags.contains(Flags::BOLD);
-
-        if is_bold || is_bold_italic || is_italic {
-            sugar.style = Some(SugarStyle {
-                is_italic,
-                is_bold_italic,
-                is_bold,
-            });
-        }
 
         if square.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
@@ -576,7 +496,6 @@ impl State {
             sugar.foreground_color = self.named_colors.background.0;
         }
 
-        sugar.decoration = self.cursor_to_decoration();
         sugar
     }
 
@@ -619,10 +538,11 @@ impl State {
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
+        let layout = sugarloaf.layout_next();
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
-        self.font_size = sugarloaf.layout.font_size;
+        self.font_size = layout.font_size;
 
         // Only blink cursor if does not contain selection
         let has_selection = self.selection_range.is_some();
@@ -640,32 +560,26 @@ impl State {
             }
         }
 
-        if has_selection || self.hyperlink_range.is_some() {
-            for (i, row) in rows.iter().enumerate() {
-                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_rich_sugar_stack(
-                    row,
-                    has_cursor,
-                    pos::Line((i as i32) - display_offset),
-                ));
-            }
-        } else {
-            for (i, row) in rows.iter().enumerate() {
-                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
-            }
+        for (i, row) in rows.iter().enumerate() {
+            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+            self.create_sugar_line(
+                sugarloaf,
+                row,
+                has_cursor,
+                pos::Line((i as i32) - display_offset),
+            );
         }
 
         self.navigation.content(
-            (sugarloaf.layout.width, sugarloaf.layout.height),
-            sugarloaf.layout.scale_factor,
+            (layout.width, layout.height),
+            layout.dimensions.scale,
             context_manager.titles.key.as_str(),
             &context_manager.titles.titles,
             context_manager.current_index(),
             context_manager.len(),
         );
 
-        sugarloaf.pile_rects(self.navigation.rects.to_owned());
+        sugarloaf.append_rects(self.navigation.rects.to_owned());
 
         for text in self.navigation.texts.iter() {
             sugarloaf.text(

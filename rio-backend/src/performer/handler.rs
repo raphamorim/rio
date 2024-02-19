@@ -8,7 +8,7 @@ use log::{debug, warn};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
-use sugarloaf::graphics::SugarGraphicData;
+use sugarloaf::SugarGraphicData;
 
 use crate::crosswords::attr::Attr;
 

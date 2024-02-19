@@ -4,7 +4,7 @@
 
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
-use crate::sugarloaf::graphics::{SugarGraphicData, SugarGraphicId};
+use crate::sugarloaf::{SugarGraphicData, SugarGraphicId};
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::mem;
@@ -206,7 +206,7 @@ impl Graphics {
 
 #[test]
 fn check_opaque_region() {
-    use sugarloaf::graphics::ColorType;
+    use sugarloaf::ColorType;
     let graphic = SugarGraphicData {
         id: SugarGraphicId(0),
         width: 10,

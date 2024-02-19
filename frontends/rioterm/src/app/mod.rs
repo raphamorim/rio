@@ -109,6 +109,10 @@ impl EventHandler for Router {
 
         if should_redraw {
             if let Some(current) = &mut self.route {
+                if self.config.renderer.disable_unfocused_render && !current.is_focused {
+                    return;
+                }
+
                 current.render();
             }
         }
@@ -119,6 +123,9 @@ impl EventHandler for Router {
 
         if let Some(event) = event {
             match event {
+                RioEvent::CloseWindow => {
+                    // TODO
+                }
                 RioEvent::CreateWindow => {
                     #[cfg(target_os = "macos")]
                     let new_tab_group = if self.config.navigation.is_native() {
@@ -223,9 +230,9 @@ impl EventHandler for Router {
                 RioEvent::UpdateFontSize(action) => {
                     if let Some(current) = &mut self.route {
                         let should_update = match action {
-                            0 => current.sugarloaf.layout.reset_font_size(),
-                            2 => current.sugarloaf.layout.increase_font_size(),
-                            1 => current.sugarloaf.layout.decrease_font_size(),
+                            0 => current.sugarloaf.layout_next().reset_font_size(),
+                            2 => current.sugarloaf.layout_next().increase_font_size(),
+                            1 => current.sugarloaf.layout_next().decrease_font_size(),
                             _ => false,
                         };
 
@@ -236,10 +243,6 @@ impl EventHandler for Router {
                         // This is a hacky solution, sugarloaf compute bounds in runtime
                         // so basically it updates with the new font-size, then compute the bounds
                         // and then updates again with correct bounds
-                        current.sugarloaf.layout.update();
-                        current.sugarloaf.calculate_bounds();
-                        current.sugarloaf.layout.update();
-
                         current.resize_all_contexts();
 
                         current.render();
@@ -252,11 +255,11 @@ impl EventHandler for Router {
                         if let Some(graphic_queues) = graphics {
                             let renderer = &mut current.sugarloaf;
                             for graphic_data in graphic_queues.pending {
-                                renderer.graphics.add(graphic_data);
+                                renderer.add_graphic(graphic_data);
                             }
 
                             for graphic_data in graphic_queues.remove_queue {
-                                renderer.graphics.remove(&graphic_data);
+                                renderer.remove_graphic(&graphic_data);
                             }
                         }
                     }
@@ -277,6 +280,13 @@ impl EventHandler for Router {
                 RioEvent::Noop => {}
                 _ => {}
             };
+        }
+    }
+
+    fn focus_event(&mut self, focused: bool) {
+        if let Some(current) = &mut self.route {
+            current.is_focused = focused;
+            current.on_focus_change(focused);
         }
     }
 
@@ -313,36 +323,41 @@ impl EventHandler for Router {
         }
     }
 
-    fn key_down_event(
-        &mut self,
-        keycode: KeyCode,
-        mods: ModifiersState,
-        repeat: bool,
-        character: Option<smol_str::SmolStr>,
-    ) {
+    fn modifiers_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
         if let Some(current) = &mut self.route {
-            if current.has_key_wait(keycode) {
-                return;
-            }
+            current.set_modifiers(mods);
 
             if (keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper)
                 && current.search_nearest_hyperlink_from_pos()
             {
                 window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
                 current.render();
-                return;
             }
-
-            current.process_key_event(keycode, mods, true, repeat, character);
         }
     }
-    fn key_up_event(&mut self, keycode: KeyCode, mods: ModifiersState) {
+
+    fn key_down_event(
+        &mut self,
+        keycode: KeyCode,
+        repeat: bool,
+        character: Option<smol_str::SmolStr>,
+    ) {
+        // FIX: Tab isn't being captured whenever other key is holding
         if let Some(current) = &mut self.route {
             if current.has_key_wait(keycode) {
                 return;
             }
 
-            current.process_key_event(keycode, mods, false, false, None);
+            current.process_key_event(keycode, true, repeat, character);
+        }
+    }
+    fn key_up_event(&mut self, keycode: KeyCode) {
+        if let Some(current) = &mut self.route {
+            if current.has_key_wait(keycode) {
+                return;
+            }
+
+            current.process_key_event(keycode, false, false, None);
             current.render();
         }
     }
@@ -419,7 +434,7 @@ impl EventHandler for Router {
             }
 
             current.scroll(x.into(), y.into());
-            current.render();
+            // current.render();
         }
     }
     fn mouse_button_down_event(&mut self, button: MouseButton, x: f32, y: f32) {
@@ -455,7 +470,6 @@ impl EventHandler for Router {
                 current
                     .sugarloaf
                     .resize(w.try_into().unwrap(), h.try_into().unwrap());
-                current.sugarloaf.calculate_bounds();
             } else {
                 current
                     .sugarloaf

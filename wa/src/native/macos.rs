@@ -684,8 +684,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         astring: ObjcId,
         _replacement_range: NSRange,
     ) {
-        // println!("insertText:replacementRange:");
-
         let string = nsstring_to_string(astring);
         let is_control = string.chars().next().map_or(false, |c| c.is_control());
 
@@ -866,6 +864,20 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             }
         }
     }
+    extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            if let Some(event_handler) = payload.context() {
+                event_handler.focus_event(true);
+            }
+        }
+    }
+    extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
+        if let Some(payload) = get_window_payload(this) {
+            if let Some(event_handler) = payload.context() {
+                event_handler.focus_event(false);
+            }
+        }
+    }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
         if let Some(payload) = get_window_payload(this) {
             unsafe {
@@ -1019,15 +1031,9 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             let repeat: bool = unsafe { msg_send!(event, isARepeat) };
             let unmod = unsafe { msg_send!(event, charactersIgnoringModifiers) };
             let unmod = nsstring_to_string(unmod);
-            let mods = get_event_key_modifier(event);
             let chars = get_event_char(event);
 
-            log::info!(
-                "KEY_DOWN (chars={:?} unmod={:?} modifiers={:?}",
-                chars,
-                unmod,
-                mods
-            );
+            log::info!("KEY_DOWN (chars={:?} unmod={:?}", chars, unmod,);
 
             let old_ime = &payload.ime;
             // unmod is differently depending of the keymap used, for example if you
@@ -1057,12 +1063,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if !had_ime_input {
                 if let Some(key) = get_event_keycode(event) {
                     if let Some(event_handler) = payload.context() {
-                        event_handler.key_down_event(
-                            key,
-                            mods,
-                            repeat,
-                            get_event_char(event),
-                        );
+                        event_handler.key_down_event(key, repeat, get_event_char(event));
                     }
                 }
             }
@@ -1079,11 +1080,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn key_up(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_window_payload(this) {
-            let mods = get_event_key_modifier(event);
             if let Some(key) = get_event_keycode(event) {
-                log::info!("KEY_UP (key={:?} modifiers={:?}", key, mods);
+                log::info!("KEY_UP (key={:?}", key);
                 if let Some(event_handler) = payload.context() {
-                    event_handler.key_up_event(key, mods);
+                    event_handler.key_up_event(key);
                 }
             }
         }
@@ -1100,10 +1100,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if new_pressed ^ old_pressed {
                 if new_pressed {
                     if let Some(event_handler) = payload.context() {
-                        event_handler.key_down_event(keycode, mods, false, None);
+                        event_handler.modifiers_event(keycode, mods);
                     }
                 } else if let Some(event_handler) = payload.context() {
-                    event_handler.key_up_event(keycode, mods);
+                    event_handler.modifiers_event(keycode, mods);
                 }
             }
         }
@@ -1231,8 +1231,12 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         scroll_wheel as extern "C" fn(&Object, Sel, ObjcId),
     );
     decl.add_method(
-        sel!(keyDown:),
-        key_down as extern "C" fn(&Object, Sel, ObjcId),
+        sel!(windowDidBecomeKey:),
+        window_did_become_key as extern "C" fn(&Object, Sel, ObjcId),
+    );
+    decl.add_method(
+        sel!(windowDidResignKey:),
+        window_did_resign_key as extern "C" fn(&Object, Sel, ObjcId),
     );
     decl.add_method(
         sel!(flagsChanged:),
@@ -1259,6 +1263,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         window_did_exit_fullscreen as extern "C" fn(&Object, Sel, ObjcId),
     );
     decl.add_method(sel!(keyUp:), key_up as extern "C" fn(&Object, Sel, ObjcId));
+    decl.add_method(
+        sel!(keyDown:),
+        key_down as extern "C" fn(&Object, Sel, ObjcId),
+    );
 
     decl.add_method(
         sel!(draggingEntered:),
@@ -1821,8 +1829,7 @@ impl Window {
         F: 'static + FnOnce() -> Box<dyn EventHandler>,
     {
         unsafe {
-            let clipboard = Box::new(MacosClipboard);
-
+            // let clipboard = Box::new(MacosClipboard);
             let id = crate::get_handler().lock().next_id();
 
             crate::set_display(
@@ -1831,7 +1838,7 @@ impl Window {
                     ..NativeDisplayData::new(
                         conf.window_width,
                         conf.window_height,
-                        clipboard,
+                        // clipboard,
                     )
                 },
             );
@@ -2024,7 +2031,6 @@ impl Window {
                 height: 200.,
             };
             let _: () = msg_send![*window, setMinSize: min_size];
-
             let _: () = msg_send![*window, setRestorable: NO];
 
             let () = msg_send![*window, makeFirstResponder: **view.as_strong_ptr()];
