@@ -1,7 +1,6 @@
 use rio_backend::error::{RioError, RioErrorLevel};
-use rio_backend::sugarloaf::components::rect::Rect;
 use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Sugarloaf, text::Text, rectangle::Rectangle};
 
 pub struct Assistant {
     pub inner: Option<RioError>,
@@ -48,64 +47,64 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
         //     color: self.named_colors.background.0,
         //     size: [layout.width, layout.height],
         // },
-        Rect {
+        Rectangle {
             position: [0., 30.0],
             color: blue,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [15., layout.margin.top_y + 40.],
             color: yellow,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [30., layout.margin.top_y + 120.],
             color: red,
             size: [30., layout.height],
         },
     ];
 
-    sugarloaf.append_rects(assistant_background);
+    sugarloaf.append_rectangles(&assistant_background);
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., layout.margin.top_y + 50.),
         String::from("Woops! Rio got errors"),
         FONT_ID_BUILTIN,
         28.,
         [1., 1., 1., 1.],
         true,
-    );
+    ));
 
     if let Some(report) = &assistant.inner {
         if report.level == RioErrorLevel::Error {
-            sugarloaf.text(
+            sugarloaf.append_text(Text::new(
                 (70., layout.margin.top_y + 80.),
                 String::from("after fix it, restart the terminal"),
                 FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
                 true,
-            );
+            ));
         }
 
         if report.level == RioErrorLevel::Warning {
-            sugarloaf.text(
+            sugarloaf.append_text(Text::new(
                 (70., layout.margin.top_y + 80.),
                 String::from("(press enter to continue)"),
                 FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
                 true,
-            );
+            ));
         }
 
-        sugarloaf.text(
+        sugarloaf.append_text(Text::new(
             (70., layout.margin.top_y + 170.),
             report.report.to_string(),
             FONT_ID_BUILTIN,
             14.,
             [1., 1., 1., 1.],
             false,
-        );
+        ));
     }
 }

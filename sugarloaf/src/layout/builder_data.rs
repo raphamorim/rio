@@ -11,7 +11,7 @@
 
 use super::span_style::*;
 use super::{SpanId, MAX_ID};
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::fragment::FragmentCursor;
 use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
 use swash::{Setting, Stretch, Style, Weight};
@@ -104,7 +104,7 @@ pub struct SpanData {
     /// Text case transformation.
     pub text_transform: TextTransform,
     /// Cursor
-    pub cursor: SugarCursor,
+    pub cursor: FragmentCursor,
 }
 
 /// Builder state.
@@ -175,7 +175,7 @@ impl BuilderState {
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
-            cursor: SugarCursor::Disabled,
+            cursor: FragmentCursor::Disabled,
             underline: false,
             underline_offset: None,
             underline_color: None,

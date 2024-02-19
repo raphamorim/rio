@@ -4,6 +4,7 @@ pub mod primitives;
 pub mod state;
 mod tree;
 
+use crate::text_area::TextArea;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -18,8 +19,6 @@ use crate::font::Font;
 use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
-use crate::Sugar;
-use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
@@ -245,57 +244,47 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn append_rects(&mut self, rects: Vec<Rect>) {
-        self.state.compute_block(SugarBlock { rects, text: None });
+    pub fn append_text_area(&mut self, text_area: TextArea) {
+        self.state.append_text_area(text_area);
     }
 
     #[inline]
-    pub fn start_line(&mut self) {
-        self.state.compute_line_start();
+    pub fn append_rectangle(&mut self, rect: crate::rectangle::Rectangle) {
+        self.state.append_rectangle(rect);
     }
 
     #[inline]
-    pub fn insert_on_current_line(&mut self, sugar: &Sugar) {
-        self.state.insert_on_current_line(sugar);
+    pub fn append_rectangles(&mut self, rects: &Vec<Rect>) {
+        self.state.append_rectangles(rects);
     }
 
     #[inline]
-    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&Sugar>) {
-        self.state.insert_on_current_line_from_vec(sugar_vec);
+    pub fn append_text(&mut self, text: crate::text::Text) {
+        self.state.append_text(text);
     }
 
-    #[inline]
-    pub fn insert_on_current_line_from_vec_owned(&mut self, sugar_vec: &Vec<Sugar>) {
-        self.state.insert_on_current_line_from_vec_owned(sugar_vec);
-    }
-
-    #[inline]
-    pub fn finish_line(&mut self) {
-        self.state.compute_line_end();
-    }
-
-    #[inline]
-    pub fn text(
-        &mut self,
-        position: (f32, f32),
-        content: String,
-        font_id: usize,
-        font_size: f32,
-        color: [f32; 4],
-        single_line: bool,
-    ) {
-        self.state.compute_block(SugarBlock {
-            rects: vec![],
-            text: Some(SugarText {
-                position,
-                content,
-                font_id,
-                font_size,
-                color,
-                single_line,
-            }),
-        });
-    }
+    // #[inline]
+    // pub fn text(
+    //     &mut self,
+    //     position: (f32, f32),
+    //     content: String,
+    //     font_id: usize,
+    //     font_size: f32,
+    //     color: [f32; 4],
+    //     single_line: bool,
+    // ) {
+    //     self.state.compute_block(SugarBlock {
+    //         rects: vec![],
+    //         text: Some(SugarText {
+    //             position,
+    //             content,
+    //             font_id,
+    //             font_size,
+    //             color,
+    //             single_line,
+    //         }),
+    //     });
+    // }
 
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -345,6 +334,8 @@ impl Sugarloaf {
             self.clean_state();
             return;
         }
+
+        println!("pq n ta passando");
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",

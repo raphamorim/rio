@@ -18,7 +18,7 @@ pub use crate::components::rich_text::image_cache::{
 };
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text::*;
-use crate::SugarCursor;
+use crate::fragment::FragmentCursor;
 
 use std::borrow::Borrow;
 
@@ -182,7 +182,7 @@ impl Compositor {
                     }
 
                     match style.cursor {
-                        SugarCursor::Block(cursor_color) => {
+                        FragmentCursor::Block(cursor_color) => {
                             self.batches.add_rect(
                                 &Rect::new(
                                     rect.x,
@@ -194,7 +194,7 @@ impl Compositor {
                                 &cursor_color,
                             );
                         }
-                        SugarCursor::Caret(cursor_color) => {
+                        FragmentCursor::Caret(cursor_color) => {
                             self.batches.add_rect(
                                 &Rect::new(rect.x, style.topline, 3.0, style.line_height),
                                 depth - 1.0,

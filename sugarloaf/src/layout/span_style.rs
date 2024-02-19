@@ -9,7 +9,7 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::fragment::FragmentCursor;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};
 
@@ -33,7 +33,7 @@ pub enum SpanStyle<'a> {
     /// Font style.
     Style(Style),
     /// Cursor.
-    Cursor(SugarCursor),
+    Cursor(FragmentCursor),
     /// Font feature settings.
     Features(Cow<'a, [Setting<u16>]>),
     /// Font variation settings.

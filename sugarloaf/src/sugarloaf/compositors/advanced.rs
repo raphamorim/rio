@@ -6,11 +6,13 @@
 // build_complex_content and update_layout was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
+use crate::text_area::TextArea;
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
 use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
-use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
+use crate::{Content, ContentBuilder};
+use crate::sugarloaf::primitives::fragment::*;
 
 pub struct Advanced {
     pub render_data: Paragraph,
@@ -117,7 +119,7 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
+    pub fn update(&mut self, line: usize, text_area: &TextArea, tree: &SugarTree) {
         if line == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
@@ -126,7 +128,7 @@ impl Advanced {
             ]);
         }
 
-        let line = &tree.lines[line];
+        let line = &text_area.inner[line];
 
         let underline = &[
             SpanStyle::Underline(true),
@@ -167,7 +169,7 @@ impl Advanced {
 
             let mut has_underline_cursor = false;
             match line[i].cursor {
-                SugarCursor::Underline(cursor_color) => {
+                FragmentCursor::Underline(cursor_color) => {
                     let underline_cursor = &[
                         SpanStyle::UnderlineColor(cursor_color),
                         SpanStyle::Underline(true),
@@ -178,15 +180,15 @@ impl Advanced {
                     span_counter += 1;
                     has_underline_cursor = true;
                 }
-                SugarCursor::Block(cursor_color) => {
+                FragmentCursor::Block(cursor_color) => {
                     self.content_builder.enter_span(&[SpanStyle::Cursor(
-                        SugarCursor::Block(cursor_color),
+                        FragmentCursor::Block(cursor_color),
                     )]);
                     span_counter += 1;
                 }
-                SugarCursor::Caret(cursor_color) => {
+                FragmentCursor::Caret(cursor_color) => {
                     self.content_builder.enter_span(&[SpanStyle::Cursor(
-                        SugarCursor::Caret(cursor_color),
+                        FragmentCursor::Caret(cursor_color),
                     )]);
                     span_counter += 1;
                 }
@@ -194,13 +196,13 @@ impl Advanced {
             }
 
             match &line[i].decoration {
-                SugarDecoration::Underline => {
+                &FragmentDecoration::Underline => {
                     if !has_underline_cursor {
                         self.content_builder.enter_span(underline);
                         span_counter += 1;
                     }
                 }
-                SugarDecoration::Strikethrough => {
+                &FragmentDecoration::Strikethrough => {
                     self.content_builder.enter_span(strikethrough);
                     span_counter += 1;
                 }

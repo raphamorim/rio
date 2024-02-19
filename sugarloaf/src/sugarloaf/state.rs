@@ -3,19 +3,21 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::text::Text;
+use crate::rectangle::Rectangle;
+use crate::text_area::TextArea;
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{SugarBlock, SugarLine};
+// use crate::{SugarBlock, SugarLine};
 
 pub struct SugarState {
     pub current: SugarTree,
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
-    current_line: usize,
     pub compositors: SugarCompositors,
     level: SugarCompositorLevel,
     // TODO: Decide if graphics should be in SugarTree or SugarState
@@ -33,7 +35,6 @@ impl SugarState {
             ..Default::default()
         };
         SugarState {
-            current_line: 0,
             compositors: SugarCompositors::default(),
             level,
             graphics: SugarloafGraphics::default(),
@@ -55,57 +56,29 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_line_start(&mut self) {
-        self.next.lines.push(SugarLine::default());
-        self.current_line = self.next.lines.len() - 1;
-    }
-
-    #[inline]
-    pub fn compute_line_end(&mut self) {
-        match self.level {
-            SugarCompositorLevel::Elementary => self
-                .compositors
-                .elementary
-                .update_tree_with_new_line(self.current_line, &self.next),
-            SugarCompositorLevel::Advanced => self
-                .compositors
-                .advanced
-                .update_tree_with_new_line(self.current_line, &self.next),
-        }
-    }
-
-    #[inline]
-    pub fn insert_on_current_line(&mut self, sugar: &crate::Sugar) {
-        self.next.lines[self.current_line].insert(sugar);
-    }
-
-    #[inline]
-    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&crate::Sugar>) {
-        for sugar in sugar_vec {
-            self.next.lines[self.current_line].insert(sugar);
-        }
-    }
-
-    #[inline]
-    pub fn insert_on_current_line_from_vec_owned(
-        &mut self,
-        sugar_vec: &Vec<crate::Sugar>,
-    ) {
-        for sugar in sugar_vec {
-            self.next.lines[self.current_line].insert(sugar);
-        }
-    }
-
-    #[inline]
     pub fn set_fonts(&mut self, fonts: FontLibrary) {
         self.compositors.elementary.set_fonts(fonts.font_arcs());
         self.compositors.advanced.set_fonts(fonts);
     }
 
     #[inline]
-    pub fn compute_block(&mut self, block: SugarBlock) {
-        // Block are used only with elementary renderer
-        self.next.blocks.push(block);
+    pub fn append_text_area(&mut self, text_area: TextArea) {
+        self.next.text_areas.push(text_area);
+    }
+
+    #[inline]
+    pub fn append_text(&mut self, text: Text) {
+        self.next.texts.push(text);
+    }
+
+    #[inline]
+    pub fn append_rectangle(&mut self, rectangle: Rectangle) {
+        self.next.rectangles.push(rectangle);
+    }
+
+    #[inline]
+    pub fn append_rectangles(&mut self, rectangles: &Vec<Rectangle>) {
+        self.next.rectangles.extend(rectangles);
     }
 
     #[inline]
@@ -136,11 +109,28 @@ impl SugarState {
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
     ) -> bool {
-        if self.latest_change == SugarTreeDiff::Equal {
-            return false;
-        }
+        // if self.latest_change == SugarTreeDiff::Equal {
+        //     return false;
+        // }
 
         // let start = std::time::Instant::now();
+        // if is text area:
+
+        for text_area in &self.current.text_areas {
+            println!("{:?}", text_area.inner.len());
+            for idx in 0..text_area.inner.len() - 1 {
+                match self.level {
+                    SugarCompositorLevel::Elementary => self
+                        .compositors
+                        .elementary
+                        .update(idx, &text_area, &self.current),
+                    SugarCompositorLevel::Advanced => self
+                        .compositors
+                        .advanced
+                        .update(idx, &text_area, &self.current),
+                }
+            }
+        }
 
         if self.level.is_advanced() {
             advance_brush.prepare(context, self);
@@ -150,10 +140,19 @@ impl SugarState {
             }
         }
 
-        for section in &self.compositors.elementary.blocks_sections {
+        for section in &self.compositors.elementary.text_sections {
             elementary_brush.queue(section);
-            elementary_brush.keep_cached(section);
         }
+
+        for text in &self.current.texts {
+            elementary_brush.queue(
+                self.compositors
+                    .elementary
+                    .create_section_from_text(text, &self.current),
+            );
+        }
+
+        self.compositors.elementary.rects.extend(&self.current.rectangles);
 
         // let duration = start.elapsed();
         // println!(
@@ -166,29 +165,29 @@ impl SugarState {
         // ...
         // If current tree has blocks and compositor has empty blocks
         // It means that's either the first render or blocks were erased on compute_diff() step
-        if !self.current.blocks.is_empty()
-            && self.compositors.elementary.blocks_are_empty()
-        {
-            for block in &self.current.blocks {
-                if let Some(text) = &block.text {
-                    elementary_brush.queue(
-                        self.compositors
-                            .elementary
-                            .create_section_from_text(text, &self.current),
-                    );
-                }
+        // if !self.current.texts.is_empty()
+        //     && self.compositors.elementary.blocks_are_empty()
+        // {
+        //     for block in &self.current.blocks {
+        //         if let Some(text) = &block.text {
+        //             elementary_brush.queue(
+        //                 self.compositors
+        //                     .elementary
+        //                     .create_section_from_text(text, &self.current),
+        //             );
+        //         }
 
-                if !block.rects.is_empty() {
-                    self.compositors.elementary.extend_block_rects(&block.rects);
-                }
-            }
-        }
+        //         if !block.rects.is_empty() {
+        //             self.compositors.elementary.extend_block_rects(&block.rects);
+        //         }
+        //     }
+        // }
 
         // Add block rects to main rects
-        self.compositors
-            .elementary
-            .rects
-            .extend(&self.compositors.elementary.blocks_rects);
+        // self.compositors
+        //     .elementary
+        //     .rects
+        //     .extend(&self.compositors.elementary.blocks_rects);
 
         if self.compositors.elementary.should_resize {
             rect_brush.resize(context);
@@ -278,9 +277,7 @@ impl SugarState {
     #[inline]
     pub fn reset_next(&mut self) {
         self.next.layout = self.current.layout;
-        self.current_line = 0;
-        self.next.lines.clear();
-        self.next.blocks.clear();
+        self.next.clear();
     }
 
     #[inline]
@@ -303,9 +300,9 @@ impl SugarState {
         if !self.current.is_empty() {
             self.latest_change = self.current.calculate_diff(&self.next);
             match &self.latest_change {
-                SugarTreeDiff::Equal => {
-                    // Do nothing
-                }
+                // SugarTreeDiff::Equal => {
+                //     // Do nothing
+                // }
                 SugarTreeDiff::LayoutIsDifferent => {
                     std::mem::swap(&mut self.current, &mut self.next);
                     if self.level.is_advanced() {
@@ -321,9 +318,9 @@ impl SugarState {
                 }
                 SugarTreeDiff::Changes(changes) => {
                     // Blocks updates are placed in the first position
-                    if !changes.is_empty() && changes[0].is_block() {
+                    // if !changes.is_empty() && changes[0].is_block() {
                         self.compositors.elementary.clean_blocks();
-                    }
+                    // }
                     //     // println!("change {:?}", change);
                     //     if let Some(offs) = self.content.insert(0, change.after.content) {
                     //         // inserted = Some(offs);

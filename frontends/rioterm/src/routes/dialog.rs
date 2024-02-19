@@ -1,5 +1,4 @@
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Sugarloaf, rectangle::Rectangle, text::Text};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
@@ -11,51 +10,51 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let height = layout.height / layout.scale_factor;
 
     let assistant_background = vec![
-        Rect {
+        Rectangle {
             position: [0., 30.0],
             color: blue,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [15., layout.margin.top_y + 40.],
             color: yellow,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [30., layout.margin.top_y + 120.],
             color: red,
             size: [30., layout.height],
         },
     ];
 
-    sugarloaf.append_rects(assistant_background);
+    sugarloaf.append_rectangles(&assistant_background);
 
     let mid_screen = height / 2.;
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., mid_screen - 10.),
         content.to_string(),
         8,
         48.,
         [1., 1., 1., 1.],
         true,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., mid_screen + 30.),
         String::from("To quit press enter key"),
         8,
         18.,
         yellow,
         true,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., mid_screen + 50.),
         String::from("To continue press escape key"),
         8,
         18.,
         blue,
         true,
-    );
+    ));
 }

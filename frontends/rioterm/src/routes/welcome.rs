@@ -1,5 +1,4 @@
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Sugarloaf, rectangle::Rectangle, text::Text};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf) {
@@ -11,109 +10,109 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     let width = layout.width / layout.dimensions.scale;
 
     let assistant_background = vec![
-        Rect {
+        Rectangle {
             position: [0., 30.0],
             color: blue,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [15., layout.margin.top_y + 40.],
             color: yellow,
             size: [30., layout.height],
         },
-        Rect {
+        Rectangle {
             position: [30., layout.margin.top_y + 120.],
             color: red,
             size: [30., layout.height],
         },
     ];
 
-    sugarloaf.append_rects(assistant_background);
+    sugarloaf.append_rectangles(&assistant_background);
 
     if width <= 440. {
-        sugarloaf.text(
+        sugarloaf.append_text(Text::new(
             (70., layout.margin.top_y + 50.),
             String::from("Welcome to\nRio Terminal"),
             8,
             28.,
             [1., 1., 1., 1.],
             false,
-        );
+        ));
 
-        sugarloaf.text(
+        sugarloaf.append_text(Text::new(
             (70., layout.margin.top_y + 100.),
             String::from("(enter to continue)"),
             8,
             18.,
             yellow,
             false,
-        );
+        ));
 
-        sugarloaf.text(
+        sugarloaf.append_text(Text::new(
             (width - 50., layout.margin.top_y + 320.),
             String::from("󰌑"),
             7,
             26.,
             yellow,
             true,
-        );
+        ));
 
-        sugarloaf.text(
+        sugarloaf.append_text(Text::new(
             (width - 50., layout.margin.top_y + 340.),
             String::from("nice"),
             8,
             14.,
             yellow,
             true,
-        );
+        ));
 
         return;
     }
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., layout.margin.top_y + 50.),
         String::from("Welcome to Rio Terminal"),
         8,
         28.,
         [1., 1., 1., 1.],
         true,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., layout.margin.top_y + 80.),
         String::from("(press enter to continue)"),
         8,
         18.,
         yellow,
         true,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (70., layout.margin.top_y + 220.),
         welcome_content(),
         8,
         18.,
         [1., 1., 1., 1.],
         false,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (width - 50., layout.margin.top_y + 320.),
         String::from("󰌑"),
         7,
         26.,
         yellow,
         true,
-    );
+    ));
 
-    sugarloaf.text(
+    sugarloaf.append_text(Text::new(
         (width - 50., layout.margin.top_y + 340.),
         String::from("nice"),
         8,
         14.,
         yellow,
         true,
-    );
+    ));
 }
 
 #[inline]

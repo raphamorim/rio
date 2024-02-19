@@ -13,8 +13,7 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
-use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+use rio_backend::sugarloaf::{Sugarloaf, text_area::TextArea, text::Text, fragment::{Fragment, FragmentStyle, FragmentCursor, FragmentDecoration}};
 #[cfg(target_os = "macos")]
 use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
@@ -169,7 +168,7 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar(&self, square: &Square) -> Sugar {
+    fn create_sugar(&self, square: &Square) -> Fragment {
         let flags = square.flags;
 
         let mut foreground_color = self.compute_fg_color(square);
@@ -181,7 +180,7 @@ impl State {
             square.c
         };
 
-        let style = SugarStyle {
+        let style = FragmentStyle {
             is_italic: flags.contains(Flags::ITALIC),
             is_bold_italic: flags.contains(Flags::BOLD_ITALIC),
             is_bold: flags.contains(Flags::BOLD),
@@ -191,40 +190,34 @@ impl State {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
-        let mut decoration = SugarDecoration::Disabled;
+        let mut decoration = FragmentDecoration::Disabled;
         if flags.contains(Flags::UNDERLINE) {
-            decoration = SugarDecoration::Underline;
+            decoration = FragmentDecoration::Underline;
         } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = SugarDecoration::Strikethrough;
+            decoration = FragmentDecoration::Strikethrough;
         }
 
-        Sugar {
+        Fragment {
             content,
             repeated: 0,
             foreground_color,
             background_color,
             style,
             decoration,
-            media: None,
-            cursor: SugarCursor::Disabled,
+            // media: None,
+            cursor: FragmentCursor::Disabled,
         }
     }
 
     #[inline]
-    fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.decoration = SugarDecoration::Underline;
-        sugar
-    }
-
-    #[inline]
-    fn create_sugar_line(
+    fn update_text_area(
         &mut self,
-        sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
         has_cursor: bool,
         current_line: pos::Line,
+        text_area: &mut TextArea,
     ) {
-        sugarloaf.start_line();
+        text_area.new_line();
 
         let columns: usize = row.len();
         for column in 0..columns {
@@ -234,13 +227,13 @@ impl State {
                 continue;
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
-                continue;
-            }
+            // if square.flags.contains(Flags::GRAPHICS) {
+            //     sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
+            //     continue;
+            // }
 
             if has_cursor && column == self.cursor.state.pos.col {
-                sugarloaf.insert_on_current_line(&self.create_cursor(square));
+                text_area.insert_on_current_line(&self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -248,8 +241,9 @@ impl State {
                     .unwrap()
                     .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
-                let sugar = self.create_sugar(square);
-                sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
+                let mut sugar = self.create_sugar(square);
+                sugar.decoration = FragmentDecoration::Underline;
+                text_area.insert_on_current_line(&sugar);
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
@@ -263,7 +257,7 @@ impl State {
                     square.c
                 };
 
-                let selected_sugar = Sugar {
+                let selected_sugar = Fragment {
                     content,
                     foreground_color: if self.ignore_selection_fg_color {
                         self.compute_fg_color(square)
@@ -271,11 +265,11 @@ impl State {
                         self.named_colors.selection_foreground
                     },
                     background_color: self.named_colors.selection_background,
-                    ..Sugar::default()
+                    ..Fragment::default()
                 };
-                sugarloaf.insert_on_current_line(&selected_sugar);
+                text_area.insert_on_current_line(&selected_sugar);
             } else {
-                sugarloaf.insert_on_current_line(&self.create_sugar(square));
+                text_area.insert_on_current_line(&self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -283,8 +277,6 @@ impl State {
                 break;
             }
         }
-
-        sugarloaf.finish_line();
     }
 
     #[inline]
@@ -437,21 +429,21 @@ impl State {
         color
     }
 
-    #[inline]
-    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let media = &square.graphics().unwrap()[0].texture;
-        Sugar {
-            media: Some(SugarGraphic {
-                id: media.id,
-                width: media.width,
-                height: media.height,
-            }),
-            ..Sugar::default()
-        }
-    }
+    // #[inline]
+    // fn create_graphic_sugar(&self, square: &Square) -> Fragment {
+    //     let media = &square.graphics().unwrap()[0].texture;
+    //     Fragment {
+    //         media: Some(FragmentGraphic {
+    //             id: media.id,
+    //             width: media.width,
+    //             height: media.height,
+    //         }),
+    //         ..Fragment::default()
+    //     }
+    // }
 
     #[inline]
-    fn create_sugar_cursor(&self) -> SugarCursor {
+    fn create_sugar_cursor(&self) -> FragmentCursor {
         let color = if !self.is_vi_mode_enabled {
             self.named_colors.cursor
         } else {
@@ -459,26 +451,26 @@ impl State {
         };
 
         match self.cursor.state.content {
-            CursorShape::Block => SugarCursor::Block(color),
-            CursorShape::Underline => SugarCursor::Underline(color),
-            CursorShape::Beam => SugarCursor::Caret(color),
-            CursorShape::Hidden => SugarCursor::Disabled,
+            CursorShape::Block => FragmentCursor::Block(color),
+            CursorShape::Underline => FragmentCursor::Underline(color),
+            CursorShape::Beam => FragmentCursor::Caret(color),
+            CursorShape::Hidden => FragmentCursor::Disabled,
         }
     }
 
     #[inline]
-    fn create_cursor(&self, square: &Square) -> Sugar {
-        let mut sugar = Sugar {
+    fn create_cursor(&self, square: &Square) -> Fragment {
+        let mut sugar = Fragment {
             content: square.c,
             foreground_color: self.compute_fg_color(square),
             background_color: self.compute_bg_color(square),
             cursor: self.create_sugar_cursor(),
-            style: SugarStyle {
+            style: FragmentStyle {
                 is_italic: square.flags.contains(Flags::ITALIC),
                 is_bold_italic: square.flags.contains(Flags::BOLD_ITALIC),
                 is_bold: square.flags.contains(Flags::BOLD),
             },
-            ..Sugar::default()
+            ..Fragment::default()
         };
 
         if square.flags.contains(Flags::INVERSE) {
@@ -560,15 +552,18 @@ impl State {
             }
         }
 
+        let mut text_area = TextArea::default();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-            self.create_sugar_line(
-                sugarloaf,
+            self.update_text_area(
                 row,
                 has_cursor,
                 pos::Line((i as i32) - display_offset),
+                &mut text_area,
             );
         }
+
+        sugarloaf.append_text_area(text_area);
 
         self.navigation.content(
             (layout.width, layout.height),
@@ -579,16 +574,18 @@ impl State {
             context_manager.len(),
         );
 
-        sugarloaf.append_rects(self.navigation.rects.to_owned());
+        sugarloaf.append_rectangles(&self.navigation.rects);
 
         for text in self.navigation.texts.iter() {
-            sugarloaf.text(
-                text.position,
-                text.content.to_owned(),
-                text.font_id,
-                text.font_size,
-                text.color,
-                true,
+            sugarloaf.append_text(
+                Text::new(
+                    text.position,
+                    text.content.to_owned(),
+                    text.font_id,
+                    text.font_size,
+                    text.color,
+                    true,
+                )
             );
         }
     }

@@ -57,7 +57,7 @@ impl SpanId {
     }
 }
 
-use crate::sugarloaf::primitives::SugarloafStyle;
+use crate::sugarloaf::primitives::style::SugarloafStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delta<T: Default> {

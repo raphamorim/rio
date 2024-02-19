@@ -7,7 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use super::{Alignment, Glyph, SpanId};
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::fragment::FragmentCursor;
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
@@ -192,7 +192,7 @@ pub struct RunData {
     pub strikeout_offset: f32,
     pub strikeout_size: f32,
     pub advance: f32,
-    pub cursor: SugarCursor,
+    pub cursor: FragmentCursor,
 }
 
 #[derive(Clone, Default)]

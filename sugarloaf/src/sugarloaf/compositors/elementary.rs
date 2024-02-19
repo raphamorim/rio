@@ -3,16 +3,18 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::sugarloaf::TextArea;
+use crate::text::Text;
 use crate::components::text::glyph::{FontId, GlyphCruncher, OwnedSection};
 use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
 use crate::sugarloaf::graphics;
-use crate::sugarloaf::primitives;
+use crate::sugarloaf::primitives::fragment::*;
 use crate::sugarloaf::text;
 use crate::sugarloaf::tree::SugarTree;
-use crate::sugarloaf::{PxScale, Rect, SugarText};
+use crate::sugarloaf::{PxScale, Rect};
 use ab_glyph::{Font, FontArc};
 use fnv::FnvHashMap;
 use unicode_width::UnicodeWidthChar;
@@ -40,9 +42,8 @@ struct GraphicRect {
 pub struct Elementary {
     sugar_cache: FnvHashMap<char, CachedSugar>,
     pub rects: Vec<Rect>,
-    pub blocks_rects: Vec<Rect>,
     pub sections: Vec<OwnedSection>,
-    pub blocks_sections: Vec<OwnedSection>,
+    pub text_sections: Vec<OwnedSection>,
     pub should_resize: bool,
     text_y: f32,
     current_row: u16,
@@ -58,29 +59,17 @@ impl Elementary {
 
     #[inline]
     pub fn rects(&mut self) -> &Vec<Rect> {
-        self.rects.extend(&self.blocks_rects);
         &self.rects
     }
 
     #[inline]
     pub fn clean_blocks(&mut self) {
-        self.blocks_sections.clear();
-        self.blocks_rects.clear();
-    }
-
-    #[inline]
-    pub fn blocks_are_empty(&self) -> bool {
-        self.blocks_sections.is_empty() && self.blocks_rects.is_empty()
+        self.text_sections.clear();
     }
 
     #[inline]
     pub fn set_should_resize(&mut self) {
         self.should_resize = true;
-    }
-
-    #[inline]
-    pub fn extend_block_rects(&mut self, rects: &Vec<Rect>) {
-        self.blocks_rects.extend(rects);
     }
 
     #[inline]
@@ -125,7 +114,7 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn get_font_id(&mut self, sugar: &crate::Sugar, tree: &SugarTree) -> CachedSugar {
+    pub fn get_font_id(&mut self, sugar: &Fragment, tree: &SugarTree) -> CachedSugar {
         if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
             return *cached_sugar;
         }
@@ -215,8 +204,8 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
-        let line = &tree.lines[line];
+    pub fn update(&mut self, line: usize, text_area: &TextArea, tree: &SugarTree) {
+        let line = &text_area.inner[line];
         let mut x = 0.;
         let mod_pos_y = tree.layout.style.screen_position.1;
         let mod_text_y = tree.layout.dimensions.height;
@@ -308,21 +297,21 @@ impl Elementary {
             });
 
             match &line[i].cursor {
-                primitives::SugarCursor::Block(cursor_color) => {
+                FragmentCursor::Block(cursor_color) => {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
                         size: [width_bound * quantity, unscaled_sugar_height],
                     });
                 }
-                primitives::SugarCursor::Caret(cursor_color) => {
+                FragmentCursor::Caret(cursor_color) => {
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, scaled_rect_pos_y],
                         color: *cursor_color,
                         size: [(width_bound * 0.02) * quantity, unscaled_sugar_height],
                     });
                 }
-                primitives::SugarCursor::Underline(cursor_color) => {
+                FragmentCursor::Underline(cursor_color) => {
                     let dec_pos_y = (scaled_rect_pos_y) + tree.layout.font_size - 2.5;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
@@ -330,11 +319,11 @@ impl Elementary {
                         size: [(width_bound * 0.1) * quantity, unscaled_sugar_height],
                     });
                 }
-                primitives::SugarCursor::Disabled => {}
+                FragmentCursor::Disabled => {}
             }
 
             match &line[i].decoration {
-                primitives::SugarDecoration::Underline => {
+               &FragmentDecoration::Underline => {
                     let dec_pos_y = (scaled_rect_pos_y) + tree.layout.font_size - 1.;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
@@ -342,7 +331,7 @@ impl Elementary {
                         size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
-                primitives::SugarDecoration::Strikethrough => {
+               &FragmentDecoration::Strikethrough => {
                     let dec_pos_y = (scaled_rect_pos_y) + tree.layout.font_size / 2.0;
                     self.rects.push(Rect {
                         position: [scaled_rect_pos_x, dec_pos_y],
@@ -350,30 +339,30 @@ impl Elementary {
                         size: [(width_bound * quantity), unscaled_sugar_height * 0.025],
                     });
                 }
-                &primitives::SugarDecoration::Disabled => {}
+                &FragmentDecoration::Disabled => {}
             }
 
-            if let Some(sugar_media) = &line[i].media {
-                if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
-                    rect.columns += 1.0;
-                    rect.end_row = self.current_row.into();
-                } else {
-                    // println!("miss {:?}", sugar_media.id);
-                    self.graphic_rects.insert(
-                        sugar_media.id,
-                        GraphicRect {
-                            id: sugar_media.id,
-                            height: sugar_media.height,
-                            width: sugar_media.width,
-                            pos_x: scaled_rect_pos_x,
-                            pos_y: scaled_rect_pos_y,
-                            columns: 1.0,
-                            start_row: 1.0,
-                            end_row: 1.0,
-                        },
-                    );
-                }
-            }
+            // if let Some(sugar_media) = &line[i].media {
+            //     if let Some(rect) = self.graphic_rects.get_mut(&sugar_media.id) {
+            //         rect.columns += 1.0;
+            //         rect.end_row = self.current_row.into();
+            //     } else {
+            //         // println!("miss {:?}", sugar_media.id);
+            //         self.graphic_rects.insert(
+            //             sugar_media.id,
+            //             GraphicRect {
+            //                 id: sugar_media.id,
+            //                 height: sugar_media.height,
+            //                 width: sugar_media.width,
+            //                 pos_x: scaled_rect_pos_x,
+            //                 pos_y: scaled_rect_pos_y,
+            //                 columns: 1.0,
+            //                 start_row: 1.0,
+            //                 end_row: 1.0,
+            //             },
+            //         );
+            //     }
+            // }
 
             x += add_pos_x * quantity;
         }
@@ -385,22 +374,22 @@ impl Elementary {
     #[inline]
     pub fn create_section_from_text(
         &mut self,
-        sugar_text: &SugarText,
+        text: &Text,
         tree: &SugarTree,
     ) -> &OwnedSection {
-        let font_id = FontId(sugar_text.font_id);
+        let font_id = FontId(text.font_id);
 
-        let text = crate::components::text::OwnedText {
-            text: sugar_text.content.to_owned(),
-            scale: PxScale::from(sugar_text.font_size * tree.layout.dimensions.scale),
+        let owned_text = crate::components::text::OwnedText {
+            text: text.content.to_owned(),
+            scale: PxScale::from(text.font_size * tree.layout.dimensions.scale),
             font_id,
             extra: crate::components::text::Extra {
-                color: sugar_text.color,
+                color: text.color,
                 z: 0.0,
             },
         };
 
-        let layout = if sugar_text.single_line {
+        let layout = if text.single_line {
             crate::components::text::glyph::Layout::default_single_line()
                 .v_align(crate::components::text::glyph::VerticalAlign::Center)
                 .h_align(crate::components::text::glyph::HorizontalAlign::Left)
@@ -412,16 +401,16 @@ impl Elementary {
 
         let section = crate::components::text::OwnedSection {
             screen_position: (
-                sugar_text.position.0 * tree.layout.dimensions.scale,
-                sugar_text.position.1 * tree.layout.dimensions.scale,
+                text.position.0 * tree.layout.dimensions.scale,
+                text.position.1 * tree.layout.dimensions.scale,
             ),
             bounds: (tree.layout.width, tree.layout.height),
-            text: vec![text],
+            text: vec![owned_text],
             layout,
         };
 
-        self.blocks_sections.push(section);
+        self.text_sections.push(section);
 
-        &self.blocks_sections[self.blocks_sections.len() - 1]
+        &self.text_sections[self.text_sections.len() - 1]
     }
 }
