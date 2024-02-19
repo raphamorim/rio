@@ -325,7 +325,6 @@ impl RichTextBrush {
             &state.compositors.advanced.render_data_sugar,
             state.compositors.advanced.font_library(),
         );
-        println!("dimensions: {:?}", dimensions);
         if dimensions.0 > 0. && dimensions.1 > 0. {
             Some(dimensions)
         } else {

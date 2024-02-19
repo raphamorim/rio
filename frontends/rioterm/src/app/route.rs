@@ -1521,7 +1521,7 @@ impl Route {
             return;
         };
 
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         match self.path {
             RoutePath::Assistant => {
                 assistant::screen(&mut self.sugarloaf, &self.assistant)
@@ -1564,7 +1564,7 @@ impl Route {
 
         self.sugarloaf.render();
 
-        let duration = start.elapsed();
-        println!("Time elapsed in render() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in render() is: {:?}", duration);
     }
 }
