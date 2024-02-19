@@ -18,8 +18,7 @@ impl Default for NavigationMode {
     fn default() -> NavigationMode {
         #[cfg(target_os = "macos")]
         {
-            NavigationMode::Breadcrumb
-            // NativeTab
+            NavigationMode::NativeTab
         }
 
         #[cfg(not(target_os = "macos"))]
