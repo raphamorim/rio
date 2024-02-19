@@ -59,6 +59,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    //return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    
     var alpha: f32 = textureSample(font_tex, font_sampler, input.f_tex_pos).r;
 
     if (alpha <= 0.0) {

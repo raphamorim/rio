@@ -98,8 +98,7 @@ impl Sequencer {
                                             .window
                                             .screen
                                             .sugarloaf
-                                            .graphics
-                                            .add(graphic_data);
+                                            .add_graphic(graphic_data);
                                     }
 
                                     for graphic_data in graphic_queues.remove_queue {
@@ -107,8 +106,7 @@ impl Sequencer {
                                             .window
                                             .screen
                                             .sugarloaf
-                                            .graphics
-                                            .remove(&graphic_data);
+                                            .remove_graphic(&graphic_data);
                                     }
                                 }
                             }
@@ -674,16 +672,10 @@ impl Sequencer {
                         let old_point =
                             route.window.screen.mouse_position(display_offset);
 
-                        let x = x.clamp(
-                            0.0,
-                            (route.window.screen.sugarloaf.layout.width as i32 - 1)
-                                .into(),
-                        ) as usize;
-                        let y = y.clamp(
-                            0.0,
-                            (route.window.screen.sugarloaf.layout.height as i32 - 1)
-                                .into(),
-                        ) as usize;
+                        let layout = route.window.screen.sugarloaf.layout();
+
+                        let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
+                        let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                         route.window.screen.mouse.x = x;
                         route.window.screen.mouse.y = y;
 
@@ -785,10 +777,9 @@ impl Sequencer {
 
                         match delta {
                             MouseScrollDelta::LineDelta(columns, lines) => {
-                                let new_scroll_px_x = columns
-                                    * route.window.screen.sugarloaf.layout.font_size;
-                                let new_scroll_px_y = lines
-                                    * route.window.screen.sugarloaf.layout.font_size;
+                                let layout = route.window.screen.sugarloaf.layout();
+                                let new_scroll_px_x = columns * layout.font_size;
+                                let new_scroll_px_y = lines * layout.font_size;
                                 route.window.screen.scroll(
                                     new_scroll_px_x as f64,
                                     new_scroll_px_y as f64,

@@ -4,7 +4,6 @@ extern crate sugarloaf;
 use crate::layout::SugarloafLayout;
 use criterion::{criterion_group, criterion_main, Criterion};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::core::Sugar;
 use sugarloaf::*;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
@@ -34,8 +33,8 @@ fn bench_sugar_pile(c: &mut Criterion) {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -46,7 +45,6 @@ fn bench_sugar_pile(c: &mut Criterion) {
         scale_factor as f32,
         font_size,
         line_height,
-        (2, 1),
     );
 
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
@@ -59,46 +57,34 @@ fn bench_sugar_pile(c: &mut Criterion) {
     .expect("Sugarloaf instance should be created");
 
     sugarloaf.set_background_color(wgpu::Color::RED);
-    sugarloaf.calculate_bounds();
 
     c.bench_function("bench_sugar_pile", |b| {
         b.iter(|| {
-            let mut pile = vec![];
-            let mut pile2 = vec![];
-            let mut pile3 = vec![];
+            sugarloaf.start_line();
             for _i in 0..NUM {
-                pile.push(Sugar {
+                sugarloaf.insert_on_current_line(&Sugar {
                     content: ' ',
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Sugar::default()
                 });
 
-                pile2.push(Sugar {
+                sugarloaf.insert_on_current_line(&Sugar {
                     content: '«',
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Sugar::default()
                 });
 
-                pile3.push(Sugar {
+                sugarloaf.insert_on_current_line(&Sugar {
                     content: '≥',
                     foreground_color: [0.0, 0.0, 0.0, 1.0],
                     background_color: [0.0, 1.0, 1.0, 1.0],
-                    style: None,
-                    media: None,
-                    decoration: None,
+                    ..Sugar::default()
                 });
             }
 
-            sugarloaf.stack(pile);
-            sugarloaf.stack(pile2);
-            sugarloaf.stack(pile3);
-
+            sugarloaf.finish_line();
             sugarloaf.render();
         })
     });

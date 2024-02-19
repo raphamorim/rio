@@ -185,7 +185,7 @@ impl LayerBrush {
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("iced_wgpu image shader"),
+            label: Some("layer image shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
                 "image.wgsl"
             ))),
@@ -308,7 +308,7 @@ impl LayerBrush {
         // transformation: [f32; 16],
         // _scale: f32,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
@@ -377,7 +377,7 @@ impl LayerBrush {
         // transformation: [f32; 16],
         // _scale: f32,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
@@ -438,16 +438,24 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
+    #[inline]
     pub fn render<'a>(
         &'a self,
         layer: usize,
-        bounds: Rectangle<u32>,
         render_pass: &mut wgpu::RenderPass<'a>,
+        rect_bounds: Option<Rectangle<u32>>,
     ) {
         if let Some(layer) = self.layers.get(layer) {
             render_pass.set_pipeline(&self.pipeline);
 
-            render_pass.set_scissor_rect(bounds.x, bounds.y, bounds.width, bounds.height);
+            if let Some(bounds) = rect_bounds {
+                render_pass.set_scissor_rect(
+                    bounds.x,
+                    bounds.y,
+                    bounds.width,
+                    bounds.height,
+                );
+            }
 
             render_pass.set_bind_group(1, &self.texture, &[]);
             render_pass

@@ -55,7 +55,7 @@ fn vertex(pos: [f32; 2]) -> Vertex {
 
 const QUAD_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, PartialEq, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Rect {
     /// The position of the [`Rect`].
@@ -104,7 +104,6 @@ pub struct RectBrush {
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
-    scale: f32,
 }
 
 impl RectBrush {
@@ -231,7 +230,6 @@ impl RectBrush {
 
         // Done
         RectBrush {
-            scale: context.scale,
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),
@@ -243,69 +241,39 @@ impl RectBrush {
         }
     }
 
-    // fn update(&mut self, _event: winit::event::WindowEvent) {
-    //empty
-    // }
-
-    // fn resize(
-    //     &mut self,
-    //     _config: &wgpu::SurfaceConfiguration,
-    //     _device: &wgpu::Device,
-    //     _queue: &wgpu::Queue,
-    // ) {
-    //     // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
-    // }
-
-    pub fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        instances: &[Rect],
-        ctx: &mut Context,
-    ) {
+    #[inline]
+    pub fn resize(&mut self, ctx: &mut Context) {
         let transform: [f32; 16] =
             orthographic_projection(ctx.size.width, ctx.size.height);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
-        // let device = &ctx.device;
         let queue = &mut ctx.queue;
 
-        if transform != self.current_transform || scale != self.scale {
+        if transform != self.current_transform {
             let uniforms = Uniforms::new(transform, scale);
 
             queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
 
-            // let mut transform_view = staging_belt.write_buffer(
-            //     encoder,
-            //     &self.transform,
-            //     0,
-            //     wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64).unwrap(),
-            //     device,
-            // );
-
-            // transform_view.copy_from_slice(bytemuck::bytes_of(&uniforms));
-
             self.current_transform = transform;
-            self.scale = scale;
         }
+        // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
+    }
 
+    #[inline]
+    pub fn render<'pass>(
+        &'pass mut self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        state: &crate::sugarloaf::state::SugarState,
+        ctx: &mut Context,
+    ) {
+        // let device = &ctx.device;
+        let instances = &state.compositors.elementary.rects;
         let mut i = 0;
         let total = instances.len();
 
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        if total == 0 {
+            return;
+        }
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
@@ -313,6 +281,7 @@ impl RectBrush {
         rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
         rpass.set_vertex_buffer(1, self.instances.slice(..));
 
+        let queue = &mut ctx.queue;
         while i < total {
             let end = (i + MAX_INSTANCES).min(total);
             let amount = end - i;
@@ -320,16 +289,11 @@ impl RectBrush {
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
             queue.write_buffer(&self.instances, 0, instance_bytes);
-
-            // rpass.push_debug_group("Prepare data for draw.");
-            // rpass.pop_debug_group();
-            // rpass.insert_debug_marker("Draw!");
             rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
 
             i += MAX_INSTANCES;
         }
 
-        drop(rpass);
         // queue.submit(Some(encoder.finish()));
     }
 }

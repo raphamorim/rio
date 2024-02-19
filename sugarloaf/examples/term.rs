@@ -1,10 +1,7 @@
 extern crate tokio;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::{
-    core::{Sugar, SugarDecoration, SugarStyle},
-    layout::SugarloafLayout,
-};
+use sugarloaf::{layout::SugarloafLayout, Sugar, SugarDecoration, SugarStyle};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -44,7 +41,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         line_height,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -53,8 +49,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -80,278 +76,217 @@ async fn main() {
                 content: 'S',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
+                },
                 media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'u',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
-
-        let underline = SugarDecoration {
-            relative_position: (0.0, 0.94),
-            size: (1.0, 0.03),
-            color: [1.0, 0.4, 1.0, 1.0],
-        };
 
         let rio = vec![
             Sugar {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: Some(underline),
-                media: None,
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: Some(underline),
-                media: None,
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '¼',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '¬',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'f',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             // // Font Unicode (unicode font)
             Sugar {
                 content: '㏑',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             // Font Symbol (apple symbols font)
             Sugar {
                 content: '⫹',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             // Font Regular (firamono)
             Sugar {
                 content: 'λ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             // // Font Emojis
             Sugar {
                 content: '🥇',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '👷',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -361,81 +296,65 @@ async fn main() {
                 content: '✔',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: Some(underline),
-                media: None,
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: '➜',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: Some(underline),
+                decoration: SugarDecoration::Underline,
                 media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '％',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.5, 0.5, 0.5, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 // content: '',
                 content: '\u{e602}',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '🥇',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
         match event {
             Event::Resumed => {
                 sugarloaf.set_background_color(wgpu::Color::RED);
-                sugarloaf.calculate_bounds();
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -449,18 +368,25 @@ async fn main() {
                     let new_inner_size = window.inner_size();
                     sugarloaf.rescale(scale_factor_f32);
                     sugarloaf.resize(new_inner_size.width, new_inner_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::Resized(new_size) => {
                     sugarloaf.resize(new_size.width, new_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.stack(sugar);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(special);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&sugar);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&rio);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&special);
+                    sugarloaf.finish_line();
+
                     sugarloaf.render();
                 }
                 _ => (),

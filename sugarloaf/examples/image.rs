@@ -37,7 +37,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         line_height,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -46,8 +45,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -61,7 +60,7 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    sugarloaf.set_background_image(&sugarloaf::core::ImageProperties {
+    sugarloaf.set_background_image(&sugarloaf::ImageProperties {
         path: String::from("resources/rio-colors.png"),
         width: 400.,
         height: 400.,
@@ -78,20 +77,19 @@ async fn main() {
             }
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested { .. } = event {
-                    sugarloaf
-                        .pile_rects(vec![
-                            Rect {
-                                position: [10.0, 10.0],
-                                color: [1.0, 0.0, 1.0, 1.0],
-                                size: [100.0, 100.0],
-                            },
-                            Rect {
-                                position: [115.0, 10.0],
-                                color: [0.0, 1.0, 1.0, 1.0],
-                                size: [100.0, 100.0],
-                            },
-                        ])
-                        .render();
+                    sugarloaf.append_rects(vec![
+                        Rect {
+                            position: [10.0, 10.0],
+                            color: [1.0, 0.0, 1.0, 1.0],
+                            size: [100.0, 100.0],
+                        },
+                        Rect {
+                            position: [115.0, 10.0],
+                            color: [0.0, 1.0, 1.0, 1.0],
+                            size: [100.0, 100.0],
+                        },
+                    ]);
+                    sugarloaf.render();
                 }
             }
             _ => {

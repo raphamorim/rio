@@ -327,13 +327,8 @@ impl RouteWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let mut screen =
+        let screen =
             Screen::new(&winit_window, config, event_proxy, font_database).await?;
-
-        screen.init(
-            screen.state.named_colors.background.1,
-            &config.window.background_image,
-        );
 
         Ok(Self {
             is_focused: false,
@@ -369,18 +364,13 @@ impl RouteWindow {
         let winit_window = window_builder.build(event_loop).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let mut screen = futures::executor::block_on(Screen::new(
+        let screen = futures::executor::block_on(Screen::new(
             &winit_window,
             config,
             event_proxy,
             font_database,
         ))
         .expect("Screen not created");
-
-        screen.init(
-            screen.state.named_colors.background.1,
-            &config.window.background_image,
-        );
 
         Self {
             is_focused: false,

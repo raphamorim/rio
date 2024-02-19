@@ -25,17 +25,15 @@ use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::renderer::{
     Backend as RendererBackend, Performance as RendererPerformance,
 };
-use rio_backend::crosswords::{
-    grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink, MIN_COLUMNS, MIN_LINES,
-};
+use rio_backend::crosswords::{grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink};
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::RioEvent;
 use rio_backend::selection::SelectionType;
 use rio_backend::sugarloaf::font::loader;
 use rio_backend::sugarloaf::{
-    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, SugarCompositorLevel, Sugarloaf, SugarloafErrors,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
@@ -64,8 +62,7 @@ pub struct Route {
     pub modifiers: ModifiersState,
     pub path: RoutePath,
     pub assistant: Assistant,
-    #[cfg(target_os = "macos")]
-    tab_identifier: String,
+    pub is_focused: bool,
 }
 
 impl Route {
@@ -128,6 +125,10 @@ impl Route {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
+            level: match config.renderer.level {
+                0 => SugarCompositorLevel::Elementary,
+                _ => SugarCompositorLevel::Advanced,
+            },
         };
 
         let padding_y_bottom = padding_bottom_from_config(&config);
@@ -141,7 +142,6 @@ impl Route {
             dimensions.2,
             config.fonts.size,
             config.line_height,
-            (MIN_COLUMNS, MIN_LINES),
         );
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
@@ -151,8 +151,8 @@ impl Route {
             display: raw_display_handle,
             scale: dimensions.2,
             size: SugarloafWindowSize {
-                width: dimensions.0 as u32,
-                height: dimensions.1 as u32,
+                width: dimensions.0 as f32,
+                height: dimensions.1 as f32,
             },
         };
 
@@ -160,7 +160,7 @@ impl Route {
             sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
-            sugarloaf_layout.clone(),
+            sugarloaf_layout,
             Some(font_database),
         )) {
             Ok(instance) => instance,
@@ -175,7 +175,7 @@ impl Route {
             superloop.clone(),
             0,
             context_manager_config,
-            sugarloaf.layout.clone(),
+            sugarloaf.layout_next(),
             sugarloaf_errors,
         )?;
 
@@ -189,12 +189,11 @@ impl Route {
         if let Some(image) = background_image {
             sugarloaf.set_background_image(&image);
         }
-        // TODO: Bug sugarloaf is not starting with right width/height
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
-        sugarloaf.calculate_bounds();
         sugarloaf.render();
 
         Ok(Route {
+            is_focused: true,
             sugarloaf,
             ime,
             id,
@@ -208,8 +207,6 @@ impl Route {
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
             modifiers: ModifiersState::empty(),
-            #[cfg(target_os = "macos")]
-            tab_identifier: format!("id-{id}"),
         })
     }
 
@@ -256,8 +253,9 @@ impl Route {
         let lmb_pressed = self.mouse.left_button_state;
         let rmb_pressed = self.mouse.right_button_state;
 
+        let layout = self.sugarloaf.layout();
         // If the terminal haven't started ignore the motion processing
-        if self.sugarloaf.layout.width == 0.0 || self.sugarloaf.layout.height == 0.0 {
+        if layout.width == 0.0 || layout.height == 0.0 {
             return cursor;
         };
 
@@ -298,8 +296,9 @@ impl Route {
         let display_offset = self.display_offset();
         let old_point = self.mouse_position(display_offset);
 
-        let x = x.clamp(0.0, self.sugarloaf.layout.width - 1.) as usize;
-        let y = y.clamp(0.0, self.sugarloaf.layout.height - 1.) as usize;
+        let layout = self.sugarloaf.layout();
+        let x = x.clamp(0.0, layout.width - 1.) as usize;
+        let y = y.clamp(0.0, layout.height - 1.) as usize;
         self.mouse.x = x;
         self.mouse.y = y;
 
@@ -358,17 +357,14 @@ impl Route {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let width = self.sugarloaf.layout.scaled_sugarwidth;
-        x <= (self.sugarloaf.layout.margin.x
-            + self.sugarloaf.layout.columns as f32 * width) as usize
-            && x > (self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor)
+        let layout = self.sugarloaf.layout();
+        let width = layout.dimensions.width;
+        x <= (layout.margin.x + layout.columns as f32 * width) as usize
+            && x > (layout.margin.x * layout.dimensions.scale) as usize
+            && y <= (layout.margin.top_y * layout.dimensions.scale
+                + layout.lines as f32 * layout.dimensions.height)
                 as usize
-            && y <= (self.sugarloaf.layout.margin.top_y
-                * self.sugarloaf.layout.scale_factor
-                + self.sugarloaf.layout.lines as f32
-                    * self.sugarloaf.layout.scaled_sugarheight)
-                as usize
-            && y > self.sugarloaf.layout.margin.top_y as usize
+            && y > layout.margin.top_y as usize
     }
 
     #[inline]
@@ -439,7 +435,7 @@ impl Route {
             }
             self.process_mouse_bindings(button);
 
-            self.render();
+            // self.render();
         } else {
             if !self.modifiers.shift && self.mouse_mode() {
                 let code = match button {
@@ -487,15 +483,15 @@ impl Route {
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
-        let width = (self.sugarloaf.layout.scaled_sugarwidth) as usize;
-        let margin_x =
-            self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor;
+        let layout = self.sugarloaf.layout();
+        let width = (layout.dimensions.width) as usize;
+        let margin_x = layout.margin.x * layout.dimensions.scale;
 
         let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
 
-        let additional_padding = (self.sugarloaf.layout.width - margin_x) % width as f32;
-        let end_of_grid = self.sugarloaf.layout.width - margin_x - additional_padding;
+        let additional_padding = (layout.width - margin_x) % width as f32;
+        let end_of_grid = layout.width - margin_x - additional_padding;
 
         if cell_x > half_cell_width
             // Edge case when mouse leaves the window.
@@ -547,20 +543,19 @@ impl Route {
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let scale_factor = self.sugarloaf.layout.scale_factor;
+        let layout = self.sugarloaf.layout();
+        let scale_factor = layout.dimensions.scale;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
         let end_top =
             std::cmp::min(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (crate::constants::PADDING_Y
-            + self.sugarloaf.layout.lines as f32)
-            * self.sugarloaf.layout.font_size;
-        let start_bottom = std::cmp::min(
-            self.sugarloaf.layout.height as i32 - min_height,
-            text_area_bottom as i32,
-        ) as f64;
+        let text_area_bottom =
+            (crate::constants::PADDING_Y + layout.lines as f32) * layout.font_size;
+        let start_bottom =
+            std::cmp::min(layout.height as i32 - min_height, text_area_bottom as i32)
+                as f64;
 
         // Get distance from closest window boundary.
         let delta = if mouse_y < end_top {
@@ -577,16 +572,18 @@ impl Route {
     }
 
     #[inline]
+    pub fn set_modifiers(&mut self, mods: ModifiersState) {
+        self.modifiers = mods;
+    }
+
+    #[inline]
     pub fn process_key_event(
         &mut self,
         key_code: KeyCode,
-        mods: ModifiersState,
         is_pressed: bool,
         repeated: bool,
         text_with_modifiers: Option<smol_str::SmolStr>,
     ) {
-        self.modifiers = mods;
-
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
         // 2. In case IME has preedit then also should drop the key processing
@@ -612,7 +609,7 @@ impl Route {
                     KeyCode::Escape => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        mods,
+                        self.modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -635,7 +632,11 @@ impl Route {
 
             let key = BindingKey::Keycode { key: key_code };
 
-            if binding.is_triggered_by(binding_mode.to_owned(), mods.into(), &key) {
+            if binding.is_triggered_by(
+                binding_mode.to_owned(),
+                self.modifiers.into(),
+                &key,
+            ) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -714,38 +715,31 @@ impl Route {
                         self.ctx.create_new_window();
                     }
                     Act::TabCreateNew => {
-                        self.superloop.send_event_with_high_priority(
-                            RioEvent::CreateNativeTab(Some(self.tab_identifier.clone())),
-                            self.id,
+                        let redirect = true;
+                        let layout = self.sugarloaf.layout();
+                        self.ctx.add_context(
+                            redirect,
+                            layout,
+                            (
+                                &self.state.get_cursor_state_from_ref(),
+                                self.state.has_blinking_enabled,
+                            ),
                         );
-                        // let redirect = true;
-
-                        // self.ctx.add_context(
-                        //     redirect,
-                        //     (
-                        //         self.sugarloaf.layout.width_u32,
-                        //         self.sugarloaf.layout.height_u32,
-                        //     ),
-                        //     (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-                        //     (
-                        //         &self.state.get_cursor_state_from_ref(),
-                        //         self.state.has_blinking_enabled,
-                        //     ),
-                        // );
-
-                        // self.render();
+                        self.render();
                     }
-                    // Act::TabCloseCurrent => {
-                    //     self.clear_selection();
+                    Act::TabCloseCurrent => {
+                        self.clear_selection();
 
-                    //     if self.ctx.config.is_native {
-                    //         self.ctx.close_current_window();
-                    //     } else {
-                    //         // Kill current context will trigger terminal.exit
-                    //         // then RioEvent::Exit and eventually try_close_existent_tab
-                    //         self.ctx.kill_current_context();
-                    //     }
-                    // }
+                        if self.ctx.config.is_native {
+                            self.ctx.close_current_window(false);
+                        } else {
+                            // Kill current context will trigger terminal.exit
+                            // then RioEvent::Exit and eventually try_close_existent_tab
+                            self.ctx.kill_current_context();
+                        }
+
+                        self.render();
+                    }
                     Act::Quit => {
                         wa::window::request_quit();
                     }
@@ -830,7 +824,7 @@ impl Route {
                         let mut terminal = self.ctx.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        // self.render();
+                        self.render();
                     }
                     Act::ToggleFullscreen => self.ctx.toggle_full_screen(),
                     Act::Minimize => {
@@ -845,19 +839,21 @@ impl Route {
                     }
                     Act::SelectTab(tab_index) => {
                         self.ctx.select_tab(*tab_index);
+                        self.render();
                     }
                     Act::SelectLastTab => {
                         self.ctx.select_last_tab();
+                        self.render();
                     }
                     Act::SelectNextTab => {
                         self.clear_selection();
                         self.ctx.switch_to_next();
-                        // self.render();
+                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.clear_selection();
                         self.ctx.switch_to_prev();
-                        // self.render();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -880,7 +876,7 @@ impl Route {
                 }
 
                 let mut bytes = Vec::with_capacity(text.len() + 1);
-                if self.alt_send_esc(&mods) && text.len() == 1 {
+                if self.alt_send_esc() && text.len() == 1 {
                     bytes.push(b'\x1b');
                 }
                 bytes.extend_from_slice(text.as_bytes());
@@ -896,7 +892,7 @@ impl Route {
                     && !text.is_empty()
                     && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
                         || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                            && (mods.is_empty() || mods.shift)
+                            && (self.modifiers.is_empty() || self.modifiers.shift)
                             // && key.location != KeyLocation::Numpad
                             // Special case escape here.
                             && key_code != wa::KeyCode::Escape));
@@ -904,7 +900,7 @@ impl Route {
                 // Handle legacy char writing.
                 if write_legacy {
                     let mut bytes = Vec::with_capacity(text.len() + 1);
-                    if self.alt_send_esc(&mods) && text.len() == 1 {
+                    if self.alt_send_esc() && text.len() == 1 {
                         bytes.push(b'\x1b');
                     }
 
@@ -914,7 +910,7 @@ impl Route {
                     // Otherwise we should build the key sequence for the given input.
                     bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        mods,
+                        self.modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -967,8 +963,9 @@ impl Route {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let width = self.sugarloaf.layout.scaled_sugarwidth as f64;
-        let height = self.sugarloaf.layout.scaled_sugarheight as f64;
+        let layout = self.sugarloaf.layout();
+        let width = layout.dimensions.width as f64;
+        let height = layout.dimensions.height as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -1014,7 +1011,7 @@ impl Route {
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / (self.sugarloaf.layout.scaled_sugarheight) as f64)
+                / (layout.dimensions.height) as f64)
                 .abs() as usize;
 
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
@@ -1040,8 +1037,7 @@ impl Route {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
             let lines = (self.mouse.accumulated_scroll.y
-                / self.sugarloaf.layout.scaled_sugarheight as f64)
-                as i32;
+                / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
                 let mut terminal = self.ctx.current().terminal.lock();
@@ -1079,7 +1075,8 @@ impl Route {
         let padding_y_bottom = padding_bottom_from_config(config);
         let padding_y_top = padding_top_from_config(config);
 
-        self.sugarloaf.layout.recalculate(
+        let mut layout = self.sugarloaf.layout_next();
+        layout.recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
@@ -1087,7 +1084,7 @@ impl Route {
             padding_y_bottom,
         );
 
-        self.sugarloaf.layout.update();
+        layout.update();
         self.resize_all_contexts();
 
         let mut bg_color = self.state.named_colors.background.1;
@@ -1101,7 +1098,6 @@ impl Route {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.sugarloaf.calculate_bounds();
         self.render();
     }
 
@@ -1195,7 +1191,20 @@ impl Route {
         };
     }
 
-    // /// Whether we should send `ESC` due to `Alt` being pressed.
+    #[inline]
+    pub fn on_focus_change(&mut self, is_focused: bool) {
+        if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
+            let chr = if is_focused { "I" } else { "O" };
+
+            let msg = format!("\x1b[{}", chr);
+            self.ctx
+                .current_mut()
+                .messenger
+                .send_bytes(msg.into_bytes());
+        }
+    }
+
+    // Whether we should send `ESC` due to `Alt` being pressed.
     #[cfg(not(target_os = "macos"))]
     #[inline]
     fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
@@ -1204,8 +1213,8 @@ impl Route {
 
     #[cfg(target_os = "macos")]
     #[inline]
-    fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
-        mods.alt
+    fn alt_send_esc(&mut self) -> bool {
+        self.modifiers.alt
             && (self.state.option_as_alt == *"both"
                 || (self.state.option_as_alt == *"left")
                     // && false)
@@ -1309,16 +1318,20 @@ impl Route {
 
     #[inline]
     pub fn resize_all_contexts(&mut self) {
-        // TODO: Consider have layout stored in crosswords instead
+        // whenever a resize update happens: it will stored in
+        // the next layout, so once the messenger.send_resize triggers
+        // the wakeup from pty it will also trigger a sugarloaf.render()
+        // and then eventually a render with the new layout computation.
+        let layout = self.sugarloaf.layout_next();
         for context in self.ctx.contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout.clone());
+            terminal.resize::<SugarloafLayout>(layout);
             drop(terminal);
             let _ = context.messenger.send_resize(
-                self.sugarloaf.layout.width as u16,
-                self.sugarloaf.layout.height as u16,
-                self.sugarloaf.layout.columns as u16,
-                self.sugarloaf.layout.lines as u16,
+                layout.width as u16,
+                layout.height as u16,
+                layout.columns as u16,
+                layout.lines as u16,
             );
         }
     }
@@ -1407,17 +1420,17 @@ impl Route {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let layout = self.sugarloaf.layout();
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            self.sugarloaf.layout.scale_factor,
-            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-            self.sugarloaf.layout.margin.x,
-            self.sugarloaf.layout.margin.top_y,
+            layout.dimensions.scale,
+            (layout.columns, layout.lines),
+            layout.margin.x,
+            layout.margin.top_y,
             (
-                self.sugarloaf.layout.scaled_sugarwidth,
-                self.sugarloaf.layout.scaled_sugarheight
-                    * self.sugarloaf.layout.line_height,
+                layout.dimensions.width,
+                layout.dimensions.height * layout.line_height,
             ),
         )
     }
@@ -1501,6 +1514,14 @@ impl Route {
 
     #[inline]
     pub fn render(&mut self) {
+        // If sugarloaf does have pending updates to process then
+        // should abort current render
+        if self.sugarloaf.dimensions_changed() {
+            self.resize_all_contexts();
+            return;
+        };
+
+        // let start = std::time::Instant::now();
         match self.path {
             RoutePath::Assistant => {
                 assistant::screen(&mut self.sugarloaf, &self.assistant)
@@ -1542,5 +1563,8 @@ impl Route {
         }
 
         self.sugarloaf.render();
+
+        // let duration = start.elapsed();
+        // println!("Time elapsed in render() is: {:?}", duration);
     }
 }

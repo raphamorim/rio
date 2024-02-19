@@ -4,7 +4,7 @@ use crate::components::text::Region;
 use cache::Cache;
 use std::borrow::Cow;
 
-use crate::glyph::ab_glyph::{point, Rect};
+use crate::components::text::glyph::ab_glyph::{point, Rect};
 use bytemuck::{Pod, Zeroable};
 use std::marker::PhantomData;
 use std::mem;
@@ -51,21 +51,19 @@ impl Pipeline<()> {
             filter_mode,
             multisample,
             render_format,
-            None,
             cache_width,
             cache_height,
         )
     }
 
-    pub fn draw(
-        &mut self,
+    pub fn draw<'pass>(
+        &'pass mut self,
         queue: &mut wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        draw(self, (queue, encoder, target), None, transform, region);
+        draw(self, (queue, rpass), transform, region);
     }
 }
 
@@ -75,7 +73,6 @@ impl Pipeline<wgpu::DepthStencilState> {
         filter_mode: wgpu::FilterMode,
         multisample: wgpu::MultisampleState,
         render_format: wgpu::TextureFormat,
-        depth_stencil_state: wgpu::DepthStencilState,
         cache_width: u32,
         cache_height: u32,
     ) -> Pipeline<wgpu::DepthStencilState> {
@@ -84,32 +81,19 @@ impl Pipeline<wgpu::DepthStencilState> {
             filter_mode,
             multisample,
             render_format,
-            Some(depth_stencil_state),
             cache_width,
             cache_height,
         )
     }
 
-    #[allow(dead_code)]
-    pub fn draw(
-        &mut self,
-        config: (
-            &mut wgpu::Queue,
-            &mut wgpu::CommandEncoder,
-            &wgpu::TextureView,
-        ),
-        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
+    pub fn draw<'pass>(
+        &'pass mut self,
+        config: (&mut wgpu::Queue, &mut wgpu::RenderPass<'pass>),
         transform: [f32; 16],
         region: Option<Region>,
     ) {
-        let (queue, encoder, target) = config;
-        draw(
-            self,
-            (queue, encoder, target),
-            Some(depth_stencil_attachment),
-            transform,
-            region,
-        );
+        let (queue, rpass) = config;
+        draw(self, (queue, rpass), transform, region);
     }
 }
 
@@ -144,7 +128,7 @@ impl<Depth> Pipeline<Depth> {
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
+        queue: &mut wgpu::Queue,
         instances: &mut [Instance],
     ) {
         if instances.is_empty() {
@@ -166,21 +150,21 @@ impl<Depth> Pipeline<Depth> {
         let instances_bytes = bytemuck::cast_slice(instances);
 
         if !instances_bytes.is_empty() {
-            let instances_buffer =
-                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("sugarloaf::text::Pipeline instances"),
-                    contents: instances_bytes,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
-                });
+            // let instances_buffer =
+            //     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            //         label: Some("sugarloaf::text::Pipeline instances"),
+            //         contents: instances_bytes,
+            //         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
+            //     });
 
-            encoder.copy_buffer_to_buffer(
-                &instances_buffer,
-                0,
-                &self.instances,
-                0,
-                mem::size_of::<Instance>() as u64 * instances.len() as u64,
-            );
-            // queue.write_buffer(&self.instances, 0, instances_bytes);
+            // encoder.copy_buffer_to_buffer(
+            //     &instances_buffer,
+            //     0,
+            //     &self.instances,
+            //     0,
+            //     mem::size_of::<Instance>() as u64 * instances.len() as u64,
+            // );
+            queue.write_buffer(&self.instances, 0, instances_bytes);
         }
 
         self.current_instances = instances.len();
@@ -196,7 +180,6 @@ fn build<D>(
     filter_mode: wgpu::FilterMode,
     multisample: wgpu::MultisampleState,
     render_format: wgpu::TextureFormat,
-    depth_stencil: Option<wgpu::DepthStencilState>,
     cache_width: u32,
     cache_height: u32,
 ) -> Pipeline<D> {
@@ -299,7 +282,7 @@ fn build<D>(
             ..Default::default()
         },
         multisample,
-        depth_stencil,
+        depth_stencil: None,
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
@@ -327,38 +310,33 @@ fn build<D>(
     }
 }
 
-fn draw<D>(
-    pipeline: &mut Pipeline<D>,
-    config: (
-        &mut wgpu::Queue,
-        &mut wgpu::CommandEncoder,
-        &wgpu::TextureView,
-    ),
-    depth_stencil_attachment: Option<wgpu::RenderPassDepthStencilAttachment>,
+fn draw<'pass, D>(
+    pipeline: &'pass mut Pipeline<D>,
+    config: (&mut wgpu::Queue, &mut wgpu::RenderPass<'pass>),
     transform: [f32; 16],
     region: Option<Region>,
 ) {
-    let (queue, encoder, target) = config;
+    let (queue, render_pass) = config;
     if transform != pipeline.current_transform {
         queue.write_buffer(&pipeline.transform, 0, bytemuck::cast_slice(&transform));
 
         pipeline.current_transform = transform;
     }
 
-    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("text::pipeline render pass"),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment,
-    });
+    // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    //     label: Some("text::pipeline render pass"),
+    //     timestamp_writes: None,
+    //     occlusion_query_set: None,
+    //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+    //         view: target,
+    //         resolve_target: None,
+    //         ops: wgpu::Operations {
+    //             load: wgpu::LoadOp::Load,
+    //             store: wgpu::StoreOp::Store,
+    //         },
+    //     })],
+    //     depth_stencil_attachment,
+    // });
 
     render_pass.set_pipeline(&pipeline.raw);
     render_pass.set_bind_group(0, &pipeline.uniforms, &[]);
@@ -413,15 +391,16 @@ pub struct Instance {
 }
 
 impl Instance {
-    const INITIAL_AMOUNT: usize = 50_000;
+    const INITIAL_AMOUNT: usize = 64;
 
+    #[inline]
     pub fn from_vertex(
-        crate::glyph::GlyphVertex {
+        crate::components::text::glyph::GlyphVertex {
             mut tex_coords,
             pixel_coords,
             bounds,
             extra,
-        }: crate::glyph::GlyphVertex,
+        }: crate::components::text::glyph::GlyphVertex,
     ) -> Instance {
         let gl_bounds = bounds;
 

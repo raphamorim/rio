@@ -4,7 +4,6 @@ extern crate sugarloaf;
 use crate::layout::SugarloafLayout;
 use criterion::{criterion_group, criterion_main, Criterion};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::core::Sugar;
 use sugarloaf::*;
 use winit::dpi::LogicalSize;
 use winit::event::Event;
@@ -39,7 +38,6 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
         scale_factor as f32,
         font_size,
         line_height,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -48,8 +46,8 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -68,26 +66,23 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
         match event {
             Event::Resumed => {
                 sugarloaf.set_background_color(wgpu::Color::RED);
-                sugarloaf.calculate_bounds();
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested { .. } = event {
                     c.bench_function("bench_sugar_pile_with_screen", |b| {
                         b.iter(|| {
-                            let mut pile = vec![];
+                            sugarloaf.start_line();
                             for _i in 0..NUM {
-                                pile.push(Sugar {
+                                sugarloaf.insert_on_current_line(&Sugar {
                                     content: 'a',
                                     foreground_color: [1.0, 1.0, 1.0, 1.0],
                                     background_color: [0.0, 1.0, 1.0, 1.0],
-                                    style: None,
-                                    media: None,
-                                    decoration: None,
+                                    ..Sugar::default()
                                 });
                             }
 
-                            sugarloaf.stack(pile);
+                            sugarloaf.finish_line();
                             sugarloaf.render();
                         })
                     });

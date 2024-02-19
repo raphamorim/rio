@@ -1,12 +1,9 @@
 extern crate tokio;
 
-use sugarloaf::core::SugarStyle;
-use sugarloaf::{
-    core::{Sugar, SugarDecoration},
-    layout::SugarloafLayout,
-};
-
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use sugarloaf::{
+    layout::SugarloafLayout, Sugar, SugarCursor, SugarDecoration, SugarStyle,
+};
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::{
     dpi::LogicalSize,
@@ -38,7 +35,6 @@ async fn main() {
         scale_factor as f32,
         font_size,
         1.0,
-        (2, 1),
     );
 
     let size = window.inner_size();
@@ -47,8 +43,8 @@ async fn main() {
         display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
-            width: size.width,
-            height: size.height,
+            width: size.width as f32,
+            height: size.height as f32,
         },
     };
 
@@ -62,8 +58,6 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
-    sugarloaf.calculate_bounds();
-
     let _ = event_loop.run(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
@@ -72,149 +66,90 @@ async fn main() {
                 content: 'u',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.050),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: '!',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'n',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 86.),
-                    size: (1.0, 0.025),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -223,133 +158,122 @@ async fn main() {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'c',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: true,
                     is_bold_italic: false,
                     is_bold: false,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.5, 0.5, 1.0, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'o',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: Some(SugarStyle {
+                style: SugarStyle {
                     is_italic: false,
                     is_bold_italic: false,
                     is_bold: true,
-                }),
-                decoration: None,
-                media: None,
+                },
+                ..Sugar::default()
             },
         ];
 
@@ -358,61 +282,44 @@ async fn main() {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.92),
-                    size: (1.0, 0.05),
-                    color: [0.0, 0.0, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 0.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'u',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 0.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
         ];
 
@@ -421,142 +328,85 @@ async fn main() {
                 content: 's',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 85.),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'k',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.5),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: 'e',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: Some(SugarDecoration {
-                    relative_position: (0.0, 0.85),
-                    size: (1.0, 0.025),
-                    color: [0.5, 0.5, 0.0, 1.0],
-                }),
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
         ];
-
-        let block = Some(SugarDecoration {
-            relative_position: (0.0, 0.0),
-            size: (1.0, 1.0),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
-
-        let underline = Some(SugarDecoration {
-            relative_position: (0.0, 85.),
-            size: (1.0, 0.05),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
-
-        let beam = Some(SugarDecoration {
-            relative_position: (0.0, 0.0),
-            size: (0.1, 1.0),
-            color: [1.0, 0.4, 1.0, 1.0],
-        });
 
         let cursors = vec![
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: block,
+                cursor: SugarCursor::Block([0.0, 0.0, 1.0, 1.0]),
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
                 background_color: [0.0, 0.0, 0.0, 1.0],
-                style: None,
-                media: None,
-                decoration: underline,
+                decoration: SugarDecoration::Underline,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                decoration: None,
-                media: None,
+                ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.0, 1.0, 1.0, 1.0],
-                style: None,
-                media: None,
-                decoration: beam,
+                cursor: SugarCursor::Caret([0.0, 0.0, 1.0, 1.0]),
+                ..Sugar::default()
             },
         ];
 
         match event {
             Event::Resumed => {
-                sugarloaf
-                    .set_background_color(wgpu::Color::RED)
-                    .calculate_bounds();
+                sugarloaf.set_background_color(wgpu::Color::RED);
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => match event {
@@ -570,20 +420,33 @@ async fn main() {
                     let new_inner_size = window.inner_size();
                     sugarloaf.rescale(scale_factor_f32);
                     sugarloaf.resize(new_inner_size.width, new_inner_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::Resized(new_size) => {
                     sugarloaf.resize(new_size.width, new_size.height);
-                    sugarloaf.calculate_bounds();
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.stack(sugar);
-                    sugarloaf.stack(italic_and_bold);
-                    sugarloaf.stack(rio);
-                    sugarloaf.stack(strike);
-                    sugarloaf.stack(cursors);
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&sugar);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&italic_and_bold);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&rio);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&strike);
+                    sugarloaf.finish_line();
+
+                    sugarloaf.start_line();
+                    sugarloaf.insert_on_current_line_from_vec_owned(&cursors);
+                    sugarloaf.finish_line();
+
                     sugarloaf.render();
                 }
                 _ => (),

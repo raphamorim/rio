@@ -529,11 +529,11 @@ impl Dimensions for SugarloafLayout {
     }
 
     fn square_width(&self) -> f32 {
-        self.scaled_sugarwidth
+        self.dimensions.width
     }
 
     fn square_height(&self) -> f32 {
-        self.scaled_sugarheight
+        self.dimensions.height
     }
 }
 
