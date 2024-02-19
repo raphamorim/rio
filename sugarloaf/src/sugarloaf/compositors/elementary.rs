@@ -231,7 +231,7 @@ impl Elementary {
             self.text_y = tree.layout.style.screen_position.1;
         }
 
-        for i in 0..line.acc {
+        for i in 0..line.len() {
             let mut add_pos_x = sugar_x;
             let mut sugar_char_width = 1.;
             let rect_pos_x = tree.layout.style.screen_position.0 + x;

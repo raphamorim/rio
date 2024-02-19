@@ -142,7 +142,7 @@ impl Advanced {
         ];
 
         // let mut content = String::from("");
-        for i in 0..line.acc {
+        for i in 0..line.len() {
             // let mut font_id = 0;
             // if line[i].content == '🥶' {
             //     font_id = 7;
