@@ -122,10 +122,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
         #[cfg(target_os = "windows")]
-        let width = size.width_u32;
+        let width = size.width;
 
         #[cfg(target_os = "windows")]
-        let height = size.height_u32;
+        let height = size.height;
 
         let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
