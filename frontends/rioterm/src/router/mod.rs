@@ -330,11 +330,6 @@ impl RouteWindow {
         let mut screen =
             Screen::new(&winit_window, config, event_proxy, font_database).await?;
 
-        screen.init(
-            screen.state.named_colors.background.1,
-            &config.window.background_image,
-        );
-
         Ok(Self {
             is_focused: false,
             is_occluded: false,
@@ -376,11 +371,6 @@ impl RouteWindow {
             font_database,
         ))
         .expect("Screen not created");
-
-        screen.init(
-            screen.state.named_colors.background.1,
-            &config.window.background_image,
-        );
 
         Self {
             is_focused: false,
