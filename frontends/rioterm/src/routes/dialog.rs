@@ -8,7 +8,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
 
     let layout = sugarloaf.layout();
-    let height = layout.height / layout.scale_factor;
+    let height = layout.height / layout.dimensions.scale;
 
     let assistant_background = vec![
         Rect {
