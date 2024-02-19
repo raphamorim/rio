@@ -4,6 +4,7 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
+use crate::layout::SugarDimensions;
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::font::FontLibrary;
@@ -306,6 +307,7 @@ impl RichTextBrush {
             // To confirm: should actually * 1.5?
             state.current.layout.style.screen_position.1 * 2.0,
             state.compositors.advanced.font_library(),
+            state.current.layout.dimensions,
         );
         self.dlist.clear();
         self.finish_composition(ctx);
@@ -461,7 +463,7 @@ impl RichTextBrush {
                         match unit {
                             // color_texture
                             0 => {
-                                if color_texture_updated.is_none() {
+                                // if color_texture_updated.is_none() {
                                     if let Some(texture) = self.textures.get(id) {
                                         log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
                                         self.color_texture_view = texture.create_view(
@@ -469,11 +471,11 @@ impl RichTextBrush {
                                         );
                                         color_texture_updated = Some(id);
                                     }
-                                }
+                                // }
                             }
                             // mask_texture
                             1 => {
-                                if mask_texture_updated.is_none() {
+                                // if mask_texture_updated.is_none() {
                                     if let Some(texture) = self.textures.get(id) {
                                         log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
                                         self.mask_texture_view = texture.create_view(
@@ -481,7 +483,7 @@ impl RichTextBrush {
                                         );
                                         mask_texture_updated = Some(id);
                                     }
-                                }
+                                // }
                             }
                             _ => {
                                 // Noop
@@ -709,6 +711,7 @@ fn draw_layout(
     x: f32,
     y: f32,
     font_library: &FontLibrary,
+    rect: SugarDimensions,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
