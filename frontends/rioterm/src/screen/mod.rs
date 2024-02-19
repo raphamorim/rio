@@ -1173,6 +1173,8 @@ impl Screen {
 
     #[inline]
     pub fn render(&mut self) {
+        println!("oi???");
+
         // If sugarloaf does have pending updates to process then
         // should abort current render
         if self.sugarloaf.dimensions_changed() {
