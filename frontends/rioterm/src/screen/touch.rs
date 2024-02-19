@@ -132,15 +132,11 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                 let start_location = start.location;
                 *touch_purpose = TouchPurpose::Select(*start);
 
+                let layout = route.window.screen.sugarloaf.layout();
+
                 // Start simulated mouse input.
-                let x = start_location
-                    .x
-                    .clamp(0.0, route.window.screen.sugarloaf.layout.width.into())
-                    as usize;
-                let y = start_location
-                    .y
-                    .clamp(0.0, route.window.screen.sugarloaf.layout.height.into())
-                    as usize;
+                let x = start_location.x.clamp(0.0, layout.width.into()) as usize;
+                let y = start_location.y.clamp(0.0, layout.height.into()) as usize;
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
@@ -191,16 +187,9 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             log::info!("scroll motion: {}", delta_y);
         }
         TouchPurpose::Select(_) => {
-            let x = touch
-                .location
-                .x
-                .clamp(0.0, route.window.screen.sugarloaf.layout.width.into())
-                as usize;
-            let y = touch
-                .location
-                .y
-                .clamp(0.0, route.window.screen.sugarloaf.layout.height.into())
-                as usize;
+            let layout = route.window.screen.sugarloaf.layout();
+            let x = touch.location.x.clamp(0.0, layout.width.into()) as usize;
+            let y = touch.location.y.clamp(0.0, layout.height.into()) as usize;
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;
             log::info!("select motion");
@@ -220,14 +209,10 @@ fn on_touch_end(route: &mut Route, touch: Touch) {
             let start_location = start.location;
             *touch_purpose = Default::default();
 
-            let x = start_location
-                .x
-                .clamp(0.0, route.window.screen.sugarloaf.layout.width.into())
-                as usize;
-            let y = start_location
-                .y
-                .clamp(0.0, route.window.screen.sugarloaf.layout.height.into())
-                as usize;
+            let layout = route.window.screen.sugarloaf.layout();
+
+            let x = start_location.x.clamp(0.0, layout.width.into()) as usize;
+            let y = start_location.y.clamp(0.0, layout.height.into()) as usize;
 
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;

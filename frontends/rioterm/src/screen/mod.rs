@@ -194,7 +194,7 @@ impl Screen {
             bg_color.a = config.window.background_opacity as f64;
         }
         sugarloaf.set_background_color(bg_color);
-        if let Some(image) = config.window.background_image {
+        if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(&image);
         }
         sugarloaf.render();
