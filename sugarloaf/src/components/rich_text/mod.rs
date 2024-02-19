@@ -4,10 +4,10 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
-use crate::layout::SugarDimensions;
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::font::FontLibrary;
+use crate::layout::SugarDimensions;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -320,11 +320,9 @@ impl RichTextBrush {
     ) -> Option<(f32, f32)> {
         self.comp.begin();
 
-        let dimensions = get_sugar_dimensions(
+        let dimensions = fetch_dimensions(
             &mut self.comp,
             &state.compositors.advanced.render_data_sugar,
-            0.0,
-            0.0,
             state.compositors.advanced.font_library(),
         );
         println!("dimensions: {:?}", dimensions);
@@ -464,25 +462,25 @@ impl RichTextBrush {
                             // color_texture
                             0 => {
                                 // if color_texture_updated.is_none() {
-                                    if let Some(texture) = self.textures.get(id) {
-                                        log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                        self.color_texture_view = texture.create_view(
-                                            &wgpu::TextureViewDescriptor::default(),
-                                        );
-                                        color_texture_updated = Some(id);
-                                    }
+                                if let Some(texture) = self.textures.get(id) {
+                                    log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
+                                    self.color_texture_view = texture.create_view(
+                                        &wgpu::TextureViewDescriptor::default(),
+                                    );
+                                    color_texture_updated = Some(id);
+                                }
                                 // }
                             }
                             // mask_texture
                             1 => {
                                 // if mask_texture_updated.is_none() {
-                                    if let Some(texture) = self.textures.get(id) {
-                                        log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                        self.mask_texture_view = texture.create_view(
-                                            &wgpu::TextureViewDescriptor::default(),
-                                        );
-                                        mask_texture_updated = Some(id);
-                                    }
+                                if let Some(texture) = self.textures.get(id) {
+                                    log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
+                                    self.mask_texture_view = texture.create_view(
+                                        &wgpu::TextureViewDescriptor::default(),
+                                    );
+                                    mask_texture_updated = Some(id);
+                                }
                                 // }
                             }
                             _ => {
@@ -711,7 +709,7 @@ fn draw_layout(
     x: f32,
     y: f32,
     font_library: &FontLibrary,
-    rect: SugarDimensions,
+    _rect: SugarDimensions,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
@@ -764,15 +762,14 @@ fn draw_layout(
 }
 
 #[inline]
-fn get_sugar_dimensions(
+fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     layout: &crate::layout::Paragraph,
-    x: f32,
-    y: f32,
     font_library: &FontLibrary,
 ) -> (f32, f32) {
-    let depth = 0.0;
-    let mut glyphs = Vec::new();
+    let x = 0.;
+    let y = 0.;
+    let mut glyphs = Vec::with_capacity(3);
     let mut sugarwidth = 0.0;
     let mut sugarheight = 0.0;
     for line in layout.lines() {
@@ -798,27 +795,19 @@ fn get_sugar_dimensions(
                 font_size: run.font_size(),
                 color,
                 cursor: run.cursor(),
-                background_color: run.background_color(),
+                background_color: None,
                 baseline: py,
                 topline: py - line.ascent(),
                 line_height: line.ascent() + line.descent(),
                 advance: px - run_x,
-                underline: if run.underline() {
-                    Some(UnderlineStyle {
-                        offset: run.underline_offset(),
-                        size: run.underline_size(),
-                        color: run.underline_color(),
-                    })
-                } else {
-                    None
-                },
+                underline: None,
             };
 
             sugarwidth = style.advance;
             sugarheight = style.line_height;
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
-                depth,
+                0.0,
                 &style,
                 glyphs.iter(),
             );
