@@ -19,7 +19,7 @@ use crate::crosswords::{
     pos::{Column, Pos, Side},
     square::Hyperlink,
     vi_mode::ViMotion,
-    Mode, MIN_COLUMNS, MIN_LINES,
+    Mode,
 };
 use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
@@ -35,8 +35,8 @@ use rio_backend::config::{
 };
 use rio_backend::event::{ClickState, EventProxy};
 use rio_backend::sugarloaf::{
-    self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
-    SugarloafWindow, SugarloafWindowSize,
+    self, layout::SugarloafLayout, SugarCompositorLevel, Sugarloaf, SugarloafErrors,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use state::State;
 use std::borrow::Cow;
@@ -104,8 +104,8 @@ impl Screen {
             display: raw_display_handle.into(),
             scale: scale as f32,
             size: SugarloafWindowSize {
-                width: size.width,
-                height: size.height,
+                width: size.width as f32,
+                height: size.height as f32,
             },
         };
 
@@ -132,6 +132,10 @@ impl Screen {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
+            level: match config.renderer.level {
+                // 0 => SugarCompositorLevel::Elementary,
+                _ => SugarCompositorLevel::Advanced,
+            },
         };
 
         let sugarloaf: Sugarloaf = match Sugarloaf::new(
@@ -181,7 +185,7 @@ impl Screen {
             event_proxy,
             window_id,
             context_manager_config,
-            sugarloaf.layout.clone(),
+            sugarloaf.layout_next(),
             sugarloaf_errors,
         )?;
 
@@ -221,17 +225,17 @@ impl Screen {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let layout = self.sugarloaf.layout();
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            self.sugarloaf.layout.scale_factor,
-            (self.sugarloaf.layout.columns, self.sugarloaf.layout.lines),
-            self.sugarloaf.layout.margin.x,
-            self.sugarloaf.layout.margin.top_y,
+            layout.dimensions.scale,
+            (layout.columns, layout.lines),
+            layout.margin.x,
+            layout.margin.top_y,
             (
-                self.sugarloaf.layout.scaled_sugarwidth,
-                self.sugarloaf.layout.scaled_sugarheight
-                    * self.sugarloaf.layout.line_height,
+                layout.dimensions.width,
+                layout.dimensions.height * layout.line_height,
             ),
         )
     }
@@ -243,14 +247,16 @@ impl Screen {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
+        let layout = self.sugarloaf.layout();
+        let scale_f64 = layout.scale_factor as f64;
         pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
 
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone_draggable(&self, pos_x: f64) -> bool {
-        let scale_f64 = self.sugarloaf.layout.scale_factor as f64;
+        let layout = self.sugarloaf.layout();
+        let scale_f64 = layout.scale_factor as f64;
         pos_x >= DEADZONE_START_X * scale_f64
     }
 
@@ -575,9 +581,10 @@ impl Screen {
                     Act::TabCreateNew => {
                         let redirect = true;
 
+                        let layout = self.sugarloaf.layout();
                         self.context_manager.add_context(
                             redirect,
-                            self.sugarloaf.layout.clone(),
+                            layout,
                             (
                                 &self.state.get_cursor_state_from_ref(),
                                 self.state.has_blinking_enabled,
@@ -1020,19 +1027,17 @@ impl Screen {
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let scale_factor = self.sugarloaf.layout.scale_factor;
+        let layout = self.sugarloaf.layout();
+        let scale_factor = layout.scale_factor;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
         let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom = (crate::constants::PADDING_Y
-            + self.sugarloaf.layout.lines as f32)
-            * self.sugarloaf.layout.font_size;
-        let start_bottom = min(
-            self.sugarloaf.layout.height as i32 - min_height,
-            text_area_bottom as i32,
-        ) as f64;
+        let text_area_bottom =
+            (crate::constants::PADDING_Y + layout.lines as f32) * layout.font_size;
+        let start_bottom =
+            min(layout.height as i32 - min_height, text_area_bottom as i32) as f64;
 
         // Get distance from closest window boundary.
         let delta = if mouse_y < end_top {
@@ -1050,30 +1055,27 @@ impl Screen {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let width = self.sugarloaf.layout.scaled_sugarwidth;
-        x <= (self.sugarloaf.layout.margin.x
-            + self.sugarloaf.layout.columns as f32 * width) as usize
-            && x > (self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor)
+        let layout = self.sugarloaf.layout();
+        let width = layout.dimensions.width;
+        x <= (layout.margin.x + layout.columns as f32 * width) as usize
+            && x > (layout.margin.x * layout.dimensions.scale) as usize
+            && y <= (layout.margin.top_y * layout.dimensions.scale
+                + layout.lines as f32 * layout.dimensions.height)
                 as usize
-            && y <= (self.sugarloaf.layout.margin.top_y
-                * self.sugarloaf.layout.scale_factor
-                + self.sugarloaf.layout.lines as f32
-                    * self.sugarloaf.layout.scaled_sugarheight)
-                as usize
-            && y > self.sugarloaf.layout.margin.top_y as usize
+            && y > layout.margin.top_y as usize
     }
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
-        let width = (self.sugarloaf.layout.scaled_sugarwidth) as usize;
-        let margin_x =
-            self.sugarloaf.layout.margin.x * self.sugarloaf.layout.scale_factor;
+        let layout = self.sugarloaf.layout();
+        let width = (layout.dimensions.width) as usize;
+        let margin_x = layout.margin.x * layout.dimensions.scale;
 
         let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
 
-        let additional_padding = (self.sugarloaf.layout.width - margin_x) % width as f32;
-        let end_of_grid = self.sugarloaf.layout.width - margin_x - additional_padding;
+        let additional_padding = (layout.width - margin_x) % width as f32;
+        let end_of_grid = layout.width - margin_x - additional_padding;
 
         if cell_x > half_cell_width
             // Edge case when mouse leaves the window.
@@ -1157,7 +1159,7 @@ impl Screen {
     pub fn init(
         &mut self,
         color: ColorWGPU,
-        background_image: &Option<sugarloaf::core::ImageProperties>,
+        background_image: &Option<sugarloaf::ImageProperties>,
     ) {
         let initial_columns = self.sugarloaf.layout.columns;
 
@@ -1197,7 +1199,7 @@ impl Screen {
     pub fn render(&mut self) {
         // If sugarloaf does have pending updates to process then
         // should abort current render
-        if self.sugarloaf.has_pending_updates() {
+        if self.sugarloaf.dimensions_changed() {
             self.resize_all_contexts();
             return;
         };
@@ -1345,8 +1347,9 @@ impl Screen {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let width = self.sugarloaf.layout.scaled_sugarwidth as f64;
-        let height = self.sugarloaf.layout.scaled_sugarheight as f64;
+        let layout = self.sugarloaf.layout();
+        let width = layout.dimensions.width as f64;
+        let height = layout.dimensions.height as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -1392,7 +1395,7 @@ impl Screen {
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / (self.sugarloaf.layout.scaled_sugarheight) as f64)
+                / (layout.dimensions.height) as f64)
                 .abs() as usize;
 
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
@@ -1418,7 +1421,7 @@ impl Screen {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
             let lines = (self.mouse.accumulated_scroll.y
-                / self.sugarloaf.layout.font_size as f64) as i32;
+                / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
                 let mut terminal = self.ctx().current().terminal.lock();
