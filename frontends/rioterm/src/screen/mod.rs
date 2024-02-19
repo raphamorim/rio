@@ -138,7 +138,7 @@ impl Screen {
             },
         };
 
-        let sugarloaf: Sugarloaf = match Sugarloaf::new(
+        let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
@@ -188,6 +188,14 @@ impl Screen {
             sugarloaf.layout_next(),
             sugarloaf_errors,
         )?;
+
+        sugarloaf.set_background_color(bg_color);
+        if let Some(image) = config.window.background_image {
+            sugarloaf.set_background_image(&image);
+        }
+
+        self.resize_all_contexts();
+        self.render();
 
         Ok(Screen {
             mouse_bindings: crate::bindings::default_mouse_bindings(),
@@ -303,11 +311,7 @@ impl Screen {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        let width = self.sugarloaf.layout.width_u32 as u16;
-        let height = self.sugarloaf.layout.height_u32 as u16;
-        let columns = self.sugarloaf.layout.columns;
-        let lines = self.sugarloaf.layout.lines;
-        self.resize_all_contexts(width, height, columns, lines);
+        self.resize_all_contexts();
 
         let mut bg_color = self.state.named_colors.background.1;
 
@@ -315,7 +319,13 @@ impl Screen {
             bg_color.a = config.window.background_opacity as f64;
         }
 
-        self.init(bg_color, &config.window.background_image);
+        self.sugarloaf
+            .set_background_color(screen.state.named_colors.background.1);
+        if let Some(image) = config.window.background_image {
+            self.sugarloaf.set_background_image(&image);
+        }
+
+        self.render();
     }
 
     #[inline]
@@ -335,24 +345,13 @@ impl Screen {
         // and then updates again with correct bounds
         // TODO: Refactor this logic
         self.sugarloaf.layout.update();
-
-        let width = self.sugarloaf.layout.width_u32 as u16;
-        let height = self.sugarloaf.layout.height_u32 as u16;
-        let columns = self.sugarloaf.layout.columns;
-        let lines = self.sugarloaf.layout.lines;
-        self.resize_all_contexts(width, height, columns, lines);
+        self.resize_all_contexts();
     }
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
         self.sugarloaf.resize(new_size.width, new_size.height);
-
-        self.resize_all_contexts(
-            new_size.width as u16,
-            new_size.height as u16,
-            self.sugarloaf.layout.columns,
-            self.sugarloaf.layout.lines,
-        );
+        self.resize_all_contexts();
         self
     }
 
@@ -364,27 +363,25 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-
         self
     }
 
     #[inline]
-    pub fn resize_all_contexts(
-        &mut self,
-        width: u16,
-        height: u16,
-        columns: usize,
-        lines: usize,
-    ) {
-        for context in self.ctx().contexts() {
+    pub fn resize_all_contexts(&mut self) {
+        // whenever a resize update happens: it will stored in
+        // the next layout, so once the messenger.send_resize triggers
+        // the wakeup from pty it will also trigger a sugarloaf.render()
+        // and then eventually a render with the new layout computation.
+        let layout = self.sugarloaf.layout_next();
+        for context in self.ctx.contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout);
+            terminal.resize::<SugarloafLayout>(layout);
             drop(terminal);
             let _ = context.messenger.send_resize(
-                width,
-                height,
-                columns as u16,
-                lines as u16,
+                layout.width as u16,
+                layout.height as u16,
+                layout.columns as u16,
+                layout.lines as u16,
             );
         }
     }
@@ -1152,28 +1149,6 @@ impl Screen {
                 .current_mut()
                 .messenger
                 .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
-        }
-    }
-
-    #[inline]
-    pub fn init(
-        &mut self,
-        color: ColorWGPU,
-        background_image: &Option<sugarloaf::ImageProperties>,
-    ) {
-        let initial_columns = self.sugarloaf.layout.columns;
-
-        self.sugarloaf.set_background_color(color);
-        if let Some(image) = background_image {
-            self.sugarloaf.set_background_image(image);
-        }
-
-        if self.sugarloaf.layout.columns != initial_columns {
-            let width = self.sugarloaf.layout.width_u32 as u16;
-            let height = self.sugarloaf.layout.height_u32 as u16;
-            let columns = self.sugarloaf.layout.columns;
-            let lines = self.sugarloaf.layout.lines;
-            self.resize_all_contexts(width, height, columns, lines);
         }
     }
 
