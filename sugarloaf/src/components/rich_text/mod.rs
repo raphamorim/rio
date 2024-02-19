@@ -304,7 +304,7 @@ impl RichTextBrush {
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
             // To confirm: should actually * 1.5?
-            state.current.layout.style.screen_position.1 * 1.5,
+            state.current.layout.style.screen_position.1 * 2.0,
             state.compositors.advanced.font_library(),
         );
         self.dlist.clear();

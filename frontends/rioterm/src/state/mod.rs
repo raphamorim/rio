@@ -538,7 +538,7 @@ impl State {
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
-        let layout = sugarloaf.layout();
+        let layout = sugarloaf.layout_next();
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
