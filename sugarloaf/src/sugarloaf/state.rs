@@ -307,6 +307,8 @@ impl SugarState {
                     // Do nothing
                 }
                 SugarTreeDiff::LayoutIsDifferent => {
+                    self.compositors.elementary.clean_blocks();
+
                     std::mem::swap(&mut self.current, &mut self.next);
                     if self.level.is_advanced() {
                         self.compositors
