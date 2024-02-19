@@ -193,9 +193,7 @@ impl Screen {
         if let Some(image) = config.window.background_image {
             sugarloaf.set_background_image(&image);
         }
-
-        self.resize_all_contexts();
-        self.render();
+        sugarloaf.render();
 
         Ok(Screen {
             mouse_bindings: crate::bindings::default_mouse_bindings(),
@@ -256,7 +254,7 @@ impl Screen {
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
         let layout = self.sugarloaf.layout();
-        let scale_f64 = layout.scale_factor as f64;
+        let scale_f64 = layout.dimensions.scale as f64;
         pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
 
@@ -264,7 +262,7 @@ impl Screen {
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone_draggable(&self, pos_x: f64) -> bool {
         let layout = self.sugarloaf.layout();
-        let scale_f64 = layout.scale_factor as f64;
+        let scale_f64 = layout.dimensions.scale as f64;
         pos_x >= DEADZONE_START_X * scale_f64
     }
 
@@ -297,7 +295,7 @@ impl Screen {
             padding_y_bottom,
         );
 
-        self.sugarloaf.layout.update();
+        self.sugarloaf.layout_next().update();
         self.state = State::new(config, current_theme);
 
         for context in self.ctx().contexts() {
@@ -320,7 +318,7 @@ impl Screen {
         }
 
         self.sugarloaf
-            .set_background_color(screen.state.named_colors.background.1);
+            .set_background_color(bg_color);
         if let Some(image) = config.window.background_image {
             self.sugarloaf.set_background_image(&image);
         }
@@ -344,7 +342,7 @@ impl Screen {
         // so basically it updates with the new font-size, then compute the bounds
         // and then updates again with correct bounds
         // TODO: Refactor this logic
-        self.sugarloaf.layout.update();
+        self.sugarloaf.layout_next().update();
         self.resize_all_contexts();
     }
 
@@ -373,7 +371,7 @@ impl Screen {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         let layout = self.sugarloaf.layout_next();
-        for context in self.ctx.contexts() {
+        for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
             terminal.resize::<SugarloafLayout>(layout);
             drop(terminal);
@@ -1025,7 +1023,7 @@ impl Screen {
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
         let layout = self.sugarloaf.layout();
-        let scale_factor = layout.scale_factor;
+        let scale_factor = layout.dimensions.scale;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
