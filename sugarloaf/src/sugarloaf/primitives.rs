@@ -128,8 +128,6 @@ pub struct SugarLine {
 
     // inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
     // pub len: usize,
-    pub acc: usize,
-
     inner: Vec<Sugar>,
     first_non_default: usize,
     last_non_default: usize,
@@ -173,7 +171,6 @@ impl Default for SugarLine {
             non_default_count: 0,
             inner: Vec::with_capacity(600),
             default_sugar: Sugar::default(),
-            acc: 0,
             // len: 0,
         }
     }
@@ -220,23 +217,20 @@ impl SugarLine {
 
         if sugar != &self.default_sugar {
             if self.first_non_default == 0 {
-                self.first_non_default = self.acc;
-                self.last_non_default = self.acc;
+                self.first_non_default = len;
+                self.last_non_default = len;
             } else {
-                self.last_non_default = self.acc;
+                self.last_non_default = len;
             }
 
             self.non_default_count += 1;
         }
-
-        self.acc += 1;
     }
 
     #[inline]
     pub fn insert_empty(&mut self) {
         // self.inner[self.len] = self.default_sugar;
         self.inner.push(self.default_sugar);
-        self.acc += 1;
         // self.len += 1;
     }
 
@@ -351,8 +345,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(!line_a.is_empty());
-        assert_eq!(line_a.len(), 6);
-        assert_eq!(line_a.acc, 4);
+        assert_eq!(line_a.len(), 4);
 
         let mut line_a = SugarLine::default();
         let vector = vec![
@@ -386,7 +379,6 @@ pub mod test {
 
         assert!(!line_a.is_empty());
         assert_eq!(line_a.len(), 6);
-        assert_eq!(line_a.acc, 6);
 
         let mut line_a = SugarLine::default();
         let vector = vec![
@@ -419,8 +411,7 @@ pub mod test {
         line_a.from_vec(&vector);
 
         assert!(line_a.is_empty());
-        assert_eq!(line_a.len(), 6);
-        assert_eq!(line_a.acc, 0);
+        assert_eq!(line_a.len(), 1);
     }
 
     #[test]

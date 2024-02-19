@@ -107,7 +107,7 @@ impl SugarTree {
                     );
                 }
 
-                for column in 0..line.acc {
+                for column in 0..line.len() {
                     if line[column] != next_line[column] {
                         changes.push(Diff {
                             line: line_number,
