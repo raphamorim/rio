@@ -1,8 +1,7 @@
-use super::defaults::default_renderer_level;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Renderer {
     #[serde(default = "Performance::default")]
     pub performance: Performance,
@@ -10,19 +9,8 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
-    #[serde(default = "default_renderer_level")]
+    #[serde(default = "u8::default")]
     pub level: u8,
-}
-
-impl Default for Renderer {
-    fn default() -> Self {
-        Self {
-            performance: Performance::default(),
-            backend: Backend::default(),
-            disable_unfocused_render: false,
-            level: default_renderer_level(),
-        }
-    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]

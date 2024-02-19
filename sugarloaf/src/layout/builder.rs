@@ -427,7 +427,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn shape(&mut self, layout: &mut Paragraph) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         for item in &self.s.items {
             shape_item(
@@ -441,8 +441,8 @@ impl<'a> ParagraphBuilder<'a> {
             );
         }
         layout.apply_spacing(&self.s.spans);
-        let duration = start.elapsed();
-        println!("Time elapsed in shape is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 
