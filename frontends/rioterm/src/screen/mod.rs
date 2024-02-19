@@ -133,7 +133,7 @@ impl Screen {
             power_preference,
             backend,
             level: match config.renderer.level {
-                // 0 => SugarCompositorLevel::Elementary,
+                0 => SugarCompositorLevel::Elementary,
                 _ => SugarCompositorLevel::Advanced,
             },
         };
@@ -195,7 +195,7 @@ impl Screen {
         }
         sugarloaf.set_background_color(bg_color);
         if let Some(image) = &config.window.background_image {
-            sugarloaf.set_background_image(&image);
+            sugarloaf.set_background_image(image);
         }
         sugarloaf.render();
 
@@ -323,7 +323,7 @@ impl Screen {
 
         self.sugarloaf.set_background_color(bg_color);
         if let Some(image) = &config.window.background_image {
-            self.sugarloaf.set_background_image(&image);
+            self.sugarloaf.set_background_image(image);
         }
 
         self.render();
