@@ -319,11 +319,19 @@ impl SugarState {
                     // TODO: should only resize elementary rects if scale or width/height changes
                     self.compositors.elementary.set_should_resize();
                 }
-                SugarTreeDiff::Changes(changes) => {
-                    // Blocks updates are placed in the first position
-                    if !changes.is_empty() && changes[0].is_block() {
-                        self.compositors.elementary.clean_blocks();
+                SugarTreeDiff::BlocksAreDifferent => {
+                    self.compositors.elementary.clean_blocks();
+
+                    std::mem::swap(&mut self.current, &mut self.next);
+                    if self.level.is_advanced() {
+                        self.compositors.advanced.update_data();
+                        self.compositors.advanced.update_layout(&self.current);
+                        self.compositors.advanced.update_size(&self.current);
                     }
+                }
+                SugarTreeDiff::Changes(_changes) => {
+                    // Blocks updates are placed in the first position
+
                     //     // println!("change {:?}", change);
                     //     if let Some(offs) = self.content.insert(0, change.after.content) {
                     //         // inserted = Some(offs);

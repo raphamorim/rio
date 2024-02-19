@@ -725,17 +725,20 @@ impl Route {
                                 self.state.has_blinking_enabled,
                             ),
                         );
+                        self.render();
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
 
                         if self.ctx.config.is_native {
-                            self.ctx.close_current_window();
+                            self.ctx.close_current_window(false);
                         } else {
                             // Kill current context will trigger terminal.exit
                             // then RioEvent::Exit and eventually try_close_existent_tab
                             self.ctx.kill_current_context();
                         }
+
+                        self.render();
                     }
                     Act::Quit => {
                         wa::window::request_quit();
@@ -836,17 +839,21 @@ impl Route {
                     }
                     Act::SelectTab(tab_index) => {
                         self.ctx.select_tab(*tab_index);
+                        self.render();
                     }
                     Act::SelectLastTab => {
                         self.ctx.select_last_tab();
+                        self.render();
                     }
                     Act::SelectNextTab => {
                         self.clear_selection();
                         self.ctx.switch_to_next();
+                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.clear_selection();
                         self.ctx.switch_to_prev();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),

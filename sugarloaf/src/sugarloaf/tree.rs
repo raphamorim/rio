@@ -9,35 +9,13 @@ use crate::{Sugar, SugarBlock, SugarLine};
 // use smallvec::SmallVec;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
-pub enum DiffKind {
-    Block,
-    #[default]
-    Sugar,
-}
-
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct Diff {
-    pub kind: DiffKind,
     pub line: usize,
     pub column: usize,
     pub before: Sugar,
     pub after: Sugar,
     // range: Range<usize>,
     // content: Vec<char>,
-}
-
-impl Diff {
-    pub fn block() -> Self {
-        Diff {
-            kind: DiffKind::Block,
-            ..Diff::default()
-        }
-    }
-
-    #[inline]
-    pub fn is_block(&self) -> bool {
-        self.kind == DiffKind::Block
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -110,14 +88,14 @@ impl SugarTree {
             return SugarTreeDiff::LayoutIsDifferent;
         }
 
+        // TODO: Improve blocks comparisson
+        if self.blocks != next.blocks {
+            return SugarTreeDiff::BlocksAreDifferent;
+        }
+
         let current_len = self.lines.len();
         let next_len = next.len();
         let mut changes: Vec<Diff> = vec![];
-
-        // TODO: Improve blocks comparisson
-        if self.blocks != next.blocks {
-            changes.push(Diff::block());
-        }
 
         if current_len == next_len {
             for line_number in 0..current_len {
@@ -132,7 +110,6 @@ impl SugarTree {
                 for column in 0..line.acc {
                     if line[column] != next_line[column] {
                         changes.push(Diff {
-                            kind: DiffKind::Sugar,
                             line: line_number,
                             column,
                             before: line[column],
@@ -357,7 +334,6 @@ pub mod test {
         });
 
         let mut changes = vec![Diff {
-            kind: DiffKind::Sugar,
             line: 0,
             column: 0,
             before: Sugar {
@@ -406,7 +382,6 @@ pub mod test {
         });
 
         changes.push(Diff {
-            kind: DiffKind::Sugar,
             line: 0,
             column: 1,
             before: Sugar {

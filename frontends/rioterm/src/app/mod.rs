@@ -123,6 +123,9 @@ impl EventHandler for Router {
 
         if let Some(event) = event {
             match event {
+                RioEvent::CloseWindow => {
+                    // TODO
+                }
                 RioEvent::CreateWindow => {
                     #[cfg(target_os = "macos")]
                     let new_tab_group = if self.config.navigation.is_native() {
