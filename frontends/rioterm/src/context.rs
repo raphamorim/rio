@@ -344,16 +344,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn create_new_window(&mut self) {
+    pub fn create_new_window(&self) {
         self.event_proxy
             .send_event(RioEvent::CreateWindow, self.window_id);
     }
 
     #[inline]
     #[allow(unused)]
-    pub fn close_current_window(&mut self) {
-        self.event_proxy
-            .send_event(RioEvent::CloseWindow, self.window_id);
+    pub fn close_current_window(&mut self, is_last_tab: bool) {
+        if self.config.is_native {
+            self.event_proxy
+                .send_event(RioEvent::CloseWindow, self.window_id);
+        } else if !is_last_tab {
+            self.close_context();
+        }
     }
 
     #[inline]
@@ -544,8 +548,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // keep Rio running in background if allow_close_last_tab is true
             #[cfg(target_os = "macos")]
             {
-                self.event_proxy
-                    .send_event(RioEvent::CloseWindow, self.window_id);
+                self.close_current_window(true);
             }
 
             return;
@@ -566,9 +569,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         #[cfg(target_os = "windows")]
-        {
-            self.close_context();
-        }
+        self.close_context();
+
+        #[cfg(target_os = "macos")]
+        self.close_current_window(false);
     }
 
     #[inline]
