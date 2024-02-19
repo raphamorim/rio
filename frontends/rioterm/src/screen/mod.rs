@@ -287,7 +287,7 @@ impl Screen {
 
         let padding_y_top = padding_top_from_config(config);
 
-        self.sugarloaf.layout.recalculate(
+        self.sugarloaf.layout_next().recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
@@ -317,8 +317,7 @@ impl Screen {
             bg_color.a = config.window.background_opacity as f64;
         }
 
-        self.sugarloaf
-            .set_background_color(bg_color);
+        self.sugarloaf.set_background_color(bg_color);
         if let Some(image) = config.window.background_image {
             self.sugarloaf.set_background_image(&image);
         }
@@ -329,9 +328,9 @@ impl Screen {
     #[inline]
     pub fn change_font_size(&mut self, action: FontSizeAction) {
         let should_update = match action {
-            FontSizeAction::Increase => self.sugarloaf.layout.increase_font_size(),
-            FontSizeAction::Decrease => self.sugarloaf.layout.decrease_font_size(),
-            FontSizeAction::Reset => self.sugarloaf.layout.reset_font_size(),
+            FontSizeAction::Increase => self.sugarloaf.layout_next().increase_font_size(),
+            FontSizeAction::Decrease => self.sugarloaf.layout_next().decrease_font_size(),
+            FontSizeAction::Reset => self.sugarloaf.layout_next().reset_font_size(),
         };
 
         if !should_update {
@@ -592,7 +591,7 @@ impl Screen {
                         self.clear_selection();
 
                         if self.context_manager.config.is_native {
-                            self.context_manager.close_current_window();
+                            self.context_manager.close_current_window(false);
                         } else {
                             // Kill current context will trigger terminal.exit
                             // then RioEvent::Exit and eventually try_close_existent_tab
