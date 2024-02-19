@@ -322,7 +322,7 @@ impl Screen {
         }
 
         self.sugarloaf.set_background_color(bg_color);
-        if let Some(image) = config.window.background_image {
+        if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(&image);
         }
 
