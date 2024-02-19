@@ -110,21 +110,21 @@ impl SugarState {
 
     #[inline]
     pub fn reset_compositor(&mut self) {
-        match self.level {
-            SugarCompositorLevel::Elementary => self.compositors.elementary.reset(),
-            SugarCompositorLevel::Advanced => self.compositors.advanced.reset(),
-        }
+        // if self.level.is_advanced() {
+        //     self.compositors.advanced.reset();
+        // }
 
+        self.compositors.elementary.reset();
         self.dimensions_changed = false;
     }
 
     #[inline]
     pub fn clean_compositor(&mut self) {
-        match self.level {
-            SugarCompositorLevel::Elementary => self.compositors.elementary.clean(),
-            SugarCompositorLevel::Advanced => self.compositors.advanced.clean(),
-        }
+        // if self.level.is_advanced() {
+        //     self.compositors.advanced.clean();
+        // }
 
+        self.compositors.elementary.clean();
         self.dimensions_changed = false;
     }
 
@@ -153,6 +153,10 @@ impl SugarState {
         for section in &self.compositors.elementary.blocks_sections {
             elementary_brush.queue(section);
             elementary_brush.keep_cached(section);
+        }
+
+        if self.compositors.elementary.should_resize {
+            rect_brush.resize(context);
         }
 
         // let duration = start.elapsed();
@@ -189,10 +193,6 @@ impl SugarState {
             .elementary
             .rects
             .extend(&self.compositors.elementary.blocks_rects);
-
-        if self.compositors.elementary.should_resize {
-            rect_brush.resize(context);
-        }
 
         true
     }
@@ -237,7 +237,7 @@ impl SugarState {
                 if dimensions_changed {
                     self.current.layout.update();
                     self.next.layout = self.current.layout;
-                    self.dimensions_changed = dimensions_changed;
+                    self.dimensions_changed = true;
                     log::info!("sugar_state: dimensions has changed");
                 }
             }
@@ -300,66 +300,56 @@ impl SugarState {
             return;
         }
 
-        if !self.current.is_empty() {
-            self.latest_change = self.current.calculate_diff(&self.next);
-            match &self.latest_change {
-                SugarTreeDiff::Equal => {
-                    // Do nothing
-                }
-                SugarTreeDiff::LayoutIsDifferent => {
-                    self.compositors.elementary.clean_blocks();
+        let mut should_update = false;
+        let mut should_clean_blocks = false;
+        let mut should_resize = false;
+        let mut should_compute_dimensions = false;
 
-                    std::mem::swap(&mut self.current, &mut self.next);
-                    if self.level.is_advanced() {
-                        self.compositors
-                            .advanced
-                            .calculate_dimensions(&self.current);
-                        self.compositors.advanced.update_data();
-                        self.compositors.advanced.update_layout(&self.current);
-                        self.compositors.advanced.update_size(&self.current);
-                    }
-                    // TODO: should only resize elementary rects if scale or width/height changes
-                    self.compositors.elementary.set_should_resize();
-                }
-                SugarTreeDiff::BlocksAreDifferent => {
-                    self.compositors.elementary.clean_blocks();
-
-                    std::mem::swap(&mut self.current, &mut self.next);
-                    if self.level.is_advanced() {
-                        self.compositors.advanced.update_data();
-                        self.compositors.advanced.update_layout(&self.current);
-                        self.compositors.advanced.update_size(&self.current);
-                    }
-                }
-                SugarTreeDiff::Changes(_changes) => {
-                    // Blocks updates are placed in the first position
-
-                    //     // println!("change {:?}", change);
-                    //     if let Some(offs) = self.content.insert(0, change.after.content) {
-                    //         // inserted = Some(offs);
-                    //         println!("{:?}", offs);
-                    //     }
-
-                    std::mem::swap(&mut self.current, &mut self.next);
-                    if self.level.is_advanced() {
-                        self.compositors.advanced.update_data();
-                        self.compositors.advanced.update_layout(&self.current);
-                        self.compositors.advanced.update_size(&self.current);
-                    }
-
-                    // println!("changes: {:?}", changes);
-                }
-                _ => {
-                    std::mem::swap(&mut self.current, &mut self.next);
-                    if self.level.is_advanced() {
-                        self.compositors.advanced.update_data();
-                        self.compositors.advanced.update_layout(&self.current);
-                        self.compositors.advanced.update_size(&self.current);
-                    }
-                }
+        self.latest_change = self.current.calculate_diff(&self.next);
+        match &self.latest_change {
+            SugarTreeDiff::Equal => {
+                // Do nothing
             }
-        } else if !self.next.is_empty() {
+            SugarTreeDiff::LayoutIsDifferent => {
+                should_update = true;
+                should_compute_dimensions = true;
+                should_clean_blocks = true;
+                should_resize = true;
+            }
+            SugarTreeDiff::BlocksAreDifferent => {
+                should_clean_blocks = true;
+                should_update = true;
+            }
+            SugarTreeDiff::Changes(_changes) => {
+                should_update = true;
+            }
+            _ => {
+                should_update = true;
+            }
+        }
+
+        if should_update {
             std::mem::swap(&mut self.current, &mut self.next);
+
+            if should_compute_dimensions {
+                self.compositors
+                    .advanced
+                    .calculate_dimensions(&self.current);
+            }
+
+            if self.level.is_advanced() {
+                self.compositors.advanced.update_data();
+                self.compositors.advanced.update_layout(&self.current);
+                self.compositors.advanced.update_size(&self.current);
+            }
+        }
+
+        if should_clean_blocks {
+            self.compositors.elementary.clean_blocks();
+        }
+
+        if should_resize {
+            self.compositors.elementary.set_should_resize();
         }
 
         self.reset_next();
