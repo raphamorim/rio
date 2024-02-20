@@ -197,6 +197,7 @@ impl Screen {
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
+        sugarloaf.render();
 
         Ok(Screen {
             mouse_bindings: crate::bindings::default_mouse_bindings(),
@@ -348,6 +349,7 @@ impl Screen {
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
         self.sugarloaf.resize(new_size.width, new_size.height);
+        self.resize_all_contexts();
         self
     }
 
@@ -359,6 +361,7 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
+        self.resize_all_contexts();
         self
     }
 
@@ -1171,7 +1174,6 @@ impl Screen {
         // If sugarloaf does have pending updates to process then
         // should abort current render
         if self.sugarloaf.dimensions_changed() {
-            println!("teve mudancao");
             self.resize_all_contexts();
             return;
         };

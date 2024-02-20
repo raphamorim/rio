@@ -47,5 +47,6 @@ x11 = [
     "copypasta/x11"
 ]
 wayland = [
-    "copypasta/wayland"
+    "copypasta/wayland",
+    "sugarloaf/render_equal_updates"
 ]
