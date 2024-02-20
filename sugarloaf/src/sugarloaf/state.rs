@@ -307,7 +307,7 @@ impl SugarState {
             SugarTreeDiff::Equal => {
                 // Do nothing
             }
-            SugarTreeDiff::LayoutIsDifferent => {
+            SugarTreeDiff::LayoutIsDifferent | SugarTreeDiff::LineLengthIsDifferent(_) => {
                 should_update = true;
                 should_compute_dimensions = true;
                 should_clean_blocks = true;
