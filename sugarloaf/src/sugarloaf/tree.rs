@@ -101,6 +101,15 @@ impl SugarTree {
             for line_number in 0..current_len {
                 let line: &SugarLine = &self.lines[line_number];
                 let next_line: &SugarLine = &next.lines[line_number];
+
+                // .width stands for column size and .len() sugar elements
+                // this needs to be differenciated
+                // if line.width != next_line.width {
+                //     return SugarTreeDiff::ColumnsLengthIsDifferent(
+                //         line.width as i32 - next_line.width as i32,
+                //     );
+                // }
+
                 if line.len() != next_line.len() {
                     return SugarTreeDiff::ColumnsLengthIsDifferent(
                         line.len() as i32 - next_line.len() as i32,

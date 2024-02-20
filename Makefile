@@ -27,12 +27,15 @@ run:
 	cargo run --release
 
 dev:
-	RIO_LOG_LEVEL=debug cargo run -p rioterm
+	cargo run -p rioterm
 
-dev-wayland:
+dev-debug:
+	RIO_LOG_LEVEL=debug make dev
+
+dev-debug-wayland:
 	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=wayland
 
-dev-x11:
+dev-debug-x11:
 	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=x11
 
 run-wasm:

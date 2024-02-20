@@ -127,7 +127,7 @@ pub struct SugarLine {
     // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
 
     // inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
-    // pub len: usize,
+    pub raw_len: usize,
     inner: Vec<Sugar>,
     first_non_default: usize,
     last_non_default: usize,
@@ -145,6 +145,7 @@ impl PartialEq for SugarLine {
         // if self.len != other.len
         let len = self.inner.len();
         if len != other.inner.len()
+            || self.raw_len != other.raw_len
             || self.first_non_default != other.first_non_default
             || self.last_non_default != other.last_non_default
             || self.non_default_count != other.non_default_count
@@ -166,6 +167,7 @@ impl Default for SugarLine {
     fn default() -> Self {
         Self {
             // hash: 00000000000000,
+            raw_len: 0,
             last_non_default: 0,
             first_non_default: 0,
             non_default_count: 0,
@@ -209,6 +211,7 @@ impl SugarLine {
         let len = self.inner.len();
 
         if len > 0 && equal_without_consider_repeat(&self.inner[len - 1], sugar) {
+            self.raw_len += 1;
             self.inner[len - 1].repeated += 1;
             return;
         }
@@ -225,19 +228,20 @@ impl SugarLine {
 
             self.non_default_count += 1;
         }
+
+        self.raw_len += 1;
     }
 
     #[inline]
     pub fn insert_empty(&mut self) {
         // self.inner[self.len] = self.default_sugar;
         self.inner.push(self.default_sugar);
-        // self.len += 1;
+        self.raw_len += 1;
     }
 
     #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
-        // self.len += 1;
     }
 
     // #[inline]
@@ -412,6 +416,7 @@ pub mod test {
 
         assert!(line_a.is_empty());
         assert_eq!(line_a.len(), 1);
+        assert_eq!(line_a.raw_len, 6);
     }
 
     #[test]
