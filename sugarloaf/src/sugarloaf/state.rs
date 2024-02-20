@@ -290,13 +290,10 @@ impl SugarState {
             std::mem::swap(&mut self.current, &mut self.next);
 
             if self.level.is_advanced() {
-                self.compositors
-                    .advanced
-                    .calculate_dimensions(&self.current);
+                self.compositors.advanced.calculate_dimensions(&self.next);
             }
 
             self.compositors.elementary.set_should_resize();
-            self.reset_next();
             return;
         }
 
@@ -310,25 +307,32 @@ impl SugarState {
             SugarTreeDiff::Equal => {
                 // Do nothing
             }
-            SugarTreeDiff::LayoutIsDifferent
-            | SugarTreeDiff::ColumnsLengthIsDifferent(_)
-            | SugarTreeDiff::LineLengthIsDifferent(_) => {
+            SugarTreeDiff::LayoutIsDifferent => {
                 should_update = true;
                 should_compute_dimensions = true;
                 should_clean_blocks = true;
                 should_resize = true;
+                println!("LayoutIsDifferent");
             }
             SugarTreeDiff::BlocksAreDifferent => {
                 should_clean_blocks = true;
                 should_update = true;
             }
+            SugarTreeDiff::ColumnsLengthIsDifferent(_different) => {
+                println!("ColumnsLengthIsDifferent");
+                should_update = true;
+            }
             SugarTreeDiff::Changes(_changes) => {
+                println!("Changes");
                 should_update = true;
             }
             _ => {
+                println!("should_update");
                 should_update = true;
             }
         }
+
+        println!("{:?}", self.latest_change);
 
         if should_update {
             std::mem::swap(&mut self.current, &mut self.next);
