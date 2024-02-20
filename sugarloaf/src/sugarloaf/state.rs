@@ -271,8 +271,10 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn dimensions_changed(&self) -> bool {
-        self.dimensions_changed
+    pub fn dimensions_changed(&mut self) -> bool {
+        let previous = self.dimensions_changed;
+        self.dimensions_changed = false;
+        previous
     }
 
     #[inline]
@@ -294,6 +296,9 @@ impl SugarState {
             }
 
             self.compositors.elementary.set_should_resize();
+            self.reset_next();
+            self.latest_change = SugarTreeDiff::LayoutIsDifferent;
+            println!("current_has_empty_dimensions, will try to find...");
             return;
         }
 
@@ -307,27 +312,27 @@ impl SugarState {
             SugarTreeDiff::Equal => {
                 // Do nothing
             }
-            SugarTreeDiff::LayoutIsDifferent | SugarTreeDiff::LineLengthIsDifferent(_) => {
+            SugarTreeDiff::LayoutIsDifferent => {
                 should_update = true;
                 should_compute_dimensions = true;
                 should_clean_blocks = true;
                 should_resize = true;
-                println!("LayoutIsDifferent");
             }
             SugarTreeDiff::BlocksAreDifferent => {
                 should_clean_blocks = true;
                 should_update = true;
             }
-            SugarTreeDiff::ColumnsLengthIsDifferent(_different) => {
-                println!("ColumnsLengthIsDifferent");
+            SugarTreeDiff::ColumnsLengthIsDifferent(_) => {
                 should_update = true;
             }
+            SugarTreeDiff::LineLengthIsDifferent(_) => {
+                should_update = true;
+                should_compute_dimensions = true;
+            }
             SugarTreeDiff::Changes(_changes) => {
-                println!("Changes");
                 should_update = true;
             }
             _ => {
-                println!("should_update");
                 should_update = true;
             }
         }
