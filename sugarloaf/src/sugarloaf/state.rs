@@ -136,6 +136,8 @@ impl SugarState {
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
     ) -> bool {
+        // TODO: Fix drop of rendering context on wayland if diff is equal
+        #[cfg(not(feature = "render_equal_updates"))]
         if self.latest_change == SugarTreeDiff::Equal {
             return false;
         }
@@ -271,10 +273,8 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn dimensions_changed(&mut self) -> bool {
-        let previous = self.dimensions_changed;
-        self.dimensions_changed = false;
-        previous
+    pub fn dimensions_changed(&self) -> bool {
+        self.dimensions_changed
     }
 
     #[inline]
@@ -292,13 +292,15 @@ impl SugarState {
             std::mem::swap(&mut self.current, &mut self.next);
 
             if self.level.is_advanced() {
-                self.compositors.advanced.calculate_dimensions(&self.current);
+                self.compositors
+                    .advanced
+                    .calculate_dimensions(&self.current);
             }
 
             self.compositors.elementary.set_should_resize();
             self.reset_next();
             self.latest_change = SugarTreeDiff::LayoutIsDifferent;
-            println!("current_has_empty_dimensions, will try to find...");
+            log::info!("current_has_empty_dimensions, will try to find...");
             return;
         }
 
@@ -337,7 +339,7 @@ impl SugarState {
             }
         }
 
-        println!("{:?}", self.latest_change);
+        log::info!("state compute_changes result: {:?}", self.latest_change);
 
         if should_update {
             std::mem::swap(&mut self.current, &mut self.next);
