@@ -312,8 +312,6 @@ impl Screen {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        self.resize_all_contexts();
-
         let mut bg_color = self.state.named_colors.background.1;
 
         if config.window.background_opacity < 1. {
@@ -325,7 +323,7 @@ impl Screen {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.render();
+        self.resize_all_contexts();
     }
 
     #[inline]
@@ -350,7 +348,6 @@ impl Screen {
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.resize_all_contexts();
         self
     }
 
@@ -362,7 +359,6 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.resize_all_contexts();
         self
     }
 

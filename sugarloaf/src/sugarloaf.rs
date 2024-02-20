@@ -325,7 +325,7 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn dimensions_changed(&self) -> bool {
+    pub fn dimensions_changed(&mut self) -> bool {
         self.state.dimensions_changed()
     }
 
