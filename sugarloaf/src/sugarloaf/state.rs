@@ -290,7 +290,7 @@ impl SugarState {
             std::mem::swap(&mut self.current, &mut self.next);
 
             if self.level.is_advanced() {
-                self.compositors.advanced.calculate_dimensions(&self.next);
+                self.compositors.advanced.calculate_dimensions(&self.current);
             }
 
             self.compositors.elementary.set_should_resize();
