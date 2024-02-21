@@ -126,8 +126,8 @@ impl Route {
             power_preference,
             backend,
             level: match config.renderer.level {
-                // 0 => SugarCompositorLevel::Elementary,
-                _ => SugarCompositorLevel::Advanced,
+                _ => SugarCompositorLevel::Elementary,
+                // _ => SugarCompositorLevel::Advanced,
             },
         };
 
@@ -1185,10 +1185,15 @@ impl Route {
 
     #[inline]
     pub fn change_font_size(&mut self, action: u8) {
-        if let 0..=2 = action {
-            self.superloop
-                .send_event_with_high_priority(RioEvent::UpdateFontSize(action), self.id);
+        self.sugarloaf.update_font_size(action);
+        self.render();
+
+        if self.sugarloaf.dimensions_changed() {
+            self.resize_all_contexts();
         };
+
+        self.render();
+        self.resize_all_contexts();
     }
 
     #[inline]

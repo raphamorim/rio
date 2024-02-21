@@ -227,27 +227,6 @@ impl EventHandler for Router {
                         current.report_error(&error);
                     }
                 }
-                RioEvent::UpdateFontSize(action) => {
-                    if let Some(current) = &mut self.route {
-                        let should_update = match action {
-                            0 => current.sugarloaf.layout_next().reset_font_size(),
-                            2 => current.sugarloaf.layout_next().increase_font_size(),
-                            1 => current.sugarloaf.layout_next().decrease_font_size(),
-                            _ => false,
-                        };
-
-                        if !should_update {
-                            return;
-                        }
-
-                        // This is a hacky solution, sugarloaf compute bounds in runtime
-                        // so basically it updates with the new font-size, then compute the bounds
-                        // and then updates again with correct bounds
-                        current.resize_all_contexts();
-
-                        current.render();
-                    }
-                }
                 RioEvent::UpdateGraphicLibrary => {
                     if let Some(current) = &mut self.route {
                         let mut terminal = current.ctx.current().terminal.lock();

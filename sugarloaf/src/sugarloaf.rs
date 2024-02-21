@@ -224,6 +224,11 @@ impl Sugarloaf {
     }
 
     #[inline]
+    pub fn update_font_size(&mut self, operation: u8) {
+        self.state.compute_layout_font_size(operation);
+    }
+
+    #[inline]
     pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
         self.background_color = color;
         self

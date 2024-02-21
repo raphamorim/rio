@@ -7,6 +7,7 @@ use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
+use crate::layout::SugarDimensions;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 
@@ -47,6 +48,22 @@ impl SugarState {
     #[inline]
     pub fn compute_layout_resize(&mut self, width: u32, height: u32) {
         self.next.layout.resize(width, height).update();
+    }
+
+    #[inline]
+    pub fn compute_layout_font_size(&mut self, operation: u8) {
+        let should_update = match operation {
+            0 => self.next.layout.reset_font_size(),
+            2 => self.next.layout.increase_font_size(),
+            1 => self.next.layout.decrease_font_size(),
+            _ => false,
+        };
+
+        if should_update {
+            self.compositors.elementary.reset();
+            self.next.layout.update();
+            self.current.layout.dimensions = SugarDimensions::default();
+        }
     }
 
     #[inline]
