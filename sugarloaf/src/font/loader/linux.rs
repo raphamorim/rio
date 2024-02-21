@@ -53,9 +53,9 @@ fn load_fontconfig(database: &mut Database) {
     } in fontconfig.aliases
     {
         let name = prefer
-            .get(0)
-            .or_else(|| accept.get(0))
-            .or_else(|| default.get(0));
+            .first()
+            .or_else(|| accept.first())
+            .or_else(|| default.first());
 
         if let Some(name) = name {
             match alias.to_lowercase().as_str() {
