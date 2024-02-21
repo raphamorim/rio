@@ -9,6 +9,11 @@ pub fn default_line_height() -> f32 {
 }
 
 #[inline]
+pub fn default_renderer_level() -> u8 {
+    1
+}
+
+#[inline]
 pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {

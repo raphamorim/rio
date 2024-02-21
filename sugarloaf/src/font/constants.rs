@@ -9,54 +9,54 @@ pub const DEFAULT_FONT_FAMILY: &str = "cascadiamono";
 pub const DEFAULT_FONT_FAMILY_VARIANT: &str = "cascadiacode";
 
 // Fonts:
-// CascadiaMonoPL-Bold.otf
-// CascadiaMonoPL-BoldItalic.otf
-// CascadiaMonoPL-ExtraLight.otf
-// CascadiaMonoPL-ExtraLightItalic.otf
-// CascadiaMonoPL-Italic.otf
-// CascadiaMonoPL-Light.otf
-// CascadiaMonoPL-LightItalic.otf
-// CascadiaMonoPL-Regular.otf
-// CascadiaMonoPL-SemiBold.otf
-// CascadiaMonoPL-SemiBoldItalic.otf
-// CascadiaMonoPL-SemiLight.otf
-// CascadiaMonoPL-SemiLightItalic.otf
+// CascadiaMonoPL-Bold.ttf
+// CascadiaMonoPL-BoldItalic.ttf
+// CascadiaMonoPL-ExtraLight.ttf
+// CascadiaMonoPL-ExtraLightItalic.ttf
+// CascadiaMonoPL-Italic.ttf
+// CascadiaMonoPL-Light.ttf
+// CascadiaMonoPL-LightItalic.ttf
+// CascadiaMonoPL-Regular.ttf
+// CascadiaMonoPL-SemiBold.ttf
+// CascadiaMonoPL-SemiBoldItalic.ttf
+// CascadiaMonoPL-SemiLight.ttf
+// CascadiaMonoPL-SemiLightItalic.ttf
 
 pub const FONT_CASCADIAMONO_BOLD: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Bold.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-Bold.ttf");
 
 pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-BoldItalic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-BoldItalic.ttf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLight.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLight.ttf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLightItalic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLightItalic.ttf");
 
 pub const FONT_CASCADIAMONO_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Italic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-Italic.ttf");
 
 pub const FONT_CASCADIAMONO_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Light.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-Light.ttf");
 
 pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-LightItalic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-LightItalic.ttf");
 
 pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Regular.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-Regular.ttf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBold.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBold.ttf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBoldItalic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBoldItalic.ttf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLight.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLight.ttf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLightItalic.otf");
+    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLightItalic.ttf");
 
 // Extra
 
