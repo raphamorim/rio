@@ -329,21 +329,21 @@ impl Screen {
 
     #[inline]
     pub fn change_font_size(&mut self, action: FontSizeAction) {
-        let should_update = match action {
-            FontSizeAction::Increase => self.sugarloaf.layout_next().increase_font_size(),
-            FontSizeAction::Decrease => self.sugarloaf.layout_next().decrease_font_size(),
-            FontSizeAction::Reset => self.sugarloaf.layout_next().reset_font_size(),
+        let action: u8 = match action {
+            FontSizeAction::Increase => 2,
+            FontSizeAction::Decrease => 1,
+            FontSizeAction::Reset => 0,
         };
 
-        if !should_update {
-            return;
-        }
+        self.sugarloaf.update_font_size(action);
+        self.render();
 
-        // This is a hacky solution, sugarloaf compute bounds in runtime
-        // so basically it updates with the new font-size, then compute the bounds
-        // and then updates again with correct bounds
-        // TODO: Refactor this logic
-        self.sugarloaf.layout_next().update();
+        if self.sugarloaf.dimensions_changed() {
+            self.resize_all_contexts();
+        };
+
+        self.render();
+        self.resize_all_contexts();
     }
 
     #[inline]

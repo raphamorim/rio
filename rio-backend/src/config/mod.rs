@@ -17,7 +17,7 @@ use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
 
@@ -220,7 +220,8 @@ impl Config {
                     light: None,
                 };
 
-                if let Ok(light_loaded_theme) = Config::load_theme(&tmp.join(light_theme)) {
+                if let Ok(light_loaded_theme) = Config::load_theme(&tmp.join(light_theme))
+                {
                     adaptive_colors.light = Some(light_loaded_theme.colors);
                 } else {
                     warn!("failed to load light theme: {}", light_theme);
@@ -244,7 +245,7 @@ impl Config {
         }
     }
 
-    fn load_theme(path: &PathBuf) -> Result<Theme, String> {
+    fn load_theme(path: &Path) -> Result<Theme, String> {
         let mut theme_path = path.with_extension("toml");
         let mut is_json = false;
         if !theme_path.exists() {
@@ -269,7 +270,7 @@ impl Config {
     }
 
     #[inline]
-    fn config_from_file(path: PathBuf, is_json: bool) -> Config {
+    fn config_from_file(path: &Path, is_json: bool) -> Config {
         let dir_path = config_dir_path();
         if let Ok(content) = std::fs::read_to_string(path) {
             let mut decoded: Config = if is_json {
@@ -283,7 +284,9 @@ impl Config {
                 return decoded;
             }
 
-            if let Ok(loaded_theme) = Config::load_theme(&dir_path.join("themes").join(theme)) {
+            if let Ok(loaded_theme) =
+                Config::load_theme(&dir_path.join("themes").join(theme))
+            {
                 decoded.colors = loaded_theme.colors;
             } else {
                 warn!("failed to load theme: {}", theme);
@@ -301,14 +304,14 @@ impl Config {
         // Validate if TOML exists
         let path = config_toml_file_path();
         if path.exists() {
-            return Self::config_from_file(path, is_json);
+            return Self::config_from_file(&path, is_json);
         }
 
         // Validate if JSON exists
         let path = config_json_file_path();
         if path.exists() {
             is_json = true;
-            return Self::config_from_file(path, is_json);
+            return Self::config_from_file(&path, is_json);
         }
 
         Config::default()
@@ -327,27 +330,19 @@ impl Config {
             }
         }
 
-        println!("using path {:?}", path);
-
         let content = std::fs::read_to_string(path).unwrap();
 
         let mut decoded: Config = if is_json {
             match serde_json::from_str::<Config>(&content) {
                 Ok(decoded) => decoded,
-                Err(e) => {
-                    return Err(ConfigError::ErrLoadingConfig(e.to_string()))
-                }
+                Err(e) => return Err(ConfigError::ErrLoadingConfig(e.to_string())),
             }
         } else {
             match toml::from_str::<Config>(&content) {
                 Ok(decoded) => decoded,
-                Err(e) => {
-                    return Err(ConfigError::ErrLoadingConfig(e.to_string()))
-                }
+                Err(e) => return Err(ConfigError::ErrLoadingConfig(e.to_string())),
             }
         };
-
-        println!("{:?}", decoded);
 
         let theme = &decoded.theme;
         let theme_path = config_dir_path().join("themes");
@@ -535,6 +530,24 @@ mod tests {
         // Developer
         assert_eq!(result.developer.log_level, default_log_level());
         assert!(!result.developer.enable_fps_counter);
+    }
+
+    #[test]
+    fn test_json_and_toml_config_file_matches() {
+        let json_result = create_temporary_config_json(
+            "json_matches",
+            r#"
+            {}
+        "#,
+        );
+
+        let toml_result = create_temporary_config_json(
+            "toml_matches",
+            r#"
+            "#,
+        );
+
+        assert_eq!(json_result, toml_result);
     }
 
     #[test]
