@@ -52,13 +52,14 @@ mod uds;
 
 pub use self::awakener::Awakener;
 pub use self::eventedfd::EventedFd;
-pub use self::io::{set_nonblock, Io};
+// pub use self::io::{set_nonblock, Io};
+pub use self::io::Io;
 pub use self::ready::{UnixReady, READY_ALL};
 
 #[cfg(feature = "with-deprecated")]
 pub use self::uds::UnixSocket;
 
-pub use iovec::IoVec;
+// pub use iovec::IoVec;
 
 use std::os::unix::io::FromRawFd;
 

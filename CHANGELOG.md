@@ -16,6 +16,8 @@
 	- Compute layout updates only if layout is different.
 	- Introduced renderer level (`0` for elementary and `1` for advanced).
 	- Reduced font size to `16.0`.
+- Update rust to 1.76.0
+- Rewrite hash logic to use `BuildHasher::hash_one`.
 - Support to font ligatures.
 - Report focus change https://terminalguide.namepad.de/mode/p1004/.
 - Updated wgpu to 0.19.0.
