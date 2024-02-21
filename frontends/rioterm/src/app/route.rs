@@ -126,8 +126,8 @@ impl Route {
             power_preference,
             backend,
             level: match config.renderer.level {
-                _ => SugarCompositorLevel::Elementary,
-                // _ => SugarCompositorLevel::Advanced,
+                0 => SugarCompositorLevel::Elementary,
+                _ => SugarCompositorLevel::Advanced,
             },
         };
 
