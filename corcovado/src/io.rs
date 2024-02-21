@@ -1,5 +1,6 @@
 // Re-export the io::Result / Error types for convenience
-pub use std::io::{Error, ErrorKind, Read, Result, Write};
+// pub use std::io::{Error, ErrorKind, Read, Result, Write};
+pub use std::io::{ErrorKind, Result};
 
 // TODO: Delete this
 /// A helper trait to provide the map_non_block function on Results.

@@ -11,10 +11,20 @@
 
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
-    Command, DisplayList, Pipeline, Rect, Vertex,
+    // Command, DisplayList, Pipeline, Rect, Vertex,
+    Command,
+    DisplayList,
+    Rect,
+    Vertex,
 };
 pub use crate::components::rich_text::image_cache::{
-    AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
+    AddImage,
+    Epoch,
+    ImageId,
+    ImageLocation,
+    TextureEvent,
+    TextureId,
+    // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text::*;

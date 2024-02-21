@@ -24,7 +24,8 @@ impl PixelFormat {
 }
 
 pub use cache::ImageCache;
-pub use glyph::{GlyphCache, GlyphCacheSession, GlyphEntry};
+// pub use glyph::{GlyphCache, GlyphCacheSession, GlyphEntry};
+pub use glyph::GlyphCache;
 
 /// Frame counter for managing resource lifetimes.
 #[derive(Copy, Clone, Default)]
