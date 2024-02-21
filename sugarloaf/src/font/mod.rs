@@ -196,6 +196,7 @@ impl FontData {
     #[inline]
     pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
+        let charmap_proxy = CharmapProxy::from_font(&font);
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
@@ -206,7 +207,7 @@ impl FontData {
             data: data.to_vec(),
             offset,
             key,
-            charmap_proxy: CharmapProxy::from_font(&font),
+            charmap_proxy,
             synth,
         })
     }
