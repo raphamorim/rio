@@ -3,7 +3,7 @@
 BUILD_MISC_DIR = misc
 DOCS_DIR = docs
 TARGET = rio
-TARGET_DIR = target/release
+TARGET_DIR = target/debug
 TARGET_DIR_DEBIAN = target/debian
 TARGET_DIR_OSX = $(TARGET_DIR)/osx
 RELEASE_DIR = release
@@ -56,9 +56,9 @@ build: install
 # rustup target add x86_64-apple-darwin
 # rustup target add aarch64-apple-darwin
 $(TARGET)-universal:
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
-	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --target=x86_64-apple-darwin
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --target=aarch64-apple-darwin
+	@lipo target/{x86_64,aarch64}-apple-darwin/debug/$(TARGET) -create -output $(APP_BINARY)
 
 app-universal: $(APP_NAME)-universal ## Create a universal Rio.app
 $(APP_NAME)-%: $(TARGET)-%
@@ -76,7 +76,7 @@ release-macos: app-universal
 	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
 	mkdir -p $(RELEASE_DIR)
-	cp -rf ./target/release/osx/* ./release/
+	cp -rf ./target/debug/osx/* ./release/
 	cd ./release && zip -r ./macos-unsigned.zip ./*
 
 release-macos-local: release-macos
@@ -163,6 +163,9 @@ install-debian-x11:
 install-debian-wayland:
 	cargo install cargo-deb
 	cargo deb -p rioterm --install -- --release --no-default-features --features=wayland
+install-macos: release-macos
+	rm -rf /Applications/Rio.app
+	mv ./release/Rio.app /Applications/Rio.app
 
 # cargo install cargo-wix
 # https://github.com/volks73/cargo-wix

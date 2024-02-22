@@ -22,6 +22,7 @@ pub enum MouseButton {
 #[derive(Clone, Debug, PartialEq)]
 pub enum KeyAssignment {
     SpawnWindow,
+    SpawnWindowWithUrls(Vec<String>),
     Copy(String),
 }
 
@@ -305,6 +306,7 @@ pub enum Appearance {
 
 pub trait AppHandler {
     fn create_window(&mut self);
+    fn create_window_with_url(&mut self, urls: Vec<String>);
     fn init(&mut self);
 }
 
