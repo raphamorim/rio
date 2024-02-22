@@ -16,7 +16,6 @@
 	- Compute layout updates only if layout is different.
 	- Introduced renderer level (`0` for elementary and `1` for advanced).
 	- Reduced font size to `16.0`.
-- Support to JSON configuration file.
 - Update rust to 1.75.0
 - Rewrite hash logic to use `BuildHasher::hash_one`.
 - Support to font ligatures.
