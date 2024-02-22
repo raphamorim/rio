@@ -522,6 +522,11 @@ impl AppHandler for Looper {
         let _ = create_window(&self.config, &None, &self.font_database, None);
     }
 
+    fn create_window_with_url(&mut self, urls: Vec<String>) {
+        panic!("{:?}", urls);
+        let _ = create_window(&self.config, &None, &self.font_database, None);
+    }
+
     fn init(&mut self) {
         let tab_group = if self.config.navigation.is_native() {
             Some(0)

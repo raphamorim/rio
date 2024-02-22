@@ -392,6 +392,7 @@ extern "C" fn rio_perform_key_assignment(
             RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
                 App::clipboard_set(text);
             }
+            _ => {}
         }
     }
 }
@@ -410,25 +411,6 @@ extern "C" fn application_dock_menu(
     dock_menu.autorelease()
 }
 
-#[allow(dead_code)]
-extern "C" fn application_open_untitled_file(
-    this: &Object,
-    _sel: Sel,
-    _app: *mut Object,
-) -> BOOL {
-    let launched: BOOL = unsafe { *this.get_ivar("launched") };
-    log::debug!("application_open_untitled_file launched={launched}");
-    // if let Some(conn) = Connection::get() {
-    // if launched == YES {
-    // conn.dispatch_app_event(ApplicationEvent::PerformKeyAssignment(
-    //     KeyAssignment::SpawnWindow,
-    // ));
-    // }
-    // return YES;
-    // }
-    NO
-}
-
 extern "C" fn application_did_finish_launching(
     this: &mut Object,
     _sel: Sel,
@@ -440,29 +422,63 @@ extern "C" fn application_did_finish_launching(
     }
 }
 
+// let urls = unsafe {
+//         (0..urls.count())
+//             .filter_map(|i| {
+//                 let url = urls.objectAtIndex(i);
+//                 match CStr::from_ptr(url.absoluteString().UTF8String() as *mut c_char).to_str() {
+//                     Ok(string) => Some(string.to_string()),
+//                     Err(err) => {
+//                         log::error!("error converting path to string: {}", err);
+//                         None
+//                     }
+//                 }
+//             })
+//             .collect::<Vec<_>>()
+//     };
+
 extern "C" fn application_open_urls(
-    this: &Object,
+    _this: &mut Object,
     _sel: Sel,
     _sender: ObjcId,
     urls: ObjcId,
 ) {
-    if let Some(payload) = get_window_payload(this) {
-        unsafe {
-            let count: u64 = msg_send![urls, count];
+    // let launched: BOOL = unsafe { *this.get_ivar("launched") };
+    // if launched == YES {
+        // if let Some(payload) = get_window_payload(this) {
+            let count: u64 = unsafe {
+                msg_send![urls, count]
+            };
             if count > 0 {
-                let mut urls_to_send = vec![];
+                let mut urls_to_send: Vec<String> = vec![];
                 for index in 0..count {
-                    let item = msg_send![urls, objectAtIndex: index];
+                    let item = unsafe {
+                        msg_send![urls, objectAtIndex: index]
+                    };
                     let path = nsstring_to_string(item);
                     urls_to_send.push(path);
                 }
 
-                if let Some(event_handler) = payload.context() {
-                    event_handler.open_urls_event(urls_to_send);
-                }
+                // if let Some(event_handler) = payload.context() {
+                    let action = RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindowWithUrls(urls_to_send));
+                    let sender = NATIVE_APP_EVENTS.get();
+                    if let Some(channel) = sender {
+                        let mut events = channel.lock();
+                        events.push(action);
+                    }
+
+                    // event_handler.open_urls_event(urls_to_send);
+                // }
+        // }
+        } else {
+            let action = RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow);
+            let sender = NATIVE_APP_EVENTS.get();
+            if let Some(channel) = sender {
+                let mut events = channel.lock();
+                events.push(action);
             }
         }
-    }
+    // }
 }
 
 #[allow(dead_code)]
@@ -569,7 +585,7 @@ pub fn define_app_delegate() -> *const Class {
         );
         decl.add_method(
             sel!(application:openURLs:),
-            application_open_urls as extern "C" fn(&Object, Sel, ObjcId, ObjcId),
+            application_open_urls as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
         );
         // decl.add_method(
         //     sel!(applicationOpenUntitledFile:),
@@ -1629,6 +1645,11 @@ impl App {
         self.handler.create_window();
     }
 
+    #[inline]
+    pub fn create_window_with_url(&mut self, urls: Vec<String>) {
+        self.handler.create_window_with_url(urls);
+    }
+
     extern "C" fn trigger(
         _observer: *mut __CFRunLoopObserver,
         _: CFRunLoopActivity,
@@ -1642,13 +1663,23 @@ impl App {
             }
 
             let mut events = events;
-            if let Some(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)) =
-                events.pop()
-            {
-                let native_app = NATIVE_APP.get();
-                if let Some(app) = native_app {
-                    let mut app = app.lock();
-                    app.create_window();
+            if let Some(event) = events.pop() {
+                match event {
+                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                        let native_app = NATIVE_APP.get();
+                        if let Some(app) = native_app {
+                            let mut app = app.lock();
+                            app.create_window();
+                        }
+                    },
+                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindowWithUrls(urls)) => {
+                        let native_app = NATIVE_APP.get();
+                        if let Some(app) = native_app {
+                            let mut app = app.lock();
+                            app.create_window_with_url(urls);
+                        }
+                    },
+                    _ => {}
                 }
             }
             // let mut events = channel.lock();
