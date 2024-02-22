@@ -2419,7 +2419,6 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "serde",
- "serde_json",
  "smallvec",
  "sugarloaf",
  "teletypewriter",

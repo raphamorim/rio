@@ -17,7 +17,7 @@ use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
 
@@ -142,33 +142,8 @@ pub fn config_dir_path() -> PathBuf {
 }
 
 #[inline]
-fn config_toml_file_path() -> PathBuf {
-    config_dir_path().join("config.toml")
-}
-
-#[inline]
-fn config_json_file_path() -> PathBuf {
-    config_dir_path().join("config.json")
-}
-
-// This will return the default config file path for Rio
-// it will set up if Rio should be waiting file updates
-// either in TOML or JSON format
 pub fn config_file_path() -> PathBuf {
-    // Validate if TOML exists
-    let toml_path = config_toml_file_path();
-    if toml_path.exists() {
-        return toml_path;
-    }
-
-    // Validate if JSON exists
-    let json_path = config_json_file_path();
-    if json_path.exists() {
-        return json_path;
-    }
-
-    // TOML is the default config format
-    toml_path
+    config_dir_path().join("config.toml")
 }
 
 #[inline]
@@ -189,79 +164,73 @@ impl Config {
         }
     }
     #[cfg(test)]
-    fn load_from_path_without_fallback(
-        path: &PathBuf,
-        is_json: bool,
-    ) -> Result<Self, String> {
+    fn load_from_path_without_fallback(path: &PathBuf) -> Result<Self, String> {
         if path.exists() {
             let content = std::fs::read_to_string(path).unwrap();
-            let mut decoded: Config = if is_json {
-                serde_json::from_str::<Config>(&content).unwrap_or_default()
-            } else {
-                toml::from_str::<Config>(&content).unwrap_or_default()
-            };
+            match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.theme;
+                    if theme.is_empty() {
+                        return Ok(decoded);
+                    }
 
-            let theme = &decoded.theme;
-            if theme.is_empty() {
-                return Ok(decoded);
-            }
+                    let tmp = std::env::temp_dir();
+                    let path = tmp.join(theme).with_extension("toml");
+                    if let Ok(loaded_theme) = Config::load_theme(&path) {
+                        decoded.colors = loaded_theme.colors;
+                    } else {
+                        warn!("failed to load theme: {}", theme);
+                    }
 
-            let tmp = std::env::temp_dir();
-            if let Ok(loaded_theme) = Config::load_theme(&tmp.join(theme)) {
-                decoded.colors = loaded_theme.colors;
-            } else {
-                warn!("failed to load theme: {}", theme);
-            }
+                    if let Some(adaptive_theme) = &decoded.adaptive_theme {
+                        let light_theme = &adaptive_theme.light;
+                        let path = tmp.join(light_theme).with_extension("toml");
+                        let mut adaptive_colors = AdaptiveColors {
+                            dark: None,
+                            light: None,
+                        };
 
-            if let Some(adaptive_theme) = &decoded.adaptive_theme {
-                let light_theme = &adaptive_theme.light;
-                let mut adaptive_colors = AdaptiveColors {
-                    dark: None,
-                    light: None,
-                };
+                        if let Ok(light_loaded_theme) = Config::load_theme(&path) {
+                            adaptive_colors.light = Some(light_loaded_theme.colors);
+                            println!("carregou");
+                        } else {
+                            println!("failed to load light theme: {}", light_theme);
+                        }
 
-                if let Ok(light_loaded_theme) = Config::load_theme(&tmp.join(light_theme))
-                {
-                    adaptive_colors.light = Some(light_loaded_theme.colors);
-                } else {
-                    warn!("failed to load light theme: {}", light_theme);
+                        let dark_theme = &adaptive_theme.dark;
+                        let path = tmp.join(dark_theme).with_extension("toml");
+                        if let Ok(dark_loaded_theme) = Config::load_theme(&path) {
+                            adaptive_colors.dark = Some(dark_loaded_theme.colors);
+                            println!("carregou");
+                        } else {
+                            println!("failed to load dark theme: {}", dark_theme);
+                        }
+
+                        if adaptive_colors.light.is_some()
+                            && adaptive_colors.dark.is_some()
+                        {
+                            decoded.adaptive_colors = Some(adaptive_colors);
+                        }
+                    }
+
+                    Ok(decoded)
                 }
-
-                let dark_theme = &adaptive_theme.dark;
-                if let Ok(dark_loaded_theme) = Config::load_theme(&tmp.join(dark_theme)) {
-                    adaptive_colors.dark = Some(dark_loaded_theme.colors);
-                } else {
-                    warn!("failed to load dark theme: {}", dark_theme);
-                }
-
-                if adaptive_colors.light.is_some() && adaptive_colors.dark.is_some() {
-                    decoded.adaptive_colors = Some(adaptive_colors);
-                }
+                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
-
-            Ok(decoded)
         } else {
             Err(String::from("filepath does not exist"))
         }
     }
 
-    fn load_theme(path: &Path) -> Result<Theme, String> {
-        let mut theme_path = path.with_extension("toml");
-        let mut is_json = false;
-        if !theme_path.exists() {
-            theme_path = path.with_extension("json");
-            if theme_path.exists() {
-                is_json = true;
-            } else {
-                return Err(String::from("filepath does not exist"));
+    fn load_theme(path: &PathBuf) -> Result<Theme, String> {
+        if path.exists() {
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Theme>(&content) {
+                Ok(decoded) => Ok(decoded),
+                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
             }
-        }
-
-        let content = std::fs::read_to_string(theme_path).unwrap();
-        if is_json {
-            Ok(serde_json::from_str::<Theme>(&content).unwrap_or_default())
         } else {
-            Ok(toml::from_str::<Theme>(&content).unwrap())
+            Err(String::from("filepath does not exist"))
         }
     }
 
@@ -269,128 +238,106 @@ impl Config {
         toml::to_string(self)
     }
 
-    #[inline]
-    fn config_from_file(path: &Path, is_json: bool) -> Config {
-        let dir_path = config_dir_path();
-        if let Ok(content) = std::fs::read_to_string(path) {
-            let mut decoded: Config = if is_json {
-                serde_json::from_str::<Config>(&content).unwrap_or_default()
-            } else {
-                toml::from_str::<Config>(&content).unwrap_or_default()
-            };
-
-            let theme = &decoded.theme;
-            if theme.is_empty() {
-                return decoded;
-            }
-
-            if let Ok(loaded_theme) =
-                Config::load_theme(&dir_path.join("themes").join(theme))
-            {
-                decoded.colors = loaded_theme.colors;
-            } else {
-                warn!("failed to load theme: {}", theme);
-            }
-
-            return decoded;
-        }
-
-        Config::default()
-    }
-
     pub fn load() -> Self {
-        let mut is_json = false;
-
-        // Validate if TOML exists
-        let path = config_toml_file_path();
+        let config_path = config_dir_path();
+        let path = config_file_path();
         if path.exists() {
-            return Self::config_from_file(&path, is_json);
-        }
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.theme;
+                    if theme.is_empty() {
+                        return decoded;
+                    }
 
-        // Validate if JSON exists
-        let path = config_json_file_path();
-        if path.exists() {
-            is_json = true;
-            return Self::config_from_file(&path, is_json);
-        }
+                    let path = config_path
+                        .join("themes")
+                        .join(theme)
+                        .with_extension("toml");
+                    if let Ok(loaded_theme) = Config::load_theme(&path) {
+                        decoded.colors = loaded_theme.colors;
+                    } else {
+                        warn!("failed to load theme: {}", theme);
+                    }
 
-        Config::default()
+                    decoded
+                }
+                Err(err_message) => {
+                    warn!("failure to parse config file, failling back to default...\n{err_message:?}");
+                    Config::default()
+                }
+            }
+        } else {
+            Config::default()
+        }
     }
 
     pub fn try_load() -> Result<Self, ConfigError> {
-        let mut path = config_toml_file_path();
-        let mut is_json = false;
-        if !path.exists() {
-            // Validate if JSON exists
-            path = config_json_file_path();
-            is_json = true;
-            if !path.exists() {
-                // Neither TOML or JSON exists
-                return Err(ConfigError::PathNotFound);
-            }
-        }
+        let path = config_file_path();
+        if path.exists() {
+            let content = std::fs::read_to_string(path).unwrap();
+            match toml::from_str::<Config>(&content) {
+                Ok(mut decoded) => {
+                    let theme = &decoded.theme;
+                    let theme_path = config_dir_path().join("themes");
+                    if !theme.is_empty() {
+                        let path = theme_path.join(theme).with_extension("toml");
+                        match Config::load_theme(&path) {
+                            Ok(loaded_theme) => {
+                                decoded.colors = loaded_theme.colors;
+                            }
+                            Err(err_message) => {
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
+                        }
+                    }
 
-        let content = std::fs::read_to_string(path).unwrap();
+                    if let Some(adaptive_theme) = &decoded.adaptive_theme {
+                        let mut adaptive_colors = AdaptiveColors {
+                            dark: None,
+                            light: None,
+                        };
 
-        let mut decoded: Config = if is_json {
-            match serde_json::from_str::<Config>(&content) {
-                Ok(decoded) => decoded,
-                Err(e) => return Err(ConfigError::ErrLoadingConfig(e.to_string())),
+                        let light_theme = &adaptive_theme.light;
+                        let path = theme_path.join(light_theme).with_extension("toml");
+                        match Config::load_theme(&path) {
+                            Ok(light_loaded_theme) => {
+                                adaptive_colors.light = Some(light_loaded_theme.colors)
+                            }
+                            Err(err_message) => {
+                                warn!("failed to load light theme: {}", light_theme);
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
+                        }
+
+                        let dark_theme = &adaptive_theme.dark;
+                        let path = theme_path.join(dark_theme).with_extension("toml");
+                        match Config::load_theme(&path) {
+                            Ok(dark_loaded_theme) => {
+                                adaptive_colors.dark = Some(dark_loaded_theme.colors)
+                            }
+                            Err(err_message) => {
+                                warn!("failed to load dark theme: {}", dark_theme);
+                                return Err(ConfigError::ErrLoadingTheme(err_message));
+                            }
+                        }
+
+                        if adaptive_colors.light.is_some()
+                            && adaptive_colors.dark.is_some()
+                        {
+                            decoded.adaptive_colors = Some(adaptive_colors);
+                        }
+                    }
+
+                    Ok(decoded)
+                }
+                Err(err_message) => {
+                    Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
+                }
             }
         } else {
-            match toml::from_str::<Config>(&content) {
-                Ok(decoded) => decoded,
-                Err(e) => return Err(ConfigError::ErrLoadingConfig(e.to_string())),
-            }
-        };
-
-        let theme = &decoded.theme;
-        let theme_path = config_dir_path().join("themes");
-        if !theme.is_empty() {
-            match Config::load_theme(&theme_path.join(theme)) {
-                Ok(loaded_theme) => {
-                    decoded.colors = loaded_theme.colors;
-                }
-                Err(err_message) => {
-                    return Err(ConfigError::ErrLoadingTheme(err_message));
-                }
-            }
+            Err(ConfigError::PathNotFound)
         }
-
-        if let Some(adaptive_theme) = &decoded.adaptive_theme {
-            let mut adaptive_colors = AdaptiveColors {
-                dark: None,
-                light: None,
-            };
-
-            let light_theme = &adaptive_theme.light;
-            match Config::load_theme(&theme_path.join(light_theme)) {
-                Ok(light_loaded_theme) => {
-                    adaptive_colors.light = Some(light_loaded_theme.colors)
-                }
-                Err(err_message) => {
-                    warn!("failed to load light theme: {}", light_theme);
-                    return Err(ConfigError::ErrLoadingTheme(err_message));
-                }
-            }
-
-            let dark_theme = &adaptive_theme.dark;
-            match Config::load_theme(&theme_path.join(dark_theme)) {
-                Ok(dark_loaded_theme) => {
-                    adaptive_colors.dark = Some(dark_loaded_theme.colors)
-                }
-                Err(err_message) => {
-                    warn!("failed to load dark theme: {}", dark_theme);
-                    return Err(ConfigError::ErrLoadingTheme(err_message));
-                }
-            }
-
-            if adaptive_colors.light.is_some() && adaptive_colors.dark.is_some() {
-                decoded.adaptive_colors = Some(adaptive_colors);
-            }
-        }
-
-        Ok(decoded)
     }
 }
 
@@ -441,18 +388,7 @@ mod tests {
         let mut file = std::fs::File::create(&file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
 
-        match Config::load_from_path_without_fallback(&file_name, false) {
-            Ok(config) => config,
-            Err(e) => panic!("{e}"),
-        }
-    }
-
-    fn create_temporary_config_json(prefix: &str, json_str: &str) -> Config {
-        let file_name = tmp_dir().join(format!("test-rio-{prefix}-config.json"));
-        let mut file = std::fs::File::create(&file_name).unwrap();
-        writeln!(file, "{json_str}").unwrap();
-
-        match Config::load_from_path_without_fallback(&file_name, true) {
+        match Config::load_from_path_without_fallback(&file_name) {
             Ok(config) => config,
             Err(e) => panic!("{e}"),
         }
@@ -468,7 +404,6 @@ mod tests {
     fn test_filepath_does_not_exist_without_fallback() {
         let should_fail = Config::load_from_path_without_fallback(
             &tmp_dir().join("it-should-never-exist"),
-            false,
         );
         assert!(should_fail.is_err(), "{}", true);
     }
@@ -481,9 +416,9 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_toml_config_file() {
+    fn test_empty_config_file() {
         let result = create_temporary_config(
-            "toml_empty",
+            "empty",
             r#"
             # Config is empty
         "#,
@@ -504,50 +439,6 @@ mod tests {
         // Developer
         assert_eq!(result.developer.log_level, default_log_level());
         assert!(!result.developer.enable_fps_counter);
-    }
-
-    #[test]
-    fn test_empty_json_config_file() {
-        let result = create_temporary_config_json(
-            "json_empty",
-            r#"
-            {}
-        "#,
-        );
-
-        assert!(!result.renderer.disable_unfocused_render);
-
-        assert_eq!(
-            result.renderer.performance,
-            renderer::Performance::default()
-        );
-        assert_eq!(result.fonts, SugarloafFonts::default());
-        assert_eq!(result.theme, String::default());
-
-        // Colors
-        assert_eq!(result.colors, Colors::default());
-
-        // Developer
-        assert_eq!(result.developer.log_level, default_log_level());
-        assert!(!result.developer.enable_fps_counter);
-    }
-
-    #[test]
-    fn test_json_and_toml_config_file_matches() {
-        let json_result = create_temporary_config_json(
-            "json_matches",
-            r#"
-            {}
-        "#,
-        );
-
-        let toml_result = create_temporary_config_json(
-            "toml_matches",
-            r#"
-            "#,
-        );
-
-        assert_eq!(json_result, toml_result);
     }
 
     #[test]
