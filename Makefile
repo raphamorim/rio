@@ -3,7 +3,7 @@
 BUILD_MISC_DIR = misc
 DOCS_DIR = docs
 TARGET = rio
-TARGET_DIR = target/debug
+TARGET_DIR = target/release
 TARGET_DIR_DEBIAN = target/debian
 TARGET_DIR_OSX = $(TARGET_DIR)/osx
 RELEASE_DIR = release

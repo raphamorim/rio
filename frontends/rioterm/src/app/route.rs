@@ -96,6 +96,7 @@ fn process_open_url(
 }
 
 impl Route {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u16,
         raw_window_handle: raw_window_handle::RawWindowHandle,

@@ -432,11 +432,10 @@ extern "C" fn application_open_urls(
     if count > 0 {
         let mut urls_to_send = {
             (0..count)
-                .filter_map(|index| {
+                .map(|index| {
                     let url: ObjcId = unsafe { msg_send![urls, objectAtIndex: index] };
                     let url: ObjcId = unsafe { msg_send![url, absoluteString] };
-                    let item = nsstring_to_string(url);
-                    Some(item)
+                    nsstring_to_string(url)
                 })
                 .collect::<Vec<String>>()
         };
