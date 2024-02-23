@@ -1642,8 +1642,7 @@ impl App {
                     RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
                         let native_app = NATIVE_APP.get();
                         if let Some(app) = native_app {
-                            // app.lock().handler.create_tab(None);
-                            app.lock().handler.create_tab(Some("file:///Users/hugoamor/Documents/a/raphael-amorim/12-referencias-bibliograficas.md"));
+                            app.lock().handler.create_tab(None);
                         }
                     }
                     _ => {}
