@@ -56,9 +56,9 @@ build: install
 # rustup target add x86_64-apple-darwin
 # rustup target add aarch64-apple-darwin
 $(TARGET)-universal:
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --target=x86_64-apple-darwin
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --target=aarch64-apple-darwin
-	@lipo target/{x86_64,aarch64}-apple-darwin/debug/$(TARGET) -create -output $(APP_BINARY)
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
+	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
 
 app-universal: $(APP_NAME)-universal ## Create a universal Rio.app
 $(APP_NAME)-%: $(TARGET)-%
@@ -76,7 +76,7 @@ release-macos: app-universal
 	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
 	mkdir -p $(RELEASE_DIR)
-	cp -rf ./target/debug/osx/* ./release/
+	cp -rf ./target/release/osx/* ./release/
 	cd ./release && zip -r ./macos-unsigned.zip ./*
 
 release-macos-local: release-macos
