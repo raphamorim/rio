@@ -818,6 +818,7 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "numpadenter" => (Key::Named(Enter), KeyLocation::Numpad),
             "numpadadd" => (Key::Character("+".into()), KeyLocation::Numpad),
             "numpadcomma" => (Key::Character(",".into()), KeyLocation::Numpad),
+            "numpaddecimal" => (Key::Character(".".into()), KeyLocation::Numpad),
             "numpaddivide" => (Key::Character("/".into()), KeyLocation::Numpad),
             "numpadequals" => (Key::Character("=".into()), KeyLocation::Numpad),
             "numpadsubtract" => (Key::Character("-".into()), KeyLocation::Numpad),
