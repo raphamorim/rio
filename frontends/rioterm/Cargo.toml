@@ -43,6 +43,7 @@ winit = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.7"
+url = "2.5.0"
 smol_str = { workspace = true }
 wa = { workspace = true }
 

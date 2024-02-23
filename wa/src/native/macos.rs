@@ -146,8 +146,8 @@ pub struct MacosDisplay {
     current_cursor: CursorIcon,
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
-    has_initialized: bool,
-
+    pub open_url: String,
+    pub has_initialized: bool,
     event_handler: Option<Box<dyn EventHandler>>,
     // f: Box<dyn 'static + FnMut(&Window)>,
     f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
@@ -382,7 +382,8 @@ extern "C" fn rio_perform_key_assignment(
     log::debug!("rio_perform_key_assignment {opt_action:?}",);
     if let Some(action) = opt_action {
         match action {
-            RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+            RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)
+            | RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
                 let sender = NATIVE_APP_EVENTS.get();
                 if let Some(channel) = sender {
                     let mut events = channel.lock();
@@ -410,25 +411,6 @@ extern "C" fn application_dock_menu(
     dock_menu.autorelease()
 }
 
-#[allow(dead_code)]
-extern "C" fn application_open_untitled_file(
-    this: &Object,
-    _sel: Sel,
-    _app: *mut Object,
-) -> BOOL {
-    let launched: BOOL = unsafe { *this.get_ivar("launched") };
-    log::debug!("application_open_untitled_file launched={launched}");
-    // if let Some(conn) = Connection::get() {
-    // if launched == YES {
-    // conn.dispatch_app_event(ApplicationEvent::PerformKeyAssignment(
-    //     KeyAssignment::SpawnWindow,
-    // ));
-    // }
-    // return YES;
-    // }
-    NO
-}
-
 extern "C" fn application_did_finish_launching(
     this: &mut Object,
     _sel: Sel,
@@ -441,43 +423,51 @@ extern "C" fn application_did_finish_launching(
 }
 
 extern "C" fn application_open_urls(
-    this: &Object,
+    this: &mut Object,
     _sel: Sel,
     _sender: ObjcId,
     urls: ObjcId,
 ) {
-    if let Some(payload) = get_window_payload(this) {
-        unsafe {
-            let count: u64 = msg_send![urls, count];
-            if count > 0 {
-                let mut urls_to_send = vec![];
-                for index in 0..count {
-                    let item = msg_send![urls, objectAtIndex: index];
-                    let path = nsstring_to_string(item);
-                    urls_to_send.push(path);
-                }
+    let count: u64 = unsafe { msg_send![urls, count] };
+    if count > 0 {
+        let mut urls_to_send = {
+            (0..count)
+                .map(|index| {
+                    let url: ObjcId = unsafe { msg_send![urls, objectAtIndex: index] };
+                    let url: ObjcId = unsafe { msg_send![url, absoluteString] };
+                    nsstring_to_string(url)
+                })
+                .collect::<Vec<String>>()
+        };
 
-                if let Some(event_handler) = payload.context() {
-                    event_handler.open_urls_event(urls_to_send);
+        if urls_to_send.is_empty() {
+            return;
+        }
+
+        let launched: BOOL = unsafe { *this.get_ivar("launched") };
+        // In case is not launched yet then use first window id
+        if launched != YES {
+            let d = get_handler().lock();
+            if let Some(display) = d.get(0) {
+                let view = display.view;
+                unsafe {
+                    if let Some(payload) = get_display_payload(&*view) {
+                        payload.open_url = urls_to_send.last().unwrap().to_owned();
+                    }
                 }
             }
-        }
-    }
-}
 
-#[allow(dead_code)]
-extern "C" fn application_open_file(
-    this: &Object,
-    _sel: Sel,
-    _app: *mut Object,
-    file_name: *mut Object,
-) {
-    let launched: BOOL = unsafe { *this.get_ivar("launched") };
-    if launched == YES {
-        let file_name = nsstring_to_string(file_name).to_string();
-        if let Some(payload) = get_window_payload(this) {
-            if let Some(event_handler) = payload.context() {
-                event_handler.open_file_event(file_name);
+            urls_to_send.pop().unwrap();
+
+            if urls_to_send.is_empty() {
+                return;
+            }
+        }
+
+        let native_app = NATIVE_APP.get();
+        if let Some(app) = native_app {
+            for url in urls_to_send {
+                app.lock().handler.create_tab(Some(&url));
             }
         }
     }
@@ -558,24 +548,14 @@ pub fn define_app_delegate() -> *const Class {
             application_did_finish_launching
                 as extern "C" fn(&mut Object, Sel, *mut Object),
         );
-        // decl.add_method(
-        //     sel!(application:openFile:),
-        //     application_open_file
-        //         as extern "C" fn(&Object, Sel, *mut Object, *mut Object),
-        // );
         decl.add_method(
             sel!(rioPerformKeyAssignment:),
             rio_perform_key_assignment as extern "C" fn(&Object, Sel, *mut Object),
         );
         decl.add_method(
             sel!(application:openURLs:),
-            application_open_urls as extern "C" fn(&Object, Sel, ObjcId, ObjcId),
+            application_open_urls as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
         );
-        // decl.add_method(
-        //     sel!(applicationOpenUntitledFile:),
-        //     application_open_untitled_file
-        //         as extern "C" fn(&Object, Sel, *mut Object) -> BOOL,
-        // );
     }
 
     decl.add_ivar::<BOOL>("launched");
@@ -595,7 +575,7 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
 #[inline]
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 if payload.cursor_grabbed {
                     let dx: f64 = msg_send!(event, deltaX);
@@ -615,7 +595,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     fn fire_mouse_event(this: &Object, event: ObjcId, down: bool, btn: MouseButton) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
@@ -632,7 +612,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _a_selector: Sel) {
         // println!("do_command_by_selector");
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if payload.ime == ImeState::Commited {
                 return;
             }
@@ -645,7 +625,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn has_marked_text(this: &Object, _sel: Sel) -> BOOL {
         // println!("has_marked_text");
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 YES
             } else {
@@ -658,7 +638,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
         // println!("marked_range");
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 NSRange::new(0, payload.marked_text.len() as u64)
             } else {
@@ -688,7 +668,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         let is_control = string.chars().next().map_or(false, |c| c.is_control());
 
         if !is_control {
-            if let Some(payload) = get_window_payload(this) {
+            if let Some(payload) = get_display_payload(this) {
                 // Commit only if we have marked text.
                 if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
                     if let Some(event_handler) = payload.context() {
@@ -717,7 +697,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         // println!("setMarkedText:selectedRange:replacementRange:");
         let s = nsstring_to_string(astring);
 
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             let preedit_string: String = s.to_string();
             payload.marked_text = preedit_string.clone();
 
@@ -749,7 +729,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn unmark_text(this: &Object, _sel: Sel) {
         // println!("unmarkText");
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             payload.marked_text.clear();
             payload.ime = ImeState::Ground;
 
@@ -788,7 +768,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         // let backing_frame: NSRect =
         //     unsafe { msg_send![this, convertRectToBacking: frame] };
 
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             let point: NSPoint = unsafe { msg_send!(this, locationInWindow) };
             let cursor_pos = payload.transform_mouse_point(&point);
 
@@ -849,7 +829,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         fire_mouse_event(this, event, false, MouseButton::Middle);
     }
     extern "C" fn scroll_wheel(this: &Object, _sel: Sel, event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let mut dx: f64 = msg_send![event, scrollingDeltaX];
                 let mut dy: f64 = msg_send![event, scrollingDeltaY];
@@ -865,21 +845,21 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
     }
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if let Some(event_handler) = payload.context() {
                 event_handler.focus_event(true);
             }
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if let Some(event_handler) = payload.context() {
                 event_handler.focus_event(false);
             }
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let cursor_id = {
                     let current_cursor = payload.current_cursor;
@@ -902,7 +882,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn dragging_entered(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let pboard: ObjcId = msg_send![sender, draggingPasteboard];
                 let filenames: ObjcId =
@@ -929,7 +909,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn dragging_exited(this: &Object, _: Sel, _sender: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if let Some(event_handler) = payload.context() {
                 event_handler.files_dragged_event(vec![], crate::DragState::Exited);
             }
@@ -937,7 +917,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn perform_drag_operation(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let pboard: ObjcId = msg_send![sender, draggingPasteboard];
                 let filenames: ObjcId =
@@ -961,7 +941,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
-        let payload = get_window_payload(this);
+        let payload = get_display_payload(this);
 
         if payload.is_none() {
             return NO;
@@ -1005,29 +985,29 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             send_resize_event(payload, false);
         }
     }
 
     extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             send_resize_event(payload, true);
         }
     }
     extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             payload.fullscreen = true;
         }
     }
     extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             payload.fullscreen = false;
         }
     }
 
     extern "C" fn key_down(this: &Object, _sel: Sel, event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             let repeat: bool = unsafe { msg_send!(event, isARepeat) };
             let unmod = unsafe { msg_send!(event, charactersIgnoringModifiers) };
             let unmod = nsstring_to_string(unmod);
@@ -1071,7 +1051,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn appearance_did_change(this: &Object, _sel: Sel, _app: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if let Some(event_handler) = payload.context() {
                 event_handler.appearance_change_event(App::appearance());
             }
@@ -1079,7 +1059,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn key_up(this: &Object, _sel: Sel, event: ObjcId) {
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             if let Some(key) = get_event_keycode(event) {
                 log::info!("KEY_UP (key={:?}", key);
                 if let Some(event_handler) = payload.context() {
@@ -1108,7 +1088,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             }
         }
 
-        if let Some(payload) = get_window_payload(this) {
+        if let Some(payload) = get_display_payload(this) {
             let mods = get_event_key_modifier(event);
             let flags: u64 = unsafe { msg_send![event, modifierFlags] };
             let new_modifiers = Modifiers::new(flags);
@@ -1340,7 +1320,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
-    if let Some(payload) = get_window_payload(this) {
+    if let Some(payload) = get_display_payload(this) {
         if !payload.has_initialized {
             let id = payload.id;
 
@@ -1350,6 +1330,8 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
                 let f = payload.f.take().unwrap();
                 payload.event_handler = Some(f());
             }
+
+            let open_url: &str = &payload.open_url.to_owned();
 
             let d = get_handler().lock();
             let d = d.get(id).unwrap();
@@ -1361,6 +1343,7 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
                     d.screen_width,
                     d.screen_height,
                     d.dpi_scale,
+                    open_url,
                 );
 
                 event_handler.resize_event(
@@ -1372,7 +1355,13 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
             }
 
             payload.has_initialized = true;
+            payload.open_url = String::from("");
             return;
+        }
+
+        if !payload.open_url.is_empty() {
+            payload.has_initialized = false;
+            // event_handler.open_url_event(open_url);
         }
 
         if let Some(event_handler) = payload.context() {
@@ -1480,7 +1469,7 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     decl.register()
 }
 
-pub fn get_window_payload(this: &Object) -> Option<&mut MacosDisplay> {
+pub fn get_display_payload(this: &Object) -> Option<&mut MacosDisplay> {
     unsafe {
         let ptr: *mut c_void = *this.get_ivar(VIEW_IVAR_NAME);
         if ptr.is_null() {
@@ -1642,13 +1631,22 @@ impl App {
             }
 
             let mut events = events;
-            if let Some(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)) =
-                events.pop()
-            {
-                let native_app = NATIVE_APP.get();
-                if let Some(app) = native_app {
-                    let mut app = app.lock();
-                    app.create_window();
+            if let Some(event) = events.pop() {
+                match event {
+                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                        let native_app = NATIVE_APP.get();
+                        if let Some(app) = native_app {
+                            app.lock().handler.create_window();
+                        }
+                    }
+                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
+                        let native_app = NATIVE_APP.get();
+                        if let Some(app) = native_app {
+                            // app.lock().handler.create_tab(None);
+                            app.lock().handler.create_tab(Some("file:///Users/hugoamor/Documents/a/raphael-amorim/12-referencias-bibliograficas.md"));
+                        }
+                    }
+                    _ => {}
                 }
             }
             // let mut events = channel.lock();
@@ -1665,7 +1663,7 @@ impl App {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
             let mut app = app.lock();
-            app.handler.init();
+            app.handler.start();
             let ns_app = *app.ns_app;
             drop(app);
 
@@ -1818,6 +1816,7 @@ impl App {
 pub struct Window {
     pub ns_window: *mut Object,
     pub ns_view: *mut Object,
+    pub id: u16,
 }
 
 impl Window {
@@ -1857,6 +1856,7 @@ impl Window {
                 cursors: HashMap::new(),
                 f: Some(Box::new(f)),
                 event_handler: None,
+                open_url: String::from(""),
                 modifiers: Modifiers::default(),
             };
 
@@ -2037,6 +2037,7 @@ impl Window {
             let () = msg_send![*window, makeKeyAndOrderFront: nil];
 
             let window_handle = Window {
+                id,
                 ns_window: *window,
                 ns_view: **view.as_strong_ptr(),
             };

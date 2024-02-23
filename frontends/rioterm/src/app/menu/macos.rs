@@ -42,30 +42,60 @@ pub fn create_menu() {
 
     for title in menu_titles {
         let _submenu = main_menu.get_or_create_sub_menu(title, |menu| {
-            if title == "Window" {
-                menu.assign_as_windows_menu();
-                // macOS will insert stuff at the top and bottom, so we add
-                // a separator to tidy things up a bit
-                menu.add_item(&MenuItem::new_separator());
-            } else if title == "Rio" {
-                menu.assign_as_app_menu();
+            match title {
+                "Window" => {
+                    menu.assign_as_windows_menu();
+                    // macOS will insert stuff at the top and bottom, so we add
+                    // a separator to tidy things up a bit
+                    menu.add_item(&MenuItem::new_separator());
+                }
+                "Shell" => {
+                    let new_window = MenuItem::new_with(
+                        "New Window",
+                        Some(rio_perform_key_assignment_sel),
+                        "n",
+                    );
+                    new_window.set_tool_tip("Click to create a new window");
+                    new_window.set_represented_item(RepresentedItem::KeyAssignment(
+                        KeyAssignment::SpawnWindow,
+                    ));
 
-                let rio_version = env!("CARGO_PKG_VERSION");
-                let about_item = MenuItem::new_with(
-                    &format!("Rio v{}", rio_version),
-                    Some(rio_perform_key_assignment_sel),
-                    "",
-                );
-                about_item.set_tool_tip("Click to copy version number");
-                about_item.set_represented_item(RepresentedItem::KeyAssignment(
-                    KeyAssignment::Copy(rio_version.to_string()),
-                ));
+                    menu.add_item(&new_window);
 
-                menu.add_item(&about_item);
-                menu.add_item(&MenuItem::new_separator());
-            } else if title == "Help" {
-                menu.assign_as_help_menu();
-            }
+                    let new_tab = MenuItem::new_with(
+                        "New Tab",
+                        Some(rio_perform_key_assignment_sel),
+                        "t",
+                    );
+                    new_tab.set_tool_tip("Click to create a new tab");
+                    new_tab.set_represented_item(RepresentedItem::KeyAssignment(
+                        KeyAssignment::SpawnTab,
+                    ));
+
+                    menu.add_item(&new_tab);
+                }
+                "Rio" => {
+                    menu.assign_as_app_menu();
+
+                    let rio_version = env!("CARGO_PKG_VERSION");
+                    let about_item = MenuItem::new_with(
+                        &format!("Rio v{}", rio_version),
+                        Some(rio_perform_key_assignment_sel),
+                        "",
+                    );
+                    about_item.set_tool_tip("Click to copy version number");
+                    about_item.set_represented_item(RepresentedItem::KeyAssignment(
+                        KeyAssignment::Copy(rio_version.to_string()),
+                    ));
+
+                    menu.add_item(&about_item);
+                    menu.add_item(&MenuItem::new_separator());
+                }
+                "Help" => {
+                    menu.assign_as_help_menu();
+                }
+                _ => {}
+            };
         });
 
         // let represented_item = RepresentedItem::KeyAssignment(cmd.action.clone());

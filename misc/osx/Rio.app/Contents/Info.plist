@@ -13,85 +13,69 @@
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
-      <key>CFBundleTypeExtensions</key>
-      <array>
-        <string>command</string>
-        <string>sh</string>
-        <string>zsh</string>
-        <string>bash</string>
-        <string>fish</string>
-        <string>tool</string>
-      </array>
-      <key>CFBundleTypeIconFile</key>
-      <string>rio.icns</string>
-      <key>CFBundleTypeName</key>
-      <string>Terminal scripts</string>
-      <key>CFBundleTypeRole</key>
-      <string>Editor</string>
+        <key>CFBundleTypeIconFile</key>
+        <string>Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.text</string>
+            <string>public.plain-text</string>
+            <string>public.utf8-plain-text</string>
+        </array>
     </dict>
     <dict>
-      <key>CFBundleTypeName</key>
-      <string>Folders</string>
-      <key>CFBundleTypeRole</key>
-      <string>Editor</string>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <key>LSItemContentTypes</key>
-      <array>
-        <string>public.directory</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleTypeRole</key>
-      <string>Shell</string>
-      <key>LSItemContentTypes</key>
-      <array>
-        <string>public.unix-executable</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleTypeName</key>
-      <string>Text files</string>
-      <key>CFBundleTypeRole</key>
-      <string>Editor</string>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <key>LSItemContentTypes</key>
-      <array>
-        <string>public.text</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleTypeName</key>
-      <string>Image files</string>
-      <key>CFBundleTypeRole</key>
-      <string>Viewer</string>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <key>LSItemContentTypes</key>
-      <array>
-        <string>public.image</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleTypeName</key>
-      <string>All files</string>
-      <key>CFBundleTypeRole</key>
-      <string>Editor</string>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <key>LSItemContentTypes</key>
-      <array>
-        <string>public.archive</string>
-        <string>public.content</string>
-        <string>public.data</string>
-      </array>
+        <key>CFBundleTypeIconFile</key>
+        <string>Document</string>
+        <key>CFBundleTypeName</key>
+        <string>Rio Text Document</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleTypeOSTypes</key>
+        <array>
+            <string>****</string>
+        </array>
+        <key>LSHandlerRank</key>
+        <string>Default</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>Gemfile</string>
+            <string>c</string>
+            <string>c++</string>
+            <string>cc</string>
+            <string>cpp</string>
+            <string>css</string>
+            <string>erb</string>
+            <string>ex</string>
+            <string>exs</string>
+            <string>go</string>
+            <string>h</string>
+            <string>h++</string>
+            <string>hh</string>
+            <string>hpp</string>
+            <string>html</string>
+            <string>js</string>
+            <string>json</string>
+            <string>jsx</string>
+            <string>md</string>
+            <string>py</string>
+            <string>rb</string>
+            <string>rkt</string>
+            <string>rs</string>
+            <string>scm</string>
+            <string>toml</string>
+            <string>ts</string>
+            <string>tsx</string>
+            <string>txt</string>
+        </array>
     </dict>
   </array>
   <key>CFBundleIdentifier</key>
   <string>com.raphaelamorim.rio</string>
   <key>CFBundleGetInfoString</key>
-  <string>Rio - Hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers. https://raphamorim.io/rio/</string>
+  <string>Hardware-accelerated GPU terminal emulator. More information: https://raphamorim.io/rio/</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -108,108 +92,12 @@
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>File URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>file</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>FTP URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>ftp</string>
-        <string>ftps</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>Gemini URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>gemini</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>Git URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>git</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>Gopher URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>gopher</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>HTTP URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>http</string>
-        <string>https</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>IRC URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>irc</string>
-        <string>irc6</string>
-        <string>ircs</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>rio URL</string>
+      <string>Rio</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
       <key>CFBundleURLSchemes</key>
       <array>
         <string>rio</string>
-      </array>
-      <key>LSHandlerRank</key>
-      <string>Owner</string>
-      <key>LSIsAppleDefaultForScheme</key>
-      <true/>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>Mail Address URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>mailto</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>News URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>news</string>
-        <string>nntp</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>SSH and SFTP URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>ssh</string>
-        <string>sftp</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>Telnet URL</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>telnet</string>
       </array>
     </dict>
   </array>
@@ -220,7 +108,7 @@
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
-  <string>10.14</string>
+  <string>10.15.7</string>
   <key>LSRequiresCarbon</key>
   <true/>
   <key>NSHighResolutionCapable</key>
@@ -250,69 +138,9 @@
   <key>NSRemindersUsageDescription</key>
   <string>An application in Rio would like to access your reminders.</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright (c) Raphael Amorim 2023. All rights reserved.</string>
+  <string>Copyright (c) Raphael Amorim 2022-present. All rights reserved.</string>
   <key>NSRequiresAquaSystemAppearance</key>
   <string>NO</string>
-  <key>NSServices</key>
-  <array>
-    <dict>
-      <key>NSMenuItem</key>
-      <dict>
-        <key>default</key>
-        <string>New Rio Tab Here</string>
-      </dict>
-      <key>NSMessage</key>
-      <string>openTab</string>
-      <key>NSRequiredContext</key>
-      <dict>
-        <key>NSTextContent</key>
-        <string>FilePath</string>
-      </dict>
-      <key>NSSendTypes</key>
-      <array>
-        <string>NSFilenamesPboardType</string>
-        <string>public.plain-text</string>
-      </array>
-    </dict>
-    <dict>
-      <key>NSMenuItem</key>
-      <dict>
-        <key>default</key>
-        <string>New Rio Window Here</string>
-      </dict>
-      <key>NSMessage</key>
-      <string>openOSWindow</string>
-      <key>NSRequiredContext</key>
-      <dict>
-        <key>NSTextContent</key>
-        <string>FilePath</string>
-      </dict>
-      <key>NSSendTypes</key>
-      <array>
-        <string>NSFilenamesPboardType</string>
-        <string>public.plain-text</string>
-      </array>
-    </dict>
-    <dict>
-      <key>NSMenuItem</key>
-      <dict>
-        <key>default</key>
-        <string>Open with Rio</string>
-      </dict>
-      <key>NSMessage</key>
-      <string>openFileURLs</string>
-      <key>NSRequiredContext</key>
-      <dict>
-        <key>NSTextContent</key>
-        <string>FilePath</string>
-      </dict>
-      <key>NSSendTypes</key>
-      <array>
-        <string>NSFilenamesPboardType</string>
-        <string>public.plain-text</string>
-      </array>
-    </dict>
-  </array>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>A program running inside Rio would like to access speech recognition.</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>

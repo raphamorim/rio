@@ -95,7 +95,7 @@ pub mod window {
         if let Some(display) = d.get(id) {
             let view = display.view;
             unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
+                if let Some(display) = native::macos::get_display_payload(&*view) {
                     display.set_cursor_grab(grab);
                 }
             }
@@ -109,7 +109,7 @@ pub mod window {
         drop(d);
 
         unsafe {
-            if let Some(display) = native::macos::get_window_payload(&*view) {
+            if let Some(display) = native::macos::get_display_payload(&*view) {
                 display.show_mouse(shown);
             }
         }
@@ -122,9 +122,20 @@ pub mod window {
         // drop view as soon we have it, if let Some() keeps locked until block drop
 
         unsafe {
-            if let Some(display) = native::macos::get_window_payload(&*view) {
+            if let Some(display) = native::macos::get_display_payload(&*view) {
                 display.set_title(&title);
                 display.set_subtitle(&subtitle);
+            }
+        }
+    }
+
+    pub fn open_url(id: u16, url: &str) {
+        let d = get_handler().lock();
+        let view = unwrap_or_return!(d.get(id)).view;
+        drop(d);
+        unsafe {
+            if let Some(display) = native::macos::get_display_payload(&*view) {
+                display.open_url = url.to_owned();
             }
         }
     }
@@ -141,7 +152,7 @@ pub mod window {
         // drop view as soon we have it, if let Some() keeps locked until block drop
 
         unsafe {
-            if let Some(display) = native::macos::get_window_payload(&*view) {
+            if let Some(display) = native::macos::get_display_payload(&*view) {
                 display.set_mouse_cursor(cursor_icon);
             }
         }
@@ -153,7 +164,7 @@ pub mod window {
         if let Some(display) = d.get(id) {
             let view = display.view;
             unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
+                if let Some(display) = native::macos::get_display_payload(&*view) {
                     display.set_window_size(new_width, new_height);
                 }
             }
@@ -165,7 +176,7 @@ pub mod window {
         if let Some(display) = d.get(id) {
             let view = display.view;
             unsafe {
-                if let Some(display) = native::macos::get_window_payload(&*view) {
+                if let Some(display) = native::macos::get_display_payload(&*view) {
                     display.set_fullscreen(fullscreen);
                 }
             }
