@@ -22,7 +22,7 @@ pub enum MouseButton {
 #[derive(Clone, Debug, PartialEq)]
 pub enum KeyAssignment {
     SpawnWindow,
-    SpawnWindowWithUrls(Vec<String>),
+    SpawnTab,
     Copy(String),
 }
 
@@ -305,9 +305,9 @@ pub enum Appearance {
 }
 
 pub trait AppHandler {
-    fn create_window(&mut self);
-    fn create_window_with_url(&mut self, urls: Vec<String>);
-    fn init(&mut self);
+    fn create_window(&self);
+    fn create_tab(&self, _urls_to_load: Option<&str>);
+    fn start(&mut self);
 }
 
 /// A trait defining event callbacks.
@@ -321,6 +321,7 @@ pub trait EventHandler {
         _w: i32,
         _h: i32,
         _s: f32,
+        _open_url: &str,
     ) {
     }
     fn resize_event(&mut self, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
@@ -360,7 +361,7 @@ pub trait EventHandler {
     }
 
     fn open_file_event(&mut self, _filename: String) {}
-    fn open_urls_event(&mut self, _urls: Vec<String>) {}
+    // fn open_url_event(&mut self, _urls: &str) {}
 
     /// Represents raw hardware mouse motion event
     /// Note that these events are delivered regardless of input focus and not in pixels, but in

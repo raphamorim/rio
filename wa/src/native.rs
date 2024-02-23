@@ -15,7 +15,7 @@ use fnv::FnvHashMap;
 
 pub(crate) struct Handler {
     inner: FnvHashMap<u16, NativeDisplayData>,
-    next: u16,
+    pub next: u16,
 }
 
 impl Handler {

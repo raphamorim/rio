@@ -75,7 +75,7 @@
   <key>CFBundleIdentifier</key>
   <string>com.raphaelamorim.rio</string>
   <key>CFBundleGetInfoString</key>
-  <string>Rio - Hardware-accelerated GPU terminal emulator powered by GPU, focusing to run in desktops and browsers. https://raphamorim.io/rio/</string>
+  <string>Hardware-accelerated GPU terminal emulator. More information: https://raphamorim.io/rio/</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -138,7 +138,7 @@
   <key>NSRemindersUsageDescription</key>
   <string>An application in Rio would like to access your reminders.</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright (c) Raphael Amorim 2023. All rights reserved.</string>
+  <string>Copyright (c) Raphael Amorim 2022-present. All rights reserved.</string>
   <key>NSRequiresAquaSystemAppearance</key>
   <string>NO</string>
   <key>NSSpeechRecognitionUsageDescription</key>

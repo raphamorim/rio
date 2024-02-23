@@ -22,8 +22,9 @@ use crate::routes::{
 };
 use crate::state::State;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
-use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
+use rio_backend::config::{
+    renderer::{Backend as RendererBackend, Performance as RendererPerformance},
+    Config, Shell,
 };
 use rio_backend::crosswords::{grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink};
 use rio_backend::error::{RioError, RioErrorType};
@@ -65,26 +66,64 @@ pub struct Route {
     pub is_focused: bool,
 }
 
+#[inline]
+fn process_open_url(
+    mut shell: Shell,
+    mut working_dir: Option<String>,
+    editor: String,
+    open_url: &str,
+) -> (Shell, Option<String>) {
+    if open_url.is_empty() {
+        return (shell, working_dir);
+    }
+
+    if let Ok(url) = url::Url::parse(open_url) {
+        if let Ok(path_buf) = url.to_file_path() {
+            if path_buf.exists() {
+                if path_buf.is_file() {
+                    shell = Shell {
+                        program: editor,
+                        args: vec![path_buf.display().to_string()],
+                    }
+                } else if path_buf.is_dir() {
+                    working_dir = Some(path_buf.display().to_string());
+                }
+            }
+        }
+    }
+
+    (shell, working_dir)
+}
+
 impl Route {
     pub fn new(
         id: u16,
         raw_window_handle: raw_window_handle::RawWindowHandle,
         raw_display_handle: raw_window_handle::RawDisplayHandle,
-        config: Rc<rio_backend::config::Config>,
+        config: Rc<Config>,
         superloop: rio_backend::superloop::Superloop,
         font_database: &loader::Database,
         dimensions: (i32, i32, f32),
+        open_url: &str,
     ) -> Result<Route, Box<dyn std::error::Error>> {
         let _route = RoutePath::Terminal;
 
         let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
+
+        let (shell, working_dir) = process_open_url(
+            config.shell.to_owned(),
+            config.working_dir.to_owned(),
+            config.editor.to_owned(),
+            open_url,
+        );
+
         let context_manager_config = context::ContextManagerConfig {
             use_current_path: config.navigation.use_current_path,
-            shell: config.shell.to_owned(),
+            shell,
+            working_dir,
             spawn_performer: true,
             use_fork: config.use_fork,
-            working_dir: config.working_dir.to_owned(),
             is_collapsed,
             is_native,
             // When navigation is collapsed and does not contain any color rule
@@ -1050,11 +1089,7 @@ impl Route {
         self.mouse.accumulated_scroll.y %= height;
     }
 
-    pub fn update_config(
-        &mut self,
-        config: &Rc<rio_backend::config::Config>,
-        appearance: wa::Appearance,
-    ) {
+    pub fn update_config(&mut self, config: &Rc<Config>, appearance: wa::Appearance) {
         self.state = State::new(config, appearance);
 
         for context in self.ctx.contexts() {
