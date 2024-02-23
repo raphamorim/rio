@@ -84,6 +84,7 @@ impl EventHandler for Router {
         width: i32,
         height: i32,
         scale_factor: f32,
+        open_url: &str,
     ) {
         let initial_route = Route::new(
             id,
@@ -93,6 +94,7 @@ impl EventHandler for Router {
             self.superloop.clone(),
             &self.font_database,
             (width, height, scale_factor),
+            open_url,
         )
         .expect("Expected window to be created");
         self.route = Some(initial_route);
@@ -372,16 +374,12 @@ impl EventHandler for Router {
             current.paste(&filepath, true);
         }
     }
-    fn open_urls_event(&mut self, opened_urls: Vec<String>) {
-        if let Some(current) = &mut self.route {
-            let mut urls = String::from("");
-            for url in opened_urls {
-                urls.push_str(&url);
-            }
-
-            current.paste(&urls, true);
-        }
-    }
+    // fn open_url_event(&mut self, _url: &str) {
+    // if let Some(current) = &mut self.route {
+    //     current.paste(&url, true);
+    //     current.render();
+    // }
+    // }
     fn mouse_wheel_event(&mut self, mut x: f32, mut y: f32) {
         if let Some(current) = &mut self.route {
             if current.path != RoutePath::Terminal {
@@ -500,12 +498,14 @@ impl EventHandler for Router {
     }
 }
 
-struct Looper {
+struct AppInstance {
     config: Rc<rio_backend::config::Config>,
     font_database: loader::Database,
+    #[cfg(target_os = "macos")]
+    last_tab_group: Option<u64>,
 }
 
-impl Looper {
+impl AppInstance {
     fn new(config: rio_backend::config::Config) -> Self {
         let mut font_database = loader::Database::new();
         font_database.load_system_fonts();
@@ -513,23 +513,44 @@ impl Looper {
         Self {
             font_database,
             config,
+            #[cfg(target_os = "macos")]
+            last_tab_group: None,
         }
     }
 }
 
-impl AppHandler for Looper {
-    fn create_window(&mut self) {
+impl AppHandler for AppInstance {
+    fn create_window(&self) {
         let _ = create_window(&self.config, &None, &self.font_database, None);
     }
 
-    fn init(&mut self) {
-        let tab_group = if self.config.navigation.is_native() {
+    fn create_tab(&self, open_file_url: Option<&str>) {
+        if let Ok(window) = create_window(
+            &self.config,
+            &None,
+            &self.font_database,
+            self.last_tab_group,
+        ) {
+            if let Some(file_url) = open_file_url {
+                wa::window::open_url(window.id, file_url);
+            }
+        }
+    }
+
+    // This is executed only in the initialization of App
+    fn start(&mut self) {
+        self.last_tab_group = if self.config.navigation.is_native() {
             Some(0)
         } else {
             None
         };
 
-        let _ = create_window(&self.config, &None, &self.font_database, tab_group);
+        let _ = create_window(
+            &self.config,
+            &None,
+            &self.font_database,
+            self.last_tab_group,
+        );
     }
 }
 
@@ -539,7 +560,7 @@ pub async fn run(
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
     // let superloop = Superloop::new();
-    let app_loop = Looper::new(config);
+    let app_loop = AppInstance::new(config);
     // let _ = crate::watcher::configuration_file_updates(superloop.clone());
 
     // let scheduler = Scheduler::new(superloop.clone());

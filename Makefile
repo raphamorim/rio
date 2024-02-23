@@ -163,6 +163,9 @@ install-debian-x11:
 install-debian-wayland:
 	cargo install cargo-deb
 	cargo deb -p rioterm --install -- --release --no-default-features --features=wayland
+install-macos: release-macos
+	rm -rf /Applications/Rio.app
+	mv ./release/Rio.app /Applications/Rio.app
 
 # cargo install cargo-wix
 # https://github.com/volks73/cargo-wix
