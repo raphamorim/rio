@@ -313,6 +313,7 @@ pub trait AppHandler {
 /// A trait defining event callbacks.
 pub trait EventHandler {
     fn process(&mut self);
+    #[allow(clippy::too_many_arguments)]
     fn init(
         &mut self,
         _id: u16,
