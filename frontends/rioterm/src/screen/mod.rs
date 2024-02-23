@@ -479,10 +479,22 @@ impl Screen {
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
 
-            // Don't want the key without modifier, because it means something else most of
+            // We don't want the key without modifier, because it means something else most of
             // the time. However what we want is to manually lowercase the character to account
+            // for both small and capital letters on regular characters at the same time.
             let logical_key = if let Key::Character(ch) = key.logical_key.as_ref() {
-                Key::Character(ch.to_lowercase().into())
+                // Match `Alt` bindings without `Alt` being applied, otherwise they use the
+                // composed chars, which are not intuitive to bind.
+                //
+                // On Windows, the `Ctrl + Alt` mangles `logical_key` to unidentified values, thus
+                // preventing them from being used in bindings
+                //
+                // For more see https://github.com/rust-windowing/winit/issues/2945.
+                if (cfg!(windows) && mods.control_key()) && mods.alt_key() {
+                    key.key_without_modifiers()
+                } else {
+                    Key::Character(ch.to_lowercase().into())
+                }
             } else {
                 key.logical_key.clone()
             };
