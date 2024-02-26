@@ -1,10 +1,11 @@
-name: nix build
+name: Nix Build
 
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - main
+      - 0.0.x
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
@@ -12,6 +13,7 @@ on:
   push:
     branches:
       - main
+      - 0.0.x
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
