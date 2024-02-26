@@ -6,6 +6,10 @@
 
 ## 0.0.35
 
+- TBD
+
+## 0.0.35
+
 - Bump wayland dependencies: `wayland-backend`, `wayland-client`, `wayland-cursor` and `wayland-scanner`.
 - Refactor: disable cursor blink on selection (ref #437) #441 by @hougesen .
 - Report focus change https://terminalguide.namepad.de/mode/p1004/.
