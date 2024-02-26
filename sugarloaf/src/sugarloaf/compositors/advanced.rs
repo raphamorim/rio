@@ -117,8 +117,8 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
-        if line == 0 {
+    pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
+        if line_number == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
                 SpanStyle::Size(tree.layout.font_size),
@@ -126,7 +126,7 @@ impl Advanced {
             ]);
         }
 
-        let line = &tree.lines[line];
+        let line = &tree.lines[line_number];
 
         let underline = &[
             SpanStyle::Underline(true),
@@ -141,13 +141,8 @@ impl Advanced {
             SpanStyle::UnderlineSize(Some(2.)),
         ];
 
-        // let mut content = String::from("");
         for i in 0..line.len() {
-            // let mut font_id = 0;
-            // if line[i].content == '🥶' {
-            //     font_id = 7;
-            // }
-
+            
             let mut span_counter = 0;
             if line[i].style.is_bold_italic {
                 self.content_builder.enter_span(&[
@@ -208,7 +203,6 @@ impl Advanced {
             }
 
             self.content_builder.enter_span(&[
-                // SpanStyle::FontId(font_id),
                 SpanStyle::Color(line[i].foreground_color),
                 SpanStyle::BackgroundColor(line[i].background_color),
             ]);
@@ -228,7 +222,11 @@ impl Advanced {
                 span_counter -= 1;
             }
         }
+
+        // if line is the last one skip break line
+        // if line_number != tree.lines.len() - 1 {
         self.content_builder.add_char('\n');
+        // }
     }
 }
 

@@ -427,7 +427,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn shape(&mut self, layout: &mut Paragraph) {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         for item in &self.s.items {
             shape_item(
@@ -441,8 +441,8 @@ impl<'a> ParagraphBuilder<'a> {
             );
         }
         layout.apply_spacing(&self.s.spans);
-        // let duration = start.elapsed();
-        // println!("Time elapsed in shape is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 
@@ -615,6 +615,7 @@ where
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
+            let start = std::time::Instant::now();
             layout.push_run(
                 &state.state.spans,
                 &current_font_id,
@@ -622,6 +623,8 @@ where
                 state.level,
                 shaper,
             );
+            let duration = start.elapsed();
+            println!("Time elapsed in push_run is: {:?}", duration);
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -637,6 +640,7 @@ where
 
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
+            let start = std::time::Instant::now();
             layout.push_run(
                 &state.state.spans,
                 &current_font_id,
@@ -644,6 +648,8 @@ where
                 state.level,
                 shaper,
             );
+            let duration = start.elapsed();
+            println!("Time elapsed in push_run is: {:?}", duration);
             state.font_id = next_font;
             state.synth = synth;
             return true;
