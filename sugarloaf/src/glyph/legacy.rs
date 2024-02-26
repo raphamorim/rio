@@ -139,7 +139,7 @@ impl<'a> From<&crate::glyph::Section<'a>> for VariedSection<'a> {
             screen_position: s.screen_position,
             layout: s.layout,
             // take the first z value, good enough for legacy compatibility
-            z: s.text.get(0).map(|t| t.extra.z).unwrap_or(0.0),
+            z: s.text.first().map(|t| t.extra.z).unwrap_or(0.0),
         }
     }
 }

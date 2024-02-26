@@ -1,6 +1,6 @@
 # If you see this, run "rustup self update" to get rustup 1.23 or newer.
 
 [toolchain]
-channel = "1.73.0"
+channel = "1.75.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]

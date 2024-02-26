@@ -68,7 +68,7 @@ impl Scheduler {
             }
         }
 
-        self.timers.get(0).map(|timer| timer.deadline)
+        self.timers.front().map(|timer| timer.deadline)
     }
 
     /// Schedule a new event.

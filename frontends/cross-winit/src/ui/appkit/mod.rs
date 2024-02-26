@@ -8,8 +8,7 @@ use objc2::rc::autoreleasepool;
 
 pub use self::menubar::MenuBar;
 pub use global::InitializedApplication;
-pub use menu::NSMenu;
-pub use menuitem::{MenuItemState, NSMenuItem};
+pub use menuitem::NSMenuItem;
 
 // We need the Objectice-C symbols like NSString, NSMenu and so on to be available
 #[link(name = "AppKit", kind = "framework")]

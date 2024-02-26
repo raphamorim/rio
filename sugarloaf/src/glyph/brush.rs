@@ -454,11 +454,7 @@ where
         VF: Fn(GlyphVertex<X>) -> V + Copy,
     {
         let draw_info = LastDrawInfo {
-            text_state: {
-                let mut s = self.section_hasher.build_hasher();
-                self.section_buffer.hash(&mut s);
-                s.finish()
-            },
+            text_state: { self.section_hasher.hash_one(&self.section_buffer) },
         };
 
         let result = if !self.cache_redraws

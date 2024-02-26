@@ -368,7 +368,7 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
-            hide_cursor_when_typing: true,
+            hide_cursor_when_typing: false,
         }
     }
 }

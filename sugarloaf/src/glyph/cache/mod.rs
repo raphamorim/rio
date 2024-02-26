@@ -5,11 +5,6 @@
 
 mod geometry;
 
-/// Re-exported ab_glyph types.
-pub mod ab_glyph {
-    pub use ab_glyph::*;
-}
-
 pub use geometry::Rectangle;
 
 use ::ab_glyph::*;
@@ -828,7 +823,7 @@ impl DrawCache {
         // The first (tallest) glyph height is used to calculate work magnitude.
         let work_magnitude = {
             let tallest_h = draw_and_upload
-                .get(0)
+                .first()
                 .map(|(r, _)| r.height() as usize)
                 .unwrap_or(0);
             glyph_count

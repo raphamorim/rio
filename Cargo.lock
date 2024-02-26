@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
@@ -2429,7 +2429,7 @@ checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
 name = "rio-backend"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "base64",
  "bitflags 2.4.1",
@@ -2456,7 +2456,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "ahash",
  "bitflags 2.4.1",
@@ -2762,7 +2762,7 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "sugarloaf"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -2823,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.0.34"
+version = "0.0.35"
 dependencies = [
  "corcovado",
  "dirs",
@@ -3649,9 +3649,9 @@ checksum = "ed94fce61571a4006852b7389a063ab983c02eb1bb37b47f8272ce92d06d9538"
 
 [[package]]
 name = "winit"
-version = "0.29.9"
+version = "0.29.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2376dab13e09c01ad8b679f0dbc7038af4ec43d9a91344338e37bd686481550"
+checksum = "272be407f804517512fdf408f0fe6c067bf24659a913c61af97af176bfd5aa92"
 dependencies = [
  "ahash",
  "android-activity",
@@ -3793,9 +3793,9 @@ checksum = "a67300977d3dc3f8034dae89778f502b6ba20b269527b3223ba59c0cf393bb8a"
 
 [[package]]
 name = "xkbcommon-dl"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6924668544c48c0133152e7eec86d644a056ca3d09275eb8d5cdb9855f9d8699"
+checksum = "d039de8032a9a8856a6be89cea3e5d12fdd82306ab7c94d74e6deab2460651c5"
 dependencies = [
  "bitflags 2.4.1",
  "dlib",

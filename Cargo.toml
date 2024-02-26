@@ -11,12 +11,12 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.34"
+version = "0.0.35"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal"]
-rust-version = "1.73.0"
+rust-version = "1.75.0"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
@@ -25,13 +25,13 @@ documentation = "https://github.com/raphamorim/rio#readme"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-sugarloaf = { path = "sugarloaf", version = "0.0.34" }
-corcovado = { path = "corcovado", version = "0.0.34" }
-rio-config = { path = "rio-config", version = "0.0.34" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.0.34" }
-copa = { path = "copa", default-features = true, version = "0.0.34" }
-teletypewriter = { path = "teletypewriter", version = "0.0.34" }
-rio-backend = { path = "rio-backend", version = "0.0.34" }
+sugarloaf = { path = "sugarloaf", version = "0.0.35" }
+corcovado = { path = "corcovado", version = "0.0.35" }
+rio-config = { path = "rio-config", version = "0.0.35" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.0.35" }
+copa = { path = "copa", default-features = true, version = "0.0.35" }
+teletypewriter = { path = "teletypewriter", version = "0.0.35" }
+rio-backend = { path = "rio-backend", version = "0.0.35" }
 
 raw-window-handle = "0.5"
 parking_lot = "0.12.1"
@@ -50,7 +50,7 @@ wasm-bindgen-test = "0.3"
 env_logger = "0.10"
 console_log = "0.2"
 console_error_panic_hook = "0.1.7"
-winit = { version = "0.29.9", default-features = false, features = ["rwh_05"] }
+winit = { version = "0.29.11", default-features = false, features = ["rwh_05"] }
 
 [profile.release]
 opt-level = 3

@@ -4,6 +4,11 @@
 
 - TBD
 
+## 0.0.35
+
+- update rust version to 1.75.0.
+- update winit to 0.29.11.
+
 ## 0.0.34
 
 - use Fowler–Noll–Vo hash function implementation for sugar cache (more efficient for smaller hash keys).

@@ -1,5 +1,5 @@
 #[cfg(all(unix, not(target_os = "fuchsia")))]
-pub use self::unix::{pipe, set_nonblock, Awakener, EventedFd, Events, Io, Selector};
+pub use self::unix::{Awakener, EventedFd, Events, Selector};
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 pub use self::unix::READY_ALL;

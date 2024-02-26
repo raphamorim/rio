@@ -27,14 +27,10 @@ pub type DefaultSectionHasher = std::hash::BuildHasherDefault<twox_hash::XxHash>
 
 #[test]
 fn default_section_hasher() {
-    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::hash::BuildHasher;
 
     let section_a = Section::default().add_text(Text::new("Hovered Tile: Some((0, 0))"));
     let section_b = Section::default().add_text(Text::new("Hovered Tile: Some((1, 0))"));
-    let hash = |s: &Section| {
-        let mut hasher = DefaultSectionHasher::default().build_hasher();
-        s.hash(&mut hasher);
-        hasher.finish()
-    };
+    let hash = |s: &Section| DefaultSectionHasher::default().hash_one(s);
     assert_ne!(hash(&section_a), hash(&section_b));
 }
