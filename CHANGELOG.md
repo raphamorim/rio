@@ -16,10 +16,7 @@
 	- Compute layout updates only if layout is different.
 	- Introduced renderer level (`0` for elementary and `1` for advanced).
 	- Reduced font size to `16.0`.
-- Update rust to 1.75.0
-- Rewrite hash logic to use `BuildHasher::hash_one`.
 - Support to font ligatures.
-- Report focus change https://terminalguide.namepad.de/mode/p1004/.
 - Updated wgpu to 0.19.0.
 - Removed support to DX11.
 - Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
@@ -28,6 +25,15 @@
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
+
+## 0.0.35
+
+- Bump wayland dependencies: `wayland-backend`, `wayland-client`, `wayland-cursor` and `wayland-scanner`.
+- Refactor: disable cursor blink on selection (ref #437) #441 by @hougesen .
+- Rewrite hash logic to use `BuildHasher::hash_one`.
+- Report focus change https://terminalguide.namepad.de/mode/p1004/.
+- update rust version to 1.75.0.
+- update winit to 0.29.11.
 
 ## 0.0.34
 
