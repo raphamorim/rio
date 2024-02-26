@@ -6,6 +6,7 @@
 
 ## 0.0.35
 
+- Report focus change https://terminalguide.namepad.de/mode/p1004/.
 - update rust version to 1.75.0.
 - update winit to 0.29.11.
 

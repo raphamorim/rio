@@ -883,7 +883,7 @@ impl Sequencer {
 
                         let has_regained_focus = !route.window.is_focused && focused;
                         route.window.is_focused = focused;
-
+                        route.window.screen.on_focus_change(focused);
                         if has_regained_focus {
                             route.redraw();
                         }
