@@ -192,18 +192,16 @@ impl Config {
 
                         if let Ok(light_loaded_theme) = Config::load_theme(&path) {
                             adaptive_colors.light = Some(light_loaded_theme.colors);
-                            println!("carregou");
                         } else {
-                            println!("failed to load light theme: {}", light_theme);
+                            warn!("failed to load light theme: {}", light_theme);
                         }
 
                         let dark_theme = &adaptive_theme.dark;
                         let path = tmp.join(dark_theme).with_extension("toml");
                         if let Ok(dark_loaded_theme) = Config::load_theme(&path) {
                             adaptive_colors.dark = Some(dark_loaded_theme.colors);
-                            println!("carregou");
                         } else {
-                            println!("failed to load dark theme: {}", dark_theme);
+                            warn!("failed to load dark theme: {}", dark_theme);
                         }
 
                         if adaptive_colors.light.is_some()
