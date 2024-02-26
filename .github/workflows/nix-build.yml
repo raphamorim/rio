@@ -1,9 +1,10 @@
-name: nix build
+name: Nix Build
 
 on:
   workflow_dispatch:
   pull_request:
     branches:
+      - main
       - 0.0.x
     paths:
       - '**/*.rs'
@@ -11,6 +12,7 @@ on:
       - 'nix/**'
   push:
     branches:
+      - main
       - 0.0.x
     paths:
       - '**/*.rs'
@@ -22,7 +24,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
