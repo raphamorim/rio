@@ -37,6 +37,15 @@ impl<'a> BreakLines<'a> {
         }
     }
 
+    pub fn from_data(layout: &'a mut LayoutData, lines: &'a mut LineLayoutData) -> Self {
+        Self {
+            layout,
+            lines,
+            state: BreakerState::default(),
+            prev_state: None,
+        }
+    }
+
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
     pub fn break_next(

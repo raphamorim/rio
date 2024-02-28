@@ -309,6 +309,7 @@ impl<'a> ParagraphBuilder<'a> {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
+
         self.s.span_stack.push(SpanId(self.s.spans.len() - 1));
         self.add_text(" ");
         for _ in 0..self.dir_depth {

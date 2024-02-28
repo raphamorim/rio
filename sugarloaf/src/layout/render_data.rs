@@ -47,6 +47,11 @@ impl RenderData {
         BreakLines::new(&mut self.data, &mut self.line_data)
     }
 
+    pub fn break_lines_using_span(&mut self) -> BreakLines {
+        println!("{:?}", self.line_data.lines);
+        BreakLines::from_data(&mut self.data, &mut self.line_data)
+    }
+
     /// Returns an iterator over the lines in the paragraph.
     pub fn lines(&self) -> Lines {
         Lines {
