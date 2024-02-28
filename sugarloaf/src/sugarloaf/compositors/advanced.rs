@@ -8,9 +8,9 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{Alignment, Direction, LayoutContext, RenderData};
+use crate::layout::{Content, ContentBuilder, Alignment, Direction, LayoutContext, RenderData};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
-use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
+use crate::{SugarCursor, SugarDecoration};
 
 pub struct Advanced {
     pub render_data: RenderData,
@@ -77,7 +77,7 @@ impl Advanced {
 
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
-        let mut content_builder = crate::content::Content::builder();
+        let mut content_builder = Content::builder();
         content_builder.enter_span(&[
             SpanStyle::FontId(0),
             SpanStyle::Size(tree.layout.font_size),
@@ -230,9 +230,9 @@ impl Advanced {
 }
 
 #[allow(unused)]
-fn build_simple_content() -> crate::content::Content {
+fn build_simple_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 
@@ -244,9 +244,9 @@ fn build_simple_content() -> crate::content::Content {
 }
 
 #[allow(unused)]
-fn build_complex_content() -> crate::content::Content {
+fn build_complex_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 
@@ -317,9 +317,9 @@ fn build_complex_content() -> crate::content::Content {
 }
 
 #[allow(unused)]
-fn build_terminal_content() -> crate::content::Content {
+fn build_terminal_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 

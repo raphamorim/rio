@@ -9,6 +9,7 @@
 
 //! Experimental paragraph layout engine.
 
+mod content;
 mod bidi;
 mod builder;
 mod builder_data;
@@ -21,6 +22,7 @@ mod span_style;
 pub use swash;
 
 pub use render_data::RenderData;
+pub use content::{Content, ContentBuilder};
 
 #[doc(inline)]
 pub use swash::text::Language;

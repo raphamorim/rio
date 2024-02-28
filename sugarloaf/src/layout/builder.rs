@@ -6,7 +6,7 @@
 // builder.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-//! Paragraph builder.
+//! Render data builder.
 
 use super::bidi::*;
 use super::builder_data::*;
