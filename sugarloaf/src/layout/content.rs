@@ -95,9 +95,7 @@ impl Content {
         let start = range.start;
         let end = range.end;
         let len = (end - start) as u32;
-        if self.text.is_char_boundary(start)
-            && self.text.is_char_boundary(end)
-        {
+        if self.text.is_char_boundary(start) && self.text.is_char_boundary(end) {
             self.text.replace_range(start..end, "");
             let frag_index = self.fragment_from_offset(start).unwrap_or(0);
             let first = &mut self.fragments[frag_index];
@@ -134,7 +132,7 @@ impl Content {
                     }
                 }
                 SpanElement::BreakLine => {
-                    println!("break_line");
+                    lcx.new_line();
                 }
             }
         }
@@ -245,9 +243,10 @@ impl ContentBuilder {
     #[inline]
     pub fn break_line(&mut self) {
         if let Some(span) = self.spans.last() {
-            self.content.spans[*span as usize].elements.push(SpanElement::BreakLine);
+            self.content.spans[*span as usize]
+                .elements
+                .push(SpanElement::BreakLine);
         }
-        // self.content.line += self.content.text.len() - 1;
     }
 
     #[inline]

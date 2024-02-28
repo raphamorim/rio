@@ -127,23 +127,25 @@ impl<'a> ParagraphBuilder<'a> {
 
     /// Adds a text fragment to the paragraph.
     pub fn add_text(&mut self, text: &str) -> Option<()> {
-        let id = self.s.fragments.len();
+        let current_line = self.s.current_line();
+        let line = &mut self.s.lines[current_line];
+        let id = line.text.frags.len();
         if id > MAX_ID {
             return None;
         }
         let span_id = *self.s.span_stack.last()?;
         let span = self.s.spans.get(span_id.to_usize())?;
         let mut offset = self.last_offset;
-        let current_line = self.s.current_line();
+
         macro_rules! push_char {
             ($ch: expr) => {{
-                self.s.lines[current_line].text.push($ch);
-                self.s.lines[current_line].text_offsets.push(offset);
+                line.text.content.push($ch);
+                line.text.offsets.push(offset);
                 offset += ($ch).len_utf8() as u32;
             }};
         }
 
-        let start = self.s.lines[self.s.current_line()].text.len();
+        let start = line.text.content.len();
         match span.text_transform {
             TextTransform::Uppercase => {
                 if let Some(lang) = &span.lang {
@@ -244,8 +246,8 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             }
         }
-        let end = self.s.lines[self.s.current_line()].text.len();
-        let break_shaping = if let Some(prev_frag) = self.s.fragments.last() {
+        let end = line.text.content.len();
+        let break_shaping = if let Some(prev_frag) = line.fragments.last() {
             if prev_frag.is_text {
                 if prev_frag.span == span_id {
                     false
@@ -265,16 +267,15 @@ impl<'a> ParagraphBuilder<'a> {
             true
         };
         let len = end - start;
-        let current_line = self.s.current_line();
-        self.s.lines[current_line].text_frags.reserve(len);
+        line.text.frags.reserve(len);
         for _ in 0..len {
-            self.s.lines[current_line].text_frags.push(id as u32);
+            line.text.frags.push(id as u32);
         }
-        self.s.lines[current_line].text_spans.reserve(len);
+        line.text.spans.reserve(len);
         for _ in 0..len {
-            self.s.lines[current_line].text_spans.push(span_id.0 as u32);
+            line.text.spans.push(span_id.0 as u32);
         }
-        self.s.fragments.push(FragmentData {
+        line.fragments.push(FragmentData {
             span: span_id,
             is_text: true,
             break_shaping,
@@ -315,10 +316,12 @@ impl<'a> ParagraphBuilder<'a> {
             self.push_char(PDI);
         }
 
-        for (line_number, line) in self.s.lines.iter_mut().enumerate() {
-            let mut analysis = analyze(line.text.iter());
+        // for (line_number, line) in self.s.lines.iter_mut().enumerate() {
+        for line_number in 0..self.s.lines.len() {
+            let line = &mut self.s.lines[line_number];
+            let mut analysis = analyze(line.text.content.iter());
             for (props, boundary) in analysis.by_ref() {
-                line.text_info.push(CharInfo::new(props, boundary));
+                line.text.info.push(CharInfo::new(props, boundary));
             }
             if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
                 let dir = match self.dir {
@@ -327,33 +330,39 @@ impl<'a> ParagraphBuilder<'a> {
                     Direction::RightToLeft => Some(BidiDirection::RightToLeft),
                 };
                 self.bidi.resolve_with_types(
-                    &line.text,
-                    line.text_info.iter().map(|i| i.bidi_class()),
+                    &self.s.lines[line_number].text.content,
+                    self.s.lines[line_number]
+                        .text
+                        .info
+                        .iter()
+                        .map(|i| i.bidi_class()),
                     dir,
                 );
                 if !self.needs_bidi {
                     self.needs_bidi = true;
                 }
             }
-        }
 
-        self.itemize();
-        self.shape(render_data);
+            self.itemize(line_number);
+            self.shape(render_data, line_number);
+        }
     }
 
-    fn itemize(&mut self) {
-        let limit = self.s.lines[self.s.current_line()].text.len();
-        if self.s.fragments.is_empty() || limit == 0 {
+    fn itemize(&mut self, line_number: usize) {
+        let line = &mut self.s.lines[line_number];
+        let limit = line.text.content.len();
+        if line.text.frags.is_empty() || limit == 0 {
             return;
         }
-        let mut last_script = self.s.lines[self.s.current_line()]
-            .text_info
+        let mut last_script = line
+            .text
+            .info
             .iter()
             .map(|i| i.script())
             .find(|s| real_script(*s))
             .unwrap_or(Script::Latin);
         let levels = self.bidi.levels();
-        let mut last_frag = self.s.fragments.first().unwrap();
+        let mut last_frag = line.fragments.first().unwrap();
         let mut last_level = if self.needs_bidi {
             levels[last_frag.start]
         } else {
@@ -376,13 +385,13 @@ impl<'a> ParagraphBuilder<'a> {
                     item.level = last_level;
                     item.vars = last_vars;
                     item.features = last_features;
-                    self.s.items.push(item);
+                    line.items.push(item);
                     item.start = item.end;
                 }
             };
         }
         if self.needs_bidi {
-            for frag in &self.s.fragments {
+            for frag in &line.fragments {
                 if frag.break_shaping || frag.start != last_frag.end {
                     push_item!();
                     item.start = frag.start;
@@ -392,10 +401,8 @@ impl<'a> ParagraphBuilder<'a> {
                 last_features = frag.features;
                 last_vars = frag.vars;
                 let range = frag.start..frag.end;
-                for (&props, &level) in self.s.lines[self.s.current_line()].text_info
-                    [range.clone()]
-                .iter()
-                .zip(&levels[range])
+                for (&props, &level) in
+                    line.text.info[range.clone()].iter().zip(&levels[range])
                 {
                     let script = props.script();
                     let real = real_script(script);
@@ -411,7 +418,7 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             }
         } else {
-            for frag in &self.s.fragments {
+            for frag in &line.fragments {
                 if frag.break_shaping || frag.start != last_frag.end {
                     push_item!();
                     item.start = frag.start;
@@ -421,7 +428,7 @@ impl<'a> ParagraphBuilder<'a> {
                 last_features = frag.features;
                 last_vars = frag.vars;
                 let range = frag.start..frag.end;
-                for &props in &self.s.lines[self.s.current_line()].text_info[range] {
+                for &props in &line.text.info[range] {
                     let script = props.script();
                     let real = real_script(script);
                     if script != last_script && real {
@@ -439,11 +446,11 @@ impl<'a> ParagraphBuilder<'a> {
         push_item!();
     }
 
-    fn shape(&mut self, render_data: &mut RenderData) {
+    fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
         let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
-        println!("{:?}", self.s.items);
-        for item in &self.s.items {
+        let line = &self.s.lines[line_number];
+        for item in &line.items {
             shape_item(
                 self.fcx,
                 self.fonts,
@@ -452,6 +459,7 @@ impl<'a> ParagraphBuilder<'a> {
                 item,
                 &mut char_cluster,
                 render_data,
+                line_number,
             );
         }
         render_data.apply_spacing(&self.s.spans);
@@ -464,10 +472,10 @@ impl<'a> ParagraphBuilder<'a> {
     #[inline]
     fn push_char(&mut self, ch: char) {
         let current_line = self.s.current_line();
-        self.s.lines[current_line].text.push(ch);
-        self.s.lines[current_line].text_frags.push(0);
-        self.s.lines[current_line].text_spans.push(0);
-        self.s.lines[current_line].text_offsets.push(0);
+        self.s.lines[current_line].text.content.push(ch);
+        self.s.lines[current_line].text.frags.push(0);
+        self.s.lines[current_line].text.spans.push(0);
+        self.s.lines[current_line].text.offsets.push(0);
     }
 }
 
@@ -498,6 +506,7 @@ fn shape_item(
     item: &ItemData,
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
+    current_line: usize,
 ) -> Option<()> {
     let dir = if item.level & 1 != 0 {
         shape::Direction::RightToLeft
@@ -505,7 +514,7 @@ fn shape_item(
         shape::Direction::LeftToRight
     };
     let range = item.start..item.end;
-    let span_index = state.lines[state.current_line()].text_spans[item.start];
+    let span_index = state.lines[current_line].text.spans[item.start];
     let span = state.spans.get(span_index as usize)?;
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
@@ -524,11 +533,11 @@ fn shape_item(
     // fcx.select_group(shape_state.font_id);
     // fcx.select_fallbacks(item.script, shape_state.span.lang.as_ref());
     if item.level & 1 != 0 {
-        let chars = state.lines[state.current_line()].text[range.clone()]
+        let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
-            .zip(&state.lines[state.current_line()].text_offsets[range.clone()])
-            .zip(&state.lines[state.current_line()].text_spans[range.clone()])
-            .zip(&state.lines[state.current_line()].text_info[range])
+            .zip(&state.lines[current_line].text.offsets[range.clone()])
+            .zip(&state.lines[current_line].text.spans[range.clone()])
+            .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 use swash::text::Codepoint;
                 let (((&ch, &offset), &span_index), &info) = z;
@@ -559,11 +568,11 @@ fn shape_item(
             render_data,
         ) {}
     } else {
-        let chars = state.lines[state.current_line()].text[range.clone()]
+        let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
-            .zip(&state.lines[state.current_line()].text_offsets[range.clone()])
-            .zip(&state.lines[state.current_line()].text_spans[range.clone()])
-            .zip(&state.lines[state.current_line()].text_info[range])
+            .zip(&state.lines[current_line].text.offsets[range.clone()])
+            .zip(&state.lines[current_line].text.spans[range.clone()])
+            .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
                 Token {

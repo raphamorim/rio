@@ -9,18 +9,18 @@
 
 //! Experimental paragraph layout engine.
 
-mod content;
 mod bidi;
 mod builder;
 mod builder_data;
+mod content;
 mod layout_data;
 mod line_breaker;
 mod nav;
 mod render_data;
 mod span_style;
 
-pub use render_data::RenderData;
 pub use content::{Content, ContentBuilder};
+pub use render_data::RenderData;
 
 #[doc(inline)]
 pub use swash::text::Language;

@@ -8,7 +8,9 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{Content, ContentBuilder, Alignment, Direction, LayoutContext, RenderData};
+use crate::layout::{
+    Alignment, Content, ContentBuilder, Direction, LayoutContext, RenderData,
+};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{SugarCursor, SugarDecoration};
 
