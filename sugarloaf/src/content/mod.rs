@@ -10,12 +10,25 @@ use crate::layout::*;
 use core::borrow::Borrow;
 use core::ops::Range;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Content {
     pub spans: Vec<Span>,
     pub fragments: Vec<(u32, u32)>,
-    pub text: String,
+    pub text: Vec<String>,
+    pub line: usize,
     pub roots: Vec<u32>,
+}
+
+impl Default for Content {
+    fn default() -> Self {
+        Self {
+            spans: vec![],
+            fragments: vec![],
+            text: vec![String::from("")],
+            line: 0,
+            roots: vec![]
+        }
+    }
 }
 
 impl PartialEq for Content {
@@ -30,15 +43,16 @@ impl Content {
     }
 
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
-        for root in &self.roots {
-            self.layout_span(*root, lcx);
+        // println!("{:?}", self.roots);
+        for root in 0..self.line {
+            self.layout_span(root, lcx);
         }
     }
 
     pub fn get_selection_into(&self, range: Range<usize>, buf: &mut String) {
         buf.clear();
         if let Some(s) = self.text.get(range) {
-            buf.push_str(s);
+            buf.push_str(&s[self.line]);
         }
     }
 
@@ -49,8 +63,8 @@ impl Content {
     }
 
     pub fn insert_str(&mut self, offset: usize, text: &str) -> Option<usize> {
-        if self.text.is_char_boundary(offset) {
-            self.text.insert_str(offset, text);
+        if self.text[self.line].is_char_boundary(offset) {
+            self.text[self.line].insert_str(offset, text);
             let len = text.len() as u32;
             let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
             self.fragments[frag_index].1 += len;
@@ -64,8 +78,8 @@ impl Content {
     }
 
     pub fn insert(&mut self, offset: usize, ch: char) -> Option<usize> {
-        if self.text.is_char_boundary(offset) {
-            self.text.insert(offset, ch);
+        if self.text[self.line].is_char_boundary(offset) {
+            self.text[self.line].insert(offset, ch);
             let len = ch.len_utf8() as u32;
             let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
             self.fragments[frag_index].1 += len;
@@ -84,7 +98,7 @@ impl Content {
             Erase::Last(range) => {
                 let _start = range.start;
                 let end = range.end;
-                let last_char = self.text.get(range)?.chars().last()?;
+                let last_char = self.text[self.line].get(range)?.chars().last()?;
                 let len = last_char.len_utf8();
                 end - len..end
             }
@@ -92,8 +106,8 @@ impl Content {
         let start = range.start;
         let end = range.end;
         let len = (end - start) as u32;
-        if self.text.is_char_boundary(start) && self.text.is_char_boundary(end) {
-            self.text.replace_range(start..end, "");
+        if self.text[self.line].is_char_boundary(start) && self.text[self.line].is_char_boundary(end) {
+            self.text[self.line].replace_range(start..end, "");
             let frag_index = self.fragment_from_offset(start).unwrap_or(0);
             let first = &mut self.fragments[frag_index];
             first.1 = first.1.saturating_sub(len);
@@ -107,15 +121,15 @@ impl Content {
 
     pub fn erase2(&mut self, offset: usize) -> Option<usize> {
         let _frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-        if self.text.is_char_boundary(offset) {
+        if self.text[self.line].is_char_boundary(offset) {
             self.text.remove(offset);
             return Some(offset);
         }
         None
     }
 
-    fn layout_span(&self, span: u32, lcx: &mut ParagraphBuilder) {
-        let span = &self.spans[span as usize];
+    fn layout_span(&self, span: usize, lcx: &mut ParagraphBuilder) {
+        let span = &self.spans[span];
         lcx.push_span(&span.properties);
         for e in &span.elements {
             match e {
@@ -124,12 +138,13 @@ impl Content {
                     let (start, end) = self.fragments[*i as usize];
                     if start < end {
                         if let Some(s) = self.text.get(start as usize..end as usize) {
-                            lcx.add_text(s);
+                            lcx.add_text(&s[self.line]);
                         }
                     }
                 }
             }
         }
+        lcx.new_line();
         lcx.pop_span();
     }
 
@@ -164,7 +179,7 @@ impl Span {
 #[derive(Copy, PartialEq, Clone)]
 pub enum SpanElement {
     Fragment(u32),
-    Span(u32),
+    Span(usize),
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -186,12 +201,13 @@ impl ContentBuilder {
                 .collect(),
             elements: Vec::new(),
         };
-        let index = self.content.spans.len() as u32;
+        let size = self.content.spans.len();
+        let index = size as u32;
         self.content.spans.push(span);
         if let Some(parent) = self.spans.last() {
             self.content.spans[*parent as usize]
                 .elements
-                .push(SpanElement::Span(index));
+                .push(SpanElement::Span(size));
         } else {
             self.content.roots.push(index);
         }
@@ -209,7 +225,7 @@ impl ContentBuilder {
         if let Some(span) = self.spans.last() {
             let index = self.content.fragments.len() as u32;
             let start = self.content.text.len() as u32;
-            self.content.text.push_str(text);
+            self.content.text[self.content.line].push_str(text);
             let end = self.content.text.len() as u32;
             self.content.fragments.push((start, end));
             self.content.spans[*span as usize]
@@ -223,7 +239,7 @@ impl ContentBuilder {
         if let Some(span) = self.spans.last() {
             let index = self.content.fragments.len() as u32;
             let start = self.content.text.len() as u32;
-            self.content.text.push(text);
+            self.content.text[self.content.line].push(text);
             let end = self.content.text.len() as u32;
             self.content.fragments.push((start, end));
             self.content.spans[*span as usize]
@@ -234,16 +250,8 @@ impl ContentBuilder {
 
     #[inline]
     pub fn break_line(&mut self) {
-        if let Some(span) = self.spans.last() {
-            let index = self.content.fragments.len() as u32;
-            let start = self.content.text.len() as u32;
-            self.content.text.push('\n');
-            let end = self.content.text.len() as u32;
-            self.content.fragments.push((start, end));
-            self.content.spans[*span as usize]
-                .elements
-                .push(SpanElement::Fragment(index));
-        }
+        self.content.text.push(String::from(""));
+        self.content.line += self.content.text.len() - 1;
     }
 
     #[inline]

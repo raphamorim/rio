@@ -225,7 +225,7 @@ impl Advanced {
 
         // if line is the last one skip break line
         // if line_number != tree.lines.len() - 1 {
-        self.content_builder.add_char('\n');
+        self.content_builder.break_line();
         // }
     }
 }

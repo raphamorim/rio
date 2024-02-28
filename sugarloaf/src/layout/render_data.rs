@@ -74,7 +74,7 @@ impl Paragraph {
         let metrics = shaper.metrics();
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
-        let mut span_data = &spans[last_span as usize];
+        let mut span_data = &spans[self.data.last_span];
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -82,7 +82,7 @@ impl Paragraph {
                 }
             }
             let span = c.data;
-            if span != last_span {
+            if span as usize != last_span {
                 span_data = &spans[last_span as usize];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
@@ -119,7 +119,7 @@ impl Paragraph {
                     });
                     clusters_start = clusters_end;
                 }
-                last_span = span;
+                last_span = span as usize;
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -225,7 +225,7 @@ impl Paragraph {
                 // Simple glyph
                 self.data.glyphs.push(GlyphData {
                     data: glyph.id as u32 | (packed_advance << 16),
-                    span: SpanId(glyph.data),
+                    span: SpanId(glyph.data as usize),
                 });
                 return glyph_index;
             }
@@ -235,7 +235,7 @@ impl Paragraph {
         self.data.detailed_glyphs.push(Glyph::new(glyph));
         self.data.glyphs.push(GlyphData {
             data: GLYPH_DETAILED | detail_index,
-            span: SpanId(glyph.data),
+            span: SpanId(glyph.data as usize),
         });
         glyph_index
     }
@@ -442,7 +442,7 @@ impl Glyph {
             x: g.x,
             y: g.y,
             advance: g.advance,
-            span: SpanId(g.data),
+            span: SpanId(g.data as usize),
         }
     }
 }

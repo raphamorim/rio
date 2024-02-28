@@ -1364,17 +1364,18 @@ impl Route {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         let layout = self.sugarloaf.layout_next();
-        for context in self.ctx.contexts() {
-            let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(layout);
-            drop(terminal);
-            let _ = context.messenger.send_resize(
-                layout.width as u16,
-                layout.height as u16,
-                layout.columns as u16,
-                layout.lines as u16,
-            );
-        }
+        println!("{:?}", layout);
+        // for context in self.ctx.contexts() {
+        //     let mut terminal = context.terminal.lock();
+        //     terminal.resize::<SugarloafLayout>(layout);
+        //     drop(terminal);
+        //     let _ = context.messenger.send_resize(
+        //         layout.width as u16,
+        //         layout.height as u16,
+        //         layout.columns as u16,
+        //         layout.lines as u16,
+        //     );
+        // }
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {

@@ -210,7 +210,7 @@ pub struct LayoutData {
     /// Glyph runs.
     pub runs: Vec<RunData>,
     /// Last shaped span.
-    pub last_span: u32,
+    pub last_span: usize,
 }
 
 impl LayoutData {

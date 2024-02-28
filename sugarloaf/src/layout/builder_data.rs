@@ -107,9 +107,9 @@ pub struct SpanData {
     pub cursor: SugarCursor,
 }
 
-/// Builder state.
+/// Builder Line State
 #[derive(Default)]
-pub struct BuilderState {
+pub struct BuilderLineState {
     /// Combined text.
     pub text: Vec<char>,
     /// Fragment index per character.
@@ -120,6 +120,13 @@ pub struct BuilderState {
     pub text_info: Vec<CharInfo>,
     /// Offset of each character relative to its fragment.
     pub text_offsets: Vec<u32>,
+}
+
+/// Builder state.
+#[derive(Default)]
+pub struct BuilderState {
+    /// Lines State
+    pub lines: Vec<BuilderLineState>,
     /// Collection of all spans, in order of span identifier.
     pub spans: Vec<SpanData>,
     /// Stack of spans.
@@ -139,14 +146,31 @@ pub struct BuilderState {
 impl BuilderState {
     /// Creates a new layout state.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            lines: vec![BuilderLineState::default()],
+            ..BuilderState::default()
+        }
+    }
+    #[inline]
+    pub fn new_line(&mut self) {
+        self.lines.push(BuilderLineState::default());
+    }
+    #[inline]
+    pub fn current_line(&self) -> usize {
+        let size = self.lines.len();
+        if size == 0 {
+            0
+        } else { 
+            size - 1
+        }
     }
     pub fn clear(&mut self) {
-        self.text.clear();
-        self.text_frags.clear();
-        self.text_spans.clear();
-        self.text_info.clear();
-        self.text_offsets.clear();
+        self.lines.clear();
+        // self.text.clear();
+        // self.text_frags.clear();
+        // self.text_spans.clear();
+        // self.text_info.clear();
+        // self.text_offsets.clear();
         self.spans.clear();
         self.span_stack.clear();
         self.features.clear();
@@ -156,6 +180,7 @@ impl BuilderState {
     }
 
     pub fn begin(&mut self, dir: Direction, lang: Option<Language>, scale: f32) {
+        self.lines.push(BuilderLineState::default());
         self.spans.push(SpanData {
             id: SpanId(0),
             parent: None,
@@ -197,7 +222,7 @@ impl BuilderState {
         I: IntoIterator,
         I::Item: Borrow<SpanStyle<'a>>,
     {
-        let next_id = SpanId(self.spans.len() as u32);
+        let next_id = SpanId(self.spans.len());
         if next_id.0 > MAX_ID {
             return None;
         }

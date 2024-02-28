@@ -44,11 +44,11 @@ pub struct Paragraph {
 }
 
 /// Largest allowable span or fragment identifier.
-const MAX_ID: u32 = i32::MAX as u32;
+const MAX_ID: usize = i32::MAX as usize;
 
 /// Index of a span in sequential order of submission to a paragraph builder.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]
-pub struct SpanId(pub u32);
+pub struct SpanId(pub usize);
 
 impl SpanId {
     /// Converts the span identifier to an index.

@@ -120,23 +120,30 @@ impl<'a> ParagraphBuilder<'a> {
         }
     }
 
+    #[inline]
+    pub fn new_line(&mut self) {
+        self.s.new_line();
+    }
+
     /// Adds a text fragment to the paragraph.
     pub fn add_text(&mut self, text: &str) -> Option<()> {
-        let id = self.s.fragments.len() as u32;
+        let id = self.s.fragments.len();
         if id > MAX_ID {
             return None;
         }
         let span_id = *self.s.span_stack.last()?;
         let span = self.s.spans.get(span_id.to_usize())?;
         let mut offset = self.last_offset;
+        let current_line = self.s.current_line();
         macro_rules! push_char {
             ($ch: expr) => {{
-                self.s.text.push($ch);
-                self.s.text_offsets.push(offset);
+                self.s.lines[current_line].text.push($ch);
+                self.s.lines[current_line].text_offsets.push(offset);
                 offset += ($ch).len_utf8() as u32;
             }};
         }
-        let start = self.s.text.len();
+
+        let start = self.s.lines[self.s.current_line()].text.len();
         match span.text_transform {
             TextTransform::Uppercase => {
                 if let Some(lang) = &span.lang {
@@ -237,7 +244,7 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             }
         }
-        let end = self.s.text.len();
+        let end = self.s.lines[self.s.current_line()].text.len();
         let break_shaping = if let Some(prev_frag) = self.s.fragments.last() {
             if prev_frag.is_text {
                 if prev_frag.span == span_id {
@@ -258,13 +265,14 @@ impl<'a> ParagraphBuilder<'a> {
             true
         };
         let len = end - start;
-        self.s.text_frags.reserve(len);
+        let current_line = self.s.current_line();
+        self.s.lines[current_line].text_frags.reserve(len);
         for _ in 0..len {
-            self.s.text_frags.push(id);
+            self.s.lines[current_line].text_frags.push(id as u32);
         }
-        self.s.text_spans.reserve(len);
+        self.s.lines[current_line].text_spans.reserve(len);
         for _ in 0..len {
-            self.s.text_spans.push(span_id.0);
+            self.s.lines[current_line].text_spans.push(span_id.0 as u32);
         }
         self.s.fragments.push(FragmentData {
             span: span_id,
@@ -302,40 +310,45 @@ impl<'a> ParagraphBuilder<'a> {
         // in a newline.
         self.s
             .span_stack
-            .push(SpanId(self.s.spans.len() as u32 - 1));
+            .push(SpanId(self.s.spans.len() - 1));
         self.add_text(" ");
         for _ in 0..self.dir_depth {
             const PDI: char = '\u{2069}';
             self.push_char(PDI);
         }
-        let mut analysis = analyze(self.s.text.iter());
-        for (props, boundary) in analysis.by_ref() {
-            self.s.text_info.push(CharInfo::new(props, boundary));
-        }
-        if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
-            let dir = match self.dir {
-                Direction::Auto => None,
-                Direction::LeftToRight => Some(BidiDirection::LeftToRight),
-                Direction::RightToLeft => Some(BidiDirection::RightToLeft),
-            };
-            self.bidi.resolve_with_types(
-                &self.s.text,
-                self.s.text_info.iter().map(|i| i.bidi_class()),
-                dir,
-            );
-            self.needs_bidi = true;
+        for line in &mut self.s.lines {
+            let mut analysis = analyze(line.text.iter());
+            for (props, boundary) in analysis.by_ref() {
+                line.text_info.push(CharInfo::new(props, boundary));
+            }
+            if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
+                let dir = match self.dir {
+                    Direction::Auto => None,
+                    Direction::LeftToRight => Some(BidiDirection::LeftToRight),
+                    Direction::RightToLeft => Some(BidiDirection::RightToLeft),
+                };
+                self.bidi.resolve_with_types(
+                    &line.text,
+                    line.text_info.iter().map(|i| i.bidi_class()),
+                    dir,
+                );
+                if !self.needs_bidi {
+                    self.needs_bidi = true;
+                }
+            }
         }
         self.itemize();
         self.shape(layout);
     }
 
     fn itemize(&mut self) {
-        let limit = self.s.text.len();
+        let limit = self.s.lines[self.s.current_line()].text.len();
         if self.s.fragments.is_empty() || limit == 0 {
             return;
         }
         let mut last_script = self
             .s
+            .lines[self.s.current_line()]
             .text_info
             .iter()
             .map(|i| i.script())
@@ -382,7 +395,7 @@ impl<'a> ParagraphBuilder<'a> {
                 last_vars = frag.vars;
                 let range = frag.start..frag.end;
                 for (&props, &level) in
-                    self.s.text_info[range.clone()].iter().zip(&levels[range])
+                    self.s.lines[self.s.current_line()].text_info[range.clone()].iter().zip(&levels[range])
                 {
                     let script = props.script();
                     let real = real_script(script);
@@ -408,7 +421,7 @@ impl<'a> ParagraphBuilder<'a> {
                 last_features = frag.features;
                 last_vars = frag.vars;
                 let range = frag.start..frag.end;
-                for &props in &self.s.text_info[range] {
+                for &props in &self.s.lines[self.s.current_line()].text_info[range] {
                     let script = props.script();
                     let real = real_script(script);
                     if script != last_script && real {
@@ -449,10 +462,11 @@ impl<'a> ParagraphBuilder<'a> {
 impl<'a> ParagraphBuilder<'a> {
     #[inline]
     fn push_char(&mut self, ch: char) {
-        self.s.text.push(ch);
-        self.s.text_frags.push(0);
-        self.s.text_spans.push(0);
-        self.s.text_offsets.push(0);
+        let current_line = self.s.current_line();
+        self.s.lines[current_line].text.push(ch);
+        self.s.lines[current_line].text_frags.push(0);
+        self.s.lines[current_line].text_spans.push(0);
+        self.s.lines[current_line].text_offsets.push(0);
     }
 }
 
@@ -490,7 +504,7 @@ fn shape_item(
         shape::Direction::LeftToRight
     };
     let range = item.start..item.end;
-    let span_index = state.text_spans[item.start];
+    let span_index = state.lines[state.current_line()].text_spans[item.start];
     let span = state.spans.get(span_index as usize)?;
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
@@ -509,11 +523,11 @@ fn shape_item(
     // fcx.select_group(shape_state.font_id);
     // fcx.select_fallbacks(item.script, shape_state.span.lang.as_ref());
     if item.level & 1 != 0 {
-        let chars = state.text[range.clone()]
+        let chars = state.lines[state.current_line()].text[range.clone()]
             .iter()
-            .zip(&state.text_offsets[range.clone()])
-            .zip(&state.text_spans[range.clone()])
-            .zip(&state.text_info[range])
+            .zip(&state.lines[state.current_line()].text_offsets[range.clone()])
+            .zip(&state.lines[state.current_line()].text_spans[range.clone()])
+            .zip(&state.lines[state.current_line()].text_info[range])
             .map(|z| {
                 use swash::text::Codepoint;
                 let (((&ch, &offset), &span_index), &info) = z;
@@ -544,11 +558,11 @@ fn shape_item(
             layout,
         ) {}
     } else {
-        let chars = state.text[range.clone()]
+        let chars = state.lines[state.current_line()].text[range.clone()]
             .iter()
-            .zip(&state.text_offsets[range.clone()])
-            .zip(&state.text_spans[range.clone()])
-            .zip(&state.text_info[range])
+            .zip(&state.lines[state.current_line()].text_offsets[range.clone()])
+            .zip(&state.lines[state.current_line()].text_spans[range.clone()])
+            .zip(&state.lines[state.current_line()].text_info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
                 Token {
@@ -615,7 +629,7 @@ where
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            let start = std::time::Instant::now();
+            // let start = std::time::Instant::now();
             layout.push_run(
                 &state.state.spans,
                 &current_font_id,
@@ -623,8 +637,8 @@ where
                 state.level,
                 shaper,
             );
-            let duration = start.elapsed();
-            println!("Time elapsed in push_run is: {:?}", duration);
+            // let duration = start.elapsed();
+            // println!("Time elapsed in push_run is: {:?}", duration);
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -640,7 +654,7 @@ where
 
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
-            let start = std::time::Instant::now();
+            // let start = std::time::Instant::now();
             layout.push_run(
                 &state.state.spans,
                 &current_font_id,
@@ -648,8 +662,8 @@ where
                 state.level,
                 shaper,
             );
-            let duration = start.elapsed();
-            println!("Time elapsed in push_run is: {:?}", duration);
+            // let duration = start.elapsed();
+            // println!("Time elapsed in push_run is: {:?}", duration);
             state.font_id = next_font;
             state.synth = synth;
             return true;
