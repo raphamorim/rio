@@ -9,12 +9,12 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
-//! Paragraph.
+//! RenderData.
 
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use super::{builder_data::SpanData, Paragraph, SpanId};
+use super::{builder_data::SpanData, SpanId};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -22,7 +22,14 @@ use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use swash::text::cluster::{Boundary, ClusterInfo};
 use swash::{GlyphId, NormalizedCoord};
 
-impl Paragraph {
+/// Collection of text, organized into lines, runs and clusters.
+#[derive(Clone, Default)]
+pub struct RenderData {
+    pub data: LayoutData,
+    pub line_data: LineLayoutData,
+}
+
+impl RenderData {
     pub fn dump_clusters(&self) {
         for (i, cluster) in self.line_data.clusters.iter().enumerate() {
             println!("[{}] {} @ {}", i, cluster.0, cluster.1);
@@ -56,7 +63,7 @@ impl Paragraph {
     }
 }
 
-impl Paragraph {
+impl RenderData {
     pub(super) fn push_run(
         &mut self,
         spans: &[SpanData],
@@ -616,7 +623,7 @@ pub struct Line<'a> {
 }
 
 impl<'a> Line<'a> {
-    pub(super) fn new(layout: &'a Paragraph, line_index: usize) -> Self {
+    pub(super) fn new(layout: &'a RenderData, line_index: usize) -> Self {
         Self {
             layout: &layout.data,
             line_layout: &layout.line_data,

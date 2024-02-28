@@ -20,6 +20,8 @@ mod span_style;
 
 pub use swash;
 
+pub use render_data::RenderData;
+
 #[doc(inline)]
 pub use swash::text::Language;
 
@@ -33,15 +35,6 @@ pub use line_breaker::{Alignment, BreakLines};
 pub use nav::{Erase, ExtendTo, Selection};
 pub use render_data::{Cluster, Glyph, Line, Run};
 pub use span_style::*;
-
-use layout_data::{LayoutData, LineLayoutData};
-
-/// Collection of text, organized into lines, runs and clusters.
-#[derive(Clone, Default)]
-pub struct Paragraph {
-    data: LayoutData,
-    line_data: LineLayoutData,
-}
 
 /// Largest allowable span or fragment identifier.
 const MAX_ID: usize = i32::MAX as usize;

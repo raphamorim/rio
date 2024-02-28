@@ -26,7 +26,7 @@ impl Default for Content {
             fragments: vec![],
             text: vec![String::from("")],
             line: 0,
-            roots: vec![]
+            roots: vec![],
         }
     }
 }
@@ -106,7 +106,9 @@ impl Content {
         let start = range.start;
         let end = range.end;
         let len = (end - start) as u32;
-        if self.text[self.line].is_char_boundary(start) && self.text[self.line].is_char_boundary(end) {
+        if self.text[self.line].is_char_boundary(start)
+            && self.text[self.line].is_char_boundary(end)
+        {
             self.text[self.line].replace_range(start..end, "");
             let frag_index = self.fragment_from_offset(start).unwrap_or(0);
             let first = &mut self.fragments[frag_index];
@@ -144,7 +146,7 @@ impl Content {
                 }
             }
         }
-        lcx.new_line();
+        // lcx.new_line();
         lcx.pop_span();
     }
 
@@ -250,7 +252,7 @@ impl ContentBuilder {
 
     #[inline]
     pub fn break_line(&mut self) {
-        self.content.text.push(String::from(""));
+        self.content.text.push(String::new());
         self.content.line += self.content.text.len() - 1;
     }
 

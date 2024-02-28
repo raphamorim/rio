@@ -8,13 +8,13 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
+use crate::layout::{Alignment, Direction, LayoutContext, RenderData};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
 
 pub struct Advanced {
-    pub render_data: Paragraph,
-    pub render_data_sugar: Paragraph,
+    pub render_data: RenderData,
+    pub mocked_render_data: RenderData,
     content_builder: ContentBuilder,
     layout_context: LayoutContext,
 }
@@ -26,8 +26,8 @@ impl Default for Advanced {
         Self {
             layout_context,
             content_builder: ContentBuilder::default(),
-            render_data: Paragraph::new(),
-            render_data_sugar: Paragraph::new(),
+            render_data: RenderData::new(),
+            mocked_render_data: RenderData::new(),
         }
     }
 }
@@ -53,7 +53,7 @@ impl Advanced {
         // self.content = build_complex_content();
         // self.content = build_terminal_content();
         // self.content = self.content_builder.clone().build();
-        self.render_data = Paragraph::default();
+        self.render_data = RenderData::default();
     }
 
     #[inline]
@@ -93,10 +93,10 @@ impl Advanced {
         );
         let content = content_builder.build_ref();
         content.layout(&mut lb);
-        self.render_data_sugar.clear();
-        lb.build_into(&mut self.render_data_sugar);
+        self.mocked_render_data.clear();
+        lb.build_into(&mut self.mocked_render_data);
 
-        self.render_data_sugar.break_lines().break_remaining(
+        self.mocked_render_data.break_lines().break_remaining(
             tree.layout.width - tree.layout.style.screen_position.0,
             Alignment::Start,
         );
@@ -142,7 +142,6 @@ impl Advanced {
         ];
 
         for i in 0..line.len() {
-            
             let mut span_counter = 0;
             if line[i].style.is_bold_italic {
                 self.content_builder.enter_span(&[

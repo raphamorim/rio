@@ -160,7 +160,7 @@ impl BuilderState {
         let size = self.lines.len();
         if size == 0 {
             0
-        } else { 
+        } else {
             size - 1
         }
     }
