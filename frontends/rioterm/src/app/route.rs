@@ -1365,17 +1365,17 @@ impl Route {
         // and then eventually a render with the new layout computation.
         let layout = self.sugarloaf.layout_next();
         println!("{:?}", layout);
-        // for context in self.ctx.contexts() {
-        //     let mut terminal = context.terminal.lock();
-        //     terminal.resize::<SugarloafLayout>(layout);
-        //     drop(terminal);
-        //     let _ = context.messenger.send_resize(
-        //         layout.width as u16,
-        //         layout.height as u16,
-        //         layout.columns as u16,
-        //         layout.lines as u16,
-        //     );
-        // }
+        for context in self.ctx.contexts() {
+            let mut terminal = context.terminal.lock();
+            terminal.resize::<SugarloafLayout>(layout);
+            drop(terminal);
+            let _ = context.messenger.send_resize(
+                layout.width as u16,
+                layout.height as u16,
+                layout.columns as u16,
+                layout.lines as u16,
+            );
+        }
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {

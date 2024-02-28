@@ -19,8 +19,6 @@ mod nav;
 mod render_data;
 mod span_style;
 
-pub use swash;
-
 pub use render_data::RenderData;
 pub use content::{Content, ContentBuilder};
 
