@@ -48,7 +48,7 @@ impl RenderData {
     }
 
     pub fn break_lines_using_span(&mut self) -> BreakLines {
-        println!("{:?}", self.line_data.lines);
+        self.line_data.clear();
         BreakLines::from_data(&mut self.data, &mut self.line_data)
     }
 
