@@ -236,11 +236,10 @@ impl<'a> BreakLines<'a> {
     }
 
     pub fn break_based_on_span(mut self) {
-        println!("{:?}", self.layout.runs.len());
         let mut last_line = 0;
         // let mut y = 0;
 
-        for i in 0..self.layout.runs.len() - 1 {
+        for i in 0..self.layout.runs.len() {
             let run = &self.layout.runs[i];
 
             if last_line < run.line {
@@ -255,8 +254,8 @@ impl<'a> BreakLines<'a> {
                     false,
                 ) {
                     // println!("commitou no 0 {}", last_line);
-                    self.state.runs = self.lines.runs.len() - 1;
-                    self.state.lines = self.lines.lines.len() - 1;
+                    self.state.runs = self.lines.runs.len();
+                    self.state.lines = self.lines.lines.len();
                     self.state.line.x = 0.;
                     // self.state.line.clusters.1 = 0;
                 }
@@ -264,13 +263,20 @@ impl<'a> BreakLines<'a> {
                 // y = 0;
             }
 
+            // let cluster_end = run.clusters.1 as usize;
+            // while self.state.j < cluster_end {
+            // let cluster =
+            //     Cluster::new(self.layout, self.layout.clusters[self.state.j]);
+            // let boundary = cluster.info().boundary();
+            // println!("{:?}", boundary);
+            // }
             self.state.prev_boundary = None;
+            // self.state.line.clusters.1 = self.state.j as u32;
             self.state.line.clusters.1 = run.clusters.1;
             self.state.line.runs.1 = i as u32 + 1;
+            self.state.j += 1;
             // y += 1;
         }
-
-        println!("{:?}", last_line);
 
         self.finish();
     }
@@ -402,7 +408,8 @@ impl<'a> BreakLines<'a> {
                         } else {
                             extra
                         };
-                        for cluster in &mut self.lines.clusters[make_range(line.clusters)] {
+                        for cluster in &mut self.lines.clusters[make_range(line.clusters)]
+                        {
                             cluster.1 += offset;
                         }
                         line.x = offset;
