@@ -47,11 +47,6 @@ impl RenderData {
         BreakLines::new(&mut self.data, &mut self.line_data)
     }
 
-    pub fn break_lines_using_span(&mut self) -> BreakLines {
-        self.line_data.clear();
-        BreakLines::from_data(&mut self.data, &mut self.line_data)
-    }
-
     /// Returns an iterator over the lines in the paragraph.
     pub fn lines(&self) -> Lines {
         Lines {
@@ -75,6 +70,7 @@ impl RenderData {
         font: &usize,
         size: f32,
         level: u8,
+        line: u32,
         shaper: Shaper<'_>,
     ) {
         let coords_start = self.data.coords.len() as u32;
@@ -101,7 +97,7 @@ impl RenderData {
                 if clusters_end != clusters_start {
                     self.data.runs.push(RunData {
                         span: SpanId(last_span),
-                        line: 0,
+                        line,
                         font: *font,
                         coords: (coords_start, coords_end),
                         color: span_data.color,
@@ -202,7 +198,7 @@ impl RenderData {
         self.data.last_span = last_span;
         self.data.runs.push(RunData {
             span: SpanId(last_span),
-            line: 0,
+            line,
             font: *font,
             coords: (coords_start, coords_end),
             size,

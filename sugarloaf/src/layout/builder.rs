@@ -448,7 +448,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         let line = &self.s.lines[line_number];
         for item in &line.items {
@@ -464,8 +464,8 @@ impl<'a> ParagraphBuilder<'a> {
             );
         }
         render_data.apply_spacing(&self.s.spans);
-        let duration = start.elapsed();
-        println!("Time elapsed in shape is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 
@@ -567,6 +567,7 @@ fn shape_item(
             cluster,
             dir,
             render_data,
+            current_line,
         ) {}
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
@@ -600,6 +601,7 @@ fn shape_item(
             cluster,
             dir,
             render_data,
+            current_line,
         ) {}
     }
     Some(())
@@ -616,6 +618,7 @@ fn shape_clusters<I>(
     cluster: &mut CharCluster,
     dir: shape::Direction,
     render_data: &mut RenderData,
+    current_line: usize,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
@@ -646,6 +649,7 @@ where
                 &current_font_id,
                 state.size,
                 state.level,
+                current_line as u32,
                 shaper,
             );
             // let duration = start.elapsed();
@@ -671,6 +675,7 @@ where
                 &current_font_id,
                 state.size,
                 state.level,
+                current_line as u32,
                 shaper,
             );
             // let duration = start.elapsed();

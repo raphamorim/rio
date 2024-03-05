@@ -14,7 +14,6 @@ use core::ops::Range;
 pub struct Content {
     pub spans: Vec<Span>,
     pub fragments: Vec<(u32, u32)>,
-    pub line: usize,
     pub text: String,
     pub roots: Vec<usize>,
 }

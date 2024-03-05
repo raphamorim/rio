@@ -37,14 +37,14 @@ impl<'a> BreakLines<'a> {
         }
     }
 
-    pub fn from_data(layout: &'a mut LayoutData, lines: &'a mut LineLayoutData) -> Self {
-        Self {
-            layout,
-            lines,
-            state: BreakerState::default(),
-            prev_state: None,
-        }
-    }
+    // pub fn from_data(layout: &'a mut LayoutData, lines: &'a mut LineLayoutData) -> Self {
+    //     Self {
+    //         layout,
+    //         lines,
+    //         state: BreakerState::default(),
+    //         prev_state: None,
+    //     }
+    // }
 
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
@@ -74,7 +74,7 @@ impl<'a> BreakLines<'a> {
                                 self.layout,
                                 self.lines,
                                 &mut self.state.line,
-                                max_advance,
+                                Some(max_advance),
                                 alignment,
                                 true,
                             ) {
@@ -108,7 +108,7 @@ impl<'a> BreakLines<'a> {
                             self.layout,
                             self.lines,
                             &mut self.state.line,
-                            max_advance,
+                            Some(max_advance),
                             alignment,
                             false,
                         ) {
@@ -131,7 +131,7 @@ impl<'a> BreakLines<'a> {
                                 self.layout,
                                 self.lines,
                                 &mut self.state.line,
-                                max_advance,
+                                Some(max_advance),
                                 alignment,
                                 false,
                             ) {
@@ -149,7 +149,7 @@ impl<'a> BreakLines<'a> {
                                 self.layout,
                                 self.lines,
                                 &mut self.state.line,
-                                max_advance,
+                                Some(max_advance),
                                 alignment,
                                 false,
                             ) {
@@ -176,7 +176,7 @@ impl<'a> BreakLines<'a> {
                             self.layout,
                             self.lines,
                             &mut self.state.line,
-                            max_advance,
+                            Some(max_advance),
                             alignment,
                             false,
                         ) {
@@ -203,7 +203,7 @@ impl<'a> BreakLines<'a> {
             self.layout,
             self.lines,
             &mut self.state.line,
-            max_advance,
+            Some(max_advance),
             alignment,
             true,
         ) {
@@ -232,6 +232,46 @@ impl<'a> BreakLines<'a> {
     /// consumes the line breaker.
     pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
         while self.break_next(max_advance, alignment).is_some() {}
+        self.finish();
+    }
+
+    pub fn break_based_on_span(mut self) {
+        println!("{:?}", self.layout.runs.len());
+        let mut last_line = 0;
+        // let mut y = 0;
+
+        for i in 0..self.layout.runs.len() - 1 {
+            let run = &self.layout.runs[i];
+
+            if last_line < run.line {
+                // println!("entrou no {}", last_line);
+
+                if commit_line(
+                    self.layout,
+                    self.lines,
+                    &mut self.state.line,
+                    None,
+                    Alignment::Start,
+                    false,
+                ) {
+                    // println!("commitou no 0 {}", last_line);
+                    self.state.runs = self.lines.runs.len() - 1;
+                    self.state.lines = self.lines.lines.len() - 1;
+                    self.state.line.x = 0.;
+                    // self.state.line.clusters.1 = 0;
+                }
+                last_line = run.line;
+                // y = 0;
+            }
+
+            self.state.prev_boundary = None;
+            self.state.line.clusters.1 = run.clusters.1;
+            self.state.line.runs.1 = i as u32 + 1;
+            // y += 1;
+        }
+
+        println!("{:?}", last_line);
+
         self.finish();
     }
 
@@ -353,17 +393,20 @@ impl<'a> BreakLines<'a> {
                     } else {
                         0.
                     };
-                let extra = line.max_advance - total_advance + trailing_space_advance;
-                if extra > 0. {
-                    let offset = if line.alignment == Alignment::Middle {
-                        extra * 0.5
-                    } else {
-                        extra
-                    };
-                    for cluster in &mut self.lines.clusters[make_range(line.clusters)] {
-                        cluster.1 += offset;
+
+                if let Some(max_advance) = line.max_advance {
+                    let extra = max_advance - total_advance + trailing_space_advance;
+                    if extra > 0. {
+                        let offset = if line.alignment == Alignment::Middle {
+                            extra * 0.5
+                        } else {
+                            extra
+                        };
+                        for cluster in &mut self.lines.clusters[make_range(line.clusters)] {
+                            cluster.1 += offset;
+                        }
+                        line.x = offset;
                     }
-                    line.x = offset;
                 }
             }
             if line.explicit_break {
@@ -421,7 +464,7 @@ fn commit_line(
     layout: &LayoutData,
     lines: &mut LineLayoutData,
     state: &mut LineState,
-    max_advance: f32,
+    max_advance: Option<f32>,
     alignment: Alignment,
     explicit: bool,
 ) -> bool {

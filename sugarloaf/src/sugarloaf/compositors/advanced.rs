@@ -111,7 +111,10 @@ impl Advanced {
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
         // );
-        self.render_data.break_lines_using_span().finish();
+
+        // TODO: break_lines and break_remaining
+        // self.render_data.break_lines_using_span().finish();
+        self.render_data.break_lines().break_based_on_span();
 
         // let duration = start.elapsed();
         // println!(
@@ -227,9 +230,9 @@ impl Advanced {
         }
 
         // if line is the last one skip break line
-        if line_number < tree.lines.len() - 1 {
+        // if line_number < tree.lines.len() - 1 {
             self.content_builder.break_line();
-        }
+        // }
     }
 }
 
