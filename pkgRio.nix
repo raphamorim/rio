@@ -29,6 +29,7 @@ let
       darwin.libobjc
       darwin.apple_sdk_11_0.frameworks.AppKit
       darwin.apple_sdk_11_0.frameworks.AVFoundation
+      darwin.apple_sdk_11_0.frameworks.MetalKit
       darwin.apple_sdk_11_0.frameworks.Vision
     ]
     else
