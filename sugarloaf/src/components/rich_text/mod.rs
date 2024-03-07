@@ -777,6 +777,7 @@ fn fetch_dimensions(
             let font = run.font();
             let py = line.baseline() + y;
             let run_x = px;
+            let line_height = line.ascent() + line.descent() + line.leading();
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
@@ -797,13 +798,13 @@ fn fetch_dimensions(
                 background_color: None,
                 baseline: py,
                 topline: py - line.ascent(),
-                line_height: line.ascent() + line.descent(),
+                line_height,
                 advance: px - run_x,
                 underline: None,
             };
 
             sugarwidth = style.advance;
-            sugarheight = style.line_height;
+            sugarheight = line_height;
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 0.0,

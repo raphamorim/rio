@@ -107,7 +107,7 @@ impl Advanced {
 
     #[inline]
     pub fn update_size(&mut self, _tree: &SugarTree) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         // self.render_data.break_lines().break_remaining(
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
@@ -116,11 +116,11 @@ impl Advanced {
         // TODO: break_lines and break_remaining
         self.render_data.break_lines().break_without_advance_or_alignment();
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
+        //     duration
+        // );
     }
 
     #[inline]
