@@ -91,7 +91,7 @@ impl RenderData {
             }
             let span = c.data;
             if span as usize != last_span {
-                span_data = &spans[last_span as usize];
+                span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {

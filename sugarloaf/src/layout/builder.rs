@@ -499,6 +499,7 @@ struct ShapeState<'a> {
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn shape_item(
     fcx: &mut FontContext,
     fonts: &FontLibrary,

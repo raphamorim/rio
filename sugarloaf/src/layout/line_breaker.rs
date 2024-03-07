@@ -269,21 +269,21 @@ impl<'a> BreakLines<'a> {
             // self.state.line.clusters.1 = self.state.j as u32;
             self.state.line.clusters.1 = run.clusters.1;
 
-            if should_commit_line {
-                if commit_line(
+            if should_commit_line
+                && commit_line(
                     self.layout,
                     self.lines,
                     &mut self.state.line,
                     None,
                     Alignment::Start,
                     true,
-                ) {
-                    self.state.runs = self.lines.runs.len();
-                    self.state.lines = self.lines.lines.len();
-                    self.state.line.x = 0.;
-                    // self.state.j += 1;
-                    self.state.line.clusters.1 = run.clusters.1 as u32 + 1;
-                }
+                )
+            {
+                self.state.runs = self.lines.runs.len();
+                self.state.lines = self.lines.lines.len();
+                self.state.line.x = 0.;
+                // self.state.j += 1;
+                self.state.line.clusters.1 = run.clusters.1 + 1;
             }
         }
 

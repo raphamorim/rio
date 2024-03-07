@@ -46,7 +46,7 @@ pub struct SpanId(pub usize);
 impl SpanId {
     /// Converts the span identifier to an index.
     pub fn to_usize(self) -> usize {
-        self.0 as usize
+        self.0
     }
 }
 

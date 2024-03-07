@@ -8,9 +8,7 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{
-    Content, ContentBuilder, Direction, LayoutContext, RenderData,
-};
+use crate::layout::{Content, ContentBuilder, Direction, LayoutContext, RenderData};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{SugarCursor, SugarDecoration};
 
@@ -102,7 +100,9 @@ impl Advanced {
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
         // );
-        self.mocked_render_data.break_lines().break_without_advance_or_alignment()
+        self.mocked_render_data
+            .break_lines()
+            .break_without_advance_or_alignment()
     }
 
     #[inline]
@@ -114,7 +114,9 @@ impl Advanced {
         // );
 
         // TODO: break_lines and break_remaining
-        self.render_data.break_lines().break_without_advance_or_alignment();
+        self.render_data
+            .break_lines()
+            .break_without_advance_or_alignment();
 
         // let duration = start.elapsed();
         // println!(
