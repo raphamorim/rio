@@ -98,22 +98,23 @@ impl Advanced {
         self.mocked_render_data.clear();
         lb.build_into(&mut self.mocked_render_data);
 
-        self.mocked_render_data.break_lines().break_remaining(
-            tree.layout.width - tree.layout.style.screen_position.0,
-            Alignment::Start,
-        );
+        // self.mocked_render_data.break_lines().break_remaining(
+        //     tree.layout.width - tree.layout.style.screen_position.0,
+        //     Alignment::Start,
+        // );
+        self.mocked_render_data.break_lines().break_based_on_span()
     }
 
     #[inline]
     pub fn update_size(&mut self, tree: &SugarTree) {
         // let start = std::time::Instant::now();
-        self.render_data.break_lines().break_remaining(
-            tree.layout.width - tree.layout.style.screen_position.0,
-            Alignment::Start,
-        );
+        // self.render_data.break_lines().break_remaining(
+        //     tree.layout.width - tree.layout.style.screen_position.0,
+        //     Alignment::Start,
+        // );
 
         // TODO: break_lines and break_remaining
-        // self.render_data.break_lines().break_based_on_span();
+        self.render_data.break_lines().break_based_on_span();
 
         // let duration = start.elapsed();
         // println!(
@@ -230,6 +231,7 @@ impl Advanced {
 
         // if line is the last one skip break line
         // if line_number < tree.lines.len() - 1 {
+        // self.content_builder.add_char('\n');
         self.content_builder.break_line();
         // }
     }

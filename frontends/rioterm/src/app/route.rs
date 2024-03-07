@@ -1364,7 +1364,6 @@ impl Route {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         let layout = self.sugarloaf.layout_next();
-        println!("{:?}", layout);
         for context in self.ctx.contexts() {
             let mut terminal = context.terminal.lock();
             terminal.resize::<SugarloafLayout>(layout);

@@ -241,6 +241,12 @@ impl ContentBuilder {
 
     #[inline]
     pub fn break_line(&mut self) {
+        // Hacky: under the hood it will ignore this "\n" for break_line
+        // however whenever process styles from span like background color
+        // will apply the line width based on last char before \n and not
+        // the remaining space.
+        self.add_char('\n');
+
         if let Some(span) = self.spans.last() {
             self.content.spans[*span as usize]
                 .elements

@@ -240,28 +240,42 @@ impl<'a> BreakLines<'a> {
 
         for i in 0..self.layout.runs.len() {
             let run = &self.layout.runs[i];
+            let mut should_commit_line = false;
+            // self.state.prev_boundary = None;
 
-            let is_last_run = i == run_len - 1;
-
-            if !is_last_run {
+            if i == run_len - 1 {
+                should_commit_line = true;
+            } else {
+                // If next run has a different line number then
+                // try to commit line
                 let next_run = &self.layout.runs[i + 1];
                 if next_run.line != run.line {
-                    if commit_line(
-                        self.layout,
-                        self.lines,
-                        &mut self.state.line,
-                        None,
-                        Alignment::Start,
-                        true,
-                    ) {
-                        // println!("commitou no 0 {}", last_line);
-                        self.state.runs = self.lines.runs.len();
-                        self.state.lines = self.lines.lines.len();
-                        self.state.line.x = 0.;
-                        // self.state.line.clusters.1 = 0;
-                    }
+                    should_commit_line = true;
                 }
-            } else {
+            }
+
+            // use swash::text::cluster::Boundary;
+            let cluster_end = run.clusters.1 as usize;
+            while self.state.j < cluster_end {
+                let cluster =
+                    Cluster::new(self.layout, self.layout.clusters[self.state.j]);
+                let advance = cluster.advance();
+                // let boundary = cluster.info().boundary();
+                // if boundary == Boundary::Line {
+                // self.state.prev_boundary = Some(PrevBoundaryState {
+                //     i: self.state.i,
+                //     j: self.state.j,
+                //     state: self.state.line,
+                // });
+                // }
+                self.state.line.x += advance;
+                self.state.j += 1;
+            }
+
+            self.state.line.runs.1 = i as u32 + 1;
+            self.state.line.clusters.1 = self.state.j as u32;
+
+            if should_commit_line {
                 if commit_line(
                     self.layout,
                     self.lines,
@@ -270,23 +284,13 @@ impl<'a> BreakLines<'a> {
                     Alignment::Start,
                     true,
                 ) {
-                    // println!("commitou no 0 {}", last_line);
                     self.state.runs = self.lines.runs.len();
                     self.state.lines = self.lines.lines.len();
                     self.state.line.x = 0.;
-                    // self.state.line.clusters.1 = 0;
+                    self.state.j += 1;
+                    self.state.line.clusters.1 = self.state.j as u32 + 1;
                 }
             }
-
-            for cluster_idx in run.clusters.0..run.clusters.1 {
-                let cluster =
-                    Cluster::new(self.layout, self.layout.clusters[cluster_idx as usize]);
-                let advance = cluster.advance();
-                self.state.line.x += advance;
-            }
-
-            self.state.line.runs.1 += 1;
-            self.state.line.clusters.1 = run.clusters.1 + 1;
         }
 
         self.finish();
@@ -522,7 +526,6 @@ fn commit_line(
         explicit_break: explicit,
         ..Default::default()
     };
-    println!("{:?}", line);
     lines.lines.push(line);
     state.clusters.0 = state.clusters.1;
     state.clusters.1 += 1;
