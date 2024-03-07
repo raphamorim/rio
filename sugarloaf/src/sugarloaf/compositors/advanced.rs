@@ -105,16 +105,15 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_size(&mut self, _tree: &SugarTree) {
+    pub fn update_size(&mut self, tree: &SugarTree) {
         // let start = std::time::Instant::now();
-        // self.render_data.break_lines().break_remaining(
-        //     tree.layout.width - tree.layout.style.screen_position.0,
-        //     Alignment::Start,
-        // );
+        self.render_data.break_lines().break_remaining(
+            tree.layout.width - tree.layout.style.screen_position.0,
+            Alignment::Start,
+        );
 
         // TODO: break_lines and break_remaining
-        // self.render_data.break_lines_using_span().finish();
-        self.render_data.break_lines().break_based_on_span();
+        // self.render_data.break_lines().break_based_on_span();
 
         // let duration = start.elapsed();
         // println!(

@@ -236,15 +236,32 @@ impl<'a> BreakLines<'a> {
     }
 
     pub fn break_based_on_span(mut self) {
-        let mut last_line = 0;
-        // let mut y = 0;
+        let run_len = self.layout.runs.len();
 
         for i in 0..self.layout.runs.len() {
             let run = &self.layout.runs[i];
 
-            if last_line < run.line {
-                // println!("entrou no {}", last_line);
+            let is_last_run = i == run_len - 1;
 
+            if !is_last_run {
+                let next_run = &self.layout.runs[i + 1];
+                if next_run.line != run.line {
+                    if commit_line(
+                        self.layout,
+                        self.lines,
+                        &mut self.state.line,
+                        None,
+                        Alignment::Start,
+                        true,
+                    ) {
+                        // println!("commitou no 0 {}", last_line);
+                        self.state.runs = self.lines.runs.len();
+                        self.state.lines = self.lines.lines.len();
+                        self.state.line.x = 0.;
+                        // self.state.line.clusters.1 = 0;
+                    }
+                }
+            } else {
                 if commit_line(
                     self.layout,
                     self.lines,
@@ -259,9 +276,7 @@ impl<'a> BreakLines<'a> {
                     self.state.line.x = 0.;
                     // self.state.line.clusters.1 = 0;
                 }
-                last_line = run.line;
-                // y = 0;
-            }        
+            }
 
             for cluster_idx in run.clusters.0..run.clusters.1 {
                 let cluster =
@@ -269,9 +284,9 @@ impl<'a> BreakLines<'a> {
                 let advance = cluster.advance();
                 self.state.line.x += advance;
             }
-            self.state.line.runs.1 = i as u32 + 1;
+
+            self.state.line.runs.1 += 1;
             self.state.line.clusters.1 = run.clusters.1 + 1;
-            // y += 1;
         }
 
         self.finish();
