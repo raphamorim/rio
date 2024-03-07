@@ -251,7 +251,7 @@ impl<'a> BreakLines<'a> {
                     &mut self.state.line,
                     None,
                     Alignment::Start,
-                    false,
+                    true,
                 ) {
                     // println!("commitou no 0 {}", last_line);
                     self.state.runs = self.lines.runs.len();
@@ -261,20 +261,16 @@ impl<'a> BreakLines<'a> {
                 }
                 last_line = run.line;
                 // y = 0;
-            }
+            }        
 
-            // let cluster_end = run.clusters.1 as usize;
-            // while self.state.j < cluster_end {
-            // let cluster =
-            //     Cluster::new(self.layout, self.layout.clusters[self.state.j]);
-            // let boundary = cluster.info().boundary();
-            // println!("{:?}", boundary);
-            // }
-            self.state.prev_boundary = None;
-            // self.state.line.clusters.1 = self.state.j as u32;
-            self.state.line.clusters.1 = run.clusters.1;
+            for cluster_idx in run.clusters.0..run.clusters.1 {
+                let cluster =
+                    Cluster::new(self.layout, self.layout.clusters[cluster_idx as usize]);
+                let advance = cluster.advance();
+                self.state.line.x += advance;
+            }
             self.state.line.runs.1 = i as u32 + 1;
-            self.state.j += 1;
+            self.state.line.clusters.1 = run.clusters.1 + 1;
             // y += 1;
         }
 
@@ -511,6 +507,7 @@ fn commit_line(
         explicit_break: explicit,
         ..Default::default()
     };
+    println!("{:?}", line);
     lines.lines.push(line);
     state.clusters.0 = state.clusters.1;
     state.clusters.1 += 1;
