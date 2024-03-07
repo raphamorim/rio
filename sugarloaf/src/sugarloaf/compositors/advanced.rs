@@ -9,7 +9,7 @@
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
 use crate::layout::{
-    Alignment, Content, ContentBuilder, Direction, LayoutContext, RenderData,
+    Content, ContentBuilder, Direction, LayoutContext, RenderData,
 };
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
 use crate::{SugarCursor, SugarDecoration};
@@ -102,25 +102,25 @@ impl Advanced {
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
         // );
-        self.mocked_render_data.break_lines().break_based_on_span()
+        self.mocked_render_data.break_lines().break_without_advance_or_alignment()
     }
 
     #[inline]
-    pub fn update_size(&mut self, tree: &SugarTree) {
-        // let start = std::time::Instant::now();
+    pub fn update_size(&mut self, _tree: &SugarTree) {
+        let start = std::time::Instant::now();
         // self.render_data.break_lines().break_remaining(
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
         // );
 
         // TODO: break_lines and break_remaining
-        self.render_data.break_lines().break_based_on_span();
+        self.render_data.break_lines().break_without_advance_or_alignment();
 
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-        //     duration
-        // );
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
+            duration
+        );
     }
 
     #[inline]

@@ -235,7 +235,8 @@ impl<'a> BreakLines<'a> {
         self.finish();
     }
 
-    pub fn break_based_on_span(mut self) {
+    #[inline]
+    pub fn break_without_advance_or_alignment(mut self) {
         let run_len = self.layout.runs.len();
 
         for i in 0..self.layout.runs.len() {
@@ -254,26 +255,19 @@ impl<'a> BreakLines<'a> {
                 }
             }
 
-            // use swash::text::cluster::Boundary;
-            let cluster_end = run.clusters.1 as usize;
-            while self.state.j < cluster_end {
-                let cluster =
-                    Cluster::new(self.layout, self.layout.clusters[self.state.j]);
-                let advance = cluster.advance();
-                // let boundary = cluster.info().boundary();
-                // if boundary == Boundary::Line {
-                // self.state.prev_boundary = Some(PrevBoundaryState {
-                //     i: self.state.i,
-                //     j: self.state.j,
-                //     state: self.state.line,
-                // });
-                // }
-                self.state.line.x += advance;
-                self.state.j += 1;
-            }
+            // If we would case about max_advance
+            // let cluster_end = run.clusters.1 as usize;
+            // while self.state.j < cluster_end {
+            //     let cluster =
+            //         Cluster::new(self.layout, self.layout.clusters[self.state.j]);
+            //     let advance = cluster.advance();
+            //     self.state.line.x += advance;
+            //     self.state.j += 1;
+            // }
 
             self.state.line.runs.1 = i as u32 + 1;
-            self.state.line.clusters.1 = self.state.j as u32;
+            // self.state.line.clusters.1 = self.state.j as u32;
+            self.state.line.clusters.1 = run.clusters.1;
 
             if should_commit_line {
                 if commit_line(
@@ -287,8 +281,8 @@ impl<'a> BreakLines<'a> {
                     self.state.runs = self.lines.runs.len();
                     self.state.lines = self.lines.lines.len();
                     self.state.line.x = 0.;
-                    self.state.j += 1;
-                    self.state.line.clusters.1 = self.state.j as u32 + 1;
+                    // self.state.j += 1;
+                    self.state.line.clusters.1 = run.clusters.1 as u32 + 1;
                 }
             }
         }
@@ -482,6 +476,7 @@ struct BreakerState {
     prev_boundary: Option<PrevBoundaryState>,
 }
 
+#[inline]
 fn commit_line(
     layout: &LayoutData,
     lines: &mut LineLayoutData,
