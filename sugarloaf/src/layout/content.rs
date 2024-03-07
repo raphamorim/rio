@@ -10,12 +10,12 @@ use crate::layout::*;
 use core::borrow::Borrow;
 use core::ops::Range;
 
-#[derive(Clone, Default)]
+#[derive(Default, Clone)]
 pub struct Content {
     pub spans: Vec<Span>,
     pub fragments: Vec<(u32, u32)>,
     pub text: String,
-    pub roots: Vec<u32>,
+    pub roots: Vec<usize>,
 }
 
 impl PartialEq for Content {
@@ -30,6 +30,8 @@ impl Content {
     }
 
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
+        // println!("{:?}", self.roots);
+        // for root in 0..self.line {
         for root in &self.roots {
             self.layout_span(*root, lcx);
         }
@@ -114,8 +116,8 @@ impl Content {
         None
     }
 
-    fn layout_span(&self, span: u32, lcx: &mut ParagraphBuilder) {
-        let span = &self.spans[span as usize];
+    fn layout_span(&self, span: usize, lcx: &mut ParagraphBuilder) {
+        let span = &self.spans[span];
         lcx.push_span(&span.properties);
         for e in &span.elements {
             match e {
@@ -127,6 +129,9 @@ impl Content {
                             lcx.add_text(s);
                         }
                     }
+                }
+                SpanElement::BreakLine => {
+                    lcx.new_line();
                 }
             }
         }
@@ -164,7 +169,8 @@ impl Span {
 #[derive(Copy, PartialEq, Clone)]
 pub enum SpanElement {
     Fragment(u32),
-    Span(u32),
+    Span(usize),
+    BreakLine,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -186,14 +192,15 @@ impl ContentBuilder {
                 .collect(),
             elements: Vec::new(),
         };
-        let index = self.content.spans.len() as u32;
+        let size = self.content.spans.len();
+        let index = size as u32;
         self.content.spans.push(span);
         if let Some(parent) = self.spans.last() {
             self.content.spans[*parent as usize]
                 .elements
-                .push(SpanElement::Span(index));
+                .push(SpanElement::Span(size));
         } else {
-            self.content.roots.push(index);
+            self.content.roots.push(size);
         }
         self.spans.push(index);
         index
@@ -234,15 +241,16 @@ impl ContentBuilder {
 
     #[inline]
     pub fn break_line(&mut self) {
+        // Hacky: under the hood it will ignore this "\n" for break_line
+        // however whenever process styles from span like background color
+        // will apply the line width based on last char before \n and not
+        // the remaining space.
+        self.add_char('\n');
+
         if let Some(span) = self.spans.last() {
-            let index = self.content.fragments.len() as u32;
-            let start = self.content.text.len() as u32;
-            self.content.text.push('\n');
-            let end = self.content.text.len() as u32;
-            self.content.fragments.push((start, end));
             self.content.spans[*span as usize]
                 .elements
-                .push(SpanElement::Fragment(index));
+                .push(SpanElement::BreakLine);
         }
     }
 

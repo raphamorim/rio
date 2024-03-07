@@ -9,12 +9,12 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
-//! Paragraph.
+//! RenderData.
 
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use super::{builder_data::SpanData, Paragraph, SpanId};
+use super::{builder_data::SpanData, SpanId};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -22,7 +22,14 @@ use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use swash::text::cluster::{Boundary, ClusterInfo};
 use swash::{GlyphId, NormalizedCoord};
 
-impl Paragraph {
+/// Collection of text, organized into lines, runs and clusters.
+#[derive(Clone, Default)]
+pub struct RenderData {
+    pub data: LayoutData,
+    pub line_data: LineLayoutData,
+}
+
+impl RenderData {
     pub fn dump_clusters(&self) {
         for (i, cluster) in self.line_data.clusters.iter().enumerate() {
             println!("[{}] {} @ {}", i, cluster.0, cluster.1);
@@ -56,13 +63,14 @@ impl Paragraph {
     }
 }
 
-impl Paragraph {
+impl RenderData {
     pub(super) fn push_run(
         &mut self,
         spans: &[SpanData],
         font: &usize,
         size: f32,
         level: u8,
+        line: u32,
         shaper: Shaper<'_>,
     ) {
         let coords_start = self.data.coords.len() as u32;
@@ -74,7 +82,7 @@ impl Paragraph {
         let metrics = shaper.metrics();
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
-        let mut span_data = &spans[last_span as usize];
+        let mut span_data = &spans[self.data.last_span];
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -82,14 +90,14 @@ impl Paragraph {
                 }
             }
             let span = c.data;
-            if span != last_span {
-                span_data = &spans[last_span as usize];
+            if span as usize != last_span {
+                span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
                     self.data.runs.push(RunData {
                         span: SpanId(last_span),
-                        line: 0,
+                        line,
                         font: *font,
                         coords: (coords_start, coords_end),
                         color: span_data.color,
@@ -119,7 +127,7 @@ impl Paragraph {
                     });
                     clusters_start = clusters_end;
                 }
-                last_span = span;
+                last_span = span as usize;
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -190,7 +198,7 @@ impl Paragraph {
         self.data.last_span = last_span;
         self.data.runs.push(RunData {
             span: SpanId(last_span),
-            line: 0,
+            line,
             font: *font,
             coords: (coords_start, coords_end),
             size,
@@ -225,7 +233,7 @@ impl Paragraph {
                 // Simple glyph
                 self.data.glyphs.push(GlyphData {
                     data: glyph.id as u32 | (packed_advance << 16),
-                    span: SpanId(glyph.data),
+                    span: SpanId(glyph.data as usize),
                 });
                 return glyph_index;
             }
@@ -235,7 +243,7 @@ impl Paragraph {
         self.data.detailed_glyphs.push(Glyph::new(glyph));
         self.data.glyphs.push(GlyphData {
             data: GLYPH_DETAILED | detail_index,
-            span: SpanId(glyph.data),
+            span: SpanId(glyph.data as usize),
         });
         glyph_index
     }
@@ -442,7 +450,7 @@ impl Glyph {
             x: g.x,
             y: g.y,
             advance: g.advance,
-            span: SpanId(g.data),
+            span: SpanId(g.data as usize),
         }
     }
 }
@@ -616,7 +624,7 @@ pub struct Line<'a> {
 }
 
 impl<'a> Line<'a> {
-    pub(super) fn new(layout: &'a Paragraph, line_index: usize) -> Self {
+    pub(super) fn new(layout: &'a RenderData, line_index: usize) -> Self {
         Self {
             layout: &layout.data,
             line_layout: &layout.line_data,

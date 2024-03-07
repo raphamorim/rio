@@ -8,13 +8,13 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{Alignment, Direction, LayoutContext, Paragraph};
+use crate::layout::{Content, ContentBuilder, Direction, LayoutContext, RenderData};
 use crate::sugarloaf::{tree::SugarTree, SpanStyle};
-use crate::{Content, ContentBuilder, SugarCursor, SugarDecoration};
+use crate::{SugarCursor, SugarDecoration};
 
 pub struct Advanced {
-    pub render_data: Paragraph,
-    pub render_data_sugar: Paragraph,
+    pub render_data: RenderData,
+    pub mocked_render_data: RenderData,
     content_builder: ContentBuilder,
     layout_context: LayoutContext,
 }
@@ -26,8 +26,8 @@ impl Default for Advanced {
         Self {
             layout_context,
             content_builder: ContentBuilder::default(),
-            render_data: Paragraph::new(),
-            render_data_sugar: Paragraph::new(),
+            render_data: RenderData::new(),
+            mocked_render_data: RenderData::new(),
         }
     }
 }
@@ -53,7 +53,7 @@ impl Advanced {
         // self.content = build_complex_content();
         // self.content = build_terminal_content();
         // self.content = self.content_builder.clone().build();
-        self.render_data = Paragraph::default();
+        self.render_data = RenderData::default();
     }
 
     #[inline]
@@ -77,7 +77,7 @@ impl Advanced {
 
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
-        let mut content_builder = crate::content::Content::builder();
+        let mut content_builder = Content::builder();
         content_builder.enter_span(&[
             SpanStyle::FontId(0),
             SpanStyle::Size(tree.layout.font_size),
@@ -93,22 +93,31 @@ impl Advanced {
         );
         let content = content_builder.build_ref();
         content.layout(&mut lb);
-        self.render_data_sugar.clear();
-        lb.build_into(&mut self.render_data_sugar);
+        self.mocked_render_data.clear();
+        lb.build_into(&mut self.mocked_render_data);
 
-        self.render_data_sugar.break_lines().break_remaining(
-            tree.layout.width - tree.layout.style.screen_position.0,
-            Alignment::Start,
-        );
+        // self.mocked_render_data.break_lines().break_remaining(
+        //     tree.layout.width - tree.layout.style.screen_position.0,
+        //     Alignment::Start,
+        // );
+        self.mocked_render_data
+            .break_lines()
+            .break_without_advance_or_alignment()
     }
 
     #[inline]
-    pub fn update_size(&mut self, tree: &SugarTree) {
+    pub fn update_size(&mut self, _tree: &SugarTree) {
         // let start = std::time::Instant::now();
-        self.render_data.break_lines().break_remaining(
-            tree.layout.width - tree.layout.style.screen_position.0,
-            Alignment::Start,
-        );
+        // self.render_data.break_lines().break_remaining(
+        //     tree.layout.width - tree.layout.style.screen_position.0,
+        //     Alignment::Start,
+        // );
+
+        // TODO: break_lines and break_remaining
+        self.render_data
+            .break_lines()
+            .break_without_advance_or_alignment();
+
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
@@ -117,8 +126,8 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line: usize, tree: &SugarTree) {
-        if line == 0 {
+    pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
+        if line_number == 0 {
             self.content_builder = Content::builder();
             self.content_builder.enter_span(&[
                 SpanStyle::Size(tree.layout.font_size),
@@ -126,7 +135,7 @@ impl Advanced {
             ]);
         }
 
-        let line = &tree.lines[line];
+        let line = &tree.lines[line_number];
 
         let underline = &[
             SpanStyle::Underline(true),
@@ -141,13 +150,7 @@ impl Advanced {
             SpanStyle::UnderlineSize(Some(2.)),
         ];
 
-        // let mut content = String::from("");
         for i in 0..line.len() {
-            // let mut font_id = 0;
-            // if line[i].content == '🥶' {
-            //     font_id = 7;
-            // }
-
             let mut span_counter = 0;
             if line[i].style.is_bold_italic {
                 self.content_builder.enter_span(&[
@@ -208,7 +211,6 @@ impl Advanced {
             }
 
             self.content_builder.enter_span(&[
-                // SpanStyle::FontId(font_id),
                 SpanStyle::Color(line[i].foreground_color),
                 SpanStyle::BackgroundColor(line[i].background_color),
             ]);
@@ -228,14 +230,19 @@ impl Advanced {
                 span_counter -= 1;
             }
         }
-        self.content_builder.add_char('\n');
+
+        // if line is the last one skip break line
+        // if line_number < tree.lines.len() - 1 {
+        // self.content_builder.add_char('\n');
+        self.content_builder.break_line();
+        // }
     }
 }
 
 #[allow(unused)]
-fn build_simple_content() -> crate::content::Content {
+fn build_simple_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 
@@ -247,9 +254,9 @@ fn build_simple_content() -> crate::content::Content {
 }
 
 #[allow(unused)]
-fn build_complex_content() -> crate::content::Content {
+fn build_complex_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 
@@ -320,9 +327,9 @@ fn build_complex_content() -> crate::content::Content {
 }
 
 #[allow(unused)]
-fn build_terminal_content() -> crate::content::Content {
+fn build_terminal_content() -> Content {
     use crate::layout::*;
-    let mut db = crate::content::Content::builder();
+    let mut db = Content::builder();
 
     use SpanStyle as S;
 

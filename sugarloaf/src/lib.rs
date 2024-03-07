@@ -1,11 +1,9 @@
 pub mod components;
-pub mod content;
 pub mod context;
 pub mod font;
 pub mod layout;
 mod sugarloaf;
 
-pub use crate::content::{Content, ContentBuilder};
 pub use crate::sugarloaf::{
     compositors::SugarCompositorLevel,
     graphics::{
