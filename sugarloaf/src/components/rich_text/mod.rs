@@ -322,7 +322,7 @@ impl RichTextBrush {
 
         let dimensions = fetch_dimensions(
             &mut self.comp,
-            &state.compositors.advanced.render_data_sugar,
+            &state.compositors.advanced.mocked_render_data,
             state.compositors.advanced.font_library(),
         );
         if dimensions.0 > 0. && dimensions.1 > 0. {
@@ -704,7 +704,7 @@ impl RichTextBrush {
 #[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
-    layout: &crate::layout::Paragraph,
+    render_data: &crate::layout::RenderData,
     x: f32,
     y: f32,
     font_library: &FontLibrary,
@@ -712,7 +712,7 @@ fn draw_layout(
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
-    for line in layout.lines() {
+    for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
             let font = run.font();
@@ -763,7 +763,7 @@ fn draw_layout(
 #[inline]
 fn fetch_dimensions(
     comp: &mut compositor::Compositor,
-    layout: &crate::layout::Paragraph,
+    render_data: &crate::layout::RenderData,
     font_library: &FontLibrary,
 ) -> (f32, f32) {
     let x = 0.;
@@ -771,12 +771,13 @@ fn fetch_dimensions(
     let mut glyphs = Vec::with_capacity(3);
     let mut sugarwidth = 0.0;
     let mut sugarheight = 0.0;
-    for line in layout.lines() {
+    for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
             let font = run.font();
             let py = line.baseline() + y;
             let run_x = px;
+            let line_height = line.ascent() + line.descent() + line.leading();
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
@@ -797,13 +798,13 @@ fn fetch_dimensions(
                 background_color: None,
                 baseline: py,
                 topline: py - line.ascent(),
-                line_height: line.ascent() + line.descent(),
+                line_height,
                 advance: px - run_x,
                 underline: None,
             };
 
             sugarwidth = style.advance;
-            sugarheight = style.line_height;
+            sugarheight = line_height;
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 0.0,

@@ -169,7 +169,7 @@ impl GlyphData {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct RunData {
     pub span: SpanId,
     pub line: u32,
@@ -210,7 +210,7 @@ pub struct LayoutData {
     /// Glyph runs.
     pub runs: Vec<RunData>,
     /// Last shaped span.
-    pub last_span: u32,
+    pub last_span: usize,
 }
 
 impl LayoutData {
@@ -235,7 +235,7 @@ pub struct LineData {
     pub trailing_whitespace: bool,
     pub explicit_break: bool,
     pub width: f32,
-    pub max_advance: f32,
+    pub max_advance: Option<f32>,
     pub runs: (u32, u32),
     pub clusters: (u32, u32),
 }
