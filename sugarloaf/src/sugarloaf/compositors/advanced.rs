@@ -96,10 +96,6 @@ impl Advanced {
         self.mocked_render_data.clear();
         lb.build_into(&mut self.mocked_render_data);
 
-        // self.mocked_render_data.break_lines().break_remaining(
-        //     tree.layout.width - tree.layout.style.screen_position.0,
-        //     Alignment::Start,
-        // );
         self.mocked_render_data
             .break_lines()
             .break_without_advance_or_alignment()
@@ -107,22 +103,13 @@ impl Advanced {
 
     #[inline]
     pub fn update_size(&mut self, _tree: &SugarTree) {
-        // let start = std::time::Instant::now();
         // self.render_data.break_lines().break_remaining(
         //     tree.layout.width - tree.layout.style.screen_position.0,
         //     Alignment::Start,
         // );
-
-        // TODO: break_lines and break_remaining
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
-
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-        //     duration
-        // );
     }
 
     #[inline]
@@ -143,7 +130,6 @@ impl Advanced {
             SpanStyle::UnderlineSize(Some(1.)),
         ];
 
-        // let strikethrough = &[SpanStyle::Strikethrough(true)];
         let strikethrough = &[
             SpanStyle::Underline(true),
             SpanStyle::UnderlineOffset(Some(6.)),
@@ -231,11 +217,7 @@ impl Advanced {
             }
         }
 
-        // if line is the last one skip break line
-        // if line_number < tree.lines.len() - 1 {
-        // self.content_builder.add_char('\n');
         self.content_builder.break_line();
-        // }
     }
 }
 
