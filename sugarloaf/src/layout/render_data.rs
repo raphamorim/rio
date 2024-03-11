@@ -18,9 +18,104 @@ use super::{builder_data::SpanData, SpanId};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use swash::text::cluster::{Boundary, ClusterInfo};
+use swash::text::cluster::{Boundary, ClusterInfo, SourceRange, UserData};
 use swash::{GlyphId, NormalizedCoord};
+
+pub struct ShaperCacheKey {
+    content: String,
+    font_family: usize,
+    font_size: usize,
+    level: u8,
+    range_start: u32,
+    range_end: u32,
+}
+
+impl Hash for ShaperCacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.font_size.hash(state);
+        self.level.hash(state);
+        self.font_family.hash(state);
+        self.content.hash(state);
+        // self.range_start.hash(state);
+        // self.range_end.hash(state);
+    }
+}
+
+impl ShaperCacheKey {
+    pub fn new(font_family: usize, font_size: usize, level: u8) -> Self {
+        Self {
+            content: String::from(""),
+            font_family,
+            font_size,
+            level,
+            range_start: 0,
+            range_end: 0,
+        }
+    }
+
+    #[inline]
+    pub fn push_chars(&mut self, chars: &[char]) {
+        self.content += &String::from_iter(chars);
+    }
+
+    #[inline]
+    pub fn push_range(&mut self, range: swash::text::cluster::SourceRange) {
+        if self.range_start == 0 && range.start != 0 {
+            self.range_start = range.start
+        }
+
+        self.range_end = range.end;
+    }
+
+    #[inline]
+    pub fn key(&self) -> u64 {
+        println!("{:?}", self.content);
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        s.finish()
+    }
+}
+
+pub struct CacheableGlyphData {
+    source: SourceRange,
+    info: ClusterInfo,
+    glyphs: Vec<swash::shape::cluster::Glyph>,
+    components: Vec<SourceRange>,
+    data: UserData,
+}
+
+pub struct ShaperCache {
+    pub cache: HashMap<u64, Vec<CacheableGlyphData>>,
+    pub current_cache_key: Option<u64>,
+}
+
+impl ShaperCache {
+    pub fn new() -> Self {
+        ShaperCache {
+            cache: HashMap::new(),
+            current_cache_key: None,
+        }
+    }
+
+    pub fn mark_next(&mut self, cache_key: u64) {
+        self.current_cache_key = Some(cache_key);
+    }
+
+    #[inline]
+    pub fn has_cache_key(&self) -> bool {
+        self.current_cache_key.is_some()
+    }
+
+    pub fn compute_cache(&mut self, data: Vec<CacheableGlyphData>) {
+        if let Some(cache_key) = self.current_cache_key {
+            self.cache.insert(cache_key, data);
+            self.current_cache_key = None;
+        }
+    }
+}
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Default)]
@@ -64,7 +159,7 @@ impl RenderData {
 }
 
 impl RenderData {
-    pub(super) fn push_run(
+    pub(super) fn push_run_from_cache(
         &mut self,
         spans: &[SpanData],
         font: &usize,
@@ -72,6 +167,7 @@ impl RenderData {
         level: u8,
         line: u32,
         shaper: Shaper<'_>,
+        c_data_vec: &[CacheableGlyphData],
     ) {
         let coords_start = self.data.coords.len() as u32;
         self.data
@@ -83,7 +179,9 @@ impl RenderData {
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
         let mut span_data = &spans[self.data.last_span];
-        shaper.shape_with(|c| {
+        let start = std::time::Instant::now();
+
+        for c in c_data_vec {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
                     c.flags |= CLUSTER_NEWLINE;
@@ -95,7 +193,7 @@ impl RenderData {
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
-                    self.data.runs.push(RunData {
+                    let run_data = RunData {
                         span: SpanId(last_span),
                         line,
                         font: *font,
@@ -124,7 +222,185 @@ impl RenderData {
                         strikeout_offset: metrics.strikeout_offset,
                         strikeout_size: metrics.stroke_size,
                         advance,
+                    };
+                    self.data.runs.push(run_data);
+                    clusters_start = clusters_end;
+                }
+                last_span = span as usize;
+            }
+            let mut glyphs_start = self.data.glyphs.len() as u32;
+            let mut cluster_advance = 0.;
+            for glyph in &c.glyphs {
+                cluster_advance += glyph.advance;
+                self.push_glyph(&glyph);
+            }
+            advance += cluster_advance;
+            let mut component_advance = cluster_advance;
+            let is_ligature = c.components.len() > 1;
+            let (len, base_flags) = if is_ligature {
+                let x = &c.components[0];
+                component_advance /= c.components.len() as f32;
+                ((x.end - x.start) as u8, CLUSTER_LIGATURE)
+            } else {
+                ((c.source.end - c.source.start) as u8, 0)
+            };
+            let glyphs_end = self.data.glyphs.len() as u32;
+            if glyphs_end - glyphs_start > 1 || is_ligature {
+                let detail_index = self.data.detailed_clusters.len() as u32;
+                self.data.detailed_clusters.push(DetailedClusterData {
+                    glyphs: (glyphs_start, glyphs_end),
+                    advance: component_advance,
+                });
+                self.data.clusters.push(ClusterData {
+                    info: c.info,
+                    flags: base_flags | CLUSTER_DETAILED,
+                    len,
+                    offset: c.source.start,
+                    glyphs: detail_index,
+                });
+            } else {
+                let flags = if glyphs_start == glyphs_end {
+                    glyphs_start = c.data;
+                    CLUSTER_EMPTY
+                } else {
+                    base_flags
+                };
+                self.data.clusters.push(ClusterData {
+                    info: c.info,
+                    flags,
+                    len,
+                    offset: c.source.start,
+                    glyphs: glyphs_start,
+                });
+            }
+            if base_flags != 0 {
+                // Emit continuations
+                for component in &c.components[1..] {
+                    self.data.clusters.push(ClusterData {
+                        info: Default::default(),
+                        flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
+                        len: (component.end - component.start) as u8,
+                        offset: component.start,
+                        glyphs: component_advance.to_bits(),
                     });
+                }
+
+                if let Some(c) = self.data.clusters.last_mut() {
+                    c.flags |= CLUSTER_LAST_CONTINUATION
+                }
+            }
+        }
+        let duration = start.elapsed();
+        println!("Time elapsed in shape_with is: {:?}", duration);
+        let clusters_end = self.data.clusters.len() as u32;
+        if clusters_end == clusters_start {
+            return;
+        }
+        self.data.last_span = last_span;
+        let run_data = RunData {
+            span: SpanId(last_span),
+            line,
+            font: *font,
+            coords: (coords_start, coords_end),
+            size,
+            level,
+            whitespace: false,
+            trailing_whitespace: false,
+            clusters: (clusters_start, clusters_end),
+            ascent: metrics.ascent * span_data.line_spacing,
+            descent: metrics.descent * span_data.line_spacing,
+            leading: metrics.leading * span_data.line_spacing,
+            color: span_data.color,
+            background_color: span_data.background_color,
+            cursor: span_data.cursor,
+            underline: span_data.underline,
+            underline_color: span_data.underline_color.unwrap_or(span_data.color),
+            underline_offset: span_data
+                .underline_offset
+                .unwrap_or(metrics.underline_offset),
+            underline_size: span_data.underline_size.unwrap_or(metrics.stroke_size),
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.stroke_size,
+            advance,
+        };
+        self.data.runs.push(run_data);
+    }
+
+    pub(super) fn push_run(
+        &mut self,
+        spans: &[SpanData],
+        font: &usize,
+        size: f32,
+        level: u8,
+        line: u32,
+        shaper: Shaper<'_>,
+        shaper_cache: &mut ShaperCache,
+    ) {
+        let coords_start = self.data.coords.len() as u32;
+        self.data
+            .coords
+            .extend_from_slice(shaper.normalized_coords());
+        let coords_end = self.data.coords.len() as u32;
+        let mut clusters_start = self.data.clusters.len() as u32;
+        let metrics = shaper.metrics();
+        let mut advance = 0.;
+        let mut last_span = self.data.last_span;
+        let mut span_data = &spans[self.data.last_span];
+        let start = std::time::Instant::now();
+        let mut cacheable_glyph_data_vec = vec![];
+        shaper.shape_with(|c| {
+            if shaper_cache.has_cache_key() {
+                cacheable_glyph_data_vec.push(CacheableGlyphData {
+                    info: c.info,
+                    glyphs: c.glyphs.to_vec(),
+                    components: c.components.to_vec(),
+                    data: c.data,
+                    source: c.source,
+                });
+            }
+
+            if c.info.boundary() == Boundary::Mandatory {
+                if let Some(c) = self.data.clusters.last_mut() {
+                    c.flags |= CLUSTER_NEWLINE;
+                }
+            }
+            let span = c.data;
+            if span as usize != last_span {
+                span_data = &spans[last_span];
+                // Ensure that every run belongs to a single span.
+                let clusters_end = self.data.clusters.len() as u32;
+                if clusters_end != clusters_start {
+                    let run_data = RunData {
+                        span: SpanId(last_span),
+                        line,
+                        font: *font,
+                        coords: (coords_start, coords_end),
+                        color: span_data.color,
+                        background_color: span_data.background_color,
+                        size,
+                        level,
+                        whitespace: false,
+                        trailing_whitespace: false,
+                        clusters: (clusters_start, clusters_end),
+                        ascent: metrics.ascent * span_data.line_spacing,
+                        descent: metrics.descent * span_data.line_spacing,
+                        leading: metrics.leading * span_data.line_spacing,
+                        cursor: span_data.cursor,
+                        underline: span_data.underline,
+                        underline_color: span_data
+                            .underline_color
+                            .unwrap_or(span_data.color),
+                        underline_offset: span_data
+                            .underline_offset
+                            .unwrap_or(metrics.underline_offset),
+                        underline_size: span_data
+                            .underline_size
+                            .unwrap_or(metrics.stroke_size),
+                        strikeout_offset: metrics.strikeout_offset,
+                        strikeout_size: metrics.stroke_size,
+                        advance,
+                    };
+                    self.data.runs.push(run_data);
                     clusters_start = clusters_end;
                 }
                 last_span = span as usize;
@@ -191,12 +467,19 @@ impl RenderData {
                 }
             }
         });
+
+        if shaper_cache.has_cache_key() {
+            shaper_cache.compute_cache(cacheable_glyph_data_vec);
+        }
+
+        let duration = start.elapsed();
+        println!("Time elapsed in shape_with is: {:?}", duration);
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
             return;
         }
         self.data.last_span = last_span;
-        self.data.runs.push(RunData {
+        let run_data = RunData {
             span: SpanId(last_span),
             line,
             font: *font,
@@ -221,7 +504,8 @@ impl RenderData {
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
-        });
+        };
+        self.data.runs.push(run_data);
     }
 
     fn push_glyph(&mut self, glyph: &ShapedGlyph) -> u32 {
@@ -231,20 +515,23 @@ impl RenderData {
             let packed_advance = (glyph.advance * 64.) as u32;
             if packed_advance <= MAX_SIMPLE_ADVANCE {
                 // Simple glyph
-                self.data.glyphs.push(GlyphData {
+                let glyph_data = GlyphData {
                     data: glyph.id as u32 | (packed_advance << 16),
                     span: SpanId(glyph.data as usize),
-                });
+                };
+                self.data.glyphs.push(glyph_data);
                 return glyph_index;
             }
         }
         // Complex glyph
         let detail_index = self.data.detailed_glyphs.len() as u32;
-        self.data.detailed_glyphs.push(Glyph::new(glyph));
-        self.data.glyphs.push(GlyphData {
+        let detailed_glyph = Glyph::new(glyph);
+        self.data.detailed_glyphs.push(detailed_glyph);
+        let glyph_data = GlyphData {
             data: GLYPH_DETAILED | detail_index,
             span: SpanId(glyph.data as usize),
-        });
+        };
+        self.data.glyphs.push(glyph_data);
         glyph_index
     }
 

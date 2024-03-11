@@ -13,7 +13,8 @@ use super::builder_data::*;
 use super::span_style::*;
 use super::{SpanId, MAX_ID};
 use crate::font::{FontContext, FontLibrary};
-use crate::layout::render_data::RenderData;
+use crate::layout::render_data::ShaperCache;
+use crate::layout::render_data::{RenderData, ShaperCacheKey};
 use core::borrow::Borrow;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -27,6 +28,7 @@ pub struct LayoutContext {
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
+    shaper_cache: ShaperCache,
 }
 
 impl LayoutContext {
@@ -38,6 +40,7 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
+            shaper_cache: ShaperCache::new(),
         }
     }
 
@@ -65,6 +68,7 @@ impl LayoutContext {
             fonts: &self.fonts,
             scale,
             scx: &mut self.scx,
+            shaper_cache: &mut self.shaper_cache,
             dir_depth: 0,
             s: &mut self.state,
             last_offset: 0,
@@ -83,6 +87,7 @@ pub struct ParagraphBuilder<'a> {
     scx: &'a mut ShapeContext,
     dir_depth: u32,
     s: &'a mut BuilderState,
+    shaper_cache: &'a mut ShaperCache,
     last_offset: u32,
 }
 
@@ -457,6 +462,7 @@ impl<'a> ParagraphBuilder<'a> {
                 self.fonts,
                 self.scx,
                 self.s,
+                self.shaper_cache,
                 item,
                 &mut char_cluster,
                 render_data,
@@ -505,6 +511,7 @@ fn shape_item(
     fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &BuilderState,
+    shaper_cache: &mut ShaperCache,
     item: &ItemData,
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
@@ -565,6 +572,7 @@ fn shape_item(
             scx,
             &mut shape_state,
             &mut parser,
+            shaper_cache,
             cluster,
             dir,
             render_data,
@@ -599,6 +607,7 @@ fn shape_item(
             scx,
             &mut shape_state,
             &mut parser,
+            shaper_cache,
             cluster,
             dir,
             render_data,
@@ -616,6 +625,7 @@ fn shape_clusters<I>(
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
+    shaper_cache: &mut ShaperCache,
     cluster: &mut CharCluster,
     dir: shape::Direction,
     render_data: &mut RenderData,
@@ -641,20 +651,41 @@ where
         .build();
 
     let mut synth = Synthesis::default();
+    let mut key = ShaperCacheKey::new(current_font_id, state.size as usize, state.level);
     loop {
+        let chars_from_cluster: Vec<char> =
+            cluster.chars().into_iter().map(|c| c.ch).collect();
+        key.push_chars(&chars_from_cluster);
+        key.push_range(cluster.range());
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            // let start = std::time::Instant::now();
-            render_data.push_run(
-                &state.state.spans,
-                &current_font_id,
-                state.size,
-                state.level,
-                current_line as u32,
-                shaper,
-            );
-            // let duration = start.elapsed();
-            // println!("Time elapsed in push_run is: {:?}", duration);
+            let start = std::time::Instant::now();
+            let cache_key = key.key();
+            if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
+                println!("cache hit {}", cache_key);
+                render_data.push_run_from_cache(
+                    &state.state.spans,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    cached_glyph_data,
+                );
+            } else {
+                shaper_cache.mark_next(cache_key);
+                render_data.push_run(
+                    &state.state.spans,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    shaper_cache,
+                );
+            }
+            let duration = start.elapsed();
+            println!("Time elapsed in push_run is: {:?}", duration);
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -670,7 +701,7 @@ where
 
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
-            // let start = std::time::Instant::now();
+            let start = std::time::Instant::now();
             render_data.push_run(
                 &state.state.spans,
                 &current_font_id,
@@ -678,9 +709,10 @@ where
                 state.level,
                 current_line as u32,
                 shaper,
+                shaper_cache,
             );
-            // let duration = start.elapsed();
-            // println!("Time elapsed in push_run is: {:?}", duration);
+            let duration = start.elapsed();
+            println!("Time elapsed in push_run is: {:?}", duration);
             state.font_id = next_font;
             state.synth = synth;
             return true;
