@@ -29,8 +29,6 @@ pub struct ShaperCacheKey {
     font_family: usize,
     font_size: usize,
     level: u8,
-    range_start: u32,
-    range_end: u32,
 }
 
 impl Hash for ShaperCacheKey {
@@ -39,8 +37,6 @@ impl Hash for ShaperCacheKey {
         self.level.hash(state);
         self.font_family.hash(state);
         self.content.hash(state);
-        // self.range_start.hash(state);
-        // self.range_end.hash(state);
     }
 }
 
@@ -51,8 +47,6 @@ impl ShaperCacheKey {
             font_family,
             font_size,
             level,
-            range_start: 0,
-            range_end: 0,
         }
     }
 
@@ -62,17 +56,7 @@ impl ShaperCacheKey {
     }
 
     #[inline]
-    pub fn push_range(&mut self, range: swash::text::cluster::SourceRange) {
-        if self.range_start == 0 && range.start != 0 {
-            self.range_start = range.start
-        }
-
-        self.range_end = range.end;
-    }
-
-    #[inline]
     pub fn key(&self) -> u64 {
-        println!("{:?}", self.content);
         let mut s = DefaultHasher::new();
         self.hash(&mut s);
         s.finish()
@@ -167,7 +151,7 @@ impl RenderData {
         level: u8,
         line: u32,
         shaper: Shaper<'_>,
-        c_data_vec: &[CacheableGlyphData],
+        data_vec: &[CacheableGlyphData],
     ) {
         let coords_start = self.data.coords.len() as u32;
         self.data
@@ -181,7 +165,7 @@ impl RenderData {
         let mut span_data = &spans[self.data.last_span];
         let start = std::time::Instant::now();
 
-        for c in c_data_vec {
+        for c in data_vec {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
                     c.flags |= CLUSTER_NEWLINE;

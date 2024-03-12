@@ -656,13 +656,11 @@ where
         let chars_from_cluster: Vec<char> =
             cluster.chars().into_iter().map(|c| c.ch).collect();
         key.push_chars(&chars_from_cluster);
-        key.push_range(cluster.range());
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
             let start = std::time::Instant::now();
             let cache_key = key.key();
             if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
-                println!("cache hit {}", cache_key);
                 render_data.push_run_from_cache(
                     &state.state.spans,
                     &current_font_id,
