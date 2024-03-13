@@ -121,8 +121,14 @@ pub struct CacheableGlyphData {
     data: UserData,
 }
 
+pub struct ShaperCacheEntry {
+    data: Vec<CacheableGlyphData>,
+    metrics: swash::Metrics,
+    coords: Vec<i16>
+}
+
 pub struct ShaperCache {
-    pub cache: LruCache<u64, Vec<CacheableGlyphData>>,
+    pub cache: LruCache<u64, ShaperCacheEntry>,
     pub current_cache_key: Option<u64>,
     pub cacheable: bool,
 }
@@ -147,7 +153,7 @@ impl ShaperCache {
     }
 
     #[inline]
-    pub fn compute_cache(&mut self, content: Vec<CacheableGlyphData>) {
+    pub fn compute_cache(&mut self, content: ShaperCacheEntry) {
         if self.cacheable {
             if let Some(cache_key) = self.current_cache_key {
                 self.cache.put(cache_key, content);
@@ -209,23 +215,22 @@ impl RenderData {
         size: f32,
         level: u8,
         line: u32,
-        shaper: Shaper<'_>,
-        data_vec: &[CacheableGlyphData],
+        cache_entry: &ShaperCacheEntry,
     ) {
         // println!("veio do cache");
         let coords_start = self.data.coords.len() as u32;
         self.data
             .coords
-            .extend_from_slice(shaper.normalized_coords());
+            .extend_from_slice(&cache_entry.coords);
         let coords_end = self.data.coords.len() as u32;
         let mut clusters_start = self.data.clusters.len() as u32;
-        let metrics = shaper.metrics();
+        let metrics = cache_entry.metrics;
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
         let mut span_data = &spans[self.data.last_span];
         let start = std::time::Instant::now();
 
-        for c in data_vec {
+        for c in &cache_entry.data {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
                     c.flags |= CLUSTER_NEWLINE;
@@ -382,15 +387,16 @@ impl RenderData {
     ) {
         // println!("nao veio do cache");
         let coords_start = self.data.coords.len() as u32;
+        let coords = shaper.normalized_coords().to_owned();
         self.data
             .coords
-            .extend_from_slice(shaper.normalized_coords());
+            .extend_from_slice(&coords);
         let coords_end = self.data.coords.len() as u32;
         let mut clusters_start = self.data.clusters.len() as u32;
-        let metrics = shaper.metrics();
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
         let mut span_data = &spans[self.data.last_span];
+        let metrics = shaper.metrics();
         let start = std::time::Instant::now();
         let mut cacheable_glyph_data_vec = vec![];
         shaper.shape_with(|c| {
@@ -519,7 +525,11 @@ impl RenderData {
         });
 
         if shaper_cache.has_cache_key() {
-            shaper_cache.compute_cache(cacheable_glyph_data_vec);
+            shaper_cache.compute_cache(ShaperCacheEntry {
+                metrics,
+                coords: coords.to_vec(),
+                data: cacheable_glyph_data_vec
+            });
         }
 
         let duration = start.elapsed();

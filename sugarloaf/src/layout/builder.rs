@@ -651,18 +651,6 @@ where
         .build();
 
     let mut synth = Synthesis::default();
-    //     struct ShapeState<'a> {
-    //     state: &'a BuilderState,
-    //     features: &'a [Setting<u16>],
-    //     synth: Synthesis,
-    //     vars: &'a [Setting<f32>],
-    //     script: Script,
-    //     level: u8,
-    //     span_index: u32,
-    //     span: &'a SpanData,
-    //     font_id: Option<usize>,
-    //     size: f32,
-    // }
     let mut key = ShaperCacheKey::new(state.level, state.span);
     loop {
         let chars_from_cluster: Vec<u32> =
@@ -670,6 +658,8 @@ where
         key.push_chars(&chars_from_cluster);
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
+            let coords = shaper.normalized_coords().to_owned();
+            let metrics = shaper.metrics();
             let cache_key = key.key();
             if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
                 render_data.push_run_from_cache(
@@ -678,7 +668,6 @@ where
                     state.size,
                     state.level,
                     current_line as u32,
-                    shaper,
                     cached_glyph_data,
                 );
             } else {
@@ -712,6 +701,8 @@ where
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
 
+            let coords = shaper.normalized_coords().to_owned();
+            let metrics = shaper.metrics();
             let cache_key = key.key();
             if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
                 render_data.push_run_from_cache(
@@ -720,7 +711,6 @@ where
                     state.size,
                     state.level,
                     current_line as u32,
-                    shaper,
                     cached_glyph_data,
                 );
             } else {
