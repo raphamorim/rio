@@ -21,7 +21,6 @@ pub struct Advanced {
 
 impl Default for Advanced {
     fn default() -> Self {
-        // let fonts = crate::layout::FontLibrary::default();
         let layout_context = LayoutContext::new(FontLibrary::default());
         Self {
             layout_context,
@@ -57,6 +56,25 @@ impl Advanced {
     }
 
     #[inline]
+    pub fn update_data_with_lines(&mut self, lines: &[usize]) {}
+
+    #[inline]
+    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
+        let mut lb = self.layout_context.builder(
+            Direction::LeftToRight,
+            None,
+            tree.layout.dimensions.scale,
+        );
+        let content = self.content_builder.build_ref();
+        content.layout(&mut lb);
+        self.render_data.clear();
+        lb.build_into(&mut self.render_data);
+        self.render_data
+            .break_lines()
+            .break_without_advance_or_alignment();
+    }
+
+    #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
         let mut lb = self.layout_context.builder(
             Direction::LeftToRight,
@@ -66,13 +84,10 @@ impl Advanced {
         let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
-        // let start = std::time::Instant::now();
         lb.build_into(&mut self.render_data);
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in update_layout() build_into is: {:?}",
-        //     duration
-        // );
+        self.render_data
+            .break_lines()
+            .break_without_advance_or_alignment();
     }
 
     #[inline]
@@ -103,26 +118,6 @@ impl Advanced {
         self.mocked_render_data
             .break_lines()
             .break_without_advance_or_alignment()
-    }
-
-    #[inline]
-    pub fn update_size(&mut self, _tree: &SugarTree) {
-        // let start = std::time::Instant::now();
-        // self.render_data.break_lines().break_remaining(
-        //     tree.layout.width - tree.layout.style.screen_position.0,
-        //     Alignment::Start,
-        // );
-
-        // TODO: break_lines and break_remaining
-        self.render_data
-            .break_lines()
-            .break_without_advance_or_alignment();
-
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() break_lines and break_remaining is: {:?}",
-        //     duration
-        // );
     }
 
     #[inline]

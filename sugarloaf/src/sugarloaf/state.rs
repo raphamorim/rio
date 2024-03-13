@@ -5,7 +5,7 @@
 
 use super::compositors::{SugarCompositorLevel, SugarCompositors};
 use super::graphics::SugarloafGraphics;
-use super::tree::{SugarTree, SugarTreeDiff};
+use super::tree::{Diff, SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::layout::SugarDimensions;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
@@ -321,6 +321,7 @@ impl SugarState {
             return;
         }
 
+        let mut lines_to_update: Vec<usize> = vec![];
         let mut should_update = false;
         let mut should_clean_blocks = false;
         let mut should_resize = false;
@@ -345,11 +346,19 @@ impl SugarState {
                 should_update = true;
                 should_compute_dimensions = true;
             }
-            SugarTreeDiff::Changes(_changes) => {
+            SugarTreeDiff::Changes(changes) => {
                 should_update = true;
-                // for i in changes {
-                //     println!("{:?}", i);
-                // }
+                for change in changes {
+                    match change {
+                        &Diff::Line(diff) => lines_to_update.push(diff.line),
+                        &Diff::Char(diff) => {
+                            let len = lines_to_update.len();
+                            if len > 0 && lines_to_update[len - 1] != diff.line {
+                                lines_to_update.push(diff.line)
+                            }
+                        }
+                    }
+                }
             }
             _ => {
                 should_update = true;
@@ -368,9 +377,24 @@ impl SugarState {
             }
 
             if self.level.is_advanced() {
-                self.compositors.advanced.update_data();
-                self.compositors.advanced.update_layout(&self.current);
-                self.compositors.advanced.update_size(&self.current);
+                if lines_to_update.is_empty() {
+                    self.compositors.advanced.update_data();
+                } else {
+                    // self.compositors.advanced.update_data_with_lines(&lines_to_update);
+                }
+
+                if lines_to_update.is_empty() {
+                    self.compositors.advanced.update_data();
+                    self.compositors.advanced.update_layout(&self.current);
+                } else {
+                    println!("lines_to_update {:?}", lines_to_update);
+                    self.compositors
+                        .advanced
+                        .update_data_with_lines(&lines_to_update);
+                    self.compositors
+                        .advanced
+                        .update_layout_with_lines(&self.current, &lines_to_update);
+                }
             }
         }
 

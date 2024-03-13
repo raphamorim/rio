@@ -59,7 +59,7 @@ impl Default for SugarTree {
     fn default() -> Self {
         Self {
             lines: Vec::with_capacity(400),
-            blocks: Vec::with_capacity(30),
+            blocks: Vec::with_capacity(20),
             layout: SugarloafLayout::default(),
         }
     }
@@ -129,17 +129,16 @@ impl SugarTree {
                         before: line.len(),
                         after: next_line.len(),
                     }));
-                    continue;
-                }
-
-                for column in 0..line.len() {
-                    if line[column] != next_line[column] {
-                        changes.push(Diff::Char(DiffChar {
-                            line: line_number,
-                            column,
-                            before: line[column],
-                            after: next_line[column],
-                        }));
+                } else {
+                    for column in 0..line.len() {
+                        if line[column] != next_line[column] {
+                            changes.push(Diff::Char(DiffChar {
+                                line: line_number,
+                                column,
+                                before: line[column],
+                                after: next_line[column],
+                            }));
+                        }
                     }
                 }
             }
