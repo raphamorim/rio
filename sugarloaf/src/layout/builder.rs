@@ -653,13 +653,11 @@ where
     let mut synth = Synthesis::default();
     let mut key = ShaperCacheKey::new(state.level, state.span);
     loop {
-        let chars_from_cluster: Vec<u32> =
-            cluster.chars().into_iter().map(|c| c.ch as u32).collect();
+        let chars_from_cluster: Vec<char> =
+            cluster.chars().into_iter().map(|c| c.ch).collect();
         key.push_chars(&chars_from_cluster);
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            let coords = shaper.normalized_coords().to_owned();
-            let metrics = shaper.metrics();
             let cache_key = key.key();
             if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
                 render_data.push_run_from_cache(

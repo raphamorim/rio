@@ -25,7 +25,7 @@ use swash::text::cluster::{Boundary, ClusterInfo, SourceRange, UserData};
 use swash::{GlyphId, NormalizedCoord};
 
 pub struct ShaperCacheKey {
-    content: u32,
+    content: String,
     level: u8,
     span_data: SpanData,
 }
@@ -53,24 +53,6 @@ impl Hash for ShaperCacheKey {
         };
         self.span_data.font_features.hash(state);
         self.span_data.font_vars.hash(state);
-        if let Some(parent) = self.span_data.parent {
-            parent.hash(state);
-        }
-        if let Some(first_child) = self.span_data.first_child {
-            first_child.hash(state);
-        }
-        if let Some(last_child) = self.span_data.last_child {
-            last_child.hash(state);
-        }
-        if let Some(next) = self.span_data.next {
-            next.hash(state);
-        }
-        if let Some(background_color) = self.span_data.background_color {
-            (background_color[0].to_bits()).hash(state);
-            (background_color[1].to_bits()).hash(state);
-            (background_color[2].to_bits()).hash(state);
-            (background_color[3].to_bits()).hash(state);
-        }
         //  else {
         //     (0.0_f32.to_bits()).hash(state);
         //     (0.0_f32.to_bits()).hash(state);
@@ -86,23 +68,41 @@ impl Hash for ShaperCacheKey {
         (self.span_data.letter_spacing.to_bits()).hash(state);
         (self.span_data.word_spacing.to_bits()).hash(state);
         (self.span_data.line_spacing.to_bits()).hash(state);
+
+        if let Some(parent) = self.span_data.parent {
+            parent.hash(state);
+        }
+        if let Some(first_child) = self.span_data.first_child {
+            first_child.hash(state);
+        }
+        if let Some(last_child) = self.span_data.last_child {
+            last_child.hash(state);
+        }
+        if let Some(next) = self.span_data.next {
+            next.hash(state);
+        }
+
+        if let Some(background_color) = self.span_data.background_color {
+            (background_color[0].to_bits()).hash(state);
+            (background_color[1].to_bits()).hash(state);
+            (background_color[2].to_bits()).hash(state);
+            (background_color[3].to_bits()).hash(state);
+        }
     }
 }
 
 impl ShaperCacheKey {
     pub fn new(level: u8, span_data: &SpanData) -> Self {
         Self {
-            content: 0,
+            content: String::new(),
             level,
             span_data: *span_data,
         }
     }
 
     #[inline]
-    pub fn push_chars(&mut self, chars: &[u32]) {
-        for c in chars {
-            self.content += c;
-        }
+    pub fn push_chars(&mut self, chars: &[char]) {
+        self.content += &String::from_iter(chars);
     }
 
     #[inline]
@@ -217,7 +217,6 @@ impl RenderData {
         line: u32,
         cache_entry: &ShaperCacheEntry,
     ) {
-        // println!("veio do cache");
         let coords_start = self.data.coords.len() as u32;
         self.data
             .coords
@@ -237,6 +236,7 @@ impl RenderData {
                 }
             }
             let span = c.data;
+            println!("cached {:?} {:?}", span, last_span);
             if span as usize != last_span {
                 span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
@@ -385,7 +385,6 @@ impl RenderData {
         shaper: Shaper<'_>,
         shaper_cache: &mut ShaperCache,
     ) {
-        // println!("nao veio do cache");
         let coords_start = self.data.coords.len() as u32;
         let coords = shaper.normalized_coords().to_owned();
         self.data
@@ -416,6 +415,7 @@ impl RenderData {
                 }
             }
             let span = c.data;
+            println!("non-cached {:?} {:?}", span, last_span);
             if span as usize != last_span {
                 span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
