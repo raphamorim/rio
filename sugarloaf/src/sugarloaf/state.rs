@@ -341,15 +341,15 @@ impl SugarState {
                 should_clean_blocks = true;
                 should_update = true;
             }
-            SugarTreeDiff::ColumnsLengthIsDifferent(_) => {
-                should_update = true;
-            }
-            SugarTreeDiff::LineLengthIsDifferent(_) => {
+            SugarTreeDiff::LineQuantity(_) => {
                 should_update = true;
                 should_compute_dimensions = true;
             }
             SugarTreeDiff::Changes(_changes) => {
                 should_update = true;
+                // for i in changes {
+                //     println!("{:?}", i);
+                // }
             }
             _ => {
                 should_update = true;
