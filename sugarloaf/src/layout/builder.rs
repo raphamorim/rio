@@ -651,14 +651,25 @@ where
         .build();
 
     let mut synth = Synthesis::default();
-    let mut key = ShaperCacheKey::new(current_font_id, state.size as usize, state.level);
+    //     struct ShapeState<'a> {
+    //     state: &'a BuilderState,
+    //     features: &'a [Setting<u16>],
+    //     synth: Synthesis,
+    //     vars: &'a [Setting<f32>],
+    //     script: Script,
+    //     level: u8,
+    //     span_index: u32,
+    //     span: &'a SpanData,
+    //     font_id: Option<usize>,
+    //     size: f32,
+    // }
+    let mut key = ShaperCacheKey::new(state.level, state.span);
     loop {
-        let chars_from_cluster: Vec<char> =
-            cluster.chars().into_iter().map(|c| c.ch).collect();
+        let chars_from_cluster: Vec<u32> =
+            cluster.chars().into_iter().map(|c| c.ch as u32).collect();
         key.push_chars(&chars_from_cluster);
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            let start = std::time::Instant::now();
             let cache_key = key.key();
             if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
                 render_data.push_run_from_cache(
@@ -682,8 +693,8 @@ where
                     shaper_cache,
                 );
             }
-            let duration = start.elapsed();
-            println!("Time elapsed in push_run is: {:?}", duration);
+            // let duration = start.elapsed();
+            // println!("Time elapsed in push_run is: {:?}", duration);
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -699,18 +710,33 @@ where
 
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
-            let start = std::time::Instant::now();
-            render_data.push_run(
-                &state.state.spans,
-                &current_font_id,
-                state.size,
-                state.level,
-                current_line as u32,
-                shaper,
-                shaper_cache,
-            );
-            let duration = start.elapsed();
-            println!("Time elapsed in push_run is: {:?}", duration);
+            // let start = std::time::Instant::now();
+
+            let cache_key = key.key();
+            if let Some(cached_glyph_data) = shaper_cache.cache.get(&cache_key) {
+                render_data.push_run_from_cache(
+                    &state.state.spans,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    cached_glyph_data,
+                );
+            } else {
+                shaper_cache.mark_next(cache_key);
+                render_data.push_run(
+                    &state.state.spans,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    shaper_cache,
+                );
+            }
+            // let duration = start.elapsed();
+            // println!("Time elapsed in push_run is: {:?}", duration);
             state.font_id = next_font;
             state.synth = synth;
             return true;

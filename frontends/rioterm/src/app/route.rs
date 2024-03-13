@@ -1606,6 +1606,6 @@ impl Route {
         self.sugarloaf.render();
 
         let duration = start.elapsed();
-        println!("Time elapsed in render() is: {:?}", duration);
+        println!("Time elapsed in render() is: {:?} \n", duration);
     }
 }

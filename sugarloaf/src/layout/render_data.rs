@@ -18,41 +18,91 @@ use super::{builder_data::SpanData, SpanId};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
-use std::collections::HashMap;
+use lru::LruCache;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use swash::text::cluster::{Boundary, ClusterInfo, SourceRange, UserData};
 use swash::{GlyphId, NormalizedCoord};
 
 pub struct ShaperCacheKey {
-    content: String,
-    font_family: usize,
-    font_size: usize,
+    content: u32,
     level: u8,
+    span_data: SpanData,
 }
 
 impl Hash for ShaperCacheKey {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.font_size.hash(state);
         self.level.hash(state);
-        self.font_family.hash(state);
         self.content.hash(state);
+        self.span_data.id.hash(state);
+        self.span_data.font.hash(state);
+        // self.span_data.dir.hash(state);
+        self.span_data.dir_changed.hash(state);
+        let (strech, weight, style) = self.span_data.font_attrs;
+        strech.hash(state);
+        weight.hash(state);
+        match style {
+            swash::Style::Normal => {}
+            swash::Style::Italic => {
+                1.hash(state);
+            }
+            _ => {
+                2.hash(state);
+            }
+        };
+        self.span_data.font_features.hash(state);
+        self.span_data.font_vars.hash(state);
+        if let Some(parent) = self.span_data.parent {
+            parent.hash(state);
+        }
+        if let Some(first_child) = self.span_data.first_child {
+            first_child.hash(state);
+        }
+        if let Some(last_child) = self.span_data.last_child {
+            last_child.hash(state);
+        }
+        if let Some(next) = self.span_data.next {
+            next.hash(state);
+        }
+        if let Some(background_color) = self.span_data.background_color {
+            (background_color[0].to_bits()).hash(state);
+            (background_color[1].to_bits()).hash(state);
+            (background_color[2].to_bits()).hash(state);
+            (background_color[3].to_bits()).hash(state);
+        }
+        //  else {
+        //     (0.0_f32.to_bits()).hash(state);
+        //     (0.0_f32.to_bits()).hash(state);
+        //     (0.0_f32.to_bits()).hash(state);
+        //     (1.0_f32.to_bits()).hash(state);
+        // }
+        (self.span_data.color[0].to_bits()).hash(state);
+        (self.span_data.color[1].to_bits()).hash(state);
+        (self.span_data.color[2].to_bits()).hash(state);
+        (self.span_data.color[3].to_bits()).hash(state);
+        (self.span_data.font_size.to_bits()).hash(state);
+        (self.span_data.font_size.to_bits()).hash(state);
+        (self.span_data.letter_spacing.to_bits()).hash(state);
+        (self.span_data.word_spacing.to_bits()).hash(state);
+        (self.span_data.line_spacing.to_bits()).hash(state);
     }
 }
 
 impl ShaperCacheKey {
-    pub fn new(font_family: usize, font_size: usize, level: u8) -> Self {
+    pub fn new(level: u8, span_data: &SpanData) -> Self {
         Self {
-            content: String::from(""),
-            font_family,
-            font_size,
+            content: 0,
             level,
+            span_data: *span_data,
         }
     }
 
     #[inline]
-    pub fn push_chars(&mut self, chars: &[char]) {
-        self.content += &String::from_iter(chars);
+    pub fn push_chars(&mut self, chars: &[u32]) {
+        for c in chars {
+            self.content += c;
+        }
     }
 
     #[inline]
@@ -72,18 +122,21 @@ pub struct CacheableGlyphData {
 }
 
 pub struct ShaperCache {
-    pub cache: HashMap<u64, Vec<CacheableGlyphData>>,
+    pub cache: LruCache<u64, Vec<CacheableGlyphData>>,
     pub current_cache_key: Option<u64>,
+    pub cacheable: bool,
 }
 
 impl ShaperCache {
     pub fn new() -> Self {
         ShaperCache {
-            cache: HashMap::new(),
+            cache: LruCache::new(std::num::NonZeroUsize::new(4000).unwrap()),
             current_cache_key: None,
+            cacheable: true,
         }
     }
 
+    #[inline]
     pub fn mark_next(&mut self, cache_key: u64) {
         self.current_cache_key = Some(cache_key);
     }
@@ -93,9 +146,15 @@ impl ShaperCache {
         self.current_cache_key.is_some()
     }
 
-    pub fn compute_cache(&mut self, data: Vec<CacheableGlyphData>) {
-        if let Some(cache_key) = self.current_cache_key {
-            self.cache.insert(cache_key, data);
+    #[inline]
+    pub fn compute_cache(&mut self, content: Vec<CacheableGlyphData>) {
+        if self.cacheable {
+            if let Some(cache_key) = self.current_cache_key {
+                self.cache.put(cache_key, content);
+                self.current_cache_key = None;
+            }
+        } else {
+            self.cacheable = true;
             self.current_cache_key = None;
         }
     }
@@ -153,6 +212,7 @@ impl RenderData {
         shaper: Shaper<'_>,
         data_vec: &[CacheableGlyphData],
     ) {
+        // println!("veio do cache");
         let coords_start = self.data.coords.len() as u32;
         self.data
             .coords
@@ -275,7 +335,7 @@ impl RenderData {
             }
         }
         let duration = start.elapsed();
-        println!("Time elapsed in shape_with is: {:?}", duration);
+        println!("Time elapsed in cached shape_with is: {:?}", duration);
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
             return;
@@ -320,6 +380,7 @@ impl RenderData {
         shaper: Shaper<'_>,
         shaper_cache: &mut ShaperCache,
     ) {
+        // println!("nao veio do cache");
         let coords_start = self.data.coords.len() as u32;
         self.data
             .coords
@@ -384,6 +445,11 @@ impl RenderData {
                         strikeout_size: metrics.stroke_size,
                         advance,
                     };
+
+                    if span_data.cursor != SugarCursor::Disabled || span_data.underline {
+                        shaper_cache.cacheable = false;
+                    }
+
                     self.data.runs.push(run_data);
                     clusters_start = clusters_end;
                 }
@@ -457,7 +523,7 @@ impl RenderData {
         }
 
         let duration = start.elapsed();
-        println!("Time elapsed in shape_with is: {:?}", duration);
+        println!("Time elapsed in non-cached shape_with is: {:?}", duration);
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
             return;

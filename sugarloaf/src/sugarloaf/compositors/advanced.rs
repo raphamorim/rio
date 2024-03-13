@@ -66,13 +66,13 @@ impl Advanced {
         let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         lb.build_into(&mut self.render_data);
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in update_layout() build_into is: {:?}",
-        //     duration
-        // );
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in update_layout() build_into is: {:?}",
+            duration
+        );
     }
 
     #[inline]
