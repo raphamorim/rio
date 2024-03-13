@@ -9,7 +9,7 @@ use crate::{Sugar, SugarBlock, SugarLine};
 // use smallvec::SmallVec;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
-pub struct Diff {
+pub struct DiffChar {
     pub line: usize,
     pub column: usize,
     pub before: Sugar,
@@ -18,13 +18,26 @@ pub struct Diff {
     // content: Vec<char>,
 }
 
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct DiffLine {
+    pub line: usize,
+    pub before: usize,
+    pub after: usize,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Diff {
+    Char(DiffChar),
+    // (previous size, next size)
+    Line(DiffLine),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
     Equal,
     CurrentTreeWasEmpty,
     BlocksAreDifferent,
-    LineLengthIsDifferent(i32),
-    ColumnsLengthIsDifferent(i32),
+    LineQuantity(i32),
     WidthIsDifferent,
     HeightIsDifferent,
     ScaleIsDifferent,
@@ -111,19 +124,22 @@ impl SugarTree {
                 // }
 
                 if line.len() != next_line.len() {
-                    return SugarTreeDiff::ColumnsLengthIsDifferent(
-                        line.len() as i32 - next_line.len() as i32,
-                    );
+                    changes.push(Diff::Line(DiffLine {
+                        line: line_number,
+                        before: line.len(),
+                        after: next_line.len(),
+                    }));
+                    continue;
                 }
 
                 for column in 0..line.len() {
                     if line[column] != next_line[column] {
-                        changes.push(Diff {
+                        changes.push(Diff::Char(DiffChar {
                             line: line_number,
                             column,
                             before: line[column],
                             after: next_line[column],
-                        });
+                        }));
                     }
                 }
             }
@@ -132,9 +148,7 @@ impl SugarTree {
                 return SugarTreeDiff::Changes(changes);
             }
         } else {
-            return SugarTreeDiff::LineLengthIsDifferent(
-                current_len as i32 - next_len as i32,
-            );
+            return SugarTreeDiff::LineQuantity(current_len as i32 - next_len as i32);
         }
 
         SugarTreeDiff::Equal
@@ -249,14 +263,14 @@ pub mod test {
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::LineLengthIsDifferent(1)
+            SugarTreeDiff::LineQuantity(1)
         );
 
         sugartree_a.insert(1, SugarLine::default());
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::LineLengthIsDifferent(2)
+            SugarTreeDiff::LineQuantity(2)
         );
 
         sugartree_b.insert(0, SugarLine::default());
@@ -265,7 +279,7 @@ pub mod test {
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::LineLengthIsDifferent(-1)
+            SugarTreeDiff::LineQuantity(-1)
         );
     }
 
@@ -293,7 +307,11 @@ pub mod test {
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::ColumnsLengthIsDifferent(-1)
+            SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
+                line: 0,
+                before: 1,
+                after: 2,
+            })])
         );
 
         sugartree_b.line_mut(0).insert(&Sugar {
@@ -303,25 +321,53 @@ pub mod test {
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::ColumnsLengthIsDifferent(-2)
+            SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
+                line: 0,
+                before: 1,
+                after: 3,
+            })])
         );
 
-        sugartree_a.line_mut(0).insert(&Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'z',
             ..Sugar::default()
         });
-        sugartree_a.line_mut(0).insert(&Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 't',
             ..Sugar::default()
         });
-        sugartree_a.line_mut(0).insert(&Sugar {
+        sugartree_b.line_mut(0).insert(&Sugar {
             content: 'o',
             ..Sugar::default()
         });
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
-            SugarTreeDiff::ColumnsLengthIsDifferent(1)
+            SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
+                line: 0,
+                before: 1,
+                after: 6,
+            })])
+        );
+
+        sugartree_a.line_mut(0).insert(&Sugar {
+            content: 'z',
+            ..Sugar::default()
+        });
+
+        assert_eq!(
+            sugartree_a.calculate_diff(&sugartree_b),
+            SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
+                line: 0,
+                before: 2,
+                after: 6,
+            })])
+        );
+
+        sugartree_a.insert(1, SugarLine::default());
+        assert_eq!(
+            sugartree_a.calculate_diff(&sugartree_b),
+            SugarTreeDiff::LineQuantity(1)
         );
     }
 
@@ -342,7 +388,7 @@ pub mod test {
             ..Sugar::default()
         });
 
-        let mut changes = vec![Diff {
+        let mut changes = vec![Diff::Char(DiffChar {
             line: 0,
             column: 0,
             before: Sugar {
@@ -373,7 +419,7 @@ pub mod test {
                 cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
-        }];
+        })];
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
@@ -390,7 +436,7 @@ pub mod test {
             ..Sugar::default()
         });
 
-        changes.push(Diff {
+        changes.push(Diff::Char(DiffChar {
             line: 0,
             column: 1,
             before: Sugar {
@@ -421,7 +467,7 @@ pub mod test {
                 cursor: crate::SugarCursor::Disabled,
                 media: None,
             },
-        });
+        }));
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b),
