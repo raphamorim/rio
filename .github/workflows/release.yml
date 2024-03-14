@@ -78,9 +78,6 @@ jobs:
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.4
       - run: wix --version
-      - name: Install Wix
-        run: choco install wixtoolset --version=4.0.4
-      - run: wix --version
       - run: wix extension add WixToolset.UI.wixext/4.0.4 WixToolset.Util.wixext/4.0.4
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release
