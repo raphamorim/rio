@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
@@ -2342,7 +2342,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "base64",
  "bitflags 2.4.2",
@@ -2369,7 +2369,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "ahash",
  "bitflags 2.4.2",
@@ -2672,7 +2672,7 @@ checksum = "5ee073c9e4cd00e28217186dbe12796d692868f432bf2e97ee73bed0c56dfa01"
 
 [[package]]
 name = "sugarloaf"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -2733,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.0.35"
+version = "0.0.36"
 dependencies = [
  "corcovado",
  "dirs",

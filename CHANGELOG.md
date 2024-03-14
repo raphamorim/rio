@@ -6,6 +6,7 @@
 
 ## 0.0.36
 
+- fixes for x11 freeze issue.
 - update winit to 0.29.15.
 
 ## 0.0.35
