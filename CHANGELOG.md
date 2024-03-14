@@ -8,6 +8,7 @@
 
 - fixes for x11 freeze issue.
 - update winit to 0.29.15.
+- update wix (toolset that builds Windows Installer) from 4.0.1 to 4.0.4.
 
 ## 0.0.35
 
