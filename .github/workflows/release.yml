@@ -13,7 +13,7 @@ env:
 
 jobs:
   release-macos:
-    runs-on: macos-11.0
+    runs-on: macos-14
     permissions:
       contents: write
       discussions: write
@@ -78,7 +78,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release
       - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.1
+        run: dotnet tool install --global wix --version 4.0.4
       - name: Crate msi installer
         run: |
           wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
