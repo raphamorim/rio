@@ -75,13 +75,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo build --release
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.4
+      - run: wix extension add WixToolset.UI.wixext/4.0.4 WixToolset.Util.wixext/4.0.4
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo build --release
       - name: Crate msi installer
         run: |
-          wix extension add WixToolset.UI.wixext WixToolset.Util.wixext
           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
           -out "./Rio-installer.msi" "misc/windows/rio.wxs"
       - run: cp ./target/release/rio.exe ./Rio-portable.exe
