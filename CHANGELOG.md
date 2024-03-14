@@ -26,6 +26,11 @@
 - Sixel graphics initial support.
 - iTerm2 image protocol.
 
+## 0.0.36
+
+- fixes for x11 freeze issue.
+- update winit to 0.29.15.
+
 ## 0.0.35
 
 - Bump wayland dependencies: `wayland-backend`, `wayland-client`, `wayland-cursor` and `wayland-scanner`.
