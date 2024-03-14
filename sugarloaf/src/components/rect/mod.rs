@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
-const MAX_INSTANCES: usize = 10_000;
+const MAX_INSTANCES: usize = 5_000;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
