@@ -63,7 +63,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 10_000;
+        let supported_vertex_buffer = 1_000;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -304,8 +304,8 @@ impl RichTextBrush {
             &mut self.comp,
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
-            // To confirm: should actually * 1.5?
-            state.current.layout.style.screen_position.1 * 2.0,
+            // TODO: Fix position
+            state.current.layout.style.screen_position.1,
             state.compositors.advanced.font_library(),
             state.current.layout.dimensions,
         );
@@ -375,23 +375,6 @@ impl RichTextBrush {
 
         let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
         if !vertices_bytes.is_empty() {
-            // self.vertices_buffer =
-            // let vertices_buffer =
-            //     ctx.device
-            //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            //             label: Some("sugarloaf::rich_text::Pipeline vertices"),
-            //             contents: vertices_bytes,
-            //             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            //             // usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_SRC,
-            //         });
-
-            // encoder.copy_buffer_to_buffer(
-            //     &vertices_buffer,
-            //     0,
-            //     &self.vertex_buffer,
-            //     0,
-            //     mem::size_of::<Vertex>() as u64 * vertices.len() as u64,
-            // );
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
         }
 
@@ -729,6 +712,7 @@ fn draw_layout(
             }
             let color = run.color();
 
+            let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
                 font: font_library[*font].as_ref(),
                 font_coords: run.normalized_coords(),
@@ -738,7 +722,7 @@ fn draw_layout(
                 background_color: run.background_color(),
                 baseline: py,
                 topline: py - line.ascent(),
-                line_height: line.ascent() + line.descent(),
+                line_height,
                 advance: px - run_x,
                 underline: if run.underline() {
                     Some(UnderlineStyle {
