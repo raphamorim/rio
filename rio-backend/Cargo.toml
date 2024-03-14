@@ -25,7 +25,7 @@ bytemuck = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-copypasta = { version = "0.10.0", default-features = false }
+copypasta = { version = "0.10.1", default-features = false }
 dirs = "5.0.1"
 image = { workspace = true }
 libc = { workspace = true }
