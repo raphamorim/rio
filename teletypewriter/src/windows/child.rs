@@ -1,11 +1,12 @@
 use corcovado::channel::{channel, Receiver, Sender};
+use std::num::NonZeroU32;
 use std::ffi::c_void;
 use std::io::Error;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
-    RegisterWaitForSingleObject, UnregisterWait, INFINITE, WT_EXECUTEINWAITTHREAD,
+    GetProcessId, RegisterWaitForSingleObject, UnregisterWait, INFINITE, WT_EXECUTEINWAITTHREAD,
     WT_EXECUTEONLYONCE,
 };
 
@@ -24,6 +25,8 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
 pub struct ChildExitWatcher {
     wait_handle: AtomicPtr<c_void>,
     event_rx: Receiver<ChildEvent>,
+    child_handle: HANDLE,
+    pid: Option<NonZeroU32>,
 }
 
 impl ChildExitWatcher {
@@ -47,15 +50,26 @@ impl ChildExitWatcher {
         if success == 0 {
             Err(Error::last_os_error())
         } else {
+            let pid = unsafe { NonZeroU32::new(GetProcessId(child_handle)) };
             Ok(ChildExitWatcher {
                 wait_handle: AtomicPtr::from(wait_handle as *mut c_void),
                 event_rx,
+                child_handle,
+                pid,
             })
         }
     }
 
     pub fn event_rx(&self) -> &Receiver<ChildEvent> {
         &self.event_rx
+    }
+
+    pub fn raw_handle(&self) -> HANDLE {
+        self.child_handle
+    }
+
+    pub fn pid(&self) -> Option<NonZeroU32> {
+        self.pid
     }
 }
 
