@@ -61,6 +61,10 @@ impl Pty {
             child_watcher,
         }
     }
+
+    pub fn child_watcher(&self) -> &ChildExitWatcher {
+        &self.child_watcher
+    }
 }
 
 impl ProcessReadWrite for Pty {
