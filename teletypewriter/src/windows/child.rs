@@ -1,13 +1,13 @@
 use corcovado::channel::{channel, Receiver, Sender};
-use std::num::NonZeroU32;
 use std::ffi::c_void;
 use std::io::Error;
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
-    GetProcessId, RegisterWaitForSingleObject, UnregisterWait, INFINITE, WT_EXECUTEINWAITTHREAD,
-    WT_EXECUTEONLYONCE,
+    GetProcessId, RegisterWaitForSingleObject, UnregisterWait, INFINITE,
+    WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE,
 };
 
 use crate::ChildEvent;
