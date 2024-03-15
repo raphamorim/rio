@@ -1,16 +1,14 @@
 # Changelog
 
-## Rio beta (0.1.0 - Unreleased)
-
-- Migration from Winit to WA.
-	- MacOS
-	- ⏳ Linux Wayland
-	- ⏳ Linux x11
-	- ⏳ Windows
-
 ## Unreleased
 
+- Migration from Winit to WA.
+	- Apple MacOS
+	- ⏳ Linux Wayland
+	- ⏳ Linux x11
+	- ⏳ Microsoft Windows
 - Major rewrite on sugarloaf.
+	- New rendering architecture.
 	- Sugarloaf now uses same render pass for each render.
 	- Ignore equal renderers.
 	- Compute layout updates only if layout is different.
