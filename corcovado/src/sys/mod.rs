@@ -9,9 +9,7 @@ pub use self::unix::READY_ALL;
 pub mod unix;
 
 #[cfg(windows)]
-pub use self::windows::{
-    Awakener, Binding, Events, Overlapped, Selector, TcpListener, TcpStream, UdpSocket,
-};
+pub use self::windows::{Awakener, Binding, Events, Overlapped, Selector};
 
 #[cfg(windows)]
 mod windows;
