@@ -25,13 +25,13 @@ impl PartialEq for Content {
 }
 
 impl Content {
+    #[inline]
     pub fn builder() -> ContentBuilder {
         ContentBuilder::default()
     }
 
+    #[inline]
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
-        // println!("{:?}", self.roots);
-        // for root in 0..self.line {
         for root in &self.roots {
             self.layout_span(*root, lcx);
         }
@@ -50,6 +50,7 @@ impl Content {
         s
     }
 
+    #[inline]
     pub fn insert_str(&mut self, offset: usize, text: &str) -> Option<usize> {
         if self.text.is_char_boundary(offset) {
             self.text.insert_str(offset, text);
@@ -65,6 +66,7 @@ impl Content {
         None
     }
 
+    #[inline]
     pub fn insert(&mut self, offset: usize, ch: char) -> Option<usize> {
         if self.text.is_char_boundary(offset) {
             self.text.insert(offset, ch);
@@ -116,6 +118,7 @@ impl Content {
         None
     }
 
+    #[inline]
     fn layout_span(&self, span: usize, lcx: &mut ParagraphBuilder) {
         let span = &self.spans[span];
         lcx.push_span(&span.properties);

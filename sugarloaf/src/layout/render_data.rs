@@ -23,7 +23,7 @@ use swash::text::cluster::{Boundary, ClusterInfo};
 use swash::{GlyphId, NormalizedCoord};
 
 /// Collection of text, organized into lines, runs and clusters.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub data: LayoutData,
     pub line_data: LineLayoutData,
@@ -40,14 +40,66 @@ impl RenderData {
         Self::default()
     }
 
+// #[derive(Clone, Debug, Default)]
+// pub struct LayoutData {
+//     /// Normalized variation coordinates.
+//     pub coords: Vec<i16>,
+//     /// Simple glyphs.
+//     pub glyphs: Vec<GlyphData>,
+//     /// Detailed glyphs.
+//     pub detailed_glyphs: Vec<Glyph>,
+//     /// Simple clusters.
+//     pub clusters: Vec<ClusterData>,
+//     /// Detailed clusters.
+//     pub detailed_clusters: Vec<DetailedClusterData>,
+//     /// Glyph runs.
+//     pub runs: Vec<RunData>,
+//     /// Last shaped span.
+//     pub last_span: usize,
+// }
+
+    // #[inline]
+    // pub fn overwrite_lines(old: &RenderData, new: &mut RenderData, lines: &[usize]) -> Self {
+    //     let mut merged: Self = old.to_owned();
+
+    //     merged.data.clusters.append(&mut new.data.clusters);
+    //     merged.data.glyphs.append(&mut new.data.glyphs);
+    //     merged.data.detailed_glyphs.append(&mut new.data.detailed_glyphs);
+    //     merged.data.coords.append(&mut new.data.coords);
+    //     merged.data.runs = vec![];
+
+    //     let mut new_runs = vec![];
+
+    //     for old_run in &old.data.runs {
+    //         if lines.contains(&(old_run.line as usize)) {
+    //             // for new_run in &new.data.runs {
+    //             //     if new_run.line == old_run.line {
+    //             //         new_runs.push(*new_run)
+    //             //     }
+    //             // }
+    //         } else {
+    //             new_runs.push(*old_run);
+    //         }
+    //     }
+
+
+    //     merged.data.runs = new_runs;
+    //     println!("{:?}", merged.data.runs.len());
+
+    //     merged
+    //     // for 
+    // }
+
     /// Clears the current line state and returns a line breaker
     /// for the paragraph.
+    #[inline]
     pub fn break_lines(&mut self) -> BreakLines {
         self.line_data.clear();
         BreakLines::new(&mut self.data, &mut self.line_data)
     }
 
     /// Returns an iterator over the lines in the paragraph.
+    #[inline]
     pub fn lines(&self) -> Lines {
         Lines {
             layout: &self.data,
@@ -57,13 +109,67 @@ impl RenderData {
     }
 
     /// Clears the paragraph.
+    #[inline]
     pub fn clear(&mut self) {
         self.data.clear();
         self.line_data.clear();
     }
 }
 
+// #[derive(Clone, Debug, Default)]
+// pub struct LayoutData {
+//     /// Normalized variation coordinates.
+//     pub coords: Vec<i16>,
+//     /// Simple glyphs.
+//     pub glyphs: Vec<GlyphData>,
+//     /// Detailed glyphs.
+//     pub detailed_glyphs: Vec<Glyph>,
+//     /// Simple clusters.
+//     pub clusters: Vec<ClusterData>,
+//     /// Detailed clusters.
+//     pub detailed_clusters: Vec<DetailedClusterData>,
+//     /// Glyph runs.
+//     pub runs: Vec<RunData>,
+//     /// Last shaped span.
+//     pub last_span: usize,
+// }
+
+pub struct RunCacheEntry {
+    /// Normalized variation coordinates.
+    pub coords: Vec<i16>,
+    /// Simple glyphs.
+    pub glyphs: Vec<ShapedGlyph>,
+    /// Glyph runs.
+    pub runs: Vec<RunData>,
+    /// Last shaped span.
+    pub last_span: usize,
+    pub clusters: Vec<ClusterData>,
+}
+
 impl RenderData {
+    pub(super) fn push_run_from_cached_line(
+        &mut self,
+        cached_entry: &RunCacheEntry,
+    ) {
+        self.data
+            .coords
+            .extend_from_slice(&cached_entry.coords);
+
+        for run in &cached_entry.runs {
+            self.data.runs.push(*run);
+        }
+
+        for glyph in &cached_entry.glyphs {
+            self.push_glyph(glyph);
+        }
+
+        for cluster in &cached_entry.clusters {
+            self.data.clusters.push(*cluster);
+        }
+
+        self.data.last_span = cached_entry.last_span;
+    }
+
     pub(super) fn push_run(
         &mut self,
         spans: &[SpanData],
@@ -72,11 +178,15 @@ impl RenderData {
         level: u8,
         line: u32,
         shaper: Shaper<'_>,
-    ) {
+    ) -> RunCacheEntry {
         let coords_start = self.data.coords.len() as u32;
+        let coords = shaper.normalized_coords().to_owned();
         self.data
             .coords
-            .extend_from_slice(shaper.normalized_coords());
+            .extend_from_slice(&coords);
+        let mut runs: Vec<RunData> = vec![];
+        let mut clusters: Vec<ClusterData> = vec![];
+        let mut shared_glyphs: Vec<ShapedGlyph> = vec![];
         let coords_end = self.data.coords.len() as u32;
         let mut clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
@@ -95,7 +205,7 @@ impl RenderData {
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
-                    self.data.runs.push(RunData {
+                    let run_data = RunData {
                         span: SpanId(last_span),
                         line,
                         font: *font,
@@ -124,7 +234,9 @@ impl RenderData {
                         strikeout_offset: metrics.strikeout_offset,
                         strikeout_size: metrics.stroke_size,
                         advance,
-                    });
+                    };
+                    self.data.runs.push(run_data);
+                    runs.push(run_data);
                     clusters_start = clusters_end;
                 }
                 last_span = span as usize;
@@ -133,6 +245,7 @@ impl RenderData {
             let mut cluster_advance = 0.;
             for glyph in c.glyphs {
                 cluster_advance += glyph.advance;
+                shared_glyphs.push(*glyph);
                 self.push_glyph(glyph);
             }
             advance += cluster_advance;
@@ -152,13 +265,15 @@ impl RenderData {
                     glyphs: (glyphs_start, glyphs_end),
                     advance: component_advance,
                 });
-                self.data.clusters.push(ClusterData {
+                let cluster = ClusterData {
                     info: c.info,
                     flags: base_flags | CLUSTER_DETAILED,
                     len,
                     offset: c.source.start,
                     glyphs: detail_index,
-                });
+                };
+                self.data.clusters.push(cluster);
+                clusters.push(cluster);
             } else {
                 let flags = if glyphs_start == glyphs_end {
                     glyphs_start = c.data;
@@ -166,24 +281,28 @@ impl RenderData {
                 } else {
                     base_flags
                 };
-                self.data.clusters.push(ClusterData {
+                let cluster = ClusterData {
                     info: c.info,
                     flags,
                     len,
                     offset: c.source.start,
                     glyphs: glyphs_start,
-                });
+                };
+                self.data.clusters.push(cluster);
+                clusters.push(cluster);
             }
             if base_flags != 0 {
                 // Emit continuations
                 for component in &c.components[1..] {
-                    self.data.clusters.push(ClusterData {
+                    let cluster = ClusterData {
                         info: Default::default(),
                         flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
                         len: (component.end - component.start) as u8,
                         offset: component.start,
                         glyphs: component_advance.to_bits(),
-                    });
+                    };
+                    self.data.clusters.push(cluster);
+                    clusters.push(cluster);
                 }
 
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -193,7 +312,13 @@ impl RenderData {
         });
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
-            return;
+            return RunCacheEntry {
+                runs,
+                coords: coords.to_vec(),
+                last_span,
+                glyphs: shared_glyphs,
+                clusters,
+            };
         }
         self.data.last_span = last_span;
         self.data.runs.push(RunData {
@@ -222,6 +347,14 @@ impl RenderData {
             strikeout_size: metrics.stroke_size,
             advance,
         });
+
+        RunCacheEntry {
+            clusters,
+            runs,
+            coords: coords.to_vec(),
+            last_span,
+            glyphs: shared_glyphs,
+        }
     }
 
     fn push_glyph(&mut self, glyph: &ShapedGlyph) -> u32 {
@@ -429,7 +562,7 @@ impl<'a> Iterator for Runs<'a> {
 }
 
 /// Shaped glyph in a paragraph.
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct Glyph {
     /// Glyph identifier.
     pub id: GlyphId,

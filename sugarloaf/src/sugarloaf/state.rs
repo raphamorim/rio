@@ -390,9 +390,6 @@ impl SugarState {
                     println!("lines_to_update {:?}", lines_to_update);
                     self.compositors
                         .advanced
-                        .update_data_with_lines(&lines_to_update);
-                    self.compositors
-                        .advanced
                         .update_layout_with_lines(&self.current, &lines_to_update);
                 }
             }
