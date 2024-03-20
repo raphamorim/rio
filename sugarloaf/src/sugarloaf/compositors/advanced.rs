@@ -56,19 +56,20 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_data_with_lines(&mut self, lines: &[usize]) {}
-
-    #[inline]
     pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
-        let mut lb = self.layout_context.builder(
+        // let old_render_data = &self.render_data;
+        
+        // Then process only lines that are different
+        let mut lb = self.layout_context.last_builder(
             Direction::LeftToRight,
-            None,
             tree.layout.dimensions.scale,
         );
         let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
-        lb.build_into(&mut self.render_data);
+        lb.build_into_specific_lines(&mut self.render_data, lines);
+
+        // self.render_data = RenderData::overwrite_lines(old_render_data, &mut new_render_data, lines);
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();

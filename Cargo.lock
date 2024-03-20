@@ -2247,9 +2247,9 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.15.6"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ea23eedb4d938031b6d4343222444608727a6aa68ec355e13588d9947ffe92"
+checksum = "81c524658d3b77930a391f559756d91dbe829ab6cf4687083f615d395df99722"
 dependencies = [
  "font-types",
 ]
@@ -2710,9 +2710,9 @@ checksum = "f83ba502a3265efb76efb89b0a2f7782ad6f2675015d4ce37e4b547dda42b499"
 
 [[package]]
 name = "swash"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d06ff4664af8923625604261c645f5c4cc610cc83c84bec74b50d76237089de7"
+checksum = "9af636fb90d39858650cae1088a37e2862dab4e874a0bb49d6dfb5b2dacf0e24"
 dependencies = [
  "read-fonts",
  "yazi",

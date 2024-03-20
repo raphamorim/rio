@@ -23,7 +23,7 @@ pub const CLUSTER_LIGATURE: u8 = 16;
 /// Cluster is an explicit line break.
 pub const CLUSTER_NEWLINE: u8 = 32;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct ClusterData {
     pub info: ClusterInfo,
     pub flags: u8,
@@ -121,7 +121,7 @@ impl ClusterData {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct DetailedClusterData {
     /// Range in `glyphs`
     pub glyphs: (u32, u32),
@@ -131,7 +131,7 @@ pub struct DetailedClusterData {
 
 pub const GLYPH_DETAILED: u32 = 0x80000000;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct GlyphData {
     pub data: u32,
     pub span: SpanId,
@@ -195,7 +195,7 @@ pub struct RunData {
     pub cursor: SugarCursor,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct LayoutData {
     /// Normalized variation coordinates.
     pub coords: Vec<i16>,
@@ -246,7 +246,7 @@ impl LineData {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct LineLayoutData {
     pub lines: Vec<LineData>,
     pub runs: Vec<RunData>,
@@ -254,12 +254,14 @@ pub struct LineLayoutData {
 }
 
 impl LineLayoutData {
+    #[inline]
     pub fn clear(&mut self) {
         self.lines.clear();
         self.runs.clear();
         self.clusters.clear();
     }
 
+    #[inline]
     pub fn run_index_for_cluster(&self, cluster: u32) -> Option<usize> {
         for (i, run) in self.runs.iter().enumerate() {
             if cluster >= run.clusters.0 && cluster < run.clusters.1 {
@@ -269,10 +271,12 @@ impl LineLayoutData {
         self.runs.len().checked_sub(1)
     }
 
+    #[inline]
     pub fn run_data_for_cluster(&self, cluster: u32) -> Option<&RunData> {
         self.runs.get(self.run_index_for_cluster(cluster)?)
     }
 
+    #[inline]
     pub fn line_index_for_cluster(&self, cluster: u32) -> usize {
         for (i, line) in self.lines.iter().enumerate() {
             if cluster >= line.clusters.0 && cluster < line.clusters.1 {
@@ -282,6 +286,7 @@ impl LineLayoutData {
         self.lines.len().saturating_sub(1)
     }
 
+    #[inline]
     pub fn logical_to_visual(&self, cluster: u32) -> u32 {
         // FIXME: linear search
         for (i, x) in self.clusters.iter().enumerate() {

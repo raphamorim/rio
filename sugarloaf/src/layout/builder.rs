@@ -13,12 +13,33 @@ use super::builder_data::*;
 use super::span_style::*;
 use super::{SpanId, MAX_ID};
 use crate::font::{FontContext, FontLibrary};
-use crate::layout::render_data::RenderData;
+use crate::layout::render_data::{RenderData, RunCacheEntry};
 use core::borrow::Borrow;
+use std::collections::HashMap;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
 use swash::{Setting, Synthesis};
+
+#[derive(Default)]
+pub struct RunCache {
+    inner: HashMap<usize, Vec<RunCacheEntry>>
+}
+
+impl RunCache {
+    fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    #[inline]
+    fn insert(&mut self, line_number: usize, data: RunCacheEntry) {
+        if let Some(line) = self.inner.get_mut(&line_number) {
+            line.push(data);
+        } else {
+            self.inner.insert(line_number, vec![data]);
+        }
+    }
+}
 
 /// Context for paragraph layout.
 pub struct LayoutContext {
@@ -27,6 +48,7 @@ pub struct LayoutContext {
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
+    cache: RunCache, 
 }
 
 impl LayoutContext {
@@ -38,6 +60,7 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
+            cache: RunCache::default(),
         }
     }
 
@@ -48,12 +71,14 @@ impl LayoutContext {
 
     /// Creates a new builder for computing a paragraph layout with the
     /// specified direction, language and scaling factor.
+    #[inline]
     pub fn builder(
         &mut self,
         direction: Direction,
         language: Option<Language>,
         scale: f32,
     ) -> ParagraphBuilder {
+        self.cache.clear();
         self.state.clear();
         self.state.begin(direction, language, scale);
         self.state.scale = scale;
@@ -68,6 +93,31 @@ impl LayoutContext {
             dir_depth: 0,
             s: &mut self.state,
             last_offset: 0,
+            cache: &mut self.cache,
+        }
+    }
+
+    #[inline]
+    pub fn last_builder(
+        &mut self,
+        direction: Direction,
+        scale: f32,
+    ) -> ParagraphBuilder {
+        self.state.clear();
+        self.state.begin(direction, None, scale);
+        self.state.scale = scale;
+        ParagraphBuilder {
+            fcx: &mut self.fcx,
+            bidi: &mut self.bidi,
+            needs_bidi: false,
+            dir: direction,
+            fonts: &self.fonts,
+            scale,
+            scx: &mut self.scx,
+            dir_depth: 0,
+            s: &mut self.state,
+            last_offset: 0,
+            cache: &mut self.cache
         }
     }
 }
@@ -84,6 +134,7 @@ pub struct ParagraphBuilder<'a> {
     dir_depth: u32,
     s: &'a mut BuilderState,
     last_offset: u32,
+    cache: &'a mut RunCache,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -291,7 +342,14 @@ impl<'a> ParagraphBuilder<'a> {
 
     /// Consumes the builder and fills the specified paragraph with the result.
     pub fn build_into(mut self, render_data: &mut RenderData) {
-        self.resolve(render_data);
+        self.resolve(render_data, None);
+        render_data.finish();
+        // self.fcx.reset_group_state();
+    }
+
+    /// Consumes the builder and fills the specified paragraph with the result.
+    pub fn build_into_specific_lines(mut self, render_data: &mut RenderData, lines: &[usize]) {
+        self.resolve(render_data, Some(lines));
         render_data.finish();
         // self.fcx.reset_group_state();
     }
@@ -305,7 +363,19 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    fn resolve(&mut self, render_data: &mut RenderData) {
+    fn process_from_cache(&mut self, render_data: &mut RenderData, line_number: usize) -> bool {
+        if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
+            for data in cached_line_data {
+                render_data.push_run_from_cached_line(data);
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
+    fn resolve(&mut self, render_data: &mut RenderData, lines_to_render: Option<&[usize]>) {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
@@ -317,8 +387,20 @@ impl<'a> ParagraphBuilder<'a> {
             self.push_char(PDI);
         }
 
-        // for (line_number, line) in self.s.lines.iter_mut().enumerate() {
+        let lines_to_render = lines_to_render.unwrap_or_default();
+        let render_specific_lines = !lines_to_render.is_empty();
+
         for line_number in 0..self.s.lines.len() {
+            // In case should render only requested lines
+            // and the line number isn't part of the requested then process from cache
+            if render_specific_lines && !lines_to_render.contains(&line_number) {
+                if self.process_from_cache(render_data, line_number) {
+                    continue;
+                }
+            } else {
+                self.cache.inner.remove(&line_number);
+            }
+
             let line = &mut self.s.lines[line_number];
             let mut analysis = analyze(line.text.content.iter());
             for (props, boundary) in analysis.by_ref() {
@@ -461,6 +543,7 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 render_data,
                 line_number,
+                &mut self.cache,
             );
         }
         render_data.apply_spacing(&self.s.spans);
@@ -509,6 +592,7 @@ fn shape_item(
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
     current_line: usize,
+    cache: &mut RunCache,
 ) -> Option<()> {
     let dir = if item.level & 1 != 0 {
         shape::Direction::RightToLeft
@@ -532,8 +616,6 @@ fn shape_item(
         font_id: None,
         size: span.font_size,
     };
-    // fcx.select_group(shape_state.font_id);
-    // fcx.select_fallbacks(item.script, shape_state.span.lang.as_ref());
     if item.level & 1 != 0 {
         let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
@@ -557,7 +639,6 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
         while shape_clusters(
             fcx,
@@ -569,6 +650,7 @@ fn shape_item(
             dir,
             render_data,
             current_line,
+            cache,
         ) {}
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
@@ -591,7 +673,6 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        // fcx[shape_state.font_id].map_cluster(cluster, &mut shape_state.synth);
         shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
         while shape_clusters(
             fcx,
@@ -603,6 +684,7 @@ fn shape_item(
             dir,
             render_data,
             current_line,
+            cache,
         ) {}
     }
     Some(())
@@ -620,6 +702,7 @@ fn shape_clusters<I>(
     dir: shape::Direction,
     render_data: &mut RenderData,
     current_line: usize,
+    cache: &mut RunCache,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
@@ -644,8 +727,7 @@ where
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            // let start = std::time::Instant::now();
-            render_data.push_run(
+            let run_data = render_data.push_run(
                 &state.state.spans,
                 &current_font_id,
                 state.size,
@@ -653,8 +735,7 @@ where
                 current_line as u32,
                 shaper,
             );
-            // let duration = start.elapsed();
-            // println!("Time elapsed in push_run is: {:?}", duration);
+            cache.insert(current_line, run_data);
             return false;
         }
         let cluster_span = cluster.user_data();
@@ -671,7 +752,7 @@ where
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
-            render_data.push_run(
+            let run_data = render_data.push_run(
                 &state.state.spans,
                 &current_font_id,
                 state.size,
@@ -679,8 +760,7 @@ where
                 current_line as u32,
                 shaper,
             );
-            // let duration = start.elapsed();
-            // println!("Time elapsed in push_run is: {:?}", duration);
+            cache.insert(current_line, run_data);
             state.font_id = next_font;
             state.synth = synth;
             return true;

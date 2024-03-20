@@ -230,6 +230,7 @@ impl<'a> BreakLines<'a> {
 
     /// Breaks all remaining lines with the specified maximum advance. This
     /// consumes the line breaker.
+    #[inline]
     pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
         while self.break_next(max_advance, alignment).is_some() {}
         self.finish();

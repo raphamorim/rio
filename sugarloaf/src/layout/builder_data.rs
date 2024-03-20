@@ -169,6 +169,7 @@ impl BuilderState {
             size - 1
         }
     }
+    #[inline]
     pub fn clear(&mut self) {
         self.lines.clear();
         // self.text.clear();
@@ -182,6 +183,7 @@ impl BuilderState {
         self.vars.clear();
     }
 
+    #[inline]
     pub fn begin(&mut self, dir: Direction, lang: Option<Language>, scale: f32) {
         self.lines.push(BuilderLine::default());
         self.spans.push(SpanData {
@@ -351,6 +353,7 @@ impl BuilderState {
 
     /// Pops the most recent span from the stack. Returns true if
     /// the direction changed.
+    #[inline]
     pub fn pop(&mut self) -> Option<(SpanId, bool)> {
         if self.span_stack.len() > 1 {
             let id = self.span_stack.pop().unwrap();
