@@ -787,8 +787,11 @@ fn fetch_dimensions(
                 underline: None,
             };
 
-            sugarwidth = style.advance;
-            sugarheight = line_height;
+            if style.advance > 0. &&  line_height > 0. {
+                sugarwidth = style.advance;
+                sugarheight = line_height;
+            }
+
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 0.0,

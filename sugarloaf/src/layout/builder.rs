@@ -386,7 +386,7 @@ impl<'a> ParagraphBuilder<'a> {
         // in a newline.
 
         // self.s.span_stack.push(SpanId(self.s.spans.len() - 1));
-        // self.add_text(" ", FragmentStyle::default());
+        self.add_text(" ", FragmentStyle::default());
         // for _ in 0..self.dir_depth {
         //     const PDI: char = '\u{2069}';
         //     self.push_char(PDI, FragmentStyle::default());
