@@ -8,8 +8,8 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{Content, ContentBuilder, Direction, LayoutContext, RenderData};
-use crate::sugarloaf::{tree::SugarTree, SpanStyle};
+use crate::layout::{FragmentStyle, Content, ContentBuilder, Direction, LayoutContext, RenderData};
+use crate::sugarloaf::{tree::SugarTree};
 use crate::{SugarCursor, SugarDecoration};
 
 pub struct Advanced {
@@ -56,11 +56,9 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
-        // let old_render_data = &self.render_data;
-        
+    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {        
         // Then process only lines that are different
-        let mut lb = self.layout_context.last_builder(
+        let mut lb = self.layout_context.cached_builder(
             Direction::LeftToRight,
             tree.layout.dimensions.scale,
         );
@@ -69,7 +67,6 @@ impl Advanced {
         self.render_data.clear();
         lb.build_into_specific_lines(&mut self.render_data, lines);
 
-        // self.render_data = RenderData::overwrite_lines(old_render_data, &mut new_render_data, lines);
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
@@ -94,13 +91,14 @@ impl Advanced {
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = Content::builder();
-        content_builder.enter_span(&[
-            SpanStyle::FontId(0),
-            SpanStyle::Size(tree.layout.font_size),
-            // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        ]);
-        content_builder.add_char(' ');
-        content_builder.leave_span();
+        let mut style = FragmentStyle::default();
+        style.font_size = tree.layout.font_size;
+        // content_builder.enter_span(&[
+        //     SpanStyle::FontId(0),
+        //     SpanStyle::Size(tree.layout.font_size),
+        //     // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+        // ]);
+        content_builder.add_char(' ', style);
 
         let mut lb = self.layout_context.builder(
             Direction::LeftToRight,
@@ -112,10 +110,6 @@ impl Advanced {
         self.mocked_render_data.clear();
         lb.build_into(&mut self.mocked_render_data);
 
-        // self.mocked_render_data.break_lines().break_remaining(
-        //     tree.layout.width - tree.layout.style.screen_position.0,
-        //     Alignment::Start,
-        // );
         self.mocked_render_data
             .break_lines()
             .break_without_advance_or_alignment()
@@ -124,70 +118,39 @@ impl Advanced {
     #[inline]
     pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
         if line_number == 0 {
-            self.content_builder = Content::builder();
-            self.content_builder.enter_span(&[
-                SpanStyle::Size(tree.layout.font_size),
-                // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-            ]);
+            self.content_builder = Content::builder(); 
         }
 
         let line = &tree.lines[line_number];
 
-        let underline = &[
-            SpanStyle::Underline(true),
-            SpanStyle::UnderlineOffset(Some(-2.)),
-            SpanStyle::UnderlineSize(Some(1.)),
-        ];
-
-        // let strikethrough = &[SpanStyle::Strikethrough(true)];
-        let strikethrough = &[
-            SpanStyle::Underline(true),
-            SpanStyle::UnderlineOffset(Some(6.)),
-            SpanStyle::UnderlineSize(Some(2.)),
-        ];
-
         for i in 0..line.len() {
-            let mut span_counter = 0;
+            let mut style = FragmentStyle::default();
+            style.font_size = tree.layout.font_size;
+
             if line[i].style.is_bold_italic {
-                self.content_builder.enter_span(&[
-                    SpanStyle::Weight(Weight::BOLD),
-                    SpanStyle::Style(Style::Italic),
-                ]);
-                span_counter += 1;
+                style.font_attrs.1 = Weight::BOLD;
+                style.font_attrs.2 = Style::Italic;
             } else if line[i].style.is_bold {
-                self.content_builder
-                    .enter_span(&[SpanStyle::Weight(Weight::BOLD)]);
-                span_counter += 1;
+                style.font_attrs.1 = Weight::BOLD;
             } else if line[i].style.is_italic {
-                self.content_builder
-                    .enter_span(&[SpanStyle::Style(Style::Italic)]);
-                span_counter += 1;
+                style.font_attrs.2 = Style::Italic;
             }
 
             let mut has_underline_cursor = false;
             match line[i].cursor {
                 SugarCursor::Underline(cursor_color) => {
-                    let underline_cursor = &[
-                        SpanStyle::UnderlineColor(cursor_color),
-                        SpanStyle::Underline(true),
-                        SpanStyle::UnderlineOffset(Some(-1.)),
-                        SpanStyle::UnderlineSize(Some(2.)),
-                    ];
-                    self.content_builder.enter_span(underline_cursor);
-                    span_counter += 1;
+                    style.underline = true;
+                    style.underline_offset = Some(-1.);
+                    style.underline_color = Some(cursor_color);
+                    style.underline_size = Some(-1.);
+
                     has_underline_cursor = true;
                 }
                 SugarCursor::Block(cursor_color) => {
-                    self.content_builder.enter_span(&[SpanStyle::Cursor(
-                        SugarCursor::Block(cursor_color),
-                    )]);
-                    span_counter += 1;
+                    style.cursor = SugarCursor::Block(cursor_color);
                 }
                 SugarCursor::Caret(cursor_color) => {
-                    self.content_builder.enter_span(&[SpanStyle::Cursor(
-                        SugarCursor::Caret(cursor_color),
-                    )]);
-                    span_counter += 1;
+                    style.cursor = SugarCursor::Caret(cursor_color);
                 }
                 _ => {}
             }
@@ -195,199 +158,190 @@ impl Advanced {
             match &line[i].decoration {
                 SugarDecoration::Underline => {
                     if !has_underline_cursor {
-                        self.content_builder.enter_span(underline);
-                        span_counter += 1;
+                        style.underline = true;
+                        style.underline_offset = Some(-2.);
+                        style.underline_size = Some(1.);
                     }
                 }
                 SugarDecoration::Strikethrough => {
-                    self.content_builder.enter_span(strikethrough);
-                    span_counter += 1;
+                    style.underline = true;
+                    style.underline_offset = Some(6.);
+                    style.underline_size = Some(2.);
                 }
                 _ => {}
             }
 
-            self.content_builder.enter_span(&[
-                SpanStyle::Color(line[i].foreground_color),
-                SpanStyle::BackgroundColor(line[i].background_color),
-            ]);
+            style.color = line[i].foreground_color;
+            style.background_color = Some(line[i].background_color);
+
 
             if line[i].repeated > 0 {
                 let text = std::iter::repeat(line[i].content)
                     .take(line[i].repeated + 1)
                     .collect::<String>();
-                self.content_builder.add_text(&text);
+                self.content_builder.add_text(&text, style);
             } else {
-                self.content_builder.add_char(line[i].content);
-            }
-            self.content_builder.leave_span();
-
-            while span_counter > 0 {
-                self.content_builder.leave_span();
-                span_counter -= 1;
+                self.content_builder.add_char(line[i].content, style);
             }
         }
 
-        // if line is the last one skip break line
-        // if line_number < tree.lines.len() - 1 {
-        // self.content_builder.add_char('\n');
         self.content_builder.break_line();
-        // }
     }
 }
 
-#[allow(unused)]
-fn build_simple_content() -> Content {
-    use crate::layout::*;
-    let mut db = Content::builder();
+// #[allow(unused)]
+// fn build_simple_content() -> Content {
+//     use crate::layout::*;
+//     let mut db = Content::builder();
 
-    use SpanStyle as S;
+//     use SpanStyle as S;
 
-    db.enter_span(&[S::Size(14.)]);
-    db.add_text("Rio terminal -> is back\n");
-    db.add_text("Second paragraph\n");
-    db.leave_span();
-    db.build()
-}
+//     db.enter_span(&[S::Size(14.)]);
+//     db.add_text("Rio terminal -> is back\n");
+//     db.add_text("Second paragraph\n");
+//     db.leave_span();
+//     db.build()
+// }
 
-#[allow(unused)]
-fn build_complex_content() -> Content {
-    use crate::layout::*;
-    let mut db = Content::builder();
+// #[allow(unused)]
+// fn build_complex_content() -> Content {
+//     use crate::layout::*;
+//     let mut db = Content::builder();
 
-    use SpanStyle as S;
+//     use SpanStyle as S;
 
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
+//     let underline = &[
+//         S::Underline(true),
+//         S::UnderlineOffset(Some(-1.)),
+//         S::UnderlineSize(Some(1.)),
+//     ];
 
-    db.enter_span(&[
-        S::FontId(0),
-        S::Size(14.),
-        S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-    ]);
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.enter_span(&[S::Size(20.)]);
-    db.enter_span(&[S::Color([0.5, 0.5, 0.5, 1.0])]);
-    db.add_text("Rio is back");
-    db.leave_span();
-    db.leave_span();
-    db.enter_span(&[S::Size(40.), S::Color([0.5, 1.0, 0.5, 1.0])]);
-    db.add_text("Rio terminal\n");
-    db.leave_span();
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.2)]);
-    db.enter_span(&[S::FontId(0), S::Size(22.)]);
-    db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
-    db.leave_span();
-    db.enter_span(&[S::Weight(Weight::BOLD)]);
-    db.add_text("Typography");
-    db.leave_span();
-    db.add_text(" is the ");
-    db.enter_span(&[S::Style(Style::Italic)]);
-    db.add_text("art and technique");
-    db.leave_span();
-    db.add_text(" of arranging type to make ");
-    db.enter_span(underline);
-    db.add_text("written language");
-    db.leave_span();
-    db.add_text(" ");
-    db.enter_span(underline);
-    db.add_text("legible");
-    db.leave_span();
-    db.add_text(", ");
-    db.enter_span(underline);
-    db.add_text("readable");
-    db.leave_span();
-    db.add_text(" and ");
-    db.enter_span(underline);
-    db.add_text("appealing");
-    db.leave_span();
-    db.enter_span(&[S::LineSpacing(1.)]);
-    db.add_text(
-        " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
-    );
-    db.leave_span();
-    db.enter_span(&[S::FontId(0), S::LineSpacing(1.)]);
-    db.add_text("A true ");
-    db.enter_span(&[S::Size(48.)]);
-    db.add_text("🕵🏽‍♀️");
-    db.leave_span();
-    db.add_text(" will spot the tricky selection in this BiDi text: ");
-    db.enter_span(&[S::Size(22.)]);
-    db.add_text("ניפגש ב09:35 בחוף הים");
-    db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
-    db.leave_span();
-    db.build()
-}
+//     db.enter_span(&[
+//         S::FontId(0),
+//         S::Size(14.),
+//         S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+//     ]);
+//     db.enter_span(&[S::Weight(Weight::BOLD)]);
+//     db.enter_span(&[S::Size(20.)]);
+//     db.enter_span(&[S::Color([0.5, 0.5, 0.5, 1.0])]);
+//     db.add_text("Rio is back");
+//     db.leave_span();
+//     db.leave_span();
+//     db.enter_span(&[S::Size(40.), S::Color([0.5, 1.0, 0.5, 1.0])]);
+//     db.add_text("Rio terminal\n");
+//     db.leave_span();
+//     db.leave_span();
+//     db.enter_span(&[S::LineSpacing(1.2)]);
+//     db.enter_span(&[S::FontId(0), S::Size(22.)]);
+//     db.add_text("❯ According >= to Wikipedia, the foremost expert on any subject,\n\n");
+//     db.leave_span();
+//     db.enter_span(&[S::Weight(Weight::BOLD)]);
+//     db.add_text("Typography");
+//     db.leave_span();
+//     db.add_text(" is the ");
+//     db.enter_span(&[S::Style(Style::Italic)]);
+//     db.add_text("art and technique");
+//     db.leave_span();
+//     db.add_text(" of arranging type to make ");
+//     db.enter_span(underline);
+//     db.add_text("written language");
+//     db.leave_span();
+//     db.add_text(" ");
+//     db.enter_span(underline);
+//     db.add_text("legible");
+//     db.leave_span();
+//     db.add_text(", ");
+//     db.enter_span(underline);
+//     db.add_text("readable");
+//     db.leave_span();
+//     db.add_text(" and ");
+//     db.enter_span(underline);
+//     db.add_text("appealing");
+//     db.leave_span();
+//     db.enter_span(&[S::LineSpacing(1.)]);
+//     db.add_text(
+//         " Furthermore, العربية نص جميل. द क्विक ब्राउन फ़ॉक्स jumps over the lazy 🐕.\n\n",
+//     );
+//     db.leave_span();
+//     db.enter_span(&[S::FontId(0), S::LineSpacing(1.)]);
+//     db.add_text("A true ");
+//     db.enter_span(&[S::Size(48.)]);
+//     db.add_text("🕵🏽‍♀️");
+//     db.leave_span();
+//     db.add_text(" will spot the tricky selection in this BiDi text: ");
+//     db.enter_span(&[S::Size(22.)]);
+//     db.add_text("ניפגש ב09:35 בחוף הים");
+//     db.add_text("\nABC🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️🕵🏽‍♀️");
+//     db.leave_span();
+//     db.build()
+// }
 
-#[allow(unused)]
-fn build_terminal_content() -> Content {
-    use crate::layout::*;
-    let mut db = Content::builder();
+// #[allow(unused)]
+// fn build_terminal_content() -> Content {
+//     use crate::layout::*;
+//     let mut db = Content::builder();
 
-    use SpanStyle as S;
+//     use SpanStyle as S;
 
-    let underline = &[
-        S::Underline(true),
-        S::UnderlineOffset(Some(-1.)),
-        S::UnderlineSize(Some(1.)),
-    ];
+//     let underline = &[
+//         S::Underline(true),
+//         S::UnderlineOffset(Some(-1.)),
+//         S::UnderlineSize(Some(1.)),
+//     ];
 
-    for i in 0..20 {
-        db.enter_span(&[
-            S::FontId(0),
-            S::Size(24.),
-            // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        ]);
-        db.enter_span(&[
-            S::Weight(Weight::BOLD),
-            S::BackgroundColor([0.0, 1.0, 1.0, 1.0]),
-            S::Color([1.0, 0.5, 0.5, 1.0]),
-        ]);
-        db.add_char('R');
-        db.leave_span();
-        // should return to span
-        db.enter_span(&[
-            S::Color([0.0, 1.0, 0.0, 1.0]),
-            S::BackgroundColor([1.0, 1.0, 0.0, 1.0]),
-        ]);
-        db.add_text("iiii");
-        db.leave_span();
-        db.enter_span(&[
-            S::Weight(Weight::NORMAL),
-            S::Style(Style::Italic),
-            S::Color([0.0, 1.0, 1.0, 1.0]),
-            // S::Size(20.),
-        ]);
-        db.add_char('o');
-        db.leave_span();
-        db.add_char('+');
-        db.add_text(" 🌊🌊🌊🌊");
-        for x in 0..5 {
-            db.add_char(' ');
-        }
-        db.add_text("---> ->");
-        db.add_text("-> 🥶");
-        db.break_line();
-        db.leave_span();
-        db.leave_span();
-    }
-    // db.break_line();
-    // db.enter_span(&[S::Color([1.0, 1.0, 1.0, 1.0])]);
-    // db.add_text("terminal");
-    // db.leave_span();
-    // db.add_text("\n");
-    // db.enter_span(&[S::Weight(Weight::BOLD)]);
-    // db.add_text("t");
-    // db.add_text("e");
-    // db.add_text("r");
-    // db.add_text("m");
-    // db.add_text(" ");
-    // db.enter_span(underline);
-    // db.add_text("\n");
-    // db.enter_span(&[S::Color([0.0, 1.0, 1.0, 1.0])]);
-    // db.add_text("n");
-    db.build()
-}
+//     for i in 0..20 {
+//         db.enter_span(&[
+//             S::FontId(0),
+//             S::Size(24.),
+//             // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
+//         ]);
+//         db.enter_span(&[
+//             S::Weight(Weight::BOLD),
+//             S::BackgroundColor([0.0, 1.0, 1.0, 1.0]),
+//             S::Color([1.0, 0.5, 0.5, 1.0]),
+//         ]);
+//         db.add_char('R');
+//         db.leave_span();
+//         // should return to span
+//         db.enter_span(&[
+//             S::Color([0.0, 1.0, 0.0, 1.0]),
+//             S::BackgroundColor([1.0, 1.0, 0.0, 1.0]),
+//         ]);
+//         db.add_text("iiii");
+//         db.leave_span();
+//         db.enter_span(&[
+//             S::Weight(Weight::NORMAL),
+//             S::Style(Style::Italic),
+//             S::Color([0.0, 1.0, 1.0, 1.0]),
+//             // S::Size(20.),
+//         ]);
+//         db.add_char('o');
+//         db.leave_span();
+//         db.add_char('+');
+//         db.add_text(" 🌊🌊🌊🌊");
+//         for x in 0..5 {
+//             db.add_char(' ');
+//         }
+//         db.add_text("---> ->");
+//         db.add_text("-> 🥶");
+//         db.break_line();
+//         db.leave_span();
+//         db.leave_span();
+//     }
+//     // db.break_line();
+//     // db.enter_span(&[S::Color([1.0, 1.0, 1.0, 1.0])]);
+//     // db.add_text("terminal");
+//     // db.leave_span();
+//     // db.add_text("\n");
+//     // db.enter_span(&[S::Weight(Weight::BOLD)]);
+//     // db.add_text("t");
+//     // db.add_text("e");
+//     // db.add_text("r");
+//     // db.add_text("m");
+//     // db.add_text(" ");
+//     // db.enter_span(underline);
+//     // db.add_text("\n");
+//     // db.enter_span(&[S::Color([0.0, 1.0, 1.0, 1.0])]);
+//     // db.add_text("n");
+//     db.build()
+// }

@@ -10,9 +10,7 @@
 // and other functionalities
 
 use super::span_style::*;
-use super::{SpanId, MAX_ID};
 use crate::sugarloaf::primitives::SugarCursor;
-use core::borrow::Borrow;
 use swash::text::{cluster::CharInfo, Script};
 use swash::{Setting, Stretch, Style, Weight};
 
@@ -20,7 +18,7 @@ use swash::{Setting, Stretch, Style, Weight};
 #[derive(Copy, Clone)]
 pub struct FragmentData {
     /// Identifier of the span that contains the fragment.
-    pub span: SpanId,
+    pub span: FragmentStyle,
     /// True if this fragment breaks shaping with the previous fragment.
     pub break_shaping: bool,
     /// True if this fragment is text.
@@ -58,19 +56,19 @@ pub struct ItemData {
 #[derive(Copy, Debug, Clone)]
 pub struct SpanData {
     /// Identifier of the span.
-    pub id: SpanId,
-    /// Identifier of the parent span.
-    pub parent: Option<SpanId>,
-    /// Identifier of first child of the span.
-    pub first_child: Option<SpanId>,
-    /// Identifier of last child of the span.
-    pub last_child: Option<SpanId>,
-    /// Identifier of next sibling of the span.
-    pub next: Option<SpanId>,
-    /// Text direction.
-    pub dir: Direction,
-    /// Is the direction different from the parent?
-    pub dir_changed: bool,
+    // pub id: SpanId,
+    // Identifier of the parent span.
+    // pub parent: Option<SpanId>,
+    // Identifier of first child of the span.
+    // pub first_child: Option<SpanId>,
+    // Identifier of last child of the span.
+    // pub last_child: Option<SpanId>,
+    // Identifier of next sibling of the span.
+    // pub next: Option<SpanId>,
+    // Text direction.
+    // pub dir: Direction,
+    // Is the direction different from the parent?
+    // pub dir_changed: bool,
     /// Text language.
     pub lang: Option<Language>,
     /// Internal identifier for a list of font families and attributes.
@@ -115,7 +113,7 @@ pub struct BuilderLineText {
     /// Fragment index per character.
     pub frags: Vec<u32>,
     /// Span index per character.
-    pub spans: Vec<u32>,
+    pub spans: Vec<FragmentStyle>,
     /// Character info per character.
     pub info: Vec<CharInfo>,
     /// Offset of each character relative to its fragment.
@@ -136,10 +134,6 @@ pub struct BuilderLine {
 pub struct BuilderState {
     /// Lines State
     pub lines: Vec<BuilderLine>,
-    /// Collection of all spans, in order of span identifier.
-    pub spans: Vec<SpanData>,
-    /// Stack of spans.
-    pub span_stack: Vec<SpanId>,
     /// Font feature setting cache.
     pub features: FontSettingCache<u16>,
     /// Font variation setting cache.
@@ -177,8 +171,8 @@ impl BuilderState {
         // self.text_spans.clear();
         // self.text_info.clear();
         // self.text_offsets.clear();
-        self.spans.clear();
-        self.span_stack.clear();
+        // self.spans.clear();
+        // self.span_stack.clear();
         self.features.clear();
         self.vars.clear();
     }
@@ -186,182 +180,182 @@ impl BuilderState {
     #[inline]
     pub fn begin(&mut self, dir: Direction, lang: Option<Language>, scale: f32) {
         self.lines.push(BuilderLine::default());
-        self.spans.push(SpanData {
-            id: SpanId(0),
-            parent: None,
-            first_child: None,
-            last_child: None,
-            next: None,
-            dir,
-            dir_changed: false,
-            lang,
-            font: 0,
-            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-            font_size: 16. * scale,
-            font_features: EMPTY_FONT_SETTINGS,
-            font_vars: EMPTY_FONT_SETTINGS,
-            letter_spacing: 0.,
-            word_spacing: 0.,
-            line_spacing: 1.,
-            color: [1.0, 1.0, 1.0, 1.0],
-            background_color: None,
-            cursor: SugarCursor::Disabled,
-            underline: false,
-            underline_offset: None,
-            underline_color: None,
-            underline_size: None,
-            text_transform: TextTransform::None,
-        });
-        self.span_stack.push(SpanId(0));
+        // self.spans.push(SpanData {
+        //     id: SpanId(0),
+        //     parent: None,
+        //     first_child: None,
+        //     last_child: None,
+        //     next: None,
+        //     dir,
+        //     dir_changed: false,
+        //     lang,
+        //     font: 0,
+        //     font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+        //     font_size: 16. * scale,
+        //     font_features: EMPTY_FONT_SETTINGS,
+        //     font_vars: EMPTY_FONT_SETTINGS,
+        //     letter_spacing: 0.,
+        //     word_spacing: 0.,
+        //     line_spacing: 1.,
+        //     color: [1.0, 1.0, 1.0, 1.0],
+        //     background_color: None,
+        //     cursor: SugarCursor::Disabled,
+        //     underline: false,
+        //     underline_offset: None,
+        //     underline_color: None,
+        //     underline_size: None,
+        //     text_transform: TextTransform::None,
+        // });
+        // self.span_stack.push(SpanId(0));
     }
 
-    /// Pushes a new span with the specified properties. Returns the new
-    /// span identifier and a value indicating a new direction, if any.
-    pub fn push<'a, I>(
-        &mut self,
-        // fcx: &mut FontLibrary,
-        scale: f32,
-        styles: I,
-    ) -> Option<(SpanId, Option<Direction>)>
-    where
-        I: IntoIterator,
-        I::Item: Borrow<SpanStyle<'a>>,
-    {
-        let next_id = SpanId(self.spans.len());
-        if next_id.0 > MAX_ID {
-            return None;
-        }
-        let parent_id = *self.span_stack.last()?;
-        let parent = self.spans.get_mut(parent_id.to_usize())?;
-        let mut span = parent.to_owned();
-        let last_child = if let Some(last_child) = parent.last_child {
-            parent.last_child = Some(next_id);
-            Some(last_child)
-        } else {
-            parent.first_child = Some(next_id);
-            parent.last_child = Some(next_id);
-            None
-        };
-        if let Some(last_child) = last_child {
-            let prev_sibling = self.spans.get_mut(last_child.to_usize())?;
-            prev_sibling.next = Some(next_id);
-        }
-        span.id = next_id;
-        span.parent = Some(parent_id);
-        span.dir_changed = false;
-        let parent_dir = span.dir;
-        // let mut font_changed = false;
-        for s in styles {
-            use SpanStyle as S;
-            match s.borrow() {
-                S::Direction(dir) => {
-                    if *dir != parent_dir {
-                        span.dir = *dir;
-                        span.dir_changed = true;
-                    } else {
-                        span.dir = *dir;
-                        span.dir_changed = false;
-                    }
-                }
-                S::Language(lang) => {
-                    span.lang = Some(*lang);
-                }
-                S::FontId(font_id) => {
-                    if font_id != &span.font {
-                        span.font = *font_id;
-                        // font_changed = true;
-                    }
-                }
-                S::Stretch(value) => {
-                    if *value != span.font_attrs.0 {
-                        span.font_attrs.0 = *value;
-                        // font_changed = true;
-                    }
-                }
-                S::Weight(value) => {
-                    if *value != span.font_attrs.1 {
-                        span.font_attrs.1 = *value;
-                        // font_changed = true;
-                    }
-                }
-                S::Style(value) => {
-                    if *value != span.font_attrs.2 {
-                        span.font_attrs.2 = *value;
-                        // font_changed = true;
-                    }
-                }
-                S::Size(size) => {
-                    span.font_size = *size * scale;
-                }
-                S::Cursor(cursor) => {
-                    span.cursor = *cursor;
-                }
-                S::Color(color) => {
-                    span.color = *color;
-                }
-                S::BackgroundColor(color) => {
-                    span.background_color = Some(*color);
-                }
-                S::Features(features) => {
-                    span.font_features = self.features.add(features.iter().copied());
-                }
-                S::Variations(vars) => {
-                    span.font_vars = self.vars.add(vars.iter().copied());
-                }
-                S::LetterSpacing(spacing) => {
-                    span.letter_spacing = *spacing * scale;
-                }
-                S::WordSpacing(spacing) => {
-                    span.word_spacing = *spacing * scale;
-                }
-                S::LineSpacing(spacing) => {
-                    span.line_spacing = *spacing;
-                }
-                S::Underline(enable) => {
-                    span.underline = *enable;
-                }
-                S::UnderlineOffset(offset) => {
-                    span.underline_offset = (*offset).map(|o| o * scale);
-                }
-                S::UnderlineColor(color) => {
-                    span.underline_color = Some(*color);
-                }
-                S::UnderlineSize(size) => {
-                    span.underline_size = (*size).map(|s| s * scale)
-                }
-                S::TextTransform(xform) => {
-                    span.text_transform = *xform;
-                }
-            }
-        }
-        // if font_changed {
-        //     span.font = fcx.register_group(
-        //         span.font_family.names(),
-        //         span.font_family.key(),
-        //         span.font_attrs.into(),
-        //     );
-        // }
-        let dir = if span.dir_changed {
-            Some(span.dir)
-        } else {
-            None
-        };
-        self.spans.push(span);
-        self.span_stack.push(next_id);
-        Some((next_id, dir))
-    }
+    // Pushes a new span with the specified properties. Returns the new
+    // span identifier and a value indicating a new direction, if any.
+    // pub fn push<'a, I>(
+    //     &mut self,
+    //     // fcx: &mut FontLibrary,
+    //     scale: f32,
+    //     styles: I,
+    // ) -> Option<(SpanId, Option<Direction>)>
+    // where
+    //     I: IntoIterator,
+    //     I::Item: Borrow<SpanStyle>,
+    // {
+    //     let next_id = SpanId(self.spans.len());
+    //     if next_id.0 > MAX_ID {
+    //         return None;
+    //     }
+    //     let parent_id = *self.span_stack.last()?;
+    //     let parent = self.spans.get_mut(parent_id.to_usize())?;
+    //     let mut span = parent.to_owned();
+    //     let last_child = if let Some(last_child) = parent.last_child {
+    //         parent.last_child = Some(next_id);
+    //         Some(last_child)
+    //     } else {
+    //         parent.first_child = Some(next_id);
+    //         parent.last_child = Some(next_id);
+    //         None
+    //     };
+    //     if let Some(last_child) = last_child {
+    //         let prev_sibling = self.spans.get_mut(last_child.to_usize())?;
+    //         prev_sibling.next = Some(next_id);
+    //     }
+    //     span.id = next_id;
+    //     span.parent = Some(parent_id);
+    //     span.dir_changed = false;
+    //     let parent_dir = span.dir;
+    //     // let mut font_changed = false;
+    //     for s in styles {
+    //         use SpanStyle as S;
+    //         match s.borrow() {
+    //             S::Direction(dir) => {
+    //                 if *dir != parent_dir {
+    //                     span.dir = *dir;
+    //                     span.dir_changed = true;
+    //                 } else {
+    //                     span.dir = *dir;
+    //                     span.dir_changed = false;
+    //                 }
+    //             }
+    //             S::Language(lang) => {
+    //                 span.lang = Some(*lang);
+    //             }
+    //             S::FontId(font_id) => {
+    //                 if font_id != &span.font {
+    //                     span.font = *font_id;
+    //                     // font_changed = true;
+    //                 }
+    //             }
+    //             S::Stretch(value) => {
+    //                 if *value != span.font_attrs.0 {
+    //                     span.font_attrs.0 = *value;
+    //                     // font_changed = true;
+    //                 }
+    //             }
+    //             S::Weight(value) => {
+    //                 if *value != span.font_attrs.1 {
+    //                     span.font_attrs.1 = *value;
+    //                     // font_changed = true;
+    //                 }
+    //             }
+    //             S::Style(value) => {
+    //                 if *value != span.font_attrs.2 {
+    //                     span.font_attrs.2 = *value;
+    //                     // font_changed = true;
+    //                 }
+    //             }
+    //             S::Size(size) => {
+    //                 span.font_size = *size * scale;
+    //             }
+    //             S::Cursor(cursor) => {
+    //                 span.cursor = *cursor;
+    //             }
+    //             S::Color(color) => {
+    //                 span.color = *color;
+    //             }
+    //             S::BackgroundColor(color) => {
+    //                 span.background_color = Some(*color);
+    //             }
+    //             S::Features(features) => {
+    //                 span.font_features = self.features.add(features.iter().copied());
+    //             }
+    //             S::Variations(vars) => {
+    //                 span.font_vars = self.vars.add(vars.iter().copied());
+    //             }
+    //             S::LetterSpacing(spacing) => {
+    //                 span.letter_spacing = *spacing * scale;
+    //             }
+    //             S::WordSpacing(spacing) => {
+    //                 span.word_spacing = *spacing * scale;
+    //             }
+    //             S::LineSpacing(spacing) => {
+    //                 span.line_spacing = *spacing;
+    //             }
+    //             S::Underline(enable) => {
+    //                 span.underline = *enable;
+    //             }
+    //             S::UnderlineOffset(offset) => {
+    //                 span.underline_offset = (*offset).map(|o| o * scale);
+    //             }
+    //             S::UnderlineColor(color) => {
+    //                 span.underline_color = Some(*color);
+    //             }
+    //             S::UnderlineSize(size) => {
+    //                 span.underline_size = (*size).map(|s| s * scale)
+    //             }
+    //             S::TextTransform(xform) => {
+    //                 span.text_transform = *xform;
+    //             }
+    //         }
+    //     }
+    //     // if font_changed {
+    //     //     span.font = fcx.register_group(
+    //     //         span.font_family.names(),
+    //     //         span.font_family.key(),
+    //     //         span.font_attrs.into(),
+    //     //     );
+    //     // }
+    //     let dir = if span.dir_changed {
+    //         Some(span.dir)
+    //     } else {
+    //         None
+    //     };
+    //     self.spans.push(span);
+    //     self.span_stack.push(next_id);
+    //     Some((next_id, dir))
+    // }
 
-    /// Pops the most recent span from the stack. Returns true if
-    /// the direction changed.
-    #[inline]
-    pub fn pop(&mut self) -> Option<(SpanId, bool)> {
-        if self.span_stack.len() > 1 {
-            let id = self.span_stack.pop().unwrap();
-            Some((id, self.spans[id.to_usize()].dir_changed))
-        } else {
-            None
-        }
-    }
+    // Pops the most recent span from the stack. Returns true if
+    // the direction changed.
+    // #[inline]
+    // pub fn pop(&mut self) -> Option<(SpanId, bool)> {
+    //     if self.span_stack.len() > 1 {
+    //         let id = self.span_stack.pop().unwrap();
+    //         Some((id, self.spans[id.to_usize()].dir_changed))
+    //     } else {
+    //         None
+    //     }
+    // }
 }
 
 /// Index into a font setting cache.
