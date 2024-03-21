@@ -108,34 +108,7 @@ impl Content {
         None
     }
 
-    pub fn erase(&mut self, erase: Erase) -> Option<usize> {
-        let range = match erase {
-            Erase::Full(range) => range,
-            Erase::Last(range) => {
-                let _start = range.start;
-                let end = range.end;
-                let last_char = self.text.get(range)?.chars().last()?;
-                let len = last_char.len_utf8();
-                end - len..end
-            }
-        };
-        let start = range.start;
-        let end = range.end;
-        let len = (end - start) as u32;
-        if self.text.is_char_boundary(start) && self.text.is_char_boundary(end) {
-            self.text.replace_range(start..end, "");
-            let frag_index = self.fragment_from_offset(start).unwrap_or(0);
-            let first = &mut self.fragments[self.last_line][frag_index];
-            first.end = first.end.saturating_sub(len);
-            for frag in &mut self.fragments[self.last_line][frag_index + 1..] {
-                frag.start = frag.start.saturating_sub(len);
-                frag.end = frag.end.saturating_sub(len);
-            }
-        }
-        Some(start)
-    }
-
-    pub fn erase2(&mut self, offset: usize) -> Option<usize> {
+    pub fn erase(&mut self, offset: usize) -> Option<usize> {
         let _frag_index = self.fragment_from_offset(offset).unwrap_or(0);
         if self.text.is_char_boundary(offset) {
             self.text.remove(offset);

@@ -15,7 +15,6 @@ mod builder_data;
 mod content;
 mod layout_data;
 mod line_breaker;
-mod nav;
 mod render_data;
 mod span_style;
 
@@ -32,7 +31,6 @@ pub mod iter {
 
 pub use builder::{LayoutContext, ParagraphBuilder};
 pub use line_breaker::{Alignment, BreakLines};
-pub use nav::{Erase, ExtendTo, Selection};
 pub use render_data::{Cluster, Glyph, Line, Run};
 pub use span_style::*;
 
