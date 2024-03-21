@@ -15,7 +15,6 @@ use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::font::loader::Database;
 use crate::font::Font;
-use crate::layout::SpanStyle;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
 use crate::Sugar;

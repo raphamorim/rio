@@ -9,15 +9,85 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
+use crate::layout::builder_data::FontSettingKey;
+use crate::layout::builder_data::EMPTY_FONT_SETTINGS;
 use crate::sugarloaf::primitives::SugarCursor;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};
 
 use std::borrow::Cow;
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct FragmentStyle {
+    // Text direction.
+    pub dir: Direction,
+    // Is the direction different from the parent?
+    pub dir_changed: bool,
+    /// Text language.
+    pub lang: Option<Language>,
+    /// Internal identifier for a list of font families and attributes.
+    pub font: usize,
+    /// Font attributes.
+    pub font_attrs: (Stretch, Weight, Style),
+    /// Font size in ppem.
+    pub font_size: f32,
+    /// Font color.
+    pub color: [f32; 4],
+    /// Background color.
+    pub background_color: Option<[f32; 4]>,
+    /// Font features.
+    pub font_features: FontSettingKey,
+    /// Font variations.
+    pub font_vars: FontSettingKey,
+    /// Additional spacing between letters (clusters) of text.
+    pub letter_spacing: f32,
+    /// Additional spacing between words of text.
+    pub word_spacing: f32,
+    /// Multiplicative line spacing factor.
+    pub line_spacing: f32,
+    /// Enable underline decoration.
+    pub underline: bool,
+    /// Offset of an underline.
+    pub underline_offset: Option<f32>,
+    /// Color of an underline.
+    pub underline_color: Option<[f32; 4]>,
+    /// Thickness of an underline.
+    pub underline_size: Option<f32>,
+    /// Text case transformation.
+    pub text_transform: TextTransform,
+    /// Cursor
+    pub cursor: SugarCursor,
+}
+
+impl Default for FragmentStyle {
+    fn default() -> Self {
+        Self {
+            dir: Direction::LeftToRight,
+            dir_changed: false,
+            lang: None,
+            font: 0,
+            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+            font_size: 16.,
+            font_features: EMPTY_FONT_SETTINGS,
+            font_vars: EMPTY_FONT_SETTINGS,
+            letter_spacing: 0.,
+            word_spacing: 0.,
+            line_spacing: 1.,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            cursor: SugarCursor::Disabled,
+            underline: false,
+            underline_offset: None,
+            underline_color: None,
+            underline_size: None,
+            text_transform: TextTransform::None,
+        }
+    }
+}
+
 /// Style that can be applied to a range of text.
 #[derive(Debug, PartialEq, Clone)]
-pub enum SpanStyle<'a> {
+pub enum SpanStyle {
     /// Font Id
     FontId(usize),
     /// Font size.
@@ -35,9 +105,9 @@ pub enum SpanStyle<'a> {
     /// Cursor.
     Cursor(SugarCursor),
     /// Font feature settings.
-    Features(Cow<'a, [Setting<u16>]>),
+    Features(Vec<Setting<u16>>),
     /// Font variation settings.
-    Variations(Cow<'a, [Setting<f32>]>),
+    Variations(Vec<Setting<f32>>),
     /// Text direction.
     Direction(Direction),
     /// Text language.
@@ -60,16 +130,16 @@ pub enum SpanStyle<'a> {
     TextTransform(TextTransform),
 }
 
-impl<'a> SpanStyle<'a> {
+impl<'a> SpanStyle {
     pub fn features(features: impl Into<Cow<'a, [Setting<u16>]>>) -> Self {
-        Self::Features(features.into())
+        Self::Features(features.into().to_vec())
     }
 
     pub fn variations(variations: impl Into<Cow<'a, [Setting<f32>]>>) -> Self {
-        Self::Variations(variations.into())
+        Self::Variations(variations.into().to_vec())
     }
 
-    pub fn to_owned(&self) -> SpanStyle<'static> {
+    pub fn to_owned(&self) -> SpanStyle {
         use SpanStyle as S;
         match self {
             Self::FontId(v) => S::FontId(*v),
@@ -79,8 +149,8 @@ impl<'a> SpanStyle<'a> {
             Self::Color(v) => S::Color(*v),
             Self::BackgroundColor(v) => S::BackgroundColor(*v),
             Self::Style(v) => S::Style(*v),
-            Self::Features(v) => S::Features(Cow::Owned(v.clone().into_owned())),
-            Self::Variations(v) => S::Variations(Cow::Owned(v.clone().into_owned())),
+            Self::Features(v) => S::Features(v.to_owned()),
+            Self::Variations(v) => S::Variations(v.to_owned()),
             Self::Direction(v) => S::Direction(*v),
             Self::Language(v) => S::Language(*v),
             Self::LetterSpacing(v) => S::LetterSpacing(*v),
@@ -95,7 +165,7 @@ impl<'a> SpanStyle<'a> {
         }
     }
 
-    pub fn into_owned(self) -> SpanStyle<'static> {
+    pub fn into_owned(self) -> SpanStyle {
         use SpanStyle as S;
         match self {
             Self::FontId(v) => S::FontId(v),
@@ -105,8 +175,8 @@ impl<'a> SpanStyle<'a> {
             Self::Color(v) => S::Color(v),
             Self::BackgroundColor(v) => S::BackgroundColor(v),
             Self::Style(v) => S::Style(v),
-            Self::Features(v) => S::Features(Cow::Owned(v.into_owned())),
-            Self::Variations(v) => S::Variations(Cow::Owned(v.into_owned())),
+            Self::Features(v) => S::Features(v.to_owned()),
+            Self::Variations(v) => S::Variations(v.to_owned()),
             Self::Direction(v) => S::Direction(v),
             Self::Language(v) => S::Language(v),
             Self::LetterSpacing(v) => S::LetterSpacing(v),
@@ -141,7 +211,7 @@ impl Default for Direction {
     }
 }
 
-impl From<Direction> for SpanStyle<'static> {
+impl From<Direction> for SpanStyle {
     fn from(value: Direction) -> Self {
         Self::Direction(value)
     }
@@ -156,7 +226,7 @@ pub enum TextTransform {
     Capitalize,
 }
 
-impl From<TextTransform> for SpanStyle<'static> {
+impl From<TextTransform> for SpanStyle {
     fn from(value: TextTransform) -> Self {
         Self::TextTransform(value)
     }

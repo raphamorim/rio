@@ -11,10 +11,11 @@
 
 //! RenderData.
 
+use crate::layout::FragmentStyle;
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use super::{builder_data::SpanData, SpanId};
+use super::{builder_data::SpanData};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -172,7 +173,7 @@ impl RenderData {
 
     pub(super) fn push_run(
         &mut self,
-        spans: &[SpanData],
+        span_data: &FragmentStyle,
         font: &usize,
         size: f32,
         level: u8,
@@ -193,11 +194,6 @@ impl RenderData {
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
 
-        if last_span >= spans.len() {
-            last_span = spans.len() - 1;
-        }
-
-        let mut span_data = &spans[last_span];
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -205,8 +201,8 @@ impl RenderData {
                 }
             }
             let span = c.data;
-            if span as usize != last_span {
-                span_data = &spans[last_span];
+            // if span as usize != last_span {
+                // span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
@@ -243,8 +239,8 @@ impl RenderData {
                     self.data.runs.push(run_data);
                     runs.push(run_data);
                     clusters_start = clusters_end;
-                }
-                last_span = span as usize;
+                // }
+                // last_span = span as usize;
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -327,7 +323,7 @@ impl RenderData {
         }
         self.data.last_span = last_span;
         self.data.runs.push(RunData {
-            span: spans[last_span],
+            span: *span_data,
             line,
             font: *font,
             coords: (coords_start, coords_end),
@@ -386,10 +382,7 @@ impl RenderData {
         glyph_index
     }
 
-    pub(super) fn apply_spacing(&mut self, spans: &[SpanData]) {
-        if spans.is_empty() {
-            return;
-        }
+    pub(super) fn apply_spacing(&mut self) {
         for run in &mut self.data.runs {
             let word = run.span.word_spacing;
             let letter = run.span.letter_spacing;
@@ -449,7 +442,7 @@ impl<'a> Run<'a> {
         Self { layout, run }
     }
     /// Returns the span that contains the run.
-    pub fn span(&self) -> SpanData {
+    pub fn span(&self) -> FragmentStyle {
         self.run.span
     }
 

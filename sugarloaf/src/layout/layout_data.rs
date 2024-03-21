@@ -6,6 +6,7 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
+use crate::layout::FragmentStyle;
 use crate::layout::builder_data::SpanData;
 use super::{Alignment, Glyph};
 use crate::sugarloaf::primitives::SugarCursor;
@@ -172,7 +173,7 @@ impl GlyphData {
 
 #[derive(Copy, Debug, Clone)]
 pub struct RunData {
-    pub span: SpanData,
+    pub span: FragmentStyle,
     pub line: u32,
     pub color: [f32; 4],
     pub font: usize,

@@ -159,8 +159,6 @@ impl SugarState {
             return false;
         }
 
-        // let start = std::time::Instant::now();
-
         if self.level.is_advanced() {
             advance_brush.prepare(context, self);
         } else {
@@ -177,12 +175,6 @@ impl SugarState {
         if self.compositors.elementary.should_resize {
             rect_brush.resize(context);
         }
-
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in state.compute_updates() is: {:?} \n",
-        //     duration
-        // );
 
         // Elementary renderer is used for everything else in sugarloaf
         // like blocks rendering (created by .text() or .append_rects())
@@ -232,7 +224,6 @@ impl SugarState {
         // the dimensions.
 
         if self.latest_change != SugarTreeDiff::LayoutIsDifferent
-        // || !self.current_has_empty_dimensions()
         {
             return;
         }
