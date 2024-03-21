@@ -167,7 +167,7 @@ impl RenderData {
             self.data.clusters.push(*cluster);
         }
 
-        self.data.last_span = cached_entry.last_span;
+        // self.data.last_span = cached_entry.last_span;
     }
 
     pub(super) fn push_run(
@@ -192,7 +192,12 @@ impl RenderData {
         let metrics = shaper.metrics();
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
-        let mut span_data = &spans[self.data.last_span];
+
+        if last_span >= spans.len() {
+            last_span = spans.len() - 1;
+        }
+
+        let mut span_data = &spans[last_span];
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -206,7 +211,7 @@ impl RenderData {
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
                     let run_data = RunData {
-                        span: SpanId(last_span),
+                        span: *span_data,
                         line,
                         font: *font,
                         coords: (coords_start, coords_end),
@@ -322,7 +327,7 @@ impl RenderData {
         }
         self.data.last_span = last_span;
         self.data.runs.push(RunData {
-            span: SpanId(last_span),
+            span: spans[last_span],
             line,
             font: *font,
             coords: (coords_start, coords_end),
@@ -366,7 +371,7 @@ impl RenderData {
                 // Simple glyph
                 self.data.glyphs.push(GlyphData {
                     data: glyph.id as u32 | (packed_advance << 16),
-                    span: SpanId(glyph.data as usize),
+                    size: glyph.data as usize,
                 });
                 return glyph_index;
             }
@@ -376,7 +381,7 @@ impl RenderData {
         self.data.detailed_glyphs.push(Glyph::new(glyph));
         self.data.glyphs.push(GlyphData {
             data: GLYPH_DETAILED | detail_index,
-            span: SpanId(glyph.data as usize),
+            size: glyph.data as usize,
         });
         glyph_index
     }
@@ -386,42 +391,40 @@ impl RenderData {
             return;
         }
         for run in &mut self.data.runs {
-            if let Some(span) = spans.get(run.span.to_usize()) {
-                let word = span.word_spacing;
-                let letter = span.letter_spacing;
-                if word == 0. && letter == 0. {
-                    continue;
+            let word = run.span.word_spacing;
+            let letter = run.span.letter_spacing;
+            if word == 0. && letter == 0. {
+                continue;
+            }
+            let clusters = &mut self.data.clusters
+                [run.clusters.0 as usize..run.clusters.1 as usize];
+            for cluster in clusters {
+                let mut spacing = letter;
+                if word != 0. && cluster.info.whitespace().is_space_or_nbsp() {
+                    spacing += word;
                 }
-                let clusters = &mut self.data.clusters
-                    [run.clusters.0 as usize..run.clusters.1 as usize];
-                for cluster in clusters {
-                    let mut spacing = letter;
-                    if word != 0. && cluster.info.whitespace().is_space_or_nbsp() {
-                        spacing += word;
+                if spacing != 0. {
+                    let detailed_glyphs = &mut self.data.detailed_glyphs[..];
+                    if cluster.is_detailed() && !cluster.is_ligature() {
+                        self.data.detailed_clusters[cluster.glyphs as usize]
+                            .advance += spacing;
+                    } else if cluster.is_last_continuation() {
+                        cluster.glyphs =
+                            (f32::from_bits(cluster.glyphs) + spacing).to_bits();
                     }
-                    if spacing != 0. {
-                        let detailed_glyphs = &mut self.data.detailed_glyphs[..];
-                        if cluster.is_detailed() && !cluster.is_ligature() {
-                            self.data.detailed_clusters[cluster.glyphs as usize]
-                                .advance += spacing;
-                        } else if cluster.is_last_continuation() {
-                            cluster.glyphs =
-                                (f32::from_bits(cluster.glyphs) + spacing).to_bits();
+                    if let Some(g) = cluster
+                        .glyphs_mut(
+                            &self.data.detailed_clusters,
+                            &mut self.data.glyphs,
+                        )
+                        .last_mut()
+                    {
+                        if g.is_simple() {
+                            g.add_spacing(spacing);
+                        } else {
+                            detailed_glyphs[g.detail_index()].advance += spacing;
                         }
-                        if let Some(g) = cluster
-                            .glyphs_mut(
-                                &self.data.detailed_clusters,
-                                &mut self.data.glyphs,
-                            )
-                            .last_mut()
-                        {
-                            if g.is_simple() {
-                                g.add_spacing(spacing);
-                            } else {
-                                detailed_glyphs[g.detail_index()].advance += spacing;
-                            }
-                            run.advance += spacing;
-                        }
+                        run.advance += spacing;
                     }
                 }
             }
@@ -446,7 +449,7 @@ impl<'a> Run<'a> {
         Self { layout, run }
     }
     /// Returns the span that contains the run.
-    pub fn span(&self) -> SpanId {
+    pub fn span(&self) -> SpanData {
         self.run.span
     }
 
@@ -573,7 +576,7 @@ pub struct Glyph {
     /// Advance width or height.
     pub advance: f32,
     /// Span that generated the glyph.
-    pub span: SpanId,
+    pub span: usize,
 }
 
 impl Glyph {
@@ -583,7 +586,7 @@ impl Glyph {
             x: g.x,
             y: g.y,
             advance: g.advance,
-            span: SpanId(g.data as usize),
+            span: g.data as usize,
         }
     }
 }
@@ -607,7 +610,7 @@ impl<'a> Iterator for Glyphs<'a> {
                 x: 0.,
                 y: 0.,
                 advance,
-                span: data.span,
+                span: id as usize,
             })
         } else {
             self.layout
@@ -628,7 +631,7 @@ impl<'a> DoubleEndedIterator for Glyphs<'a> {
                 x: 0.,
                 y: 0.,
                 advance,
-                span: data.span,
+                span: id as usize,
             })
         } else {
             self.layout
