@@ -51,7 +51,6 @@ impl Content {
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
         for line in 0..self.last_line + 1 {
             for e in &self.fragments[line] {
-                println!("{:?} {:?}", e, self.text);
                 if e.start < e.end {
                     if let Some(s) = self.text.get(e.start as usize..e.end as usize) {
                         lcx.add_text(s, e.style);
