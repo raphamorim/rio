@@ -7,7 +7,6 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::layout::FragmentStyle;
-use crate::layout::builder_data::SpanData;
 use super::{Alignment, Glyph};
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;

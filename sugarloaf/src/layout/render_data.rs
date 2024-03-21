@@ -15,7 +15,6 @@ use crate::layout::FragmentStyle;
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use super::{builder_data::SpanData};
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;

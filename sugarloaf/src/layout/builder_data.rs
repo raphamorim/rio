@@ -10,9 +10,8 @@
 // and other functionalities
 
 use super::span_style::*;
-use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::{cluster::CharInfo, Script};
-use swash::{Setting, Stretch, Style, Weight};
+use swash::{Setting};
 
 /// Data that describes a fragment.
 #[derive(Copy, Clone)]
@@ -50,59 +49,6 @@ pub struct ItemData {
     pub features: FontSettingKey,
     /// Font variations.
     pub vars: FontSettingKey,
-}
-
-/// Data that describes a span.
-#[derive(Copy, Debug, Clone)]
-pub struct SpanData {
-    /// Identifier of the span.
-    // pub id: SpanId,
-    // Identifier of the parent span.
-    // pub parent: Option<SpanId>,
-    // Identifier of first child of the span.
-    // pub first_child: Option<SpanId>,
-    // Identifier of last child of the span.
-    // pub last_child: Option<SpanId>,
-    // Identifier of next sibling of the span.
-    // pub next: Option<SpanId>,
-    // Text direction.
-    // pub dir: Direction,
-    // Is the direction different from the parent?
-    // pub dir_changed: bool,
-    /// Text language.
-    pub lang: Option<Language>,
-    /// Internal identifier for a list of font families and attributes.
-    pub font: usize,
-    /// Font attributes.
-    pub font_attrs: (Stretch, Weight, Style),
-    /// Font size in ppem.
-    pub font_size: f32,
-    /// Font color.
-    pub color: [f32; 4],
-    /// Background color.
-    pub background_color: Option<[f32; 4]>,
-    /// Font features.
-    pub font_features: FontSettingKey,
-    /// Font variations.
-    pub font_vars: FontSettingKey,
-    /// Additional spacing between letters (clusters) of text.
-    pub letter_spacing: f32,
-    /// Additional spacing between words of text.
-    pub word_spacing: f32,
-    /// Multiplicative line spacing factor.
-    pub line_spacing: f32,
-    /// Enable underline decoration.
-    pub underline: bool,
-    /// Offset of an underline.
-    pub underline_offset: Option<f32>,
-    /// Color of an underline.
-    pub underline_color: Option<[f32; 4]>,
-    /// Thickness of an underline.
-    pub underline_size: Option<f32>,
-    /// Text case transformation.
-    pub text_transform: TextTransform,
-    /// Cursor
-    pub cursor: SugarCursor,
 }
 
 /// Builder Line State
