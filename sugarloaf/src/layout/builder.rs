@@ -87,9 +87,7 @@ impl LayoutContext {
             needs_bidi: false,
             dir: direction,
             fonts: &self.fonts,
-            scale,
             scx: &mut self.scx,
-            dir_depth: 0,
             s: &mut self.state,
             last_offset: 0,
             cache: &mut self.cache,
@@ -111,9 +109,7 @@ impl LayoutContext {
             needs_bidi: false,
             dir: direction,
             fonts: &self.fonts,
-            scale,
             scx: &mut self.scx,
-            dir_depth: 0,
             s: &mut self.state,
             last_offset: 0,
             cache: &mut self.cache
@@ -128,9 +124,7 @@ pub struct ParagraphBuilder<'a> {
     fonts: &'a FontLibrary,
     needs_bidi: bool,
     dir: Direction,
-    scale: f32,
     scx: &'a mut ShapeContext,
-    dir_depth: u32,
     s: &'a mut BuilderState,
     last_offset: u32,
     cache: &'a mut RunCache,
@@ -186,6 +180,18 @@ impl<'a> ParagraphBuilder<'a> {
         // let span_id = *self.s.span_stack.last()?;
         // let span = self.s.spans.get(span_id.to_usize())?;
         let mut offset = self.last_offset;
+
+        // if let Some(dir) = style.dir {
+        //     const LRI: char = '\u{2066}';
+        //     const RLI: char = '\u{2067}';
+        //     const FSI: char = '\u{2068}';
+        //     match dir {
+        //         Direction::Auto => self.push_char(FSI, style),
+        //         Direction::LeftToRight => self.push_char(LRI, style),
+        //         Direction::RightToLeft => self.push_char(RLI, style),
+        //     }
+        //     // self.dir_depth += 1;
+        // }
 
         macro_rules! push_char {
             ($ch: expr) => {{
@@ -380,11 +386,11 @@ impl<'a> ParagraphBuilder<'a> {
         // in a newline.
 
         // self.s.span_stack.push(SpanId(self.s.spans.len() - 1));
-        self.add_text(" ", FragmentStyle::default());
-        for _ in 0..self.dir_depth {
-            const PDI: char = '\u{2069}';
-            self.push_char(PDI, FragmentStyle::default());
-        }
+        // self.add_text(" ", FragmentStyle::default());
+        // for _ in 0..self.dir_depth {
+        //     const PDI: char = '\u{2069}';
+        //     self.push_char(PDI, FragmentStyle::default());
+        // }
 
         let lines_to_render = lines_to_render.unwrap_or_default();
         let render_specific_lines = !lines_to_render.is_empty();
