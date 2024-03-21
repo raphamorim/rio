@@ -6,7 +6,8 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use super::{Alignment, Glyph, SpanId};
+use crate::layout::builder_data::SpanData;
+use super::{Alignment, Glyph};
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
@@ -134,15 +135,15 @@ pub const GLYPH_DETAILED: u32 = 0x80000000;
 #[derive(Copy, Debug, Clone)]
 pub struct GlyphData {
     pub data: u32,
-    pub span: SpanId,
+    pub size: usize,
 }
 
 impl GlyphData {
-    pub fn simple(id: u16, advance: f32, span: SpanId) -> Self {
+    pub fn simple(id: u16, advance: f32, size: usize) -> Self {
         let advance = (advance * 64.).max(0.) as u32;
         Self {
             data: (id as u32 | (advance & 0x7FFF) << 16),
-            span,
+            size,
         }
     }
 
@@ -160,18 +161,18 @@ impl GlyphData {
 
     pub fn add_spacing(&mut self, spacing: f32) {
         let (id, advance) = self.simple_data();
-        *self = Self::simple(id, (advance + spacing).max(0.), self.span);
+        *self = Self::simple(id, (advance + spacing).max(0.), self.size);
     }
 
     pub fn clear_advance(&mut self) {
         let (id, _advance) = self.simple_data();
-        *self = Self::simple(id, 0., self.span);
+        *self = Self::simple(id, 0., self.size);
     }
 }
 
 #[derive(Copy, Debug, Clone)]
 pub struct RunData {
-    pub span: SpanId,
+    pub span: SpanData,
     pub line: u32,
     pub color: [f32; 4],
     pub font: usize,
