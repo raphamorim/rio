@@ -11,7 +11,7 @@
 
 use super::span_style::*;
 use swash::text::{cluster::CharInfo, Script};
-use swash::{Setting};
+use swash::Setting;
 
 /// Data that describes a fragment.
 #[derive(Copy, Clone)]

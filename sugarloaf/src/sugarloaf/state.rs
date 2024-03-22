@@ -223,8 +223,7 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
 
-        if self.latest_change != SugarTreeDiff::LayoutIsDifferent
-        {
+        if self.latest_change != SugarTreeDiff::LayoutIsDifferent {
             return;
         }
 

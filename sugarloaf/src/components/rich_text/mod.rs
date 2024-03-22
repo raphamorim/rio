@@ -787,7 +787,7 @@ fn fetch_dimensions(
                 underline: None,
             };
 
-            if style.advance > 0. &&  line_height > 0. {
+            if style.advance > 0. && line_height > 0. {
                 sugarwidth = style.advance;
                 sugarheight = line_height;
             }

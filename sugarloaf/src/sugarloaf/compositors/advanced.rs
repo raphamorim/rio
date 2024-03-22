@@ -8,8 +8,10 @@
 
 use crate::font::FontLibrary;
 use crate::font::{Style, Weight};
-use crate::layout::{FragmentStyle, Content, ContentBuilder, Direction, LayoutContext, RenderData};
-use crate::sugarloaf::{tree::SugarTree};
+use crate::layout::{
+    Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
+};
+use crate::sugarloaf::tree::SugarTree;
 use crate::{SugarCursor, SugarDecoration};
 
 pub struct Advanced {
@@ -56,12 +58,11 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {        
+    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
         // Then process only lines that are different
-        let mut lb = self.layout_context.cached_builder(
-            Direction::LeftToRight,
-            tree.layout.dimensions.scale,
-        );
+        let mut lb = self
+            .layout_context
+            .cached_builder(Direction::LeftToRight, tree.layout.dimensions.scale);
         let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
@@ -118,7 +119,7 @@ impl Advanced {
     #[inline]
     pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
         if line_number == 0 {
-            self.content_builder = Content::builder(); 
+            self.content_builder = Content::builder();
         }
 
         let line = &tree.lines[line_number];
@@ -173,7 +174,6 @@ impl Advanced {
 
             style.color = line[i].foreground_color;
             style.background_color = Some(line[i].background_color);
-
 
             if line[i].repeated > 0 {
                 let text = std::iter::repeat(line[i].content)
