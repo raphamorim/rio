@@ -166,7 +166,7 @@ impl RenderData {
 
     pub(super) fn push_run(
         &mut self,
-        span_data: &[FragmentStyle],
+        spans: &[FragmentStyle],
         font: &usize,
         size: f32,
         level: u8,
@@ -183,7 +183,9 @@ impl RenderData {
         let mut clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
         let mut advance = 0.;
+        println!("{:?} {:?}", self.data.last_span, spans.len());
         let mut last_span = self.data.last_span;
+        let mut span_data = &spans[self.data.last_span];
 
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
@@ -191,15 +193,14 @@ impl RenderData {
                     c.flags |= CLUSTER_NEWLINE;
                 }
             }
-            let span = c.data as usize;
-            if span != last_span {
-                let span_data = span_data[span];
-                // span_data = &spans[last_span];
+            let span = c.data;
+            if span as usize != last_span {
+                span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
                     let run_data = RunData {
-                        span: span_data,
+                        span: spans[last_span],
                         line,
                         font: *font,
                         coords: (coords_start, coords_end),
@@ -232,7 +233,7 @@ impl RenderData {
                     runs.push(run_data);
                     clusters_start = clusters_end;
                 }
-                last_span = span;
+                last_span = span as usize;
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -313,10 +314,9 @@ impl RenderData {
                 clusters,
             };
         }
-        self.data.last_span = last_span;
-        let span_data = span_data[self.data.last_span];
+        self.data.last_span = 0;
         self.data.runs.push(RunData {
-            span: span_data,
+            span: *span_data,
             line,
             font: *font,
             coords: (coords_start, coords_end),

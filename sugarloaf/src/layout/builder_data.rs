@@ -59,7 +59,7 @@ pub struct BuilderLineText {
     /// Fragment index per character.
     pub frags: Vec<u32>,
     /// Span index per character.
-    pub spans: Vec<FragmentStyle>,
+    pub spans: Vec<usize>,
     /// Character info per character.
     pub info: Vec<CharInfo>,
     /// Offset of each character relative to its fragment.
@@ -73,6 +73,8 @@ pub struct BuilderLine {
     pub fragments: Vec<FragmentData>,
     /// Collection of items.
     pub items: Vec<ItemData>,
+    /// Span index per character.
+    pub styles: Vec<FragmentStyle>,
 }
 
 /// Builder state.
@@ -91,14 +93,18 @@ pub struct BuilderState {
 impl BuilderState {
     /// Creates a new layout state.
     pub fn new() -> Self {
+        let mut lines = vec![BuilderLine::default()];
+        lines[0].styles.push(FragmentStyle::default());
         Self {
-            lines: vec![BuilderLine::default()],
+            lines,
             ..BuilderState::default()
         }
     }
     #[inline]
     pub fn new_line(&mut self) {
         self.lines.push(BuilderLine::default());
+        let last = self.lines.len() - 1;
+        self.lines[last].styles.push(FragmentStyle::scaled_default(self.scale));
     }
     #[inline]
     pub fn current_line(&self) -> usize {

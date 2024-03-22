@@ -53,7 +53,7 @@ impl Content {
             for e in &self.fragments[line] {
                 if e.start < e.end {
                     if let Some(s) = self.text.get(e.start as usize..e.end as usize) {
-                        lcx.add_text(s, e.style);
+                        lcx.add_text(s, Some(e.style));
                     }
                 }
             }
