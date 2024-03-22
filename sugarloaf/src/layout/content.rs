@@ -28,7 +28,7 @@ impl Default for Content {
         Self {
             fragments: vec![vec![]],
             text: String::default(),
-            last_line: 0
+            last_line: 0,
         }
     }
 }
@@ -137,13 +137,11 @@ impl ContentBuilder {
         let start = self.content.text.len() as u32;
         self.content.text.push_str(text);
         let end = self.content.text.len() as u32;
-        self.content.fragments[self.content.last_line].push(
-            Fragment {
-                start,
-                end,
-                style,
-            }
-        );
+        self.content.fragments[self.content.last_line].push(Fragment {
+            start,
+            end,
+            style,
+        });
     }
 
     #[inline]
@@ -151,13 +149,11 @@ impl ContentBuilder {
         let start = self.content.text.len() as u32;
         self.content.text.push(text);
         let end = self.content.text.len() as u32;
-        self.content.fragments[self.content.last_line].push(
-            Fragment {
-                start,
-                end,
-                style,
-            }
-        );
+        self.content.fragments[self.content.last_line].push(Fragment {
+            start,
+            end,
+            style,
+        });
     }
 
     #[inline]

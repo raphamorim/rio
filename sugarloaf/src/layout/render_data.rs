@@ -11,10 +11,10 @@
 
 //! RenderData.
 
-use crate::layout::FragmentStyle;
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
+use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
@@ -40,23 +40,23 @@ impl RenderData {
         Self::default()
     }
 
-// #[derive(Clone, Debug, Default)]
-// pub struct LayoutData {
-//     /// Normalized variation coordinates.
-//     pub coords: Vec<i16>,
-//     /// Simple glyphs.
-//     pub glyphs: Vec<GlyphData>,
-//     /// Detailed glyphs.
-//     pub detailed_glyphs: Vec<Glyph>,
-//     /// Simple clusters.
-//     pub clusters: Vec<ClusterData>,
-//     /// Detailed clusters.
-//     pub detailed_clusters: Vec<DetailedClusterData>,
-//     /// Glyph runs.
-//     pub runs: Vec<RunData>,
-//     /// Last shaped span.
-//     pub last_span: usize,
-// }
+    // #[derive(Clone, Debug, Default)]
+    // pub struct LayoutData {
+    //     /// Normalized variation coordinates.
+    //     pub coords: Vec<i16>,
+    //     /// Simple glyphs.
+    //     pub glyphs: Vec<GlyphData>,
+    //     /// Detailed glyphs.
+    //     pub detailed_glyphs: Vec<Glyph>,
+    //     /// Simple clusters.
+    //     pub clusters: Vec<ClusterData>,
+    //     /// Detailed clusters.
+    //     pub detailed_clusters: Vec<DetailedClusterData>,
+    //     /// Glyph runs.
+    //     pub runs: Vec<RunData>,
+    //     /// Last shaped span.
+    //     pub last_span: usize,
+    // }
 
     // #[inline]
     // pub fn overwrite_lines(old: &RenderData, new: &mut RenderData, lines: &[usize]) -> Self {
@@ -82,12 +82,11 @@ impl RenderData {
     //         }
     //     }
 
-
     //     merged.data.runs = new_runs;
     //     println!("{:?}", merged.data.runs.len());
 
     //     merged
-    //     // for 
+    //     // for
     // }
 
     /// Clears the current line state and returns a line breaker
@@ -147,13 +146,8 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(
-        &mut self,
-        cached_entry: &RunCacheEntry,
-    ) {
-        self.data
-            .coords
-            .extend_from_slice(&cached_entry.coords);
+    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
+        self.data.coords.extend_from_slice(&cached_entry.coords);
 
         for run in &cached_entry.runs {
             self.data.runs.push(*run);
@@ -172,7 +166,7 @@ impl RenderData {
 
     pub(super) fn push_run(
         &mut self,
-        span_data: &FragmentStyle,
+        span_data: &[FragmentStyle],
         font: &usize,
         size: f32,
         level: u8,
@@ -181,9 +175,7 @@ impl RenderData {
     ) -> RunCacheEntry {
         let coords_start = self.data.coords.len() as u32;
         let coords = shaper.normalized_coords().to_owned();
-        self.data
-            .coords
-            .extend_from_slice(&coords);
+        self.data.coords.extend_from_slice(&coords);
         let mut runs: Vec<RunData> = vec![];
         let mut clusters: Vec<ClusterData> = vec![];
         let mut shared_glyphs: Vec<ShapedGlyph> = vec![];
@@ -199,14 +191,15 @@ impl RenderData {
                     c.flags |= CLUSTER_NEWLINE;
                 }
             }
-            let span = c.data;
-            // if span as usize != last_span {
+            let span = c.data as usize;
+            if span != last_span {
+                let span_data = span_data[span];
                 // span_data = &spans[last_span];
                 // Ensure that every run belongs to a single span.
                 let clusters_end = self.data.clusters.len() as u32;
                 if clusters_end != clusters_start {
                     let run_data = RunData {
-                        span: *span_data,
+                        span: span_data,
                         line,
                         font: *font,
                         coords: (coords_start, coords_end),
@@ -238,8 +231,8 @@ impl RenderData {
                     self.data.runs.push(run_data);
                     runs.push(run_data);
                     clusters_start = clusters_end;
-                // }
-                // last_span = span as usize;
+                }
+                last_span = span;
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -321,8 +314,9 @@ impl RenderData {
             };
         }
         self.data.last_span = last_span;
+        let span_data = span_data[self.data.last_span];
         self.data.runs.push(RunData {
-            span: *span_data,
+            span: span_data,
             line,
             font: *font,
             coords: (coords_start, coords_end),
@@ -388,8 +382,8 @@ impl RenderData {
             if word == 0. && letter == 0. {
                 continue;
             }
-            let clusters = &mut self.data.clusters
-                [run.clusters.0 as usize..run.clusters.1 as usize];
+            let clusters =
+                &mut self.data.clusters[run.clusters.0 as usize..run.clusters.1 as usize];
             for cluster in clusters {
                 let mut spacing = letter;
                 if word != 0. && cluster.info.whitespace().is_space_or_nbsp() {
@@ -398,17 +392,14 @@ impl RenderData {
                 if spacing != 0. {
                     let detailed_glyphs = &mut self.data.detailed_glyphs[..];
                     if cluster.is_detailed() && !cluster.is_ligature() {
-                        self.data.detailed_clusters[cluster.glyphs as usize]
-                            .advance += spacing;
+                        self.data.detailed_clusters[cluster.glyphs as usize].advance +=
+                            spacing;
                     } else if cluster.is_last_continuation() {
                         cluster.glyphs =
                             (f32::from_bits(cluster.glyphs) + spacing).to_bits();
                     }
                     if let Some(g) = cluster
-                        .glyphs_mut(
-                            &self.data.detailed_clusters,
-                            &mut self.data.glyphs,
-                        )
+                        .glyphs_mut(&self.data.detailed_clusters, &mut self.data.glyphs)
                         .last_mut()
                     {
                         if g.is_simple() {

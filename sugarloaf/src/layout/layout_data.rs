@@ -6,8 +6,8 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use crate::layout::FragmentStyle;
 use super::{Alignment, Glyph};
+use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
