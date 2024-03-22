@@ -26,6 +26,7 @@ use swash::{GlyphId, NormalizedCoord};
 #[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub data: LayoutData,
+    last_line: u32,
     pub line_data: LineLayoutData,
 }
 
@@ -184,6 +185,12 @@ impl RenderData {
         let metrics = shaper.metrics();
         let mut advance = 0.;
         println!("{:?} {:?}", self.data.last_span, spans.len());
+
+        if line != self.last_line {
+            self.last_line = line;
+            self.data.last_span = 0;
+        }
+
         let mut last_span = self.data.last_span;
         let mut span_data = &spans[self.data.last_span];
 
@@ -314,7 +321,7 @@ impl RenderData {
                 clusters,
             };
         }
-        self.data.last_span = 0;
+        self.data.last_span = last_span;
         self.data.runs.push(RunData {
             span: *span_data,
             line,
