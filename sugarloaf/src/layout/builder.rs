@@ -74,12 +74,12 @@ impl LayoutContext {
     pub fn builder(
         &mut self,
         direction: Direction,
-        language: Option<Language>,
+        _language: Option<Language>,
         scale: f32,
     ) -> ParagraphBuilder {
         self.cache.clear();
         self.state.clear();
-        self.state.begin(direction, language, scale);
+        self.state.begin();
         self.state.scale = scale;
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -101,7 +101,7 @@ impl LayoutContext {
         scale: f32,
     ) -> ParagraphBuilder {
         self.state.clear();
-        self.state.begin(direction, None, scale);
+        self.state.begin();
         self.state.scale = scale;
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -170,7 +170,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> Option<()> {
+    pub fn add_text(&mut self, text: &str, mut style: FragmentStyle) -> Option<()> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
@@ -180,6 +180,8 @@ impl<'a> ParagraphBuilder<'a> {
         // let span_id = *self.s.span_stack.last()?;
         // let span = self.s.spans.get(span_id.to_usize())?;
         let mut offset = self.last_offset;
+
+        style.font_size = style.font_size * self.s.scale;
 
         // if let Some(dir) = style.dir {
         //     const LRI: char = '\u{2066}';
@@ -385,11 +387,10 @@ impl<'a> ParagraphBuilder<'a> {
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
 
-        // self.s.span_stack.push(SpanId(self.s.spans.len() - 1));
-        self.add_text(" ", FragmentStyle::default());
+        self.add_text(" ", FragmentStyle::scaled_default(self.s.scale));
         // for _ in 0..self.dir_depth {
-        //     const PDI: char = '\u{2069}';
-        //     self.push_char(PDI, FragmentStyle::default());
+            const PDI: char = '\u{2069}';
+            self.push_char(PDI, FragmentStyle::default());
         // }
 
         let lines_to_render = lines_to_render.unwrap_or_default();

@@ -85,6 +85,32 @@ impl Default for FragmentStyle {
     }
 }
 
+impl FragmentStyle {
+    pub fn scaled_default(scale: f32) -> Self {
+        Self {
+            dir: Direction::LeftToRight,
+            dir_changed: false,
+            lang: None,
+            font: 0,
+            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+            font_size: 16. * scale,
+            font_features: EMPTY_FONT_SETTINGS,
+            font_vars: EMPTY_FONT_SETTINGS,
+            letter_spacing: 0.,
+            word_spacing: 0.,
+            line_spacing: 1.,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            cursor: SugarCursor::Disabled,
+            underline: false,
+            underline_offset: None,
+            underline_color: None,
+            underline_size: None,
+            text_transform: TextTransform::None,
+        }
+    }
+}
+
 /// Style that can be applied to a range of text.
 #[derive(Debug, PartialEq, Clone)]
 pub enum SpanStyle {
