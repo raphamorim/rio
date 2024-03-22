@@ -170,7 +170,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, text: &str, mut style: FragmentStyle) -> Option<()> {
+    pub fn add_text(&mut self, text: &str, style: Option<FragmentStyle>) -> Option<()> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
@@ -178,9 +178,16 @@ impl<'a> ParagraphBuilder<'a> {
             return None;
         }
 
-        let mut offset = self.last_offset;
+        let mut should_insert_style = false;
 
-        style.font_size = style.font_size * self.s.scale;
+        let mut offset = self.last_offset;
+        let style = if let Some(mut val) = style {
+            should_insert_style = true;
+            val.font_size = val.font_size * self.s.scale;
+            val
+        } else {
+            *line.styles.last().unwrap_or(&FragmentStyle::scaled_default(self.s.scale))
+        };
 
         // if let Some(dir) = style.dir {
         //     const LRI: char = '\u{2066}';
@@ -327,9 +334,15 @@ impl<'a> ParagraphBuilder<'a> {
         for _ in 0..len {
             line.text.frags.push(id as u32);
         }
+
+        let mut style_index = 0;
+        if should_insert_style {
+            line.styles.push(style);
+            style_index = line.styles.len() - 1;
+        }
         line.text.spans.reserve(len);
         for _ in 0..len {
-            line.text.spans.push(style);
+            line.text.spans.push(style_index);
         }
         line.fragments.push(FragmentData {
             span: style,
@@ -341,6 +354,7 @@ impl<'a> ParagraphBuilder<'a> {
             features: style.font_features,
             vars: style.font_vars,
         });
+
         self.last_offset = offset;
         Some(())
     }
@@ -395,10 +409,10 @@ impl<'a> ParagraphBuilder<'a> {
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
 
-        self.add_text(" ", FragmentStyle::scaled_default(self.s.scale));
+        self.add_text(" ", None);
         // for _ in 0..self.dir_depth {
         const PDI: char = '\u{2069}';
-        self.push_char(PDI, FragmentStyle::default());
+        self.push_char(PDI);
         // }
 
         let lines_to_render = lines_to_render.unwrap_or_default();
@@ -568,11 +582,11 @@ impl<'a> ParagraphBuilder<'a> {
 
 impl<'a> ParagraphBuilder<'a> {
     #[inline]
-    fn push_char(&mut self, ch: char, span: FragmentStyle) {
+    fn push_char(&mut self, ch: char) {
         let current_line = self.s.current_line();
         self.s.lines[current_line].text.content.push(ch);
         self.s.lines[current_line].text.frags.push(0);
-        self.s.lines[current_line].text.spans.push(span);
+        self.s.lines[current_line].text.spans.push(0);
         self.s.lines[current_line].text.offsets.push(0);
     }
 }
@@ -592,6 +606,7 @@ struct ShapeState<'a> {
     span: &'a FragmentStyle,
     font_id: Option<usize>,
     size: f32,
+    span_index: usize,
 }
 
 #[inline]
@@ -613,7 +628,9 @@ fn shape_item(
         shape::Direction::LeftToRight
     };
     let range = item.start..item.end;
-    let style: FragmentStyle = state.lines[current_line].text.spans[item.start];
+    let span_index = state.lines[current_line].text.spans[item.start];
+    println!("spans: {:?}", state.lines[current_line].text.spans);
+    let style = state.lines[current_line].styles[span_index as usize]; 
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
     let mut shape_state = ShapeState {
@@ -623,10 +640,19 @@ fn shape_item(
         vars,
         synth: Synthesis::default(),
         state,
-        span: &style,
+        span: &state.lines[current_line].styles[0],
         font_id: None,
+        span_index,
         size: style.font_size,
     };
+
+    println!("{:?}", span_index);
+
+    if current_line == 0 {
+        println!("text.spans.len {:?}", state.lines[current_line].text.spans.len());
+        println!("range {:?}", range);
+        println!("styles {:?}", state.lines[current_line].styles.len());
+    }
 
     if item.level & 1 != 0 {
         let chars = state.lines[current_line].text.content[range.clone()]
@@ -634,17 +660,17 @@ fn shape_item(
             .zip(&state.lines[current_line].text.offsets[range.clone()])
             .zip(&state.lines[current_line].text.spans[range.clone()])
             .zip(&state.lines[current_line].text.info[range])
-            .enumerate()
-            .map(|(i, z)| {
+            .map(|z| {
                 use swash::text::Codepoint;
-                let (((&ch, &offset), &_span_index), &info) = z;
+                let (((&ch, &offset), &span_index), &info) = z;
                 let ch = ch.mirror().unwrap_or(ch);
                 Token {
                     ch,
                     offset,
                     len: ch.len_utf8() as u8,
                     info,
-                    data: i as u32, // data: span_index,
+                    // data: i as u32,
+                    data: span_index as u32,
                 }
             });
 
@@ -671,16 +697,15 @@ fn shape_item(
             .zip(&state.lines[current_line].text.offsets[range.clone()])
             .zip(&state.lines[current_line].text.spans[range.clone()])
             .zip(&state.lines[current_line].text.info[range])
-            .enumerate()
-            .map(|(i, z)| {
-                let (((&ch, &offset), &_span_index), &info) = z;
+            .map(|z| {
+                let (((&ch, &offset), &span_index), &info) = z;
                 Token {
                     ch,
                     offset,
                     len: ch.len_utf8() as u8,
                     info,
-                    // data: span_index,
-                    data: i as u32,
+                    data: span_index as u32,
+                    // data: i as u32,
                 }
             });
 
@@ -738,12 +763,20 @@ where
         .variations(state.vars.iter().copied())
         .build();
 
+    if current_line == 0 {
+        println!("\n");
+        println!("FIRST {:?}", &state.state.lines[current_line].text.spans[state.span_index]);
+        println!("{:?}", cluster.chars());
+        println!("{:?}", &state.state.lines[current_line].styles.len());
+        println!("\n");
+    }
+
     let mut synth = Synthesis::default();
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
             let run_data = render_data.push_run(
-                &state.state.lines[current_line].text.spans,
+                &state.state.lines[current_line].styles,
                 &current_font_id,
                 state.size,
                 state.level,
@@ -754,12 +787,11 @@ where
             return false;
         }
 
-        let cluster_span = cluster.user_data();
-        state.span = &state.state.lines[current_line].text.spans[cluster_span as usize];
-
-        // let cluster_span = cluster.user_data();
-        // if cluster_span != state.span_index {
-        // state.span_index = cluster_span;
+        let cluster_span = cluster.user_data() as usize;
+        if cluster_span != state.span_index {
+            state.span_index = cluster_span;
+            state.span = &state.state.lines[current_line].styles[state.span_index];
+        }
         // state.span = state.state.spans.get(cluster_span as usize).unwrap();
 
         // TODO?: Fix state.span.font overwrite
@@ -773,7 +805,7 @@ where
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
             let run_data = render_data.push_run(
-                &state.state.lines[current_line].text.spans,
+                &state.state.lines[current_line].styles,
                 &current_font_id,
                 state.size,
                 state.level,
