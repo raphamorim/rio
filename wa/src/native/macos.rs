@@ -1403,19 +1403,19 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     // }
 
     // extern "C" fn timer_fired(_this: &Object, _sel: Sel, _: ObjcId) {
-        // Information retired from https://github.com/rust-windowing/winit
-        // `setNeedsDisplay` does nothing on UIViews which are directly backed by CAEAGLLayer or CAMetalLayer.
-        // Ordinarily the OS sets up a bunch of UIKit state before calling drawRect: on a UIView, but when using
-        // raw or gl/metal for drawing this work is completely avoided.
-        //
-        // The docs for `setNeedsDisplay` don't mention `CAMetalLayer`; however, this has been confirmed via
-        // testing.
-        //
-        // https://developer.apple.com/documentation/uikit/uiview/1622437-setneedsdisplay?language=objc
+    // Information retired from https://github.com/rust-windowing/winit
+    // `setNeedsDisplay` does nothing on UIViews which are directly backed by CAEAGLLayer or CAMetalLayer.
+    // Ordinarily the OS sets up a bunch of UIKit state before calling drawRect: on a UIView, but when using
+    // raw or gl/metal for drawing this work is completely avoided.
+    //
+    // The docs for `setNeedsDisplay` don't mention `CAMetalLayer`; however, this has been confirmed via
+    // testing.
+    //
+    // https://developer.apple.com/documentation/uikit/uiview/1622437-setneedsdisplay?language=objc
 
-        // unsafe {
-        //     let () = msg_send!(this, setNeedsDisplay: YES);
-        // }
+    // unsafe {
+    //     let () = msg_send!(this, setNeedsDisplay: YES);
+    // }
     // }
 
     extern "C" fn dealloc(this: &Object, _sel: Sel) {
