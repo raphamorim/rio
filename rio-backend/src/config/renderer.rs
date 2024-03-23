@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 pub struct Renderer {
     #[serde(default = "Performance::default")]
     pub performance: Performance,
@@ -9,16 +9,6 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
-}
-
-impl Default for Renderer {
-    fn default() -> Self {
-        Self {
-            performance: Performance::default(),
-            backend: Backend::default(),
-            disable_unfocused_render: false,
-        }
-    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
