@@ -22,7 +22,7 @@ use swash::{Setting, Synthesis};
 
 #[derive(Default)]
 pub struct RunCache {
-    inner: HashMap<usize, Vec<RunCacheEntry>>,
+    inner: HashMap<usize, RunCacheEntry>,
 }
 
 impl RunCache {
@@ -32,10 +32,14 @@ impl RunCache {
 
     #[inline]
     fn insert(&mut self, line_number: usize, data: RunCacheEntry) {
+        if data.runs.is_empty() {
+            return;
+        }
+
         if let Some(line) = self.inner.get_mut(&line_number) {
-            line.push(data);
+            *line = data;
         } else {
-            self.inner.insert(line_number, vec![data]);
+            self.inner.insert(line_number, data);
         }
     }
 }
@@ -392,10 +396,8 @@ impl<'a> ParagraphBuilder<'a> {
         render_data: &mut RenderData,
         line_number: usize,
     ) -> bool {
-        if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
-            for data in cached_line_data {
-                render_data.push_run_from_cached_line(data);
-            }
+        if let Some(data) = self.cache.inner.get(&line_number) {
+            render_data.push_run_from_cached_line(data);
 
             true
         } else {

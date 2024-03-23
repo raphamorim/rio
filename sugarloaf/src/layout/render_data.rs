@@ -82,20 +82,35 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    #[allow(unused)]
     pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
         let mut i = 0;
         let mut g = 0;
 
+        // TO_DEBUG_CACHE:
+        // let glyphs_start = self.data.glyphs.len() as u32;
+        // let clusters_start = self.data.clusters.len() as u32;
+        // println!("\nCACHE");
+        // println!("current glyphs_start {}", glyphs_start);
+        // println!("current clusters_start {}", clusters_start);
+        // println!("first run expected glyphs_start {:?}", cached_entry.clusters[0].glyphs);
+        // println!("first run expected cluster_start {:?}", cached_entry.runs[0].clusters.0);
+        // println!("last run expected cluster_start {:?}", cached_entry.clusters[cached_entry.runs.len() - 1].glyphs);
+        // println!("last run expected cluster_start {:?}", cached_entry.runs[cached_entry.runs.len() - 1].clusters.0);
+
+        // println!("cache run length {:?}", cached_entry.runs.len());
+
         for run in &cached_entry.runs {
             let clusters_start = self.data.clusters.len() as u32;
+
             for _ in run.clusters.0..run.clusters.1 {
                 let glyphs_start = self.data.glyphs.len() as u32;
                 let mut cluster = cached_entry.clusters[i].to_owned();
 
                 for _ in 0..cached_entry.clusters_marks[i] {
-                    self.push_glyph(&cached_entry.glyphs[g]);
-                    g += 1;
+                    if g < cached_entry.glyphs.len() {
+                        self.push_glyph(&cached_entry.glyphs[g]);
+                        g += 1;
+                    }
                 }
 
                 cluster.glyphs = glyphs_start;
@@ -279,7 +294,7 @@ impl RenderData {
             return;
         }
         self.data.last_span = last_span;
-        self.data.runs.push(RunData {
+        let run_data = RunData {
             span: *span_data,
             line,
             font: *font,
@@ -304,11 +319,13 @@ impl RenderData {
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
-        });
+        };
+        self.data.runs.push(run_data);
+        self.last_cached_run.runs.push(run_data);
     }
 
-    fn push_glyph(&mut self, glyph: &ShapedGlyph) -> u32 {
-        let glyph_index = self.data.glyphs.len() as u32;
+    #[inline]
+    fn push_glyph(&mut self, glyph: &ShapedGlyph) {
         const MAX_SIMPLE_ADVANCE: u32 = 0x7FFF;
         if glyph.x == 0. && glyph.y == 0. {
             let packed_advance = (glyph.advance * 64.) as u32;
@@ -318,7 +335,7 @@ impl RenderData {
                     data: glyph.id as u32 | (packed_advance << 16),
                     size: glyph.data as usize,
                 });
-                return glyph_index;
+                return;
             }
         }
         // Complex glyph
@@ -328,7 +345,6 @@ impl RenderData {
             data: GLYPH_DETAILED | detail_index,
             size: glyph.data as usize,
         });
-        glyph_index
     }
 
     pub(super) fn apply_spacing(&mut self) {
