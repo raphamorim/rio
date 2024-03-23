@@ -183,10 +183,13 @@ impl<'a> ParagraphBuilder<'a> {
         let mut offset = self.last_offset;
         let style = if let Some(mut val) = style {
             should_insert_style = true;
-            val.font_size = val.font_size * self.s.scale;
+            val.font_size *= self.s.scale;
             val
         } else {
-            *line.styles.last().unwrap_or(&FragmentStyle::scaled_default(self.s.scale))
+            *line
+                .styles
+                .last()
+                .unwrap_or(&FragmentStyle::scaled_default(self.s.scale))
         };
 
         // if let Some(dir) = style.dir {
@@ -384,26 +387,26 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    fn process_from_cache(
-        &mut self,
-        render_data: &mut RenderData,
-        line_number: usize,
-    ) -> bool {
-        if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
-            for data in cached_line_data {
-                render_data.push_run_from_cached_line(data, line_number);
-            }
+    // fn process_from_cache(
+    //     &mut self,
+    //     render_data: &mut RenderData,
+    //     line_number: usize,
+    // ) -> bool {
+    //     if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
+    //         for data in cached_line_data {
+    //             render_data.push_run_from_cached_line(data);
+    //         }
 
-            true
-        } else {
-            false
-        }
-    }
+    //         true
+    //     } else {
+    //         false
+    //     }
+    // }
 
     fn resolve(
         &mut self,
         render_data: &mut RenderData,
-        lines_to_render: Option<&[usize]>,
+        _lines_to_render: Option<&[usize]>,
     ) {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
@@ -415,19 +418,22 @@ impl<'a> ParagraphBuilder<'a> {
         self.push_char(PDI);
         // }
 
-        let lines_to_render = lines_to_render.unwrap_or_default();
-        let render_specific_lines = !lines_to_render.is_empty();
+        // TODO:
+        // let lines_to_render = lines_to_render.unwrap_or_default();
+        // let render_specific_lines = !lines_to_render.is_empty();
 
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
-            if render_specific_lines && !lines_to_render.contains(&line_number) {
-                if self.process_from_cache(render_data, line_number) {
-                    continue;
-                }
-            } else {
-                self.cache.inner.remove(&line_number);
-            }
+
+            // TODO:
+            // if render_specific_lines && !lines_to_render.contains(&line_number) {
+            //     if self.process_from_cache(render_data, line_number) {
+            //         continue;
+            //     }
+            // } else {
+            //     self.cache.inner.remove(&line_number);
+            // }
 
             let line = &mut self.s.lines[line_number];
             let mut analysis = analyze(line.text.content.iter());
@@ -571,7 +577,7 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 render_data,
                 line_number,
-                &mut self.cache,
+                self.cache,
             );
         }
         render_data.apply_spacing();
@@ -630,7 +636,7 @@ fn shape_item(
     let range = item.start..item.end;
     let span_index = state.lines[current_line].text.spans[item.start];
     // println!("spans: {:?}", state.lines[current_line].text.spans);
-    let style = state.lines[current_line].styles[span_index as usize]; 
+    let style = state.lines[current_line].styles[span_index];
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
     let mut shape_state = ShapeState {
@@ -681,8 +687,9 @@ fn shape_item(
             dir,
             render_data,
             current_line,
-            cache,
         ) {}
+
+        cache.insert(current_line, render_data.last_cached_run.clone());
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
@@ -716,8 +723,9 @@ fn shape_item(
             dir,
             render_data,
             current_line,
-            cache,
         ) {}
+
+        cache.insert(current_line, render_data.last_cached_run.clone());
     }
     Some(())
 }
@@ -734,7 +742,6 @@ fn shape_clusters<I>(
     dir: shape::Direction,
     render_data: &mut RenderData,
     current_line: usize,
-    cache: &mut RunCache,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
@@ -755,19 +762,11 @@ where
         .variations(state.vars.iter().copied())
         .build();
 
-    if current_line == 0 {
-        println!("\n");
-        println!("FIRST {:?}", &state.state.lines[current_line].text.spans[state.span_index]);
-        println!("{:?}", cluster.chars());
-        println!("{:?}", &state.state.lines[current_line].styles.len());
-        println!("\n");
-    }
-
     let mut synth = Synthesis::default();
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            let run_data = render_data.push_run(
+            render_data.push_run(
                 &state.state.lines[current_line].styles,
                 &current_font_id,
                 state.size,
@@ -775,7 +774,6 @@ where
                 current_line as u32,
                 shaper,
             );
-            cache.insert(current_line, run_data);
             return false;
         }
 
@@ -796,7 +794,7 @@ where
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
-            let run_data = render_data.push_run(
+            render_data.push_run(
                 &state.state.lines[current_line].styles,
                 &current_font_id,
                 state.size,
@@ -804,7 +802,6 @@ where
                 current_line as u32,
                 shaper,
             );
-            cache.insert(current_line, run_data);
             state.font_id = next_font;
             state.synth = synth;
             return true;
