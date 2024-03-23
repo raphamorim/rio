@@ -463,6 +463,8 @@ impl<'a> ParagraphBuilder<'a> {
             self.itemize(line_number);
             self.shape(render_data, line_number);
         }
+
+        render_data.apply_spacing();
     }
 
     fn itemize(&mut self, line_number: usize) {
@@ -580,7 +582,6 @@ impl<'a> ParagraphBuilder<'a> {
                 self.cache,
             );
         }
-        render_data.apply_spacing();
         // let duration = start.elapsed();
         // println!("Time elapsed in shape is: {:?}", duration);
     }
