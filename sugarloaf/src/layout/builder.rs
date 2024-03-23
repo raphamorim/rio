@@ -387,26 +387,26 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    // fn process_from_cache(
-    //     &mut self,
-    //     render_data: &mut RenderData,
-    //     line_number: usize,
-    // ) -> bool {
-    //     if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
-    //         for data in cached_line_data {
-    //             render_data.push_run_from_cached_line(data);
-    //         }
+    fn process_from_cache(
+        &mut self,
+        render_data: &mut RenderData,
+        line_number: usize,
+    ) -> bool {
+        if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
+            for data in cached_line_data {
+                render_data.push_run_from_cached_line(data);
+            }
 
-    //         true
-    //     } else {
-    //         false
-    //     }
-    // }
+            true
+        } else {
+            false
+        }
+    }
 
     fn resolve(
         &mut self,
         render_data: &mut RenderData,
-        _lines_to_render: Option<&[usize]>,
+        lines_to_render: Option<&[usize]>,
     ) {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
@@ -418,22 +418,20 @@ impl<'a> ParagraphBuilder<'a> {
         self.push_char(PDI);
         // }
 
-        // TODO:
-        // let lines_to_render = lines_to_render.unwrap_or_default();
-        // let render_specific_lines = !lines_to_render.is_empty();
+        let lines_to_render = lines_to_render.unwrap_or_default();
+        let render_specific_lines = !lines_to_render.is_empty();
 
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
 
-            // TODO:
-            // if render_specific_lines && !lines_to_render.contains(&line_number) {
-            //     if self.process_from_cache(render_data, line_number) {
-            //         continue;
-            //     }
-            // } else {
-            //     self.cache.inner.remove(&line_number);
-            // }
+            if render_specific_lines && !lines_to_render.contains(&line_number) {
+                if self.process_from_cache(render_data, line_number) {
+                    continue;
+                }
+            } else {
+                self.cache.inner.remove(&line_number);
+            }
 
             let line = &mut self.s.lines[line_number];
             let mut analysis = analyze(line.text.content.iter());
