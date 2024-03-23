@@ -37,7 +37,7 @@ impl PartialEq for Content {
     fn eq(&self, other: &Self) -> bool {
         self.text == other.text
             && self.fragments == other.fragments
-            && self.last_line == self.last_line
+            && self.last_line == other.last_line
     }
 }
 

@@ -92,8 +92,10 @@ impl Advanced {
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = Content::builder();
-        let mut style = FragmentStyle::default();
-        style.font_size = tree.layout.font_size;
+        let style = FragmentStyle {
+            font_size: tree.layout.font_size,
+            ..Default::default()
+        };
         // content_builder.enter_span(&[
         //     SpanStyle::FontId(0),
         //     SpanStyle::Size(tree.layout.font_size),
@@ -125,8 +127,10 @@ impl Advanced {
         let line = &tree.lines[line_number];
 
         for i in 0..line.len() {
-            let mut style = FragmentStyle::default();
-            style.font_size = tree.layout.font_size;
+            let mut style = FragmentStyle {
+                font_size: tree.layout.font_size,
+                ..Default::default()
+            };
 
             if line[i].style.is_bold_italic {
                 style.font_attrs.1 = Weight::BOLD;
