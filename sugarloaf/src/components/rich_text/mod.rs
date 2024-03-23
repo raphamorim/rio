@@ -275,7 +275,7 @@ impl RichTextBrush {
             mask_texture_view,
             sampler,
             textures: FnvHashMap::default(),
-            comp: Compositor::new(2048),
+            comp: Compositor::new(4096),
             dlist,
             bind_group,
             transform,

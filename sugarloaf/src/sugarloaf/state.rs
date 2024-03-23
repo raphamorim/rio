@@ -129,6 +129,7 @@ impl SugarState {
         //     self.compositors.advanced.clean();
         // }
 
+        self.compositors.advanced.clean();
         self.compositors.elementary.clean();
         self.dimensions_changed = false;
     }
@@ -149,7 +150,7 @@ impl SugarState {
 
         advance_brush.prepare(context, self);
 
-        for section in &self.compositors.elementary.blocks_sections {
+        for section in &self.compositors.elementary.sections {
             elementary_brush.queue(section);
             elementary_brush.keep_cached(section);
         }
@@ -176,16 +177,10 @@ impl SugarState {
                 }
 
                 if !block.rects.is_empty() {
-                    self.compositors.elementary.extend_block_rects(&block.rects);
+                    self.compositors.elementary.extend_rects(&block.rects);
                 }
             }
         }
-
-        // Add block rects to main rects
-        self.compositors
-            .elementary
-            .rects
-            .extend(&self.compositors.elementary.blocks_rects);
 
         true
     }
@@ -332,7 +327,7 @@ impl SugarState {
         }
 
         if should_clean_blocks {
-            self.compositors.elementary.clean_blocks();
+            self.compositors.elementary.clean();
         }
 
         if should_resize {

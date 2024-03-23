@@ -35,7 +35,9 @@ impl Default for Advanced {
 
 impl Advanced {
     pub fn reset(&mut self) {}
-    pub fn clean(&mut self) {}
+    pub fn clean(&mut self) {
+        self.content_builder = Content::builder();
+    }
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
@@ -114,10 +116,6 @@ impl Advanced {
 
     #[inline]
     pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
-        if line_number == 0 {
-            self.content_builder = Content::builder();
-        }
-
         let line = &tree.lines[line_number];
 
         for i in 0..line.len() {

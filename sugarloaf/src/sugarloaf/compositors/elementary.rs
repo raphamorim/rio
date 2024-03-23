@@ -11,13 +11,6 @@ use crate::sugarloaf::{PxScale, Rect, SugarText};
 use ab_glyph::FontArc;
 use fnv::FnvHashMap;
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct CachedSugar {
-    font_id: FontId,
-    char_width: f32,
-    px_scale: Option<PxScale>,
-}
-
 #[allow(unused)]
 struct GraphicRect {
     id: graphics::SugarGraphicId,
@@ -32,14 +25,9 @@ struct GraphicRect {
 
 #[derive(Default)]
 pub struct Elementary {
-    sugar_cache: FnvHashMap<char, CachedSugar>,
     pub rects: Vec<Rect>,
-    pub blocks_rects: Vec<Rect>,
     pub sections: Vec<OwnedSection>,
-    pub blocks_sections: Vec<OwnedSection>,
     pub should_resize: bool,
-    text_y: f32,
-    current_row: u16,
     fonts: Vec<FontArc>,
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
 }
@@ -52,19 +40,17 @@ impl Elementary {
 
     #[inline]
     pub fn rects(&mut self) -> &Vec<Rect> {
-        self.rects.extend(&self.blocks_rects);
         &self.rects
     }
 
     #[inline]
-    pub fn clean_blocks(&mut self) {
-        self.blocks_sections.clear();
-        self.blocks_rects.clear();
+    pub fn extend_rects(&mut self, rects: &Vec<Rect>) {
+        self.rects.extend(rects);
     }
 
     #[inline]
     pub fn blocks_are_empty(&self) -> bool {
-        self.blocks_sections.is_empty() && self.blocks_rects.is_empty()
+        self.sections.is_empty() && self.rects.is_empty()
     }
 
     #[inline]
@@ -73,14 +59,8 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn extend_block_rects(&mut self, rects: &Vec<Rect>) {
-        self.blocks_rects.extend(rects);
-    }
-
-    #[inline]
     pub fn reset(&mut self) {
         // Clean font cache per instance
-        self.sugar_cache.clear();
         self.clean();
     }
 
@@ -89,8 +69,6 @@ impl Elementary {
         self.rects.clear();
         self.sections.clear();
         self.graphic_rects.clear();
-        self.current_row = 0;
-        self.text_y = 0.0;
         self.should_resize = false;
     }
 
@@ -132,8 +110,8 @@ impl Elementary {
             layout,
         };
 
-        self.blocks_sections.push(section);
+        self.sections.push(section);
 
-        &self.blocks_sections[self.blocks_sections.len() - 1]
+        &self.sections[self.sections.len() - 1]
     }
 }
