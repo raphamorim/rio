@@ -12,14 +12,12 @@
 	- Sugarloaf now uses same render pass for each render.
 	- Ignore equal renderers.
 	- Compute layout updates only if layout is different.
-	- Introduced renderer level (`0` for elementary and `1` for advanced).
 	- Reduced font size to `16.0`.
 - Support to font ligatures.
 - Updated wgpu to 0.19.0.
 - Removed support to DX11.
 - Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
-- Vertical text alignment is now `Bottom` as default instead of `Center`.
-- Partial support to `line-height` configuration.
+- Support to `line-height` configuration.
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
