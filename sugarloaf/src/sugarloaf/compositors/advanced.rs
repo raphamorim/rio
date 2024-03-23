@@ -164,7 +164,7 @@ impl Advanced {
                 }
                 SugarDecoration::Strikethrough => {
                     style.underline = true;
-                    style.underline_offset = Some(6.);
+                    style.underline_offset = Some(style.font_size / 2.);
                     style.underline_size = Some(2.);
                 }
                 _ => {}

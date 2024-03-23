@@ -10,9 +10,8 @@ pub const FONT_ID_BOLD_ITALIC: usize = 3;
 pub const FONT_ID_UNICODE: usize = 4;
 pub const FONT_ID_SYMBOL: usize = 5;
 pub const FONT_ID_EMOJIS: usize = 6;
-pub const FONT_ID_EMOJIS_NATIVE: usize = 7;
-pub const FONT_ID_ICONS: usize = 8;
-pub const FONT_ID_BUILTIN: usize = 9;
+pub const FONT_ID_ICONS: usize = 7;
+pub const FONT_ID_BUILTIN: usize = 8;
 // After 8 is extra fonts
 
 use crate::font::constants::*;
@@ -65,7 +64,7 @@ impl FontContext {
         if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
             font_id = *cached_font_id;
         } else if cluster.info().is_emoji() {
-            font_id = FONT_ID_EMOJIS_NATIVE;
+            font_id = FONT_ID_EMOJIS;
         }
 
         let charmap = library[font_id]
@@ -514,9 +513,6 @@ impl Font {
             let font_arc_symbol = FontData::from_slice(FONT_DEJAVU_SANS).unwrap();
             fonts.insert(font_arc_symbol);
         }
-
-        let font_arc_emoji = FontData::from_slice(FONT_EMOJI).unwrap();
-        fonts.insert(font_arc_emoji);
 
         let font_arc_emoji_native = find_font(
             db,

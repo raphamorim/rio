@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::compositors::{SugarCompositorLevel, SugarCompositors};
+use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
 use super::tree::{Diff, SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
@@ -18,16 +18,12 @@ pub struct SugarState {
     dimensions_changed: bool,
     current_line: usize,
     pub compositors: SugarCompositors,
-    level: SugarCompositorLevel,
     // TODO: Decide if graphics should be in SugarTree or SugarState
     pub graphics: SugarloafGraphics,
 }
 
 impl SugarState {
-    pub fn new(
-        level: SugarCompositorLevel,
-        initial_layout: SugarloafLayout,
-    ) -> SugarState {
+    pub fn new(initial_layout: SugarloafLayout) -> SugarState {
         // First time computing changes should obtain dimensions
         let next = SugarTree {
             layout: initial_layout,
@@ -36,7 +32,6 @@ impl SugarState {
         SugarState {
             current_line: 0,
             compositors: SugarCompositors::default(),
-            level,
             graphics: SugarloafGraphics::default(),
             current: SugarTree::default(),
             next,
@@ -79,16 +74,9 @@ impl SugarState {
 
     #[inline]
     pub fn compute_line_end(&mut self) {
-        match self.level {
-            SugarCompositorLevel::Elementary => self
-                .compositors
-                .elementary
-                .update_tree_with_new_line(self.current_line, &self.next),
-            SugarCompositorLevel::Advanced => self
-                .compositors
-                .advanced
-                .update_tree_with_new_line(self.current_line, &self.next),
-        }
+        self.compositors
+            .advanced
+            .update_tree_with_new_line(self.current_line, &self.next);
     }
 
     #[inline]
@@ -159,13 +147,7 @@ impl SugarState {
             return false;
         }
 
-        if self.level.is_advanced() {
-            advance_brush.prepare(context, self);
-        } else {
-            for section in &self.compositors.elementary.sections {
-                elementary_brush.queue(section);
-            }
-        }
+        advance_brush.prepare(context, self);
 
         for section in &self.compositors.elementary.blocks_sections {
             elementary_brush.queue(section);
@@ -214,11 +196,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_dimensions(
-        &mut self,
-        advance_brush: &mut RichTextBrush,
-        elementary_brush: &mut text::GlyphBrush<()>,
-    ) {
+    pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
         // If layout is different or current has empty dimensions
         // then current will flip with next and will try to obtain
         // the dimensions.
@@ -227,47 +205,19 @@ impl SugarState {
             return;
         }
 
-        if self.level.is_advanced() {
-            if let Some((width, height)) = advance_brush.dimensions(self) {
-                let mut dimensions_changed = false;
-                if height != self.current.layout.dimensions.height {
-                    self.current.layout.dimensions.height = height;
-                    log::info!("prepare_render: changed height... {}", height);
-                    dimensions_changed = true;
-                }
-
-                if width != self.current.layout.dimensions.width {
-                    self.current.layout.dimensions.width = width;
-                    self.current.layout.update_columns_per_font_width();
-                    log::info!("prepare_render: changed width... {}", width);
-                    dimensions_changed = true;
-                }
-
-                if dimensions_changed {
-                    self.current.layout.update();
-                    self.next.layout = self.current.layout;
-                    self.dimensions_changed = true;
-                    log::info!("sugar_state: dimensions has changed");
-                }
-            }
-        } else {
-            let font_bound = self.compositors.elementary.calculate_dimensions(
-                ' ',
-                crate::font::FONT_ID_REGULAR,
-                &self.current,
-                elementary_brush,
-            );
-
+        if let Some((width, height)) = advance_brush.dimensions(self) {
             let mut dimensions_changed = false;
-            if font_bound.0 != self.current.layout.dimensions.width {
+            if height != self.current.layout.dimensions.height {
+                self.current.layout.dimensions.height = height;
+                log::info!("prepare_render: changed height... {}", height);
                 dimensions_changed = true;
-                self.current.layout.dimensions.width = font_bound.0;
-                self.current.layout.update_columns_per_font_width();
             }
 
-            if font_bound.1 != self.current.layout.dimensions.height {
+            if width != self.current.layout.dimensions.width {
+                self.current.layout.dimensions.width = width;
+                self.current.layout.update_columns_per_font_width();
+                log::info!("prepare_render: changed width... {}", width);
                 dimensions_changed = true;
-                self.current.layout.dimensions.height = font_bound.1;
             }
 
             if dimensions_changed {
@@ -298,11 +248,9 @@ impl SugarState {
         if self.current_has_empty_dimensions() {
             std::mem::swap(&mut self.current, &mut self.next);
 
-            if self.level.is_advanced() {
-                self.compositors
-                    .advanced
-                    .calculate_dimensions(&self.current);
-            }
+            self.compositors
+                .advanced
+                .calculate_dimensions(&self.current);
 
             self.compositors.elementary.set_should_resize();
             self.reset_next();
@@ -373,18 +321,13 @@ impl SugarState {
                     .calculate_dimensions(&self.current);
             }
 
-            if self.level.is_advanced() {
-                if lines_to_update.is_empty() {
-                    self.compositors.advanced.update_layout(&self.current);
-                } else {
-                    log::debug!(
-                        "sugarloaf - update specific lines: {:?}",
-                        lines_to_update
-                    );
-                    self.compositors
-                        .advanced
-                        .update_layout_with_lines(&self.current, &lines_to_update);
-                }
+            if lines_to_update.is_empty() {
+                self.compositors.advanced.update_layout(&self.current);
+            } else {
+                log::debug!("sugarloaf - update specific lines: {:?}", lines_to_update);
+                self.compositors
+                    .advanced
+                    .update_layout_with_lines(&self.current, &lines_to_update);
             }
         }
 
