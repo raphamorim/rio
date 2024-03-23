@@ -1,4 +1,3 @@
-use crate::config::default_renderer_level;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -10,8 +9,6 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
-    #[serde(default = "default_renderer_level")]
-    pub level: u8,
 }
 
 impl Default for Renderer {
@@ -20,7 +17,6 @@ impl Default for Renderer {
             performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
-            level: default_renderer_level(),
         }
     }
 }

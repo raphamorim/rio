@@ -33,8 +33,8 @@ use rio_backend::event::RioEvent;
 use rio_backend::selection::SelectionType;
 use rio_backend::sugarloaf::font::loader;
 use rio_backend::sugarloaf::{
-    layout::SugarloafLayout, SugarCompositorLevel, Sugarloaf, SugarloafErrors,
-    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
@@ -165,10 +165,6 @@ impl Route {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
-            level: match config.renderer.level {
-                0 => SugarCompositorLevel::Elementary,
-                _ => SugarCompositorLevel::Advanced,
-            },
         };
 
         let padding_y_bottom = padding_bottom_from_config(&config);

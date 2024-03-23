@@ -9,7 +9,6 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
-use crate::components::text::glyph::FontId;
 use crate::context::Context;
 use crate::font::fonts::{SugarloafFont, SugarloafFonts};
 #[cfg(not(target_arch = "wasm32"))]
@@ -74,7 +73,6 @@ pub struct SugarloafWindow {
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
-    pub level: compositors::SugarCompositorLevel,
 }
 
 impl Default for SugarloafRenderer {
@@ -87,7 +85,6 @@ impl Default for SugarloafRenderer {
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
-            level: compositors::SugarCompositorLevel::default(),
         }
     }
 }
@@ -147,7 +144,7 @@ impl Sugarloaf {
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
-        let mut state = SugarState::new(renderer.level, layout);
+        let mut state = SugarState::new(layout);
         state.set_fonts(font_library);
 
         let instance = Sugarloaf {
@@ -337,8 +334,7 @@ impl Sugarloaf {
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
         self.state.compute_changes();
-        self.state
-            .compute_dimensions(&mut self.rich_text_brush, &mut self.text_brush);
+        self.state.compute_dimensions(&mut self.rich_text_brush);
 
         if !self.state.compute_updates(
             &mut self.rich_text_brush,

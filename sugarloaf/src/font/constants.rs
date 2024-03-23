@@ -58,10 +58,6 @@ pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
     font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLightItalic.ttf");
 
-// Extra
-
-pub const FONT_EMOJI: &[u8] = font!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
-
 pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
     font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
 

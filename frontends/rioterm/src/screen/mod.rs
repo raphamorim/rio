@@ -132,10 +132,6 @@ impl Screen {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
-            level: match config.renderer.level {
-                0 => SugarCompositorLevel::Elementary,
-                _ => SugarCompositorLevel::Advanced,
-            },
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(

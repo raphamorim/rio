@@ -5,7 +5,7 @@ pub mod layout;
 mod sugarloaf;
 
 pub use crate::sugarloaf::{
-    compositors::SugarCompositorLevel,
+    compositors::SugarCompositors,
     graphics::{
         ColorType, SugarGraphic, SugarGraphicData, SugarGraphicId, SugarloafGraphics,
     },
