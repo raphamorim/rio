@@ -48,17 +48,9 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_data(&mut self) {
-        // Used for quick testings
-        // self.content = build_simple_content();
-        // self.content = build_complex_content();
-        // self.content = build_terminal_content();
-        // self.content = self.content_builder.clone().build();
-        self.render_data = RenderData::default();
-    }
-
-    #[inline]
     pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
+        self.render_data = RenderData::default();
+
         // Then process only lines that are different
         let mut lb = self
             .layout_context
@@ -75,6 +67,8 @@ impl Advanced {
 
     #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
+        self.render_data = RenderData::default();
+
         let mut lb = self.layout_context.builder(
             Direction::LeftToRight,
             None,

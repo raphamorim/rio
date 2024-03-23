@@ -340,10 +340,17 @@ impl SugarState {
                 should_update = true;
                 for change in changes {
                     match change {
-                        Diff::Line(diff) => lines_to_update.push(diff.line),
+                        Diff::Line(diff) => {
+                            if lines_to_update.is_empty()
+                                || lines_to_update[lines_to_update.len() - 1] != diff.line
+                            {
+                                lines_to_update.push(diff.line)
+                            }
+                        }
                         Diff::Char(diff) => {
-                            let len = lines_to_update.len();
-                            if len > 0 && lines_to_update[len - 1] != diff.line {
+                            if lines_to_update.is_empty()
+                                || lines_to_update[lines_to_update.len() - 1] != diff.line
+                            {
                                 lines_to_update.push(diff.line)
                             }
                         }
@@ -368,15 +375,12 @@ impl SugarState {
 
             if self.level.is_advanced() {
                 if lines_to_update.is_empty() {
-                    self.compositors.advanced.update_data();
-                } else {
-                    // self.compositors.advanced.update_data_with_lines(&lines_to_update);
-                }
-
-                if lines_to_update.is_empty() {
-                    self.compositors.advanced.update_data();
                     self.compositors.advanced.update_layout(&self.current);
                 } else {
+                    log::debug!(
+                        "sugarloaf - update specific lines: {:?}",
+                        lines_to_update
+                    );
                     self.compositors
                         .advanced
                         .update_layout_with_lines(&self.current, &lines_to_update);
