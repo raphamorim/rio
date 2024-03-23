@@ -391,7 +391,7 @@ impl<'a> ParagraphBuilder<'a> {
     ) -> bool {
         if let Some(cached_line_data) = self.cache.inner.get(&line_number) {
             for data in cached_line_data {
-                render_data.push_run_from_cached_line(data);
+                render_data.push_run_from_cached_line(data, line_number);
             }
 
             true
@@ -421,13 +421,13 @@ impl<'a> ParagraphBuilder<'a> {
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
-            // if render_specific_lines && !lines_to_render.contains(&line_number) {
-            //     if self.process_from_cache(render_data, line_number) {
-            //         continue;
-            //     }
-            // } else {
-            //     self.cache.inner.remove(&line_number);
-            // }
+            if render_specific_lines && !lines_to_render.contains(&line_number) {
+                if self.process_from_cache(render_data, line_number) {
+                    continue;
+                }
+            } else {
+                self.cache.inner.remove(&line_number);
+            }
 
             let line = &mut self.s.lines[line_number];
             let mut analysis = analyze(line.text.content.iter());
@@ -629,7 +629,7 @@ fn shape_item(
     };
     let range = item.start..item.end;
     let span_index = state.lines[current_line].text.spans[item.start];
-    println!("spans: {:?}", state.lines[current_line].text.spans);
+    // println!("spans: {:?}", state.lines[current_line].text.spans);
     let style = state.lines[current_line].styles[span_index as usize]; 
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
@@ -645,14 +645,6 @@ fn shape_item(
         span_index,
         size: style.font_size,
     };
-
-    println!("{:?}", span_index);
-
-    if current_line == 0 {
-        println!("text.spans.len {:?}", state.lines[current_line].text.spans.len());
-        println!("range {:?}", range);
-        println!("styles {:?}", state.lines[current_line].styles.len());
-    }
 
     if item.level & 1 != 0 {
         let chars = state.lines[current_line].text.content[range.clone()]
