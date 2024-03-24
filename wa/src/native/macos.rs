@@ -1374,39 +1374,49 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     let superclass = class!(MTKView);
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
 
-    extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
-        let rect = NSRect {
-            origin: NSPoint { x: 0.0, y: 0.0 },
-            size: NSSize {
-                width: 0.0,
-                height: 0.0,
-            },
-        };
+    // extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
+    //     let rect = NSRect {
+    //         origin: NSPoint { x: 0.0, y: 0.0 },
+    //         size: NSSize {
+    //             width: 0.0,
+    //             height: 0.0,
+    //         },
+    //     };
 
-        draw_rect(this, sel, rect)
-    }
+    //     draw_rect(this, sel, rect)
+    // }
 
-    extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
-        YES
-    }
+    // extern "C" fn wants_update_layer(_view: &mut Object, _sel: Sel) -> BOOL {
+    //     YES
+    // }
 
-    extern "C" fn draw_layer_in_context(
-        _view: &mut Object,
-        _sel: Sel,
-        _layer_id: ObjcId,
-        _context: ObjcId,
-    ) {
-    }
+    // extern "C" fn draw_layer_in_context(
+    //     _view: &mut Object,
+    //     _sel: Sel,
+    //     _layer_id: ObjcId,
+    //     _context: ObjcId,
+    // ) {
+    // }
 
-    extern "C" fn update_layer(_this: &mut Object, _sel: Sel) {
-        log::trace!("update_layer called");
-    }
+    // extern "C" fn update_layer(_this: &mut Object, _sel: Sel) {
+    //     log::trace!("update_layer called");
+    // }
 
-    extern "C" fn timer_fired(this: &Object, _sel: Sel, _: ObjcId) {
-        unsafe {
-            let () = msg_send!(this, setNeedsDisplay: YES);
-        }
-    }
+    // extern "C" fn timer_fired(_this: &Object, _sel: Sel, _: ObjcId) {
+        // Information retired from https://github.com/rust-windowing/winit
+        // `setNeedsDisplay` does nothing on UIViews which are directly backed by CAEAGLLayer or CAMetalLayer.
+        // Ordinarily the OS sets up a bunch of UIKit state before calling drawRect: on a UIView, but when using
+        // raw or gl/metal for drawing this work is completely avoided.
+        //
+        // The docs for `setNeedsDisplay` don't mention `CAMetalLayer`; however, this has been confirmed via
+        // testing.
+        //
+        // https://developer.apple.com/documentation/uikit/uiview/1622437-setneedsdisplay?language=objc
+
+        // unsafe {
+        //     let () = msg_send!(this, setNeedsDisplay: YES);
+        // }
+    // }
 
     extern "C" fn dealloc(this: &Object, _sel: Sel) {
         unsafe {
@@ -1429,30 +1439,30 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
 
     unsafe {
         decl.add_method(sel!(dealloc), dealloc as extern "C" fn(&Object, Sel));
-        decl.add_method(
-            sel!(timerFired:),
-            timer_fired as extern "C" fn(&Object, Sel, ObjcId),
-        );
+        // decl.add_method(
+        //     sel!(timerFired:),
+        //     timer_fired as extern "C" fn(&Object, Sel, ObjcId),
+        // );
         decl.add_method(
             sel!(drawRect:),
             draw_rect as extern "C" fn(&Object, Sel, NSRect),
         );
-        decl.add_method(
-            sel!(displayLayer:),
-            display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
-        );
-        decl.add_method(
-            sel!(updateLayer),
-            update_layer as extern "C" fn(&mut Object, Sel),
-        );
-        decl.add_method(
-            sel!(wantsUpdateLayer),
-            wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
-        );
-        decl.add_method(
-            sel!(drawLayer:inContext:),
-            draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
-        );
+        // decl.add_method(
+        //     sel!(displayLayer:),
+        //     display_layer as extern "C" fn(&mut Object, Sel, ObjcId),
+        // );
+        // decl.add_method(
+        //     sel!(updateLayer),
+        //     update_layer as extern "C" fn(&mut Object, Sel),
+        // );
+        // decl.add_method(
+        //     sel!(wantsUpdateLayer),
+        //     wants_update_layer as extern "C" fn(&mut Object, Sel) -> BOOL,
+        // );
+        // decl.add_method(
+        //     sel!(drawLayer:inContext:),
+        //     draw_layer_in_context as extern "C" fn(&mut Object, Sel, ObjcId, ObjcId),
+        // );
 
         view_base_decl(&mut decl);
     }
