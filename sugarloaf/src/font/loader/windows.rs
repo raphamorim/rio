@@ -13,6 +13,8 @@ pub fn load(db: &mut Database) {
     if let Ok(ref home) = std::env::var("USERPROFILE") {
         let home_path = std::path::Path::new(home);
         self.load_fonts_dir(home_path.join("AppData\\Local\\Microsoft\\Windows\\Fonts"));
-        self.load_fonts_dir(home_path.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"));
+        self.load_fonts_dir(
+            home_path.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"),
+        );
     }
 }
