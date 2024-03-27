@@ -29,6 +29,7 @@ pub use swash::{Style, Weight};
 #[derive(Debug)]
 enum Inner {
     #[allow(unused)]
+    #[cfg(not(target_arch = "wasm32"))]
     Mapped(memmap2::Mmap),
     Memory(Vec<u8>),
 }
@@ -619,7 +620,6 @@ impl Font {
         fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap());
         fonts.insert(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
         fonts.insert(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
-        fonts.insert(FontData::from_slice(FONT_EMOJI).unwrap());
         fonts.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
         fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
 
