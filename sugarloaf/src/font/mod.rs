@@ -10,8 +10,8 @@ pub const FONT_ID_BOLD_ITALIC: usize = 3;
 pub const FONT_ID_UNICODE: usize = 4;
 pub const FONT_ID_SYMBOL: usize = 5;
 pub const FONT_ID_EMOJIS: usize = 6;
-pub const FONT_ID_ICONS: usize = 7;
-pub const FONT_ID_BUILTIN: usize = 8;
+pub const FONT_ID_ICONS: usize = 8;
+pub const FONT_ID_BUILTIN: usize = 9;
 // After 8 is extra fonts
 
 use crate::font::constants::*;
@@ -19,11 +19,29 @@ use ab_glyph::FontArc;
 use fnv::FnvHashMap;
 use std::ops::Index;
 use std::ops::IndexMut;
+use std::sync::Arc;
 use swash::proxy::CharmapProxy;
 use swash::text::cluster::{CharCluster, Status};
 use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 
 pub use swash::{Style, Weight};
+
+#[derive(Debug)]
+enum Inner {
+    #[allow(unused)]
+    #[cfg(not(target_arch = "wasm32"))]
+    Mapped(memmap2::Mmap),
+    Memory(Vec<u8>),
+}
+
+impl Inner {
+    fn data(&self) -> &[u8] {
+        match self {
+            Self::Mapped(mmap) => mmap,
+            Self::Memory(vec) => vec,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct FontContext {
@@ -146,10 +164,50 @@ impl IndexMut<usize> for FontLibrary {
     }
 }
 
+/// Atomically reference counted, heap allocated or memory mapped buffer.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct SharedData {
+    inner: Arc<Inner>,
+}
+
+impl SharedData {
+    /// Creates shared data from the specified bytes.
+    pub fn new(data: Vec<u8>) -> Self {
+        Self {
+            inner: Arc::new(Inner::Memory(data)),
+        }
+    }
+
+    /// Returns the underlying bytes of the data.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.data()
+    }
+
+    /// Returns the number of strong references to the data.
+    pub fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.inner)
+    }
+}
+
+impl std::ops::Deref for SharedData {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.data()
+    }
+}
+
+impl AsRef<[u8]> for SharedData {
+    fn as_ref(&self) -> &[u8] {
+        self.inner.data()
+    }
+}
+
 #[derive(Clone)]
 pub struct FontData {
     // Full content of the font file
-    data: Vec<u8>,
+    data: SharedData,
     // Offset to the table directory
     offset: u32,
     // Cache key
@@ -161,7 +219,8 @@ pub struct FontData {
 
 impl PartialEq for FontData {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data && self.offset == other.offset && self.key == other.key
+        // self.data == other.data && self.offset == other.offset &&
+        self.key == other.key
     }
 }
 
@@ -184,7 +243,7 @@ impl FontData {
         let synth = attributes.synthesize(attributes);
 
         Ok(Self {
-            data,
+            data: SharedData::new(data),
             offset,
             key,
             charmap_proxy,
@@ -203,7 +262,7 @@ impl FontData {
         let synth = attributes.synthesize(attributes);
 
         Ok(Self {
-            data: data.to_vec(),
+            data: SharedData::new(data.to_vec()),
             offset,
             key,
             charmap_proxy,
