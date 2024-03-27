@@ -709,8 +709,12 @@ fn parse_face_info(
         ttf_parser::RawFace::parse(data, index).map_err(|_| LoadError::MalformedFont)?;
     let (families, post_script_name) =
         parse_names(&raw_face).ok_or(LoadError::UnnamedFont)?;
-    let (style, weight, stretch) = parse_os2(&raw_face);
-    let monospaced = parse_post(&raw_face);
+    let (mut style, weight, stretch) = parse_os2(&raw_face);
+    let (monospaced, italic) = parse_post(&raw_face);
+
+    if style == Style::Normal && italic {
+        style = Style::Italic;
+    }
 
     Ok(FaceInfo {
         id: ID::dummy(),
@@ -842,18 +846,23 @@ fn parse_os2(raw_face: &ttf_parser::RawFace) -> (Style, Weight, Stretch) {
     (style, Weight(weight.to_number()), stretch)
 }
 
-fn parse_post(raw_face: &ttf_parser::RawFace) -> bool {
+fn parse_post(raw_face: &ttf_parser::RawFace) -> (bool, bool) {
     // We need just a single value from the `post` table, while ttf-parser will parse all.
     // Therefore we have a custom parser.
 
     const POST_TAG: ttf_parser::Tag = ttf_parser::Tag::from_bytes(b"post");
     let data = match raw_face.table(POST_TAG) {
         Some(v) => v,
-        None => return false,
+        None => return (false, false),
     };
 
     // All we care about, it that u32 at offset 12 is non-zero.
-    data.get(12..16) != Some(&[0, 0, 0, 0])
+    let monospaced = data.get(12..16) != Some(&[0, 0, 0, 0]);
+
+    // Italic angle as f16.16.
+    let italic = data.get(4..8) != Some(&[0, 0, 0, 0]);
+
+    (monospaced, italic)
 }
 
 trait NameExt {
