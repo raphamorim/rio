@@ -1,42 +1,6 @@
 use crate::font::{DEFAULT_FONT_FAMILY, DEFAULT_FONT_FAMILY_VARIANT};
 use serde::{Deserialize, Serialize};
 
-/* Example:
-
-[fonts]
-size = 18
-
-
-# You can also set family on root to overwritte all fonts
-# family = "cascadiamono"
-
-# You can also specify extra fonts to load
-# extras = [
-#   { family = "Microsoft JhengHei" },
-# ]
-
-[fonts.regular]
-family = "cascadiamono"
-style = "normal"
-weight = 400
-
-[fonts.bold]
-family = "cascadiamono"
-style = "normal"
-weight = 800
-
-[fonts.italic]
-family = "cascadiamono"
-style = "italic"
-weight = 400
-
-[fonts.bold-italic]
-family = "cascadiamono"
-style = "italic"
-weight = 800
-
-*/
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
