@@ -34,7 +34,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         sugarloaf.text(
             (70., layout.margin.top_y + 50.),
             String::from("Welcome to\nRio Terminal"),
-            8,
             28.,
             [1., 1., 1., 1.],
             false,
@@ -43,7 +42,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         sugarloaf.text(
             (70., layout.margin.top_y + 100.),
             String::from("(enter to continue)"),
-            8,
             18.,
             yellow,
             false,
@@ -52,7 +50,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         sugarloaf.text(
             (width - 50., layout.margin.top_y + 320.),
             String::from("󰌑"),
-            7,
             26.,
             yellow,
             true,
@@ -61,7 +58,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         sugarloaf.text(
             (width - 50., layout.margin.top_y + 340.),
             String::from("nice"),
-            8,
             14.,
             yellow,
             true,
@@ -73,7 +69,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     sugarloaf.text(
         (70., layout.margin.top_y + 50.),
         String::from("Welcome to Rio Terminal"),
-        8,
         28.,
         [1., 1., 1., 1.],
         true,
@@ -82,7 +77,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     sugarloaf.text(
         (70., layout.margin.top_y + 80.),
         String::from("(press enter to continue)"),
-        8,
         18.,
         yellow,
         true,
@@ -91,7 +85,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     sugarloaf.text(
         (70., layout.margin.top_y + 220.),
         welcome_content(),
-        8,
         18.,
         [1., 1., 1., 1.],
         false,
@@ -100,7 +93,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     sugarloaf.text(
         (width - 50., layout.margin.top_y + 320.),
         String::from("󰌑"),
-        7,
         26.,
         yellow,
         true,
@@ -109,7 +101,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     sugarloaf.text(
         (width - 50., layout.margin.top_y + 340.),
         String::from("nice"),
-        8,
         14.,
         yellow,
         true,

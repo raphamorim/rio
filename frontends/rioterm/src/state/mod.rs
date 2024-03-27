@@ -585,7 +585,6 @@ impl State {
             sugarloaf.text(
                 text.position,
                 text.content.to_owned(),
-                text.font_id,
                 text.font_size,
                 text.color,
                 true,

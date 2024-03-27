@@ -280,7 +280,6 @@ impl Sugarloaf {
         &mut self,
         position: (f32, f32),
         content: String,
-        font_id: usize,
         font_size: f32,
         color: [f32; 4],
         single_line: bool,
@@ -290,7 +289,7 @@ impl Sugarloaf {
             text: Some(SugarText {
                 position,
                 content,
-                font_id,
+                font_id: 0,
                 font_size,
                 color,
                 single_line,
