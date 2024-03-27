@@ -1,6 +1,5 @@
 use rio_backend::error::{RioError, RioErrorLevel};
 use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
 use rio_backend::sugarloaf::Sugarloaf;
 
 pub struct Assistant {
@@ -70,7 +69,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
     sugarloaf.text(
         (70., layout.margin.top_y + 50.),
         String::from("Woops! Rio got errors"),
-        FONT_ID_BUILTIN,
         28.,
         [1., 1., 1., 1.],
         true,
@@ -81,7 +79,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
             sugarloaf.text(
                 (70., layout.margin.top_y + 80.),
                 String::from("after fix it, restart the terminal"),
-                FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
                 true,
@@ -92,7 +89,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
             sugarloaf.text(
                 (70., layout.margin.top_y + 80.),
                 String::from("(press enter to continue)"),
-                FONT_ID_BUILTIN,
                 18.,
                 [1., 1., 1., 1.],
                 true,
@@ -102,7 +98,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
         sugarloaf.text(
             (70., layout.margin.top_y + 170.),
             report.report.to_string(),
-            FONT_ID_BUILTIN,
             14.,
             [1., 1., 1., 1.],
             false,
