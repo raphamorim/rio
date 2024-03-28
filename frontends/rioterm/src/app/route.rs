@@ -31,7 +31,7 @@ use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::RioEvent;
 use rio_backend::selection::SelectionType;
-use rio_backend::sugarloaf::font::loader;
+use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
@@ -103,7 +103,7 @@ impl Route {
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         config: Rc<Config>,
         superloop: rio_backend::superloop::Superloop,
-        font_database: &loader::Database,
+        font_library: FontLibrary,
         dimensions: (i32, i32, f32),
         open_url: &str,
     ) -> Result<Route, Box<dyn std::error::Error>> {
@@ -195,9 +195,9 @@ impl Route {
         let mut sugarloaf = match futures::executor::block_on(Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            config.fonts.to_owned(),
+            // config.fonts.to_owned(),
+            &font_library,
             sugarloaf_layout,
-            Some(font_database),
         )) {
             Ok(instance) => instance,
             Err(instance_with_errors) => {

@@ -12,7 +12,7 @@ use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
 use super::MAX_ID;
-use crate::font::{FontContext, FontLibrary};
+use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use std::collections::HashMap;
 use swash::shape::{self, ShapeContext};
@@ -56,9 +56,9 @@ pub struct LayoutContext {
 
 impl LayoutContext {
     /// Creates a new layout context with the specified font library.
-    pub fn new(fcx: FontLibrary) -> Self {
+    pub fn new(font_library: &FontLibrary) -> Self {
         Self {
-            fonts: fcx,
+            fonts: font_library.clone(),
             fcx: FontContext::default(),
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
@@ -677,10 +677,13 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
+        let font_library = { &fonts.inner.read().unwrap() };
+        shape_state.font_id =
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+
         while shape_clusters(
             fcx,
-            fonts,
+            font_library,
             scx,
             &mut shape_state,
             &mut parser,
@@ -713,10 +716,12 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        shape_state.font_id = fcx.map_cluster(cluster, &mut shape_state.synth, fonts);
+        let font_library = { &fonts.inner.read().unwrap() };
+        shape_state.font_id =
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
         while shape_clusters(
             fcx,
-            fonts,
+            font_library,
             scx,
             &mut shape_state,
             &mut parser,
@@ -735,7 +740,7 @@ fn shape_item(
 #[allow(clippy::too_many_arguments)]
 fn shape_clusters<I>(
     fcx: &mut FontContext,
-    fonts: &FontLibrary,
+    fonts: &FontLibraryData,
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,

@@ -5,10 +5,10 @@
 
 use crate::components::text::glyph::{FontId, OwnedSection};
 
+use crate::font::FONT_ID_BUILT_IN;
 use crate::sugarloaf::graphics;
 use crate::sugarloaf::tree::SugarTree;
 use crate::sugarloaf::{PxScale, Rect, SugarText};
-use ab_glyph::FontArc;
 use fnv::FnvHashMap;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -40,16 +40,10 @@ pub struct Elementary {
     pub should_resize: bool,
     text_y: f32,
     current_row: u16,
-    fonts: Vec<FontArc>,
     graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
 }
 
 impl Elementary {
-    #[inline]
-    pub fn set_fonts(&mut self, fonts: Vec<FontArc>) {
-        self.fonts = fonts
-    }
-
     #[inline]
     pub fn rects(&mut self) -> &Vec<Rect> {
         self.rects.extend(&self.blocks_rects);
@@ -100,7 +94,7 @@ impl Elementary {
         sugar_text: &SugarText,
         tree: &SugarTree,
     ) -> &OwnedSection {
-        let font_id = FontId(sugar_text.font_id);
+        let font_id = FontId(FONT_ID_BUILT_IN);
 
         let text = crate::components::text::OwnedText {
             text: sugar_text.content.to_owned(),

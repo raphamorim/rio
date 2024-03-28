@@ -1,18 +1,12 @@
 pub mod constants;
+mod fallbacks;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 
-pub const FONT_ID_REGULAR: usize = 0;
-pub const FONT_ID_ITALIC: usize = 1;
-pub const FONT_ID_BOLD: usize = 2;
-pub const FONT_ID_BOLD_ITALIC: usize = 3;
-pub const FONT_ID_UNICODE: usize = 4;
-pub const FONT_ID_SYMBOL: usize = 5;
-pub const FONT_ID_EMOJIS: usize = 6;
-pub const FONT_ID_ICONS: usize = 8;
-pub const FONT_ID_BUILTIN: usize = 9;
-// After 8 is extra fonts
+pub const FONT_ID_DEFAULT: usize = 0;
+pub const FONT_ID_BUILT_IN: usize = 1;
+pub const FONT_ID_EMOJIS: usize = 2;
 
 use crate::font::constants::*;
 use ab_glyph::FontArc;
@@ -20,6 +14,7 @@ use fnv::FnvHashMap;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::sync::Arc;
+use std::sync::RwLock;
 use swash::proxy::CharmapProxy;
 use swash::text::cluster::{CharCluster, Status};
 use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
@@ -54,7 +49,7 @@ impl FontContext {
         &mut self,
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
-        library: &FontLibrary,
+        library: &FontLibraryData,
     ) -> Option<usize> {
         let mut font_id = None;
         for (current_font_id, font) in library.inner.iter().enumerate() {
@@ -75,10 +70,10 @@ impl FontContext {
         &mut self,
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
-        library: &FontLibrary,
+        library: &FontLibraryData,
     ) -> Option<usize> {
         let chars = cluster.chars();
-        let mut font_id = FONT_ID_REGULAR;
+        let mut font_id = FONT_ID_DEFAULT;
         if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
             font_id = *cached_font_id;
         } else if cluster.info().is_emoji() {
@@ -111,24 +106,49 @@ impl FontContext {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct FontLibrary {
-    pub inner: Vec<FontData>,
+    pub(super) inner: Arc<RwLock<FontLibraryData>>,
 }
 
 impl FontLibrary {
-    #[inline]
-    pub fn font_arcs(&self) -> Vec<ab_glyph::FontArc> {
-        self.inner
-            .iter()
-            .map(|x| {
-                FontArc::try_from_vec(x.data.to_vec()).unwrap_or(
-                    FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-                )
-            })
-            .collect::<Vec<ab_glyph::FontArc>>()
-    }
+    pub fn new(spec: SugarloafFonts) -> Self {
+        let mut font_library = FontLibraryData::default();
+        // let mut sugarloaf_errors = None;
 
+        // let (font_library, fonts_not_found) = loader;
+
+        // if !fonts_not_found.is_empty() {
+        //     sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
+        // }
+
+        let _fonts_not_found = font_library.load(spec);
+
+        Self {
+            inner: Arc::new(RwLock::new(font_library)),
+        }
+    }
+}
+
+pub struct FontLibraryData {
+    pub main: FontArc,
+    pub inner: Vec<FontData>,
+    db: loader::Database,
+}
+
+impl Default for FontLibraryData {
+    fn default() -> Self {
+        let mut db = loader::Database::new();
+        db.load_system_fonts();
+        Self {
+            db,
+            main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+            inner: vec![],
+        }
+    }
+}
+
+impl FontLibraryData {
     #[inline]
     pub fn insert(&mut self, font_data: FontData) {
         self.inner.push(font_data);
@@ -148,9 +168,116 @@ impl FontLibrary {
     pub fn font_by_id(&self, font_id: usize) -> FontRef {
         self.inner[font_id].as_ref()
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
+        let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
+
+        // If fonts.family does exist it will overwrite all families
+        if let Some(font_family_overwrite) = spec.family {
+            spec.regular.family = font_family_overwrite.to_owned();
+            spec.bold.family = font_family_overwrite.to_owned();
+            spec.bold_italic.family = font_family_overwrite.to_owned();
+            spec.italic.family = font_family_overwrite.to_owned();
+        }
+
+        let regular = find_font(&self.db, spec.regular);
+        self.inner.push(regular.0);
+        if let Some(err) = regular.2 {
+            fonts_not_fount.push(err);
+        }
+
+        for fallback in fallbacks::external_fallbacks() {
+            let extra_font_arc = find_font(
+                &self.db,
+                SugarloafFont {
+                    family: fallback,
+                    ..SugarloafFont::default()
+                },
+            );
+            self.inner.push(extra_font_arc.0);
+            if let Some(err) = extra_font_arc.2 {
+                fonts_not_fount.push(err);
+            }
+        }
+
+        let italic = find_font(&self.db, spec.italic);
+        self.inner.push(italic.0);
+        if let Some(err) = italic.2 {
+            fonts_not_fount.push(err);
+        }
+
+        let bold = find_font(&self.db, spec.bold);
+        self.inner.push(bold.0);
+        if let Some(err) = bold.2 {
+            fonts_not_fount.push(err);
+        }
+
+        let bold_italic = find_font(&self.db, spec.bold_italic);
+        self.inner.push(bold_italic.0);
+        if let Some(err) = bold_italic.2 {
+            fonts_not_fount.push(err);
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            self.inner
+                .push(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            self.inner
+                .push(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
+        }
+
+        self.inner
+            .push(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+
+        if !spec.extras.is_empty() {
+            for extra_font in spec.extras {
+                let extra_font_arc = find_font(
+                    &self.db,
+                    SugarloafFont {
+                        family: extra_font.family,
+                        style: extra_font.style,
+                        weight: extra_font.weight,
+                    },
+                );
+                self.inner.push(extra_font_arc.0);
+                if let Some(err) = extra_font_arc.2 {
+                    fonts_not_fount.push(err);
+                }
+            }
+        }
+
+        fonts_not_fount
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
+        self.inner
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_ITALIC).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+        self.inner
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+
+        vec![]
+    }
 }
 
-impl Index<usize> for FontLibrary {
+impl Index<usize> for FontLibraryData {
     type Output = FontData;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -158,7 +285,7 @@ impl Index<usize> for FontLibrary {
     }
 }
 
-impl IndexMut<usize> for FontLibrary {
+impl IndexMut<usize> for FontLibraryData {
     fn index_mut(&mut self, index: usize) -> &mut FontData {
         &mut self.inner[index]
     }
@@ -300,15 +427,6 @@ impl FontData {
             key: self.key,
         }
     }
-
-    // #[inline]
-    // pub fn map_cluster(&mut self, cluster: &mut CharCluster, synth: &mut Synthesis) {
-    //     let charmap = self.charmap_proxy.materialize(&self.as_ref());
-    //     let status = cluster.map(|ch| charmap.map(ch));
-    //     if status != Status::Discard {
-    //         *synth = self.synth;
-    //     }
-    // }
 }
 
 pub type SugarloafFont = fonts::SugarloafFont;
@@ -323,15 +441,6 @@ pub struct ComposedFontArc {
     pub bold: FontArc,
     pub italic: FontArc,
     pub bold_italic: FontArc,
-}
-
-pub struct Font {
-    pub text: ComposedFontArc,
-    pub symbol: FontArc,
-    pub emojis: FontArc,
-    pub unicode: FontArc,
-    pub icons: FontArc,
-    pub breadcrumbs: FontArc,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -437,192 +546,4 @@ fn find_font(
     };
 
     (FontData::from_slice(font_to_load).unwrap(), true, not_found)
-}
-
-impl Font {
-    // TODO: Refactor multiple unwraps in this code
-    // TODO: Use FontAttributes bold and italic
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn load(
-        mut spec: SugarloafFonts,
-        db_opt: Option<&loader::Database>,
-    ) -> (FontLibrary, Vec<SugarloafFont>) {
-        let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
-        let mut fonts: FontLibrary = FontLibrary::default();
-
-        // If fonts.family does exist it will overwrite all families
-        if let Some(font_family_overwrite) = spec.family {
-            spec.regular.family = font_family_overwrite.to_owned();
-            spec.bold.family = font_family_overwrite.to_owned();
-            spec.bold_italic.family = font_family_overwrite.to_owned();
-            spec.italic.family = font_family_overwrite.to_owned();
-        }
-
-        let mut font_database;
-        let db: &loader::Database;
-
-        if let Some(db_ref) = db_opt {
-            db = db_ref;
-        } else {
-            font_database = loader::Database::new();
-            font_database.load_system_fonts();
-            db = &font_database;
-        }
-
-        let regular = find_font(db, spec.regular);
-        fonts.insert(regular.0);
-        if let Some(err) = regular.2 {
-            fonts_not_fount.push(err);
-        }
-
-        let italic = find_font(db, spec.italic);
-        fonts.insert(italic.0);
-        if let Some(err) = italic.2 {
-            fonts_not_fount.push(err);
-        }
-
-        let bold = find_font(db, spec.bold);
-        fonts.insert(bold.0);
-        if let Some(err) = bold.2 {
-            fonts_not_fount.push(err);
-        }
-
-        let bold_italic = find_font(db, spec.bold_italic);
-        fonts.insert(bold_italic.0);
-        if let Some(err) = bold_italic.2 {
-            fonts_not_fount.push(err);
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            let font_arc_unicode = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Arial Unicode MS"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.insert(font_arc_unicode);
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // Lucida Sans Unicode
-            let font_arc_unicode = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Lucida Sans Unicode"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.insert(font_arc_unicode);
-
-            let font_arc_unicode = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Microsoft JhengHei"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.insert(font_arc_unicode);
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            let font_arc_unicode = FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap();
-            fonts.insert(font_arc_unicode);
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            let font_arc_symbol = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Apple Symbols"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.insert(font_arc_symbol);
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let font_arc_symbol = find_font(
-                db,
-                SugarloafFont {
-                    family: String::from("Symbol"),
-                    style: None,
-                    weight: None,
-                },
-            )
-            .0;
-            fonts.insert(font_arc_symbol);
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            let font_arc_symbol = FontData::from_slice(FONT_DEJAVU_SANS).unwrap();
-            fonts.insert(font_arc_symbol);
-        }
-
-        let font_arc_emoji_native = find_font(
-            db,
-            SugarloafFont {
-                family: String::from("Apple Color Emoji"),
-                style: None,
-                weight: None,
-            },
-        )
-        .0;
-        fonts.insert(font_arc_emoji_native);
-
-        let font_arc_icons = FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap();
-        fonts.insert(font_arc_icons);
-
-        let font_arc_builtin = FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap();
-        fonts.insert(font_arc_builtin);
-
-        if !spec.extras.is_empty() {
-            for extra_font in spec.extras {
-                let extra_font_arc = find_font(
-                    db,
-                    SugarloafFont {
-                        family: extra_font.family,
-                        style: extra_font.style,
-                        weight: extra_font.weight,
-                    },
-                );
-                fonts.insert(extra_font_arc.0);
-                if let Some(err) = extra_font_arc.2 {
-                    fonts_not_fount.push(err);
-                }
-            }
-        }
-
-        (fonts, fonts_not_fount)
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn load(_font_spec: SugarloafFonts) -> (FontLibrary, Vec<SugarloafFont>) {
-        let mut fonts: FontLibrary = FontLibrary::default();
-
-        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
-        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_ITALIC).unwrap());
-        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD).unwrap());
-        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap());
-        fonts.insert(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
-        fonts.insert(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
-        fonts.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
-        fonts.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
-
-        (fonts, vec![])
-    }
 }

@@ -9,6 +9,16 @@ pub struct SugarloafFont {
     pub style: Option<String>,
 }
 
+impl Default for SugarloafFont {
+    fn default() -> Self {
+        Self {
+            family: default_font_family(),
+            weight: None,
+            style: None,
+        }
+    }
+}
+
 impl SugarloafFont {
     #[inline]
     pub fn is_default_family(&self) -> bool {

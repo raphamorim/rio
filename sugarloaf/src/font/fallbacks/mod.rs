@@ -1,0 +1,31 @@
+#[cfg(target_os = "macos")]
+pub fn external_fallbacks() -> Vec<String> {
+    vec![
+        String::from("Apple Color Emoji"),
+        String::from(".SF NS"),
+        String::from("Menlo"),
+        String::from("Geneva"),
+        String::from("Arial Unicode MS"),
+    ]
+}
+
+#[cfg(target_os = "windows")]
+pub fn external_fallbacks() -> Vec<String> {
+    vec![
+        // Lucida Sans Unicode
+        // Microsoft JhengHei
+        String::from("Segoe UI"),
+        String::from("Segoe UI Emoji"),
+        String::from("Segoe UI Symbol"),
+        String::from("Segoe UI Historic"),
+    ]
+}
+
+#[cfg(target_os = "windows")]
+pub fn external_fallbacks() -> Vec<String> {
+    vec![
+        String::from("Noto Sans"),
+        String::from("DejaVu Sans"),
+        String::from("FreeMono"),
+    ]
+}
