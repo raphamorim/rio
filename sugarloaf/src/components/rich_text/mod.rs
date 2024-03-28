@@ -6,7 +6,7 @@ pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use crate::font::FontLibrary;
+use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
@@ -300,13 +300,17 @@ impl RichTextBrush {
     ) {
         // Render
         self.comp.begin();
+
+        let library = state.compositors.advanced.font_library();
+        let font_library = { &library.inner.read().unwrap() };
+
         draw_layout(
             &mut self.comp,
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
             // TODO: Fix position
             state.current.layout.style.screen_position.1,
-            state.compositors.advanced.font_library(),
+            font_library,
             state.current.layout.dimensions,
         );
         self.dlist.clear();
@@ -320,10 +324,13 @@ impl RichTextBrush {
     ) -> Option<(f32, f32)> {
         self.comp.begin();
 
+        let library = state.compositors.advanced.font_library();
+        let font_library = { &library.inner.read().unwrap() };
+
         let dimensions = fetch_dimensions(
             &mut self.comp,
             &state.compositors.advanced.mocked_render_data,
-            state.compositors.advanced.font_library(),
+            font_library,
         );
         if dimensions.0 > 0. && dimensions.1 > 0. {
             Some(dimensions)
@@ -690,7 +697,7 @@ fn draw_layout(
     render_data: &crate::layout::RenderData,
     x: f32,
     y: f32,
-    font_library: &FontLibrary,
+    font_library: &FontLibraryData,
     _rect: SugarDimensions,
 ) {
     let depth = 0.0;
@@ -748,7 +755,7 @@ fn draw_layout(
 fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     render_data: &crate::layout::RenderData,
-    font_library: &FontLibrary,
+    font_library: &FontLibraryData,
 ) -> (f32, f32) {
     let x = 0.;
     let y = 0.;

@@ -23,7 +23,10 @@ pub struct SugarState {
 }
 
 impl SugarState {
-    pub fn new(initial_layout: SugarloafLayout) -> SugarState {
+    pub fn new(
+        initial_layout: SugarloafLayout,
+        font_library: &FontLibrary,
+    ) -> SugarState {
         // First time computing changes should obtain dimensions
         let next = SugarTree {
             layout: initial_layout,
@@ -31,7 +34,7 @@ impl SugarState {
         };
         SugarState {
             current_line: 0,
-            compositors: SugarCompositors::default(),
+            compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
             current: SugarTree::default(),
             next,
@@ -102,8 +105,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_fonts(&mut self, fonts: FontLibrary) {
-        self.compositors.elementary.set_fonts(fonts.font_arcs());
+    pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
     }
 

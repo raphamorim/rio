@@ -7,7 +7,7 @@ use crate::routes::RoutePath;
 // use crate::scheduler::{Scheduler, TimerId, Topic};
 use rio_backend::error::RioError;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::font::loader;
+use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
@@ -18,7 +18,7 @@ struct Router {
     config: Rc<rio_backend::config::Config>,
     route: Option<Route>,
     superloop: Superloop,
-    font_database: loader::Database,
+    font_library: FontLibrary,
     #[cfg(target_os = "macos")]
     tab_group: Option<u64>,
 }
@@ -26,7 +26,7 @@ struct Router {
 pub fn create_window(
     config: &Rc<rio_backend::config::Config>,
     config_error: &Option<rio_backend::config::ConfigError>,
-    font_database: &loader::Database,
+    font_library: FontLibrary,
     tab_group: Option<u64>,
 ) -> Result<Window, Box<dyn std::error::Error>> {
     let superloop = Superloop::new();
@@ -42,7 +42,7 @@ pub fn create_window(
         config: config.clone(),
         route: None,
         superloop,
-        font_database: font_database.clone(),
+        font_library: font_library,
         tab_group,
     };
 
@@ -92,7 +92,7 @@ impl EventHandler for Router {
             raw_display_handle,
             self.config.clone(),
             self.superloop.clone(),
-            &self.font_database,
+            self.font_library.clone(),
             (width, height, scale_factor),
             open_url,
         )
@@ -140,7 +140,7 @@ impl EventHandler for Router {
                     let _ = create_window(
                         &self.config,
                         &None,
-                        &self.font_database,
+                        self.font_library.clone(),
                         new_tab_group,
                     );
                 }
@@ -149,7 +149,7 @@ impl EventHandler for Router {
                     let _ = create_window(
                         &self.config,
                         &None,
-                        &self.font_database,
+                        self.font_library.clone(),
                         self.tab_group,
                     );
                 }
@@ -500,18 +500,25 @@ impl EventHandler for Router {
 
 struct AppInstance {
     config: Rc<rio_backend::config::Config>,
-    font_database: loader::Database,
+    font_library: FontLibrary,
     #[cfg(target_os = "macos")]
     last_tab_group: Option<u64>,
 }
 
 impl AppInstance {
     fn new(config: rio_backend::config::Config) -> Self {
-        let mut font_database = loader::Database::new();
-        font_database.load_system_fonts();
+        let font_library = FontLibrary::new(config.fonts.to_owned());
+        // let mut sugarloaf_errors = None;
+
+        // let (font_library, fonts_not_found) = loader;
+
+        // if !fonts_not_found.is_empty() {
+        //     sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
+        // }
+
         let config = Rc::new(config);
         Self {
-            font_database,
+            font_library,
             config,
             #[cfg(target_os = "macos")]
             last_tab_group: None,
@@ -521,14 +528,14 @@ impl AppInstance {
 
 impl AppHandler for AppInstance {
     fn create_window(&self) {
-        let _ = create_window(&self.config, &None, &self.font_database, None);
+        let _ = create_window(&self.config, &None, self.font_library.clone(), None);
     }
 
     fn create_tab(&self, open_file_url: Option<&str>) {
         if let Ok(window) = create_window(
             &self.config,
             &None,
-            &self.font_database,
+            self.font_library.clone(),
             self.last_tab_group,
         ) {
             if let Some(file_url) = open_file_url {
@@ -548,7 +555,7 @@ impl AppHandler for AppInstance {
         let _ = create_window(
             &self.config,
             &None,
-            &self.font_database,
+            self.font_library.clone(),
             self.last_tab_group,
         );
     }

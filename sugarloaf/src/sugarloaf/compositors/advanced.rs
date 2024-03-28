@@ -21,19 +21,16 @@ pub struct Advanced {
     layout_context: LayoutContext,
 }
 
-impl Default for Advanced {
-    fn default() -> Self {
-        let layout_context = LayoutContext::new(FontLibrary::default());
+impl Advanced {
+    pub fn new(font_library: &FontLibrary) -> Self {
         Self {
-            layout_context,
+            layout_context: LayoutContext::new(font_library),
             content_builder: ContentBuilder::default(),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
         }
     }
-}
 
-impl Advanced {
     pub fn reset(&mut self) {}
     pub fn clean(&mut self) {}
 
@@ -43,7 +40,7 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn set_fonts(&mut self, fonts: FontLibrary) {
+    pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.layout_context = LayoutContext::new(fonts);
     }
 
