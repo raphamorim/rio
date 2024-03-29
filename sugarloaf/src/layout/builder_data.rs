@@ -145,38 +145,6 @@ pub struct FontSettingCache<T: Copy + PartialOrd + PartialEq> {
 }
 
 impl<T: Copy + PartialOrd + PartialEq> FontSettingCache<T> {
-    // pub fn add<I>(&mut self, settings: I) -> FontSettingKey
-    // where
-    //     I: Iterator,
-    //     I::Item: Into<Setting<T>>,
-    // {
-    //     self.tmp.clear();
-    //     self.tmp.extend(settings.map(|v| v.into()));
-    //     let len = self.tmp.len();
-    //     if len == 0 {
-    //         return EMPTY_FONT_SETTINGS;
-    //     }
-    //     self.tmp.sort_unstable_by(|a, b| a.tag.cmp(&b.tag));
-    //     'outer: for (i, list) in self.lists.iter().enumerate() {
-    //         let other = list.get(&self.settings);
-    //         if other.len() != len {
-    //             continue;
-    //         }
-    //         for (a, b) in self.tmp.iter().zip(other) {
-    //             if a.tag != b.tag || a.value != b.value {
-    //                 continue 'outer;
-    //             }
-    //         }
-    //         return i as u32;
-    //     }
-    //     let key = self.lists.len() as u32;
-    //     let start = self.settings.len() as u32;
-    //     self.settings.extend_from_slice(&self.tmp);
-    //     let end = self.settings.len() as u32;
-    //     self.lists.push(FontSettingList { start, end });
-    //     key
-    // }
-
     pub fn get(&self, key: u32) -> &[Setting<T>] {
         if key == !0 {
             &[]

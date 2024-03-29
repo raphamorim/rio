@@ -38,26 +38,32 @@ pub struct ClusterData {
 }
 
 impl ClusterData {
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.flags & CLUSTER_EMPTY != 0
     }
 
+    #[inline]
     pub fn is_detailed(&self) -> bool {
         self.flags & CLUSTER_DETAILED != 0
     }
 
+    #[inline]
     pub fn is_ligature(&self) -> bool {
         self.flags & CLUSTER_LIGATURE != 0
     }
 
+    #[inline]
     pub fn is_continuation(&self) -> bool {
         self.flags & CLUSTER_CONTINUATION != 0
     }
 
+    #[inline]
     pub fn is_last_continuation(&self) -> bool {
         self.flags & CLUSTER_LAST_CONTINUATION != 0
     }
 
+    #[inline]
     pub fn is_newline(&self) -> bool {
         self.flags & CLUSTER_NEWLINE != 0
     }
@@ -77,6 +83,7 @@ impl ClusterData {
         }
     }
 
+    #[inline]
     pub fn advance(
         &self,
         detail: &[DetailedClusterData],
