@@ -59,7 +59,7 @@ impl Sequencer {
         let mut scheduler = Scheduler::new(proxy);
 
         let window =
-            RouteWindow::new(&event_loop, &self.config, &self.router.font_database)
+            RouteWindow::new(&event_loop, &self.config, &self.router.font_library)
                 .await?;
         self.router.create_route_from_window(window);
 
@@ -130,7 +130,7 @@ impl Sequencer {
                             for (_id, route) in self.router.routes.iter_mut() {
                                 route.update_config(
                                     &self.config,
-                                    &self.router.font_database,
+                                    &self.router.font_library,
                                 );
 
                                 if let Some(error) = &config_error {
@@ -418,7 +418,7 @@ impl Sequencer {
                             for (_id, route) in self.router.routes.iter_mut() {
                                 route.update_config(
                                     &self.config,
-                                    &self.router.font_database,
+                                    &self.router.font_library,
                                 );
 
                                 route.redraw();
@@ -937,7 +937,7 @@ impl Sequencer {
                         route.window.screen.update_config(
                             &self.config,
                             Some(new_theme),
-                            &self.router.font_database,
+                            &self.router.font_library,
                         );
                     }
                 }

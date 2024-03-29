@@ -35,7 +35,11 @@ impl Route {
     }
 
     #[inline]
-    pub fn update_config(&mut self, config: &Rc<RioConfig>, db: &loader::Database) {
+    pub fn update_config(
+        &mut self,
+        config: &Rc<RioConfig>,
+        db: &rio_backend::sugarloaf::font::FontLibrary,
+    ) {
         self.window
             .screen
             .update_config(config, self.window.winit_window.theme(), db);
@@ -157,20 +161,19 @@ impl Route {
 pub struct Router {
     pub routes: HashMap<WindowId, Route>,
     propagated_report: Option<RioError>,
-    pub font_database: loader::Database,
+    pub font_library: rio_backend::sugarloaf::font::FontLibrary,
     pub config_route: Option<WindowId>,
 }
 
 impl Router {
     pub fn new() -> Self {
-        let mut font_database = loader::Database::new();
-        font_database.load_system_fonts();
+        let font_library = rio_backend::sugarloaf::font::FontLibrary::default();
 
         Router {
             routes: HashMap::new(),
             propagated_report: None,
             config_route: None,
-            font_database,
+            font_library,
         }
     }
 
@@ -225,7 +228,7 @@ impl Router {
             event_loop,
             event_proxy,
             &new_config.into(),
-            &self.font_database,
+            &self.font_library,
             "Rio Settings",
             None,
         );
@@ -252,7 +255,7 @@ impl Router {
             event_loop,
             event_proxy,
             config,
-            &self.font_database,
+            &self.font_library,
             "Rio",
             None,
         );
@@ -279,7 +282,7 @@ impl Router {
             event_loop,
             event_proxy,
             config,
-            &self.font_database,
+            &self.font_library,
             "Rio",
             tab_id,
         );
@@ -307,7 +310,7 @@ impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventPayload>,
         config: &Rc<RioConfig>,
-        font_database: &loader::Database,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -328,7 +331,7 @@ impl RouteWindow {
         let winit_window = configure_window(winit_window, config);
 
         let screen =
-            Screen::new(&winit_window, config, event_proxy, font_database).await?;
+            Screen::new(&winit_window, config, event_proxy, font_library).await?;
 
         Ok(Self {
             is_focused: false,
@@ -344,7 +347,7 @@ impl RouteWindow {
         event_loop: &EventLoopWindowTarget<EventPayload>,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
-        font_database: &loader::Database,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
         tab_id: Option<String>,
     ) -> Self {
@@ -368,7 +371,7 @@ impl RouteWindow {
             &winit_window,
             config,
             event_proxy,
-            font_database,
+            font_library,
         ))
         .expect("Screen not created");
 
