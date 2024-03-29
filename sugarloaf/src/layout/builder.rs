@@ -678,12 +678,8 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id = fcx.map_cluster(
-            cluster,
-            &mut shape_state.synth,
-            font_library,
-            &style,
-        );
+        shape_state.font_id =
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, &style);
 
         while shape_clusters(
             fcx,
@@ -721,12 +717,8 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id = fcx.map_cluster(
-            cluster,
-            &mut shape_state.synth,
-            font_library,
-            &style,
-        );
+        shape_state.font_id =
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, &style);
         while shape_clusters(
             fcx,
             font_library,

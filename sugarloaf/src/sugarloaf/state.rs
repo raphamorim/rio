@@ -207,18 +207,18 @@ impl SugarState {
             return;
         }
 
-        if let Some((width, height)) = advance_brush.dimensions(self) {
+        if let Some(dimension) = advance_brush.dimensions(self) {
             let mut dimensions_changed = false;
-            if height != self.current.layout.dimensions.height {
-                self.current.layout.dimensions.height = height;
-                log::info!("prepare_render: changed height... {}", height);
+            if dimension.height != self.current.layout.dimensions.height {
+                self.current.layout.dimensions.height = dimension.height;
+                log::info!("prepare_render: changed height... {}", dimension.height);
                 dimensions_changed = true;
             }
 
-            if width != self.current.layout.dimensions.width {
-                self.current.layout.dimensions.width = width;
+            if dimension.width != self.current.layout.dimensions.width {
+                self.current.layout.dimensions.width = dimension.width;
                 self.current.layout.update_columns_per_font_width();
-                log::info!("prepare_render: changed width... {}", width);
+                log::info!("prepare_render: changed width... {}", dimension.width);
                 dimensions_changed = true;
             }
 
