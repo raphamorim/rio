@@ -42,7 +42,7 @@ pub fn create_window(
         config: config.clone(),
         route: None,
         superloop,
-        font_library: font_library,
+        font_library,
         tab_group,
     };
 

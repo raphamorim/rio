@@ -51,9 +51,8 @@ async fn main() {
     let mut sugarloaf = Sugarloaf::new(
         sugarloaf_window,
         sugarloaf::SugarloafRenderer::default(),
-        sugarloaf::font::fonts::SugarloafFonts::default(),
+        &sugarloaf::font::FontLibrary::default(),
         sugarloaf_layout,
-        None,
     )
     .await
     .expect("Sugarloaf instance should be created");

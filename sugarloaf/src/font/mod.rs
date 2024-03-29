@@ -130,6 +130,17 @@ impl FontLibrary {
     }
 }
 
+impl Default for FontLibrary {
+    fn default() -> Self {
+        let mut font_library = FontLibraryData::default();
+        let _fonts_not_found = font_library.load(SugarloafFonts::default());
+
+        Self {
+            inner: Arc::new(RwLock::new(font_library)),
+        }
+    }
+}
+
 pub struct FontLibraryData {
     pub main: FontArc,
     pub inner: Vec<FontData>,
@@ -217,18 +228,6 @@ impl FontLibraryData {
         self.inner.push(bold_italic.0);
         if let Some(err) = bold_italic.2 {
             fonts_not_fount.push(err);
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            self.inner
-                .push(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            self.inner
-                .push(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
         }
 
         self.inner

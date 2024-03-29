@@ -2,7 +2,7 @@
 pub fn external_fallbacks() -> Vec<String> {
     vec![
         String::from("Apple Color Emoji"),
-        String::from(".SF NS"),
+        // String::from(".SF NS"),
         String::from("Menlo"),
         String::from("Geneva"),
         String::from("Arial Unicode MS"),
@@ -21,7 +21,7 @@ pub fn external_fallbacks() -> Vec<String> {
     ]
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn external_fallbacks() -> Vec<String> {
     vec![
         String::from("Noto Sans"),
