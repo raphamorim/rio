@@ -682,7 +682,7 @@ fn shape_item(
             cluster,
             &mut shape_state.synth,
             font_library,
-            shape_state.span,
+            &style,
         );
 
         while shape_clusters(
@@ -725,7 +725,7 @@ fn shape_item(
             cluster,
             &mut shape_state.synth,
             font_library,
-            shape_state.span,
+            &style,
         );
         while shape_clusters(
             fcx,
