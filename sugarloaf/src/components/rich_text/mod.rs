@@ -321,19 +321,19 @@ impl RichTextBrush {
     pub fn dimensions(
         &mut self,
         state: &crate::sugarloaf::state::SugarState,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<SugarDimensions> {
         self.comp.begin();
 
         let library = state.compositors.advanced.font_library();
         let font_library = { &library.inner.read().unwrap() };
 
-        let dimensions = fetch_dimensions(
+        let dimension = fetch_dimensions(
             &mut self.comp,
             &state.compositors.advanced.mocked_render_data,
             font_library,
         );
-        if dimensions.0 > 0. && dimensions.1 > 0. {
-            Some(dimensions)
+        if dimension.height > 0. && dimension.width > 0. {
+            Some(dimension)
         } else {
             None
         }
@@ -756,12 +756,11 @@ fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     render_data: &crate::layout::RenderData,
     font_library: &FontLibraryData,
-) -> (f32, f32) {
+) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
     let mut glyphs = Vec::with_capacity(3);
-    let mut sugarwidth = 0.0;
-    let mut sugarheight = 0.0;
+    let mut dimension = SugarDimensions::default();
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
@@ -795,8 +794,8 @@ fn fetch_dimensions(
             };
 
             if style.advance > 0. && line_height > 0. {
-                sugarwidth = style.advance;
-                sugarheight = line_height;
+                dimension.width = style.advance;
+                dimension.height = line_height;
             }
 
             comp.draw_glyphs(
@@ -808,7 +807,7 @@ fn fetch_dimensions(
         }
     }
 
-    (sugarwidth, sugarheight)
+    dimension
 }
 
 #[inline]
