@@ -7,7 +7,6 @@ use crate::screen::Screen;
 use assistant::Assistant;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorType};
-use rio_backend::sugarloaf::font::loader;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
