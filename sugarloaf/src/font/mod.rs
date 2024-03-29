@@ -4,11 +4,13 @@ pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
 
-pub const FONT_ID_DEFAULT: usize = 0;
-pub const FONT_ID_BUILT_IN: usize = 1;
-pub const FONT_ID_EMOJIS: usize = 2;
+pub const FONT_ID_REGULAR: usize = 0;
+pub const FONT_ID_ITALIC: usize = 1;
+pub const FONT_ID_BOLD: usize = 2;
+pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
 use crate::font::constants::*;
+use crate::layout::FragmentStyle;
 use ab_glyph::FontArc;
 use fnv::FnvHashMap;
 use std::ops::Index;
@@ -71,13 +73,33 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
+        style: &FragmentStyle,
     ) -> Option<usize> {
         let chars = cluster.chars();
-        let mut font_id = FONT_ID_DEFAULT;
+        let mut font_id = FONT_ID_REGULAR;
+
         if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
-            font_id = *cached_font_id;
+            // 0 to 4 font_ids are reserved spots
+            if cached_font_id <= &4 {
+                let is_italic = style.font_attrs.2 == Style::Italic;
+                let is_bold = style.font_attrs.1 == Weight::BOLD;
+
+                if is_bold && is_italic {
+                    font_id = FONT_ID_BOLD_ITALIC;
+                } else if is_bold {
+                    font_id = FONT_ID_BOLD;
+                } else if is_italic {
+                    font_id = FONT_ID_ITALIC;
+                } else {
+                    font_id = FONT_ID_REGULAR;
+                }
+            } else {
+                font_id = *cached_font_id;
+            }
         } else if cluster.info().is_emoji() {
-            font_id = FONT_ID_EMOJIS;
+            if let Some(font_emoji_id) = library.inner.iter().position(|r| r.is_emoji) {
+                font_id = font_emoji_id;
+            }
         }
 
         let charmap = library[font_id]
@@ -102,6 +124,7 @@ impl FontContext {
         if !chars.is_empty() {
             self.cache.insert(chars[0].ch, font_id);
         }
+
         Some(font_id)
     }
 }
@@ -198,20 +221,6 @@ impl FontLibraryData {
             fonts_not_fount.push(err);
         }
 
-        for fallback in fallbacks::external_fallbacks() {
-            let extra_font_arc = find_font(
-                &self.db,
-                SugarloafFont {
-                    family: fallback,
-                    ..SugarloafFont::default()
-                },
-            );
-            self.inner.push(extra_font_arc.0);
-            if let Some(err) = extra_font_arc.2 {
-                fonts_not_fount.push(err);
-            }
-        }
-
         let italic = find_font(&self.db, spec.italic);
         self.inner.push(italic.0);
         if let Some(err) = italic.2 {
@@ -232,6 +241,25 @@ impl FontLibraryData {
 
         self.inner
             .push(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+
+        for fallback in fallbacks::external_fallbacks() {
+            let is_emoji = fallback.contains("emoji");
+            let mut font_data = find_font(
+                &self.db,
+                SugarloafFont {
+                    family: fallback,
+                    ..SugarloafFont::default()
+                },
+            );
+            // Hacky way to declare emojis
+            if is_emoji {
+                font_data.0.is_emoji = true;
+            }
+            self.inner.push(font_data.0);
+            if let Some(err) = font_data.2 {
+                fonts_not_fount.push(err);
+            }
+        }
 
         if !spec.extras.is_empty() {
             for extra_font in spec.extras {
@@ -255,20 +283,6 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_ITALIC).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_BOLD_ITALIC).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_UNICODE_FALLBACK).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_DEJAVU_SANS).unwrap());
-        self.inner
-            .insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
         self.inner
             .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
 
@@ -338,8 +352,12 @@ pub struct FontData {
     offset: u32,
     // Cache key
     key: CacheKey,
-
     charmap_proxy: CharmapProxy,
+
+    pub is_emoji: bool,
+    pub weight: swash::Weight,
+    pub style: swash::Style,
+    pub stretch: swash::Stretch,
     pub synth: Synthesis,
 }
 
@@ -366,14 +384,21 @@ impl FontData {
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
         let attributes = font.attributes();
+        let style = attributes.style();
+        let weight = attributes.weight();
+        let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
         Ok(Self {
             data: SharedData::new(data),
             offset,
+            is_emoji: false,
             key,
             charmap_proxy,
             synth,
+            style,
+            weight,
+            stretch,
         })
     }
 
@@ -385,14 +410,21 @@ impl FontData {
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
         let attributes = font.attributes();
+        let style = attributes.style();
+        let weight = attributes.weight();
+        let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
         Ok(Self {
             data: SharedData::new(data.to_vec()),
             offset,
+            is_emoji: false,
             key,
             charmap_proxy,
             synth,
+            style,
+            weight,
+            stretch,
         })
     }
 
