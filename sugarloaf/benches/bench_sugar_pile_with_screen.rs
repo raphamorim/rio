@@ -51,12 +51,12 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
         },
     };
 
+    let font_library = sugarloaf::font::FontLibrary::default();
     let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
         sugarloaf_window,
         sugarloaf::SugarloafRenderer::default(),
-        sugarloaf::font::fonts::SugarloafFonts::default(),
+        &font_library,
         sugarloaf_layout,
-        None,
     ))
     .expect("Sugarloaf instance should be created");
 

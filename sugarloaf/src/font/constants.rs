@@ -60,14 +60,3 @@ pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
 
 pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
     font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
-
-// Not macos
-
-#[cfg(not(target_os = "macos"))]
-pub const FONT_DEJAVU_SANS: &[u8] = font!("./resources/DejaVuSans/DejaVuSans.ttf");
-
-// Not macos neither windows
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub const FONT_UNICODE_FALLBACK: &[u8] =
-    font!("./resources/chrysanthi-unicode-font/ChrysanthiUnicodeRegular-KEzo.ttf");
