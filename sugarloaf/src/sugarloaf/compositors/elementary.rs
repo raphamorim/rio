@@ -5,7 +5,6 @@
 
 use crate::components::text::glyph::{FontId, OwnedSection};
 
-use crate::font::FONT_ID_BUILT_IN;
 use crate::sugarloaf::graphics;
 use crate::sugarloaf::tree::SugarTree;
 use crate::sugarloaf::{PxScale, Rect, SugarText};
@@ -94,12 +93,10 @@ impl Elementary {
         sugar_text: &SugarText,
         tree: &SugarTree,
     ) -> &OwnedSection {
-        let font_id = FontId(FONT_ID_BUILT_IN);
-
         let text = crate::components::text::OwnedText {
             text: sugar_text.content.to_owned(),
             scale: PxScale::from(sugar_text.font_size * tree.layout.dimensions.scale),
-            font_id,
+            font_id: crate::components::text::FontId(0),
             extra: crate::components::text::Extra {
                 color: sugar_text.color,
                 z: 0.0,

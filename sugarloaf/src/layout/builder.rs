@@ -678,8 +678,12 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+        shape_state.font_id = fcx.map_cluster(
+            cluster,
+            &mut shape_state.synth,
+            font_library,
+            shape_state.span,
+        );
 
         while shape_clusters(
             fcx,
@@ -717,8 +721,12 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+        shape_state.font_id = fcx.map_cluster(
+            cluster,
+            &mut shape_state.synth,
+            font_library,
+            shape_state.span,
+        );
         while shape_clusters(
             fcx,
             font_library,
@@ -797,7 +805,7 @@ where
         // fcx.select_group(state.font_id);
         // }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, state.span);
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
             render_data.push_run(
