@@ -79,26 +79,25 @@ impl FontContext {
         let mut font_id = FONT_ID_REGULAR;
 
         if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
-            // 0 to 4 font_ids are reserved spots
-            if cached_font_id <= &4 {
-                let is_italic = style.font_attrs.2 == Style::Italic;
-                let is_bold = style.font_attrs.1 == Weight::BOLD;
-
-                if is_bold && is_italic {
-                    font_id = FONT_ID_BOLD_ITALIC;
-                } else if is_bold {
-                    font_id = FONT_ID_BOLD;
-                } else if is_italic {
-                    font_id = FONT_ID_ITALIC;
-                } else {
-                    font_id = FONT_ID_REGULAR;
-                }
-            } else {
-                font_id = *cached_font_id;
-            }
+            font_id = *cached_font_id;
         } else if cluster.info().is_emoji() {
             if let Some(font_emoji_id) = library.inner.iter().position(|r| r.is_emoji) {
                 font_id = font_emoji_id;
+            }
+        }
+
+        // TODO: there's a bug introduced on b949dd058ec5eb4c25b5977268a6044b9bc70835
+        // regarding the vim powerline first character
+        if !chars.is_empty() && font_id == 0 {
+            let is_italic = style.font_attrs.2 == Style::Italic;
+            let is_bold = style.font_attrs.1 == Weight::BOLD;
+
+            if is_bold && is_italic {
+                font_id = FONT_ID_BOLD_ITALIC;
+            } else if is_bold {
+                font_id = FONT_ID_BOLD;
+            } else if is_italic {
+                font_id = FONT_ID_ITALIC;
             }
         }
 
@@ -121,7 +120,8 @@ impl FontContext {
         }
 
         let chars = cluster.chars();
-        if !chars.is_empty() {
+        // 0..4 are reserved spots
+        if font_id > 4 && !chars.is_empty() {
             self.cache.insert(chars[0].ch, font_id);
         }
 
@@ -239,9 +239,6 @@ impl FontLibraryData {
             fonts_not_fount.push(err);
         }
 
-        self.inner
-            .push(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
-
         for fallback in fallbacks::external_fallbacks() {
             let is_emoji = fallback.contains("emoji");
             let mut font_data = find_font(
@@ -277,6 +274,9 @@ impl FontLibraryData {
                 }
             }
         }
+
+        self.inner
+            .push(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
 
         fonts_not_fount
     }
@@ -549,31 +549,27 @@ fn find_font(
         }
     }
 
-    let font_to_load = match style.as_str() {
-        "italic" => match weight {
-            100 => constants::FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
-            200 => constants::FONT_CASCADIAMONO_LIGHT_ITALIC,
-            300 => constants::FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC,
-            400 => constants::FONT_CASCADIAMONO_ITALIC,
-            500 => constants::FONT_CASCADIAMONO_ITALIC,
-            600 => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
-            700 => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
-            800 => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
-            900 => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
-            _ => constants::FONT_CASCADIAMONO_ITALIC,
-        },
-        _ => match weight {
-            100 => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
-            200 => constants::FONT_CASCADIAMONO_LIGHT,
-            300 => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
-            400 => constants::FONT_CASCADIAMONO_REGULAR,
-            500 => constants::FONT_CASCADIAMONO_REGULAR,
-            600 => constants::FONT_CASCADIAMONO_SEMI_BOLD,
-            700 => constants::FONT_CASCADIAMONO_SEMI_BOLD,
-            800 => constants::FONT_CASCADIAMONO_BOLD,
-            900 => constants::FONT_CASCADIAMONO_BOLD,
-            _ => constants::FONT_CASCADIAMONO_REGULAR,
-        },
+    let font_to_load = match (weight, style.as_str()) {
+        (100, "italic") => constants::FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
+        (200, "italic") => constants::FONT_CASCADIAMONO_LIGHT_ITALIC,
+        (300, "italic") => constants::FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC,
+        (400, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
+        (500, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
+        (600, "italic") => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
+        (700, "italic") => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
+        (800, "italic") => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
+        (900, "italic") => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
+        (_, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
+        (100, _) => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
+        (200, _) => constants::FONT_CASCADIAMONO_LIGHT,
+        (300, _) => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
+        (400, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (500, _) => constants::FONT_CASCADIAMONO_REGULAR,
+        (600, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
+        (700, _) => constants::FONT_CASCADIAMONO_SEMI_BOLD,
+        (800, _) => constants::FONT_CASCADIAMONO_BOLD,
+        (900, _) => constants::FONT_CASCADIAMONO_BOLD,
+        (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
     };
 
     (FontData::from_slice(font_to_load).unwrap(), true, not_found)
