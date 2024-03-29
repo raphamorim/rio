@@ -25,6 +25,7 @@ pub struct BreakLines<'a> {
     lines: &'a mut LineLayoutData,
     state: BreakerState,
     prev_state: Option<BreakerState>,
+    use_same_line_height: bool,
 }
 
 impl<'a> BreakLines<'a> {
@@ -34,6 +35,9 @@ impl<'a> BreakLines<'a> {
             lines,
             state: BreakerState::default(),
             prev_state: None,
+            // This should be configurable but since sugarloaf is used
+            // mainly in Rio terminal should be ok leave this way for now
+            use_same_line_height: true,
         }
     }
 
@@ -441,6 +445,14 @@ impl<'a> BreakLines<'a> {
                     line.leading = run.leading;
                 }
             }
+
+            if self.use_same_line_height {
+                let run = &self.lines.runs[line.runs.0 as usize];
+                line.ascent = run.ascent;
+                line.descent = run.descent;
+                line.leading = run.leading;
+            }
+
             line.ascent = line.ascent.round();
             line.descent = line.descent.round();
             line.leading = (line.leading * 0.5).round() * 2.;
