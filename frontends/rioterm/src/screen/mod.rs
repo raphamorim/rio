@@ -77,7 +77,7 @@ impl Screen {
         winit_window: &winit::window::Window,
         config: &Rc<rio_backend::config::Config>,
         event_proxy: EventProxy,
-        font_database: &sugarloaf::font::loader::Database,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -137,9 +137,8 @@ impl Screen {
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            config.fonts.to_owned(),
+            font_library,
             sugarloaf_layout,
-            Some(font_database),
         )
         .await
         {
@@ -272,16 +271,16 @@ impl Screen {
         &mut self,
         config: &Rc<rio_backend::config::Config>,
         current_theme: Option<winit::window::Theme>,
-        db: &sugarloaf::font::loader::Database,
+        _font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        if let Some(err) = self
-            .sugarloaf
-            .update_font(config.fonts.to_owned(), Some(db))
-        {
-            self.context_manager
-                .report_error_fonts_not_found(err.fonts_not_found);
-            return;
-        }
+        // if let Some(err) = self
+        //     .sugarloaf
+        //     .update_font(config.fonts.to_owned(), Some(db))
+        // {
+        //     self.context_manager
+        //         .report_error_fonts_not_found(err.fonts_not_found);
+        //     return;
+        // }
 
         let padding_y_bottom = padding_bottom_from_config(config);
 
