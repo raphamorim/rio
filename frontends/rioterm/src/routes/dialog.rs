@@ -35,7 +35,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     sugarloaf.text(
         (70., mid_screen - 10.),
         content.to_string(),
-        8,
         48.,
         [1., 1., 1., 1.],
         true,
@@ -44,7 +43,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     sugarloaf.text(
         (70., mid_screen + 30.),
         String::from("To quit press enter key"),
-        8,
         18.,
         yellow,
         true,
@@ -53,7 +51,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     sugarloaf.text(
         (70., mid_screen + 50.),
         String::from("To continue press escape key"),
-        8,
         18.,
         blue,
         true,

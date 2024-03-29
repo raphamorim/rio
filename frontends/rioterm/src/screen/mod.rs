@@ -35,7 +35,7 @@ use rio_backend::config::{
 };
 use rio_backend::event::{ClickState, EventProxy};
 use rio_backend::sugarloaf::{
-    self, layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
+    layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
 use state::State;
