@@ -103,7 +103,7 @@ impl Context {
         let caps = surface.get_capabilities(&adapter);
 
         #[cfg(target_os = "macos")]
-        let format = wgpu::TextureFormat::Rgb10a2Unorm;
+        let format = wgpu::TextureFormat::Rgba8Snorm;
         #[cfg(not(target_os = "macos"))]
         let format = find_best_texture_format(caps.formats);
 
