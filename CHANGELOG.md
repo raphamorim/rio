@@ -13,6 +13,7 @@
 	- Ignore equal renderers.
 	- Compute layout updates only if layout is different.
 	- Reduced font size to `16.0`.
+- `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Fixes on font search for Microsoft Windows.
 - All tabs/window instances now use same font data.
