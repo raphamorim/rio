@@ -128,6 +128,8 @@ extern "C" {
     pub fn CFRunLoopStop(rl: CFRunLoopRef);
     pub fn CFRunLoopIsWaiting(rl: CFRunLoopRef) -> BOOL;
 
+    pub fn CFRelease(cftype: *const c_void);
+
     /* Managing Sources */
     pub fn CFRunLoopAddSource(
         rl: CFRunLoopRef,

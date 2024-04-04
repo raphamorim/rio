@@ -28,15 +28,13 @@ use rio_backend::config::{
 };
 use rio_backend::crosswords::{grid::Dimensions, pos::Pos, pos::Side, square::Hyperlink};
 use rio_backend::error::{RioError, RioErrorType};
-use rio_backend::event::EventListener;
-use rio_backend::event::RioEvent;
+use rio_backend::event::EventProxy;
 use rio_backend::selection::SelectionType;
 use rio_backend::sugarloaf::font::FontLibrary;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
-use rio_backend::superloop::Superloop;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
@@ -51,13 +49,12 @@ const SELECTION_SCROLLING_STEP: f32 = 10.;
 
 pub struct Route {
     pub id: u16,
-    pub ctx: ContextManager<Superloop>,
+    pub ctx: ContextManager<EventProxy>,
     pub state: State,
     pub ime: Ime,
     pub mouse: Mouse,
     bindings: KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
-    superloop: Superloop,
     clipboard: Clipboard,
     pub sugarloaf: Sugarloaf,
     pub modifiers: ModifiersState,
@@ -99,10 +96,10 @@ impl Route {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u16,
+        event_proxy: EventProxy,
         raw_window_handle: raw_window_handle::RawWindowHandle,
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         config: Rc<Config>,
-        superloop: rio_backend::superloop::Superloop,
         font_library: FontLibrary,
         dimensions: (i32, i32, f32),
         open_url: &str,
@@ -208,7 +205,7 @@ impl Route {
 
         let context_manager = context::ContextManager::start(
             (&state.get_cursor_state(), config.blinking_cursor),
-            superloop.clone(),
+            event_proxy,
             0,
             context_manager_config,
             sugarloaf.layout_next(),
@@ -239,7 +236,6 @@ impl Route {
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             ctx: context_manager,
             state,
-            superloop,
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
             modifiers: ModifiersState::empty(),
@@ -512,7 +508,6 @@ impl Route {
             {
                 let content = self.clipboard.get(ClipboardType::Selection);
                 self.paste(&content, true);
-                self.superloop.send_event(RioEvent::Paste, self.id);
             }
         }
     }
@@ -687,7 +682,6 @@ impl Route {
                         current_context.messenger.send_bytes(s.clone().into_bytes());
                     }
                     Act::Paste => {
-                        // self.superloop.send_event(RioEvent::Paste, self.id);
                         let content = self.clipboard.get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
@@ -1593,8 +1587,8 @@ impl Route {
                     && has_blinking_enabled
                     && self.selection_is_empty()
                 {
-                    self.superloop
-                        .send_event(RioEvent::PrepareRender(800), self.id);
+                    // self.superloop
+                        // .send_event(RioEvent::PrepareRender(800), self.id);
                 }
             }
         }

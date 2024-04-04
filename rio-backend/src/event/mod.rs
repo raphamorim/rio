@@ -13,13 +13,15 @@ use teletypewriter::WinsizeBuilder;
 #[cfg(not(target_os = "macos"))]
 use winit::event_loop::EventLoopProxy;
 
+#[cfg(target_os = "macos")]
+use wa::event_loop::EventLoopProxy;
+
 #[cfg(not(target_os = "macos"))]
 pub type WindowId = winit::window::WindowId;
 
 #[cfg(target_os = "macos")]
 pub type WindowId = u16;
 
-#[cfg(not(target_os = "macos"))]
 #[derive(Debug, Clone)]
 pub enum RioEventType {
     Rio(RioEvent),
@@ -27,9 +29,6 @@ pub enum RioEventType {
     BlinkCursor,
     BlinkCursorTimeout,
 }
-
-#[cfg(target_os = "macos")]
-pub type RioEventType = RioEvent;
 
 #[derive(Debug)]
 pub enum Msg {
@@ -225,7 +224,6 @@ pub trait EventListener {
 #[derive(Clone)]
 pub struct VoidListener;
 
-#[cfg(not(target_os = "macos"))]
 impl From<RioEvent> for RioEventType {
     fn from(rio_event: RioEvent) -> Self {
         Self::Rio(rio_event)
@@ -238,13 +236,11 @@ impl EventListener for VoidListener {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 #[derive(Debug, Clone)]
 pub struct EventProxy {
     proxy: EventLoopProxy<EventPayload>,
 }
 
-#[cfg(not(target_os = "macos"))]
 impl EventProxy {
     pub fn new(proxy: EventLoopProxy<EventPayload>) -> Self {
         Self { proxy }
@@ -260,7 +256,6 @@ impl EventProxy {
     // }
 }
 
-#[cfg(not(target_os = "macos"))]
 impl EventListener for EventProxy {
     fn event(&self) -> (std::option::Option<RioEvent>, bool) {
         (None, false)

@@ -1364,9 +1364,9 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
             // event_handler.open_url_event(open_url);
         }
 
-        if let Some(event_handler) = payload.context() {
-            event_handler.process();
-        }
+        // if let Some(event_handler) = payload.context() {
+        //     event_handler.process();
+        // }
     }
 }
 
@@ -1630,8 +1630,8 @@ impl App {
 
     extern "C" fn trigger(
         _observer: *mut __CFRunLoopObserver,
-        _: CFRunLoopActivity,
-        _: *mut std::ffi::c_void,
+        _activities: CFRunLoopActivity,
+        _repeats: *mut std::ffi::c_void,
     ) {
         let sender = NATIVE_APP_EVENTS.get();
         if let Some(events) = sender {
@@ -1662,6 +1662,7 @@ impl App {
             // events.push(action);
         }
 
+
         // Run loop
         // unsafe {
         // CFRunLoopWakeUp(CFRunLoopGetMain());
@@ -1680,8 +1681,8 @@ impl App {
                 CFRunLoopObserverCreate(
                     std::ptr::null(),
                     kCFRunLoopAllActivities,
-                    YES,
-                    0,
+                    YES, // repeated
+                    0, // low priority
                     App::trigger,
                     std::ptr::null_mut(),
                 )

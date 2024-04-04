@@ -308,11 +308,11 @@ pub trait AppHandler {
     fn create_window(&self);
     fn create_tab(&self, _urls_to_load: Option<&str>);
     fn start(&mut self);
+    fn process(&mut self, _id: u16);
 }
 
 /// A trait defining event callbacks.
 pub trait EventHandler {
-    fn process(&mut self);
     #[allow(clippy::too_many_arguments)]
     fn init(
         &mut self,

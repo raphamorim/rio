@@ -7,7 +7,4 @@ pub mod event;
 pub mod performer;
 pub mod selection;
 
-#[cfg(target_os = "macos")]
-pub mod superloop;
-
 pub use sugarloaf;

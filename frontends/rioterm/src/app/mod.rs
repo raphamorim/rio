@@ -1,14 +1,14 @@
 mod menu;
 mod route;
 
+use rio_backend::event::{EventProxy, EventPayload};
 use crate::event::RioEvent;
 use crate::ime::Preedit;
 use crate::routes::RoutePath;
 // use crate::scheduler::{Scheduler, TimerId, Topic};
 use rio_backend::error::RioError;
-use rio_backend::event::EventListener;
+use wa::event_loop::{EventLoop, EventLoopProxy};
 use rio_backend::sugarloaf::font::FontLibrary;
-use rio_backend::superloop::Superloop;
 use route::Route;
 use std::error::Error;
 use std::rc::Rc;
@@ -17,31 +17,30 @@ use wa::*;
 struct Router {
     config: Rc<rio_backend::config::Config>,
     route: Option<Route>,
-    superloop: Superloop,
+    event_loop_proxy: EventLoopProxy<EventPayload>,
     font_library: FontLibrary,
     #[cfg(target_os = "macos")]
     tab_group: Option<u64>,
 }
 
 pub fn create_window(
+    event_loop_proxy: EventLoopProxy<EventPayload>,
     config: &Rc<rio_backend::config::Config>,
     config_error: &Option<rio_backend::config::ConfigError>,
     font_library: FontLibrary,
     tab_group: Option<u64>,
 ) -> Result<Window, Box<dyn std::error::Error>> {
-    let superloop = Superloop::new();
-
-    if config_error.is_some() {
-        superloop.send_event(
-            RioEvent::ReportToAssistant(RioError::configuration_not_found()),
-            0,
-        );
-    }
+    // if config_error.is_some() {
+    //     superloop.send_event(
+    //         RioEvent::ReportToAssistant(RioError::configuration_not_found()),
+    //         0,
+    //     );
+    // }
 
     let router = Router {
         config: config.clone(),
         route: None,
-        superloop,
+        event_loop_proxy,
         font_library,
         tab_group,
     };
@@ -86,182 +85,19 @@ impl EventHandler for Router {
         scale_factor: f32,
         open_url: &str,
     ) {
+        let event_proxy = EventProxy::new(self.event_loop_proxy.clone());
         let initial_route = Route::new(
             id,
+            event_proxy,
             raw_window_handle,
             raw_display_handle,
             self.config.clone(),
-            self.superloop.clone(),
             self.font_library.clone(),
             (width, height, scale_factor),
             open_url,
         )
         .expect("Expected window to be created");
         self.route = Some(initial_route);
-    }
-    #[inline]
-    fn process(&mut self) {
-        // TODO:
-        // match self.scheduler.update() {
-        //     Some(instant) => { return next },
-        //     None => {},
-        // };
-
-        let (event, should_redraw) = self.superloop.event();
-
-        if should_redraw {
-            if let Some(current) = &mut self.route {
-                if self.config.renderer.disable_unfocused_render && !current.is_focused {
-                    return;
-                }
-
-                current.render();
-            }
-        }
-
-        if event.is_none() {
-            return;
-        }
-
-        if let Some(event) = event {
-            match event {
-                RioEvent::CloseWindow => {
-                    // TODO
-                }
-                RioEvent::CreateWindow => {
-                    #[cfg(target_os = "macos")]
-                    let new_tab_group = if self.config.navigation.is_native() {
-                        self.tab_group
-                            .map(|current_tab_group| current_tab_group + 1)
-                    } else {
-                        None
-                    };
-
-                    let _ = create_window(
-                        &self.config,
-                        &None,
-                        self.font_library.clone(),
-                        new_tab_group,
-                    );
-                }
-                #[cfg(target_os = "macos")]
-                RioEvent::CreateNativeTab(_) => {
-                    let _ = create_window(
-                        &self.config,
-                        &None,
-                        self.font_library.clone(),
-                        self.tab_group,
-                    );
-                }
-                RioEvent::UpdateConfig => {
-                    let (config, config_error) =
-                        match rio_backend::config::Config::try_load() {
-                            Ok(config) => (config, None),
-                            Err(error) => {
-                                (rio_backend::config::Config::default(), Some(error))
-                            }
-                        };
-
-                    self.config = config.into();
-                    let appearance = wa::window::get_appearance();
-
-                    if let Some(current) = &mut self.route {
-                        if let Some(error) = &config_error {
-                            current.report_error(&error.to_owned().into());
-                        } else {
-                            current.clear_assistant_errors();
-                        }
-
-                        current.update_config(&self.config, appearance);
-                    }
-                }
-                RioEvent::TitleWithSubtitle(title, subtitle) => {
-                    if let Some(current) = &mut self.route {
-                        window::set_window_title(current.id, title, subtitle);
-                    }
-                }
-                RioEvent::MouseCursorDirty => {
-                    if let Some(current) = &mut self.route {
-                        current.mouse.accumulated_scroll =
-                            crate::mouse::AccumulatedScroll::default();
-                    }
-                }
-                RioEvent::Scroll(scroll) => {
-                    if let Some(current) = &mut self.route {
-                        let mut terminal = current.ctx.current().terminal.lock();
-                        terminal.scroll_display(scroll);
-                        drop(terminal);
-                    }
-                }
-                RioEvent::Quit => {
-                    window::request_quit();
-                }
-                RioEvent::ClipboardLoad(clipboard_type, format) => {
-                    if let Some(current) = &mut self.route {
-                        // if route.window.is_focused {
-                        let text = format(current.clipboard_get(clipboard_type).as_str());
-                        current
-                            .ctx
-                            .current_mut()
-                            .messenger
-                            .send_bytes(text.into_bytes());
-                        // }
-                    }
-                }
-                RioEvent::ClipboardStore(clipboard_type, content) => {
-                    if let Some(current) = &mut self.route {
-                        // if current.is_focused {
-                        current.clipboard_store(clipboard_type, content);
-                        // }
-                    }
-                }
-                RioEvent::PtyWrite(text) => {
-                    if let Some(current) = &mut self.route {
-                        current
-                            .ctx
-                            .current_mut()
-                            .messenger
-                            .send_bytes(text.into_bytes());
-                    }
-                }
-                RioEvent::ReportToAssistant(error) => {
-                    if let Some(current) = &mut self.route {
-                        current.report_error(&error);
-                    }
-                }
-                RioEvent::UpdateGraphicLibrary => {
-                    if let Some(current) = &mut self.route {
-                        let mut terminal = current.ctx.current().terminal.lock();
-                        let graphics = terminal.graphics_take_queues();
-                        if let Some(graphic_queues) = graphics {
-                            let renderer = &mut current.sugarloaf;
-                            for graphic_data in graphic_queues.pending {
-                                renderer.add_graphic(graphic_data);
-                            }
-
-                            for graphic_data in graphic_queues.remove_queue {
-                                renderer.remove_graphic(&graphic_data);
-                            }
-                        }
-                    }
-                }
-                // RioEvent::ScheduleRender(millis) => {
-                //     let timer_id = TimerId::new(Topic::Render, 0);
-                //     let event = EventPayload::new(RioEvent::Render, self.current);
-
-                //     if !self.scheduler.scheduled(timer_id) {
-                //         self.scheduler.schedule(
-                //             event,
-                //             Duration::from_millis(millis),
-                //             false,
-                //             timer_id,
-                //         );
-                //     }
-                // }
-                RioEvent::Noop => {}
-                _ => {}
-            };
-        }
     }
 
     fn focus_event(&mut self, focused: bool) {
@@ -501,6 +337,7 @@ impl EventHandler for Router {
 struct AppInstance {
     config: Rc<rio_backend::config::Config>,
     font_library: FontLibrary,
+    event_loop: EventLoop<rio_backend::event::EventPayload>,
     #[cfg(target_os = "macos")]
     last_tab_group: Option<u64>,
 }
@@ -517,7 +354,9 @@ impl AppInstance {
         // }
 
         let config = Rc::new(config);
+        let event_loop = EventLoop::<rio_backend::event::EventPayload>::build().expect("expected event loop to be created");
         Self {
+            event_loop,
             font_library,
             config,
             #[cfg(target_os = "macos")]
@@ -528,11 +367,12 @@ impl AppInstance {
 
 impl AppHandler for AppInstance {
     fn create_window(&self) {
-        let _ = create_window(&self.config, &None, self.font_library.clone(), None);
+        let _ = create_window(self.event_loop.create_proxy(), &self.config, &None, self.font_library.clone(), None);
     }
 
     fn create_tab(&self, open_file_url: Option<&str>) {
         if let Ok(window) = create_window(
+            self.event_loop.create_proxy(),
             &self.config,
             &None,
             self.font_library.clone(),
@@ -544,6 +384,174 @@ impl AppHandler for AppInstance {
         }
     }
 
+    #[inline]
+    fn process(&mut self, _id: u16) {
+    }
+    //     // TODO:
+    //     // match self.scheduler.update() {
+    //     //     Some(instant) => { return next },
+    //     //     None => {},
+    //     // };
+
+    //     let (event, should_redraw) = self.superloop.event();
+
+    //     if should_redraw {
+    //         if let Some(current) = &mut self.route {
+    //             if self.config.renderer.disable_unfocused_render && !current.is_focused {
+    //                 return;
+    //             }
+
+    //             current.render();
+    //         }
+    //     }
+
+    //     if event.is_none() {
+    //         return;
+    //     }
+
+    //     if let Some(event) = event {
+    //         match event {
+    //             RioEvent::CloseWindow => {
+    //                 // TODO
+    //             }
+    //             RioEvent::CreateWindow => {
+    //                 #[cfg(target_os = "macos")]
+    //                 let new_tab_group = if self.config.navigation.is_native() {
+    //                     self.tab_group
+    //                         .map(|current_tab_group| current_tab_group + 1)
+    //                 } else {
+    //                     None
+    //                 };
+
+    //                 let _ = create_window(
+    //                     self.event_loop_proxy,
+    //                     &self.config,
+    //                     &None,
+    //                     self.font_library.clone(),
+    //                     new_tab_group,
+    //                 );
+    //             }
+    //             #[cfg(target_os = "macos")]
+    //             RioEvent::CreateNativeTab(_) => {
+    //                 let _ = create_window(
+    //                     self.event_loop_proxy,
+    //                     &self.config,
+    //                     &None,
+    //                     self.font_library.clone(),
+    //                     self.tab_group,
+    //                 );
+    //             }
+    //             RioEvent::UpdateConfig => {
+    //                 let (config, config_error) =
+    //                     match rio_backend::config::Config::try_load() {
+    //                         Ok(config) => (config, None),
+    //                         Err(error) => {
+    //                             (rio_backend::config::Config::default(), Some(error))
+    //                         }
+    //                     };
+
+    //                 self.config = config.into();
+    //                 let appearance = wa::window::get_appearance();
+
+    //                 if let Some(current) = &mut self.route {
+    //                     if let Some(error) = &config_error {
+    //                         current.report_error(&error.to_owned().into());
+    //                     } else {
+    //                         current.clear_assistant_errors();
+    //                     }
+
+    //                     current.update_config(&self.config, appearance);
+    //                 }
+    //             }
+    //             RioEvent::TitleWithSubtitle(title, subtitle) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     window::set_window_title(current.id, title, subtitle);
+    //                 }
+    //             }
+    //             RioEvent::MouseCursorDirty => {
+    //                 if let Some(current) = &mut self.route {
+    //                     current.mouse.accumulated_scroll =
+    //                         crate::mouse::AccumulatedScroll::default();
+    //                 }
+    //             }
+    //             RioEvent::Scroll(scroll) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     let mut terminal = current.ctx.current().terminal.lock();
+    //                     terminal.scroll_display(scroll);
+    //                     drop(terminal);
+    //                 }
+    //             }
+    //             RioEvent::Quit => {
+    //                 window::request_quit();
+    //             }
+    //             RioEvent::ClipboardLoad(clipboard_type, format) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     // if route.window.is_focused {
+    //                     let text = format(current.clipboard_get(clipboard_type).as_str());
+    //                     current
+    //                         .ctx
+    //                         .current_mut()
+    //                         .messenger
+    //                         .send_bytes(text.into_bytes());
+    //                     // }
+    //                 }
+    //             }
+    //             RioEvent::ClipboardStore(clipboard_type, content) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     // if current.is_focused {
+    //                     current.clipboard_store(clipboard_type, content);
+    //                     // }
+    //                 }
+    //             }
+    //             RioEvent::PtyWrite(text) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     current
+    //                         .ctx
+    //                         .current_mut()
+    //                         .messenger
+    //                         .send_bytes(text.into_bytes());
+    //                 }
+    //             }
+    //             RioEvent::ReportToAssistant(error) => {
+    //                 if let Some(current) = &mut self.route {
+    //                     current.report_error(&error);
+    //                 }
+    //             }
+    //             RioEvent::UpdateGraphicLibrary => {
+    //                 if let Some(current) = &mut self.route {
+    //                     let mut terminal = current.ctx.current().terminal.lock();
+    //                     let graphics = terminal.graphics_take_queues();
+    //                     if let Some(graphic_queues) = graphics {
+    //                         let renderer = &mut current.sugarloaf;
+    //                         for graphic_data in graphic_queues.pending {
+    //                             renderer.add_graphic(graphic_data);
+    //                         }
+
+    //                         for graphic_data in graphic_queues.remove_queue {
+    //                             renderer.remove_graphic(&graphic_data);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             // RioEvent::ScheduleRender(millis) => {
+    //             //     let timer_id = TimerId::new(Topic::Render, 0);
+    //             //     let event = EventPayload::new(RioEvent::Render, self.current);
+
+    //             //     if !self.scheduler.scheduled(timer_id) {
+    //             //         self.scheduler.schedule(
+    //             //             event,
+    //             //             Duration::from_millis(millis),
+    //             //             false,
+    //             //             timer_id,
+    //             //         );
+    //             //     }
+    //             // }
+    //             RioEvent::Noop => {}
+    //             _ => {}
+    //         };
+    //     }
+    // }
+
     // This is executed only in the initialization of App
     fn start(&mut self) {
         self.last_tab_group = if self.config.navigation.is_native() {
@@ -553,6 +561,7 @@ impl AppHandler for AppInstance {
         };
 
         let _ = create_window(
+            self.event_loop.create_proxy(),
             &self.config,
             &None,
             self.font_library.clone(),
