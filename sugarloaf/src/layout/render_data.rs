@@ -68,24 +68,53 @@ impl RenderData {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CachedClusterData {
+    pub info: ClusterInfo,
+    pub flags: u8,
+    /// Length of the cluster in the source text.
+    pub len: u8,
+    /// Offset of the cluster in the source text.
+    pub offset: u32,
+    /// Depending on `flags`, either an index into `glyphs` or an index
+    /// into `detailed_clusters`
+    pub glyphs: Vec<GlyphData>,
+    pub details: Vec<DetailedClusterData>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedRunData {
+    pub clusters: Vec<CachedClusterData>,
+    pub coords: Vec<i16>,
+    pub span: FragmentStyle,
+    pub line: u32,
+    pub color: [f32; 4],
+    pub font: usize,
+    pub size: f32,
+    pub level: u8,
+    pub whitespace: bool,
+    pub trailing_whitespace: bool,
+    pub ascent: f32,
+    pub descent: f32,
+    pub leading: f32,
+    pub background_color: Option<[f32; 4]>,
+    pub underline: bool,
+    pub underline_offset: f32,
+    pub underline_size: f32,
+    pub underline_color: [f32; 4],
+    pub strikeout_offset: f32,
+    pub strikeout_size: f32,
+    pub advance: f32,
+    pub cursor: SugarCursor,
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct RunCacheEntry {
-    /// Normalized variation coordinates.
-    pub coords: Vec<i16>,
-    /// Simple glyphs.
-    pub glyphs: Vec<ShapedGlyph>,
-    /// Glyph runs.
-    pub runs: Vec<RunData>,
-    /// Last shaped span.
-    pub clusters: Vec<ClusterData>,
-    pub clusters_marks: Vec<u32>,
+    pub runs: Vec<CachedRunData>,
 }
 
 impl RenderData {
     pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
-        let mut i = 0;
-        let mut g = 0;
-
         // TO_DEBUG_CACHE:
         // let glyphs_start = self.data.glyphs.len() as u32;
         // let clusters_start = self.data.clusters.len() as u32;
@@ -99,38 +128,61 @@ impl RenderData {
 
         // println!("cache run length {:?}", cached_entry.runs.len());
 
-        for run in &cached_entry.runs {
+        for cached_run in &cached_entry.runs {
+            let coords_start = self.data.coords.len() as u32;
+            self.data.coords.extend_from_slice(&cached_run.coords);
+            let coords_end = self.data.coords.len() as u32;
+
             let clusters_start = self.data.clusters.len() as u32;
-
-            for _ in run.clusters.0..run.clusters.1 {
-                let glyphs_start = self.data.glyphs.len() as u32;
-                let mut cluster = cached_entry.clusters[i].to_owned();
-
-                for _ in 0..cached_entry.clusters_marks[i] {
-                    if g < cached_entry.glyphs.len() {
-                        self.push_glyph(&cached_entry.glyphs[g]);
-                        g += 1;
-                    }
+            for cached_cluster in &cached_run.clusters {
+                // let glyphs_start = self.data.glyphs.len() as u32;
+                for glyph_data in &cached_cluster.glyphs {
+                    self.data.glyphs.push(*glyph_data);
                 }
+                // let glyphs_start = self.data.glyphs.len() as u32
+                // for detail in &cached_cluster.details {
+                //     self.data.detailed_clusters.push(DetailedClusterData {
+                //         glyphs: (glyphs_start, glyphs_end),
+                //         advance: component_advance,
+                //     });
+                // }
 
-                cluster.glyphs = glyphs_start;
+                let glyphs_start = self.data.glyphs.len() as u32;
 
-                self.data.clusters.push(cluster);
-                i += 1;
+                self.data.clusters.push(ClusterData {
+                    info: cached_cluster.info,
+                    flags: cached_cluster.flags,
+                    len: cached_cluster.len,
+                    offset: cached_cluster.offset,
+                    glyphs: glyphs_start,
+                });
             }
             let clusters_end = self.data.clusters.len() as u32;
 
-            let coords_start = self.data.coords.len() as u32;
-            // for _ in run.coords.0..run.coords.1 {
-            self.data.coords.extend_from_slice(&cached_entry.coords);
-            // }
-            let coords_end = self.data.coords.len() as u32;
-
-            let mut run = run.to_owned();
-            run.coords = (coords_start, coords_end);
-            run.clusters = (clusters_start, clusters_end);
-
-            self.data.runs.push(run);
+            self.data.runs.push(RunData {
+                coords: (coords_start, coords_end),
+                clusters: (clusters_start, clusters_end),
+                span: cached_run.span,
+                line: cached_run.line,
+                font: cached_run.font,
+                color: cached_run.color,
+                background_color: cached_run.background_color,
+                size: cached_run.size,
+                level: cached_run.level,
+                whitespace: false,
+                trailing_whitespace: false,
+                ascent: cached_run.ascent,
+                descent: cached_run.descent,
+                leading: cached_run.leading,
+                cursor: cached_run.cursor,
+                underline: cached_run.underline,
+                underline_color: cached_run.underline_color,
+                underline_offset: cached_run.underline_offset,
+                underline_size: cached_run.underline_size,
+                strikeout_offset: cached_run.strikeout_offset,
+                strikeout_size: cached_run.strikeout_size,
+                advance: cached_run.advance,
+            });
         }
 
         self.data.last_span = 0;
@@ -156,7 +208,6 @@ impl RenderData {
         let coords_start = self.data.coords.len() as u32;
         let coords = shaper.normalized_coords().to_owned();
         self.data.coords.extend_from_slice(&coords);
-        self.last_cached_run.coords.extend_from_slice(&coords);
 
         let coords_end = self.data.coords.len() as u32;
         let mut clusters_start = self.data.clusters.len() as u32;
@@ -209,7 +260,57 @@ impl RenderData {
                         advance,
                     };
                     self.data.runs.push(run_data);
-                    self.last_cached_run.runs.push(run_data);
+                    let mut owned_clusters = Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
+                    for current_cluster in &self.data.clusters[clusters_start as usize..clusters_end as usize] {
+                        let mut detailed_clusters = Vec::with_capacity(2);
+                        let glyphs_data = if current_cluster.is_detailed() {
+                            let detail = &self.data.detailed_clusters[current_cluster.glyphs as usize];
+                            detailed_clusters.push(*detail);
+                            &self.data.glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
+                        } else if current_cluster.is_empty() {
+                            &[]
+                        } else {
+                            &self.data.glyphs[current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
+                        };
+                        owned_clusters.push(CachedClusterData {
+                            info: current_cluster.info,
+                            flags: current_cluster.flags,
+                            len: current_cluster.len,
+                            offset: current_cluster.offset,
+                            glyphs: glyphs_data.to_vec(),
+                            details: detailed_clusters,
+                        });
+                    }                     
+                    self.last_cached_run.runs.push(CachedRunData {
+                        span: styles[last_span],
+                        line,
+                        font: *font,
+                        coords: coords.to_owned(),
+                        color: span_data.color,
+                        background_color: span_data.background_color,
+                        size,
+                        level,
+                        whitespace: false,
+                        trailing_whitespace: false,
+                        clusters: owned_clusters,
+                        ascent: metrics.ascent * span_data.line_spacing,
+                        descent: metrics.descent * span_data.line_spacing,
+                        leading: metrics.leading * span_data.line_spacing,
+                        cursor: span_data.cursor,
+                        underline: span_data.underline,
+                        underline_color: span_data
+                            .underline_color
+                            .unwrap_or(span_data.color),
+                        underline_offset: span_data
+                            .underline_offset
+                            .unwrap_or(metrics.underline_offset),
+                        underline_size: span_data
+                            .underline_size
+                            .unwrap_or(metrics.stroke_size),
+                        strikeout_offset: metrics.strikeout_offset,
+                        strikeout_size: metrics.stroke_size,
+                        advance,
+                    });
                     clusters_start = clusters_end;
                 }
                 last_span = span as usize;
@@ -218,7 +319,6 @@ impl RenderData {
             let mut cluster_advance = 0.;
             for glyph in c.glyphs {
                 cluster_advance += glyph.advance;
-                self.last_cached_run.glyphs.push(*glyph);
                 self.push_glyph(glyph);
             }
             advance += cluster_advance;
@@ -246,10 +346,6 @@ impl RenderData {
                     glyphs: detail_index,
                 };
                 self.data.clusters.push(cluster);
-                self.last_cached_run.clusters.push(cluster);
-                self.last_cached_run
-                    .clusters_marks
-                    .push(glyphs_end - glyphs_start);
             } else {
                 let flags = if glyphs_start == glyphs_end {
                     glyphs_start = c.data;
@@ -265,10 +361,6 @@ impl RenderData {
                     glyphs: glyphs_start,
                 };
                 self.data.clusters.push(cluster);
-                self.last_cached_run.clusters.push(cluster);
-                self.last_cached_run
-                    .clusters_marks
-                    .push(glyphs_end - glyphs_start);
             }
             if base_flags != 0 {
                 // Emit continuations
@@ -281,7 +373,6 @@ impl RenderData {
                         glyphs: component_advance.to_bits(),
                     };
                     self.data.clusters.push(cluster);
-                    self.last_cached_run.clusters.push(cluster);
                 }
 
                 if let Some(c) = self.data.clusters.last_mut() {
@@ -321,7 +412,57 @@ impl RenderData {
             advance,
         };
         self.data.runs.push(run_data);
-        self.last_cached_run.runs.push(run_data);
+        let mut owned_clusters = Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
+        for current_cluster in &self.data.clusters[clusters_start as usize..clusters_end as usize] {
+            let mut detailed_clusters = Vec::with_capacity(2);
+            let glyphs_data = if current_cluster.is_detailed() {
+                let detail = &self.data.detailed_clusters[current_cluster.glyphs as usize];
+                detailed_clusters.push(*detail);
+                &self.data.glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
+            } else if current_cluster.is_empty() {
+                &[]
+            } else {
+                &self.data.glyphs[current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
+            };
+            owned_clusters.push(CachedClusterData {
+                info: current_cluster.info,
+                flags: current_cluster.flags,
+                len: current_cluster.len,
+                offset: current_cluster.offset,
+                glyphs: glyphs_data.to_vec(),
+                details: detailed_clusters,
+            });
+        }                     
+        self.last_cached_run.runs.push(CachedRunData {
+            span: styles[last_span],
+            line,
+            font: *font,
+            coords: coords.to_owned(),
+            color: span_data.color,
+            background_color: span_data.background_color,
+            size,
+            level,
+            whitespace: false,
+            trailing_whitespace: false,
+            clusters: owned_clusters,
+            ascent: metrics.ascent * span_data.line_spacing,
+            descent: metrics.descent * span_data.line_spacing,
+            leading: metrics.leading * span_data.line_spacing,
+            cursor: span_data.cursor,
+            underline: span_data.underline,
+            underline_color: span_data
+                .underline_color
+                .unwrap_or(span_data.color),
+            underline_offset: span_data
+                .underline_offset
+                .unwrap_or(metrics.underline_offset),
+            underline_size: span_data
+                .underline_size
+                .unwrap_or(metrics.stroke_size),
+            strikeout_offset: metrics.strikeout_offset,
+            strikeout_size: metrics.stroke_size,
+            advance,
+        });
     }
 
     #[inline]

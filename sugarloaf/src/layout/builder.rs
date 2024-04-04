@@ -426,7 +426,6 @@ impl<'a> ParagraphBuilder<'a> {
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
-
             if render_specific_lines && !lines_to_render.contains(&line_number) {
                 if self.process_from_cache(render_data, line_number) {
                     continue;
