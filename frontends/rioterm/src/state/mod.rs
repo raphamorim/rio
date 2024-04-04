@@ -15,8 +15,6 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
-#[cfg(target_os = "macos")]
-use rio_backend::superloop::Superloop;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 #[cfg(not(target_os = "macos"))]
@@ -529,11 +527,8 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        #[cfg(not(target_os = "macos"))] context_manager: &crate::context::ContextManager<
+        context_manager: &crate::context::ContextManager<
             rio_backend::event::EventProxy,
-        >,
-        #[cfg(target_os = "macos")] context_manager: &crate::context::ContextManager<
-            Superloop,
         >,
         display_offset: i32,
         has_blinking_enabled: bool,

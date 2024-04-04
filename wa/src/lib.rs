@@ -11,6 +11,7 @@
 #![cfg(target_os = "macos")]
 
 pub mod conf;
+pub mod event_loop;
 mod event;
 pub mod native;
 mod resources;

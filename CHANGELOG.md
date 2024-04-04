@@ -17,7 +17,7 @@
 - Support to font ligatures.
 - Fixes on font search for Microsoft Windows.
 - All tabs/window instances now use same font data.
-- Updated wgpu to 0.19.0.
+- Updated wgpu to 0.19.3.
 - Removed support to DX11.
 - Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
 - Support to `line-height` configuration.
