@@ -68,6 +68,22 @@ impl ClusterData {
         self.flags & CLUSTER_NEWLINE != 0
     }
 
+    // TODO: Fix it
+    // pub fn glyphs<'a>(
+    //     &self,
+    //     detail: &[DetailedClusterData],
+    //     glyphs: &'a [GlyphData],
+    // ) -> &'a [GlyphData] {
+    //     if self.is_detailed() {
+    //         let detail = &detail[self.glyphs as usize];
+    //         &glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
+    //     } else if self.is_empty() {
+    //         &[]
+    //     } else {
+    //         &glyphs[self.glyphs as usize..self.glyphs as usize + 1]
+    //     }
+    // }
+
     pub fn glyphs<'a>(
         &self,
         detail: &[DetailedClusterData],
@@ -79,7 +95,12 @@ impl ClusterData {
         } else if self.is_empty() {
             &[]
         } else {
-            &glyphs[self.glyphs as usize..self.glyphs as usize + 1]
+            let idx = self.glyphs as usize;
+            if idx < glyphs.len() {
+                &glyphs[idx..idx + 1]
+            } else {
+                &[]
+            }
         }
     }
 
