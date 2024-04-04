@@ -635,7 +635,6 @@ fn shape_item(
     };
     let range = item.start..item.end;
     let span_index = state.lines[current_line].text.spans[item.start];
-    // println!("spans: {:?}", state.lines[current_line].text.spans);
     let style = state.lines[current_line].styles[span_index];
     let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
@@ -692,7 +691,7 @@ fn shape_item(
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.clone());
+        cache.insert(current_line, render_data.last_cached_run.to_owned());
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
@@ -730,7 +729,7 @@ fn shape_item(
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.clone());
+        cache.insert(current_line, render_data.last_cached_run.to_owned());
     }
     Some(())
 }
