@@ -115,19 +115,9 @@ pub struct RunCacheEntry {
 
 impl RenderData {
     pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
-        // TO_DEBUG_CACHE:
-        // let glyphs_start = self.data.glyphs.len() as u32;
-        // let clusters_start = self.data.clusters.len() as u32;
-        // println!("\nCACHE");
-        // println!("current glyphs_start {}", glyphs_start);
-        // println!("current clusters_start {}", clusters_start);
-        // println!("first run expected glyphs_start {:?}", cached_entry.clusters[0].glyphs);
-        // println!("first run expected cluster_start {:?}", cached_entry.runs[0].clusters.0);
-        // println!("last run expected cluster_start {:?}", cached_entry.clusters[cached_entry.runs.len() - 1].glyphs);
-        // println!("last run expected cluster_start {:?}", cached_entry.runs[cached_entry.runs.len() - 1].clusters.0);
-
-        // println!("cache run length {:?}", cached_entry.runs.len());
-
+        // Every time a line is cached we need to rebuild the indexes
+        // so RunData, Clusters, DetailedClusterData and Glyphs need to be
+        // pointed correctly across each other otherwise will lead to panic
         for cached_run in &cached_entry.runs {
             let coords_start = self.data.coords.len() as u32;
             self.data.coords.extend_from_slice(&cached_run.coords);
@@ -135,19 +125,23 @@ impl RenderData {
 
             let clusters_start = self.data.clusters.len() as u32;
             for cached_cluster in &cached_run.clusters {
-                // let glyphs_start = self.data.glyphs.len() as u32;
+                let mut glyphs_start = self.data.glyphs.len() as u32;
                 for glyph_data in &cached_cluster.glyphs {
                     self.data.glyphs.push(*glyph_data);
                 }
-                // let glyphs_start = self.data.glyphs.len() as u32
-                // for detail in &cached_cluster.details {
-                //     self.data.detailed_clusters.push(DetailedClusterData {
-                //         glyphs: (glyphs_start, glyphs_end),
-                //         advance: component_advance,
-                //     });
-                // }
+                let glyphs_end = self.data.glyphs.len() as u32;
 
-                let glyphs_start = self.data.glyphs.len() as u32;
+                let detailed_len = self.data.detailed_clusters.len() as u32;
+                for detail in &cached_cluster.details {
+                    self.data.detailed_clusters.push(DetailedClusterData {
+                        glyphs: (glyphs_start, glyphs_end),
+                        advance: detail.advance,
+                    });
+                }
+
+                if !cached_cluster.details.is_empty() {
+                    glyphs_start = detailed_len;
+                }
 
                 self.data.clusters.push(ClusterData {
                     info: cached_cluster.info,
@@ -260,17 +254,24 @@ impl RenderData {
                         advance,
                     };
                     self.data.runs.push(run_data);
-                    let mut owned_clusters = Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
-                    for current_cluster in &self.data.clusters[clusters_start as usize..clusters_end as usize] {
+                    let mut owned_clusters = Vec::with_capacity(
+                        (clusters_end - clusters_start).try_into().unwrap(),
+                    );
+                    for current_cluster in &self.data.clusters
+                        [clusters_start as usize..clusters_end as usize]
+                    {
                         let mut detailed_clusters = Vec::with_capacity(2);
                         let glyphs_data = if current_cluster.is_detailed() {
-                            let detail = &self.data.detailed_clusters[current_cluster.glyphs as usize];
+                            let detail = &self.data.detailed_clusters
+                                [current_cluster.glyphs as usize];
                             detailed_clusters.push(*detail);
-                            &self.data.glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
+                            &self.data.glyphs
+                                [detail.glyphs.0 as usize..detail.glyphs.1 as usize]
                         } else if current_cluster.is_empty() {
                             &[]
                         } else {
-                            &self.data.glyphs[current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
+                            &self.data.glyphs[current_cluster.glyphs as usize
+                                ..current_cluster.glyphs as usize + 1]
                         };
                         owned_clusters.push(CachedClusterData {
                             info: current_cluster.info,
@@ -280,7 +281,7 @@ impl RenderData {
                             glyphs: glyphs_data.to_vec(),
                             details: detailed_clusters,
                         });
-                    }                     
+                    }
                     self.last_cached_run.runs.push(CachedRunData {
                         span: styles[last_span],
                         line,
@@ -412,17 +413,22 @@ impl RenderData {
             advance,
         };
         self.data.runs.push(run_data);
-        let mut owned_clusters = Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
-        for current_cluster in &self.data.clusters[clusters_start as usize..clusters_end as usize] {
+        let mut owned_clusters =
+            Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
+        for current_cluster in
+            &self.data.clusters[clusters_start as usize..clusters_end as usize]
+        {
             let mut detailed_clusters = Vec::with_capacity(2);
             let glyphs_data = if current_cluster.is_detailed() {
-                let detail = &self.data.detailed_clusters[current_cluster.glyphs as usize];
+                let detail =
+                    &self.data.detailed_clusters[current_cluster.glyphs as usize];
                 detailed_clusters.push(*detail);
                 &self.data.glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
             } else if current_cluster.is_empty() {
                 &[]
             } else {
-                &self.data.glyphs[current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
+                &self.data.glyphs
+                    [current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
             };
             owned_clusters.push(CachedClusterData {
                 info: current_cluster.info,
@@ -432,7 +438,7 @@ impl RenderData {
                 glyphs: glyphs_data.to_vec(),
                 details: detailed_clusters,
             });
-        }                     
+        }
         self.last_cached_run.runs.push(CachedRunData {
             span: styles[last_span],
             line,
@@ -450,15 +456,11 @@ impl RenderData {
             leading: metrics.leading * span_data.line_spacing,
             cursor: span_data.cursor,
             underline: span_data.underline,
-            underline_color: span_data
-                .underline_color
-                .unwrap_or(span_data.color),
+            underline_color: span_data.underline_color.unwrap_or(span_data.color),
             underline_offset: span_data
                 .underline_offset
                 .unwrap_or(metrics.underline_offset),
-            underline_size: span_data
-                .underline_size
-                .unwrap_or(metrics.stroke_size),
+            underline_size: span_data.underline_size.unwrap_or(metrics.stroke_size),
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
