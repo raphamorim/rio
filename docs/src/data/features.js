@@ -5,6 +5,7 @@ import CirclesThreePlus from '@site/static/assets/feature-icons/circles-three-pl
 import Image from '@site/static/assets/feature-icons/image.svg';
 import Lightning from '@site/static/assets/feature-icons/lightning.svg';
 import Palette from '@site/static/assets/feature-icons/palette.svg';
+import FontLigatures from '@site/static/assets/feature-icons/font-ligatures.svg';
 
 /**
  * @satisfies {import('@site/src/components/FeaturesSection/index').FeatureCardProps[]}
@@ -59,6 +60,18 @@ const FEATURES = [
       <Translate id="home.features.cross-platform.description">
         Rio is a cross-platform app that runs on Windows, macOS, Linux, and
         FreeBSD.
+      </Translate>
+    ),
+  },
+  {
+    title: translate({
+      message: 'Font ligatures',
+      id: 'home.features.font-ligatures.title',
+    }),
+    Icon: FontLigatures,
+    description: (
+      <Translate id="home.features.font-ligatures.description">
+        Rio provide font ligatures support as a way to improve readability of common expressions or operators.
       </Translate>
     ),
   },

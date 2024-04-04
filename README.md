@@ -16,9 +16,6 @@
 | Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/linux) |
 | Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
-| Nintendo Switch * | (development hasn't started) |
-
-_* Nintendo Switch development is just for fun, the goal is to have  the renderer working and the basic features of a terminal._
 
 ## Demo Gallery
 
