@@ -308,7 +308,7 @@ pub trait AppHandler {
     fn create_window(&self);
     fn create_tab(&self, _urls_to_load: Option<&str>);
     fn start(&mut self);
-    fn process(&mut self, _id: u16);
+    fn process(&mut self);
 }
 
 /// A trait defining event callbacks.

@@ -1633,6 +1633,11 @@ impl App {
         _activities: CFRunLoopActivity,
         _repeats: *mut std::ffi::c_void,
     ) {
+        let native_app = NATIVE_APP.get();
+        if let Some(app) = native_app {
+            app.lock().handler.process();
+        }
+
         let sender = NATIVE_APP_EVENTS.get();
         if let Some(events) = sender {
             let events = events.lock();
