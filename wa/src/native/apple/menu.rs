@@ -67,7 +67,7 @@ impl Menu {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, setMainMenu: *self.menu];
+                let _: ObjcId = msg_send![*app.inner, setMainMenu: *self.menu];
             }
         }
     }
@@ -76,7 +76,7 @@ impl Menu {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
             let app = app.lock();
-            let existing: ObjcId = unsafe { msg_send![*app.ns_app, mainMenu] };
+            let existing: ObjcId = unsafe { msg_send![*app.inner, mainMenu] };
             if existing == nil {
                 None
             } else {
@@ -94,7 +94,7 @@ impl Menu {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, setHelpMenu: *self.menu];
+                let _: ObjcId = msg_send![*app.inner, setHelpMenu: *self.menu];
             }
         }
     }
@@ -104,7 +104,7 @@ impl Menu {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, setWindowsMenu: *self.menu];
+                let _: ObjcId = msg_send![*app.inner, setWindowsMenu: *self.menu];
             }
         }
     }
@@ -114,7 +114,7 @@ impl Menu {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, setServicesMenu: *self.menu];
+                let _: ObjcId = msg_send![*app.inner, setServicesMenu: *self.menu];
             }
         }
     }
@@ -124,7 +124,7 @@ impl Menu {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
+                let _: ObjcId = msg_send![*app.inner, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
             }
         }
     }

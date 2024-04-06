@@ -11,8 +11,8 @@
 #![cfg(target_os = "macos")]
 
 pub mod conf;
-pub mod event_loop;
 mod event;
+pub mod event_loop;
 pub mod native;
 mod resources;
 pub mod sync;
@@ -115,6 +115,7 @@ pub mod window {
             }
         }
     }
+
     /// Show or hide the mouse cursor
     pub fn set_window_title(id: u16, title: String, subtitle: String) {
         let d = get_handler().lock();

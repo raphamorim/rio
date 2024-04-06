@@ -304,64 +304,83 @@ pub enum Appearance {
     DarkHighContrast,
 }
 
-pub trait AppHandler {
-    fn create_window(&self);
-    fn create_tab(&self, _urls_to_load: Option<&str>);
-    fn start(&mut self);
-    fn process(&mut self);
-}
-
 /// A trait defining event callbacks.
 pub trait EventHandler {
-    #[allow(clippy::too_many_arguments)]
-    fn init(
+    fn create_window(&mut self);
+    fn create_tab(&mut self, _urls_to_load: Option<&str>);
+    fn start(&mut self);
+    fn process(&mut self);
+    // #[allow(clippy::too_many_arguments)]
+    // fn init(
+    //     &mut self,
+    //     _id: u16,
+    //     _raw_window_handle: raw_window_handle::RawWindowHandle,
+    //     _raw_display_handle: raw_window_handle::RawDisplayHandle,
+    //     _w: i32,
+    //     _h: i32,
+    //     _s: f32,
+    //     _open_url: &str,
+    // ) {
+    // }
+    fn resize_event(&mut self, _id: u16, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
+    fn ime_event(&mut self, _id: u16, _ime: ImeState) {}
+    fn mouse_motion_event(&mut self, _id: u16, _x: f32, _y: f32) {}
+    fn mouse_wheel_event(&mut self, _id: u16, _x: f32, _y: f32) {}
+    fn mouse_button_down_event(
         &mut self,
         _id: u16,
-        _raw_window_handle: raw_window_handle::RawWindowHandle,
-        _raw_display_handle: raw_window_handle::RawDisplayHandle,
-        _w: i32,
-        _h: i32,
-        _s: f32,
-        _open_url: &str,
+        _button: MouseButton,
+        _x: f32,
+        _y: f32,
     ) {
     }
-    fn resize_event(&mut self, _w: i32, _h: i32, _s: f32, _rescale: bool) {}
-    fn ime_event(&mut self, _ime: ImeState) {}
-    fn mouse_motion_event(&mut self, _x: f32, _y: f32) {}
-    fn mouse_wheel_event(&mut self, _x: f32, _y: f32) {}
-    fn mouse_button_down_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
-    fn mouse_button_up_event(&mut self, _button: MouseButton, _x: f32, _y: f32) {}
-    fn appearance_change_event(&mut self, _a: Appearance) {}
+    fn mouse_button_up_event(
+        &mut self,
+        _id: u16,
+        _button: MouseButton,
+        _x: f32,
+        _y: f32,
+    ) {
+    }
+    fn appearance_change_event(&mut self, _id: u16, _a: Appearance) {}
 
     // fn char_event(&mut self, _character: char, _mods: ModifiersState, _repeat: bool) {}
     fn key_down_event(
         &mut self,
+        _id: u16,
         _keycode: KeyCode,
         _repeat: bool,
         _text: Option<SmolStr>,
     ) {
     }
-    fn key_up_event(&mut self, _keycode: KeyCode) {}
-    fn modifiers_event(&mut self, _keycode: KeyCode, _mods: ModifiersState) {}
+    fn key_up_event(&mut self, _id: u16, _keycode: KeyCode) {}
+    fn modifiers_event(&mut self, _id: u16, _keycode: KeyCode, _mods: ModifiersState) {}
 
-    fn focus_event(&mut self, _focused: bool) {}
+    fn focus_event(&mut self, _id: u16, _focused: bool) {}
 
     /// Default implementation emulates mouse clicks
-    fn touch_event(&mut self, phase: TouchPhase, _id: u64, x: f32, y: f32) {
+    fn touch_event(
+        &mut self,
+        window_id: u16,
+        phase: TouchPhase,
+        _id: u64,
+        x: f32,
+        y: f32,
+    ) {
         if phase == TouchPhase::Started {
-            self.mouse_button_down_event(MouseButton::Left, x, y);
+            self.mouse_button_down_event(window_id, MouseButton::Left, x, y);
         }
 
         if phase == TouchPhase::Ended {
-            self.mouse_button_up_event(MouseButton::Left, x, y);
+            self.mouse_button_up_event(window_id, MouseButton::Left, x, y);
         }
 
         if phase == TouchPhase::Moved {
-            self.mouse_motion_event(x, y);
+            self.mouse_motion_event(window_id, x, y);
         }
     }
 
-    fn open_file_event(&mut self, _filename: String) {}
+    fn open_file_event(&mut self, _id: u16, _filename: String) {}
     // fn open_url_event(&mut self, _urls: &str) {}
 
     /// Represents raw hardware mouse motion event
@@ -389,11 +408,12 @@ pub trait EventHandler {
     fn quit_requested_event(&mut self) {}
 
     /// A file has been dropped over the application.
-    fn files_dropped_event(&mut self, _filepaths: Vec<std::path::PathBuf>) {}
+    fn files_dropped_event(&mut self, _id: u16, _filepaths: Vec<std::path::PathBuf>) {}
 
     /// A file has been dragged over the application..
     fn files_dragged_event(
         &mut self,
+        _id: u16,
         _filepaths: Vec<std::path::PathBuf>,
         _drag_state: DragState,
     ) {
