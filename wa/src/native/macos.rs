@@ -11,12 +11,14 @@
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use crate::native::macos::NSEventMask::NSAnyEventMask;
 use crate::native::macos::NSEventType::NSApplicationDefined;
+use crate::Appearance;
 use crate::FairMutex;
-use crate::{AppHandler, Appearance};
 use objc::rc::StrongPtr;
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 use {
@@ -93,7 +95,14 @@ pub enum NSEventType {
 }
 
 pub static NATIVE_APP: OnceLock<FairMutex<App>> = OnceLock::new();
-pub static NATIVE_APP_EVENTS: OnceLock<FairMutex<Vec<RepresentedItem>>> = OnceLock::new();
+
+pub static HANDLER: OnceLock<FairMutex<Handler>> = OnceLock::new();
+
+pub struct Handler {
+    pub inner: Rc<RefCell<dyn EventHandler>>,
+}
+unsafe impl Send for Handler {}
+unsafe impl Sync for Handler {}
 
 #[cfg(target_pointer_width = "32")]
 pub type NSInteger = libc::c_int;
@@ -148,9 +157,7 @@ pub struct MacosDisplay {
     cursors: HashMap<CursorIcon, ObjcId>,
     pub open_url: String,
     pub has_initialized: bool,
-    event_handler: Option<Box<dyn EventHandler>>,
-    // f: Box<dyn 'static + FnMut(&Window)>,
-    f: Option<Box<dyn 'static + FnOnce() -> Box<dyn EventHandler>>>,
+    event_handler: Rc<RefCell<dyn EventHandler>>,
     modifiers: Modifiers,
 }
 
@@ -168,20 +175,6 @@ impl MacosDisplay {
         RawDisplayHandle::AppKit(handle)
     }
 }
-
-// impl HasWindowHandle for SugarloafWindow {
-//     fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
-//         let raw = self.raw_window_handle();
-//         Ok(unsafe { WindowHandle::borrow_raw(raw) })
-//     }
-// }
-
-// impl HasDisplayHandle for SugarloafWindow {
-//     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
-//         let raw = self.raw_display_handle();
-//         Ok(unsafe { DisplayHandle::borrow_raw(raw)})
-//     }
-// }
 
 impl MacosDisplay {
     pub fn set_cursor_grab(&mut self, grab: bool) {
@@ -261,24 +254,7 @@ impl MacosDisplay {
             }
         }
     }
-    #[inline]
-    pub fn context(&mut self) -> Option<&mut dyn EventHandler> {
-        let event_handler = self.event_handler.as_deref_mut()?;
-
-        Some(event_handler)
-    }
 }
-
-// fn get_dimensions(window: *mut Object, view: *mut Object) -> (i32, i32, f32) {
-//     let screen: ObjcId = msg_send![window, screen];
-//     let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
-//     let dpi_scale = dpi_scale as f32;
-
-//     let bounds: NSRect = msg_send![view, bounds];
-//     let screen_width = (bounds.size.width as f32 * dpi_scale) as i32;
-//     let screen_height = (bounds.size.height as f32 * dpi_scale) as i32;
-//     (screen_width, screen_height, dpi_scale)
-// }
 
 impl MacosDisplay {
     fn transform_mouse_point(&self, point: &NSPoint) -> (f32, f32) {
@@ -382,12 +358,16 @@ extern "C" fn rio_perform_key_assignment(
     log::debug!("rio_perform_key_assignment {opt_action:?}",);
     if let Some(action) = opt_action {
         match action {
-            RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow)
-            | RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
-                let sender = NATIVE_APP_EVENTS.get();
-                if let Some(channel) = sender {
-                    let mut events = channel.lock();
-                    events.push(action);
+            RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+                let h = HANDLER.get();
+                if let Some(handler) = h {
+                    handler.lock().inner.borrow_mut().create_window();
+                }
+            }
+            RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
+                let h = HANDLER.get();
+                if let Some(handler) = h {
+                    handler.lock().inner.borrow_mut().create_tab(None);
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
@@ -464,10 +444,14 @@ extern "C" fn application_open_urls(
             }
         }
 
-        let native_app = NATIVE_APP.get();
-        if let Some(app) = native_app {
+        let handler = HANDLER.get();
+        if let Some(handler_instance) = handler {
             for url in urls_to_send {
-                app.lock().handler.create_tab(Some(&url));
+                handler_instance
+                    .lock()
+                    .inner
+                    .borrow_mut()
+                    .create_tab(Some(&url));
             }
         }
     }
@@ -566,9 +550,13 @@ pub fn define_app_delegate() -> *const Class {
 #[inline]
 fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     if let Some((w, h, scale_factor)) = unsafe { payload.update_dimensions() } {
-        if let Some(event_handler) = payload.context() {
-            event_handler.resize_event(w, h, scale_factor, rescale);
-        }
+        payload.event_handler.borrow_mut().resize_event(
+            payload.id,
+            w,
+            h,
+            scale_factor,
+            rescale,
+        );
     }
 }
 
@@ -580,15 +568,16 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 if payload.cursor_grabbed {
                     let dx: f64 = msg_send!(event, deltaX);
                     let dy: f64 = msg_send!(event, deltaY);
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.raw_mouse_motion(dx as f32, dy as f32);
-                    }
+                    // if let Some(event_handler) = payload.context() {
+                    // payload.event_handler.borrow_mut().raw_mouse_motion(dx as f32, dy as f32);
+                    // }
                 } else {
                     let point: NSPoint = msg_send!(event, locationInWindow);
                     let point = payload.transform_mouse_point(&point);
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.mouse_motion_event(point.0, point.1);
-                    }
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .mouse_motion_event(payload.id, point.0, point.1);
                 }
             }
         }
@@ -599,12 +588,16 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             unsafe {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
-                if let Some(event_handler) = payload.context() {
-                    if down {
-                        event_handler.mouse_button_down_event(btn, point.0, point.1);
-                    } else {
-                        event_handler.mouse_button_up_event(btn, point.0, point.1);
-                    }
+                if down {
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .mouse_button_down_event(payload.id, btn, point.0, point.1);
+                } else {
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .mouse_button_up_event(payload.id, btn, point.0, point.1);
                 }
             }
         }
@@ -671,12 +664,17 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Some(payload) = get_display_payload(this) {
                 // Commit only if we have marked text.
                 if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
-                    if let Some(event_handler) = payload.context() {
-                        event_handler
-                            .ime_event(crate::ImeState::Preedit(String::new(), None));
-                        event_handler.ime_event(crate::ImeState::Commit(string));
-                        payload.ime = ImeState::Commited;
-                    }
+                    // if let Some(event_handler) = payload.context() {
+                    payload.event_handler.borrow_mut().ime_event(
+                        payload.id,
+                        crate::ImeState::Preedit(String::new(), None),
+                    );
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .ime_event(payload.id, crate::ImeState::Commit(string));
+                    payload.ime = ImeState::Commited;
+                    // }
                 }
             }
 
@@ -702,9 +700,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             payload.marked_text = preedit_string.clone();
 
             if payload.ime == ImeState::Disabled {
-                if let Some(event_handler) = payload.context() {
-                    event_handler.ime_event(crate::ImeState::Enabled);
-                }
+                payload
+                    .event_handler
+                    .borrow_mut()
+                    .ime_event(payload.id, crate::ImeState::Enabled);
             }
 
             if !payload.marked_text.is_empty() {
@@ -720,10 +719,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 Some((payload.marked_text.len(), payload.marked_text.len()))
             };
 
-            if let Some(event_handler) = payload.context() {
-                event_handler
-                    .ime_event(crate::ImeState::Preedit(preedit_string, cursor_range));
-            }
+            payload.event_handler.borrow_mut().ime_event(
+                payload.id,
+                crate::ImeState::Preedit(preedit_string, cursor_range),
+            );
         }
     }
 
@@ -838,24 +837,29 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     dx *= 10.0;
                     dy *= 10.0;
                 }
-                if let Some(event_handler) = payload.context() {
-                    event_handler.mouse_wheel_event(dx as f32, dy as f32);
-                }
+                // if let Some(event_handler) = payload.context() {
+                payload
+                    .event_handler
+                    .borrow_mut()
+                    .mouse_wheel_event(payload.id, dx as f32, dy as f32);
+                // }
             }
         }
     }
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            if let Some(event_handler) = payload.context() {
-                event_handler.focus_event(true);
-            }
+            payload
+                .event_handler
+                .borrow_mut()
+                .focus_event(payload.id, true);
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            if let Some(event_handler) = payload.context() {
-                event_handler.focus_event(false);
-            }
+            payload
+                .event_handler
+                .borrow_mut()
+                .focus_event(payload.id, false);
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
@@ -896,12 +900,11 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                         dragged_files.push(std::path::PathBuf::from(path));
                     }
 
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.files_dragged_event(
-                            dragged_files,
-                            crate::DragState::Entered,
-                        );
-                    }
+                    payload.event_handler.borrow_mut().files_dragged_event(
+                        payload.id,
+                        dragged_files,
+                        crate::DragState::Entered,
+                    );
                 }
             }
         }
@@ -910,9 +913,11 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn dragging_exited(this: &Object, _: Sel, _sender: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            if let Some(event_handler) = payload.context() {
-                event_handler.files_dragged_event(vec![], crate::DragState::Exited);
-            }
+            payload.event_handler.borrow_mut().files_dragged_event(
+                payload.id,
+                vec![],
+                crate::DragState::Exited,
+            );
         }
     }
 
@@ -931,9 +936,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                         dropped_files.push(std::path::PathBuf::from(path));
                     }
 
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.files_dropped_event(dropped_files);
-                    }
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .files_dropped_event(payload.id, dropped_files);
                 }
             }
         }
@@ -964,9 +970,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 .get_mut(payload.id)
                 .unwrap()
                 .quit_requested = true;
-            if let Some(event_handler) = payload.context() {
-                event_handler.quit_requested_event();
-            }
+            payload.event_handler.borrow_mut().quit_requested_event();
 
             // user code hasn't intervened, quit the app
             if get_handler().lock().get(payload.id).unwrap().quit_requested {
@@ -1042,9 +1046,14 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
             if !had_ime_input {
                 if let Some(key) = get_event_keycode(event) {
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.key_down_event(key, repeat, get_event_char(event));
-                    }
+                    // if let Some(event_handler) = payload.context() {
+                    payload.event_handler.borrow_mut().key_down_event(
+                        payload.id,
+                        key,
+                        repeat,
+                        get_event_char(event),
+                    );
+                    // }
                 }
             }
         }
@@ -1052,9 +1061,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn appearance_did_change(this: &Object, _sel: Sel, _app: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            if let Some(event_handler) = payload.context() {
-                event_handler.appearance_change_event(App::appearance());
-            }
+            payload
+                .event_handler
+                .borrow_mut()
+                .appearance_change_event(payload.id, App::appearance());
         }
     }
 
@@ -1062,9 +1072,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         if let Some(payload) = get_display_payload(this) {
             if let Some(key) = get_event_keycode(event) {
                 log::info!("KEY_UP (key={:?}", key);
-                if let Some(event_handler) = payload.context() {
-                    event_handler.key_up_event(key);
-                }
+                payload
+                    .event_handler
+                    .borrow_mut()
+                    .key_up_event(payload.id, key);
             }
         }
     }
@@ -1079,11 +1090,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         ) {
             if new_pressed ^ old_pressed {
                 if new_pressed {
-                    if let Some(event_handler) = payload.context() {
-                        event_handler.modifiers_event(keycode, mods);
-                    }
-                } else if let Some(event_handler) = payload.context() {
-                    event_handler.modifiers_event(keycode, mods);
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .modifiers_event(payload.id, keycode, mods);
+                } else {
+                    payload
+                        .event_handler
+                        .borrow_mut()
+                        .modifiers_event(payload.id, keycode, mods);
                 }
             }
         }
@@ -1326,33 +1341,17 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
 
             unsafe { payload.update_dimensions() };
 
-            if payload.event_handler.is_none() {
-                let f = payload.f.take().unwrap();
-                payload.event_handler = Some(f());
-            }
-
-            let open_url: &str = &payload.open_url.to_owned();
+            // let open_url: &str = &payload.open_url.to_owned();
 
             let d = get_handler().lock();
             let d = d.get(id).unwrap();
-            if let Some(event_handler) = payload.context() {
-                event_handler.init(
-                    id,
-                    d.window_handle.unwrap(),
-                    d.display_handle.unwrap(),
-                    d.screen_width,
-                    d.screen_height,
-                    d.dpi_scale,
-                    open_url,
-                );
-
-                event_handler.resize_event(
-                    d.screen_width,
-                    d.screen_height,
-                    d.dpi_scale,
-                    true,
-                );
-            }
+            payload.event_handler.borrow_mut().resize_event(
+                payload.id,
+                d.screen_width,
+                d.screen_height,
+                d.dpi_scale,
+                true,
+            );
 
             payload.has_initialized = true;
             payload.open_url = String::from("");
@@ -1363,10 +1362,6 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
             payload.has_initialized = false;
             // event_handler.open_url_event(open_url);
         }
-
-        // if let Some(event_handler) = payload.context() {
-        //     event_handler.process();
-        // }
     }
 }
 
@@ -1583,18 +1578,14 @@ pub enum NSWindowTabbingMode {
 }
 
 pub struct App {
-    pub ns_app: StrongPtr,
-    handler: Box<dyn AppHandler>,
+    pub inner: StrongPtr,
 }
 
 unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub fn start<F>(f: F) -> StrongPtr
-    where
-        F: 'static + FnOnce() -> Box<dyn AppHandler>,
-    {
+    pub fn start(f: Rc<RefCell<dyn EventHandler + 'static>>) -> StrongPtr {
         crate::set_handler();
 
         unsafe {
@@ -1612,20 +1603,14 @@ impl App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            let _ = NATIVE_APP.set(FairMutex::new(App {
-                ns_app: ns_app.clone(),
-                handler: f(),
-            }));
+            let _ = HANDLER.set(FairMutex::new(Handler { inner: f }));
 
-            let _ = NATIVE_APP_EVENTS.set(FairMutex::new(vec![]));
+            let _ = NATIVE_APP.set(FairMutex::new(App {
+                inner: ns_app.clone(),
+            }));
 
             ns_app
         }
-    }
-
-    #[inline]
-    pub fn create_window(&mut self) {
-        self.handler.create_window();
     }
 
     extern "C" fn trigger(
@@ -1633,40 +1618,10 @@ impl App {
         _activities: CFRunLoopActivity,
         _repeats: *mut std::ffi::c_void,
     ) {
-        let native_app = NATIVE_APP.get();
-        if let Some(app) = native_app {
-            app.lock().handler.process();
+        let h = HANDLER.get();
+        if let Some(handler) = h {
+            handler.lock().inner.borrow_mut().process();
         }
-
-        let sender = NATIVE_APP_EVENTS.get();
-        if let Some(events) = sender {
-            let events = events.lock();
-            if events.is_empty() {
-                return;
-            }
-
-            let mut events = events;
-            if let Some(event) = events.pop() {
-                match event {
-                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-                        let native_app = NATIVE_APP.get();
-                        if let Some(app) = native_app {
-                            app.lock().handler.create_window();
-                        }
-                    }
-                    RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
-                        let native_app = NATIVE_APP.get();
-                        if let Some(app) = native_app {
-                            app.lock().handler.create_tab(None);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            // let mut events = channel.lock();
-            // events.push(action);
-        }
-
 
         // Run loop
         // unsafe {
@@ -1674,12 +1629,12 @@ impl App {
         // }
     }
 
-    pub fn run() {
+    pub fn run(event_handler: Rc<RefCell<dyn EventHandler>>) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let mut app = app.lock();
-            app.handler.start();
-            let ns_app = *app.ns_app;
+            event_handler.borrow_mut().start();
+            let app = app.lock();
+            let ns_app = *app.inner;
             drop(app);
 
             let observer = unsafe {
@@ -1687,7 +1642,7 @@ impl App {
                     std::ptr::null(),
                     kCFRunLoopAllActivities,
                     YES, // repeated
-                    0, // low priority
+                    0,   // low priority
                     App::trigger,
                     std::ptr::null_mut(),
                 )
@@ -1711,7 +1666,7 @@ impl App {
 
                 // Blocks until event available
                 let date: ObjcId = msg_send![class!(NSDate), distantPast];
-                let nsevent: ObjcId = msg_send![*self.ns_app,
+                let nsevent: ObjcId = msg_send![*self.inner,
                         nextEventMatchingMask: NSAnyEventMask
                         untilDate: date
                         inMode:NSDefaultRunLoopMode
@@ -1727,18 +1682,18 @@ impl App {
                         let () = msg_send![nswindow, eventLoopAwaken];
                     }
                 } else {
-                    let () = msg_send![*self.ns_app, sendEvent: nsevent];
+                    let () = msg_send![*self.inner, sendEvent: nsevent];
                 }
 
                 let date: ObjcId = msg_send![class!(NSDate), distantPast];
                 // Get all pending events
                 loop {
-                    let nsevent: ObjcId = msg_send![*self.ns_app,
+                    let nsevent: ObjcId = msg_send![*self.inner,
                         nextEventMatchingMask: NSAnyEventMask
                         untilDate: date
                         inMode:NSDefaultRunLoopMode
                         dequeue:YES];
-                    let () = msg_send![*self.ns_app, sendEvent: nsevent];
+                    let () = msg_send![*self.inner, sendEvent: nsevent];
                     if nsevent == nil {
                         break;
                     }
@@ -1777,7 +1732,7 @@ impl App {
         if let Some(app) = native_app {
             let app = app.lock();
             unsafe {
-                let _: ObjcId = msg_send![*app.ns_app, terminate: nil];
+                let _: ObjcId = msg_send![*app.inner, terminate: nil];
             }
         }
     }
@@ -1787,7 +1742,7 @@ impl App {
         if let Some(app) = native_app {
             let app = app.lock();
             let name = unsafe {
-                let appearance: ObjcId = msg_send![*app.ns_app, effectiveAppearance];
+                let appearance: ObjcId = msg_send![*app.inner, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
             };
             log::info!("App Appearance is {name}");
@@ -1820,7 +1775,7 @@ impl App {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
             let app = app.lock();
-            let ns_app = *app.ns_app;
+            let ns_app = *app.inner;
             unsafe {
                 let () = msg_send![ns_app, hide: ns_app];
             }
@@ -1832,16 +1787,18 @@ pub struct Window {
     pub ns_window: *mut Object,
     pub ns_view: *mut Object,
     pub id: u16,
+    pub raw_window_handle: raw_window_handle::RawWindowHandle,
+    pub raw_display_handle: raw_window_handle::RawDisplayHandle,
 }
 
 impl Window {
-    pub async fn new_window<F>(
+    pub async fn new(
         conf: crate::conf::Conf,
-        f: F,
-    ) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        F: 'static + FnOnce() -> Box<dyn EventHandler>,
-    {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let h = HANDLER.get().unwrap().lock();
+        let event_handler = h.inner.clone();
+        drop(h);
+
         unsafe {
             // let clipboard = Box::new(MacosClipboard);
             let id = crate::get_handler().lock().next_id();
@@ -1869,8 +1826,7 @@ impl Window {
                 current_cursor: CursorIcon::Default,
                 cursor_grabbed: false,
                 cursors: HashMap::new(),
-                f: Some(Box::new(f)),
-                event_handler: None,
+                event_handler: event_handler,
                 open_url: String::from(""),
                 modifiers: Modifiers::default(),
             };
@@ -1976,6 +1932,9 @@ impl Window {
             // let nsrunloop: ObjcId = msg_send![class!(NSRunLoop), currentRunLoop];
             // let () = msg_send![nsrunloop, addTimer: nstimer forMode: NSDefaultRunLoopMode];
 
+            let raw_window_handle = display.raw_window_handle();
+            let raw_display_handle = display.raw_display_handle();
+
             let boxed_view = Box::into_raw(Box::new(display));
 
             (*(*boxed_view).view)
@@ -2055,6 +2014,8 @@ impl Window {
                 id,
                 ns_window: *window,
                 ns_view: **view.as_strong_ptr(),
+                raw_window_handle,
+                raw_display_handle,
             };
 
             Ok(window_handle)

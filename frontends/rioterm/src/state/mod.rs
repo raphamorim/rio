@@ -527,9 +527,7 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &crate::context::ContextManager<
-            rio_backend::event::EventProxy,
-        >,
+        context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
