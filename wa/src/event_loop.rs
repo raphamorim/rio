@@ -1,14 +1,15 @@
-use crate::native::apple::frameworks::{CFRunLoopSourceCreate,
-CFRunLoopSourceContext,
-CFRunLoopGetMain,
-CFRunLoopSourceRef, CFRelease, CFRunLoopSourceSignal, CFIndex, CFRunLoopAddSource, kCFRunLoopCommonModes, CFRunLoopWakeUp};
-use std::ptr;
+use crate::native::apple::frameworks::{
+    kCFRunLoopCommonModes, CFIndex, CFRelease, CFRunLoopAddSource, CFRunLoopGetMain,
+    CFRunLoopSourceContext, CFRunLoopSourceCreate, CFRunLoopSourceRef,
+    CFRunLoopSourceSignal, CFRunLoopWakeUp,
+};
+use std::fmt;
 use std::os::raw::c_void;
+use std::ptr;
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
-use std::sync::atomic::AtomicBool;
-use std::fmt;
 
 static EVENT_LOOP_CREATED: AtomicBool = AtomicBool::new(false);
 
@@ -47,24 +48,6 @@ impl<T> EventLoop<T> {
         })
     }
 }
-
-/// Used to send custom events to [`EventLoop`].
-// pub struct EventLoopProxy<T: 'static> {
-//     sender: mpsc::Sender<T>,
-// }
-
-// impl<T: 'static> EventLoopProxy<T> {
-//     /// Send an event to the [`EventLoop`] from which this proxy was created. This emits a
-//     /// `UserEvent(event)` event in the event loop, where `event` is the value passed to this
-//     /// function.
-//     ///
-//     /// Returns an `Err` if the associated [`EventLoop`] no longer exists.
-//     ///
-//     /// [`UserEvent(event)`]: Event::UserEvent
-//     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
-//         self.event_loop_proxy.send_event(event)
-//     }
-// }
 
 impl<T: 'static> fmt::Debug for EventLoopProxy<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -115,8 +98,11 @@ impl<T> EventLoopProxy<T> {
                 cancel: None,
                 perform: event_loop_proxy_handler,
             };
-            let source =
-                CFRunLoopSourceCreate(ptr::null_mut(), CFIndex::max_value() - 1, &mut context);
+            let source = CFRunLoopSourceCreate(
+                ptr::null_mut(),
+                CFIndex::max_value() - 1,
+                &mut context,
+            );
             CFRunLoopAddSource(rl, source, kCFRunLoopCommonModes);
             CFRunLoopWakeUp(rl);
 
