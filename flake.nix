@@ -35,11 +35,12 @@
 
           mkDevShell = rust-toolchain:
             let
-              dependencies = self'.packages.rio.nativeBuildInputs ++ self'.packages.rio.buildInputs;
+              runtimeDeps = self'.packages.rio.runtimeDependencies;
+              tools = self'.packages.rio.nativeBuildInputs ++ self'.packages.rio.buildInputs ++ [ rust-toolchain ];
             in
             pkgs.mkShell {
-              LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath dependencies}:$LD_LIBRARY_PATH";
-              packages = dependencies ++ [ rust-toolchain ];
+              LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath runtimeDeps}";
+              packages = tools ++ [ rust-toolchain ];
             };
         in
         {
