@@ -359,13 +359,17 @@ extern "C" fn rio_perform_key_assignment(
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
                 let h = HANDLER.get();
                 if let Some(handler) = h {
-                    handler.inner.borrow_mut().create_window();
+                    if let Ok(mut event_handler) = handler.inner.try_borrow_mut() {
+                        event_handler.create_window();
+                    }
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
                 let h = HANDLER.get();
                 if let Some(handler) = h {
-                    handler.inner.borrow_mut().create_tab(None);
+                    if let Ok(mut event_handler) = handler.inner.try_borrow_mut() {
+                        event_handler.create_tab(None);
+                    }
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
@@ -445,10 +449,9 @@ extern "C" fn application_open_urls(
         let handler = HANDLER.get();
         if let Some(handler_instance) = handler {
             for url in urls_to_send {
-                handler_instance
-                    .inner
-                    .borrow_mut()
-                    .create_tab(Some(&url));
+                if let Ok(mut event_handler) = handler_instance.inner.try_borrow_mut() {
+                    event_handler.create_tab(Some(&url));
+                }
             }
         }
     }
@@ -547,13 +550,9 @@ pub fn define_app_delegate() -> *const Class {
 #[inline]
 fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
     if let Some((w, h, scale_factor)) = unsafe { payload.update_dimensions() } {
-        payload.event_handler.borrow_mut().resize_event(
-            payload.id,
-            w,
-            h,
-            scale_factor,
-            rescale,
-        );
+        if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+            event_handler.resize_event(payload.id, w, h, scale_factor, rescale);
+        }
     }
 }
 
@@ -563,16 +562,18 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 if payload.cursor_grabbed {
-                    let dx: f64 = msg_send!(event, deltaX);
-                    let dy: f64 = msg_send!(event, deltaY);
-                    payload.event_handler.borrow_mut().raw_mouse_motion(payload.id, dx as f32, dy as f32);
+                    // let dx: f64 = msg_send!(event, deltaX);
+                    // let dy: f64 = msg_send!(event, deltaY);
+                    // if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                    //     event_handler.raw_mouse_motion(payload.id, dx as f32, dy as f32);
+                    // }
                 } else {
                     let point: NSPoint = msg_send!(event, locationInWindow);
                     let point = payload.transform_mouse_point(&point);
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .mouse_motion_event(payload.id, point.0, point.1);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.mouse_motion_event(payload.id, point.0, point.1);
+                    }
                 }
             }
         }
@@ -584,15 +585,17 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 let point: NSPoint = msg_send!(event, locationInWindow);
                 let point = payload.transform_mouse_point(&point);
                 if down {
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .mouse_button_down_event(payload.id, btn, point.0, point.1);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler
+                            .mouse_button_down_event(payload.id, btn, point.0, point.1);
+                    }
                 } else {
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .mouse_button_up_event(payload.id, btn, point.0, point.1);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler
+                            .mouse_button_up_event(payload.id, btn, point.0, point.1);
+                    }
                 }
             }
         }
@@ -660,15 +663,16 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 // Commit only if we have marked text.
                 if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
                     // if let Some(event_handler) = payload.context() {
-                    payload.event_handler.borrow_mut().ime_event(
-                        payload.id,
-                        crate::ImeState::Preedit(String::new(), None),
-                    );
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .ime_event(payload.id, crate::ImeState::Commit(string));
-                    payload.ime = ImeState::Commited;
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.ime_event(
+                            payload.id,
+                            crate::ImeState::Preedit(String::new(), None),
+                        );
+                        event_handler
+                            .ime_event(payload.id, crate::ImeState::Commit(string));
+                        payload.ime = ImeState::Commited;
+                    }
                     // }
                 }
             }
@@ -695,10 +699,9 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             payload.marked_text = preedit_string.clone();
 
             if payload.ime == ImeState::Disabled {
-                payload
-                    .event_handler
-                    .borrow_mut()
-                    .ime_event(payload.id, crate::ImeState::Enabled);
+                if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                    event_handler.ime_event(payload.id, crate::ImeState::Enabled);
+                }
             }
 
             if !payload.marked_text.is_empty() {
@@ -714,10 +717,12 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 Some((payload.marked_text.len(), payload.marked_text.len()))
             };
 
-            payload.event_handler.borrow_mut().ime_event(
-                payload.id,
-                crate::ImeState::Preedit(preedit_string, cursor_range),
-            );
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.ime_event(
+                    payload.id,
+                    crate::ImeState::Preedit(preedit_string, cursor_range),
+                );
+            }
         }
     }
 
@@ -833,28 +838,25 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     dy *= 10.0;
                 }
                 // if let Some(event_handler) = payload.context() {
-                payload
-                    .event_handler
-                    .borrow_mut()
-                    .mouse_wheel_event(payload.id, dx as f32, dy as f32);
+                if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                    event_handler.mouse_wheel_event(payload.id, dx as f32, dy as f32);
+                }
                 // }
             }
         }
     }
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            payload
-                .event_handler
-                .borrow_mut()
-                .focus_event(payload.id, true);
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.focus_event(payload.id, true);
+            }
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            payload
-                .event_handler
-                .borrow_mut()
-                .focus_event(payload.id, false);
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.focus_event(payload.id, false);
+            }
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
@@ -895,11 +897,14 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                         dragged_files.push(std::path::PathBuf::from(path));
                     }
 
-                    payload.event_handler.borrow_mut().files_dragged_event(
-                        payload.id,
-                        dragged_files,
-                        crate::DragState::Entered,
-                    );
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.files_dragged_event(
+                            payload.id,
+                            dragged_files,
+                            crate::DragState::Entered,
+                        );
+                    }
                 }
             }
         }
@@ -908,11 +913,13 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn dragging_exited(this: &Object, _: Sel, _sender: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            payload.event_handler.borrow_mut().files_dragged_event(
-                payload.id,
-                vec![],
-                crate::DragState::Exited,
-            );
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.files_dragged_event(
+                    payload.id,
+                    vec![],
+                    crate::DragState::Exited,
+                );
+            }
         }
     }
 
@@ -931,10 +938,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                         dropped_files.push(std::path::PathBuf::from(path));
                     }
 
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .files_dropped_event(payload.id, dropped_files);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.files_dropped_event(payload.id, dropped_files);
+                    }
                 }
             }
         }
@@ -965,7 +972,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 .get_mut(payload.id)
                 .unwrap()
                 .quit_requested = true;
-            payload.event_handler.borrow_mut().quit_requested_event();
+
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.quit_requested_event();
+            }
 
             // user code hasn't intervened, quit the app
             if get_handler().lock().get(payload.id).unwrap().quit_requested {
@@ -1042,12 +1052,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if !had_ime_input {
                 if let Some(key) = get_event_keycode(event) {
                     // if let Some(event_handler) = payload.context() {
-                    payload.event_handler.borrow_mut().key_down_event(
-                        payload.id,
-                        key,
-                        repeat,
-                        get_event_char(event),
-                    );
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.key_down_event(
+                            payload.id,
+                            key,
+                            repeat,
+                            get_event_char(event),
+                        );
+                    }
                     // }
                 }
             }
@@ -1056,10 +1069,9 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
     extern "C" fn appearance_did_change(this: &Object, _sel: Sel, _app: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            payload
-                .event_handler
-                .borrow_mut()
-                .appearance_change_event(payload.id, App::appearance());
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.appearance_change_event(payload.id, App::appearance());
+            }
         }
     }
 
@@ -1067,10 +1079,9 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         if let Some(payload) = get_display_payload(this) {
             if let Some(key) = get_event_keycode(event) {
                 log::info!("KEY_UP (key={:?}", key);
-                payload
-                    .event_handler
-                    .borrow_mut()
-                    .key_up_event(payload.id, key);
+                if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                    event_handler.key_up_event(payload.id, key);
+                }
             }
         }
     }
@@ -1085,15 +1096,15 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         ) {
             if new_pressed ^ old_pressed {
                 if new_pressed {
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .modifiers_event(payload.id, keycode, mods);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.modifiers_event(payload.id, keycode, mods);
+                    }
                 } else {
-                    payload
-                        .event_handler
-                        .borrow_mut()
-                        .modifiers_event(payload.id, keycode, mods);
+                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
+                    {
+                        event_handler.modifiers_event(payload.id, keycode, mods);
+                    }
                 }
             }
         }
@@ -1340,16 +1351,19 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
 
             let d = get_handler().lock();
             let d = d.get(id).unwrap();
-            payload.event_handler.borrow_mut().resize_event(
-                payload.id,
-                d.screen_width,
-                d.screen_height,
-                d.dpi_scale,
-                true,
-            );
 
-            payload.has_initialized = true;
-            payload.open_url = String::from("");
+            if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                event_handler.resize_event(
+                    payload.id,
+                    d.screen_width,
+                    d.screen_height,
+                    d.dpi_scale,
+                    true,
+                );
+
+                payload.has_initialized = true;
+                payload.open_url = String::from("");
+            }
             return;
         }
 
@@ -1615,7 +1629,9 @@ impl App {
     ) {
         let h = HANDLER.get();
         if let Some(handler) = h {
-            handler.inner.borrow_mut().process();
+            if let Ok(mut event_handler) = handler.inner.try_borrow_mut() {
+                event_handler.process();
+            }
         }
 
         // Run loop
@@ -1785,7 +1801,7 @@ pub struct Window {
 impl Window {
     pub async fn new(
         conf: crate::conf::Conf,
-        event_handler: Rc<RefCell<dyn EventHandler>>
+        event_handler: Rc<RefCell<dyn EventHandler>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // let event_handler = {
         //     HANDLER.get().unwrap().lock().inner.clone()
