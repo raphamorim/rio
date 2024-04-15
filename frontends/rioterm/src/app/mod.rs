@@ -65,7 +65,10 @@ pub fn create_window(
     };
 
     let event_proxy = EventProxy::new(event_loop_proxy);
-    let created_window = futures::executor::block_on(Window::new(wa_conf, handler.as_ref().unwrap().clone()))?;
+    let created_window = futures::executor::block_on(Window::new(
+        wa_conf,
+        handler.as_ref().unwrap().clone(),
+    ))?;
 
     let route = Route::new(
         created_window.id,
