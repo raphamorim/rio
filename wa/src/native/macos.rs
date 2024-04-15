@@ -143,6 +143,7 @@ pub struct MacosDisplay {
     view: ObjcId,
     fullscreen: bool,
     id: u16,
+    focused: bool,
     ime: ImeState,
     marked_text: String,
     // [NSCursor hide]/unhide calls should be balanced
@@ -850,6 +851,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
                 event_handler.focus_event(payload.id, true);
             }
+            payload.focused = true;
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
@@ -857,6 +859,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
                 event_handler.focus_event(payload.id, false);
             }
+            payload.focused = false;
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
@@ -1342,6 +1345,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     if let Some(payload) = get_display_payload(this) {
+        if !payload.focused {
+            return;
+        }
+
         if !payload.has_initialized {
             let id = payload.id;
 
@@ -1627,8 +1634,7 @@ impl App {
         _activities: CFRunLoopActivity,
         _repeats: *mut std::ffi::c_void,
     ) {
-        let h = HANDLER.get();
-        if let Some(handler) = h {
+        if let Some(handler) = HANDLER.get() {
             if let Ok(mut event_handler) = handler.inner.try_borrow_mut() {
                 event_handler.process();
             }
@@ -1825,6 +1831,7 @@ impl Window {
             let mut display = MacosDisplay {
                 has_initialized: false,
                 id,
+                focused: true,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
                 ime: ImeState::Disabled,
