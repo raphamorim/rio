@@ -12,7 +12,6 @@ use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem}
 use crate::native::macos::NSEventMask::NSAnyEventMask;
 use crate::native::macos::NSEventType::NSApplicationDefined;
 use crate::Appearance;
-use crate::FairMutex;
 use objc::rc::StrongPtr;
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -95,8 +94,7 @@ pub enum NSEventType {
 }
 
 pub static NATIVE_APP: OnceLock<App> = OnceLock::new();
-
-pub static HANDLER: OnceLock<FairMutex<Handler>> = OnceLock::new();
+pub static HANDLER: OnceLock<Handler> = OnceLock::new();
 
 pub struct Handler {
     pub inner: Rc<RefCell<dyn EventHandler>>,
@@ -361,13 +359,13 @@ extern "C" fn rio_perform_key_assignment(
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
                 let h = HANDLER.get();
                 if let Some(handler) = h {
-                    handler.lock().inner.borrow_mut().create_window();
+                    handler.inner.borrow_mut().create_window();
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
                 let h = HANDLER.get();
                 if let Some(handler) = h {
-                    handler.lock().inner.borrow_mut().create_tab(None);
+                    handler.inner.borrow_mut().create_tab(None);
                 }
             }
             RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
@@ -448,7 +446,6 @@ extern "C" fn application_open_urls(
         if let Some(handler_instance) = handler {
             for url in urls_to_send {
                 handler_instance
-                    .lock()
                     .inner
                     .borrow_mut()
                     .create_tab(Some(&url));
@@ -1601,7 +1598,7 @@ impl App {
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
 
-            let _ = HANDLER.set(FairMutex::new(Handler { inner: f }));
+            let _ = HANDLER.set(Handler { inner: f });
 
             let _ = NATIVE_APP.set(App {
                 inner: ns_app.clone(),
@@ -1618,7 +1615,7 @@ impl App {
     ) {
         let h = HANDLER.get();
         if let Some(handler) = h {
-            handler.lock().inner.borrow_mut().process();
+            handler.inner.borrow_mut().process();
         }
 
         // Run loop
@@ -1727,7 +1724,6 @@ impl App {
     pub fn confirm_quit() {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let ns_app = *app.inner;
             unsafe {
                 let _: ObjcId = msg_send![*app.inner, terminate: nil];
             }
@@ -1737,7 +1733,6 @@ impl App {
     pub fn appearance() -> Appearance {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let ns_app = *app.inner;
             let name = unsafe {
                 let appearance: ObjcId = msg_send![*app.inner, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
