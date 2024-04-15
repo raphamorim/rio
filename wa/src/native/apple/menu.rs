@@ -65,9 +65,9 @@ impl Menu {
     pub fn assign_as_main_menu(&self) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
-                let _: ObjcId = msg_send![*app.inner, setMainMenu: *self.menu];
+                let _: ObjcId = msg_send![ns_app, setMainMenu: *self.menu];
             }
         }
     }
@@ -75,8 +75,8 @@ impl Menu {
     pub fn get_main_menu() -> Option<Self> {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
-            let existing: ObjcId = unsafe { msg_send![*app.inner, mainMenu] };
+            let ns_app = *app.inner;
+            let existing: ObjcId = unsafe { msg_send![ns_app, mainMenu] };
             if existing == nil {
                 None
             } else {
@@ -92,9 +92,9 @@ impl Menu {
     pub fn assign_as_help_menu(&self) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
-                let _: ObjcId = msg_send![*app.inner, setHelpMenu: *self.menu];
+                let _: ObjcId = msg_send![ns_app, setHelpMenu: *self.menu];
             }
         }
     }
@@ -102,9 +102,9 @@ impl Menu {
     pub fn assign_as_windows_menu(&self) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
-                let _: ObjcId = msg_send![*app.inner, setWindowsMenu: *self.menu];
+                let _: ObjcId = msg_send![ns_app, setWindowsMenu: *self.menu];
             }
         }
     }
@@ -112,9 +112,9 @@ impl Menu {
     pub fn assign_as_services_menu(&self) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
-                let _: ObjcId = msg_send![*app.inner, setServicesMenu: *self.menu];
+                let _: ObjcId = msg_send![ns_app, setServicesMenu: *self.menu];
             }
         }
     }
@@ -122,9 +122,9 @@ impl Menu {
     pub fn assign_as_app_menu(&self) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
-                let _: ObjcId = msg_send![*app.inner, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
+                let _: ObjcId = msg_send![ns_app, performSelector:sel!(setAppleMenu:) withObject:*self.menu];
             }
         }
     }
