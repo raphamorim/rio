@@ -568,9 +568,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 if payload.cursor_grabbed {
                     let dx: f64 = msg_send!(event, deltaX);
                     let dy: f64 = msg_send!(event, deltaY);
-                    // if let Some(event_handler) = payload.context() {
-                    // payload.event_handler.borrow_mut().raw_mouse_motion(dx as f32, dy as f32);
-                    // }
+                    payload.event_handler.borrow_mut().raw_mouse_motion(payload.id, dx as f32, dy as f32);
                 } else {
                     let point: NSPoint = msg_send!(event, locationInWindow);
                     let point = payload.transform_mouse_point(&point);
@@ -1585,7 +1583,7 @@ unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub fn start(f: Rc<RefCell<dyn EventHandler + 'static>>) -> StrongPtr {
+    pub fn new(f: Rc<RefCell<dyn EventHandler + 'static>>) -> StrongPtr {
         crate::set_handler();
 
         unsafe {
@@ -1632,7 +1630,8 @@ impl App {
     pub fn run(event_handler: Rc<RefCell<dyn EventHandler>>) {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            event_handler.borrow_mut().start();
+            // HACKY: f(f)?
+            event_handler.borrow_mut().start(event_handler.clone());
             let app = app.lock();
             let ns_app = *app.inner;
             drop(app);
@@ -1794,10 +1793,11 @@ pub struct Window {
 impl Window {
     pub async fn new(
         conf: crate::conf::Conf,
+        event_handler: Rc<RefCell<dyn EventHandler>>
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let h = HANDLER.get().unwrap().lock();
-        let event_handler = h.inner.clone();
-        drop(h);
+        // let event_handler = {
+        //     HANDLER.get().unwrap().lock().inner.clone()
+        // };
 
         unsafe {
             // let clipboard = Box::new(MacosClipboard);
