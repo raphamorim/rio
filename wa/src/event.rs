@@ -8,10 +8,10 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
-use std::rc::Rc;
-use std::cell::RefCell;
 use bitflags::bitflags;
 use smol_str::SmolStr;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
 pub enum MouseButton {
