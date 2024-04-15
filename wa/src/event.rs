@@ -8,6 +8,8 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
+use std::rc::Rc;
+use std::cell::RefCell;
 use bitflags::bitflags;
 use smol_str::SmolStr;
 
@@ -308,7 +310,7 @@ pub enum Appearance {
 pub trait EventHandler {
     fn create_window(&mut self);
     fn create_tab(&mut self, _urls_to_load: Option<&str>);
-    fn start(&mut self);
+    fn start(&mut self, _handler: Rc<RefCell<dyn EventHandler>>);
     fn process(&mut self);
     // #[allow(clippy::too_many_arguments)]
     // fn init(
@@ -386,7 +388,7 @@ pub trait EventHandler {
     /// Represents raw hardware mouse motion event
     /// Note that these events are delivered regardless of input focus and not in pixels, but in
     /// hardware units instead. And those units may be different from pixels depending on the target platform
-    fn raw_mouse_motion(&mut self, _dx: f32, _dy: f32) {}
+    fn raw_mouse_motion(&mut self, _id: u16, _dx: f32, _dy: f32) {}
 
     /// Window has been minimized
     /// Right now is only implemented on Android, X11 and wasm,

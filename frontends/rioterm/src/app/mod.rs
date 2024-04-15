@@ -24,6 +24,7 @@ pub struct Router {
 }
 
 pub fn create_window(
+    handler: &Option<Rc<RefCell<dyn EventHandler>>>,
     event_loop_proxy: EventLoopProxy<EventPayload>,
     config: &Rc<rio_backend::config::Config>,
     config_error: &Option<rio_backend::config::ConfigError>,
@@ -64,7 +65,7 @@ pub fn create_window(
     };
 
     let event_proxy = EventProxy::new(event_loop_proxy);
-    let created_window = futures::executor::block_on(Window::new(wa_conf))?;
+    let created_window = futures::executor::block_on(Window::new(wa_conf, handler.as_ref().unwrap().clone()))?;
 
     let route = Route::new(
         created_window.id,
@@ -87,6 +88,7 @@ pub fn create_window(
 struct EventHandlerInstance {
     config: Rc<rio_backend::config::Config>,
     font_library: FontLibrary,
+    handler: Option<Rc<RefCell<dyn EventHandler>>>,
     routes: HashMap<u16, Router>,
     event_loop: EventLoop<rio_backend::event::EventPayload>,
     #[cfg(target_os = "macos")]
@@ -110,6 +112,7 @@ impl EventHandlerInstance {
         Self {
             routes: HashMap::default(),
             event_loop,
+            handler: None,
             font_library,
             config,
             #[cfg(target_os = "macos")]
@@ -121,6 +124,7 @@ impl EventHandlerInstance {
 impl EventHandler for EventHandlerInstance {
     fn create_window(&mut self) {
         if let Ok(router) = create_window(
+            &self.handler,
             self.event_loop.create_proxy(),
             &self.config,
             &None,
@@ -133,6 +137,7 @@ impl EventHandler for EventHandlerInstance {
 
     fn create_tab(&mut self, open_file_url: Option<&str>) {
         if let Ok(router) = create_window(
+            &self.handler,
             self.event_loop.create_proxy(),
             &self.config,
             &None,
@@ -171,6 +176,7 @@ impl EventHandler for EventHandlerInstance {
                         };
 
                         if let Ok(router) = create_window(
+                            &self.handler,
                             self.event_loop.create_proxy(),
                             &self.config,
                             &None,
@@ -185,6 +191,7 @@ impl EventHandler for EventHandlerInstance {
                 RioEventType::Rio(RioEvent::CreateNativeTab(_)) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         if let Ok(router) = create_window(
+                            &self.handler,
                             self.event_loop.create_proxy(),
                             &self.config,
                             &None,
@@ -583,7 +590,8 @@ impl EventHandler for EventHandlerInstance {
     }
 
     // This is executed only in the initialization of App
-    fn start(&mut self) {
+    fn start(&mut self, event_handler: Rc<RefCell<dyn EventHandler>>) {
+        self.handler = Some(event_handler);
         self.last_tab_group = if self.config.navigation.is_native() {
             Some(0)
         } else {
@@ -591,6 +599,7 @@ impl EventHandler for EventHandlerInstance {
         };
 
         if let Ok(router) = create_window(
+            &self.handler,
             self.event_loop.create_proxy(),
             &self.config,
             &None,
@@ -612,7 +621,7 @@ pub async fn run(
 
     // let scheduler = Scheduler::new(superloop.clone());
 
-    App::start(event_handler.clone());
+    App::new(event_handler.clone());
     menu::create_menu();
     App::run(event_handler);
     Ok(())
