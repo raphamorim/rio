@@ -1,5 +1,5 @@
 // MIT License
-// Copyright 2022-2023 Raphael Amorim
+// Copyright 2022-present Raphael Amorim
 //
 // The functions (including comments) and logic of process_key_event, build_key_sequence, process_mouse_bindings, copy_selection, start_selection, update_selection_scrolling,
 // side_by_pos, on_left_click, paste, sgr_mouse_report, mouse_report, normal_mouse_report, scroll,
@@ -192,7 +192,6 @@ impl Route {
         let mut sugarloaf = match futures::executor::block_on(Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            // config.fonts.to_owned(),
             &font_library,
             sugarloaf_layout,
         )) {
@@ -206,7 +205,7 @@ impl Route {
         let context_manager = context::ContextManager::start(
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
-            0,
+            id,
             context_manager_config,
             sugarloaf.layout_next(),
             sugarloaf_errors,

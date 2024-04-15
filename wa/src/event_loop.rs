@@ -124,10 +124,6 @@ impl<T> EventLoopProxy<T> {
     }
 }
 
-/// The error that is returned when an [`EventLoopProxy`] attempts to wake up an [`EventLoop`] that
-/// no longer exists.
-///
-/// Contains the original event given to [`EventLoopProxy::send_event`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EventLoopClosed<T>(pub T);
 
