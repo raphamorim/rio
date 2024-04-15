@@ -94,7 +94,7 @@ pub enum NSEventType {
     NSEventTypePressure = 34,
 }
 
-pub static NATIVE_APP: OnceLock<FairMutex<App>> = OnceLock::new();
+pub static NATIVE_APP: OnceLock<App> = OnceLock::new();
 
 pub static HANDLER: OnceLock<FairMutex<Handler>> = OnceLock::new();
 
@@ -1603,9 +1603,9 @@ impl App {
 
             let _ = HANDLER.set(FairMutex::new(Handler { inner: f }));
 
-            let _ = NATIVE_APP.set(FairMutex::new(App {
+            let _ = NATIVE_APP.set(App {
                 inner: ns_app.clone(),
-            }));
+            });
 
             ns_app
         }
@@ -1632,9 +1632,7 @@ impl App {
         if let Some(app) = native_app {
             // HACKY: f(f)?
             event_handler.borrow_mut().start(event_handler.clone());
-            let app = app.lock();
             let ns_app = *app.inner;
-            drop(app);
 
             let observer = unsafe {
                 CFRunLoopObserverCreate(
@@ -1729,7 +1727,7 @@ impl App {
     pub fn confirm_quit() {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             unsafe {
                 let _: ObjcId = msg_send![*app.inner, terminate: nil];
             }
@@ -1739,7 +1737,7 @@ impl App {
     pub fn appearance() -> Appearance {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
+            let ns_app = *app.inner;
             let name = unsafe {
                 let appearance: ObjcId = msg_send![*app.inner, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
@@ -1773,7 +1771,6 @@ impl App {
     pub fn hide_application() {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
-            let app = app.lock();
             let ns_app = *app.inner;
             unsafe {
                 let () = msg_send![ns_app, hide: ns_app];
