@@ -5,7 +5,6 @@ use std::time::Duration;
 
 const POLLING_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[allow(unused)]
 pub fn configuration_file_updates<
     P: AsRef<Path> + std::marker::Send + 'static,
     T: EventListener + std::marker::Send + 'static,

@@ -4,15 +4,16 @@ mod route;
 use crate::event::RioEvent;
 use crate::ime::Preedit;
 use crate::routes::RoutePath;
-use rio_backend::event::{EventPayload, EventProxy, RioEventType};
-use std::cell::RefCell;
-use std::collections::HashMap;
-// use crate::scheduler::{Scheduler, TimerId, Topic};
+use crate::scheduler::{Scheduler, TimerId, Topic};
 use rio_backend::error::RioError;
+use rio_backend::event::{EventPayload, EventProxy, RioEventType};
 use rio_backend::sugarloaf::font::FontLibrary;
 use route::Route;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
+use std::time::Duration;
 use wa::event_loop::{EventLoop, EventLoopProxy};
 use wa::*;
 
@@ -24,20 +25,12 @@ pub struct Router {
 }
 
 pub fn create_window(
-    handler: &Option<Rc<RefCell<dyn EventHandler>>>,
     event_loop_proxy: EventLoopProxy<EventPayload>,
     config: &Rc<rio_backend::config::Config>,
     config_error: &Option<rio_backend::config::ConfigError>,
     font_library: FontLibrary,
     tab_group: Option<u64>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    // if config_error.is_some() {
-    //     superloop.send_event(
-    //         RioEvent::ReportToAssistant(RioError::configuration_not_found()),
-    //         0,
-    //     );
-    // }
-
     let hide_toolbar_buttons = config.window.decorations
         == rio_backend::config::window::Decorations::Buttonless
         || config.window.decorations
@@ -65,10 +58,16 @@ pub fn create_window(
     };
 
     let event_proxy = EventProxy::new(event_loop_proxy);
-    let created_window = futures::executor::block_on(Window::new(
-        wa_conf,
-        handler.as_ref().unwrap().clone(),
-    ))?;
+    let created_window = futures::executor::block_on(Window::new(wa_conf))?;
+
+    if config_error.is_some() {
+        event_proxy.send_event(
+            RioEventType::Rio(RioEvent::ReportToAssistant(
+                RioError::configuration_not_found(),
+            )),
+            created_window.id,
+        );
+    }
 
     let route = Route::new(
         created_window.id,
@@ -91,7 +90,7 @@ pub fn create_window(
 struct EventHandlerInstance {
     config: Rc<rio_backend::config::Config>,
     font_library: FontLibrary,
-    handler: Option<Rc<RefCell<dyn EventHandler>>>,
+    scheduler: Option<Scheduler>,
     routes: HashMap<u16, Router>,
     event_loop: EventLoop<rio_backend::event::EventPayload>,
     #[cfg(target_os = "macos")]
@@ -115,7 +114,7 @@ impl EventHandlerInstance {
         Self {
             routes: HashMap::default(),
             event_loop,
-            handler: None,
+            scheduler: None,
             font_library,
             config,
             #[cfg(target_os = "macos")]
@@ -127,7 +126,6 @@ impl EventHandlerInstance {
 impl EventHandler for EventHandlerInstance {
     fn create_window(&mut self) {
         if let Ok(router) = create_window(
-            &self.handler,
             self.event_loop.create_proxy(),
             &self.config,
             &None,
@@ -140,7 +138,6 @@ impl EventHandler for EventHandlerInstance {
 
     fn create_tab(&mut self, open_file_url: Option<&str>) {
         if let Ok(router) = create_window(
-            &self.handler,
             self.event_loop.create_proxy(),
             &self.config,
             &None,
@@ -179,7 +176,6 @@ impl EventHandler for EventHandlerInstance {
                         };
 
                         if let Ok(router) = create_window(
-                            &self.handler,
                             self.event_loop.create_proxy(),
                             &self.config,
                             &None,
@@ -194,7 +190,6 @@ impl EventHandler for EventHandlerInstance {
                 RioEventType::Rio(RioEvent::CreateNativeTab(_)) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         if let Ok(router) = create_window(
-                            &self.handler,
                             self.event_loop.create_proxy(),
                             &self.config,
                             &None,
@@ -250,23 +245,24 @@ impl EventHandler for EventHandlerInstance {
                 }
                 RioEventType::Rio(RioEvent::ClipboardLoad(clipboard_type, format)) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
-                        // if route.window.is_focused {
-                        let text =
-                            format(current.route.clipboard_get(clipboard_type).as_str());
-                        current
-                            .route
-                            .ctx
-                            .current_mut()
-                            .messenger
-                            .send_bytes(text.into_bytes());
-                        // }
+                        if current.route.is_focused {
+                            let text = format(
+                                current.route.clipboard_get(clipboard_type).as_str(),
+                            );
+                            current
+                                .route
+                                .ctx
+                                .current_mut()
+                                .messenger
+                                .send_bytes(text.into_bytes());
+                        }
                     }
                 }
                 RioEventType::Rio(RioEvent::ClipboardStore(clipboard_type, content)) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
-                        // if current.is_focused {
-                        current.route.clipboard_store(clipboard_type, content);
-                        // }
+                        if current.route.is_focused {
+                            current.route.clipboard_store(clipboard_type, content);
+                        }
                     }
                 }
                 RioEventType::Rio(RioEvent::PtyWrite(text)) => {
@@ -300,21 +296,28 @@ impl EventHandler for EventHandlerInstance {
                         }
                     }
                 }
-                // RioEventType::Rio(RioEvent::ScheduleRender(millis)) => {
-                //     let timer_id = TimerId::new(Topic::Render, 0);
-                //     let event = EventPayload::new(RioEventType::Rio(RioEvent::Render, self.current);
+                RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
+                    let timer_id = TimerId::new(Topic::Render, 0);
+                    let event =
+                        EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
 
-                //     if !self.scheduler.scheduled(timer_id) {
-                //         self.scheduler.schedule(
-                //             event,
-                //             Duration::from_millis(millis),
-                //             false,
-                //             timer_id,
-                //         );
-                //     }
-                // }
+                    if let Some(scheduler) = &mut self.scheduler {
+                        if !scheduler.scheduled(timer_id) {
+                            scheduler.schedule(
+                                event,
+                                Duration::from_millis(millis),
+                                false,
+                                timer_id,
+                            );
+                        }
+                    }
+                }
                 _ => {}
             };
+        } else {
+            if let Some(scheduler) = &mut self.scheduler {
+                scheduler.update();
+            }
         }
     }
 
@@ -397,6 +400,13 @@ impl EventHandler for EventHandlerInstance {
     fn key_up_event(&mut self, window_id: u16, keycode: KeyCode) {
         if let Some(current) = self.routes.get_mut(&window_id) {
             if current.route.has_key_wait(keycode) {
+                if current.route.path != RoutePath::Terminal {
+                    // Scheduler must be cleaned after leave the terminal route
+                    if let Some(scheduler) = &mut self.scheduler {
+                        scheduler.unschedule(TimerId::new(Topic::Render, window_id));
+                    }
+                }
+
                 return;
             }
 
@@ -593,17 +603,23 @@ impl EventHandler for EventHandlerInstance {
     }
 
     // This is executed only in the initialization of App
-    fn start(&mut self, event_handler: Rc<RefCell<dyn EventHandler>>) {
-        self.handler = Some(event_handler);
+    fn start(&mut self) {
+        let proxy = self.event_loop.create_proxy();
+
+        self.scheduler = Some(Scheduler::new(proxy.clone()));
         self.last_tab_group = if self.config.navigation.is_native() {
             Some(0)
         } else {
             None
         };
 
+        let _ = crate::watcher::configuration_file_updates(
+            rio_backend::config::config_dir_path(),
+            EventProxy::new(proxy.clone()),
+        );
+
         if let Ok(router) = create_window(
-            &self.handler,
-            self.event_loop.create_proxy(),
+            proxy,
             &self.config,
             &None,
             self.font_library.clone(),
@@ -620,9 +636,6 @@ pub async fn run(
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
     let event_handler = Rc::new(RefCell::new(EventHandlerInstance::new(config)));
-    // let _ = crate::watcher::configuration_file_updates(superloop.clone());
-
-    // let scheduler = Scheduler::new(superloop.clone());
 
     App::new(event_handler.clone());
     menu::create_menu();
