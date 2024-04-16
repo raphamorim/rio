@@ -221,6 +221,7 @@ impl SugarloafLayout {
             self.line_height,
             self.margin,
         );
+        println!("columns {:?}", columns);
         self.columns = columns;
         self.lines = lines;
     }
