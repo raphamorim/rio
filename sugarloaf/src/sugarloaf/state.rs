@@ -150,7 +150,6 @@ impl SugarState {
 
         for section in &self.compositors.elementary.blocks_sections {
             elementary_brush.queue(section);
-            elementary_brush.keep_cached(section);
         }
 
         if self.compositors.elementary.should_resize {
@@ -200,11 +199,9 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
 
-        if self.latest_change != SugarTreeDiff::LayoutIsDifferent {
+        if !self.layout_was_updated() {
             return;
         }
-
-        println!("vai procurar {:?}", self.current.layout.dimensions);
 
         if let Some(dimension) = advance_brush.dimensions(self) {
             let mut dimensions_changed = false;
@@ -247,7 +244,7 @@ impl SugarState {
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
         if self.current_has_empty_dimensions() {
-            println!("empty dimension");
+            println!("current_has_empty_dimensions");
             std::mem::swap(&mut self.current, &mut self.next);
 
             self.compositors
@@ -261,7 +258,8 @@ impl SugarState {
             return;
         }
 
-        let mut lines_to_update: Vec<usize> = vec![];
+        let mut lines_to_update: Vec<usize> =
+            Vec::with_capacity(self.current.lines.len());
         let mut should_update = false;
         let mut should_clean_blocks = false;
         let mut should_resize = false;
@@ -273,7 +271,6 @@ impl SugarState {
                 // Do nothing
             }
             SugarTreeDiff::LayoutIsDifferent => {
-                println!("LayoutIsDifferent");
                 should_update = true;
                 should_compute_dimensions = true;
                 should_clean_blocks = true;

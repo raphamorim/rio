@@ -123,6 +123,7 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: I,
+        // dimension: SugarDimensions,
     ) where
         I: Iterator,
         I::Item: Borrow<Glyph>,
@@ -200,14 +201,14 @@ impl Compositor {
                                     rect.width,
                                     style.line_height,
                                 ),
-                                depth - 1.0,
+                                depth,
                                 &cursor_color,
                             );
                         }
                         SugarCursor::Caret(cursor_color) => {
                             self.batches.add_rect(
                                 &Rect::new(rect.x, style.topline, 3.0, style.line_height),
-                                depth - 1.0,
+                                depth,
                                 &cursor_color,
                             );
                         }

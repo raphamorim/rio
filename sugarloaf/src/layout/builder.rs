@@ -414,7 +414,7 @@ impl<'a> ParagraphBuilder<'a> {
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
 
-        self.add_text(" ", None);
+        self.add_text(" ", Some(FragmentStyle::default()));
         // for _ in 0..self.dir_depth {
         const PDI: char = '\u{2069}';
         self.push_char(PDI);
