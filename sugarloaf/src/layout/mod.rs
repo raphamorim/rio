@@ -176,6 +176,8 @@ impl SugarloafLayout {
 
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
+        self.dimensions.width *= scale_factor;
+        self.dimensions.height *= scale_factor;
         self.dimensions.scale = scale_factor;
         self
     }
@@ -221,7 +223,6 @@ impl SugarloafLayout {
             self.line_height,
             self.margin,
         );
-        println!("columns {:?}", columns);
         self.columns = columns;
         self.lines = lines;
     }

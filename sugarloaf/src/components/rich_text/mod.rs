@@ -8,6 +8,7 @@ use crate::components::core::orthographic_projection;
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
+use crate::SugarCursor;
 use compositor::{
     Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -702,6 +703,7 @@ fn draw_layout(
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
+    let mut drawn_cursor = false;
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
@@ -720,7 +722,7 @@ fn draw_layout(
             let color = run.color();
 
             let line_height = line.ascent() + line.descent() + line.leading();
-            let style = TextRunStyle {
+            let mut style = TextRunStyle {
                 font: font_library[*font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
@@ -741,6 +743,16 @@ fn draw_layout(
                     None
                 },
             };
+
+            // TODO: Fix cursor repetition on render data
+            if style.cursor != SugarCursor::Disabled {
+                if drawn_cursor {
+                    style.cursor = SugarCursor::Disabled;
+                }
+
+                drawn_cursor = true;
+            }
+
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
