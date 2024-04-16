@@ -77,7 +77,7 @@ pub fn create_window(
         config.clone(),
         font_library.clone(),
         (config.window.width, config.window.height, 1.0),
-        &String::from(""),
+        "",
     )?;
 
     Ok(Router {
@@ -314,10 +314,8 @@ impl EventHandler for EventHandlerInstance {
                 }
                 _ => {}
             };
-        } else {
-            if let Some(scheduler) = &mut self.scheduler {
-                scheduler.update();
-            }
+        } else if let Some(scheduler) = &mut self.scheduler {
+            scheduler.update();
         }
     }
 
