@@ -381,7 +381,7 @@ pub trait EventHandler {
     }
 
     fn open_file_event(&mut self, _id: u16, _filename: String) {}
-    // fn open_url_event(&mut self, _urls: &str) {}
+    // fn open_url_event(&mut self, _id: u16, _urls: &str) {}
 
     /// Represents raw hardware mouse motion event
     /// Note that these events are delivered regardless of input focus and not in pixels, but in

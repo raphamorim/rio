@@ -30,6 +30,7 @@ pub fn create_window(
     config_error: &Option<rio_backend::config::ConfigError>,
     font_library: FontLibrary,
     tab_group: Option<u64>,
+    open_file_url: Option<&str>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let hide_toolbar_buttons = config.window.decorations
         == rio_backend::config::window::Decorations::Buttonless
@@ -77,7 +78,7 @@ pub fn create_window(
         config.clone(),
         font_library.clone(),
         (config.window.width, config.window.height, 1.0),
-        "",
+        open_file_url,
     )?;
 
     Ok(Router {
@@ -131,6 +132,7 @@ impl EventHandler for EventHandlerInstance {
             &None,
             self.font_library.clone(),
             None,
+            None,
         ) {
             self.routes.insert(router.id, router);
         }
@@ -143,12 +145,13 @@ impl EventHandler for EventHandlerInstance {
             &None,
             self.font_library.clone(),
             self.last_tab_group,
+            open_file_url,
         ) {
             let id = router.id;
             self.routes.insert(id, router);
-            if let Some(file_url) = open_file_url {
-                wa::window::open_url(id, file_url);
-            }
+            // if let Some(file_url) = open_file_url {
+            //     wa::window::open_url(id, file_url);
+            // }
         }
     }
 
@@ -181,6 +184,7 @@ impl EventHandler for EventHandlerInstance {
                             &None,
                             self.font_library.clone(),
                             new_tab_group,
+                            None,
                         ) {
                             self.routes.insert(router.id, router);
                         }
@@ -195,6 +199,7 @@ impl EventHandler for EventHandlerInstance {
                             &None,
                             self.font_library.clone(),
                             current.tab_group,
+                            None,
                         ) {
                             self.routes.insert(router.id, router);
                         }
@@ -451,11 +456,11 @@ impl EventHandler for EventHandlerInstance {
             current.route.paste(&filepath, true);
         }
     }
-    // fn open_url_event(&mut self, _url: &str) {
-    // if let Some(current) = &mut self.route {
-    //     current.paste(&url, true);
-    //     current.render();
-    // }
+    // fn open_url_event(&mut self, window_id: u16, url: &str) {
+    //     if let Some(current) = self.routes.get_mut(&window_id) {
+    //         current.route.paste(&url, true);
+    //         current.route.render();
+    //     }
     // }
     fn mouse_wheel_event(&mut self, window_id: u16, mut x: f32, mut y: f32) {
         if let Some(current) = self.routes.get_mut(&window_id) {
@@ -622,6 +627,7 @@ impl EventHandler for EventHandlerInstance {
             &None,
             self.font_library.clone(),
             self.last_tab_group,
+            None,
         ) {
             self.routes.insert(router.id, router);
         }

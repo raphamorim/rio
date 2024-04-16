@@ -68,13 +68,13 @@ fn process_open_url(
     mut shell: Shell,
     mut working_dir: Option<String>,
     editor: String,
-    open_url: &str,
+    open_url: Option<&str>,
 ) -> (Shell, Option<String>) {
-    if open_url.is_empty() {
+    if open_url.is_none() {
         return (shell, working_dir);
     }
 
-    if let Ok(url) = url::Url::parse(open_url) {
+    if let Ok(url) = url::Url::parse(open_url.unwrap_or_default()) {
         if let Ok(path_buf) = url.to_file_path() {
             if path_buf.exists() {
                 if path_buf.is_file() {
@@ -102,7 +102,7 @@ impl Route {
         config: Rc<Config>,
         font_library: FontLibrary,
         dimensions: (i32, i32, f32),
-        open_url: &str,
+        open_url: Option<&str>,
     ) -> Result<Route, Box<dyn std::error::Error>> {
         let _route = RoutePath::Terminal;
 
