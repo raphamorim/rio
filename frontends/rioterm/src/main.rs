@@ -21,7 +21,6 @@ mod renderer;
 #[cfg(not(target_os = "macos"))]
 mod router;
 mod routes;
-#[cfg(not(target_os = "macos"))]
 mod scheduler;
 #[cfg(not(target_os = "macos"))]
 mod screen;
