@@ -1,5 +1,5 @@
 // MIT License
-// Copyright 2022-2023 Raphael Amorim
+// Copyright 2022-present Raphael Amorim
 //
 // The functions (including comments) and logic of process_key_event, build_key_sequence, process_mouse_bindings, copy_selection, start_selection, update_selection_scrolling,
 // side_by_pos, on_left_click, paste, sgr_mouse_report, mouse_report, normal_mouse_report, scroll,

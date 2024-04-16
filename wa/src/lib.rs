@@ -131,16 +131,16 @@ pub mod window {
         }
     }
 
-    pub fn open_url(id: u16, url: &str) {
-        let d = get_handler().lock();
-        let view = unwrap_or_return!(d.get(id)).view;
-        drop(d);
-        unsafe {
-            if let Some(display) = native::macos::get_display_payload(&*view) {
-                display.open_url = url.to_owned();
-            }
-        }
-    }
+    // pub fn open_url(id: u16, url: &str) {
+    //     let d = get_handler().lock();
+    //     let view = unwrap_or_return!(d.get(id)).view;
+    //     drop(d);
+    //     unsafe {
+    //         if let Some(display) = native::macos::get_display_payload(&*view) {
+    //             display.open_url = url.to_owned();
+    //         }
+    //     }
+    // }
 
     pub fn get_appearance() -> Appearance {
         App::appearance()

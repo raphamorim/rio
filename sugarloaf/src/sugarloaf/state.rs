@@ -244,7 +244,6 @@ impl SugarState {
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
         if self.current_has_empty_dimensions() {
-            println!("current_has_empty_dimensions");
             std::mem::swap(&mut self.current, &mut self.next);
 
             self.compositors

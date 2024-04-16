@@ -153,7 +153,6 @@ pub struct MacosDisplay {
     current_cursor: CursorIcon,
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
-    pub open_url: String,
     has_initialized: bool,
     has_focus: bool,
     event_handler: Rc<RefCell<dyn EventHandler>>,
@@ -406,14 +405,14 @@ extern "C" fn application_did_finish_launching(
 }
 
 extern "C" fn application_open_urls(
-    this: &mut Object,
+    _this: &mut Object,
     _sel: Sel,
     _sender: ObjcId,
     urls: ObjcId,
 ) {
     let count: u64 = unsafe { msg_send![urls, count] };
     if count > 0 {
-        let mut urls_to_send = {
+        let urls_to_send = {
             (0..count)
                 .map(|index| {
                     let url: ObjcId = unsafe { msg_send![urls, objectAtIndex: index] };
@@ -427,25 +426,25 @@ extern "C" fn application_open_urls(
             return;
         }
 
-        let launched: BOOL = unsafe { *this.get_ivar("launched") };
-        // In case is not launched yet then use first window id
-        if launched != YES {
-            let d = get_handler().lock();
-            if let Some(display) = d.get(0) {
-                let view = display.view;
-                unsafe {
-                    if let Some(payload) = get_display_payload(&*view) {
-                        payload.open_url = urls_to_send.last().unwrap().to_owned();
-                    }
-                }
-            }
+        // let launched: BOOL = unsafe { *this.get_ivar("launched") };
+        // // In case is not launched yet then use first window id
+        // if launched != YES {
+        //     let d = get_handler().lock();
+        //     if let Some(display) = d.get(0) {
+        //         let view = display.view;
+        //         unsafe {
+        //             if let Some(payload) = get_display_payload(&*view) {
+        //                 payload.open_url = urls_to_send.last().unwrap().to_owned();
+        //             }
+        //         }
+        //     }
 
-            urls_to_send.pop().unwrap();
+        //     urls_to_send.pop().unwrap();
 
-            if urls_to_send.is_empty() {
-                return;
-            }
-        }
+        //     if urls_to_send.is_empty() {
+        //         return;
+        //     }
+        // }
 
         let handler = HANDLER.get();
         if let Some(handler_instance) = handler {
@@ -1323,17 +1322,10 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     if let Some(payload) = get_display_payload(this) {
-        // Every new window does have focus true
-        if !payload.has_focus {
-            return;
-        }
-
-        if !payload.has_initialized {
+        if payload.has_focus && !payload.has_initialized {
             let id = payload.id;
 
             unsafe { payload.update_dimensions() };
-
-            // let open_url: &str = &payload.open_url.to_owned();
 
             let d = get_handler().lock();
             let d = d.get(id).unwrap();
@@ -1348,14 +1340,7 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
                 );
 
                 payload.has_initialized = true;
-                payload.open_url = String::from("");
             }
-            return;
-        }
-
-        if !payload.open_url.is_empty() {
-            payload.has_initialized = false;
-            // event_handler.open_url_event(open_url);
         }
     }
 }
@@ -1814,7 +1799,6 @@ impl Window {
                 cursor_grabbed: false,
                 cursors: HashMap::new(),
                 event_handler,
-                open_url: String::from(""),
                 modifiers: Modifiers::default(),
             };
 
