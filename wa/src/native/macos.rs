@@ -143,7 +143,6 @@ pub struct MacosDisplay {
     view: ObjcId,
     fullscreen: bool,
     id: u16,
-    focused: bool,
     ime: ImeState,
     marked_text: String,
     // [NSCursor hide]/unhide calls should be balanced
@@ -155,7 +154,8 @@ pub struct MacosDisplay {
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
     pub open_url: String,
-    pub has_initialized: bool,
+    has_initialized: bool,
+    has_focus: bool,
     event_handler: Rc<RefCell<dyn EventHandler>>,
     modifiers: Modifiers,
 }
@@ -603,7 +603,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _a_selector: Sel) {
-        // println!("do_command_by_selector");
         if let Some(payload) = get_display_payload(this) {
             if payload.ime == ImeState::Commited {
                 return;
@@ -616,7 +615,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn has_marked_text(this: &Object, _sel: Sel) -> BOOL {
-        // println!("has_marked_text");
         if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 YES
@@ -629,7 +627,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
-        // println!("marked_range");
         if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 NSRange::new(0, payload.marked_text.len() as u64)
@@ -642,7 +639,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
-        // println!("selected_range");
         NSRange {
             location: 0,
             length: 1,
@@ -663,7 +659,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Some(payload) = get_display_payload(this) {
                 // Commit only if we have marked text.
                 if !payload.marked_text.is_empty() && payload.ime != ImeState::Disabled {
-                    // if let Some(event_handler) = payload.context() {
                     if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
                     {
                         event_handler.ime_event(
@@ -674,7 +669,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                             .ime_event(payload.id, crate::ImeState::Commit(string));
                         payload.ime = ImeState::Commited;
                     }
-                    // }
                 }
             }
 
@@ -692,7 +686,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        // println!("setMarkedText:selectedRange:replacementRange:");
         let s = nsstring_to_string(astring);
 
         if let Some(payload) = get_display_payload(this) {
@@ -728,7 +721,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn unmark_text(this: &Object, _sel: Sel) {
-        // println!("unmarkText");
         if let Some(payload) = get_display_payload(this) {
             payload.marked_text.clear();
             payload.ime = ImeState::Ground;
@@ -745,9 +737,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _sel: Sel,
         _point: NSPoint,
     ) -> NSUInteger {
-        // println!("character_index_for_point");
         NSNOT_FOUND as _
-        // 0
     }
 
     extern "C" fn first_rect_for_character_range(
@@ -756,8 +746,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _range: NSRange,
         _actual: *mut c_void,
     ) -> NSRect {
-        // println!("first_rect_for_character_range");
-
         // Returns a rect in screen coordinates; this is used to place
         // the input method editor
         let window: ObjcId = unsafe { msg_send![this, window] };
@@ -788,8 +776,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> ObjcId {
-        // println!("valid_attributes_for_marked_text");
-
         // FIXME: returns NSArray<NSAttributedStringKey> *
         let content: &[ObjcId; 0] = &[];
         unsafe {
@@ -806,7 +792,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _proposed_range: NSRange,
         _actual_range: *mut c_void,
     ) -> ObjcId {
-        // println!("attributed_substring_for_proposed_range");
         nil
     }
 
@@ -838,11 +823,9 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                     dx *= 10.0;
                     dy *= 10.0;
                 }
-                // if let Some(event_handler) = payload.context() {
                 if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
                     event_handler.mouse_wheel_event(payload.id, dx as f32, dy as f32);
                 }
-                // }
             }
         }
     }
@@ -851,7 +834,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
                 event_handler.focus_event(payload.id, true);
             }
-            payload.focused = true;
+            payload.has_focus = true;
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
@@ -859,7 +842,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
                 event_handler.focus_event(payload.id, false);
             }
-            payload.focused = false;
+            payload.has_focus = false;
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
@@ -1345,7 +1328,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     if let Some(payload) = get_display_payload(this) {
-        if !payload.focused {
+        if !payload.has_focus {
             return;
         }
 
@@ -1512,10 +1495,6 @@ impl View {
         let view: ObjcId = msg_send![view_class, alloc];
         let view: StrongPtr = StrongPtr::new(msg_send![view, init]);
 
-        // let boxed_view = Box::into_raw(Box::new(Self {
-        //     inner: StrongPtr::new(*view),
-        // }));
-
         let () = msg_send![*view, setDevice: mtl_device_obj];
         let () = msg_send![*view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
         let () = msg_send![
@@ -1650,7 +1629,7 @@ impl App {
         let native_app = NATIVE_APP.get();
         if let Some(app) = native_app {
             // HACKY: f(f)?
-            event_handler.borrow_mut().start(event_handler.clone());
+            event_handler.borrow_mut().start();
             let ns_app = *app.inner;
 
             let observer = unsafe {
@@ -1807,11 +1786,8 @@ pub struct Window {
 impl Window {
     pub async fn new(
         conf: crate::conf::Conf,
-        event_handler: Rc<RefCell<dyn EventHandler>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // let event_handler = {
-        //     HANDLER.get().unwrap().lock().inner.clone()
-        // };
+        let event_handler = { HANDLER.get().unwrap().inner.clone() };
 
         unsafe {
             // let clipboard = Box::new(MacosClipboard);
@@ -1831,7 +1807,7 @@ impl Window {
             let mut display = MacosDisplay {
                 has_initialized: false,
                 id,
-                focused: true,
+                has_focus: true,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
                 ime: ImeState::Disabled,
@@ -1878,10 +1854,6 @@ impl Window {
             ]);
 
             assert!(!window.is_null());
-
-            // let window_delegate_class = define_cocoa_window_delegate(
-            //     format!("RenderViewClassWithId{id}").as_str(),
-            // );
 
             let title = str_to_nsstring(&conf.window_title);
 

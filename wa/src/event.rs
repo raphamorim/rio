@@ -10,8 +10,6 @@
 
 use bitflags::bitflags;
 use smol_str::SmolStr;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
 pub enum MouseButton {
@@ -310,7 +308,7 @@ pub enum Appearance {
 pub trait EventHandler {
     fn create_window(&mut self);
     fn create_tab(&mut self, _urls_to_load: Option<&str>);
-    fn start(&mut self, _handler: Rc<RefCell<dyn EventHandler>>);
+    fn start(&mut self);
     fn process(&mut self);
     // #[allow(clippy::too_many_arguments)]
     // fn init(
