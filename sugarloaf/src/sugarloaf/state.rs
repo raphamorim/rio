@@ -7,7 +7,6 @@ use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
 use super::tree::{Diff, SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
-use crate::layout::SugarDimensions;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 
@@ -49,6 +48,11 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn compute_layout_rescale(&mut self, scale: f32) {
+        self.next.layout.rescale(scale).update();
+    }
+
+    #[inline]
     pub fn compute_layout_font_size(&mut self, operation: u8) {
         let should_update = match operation {
             0 => self.next.layout.reset_font_size(),
@@ -58,15 +62,8 @@ impl SugarState {
         };
 
         if should_update {
-            self.compositors.elementary.reset();
             self.next.layout.update();
-            self.current.layout.dimensions = SugarDimensions::default();
         }
-    }
-
-    #[inline]
-    pub fn compute_layout_rescale(&mut self, scale: f32) {
-        self.next.layout.rescale(scale).update();
     }
 
     #[inline]
@@ -207,6 +204,8 @@ impl SugarState {
             return;
         }
 
+        println!("vai procurar {:?}", self.current.layout.dimensions);
+
         if let Some(dimension) = advance_brush.dimensions(self) {
             let mut dimensions_changed = false;
             if dimension.height != self.current.layout.dimensions.height {
@@ -248,6 +247,7 @@ impl SugarState {
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
         if self.current_has_empty_dimensions() {
+            println!("empty dimension");
             std::mem::swap(&mut self.current, &mut self.next);
 
             self.compositors
@@ -273,6 +273,7 @@ impl SugarState {
                 // Do nothing
             }
             SugarTreeDiff::LayoutIsDifferent => {
+                println!("LayoutIsDifferent");
                 should_update = true;
                 should_compute_dimensions = true;
                 should_clean_blocks = true;

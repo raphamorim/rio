@@ -591,12 +591,11 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                         event_handler
                             .mouse_button_down_event(payload.id, btn, point.0, point.1);
                     }
-                } else {
-                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
-                    {
-                        event_handler
-                            .mouse_button_up_event(payload.id, btn, point.0, point.1);
-                    }
+                } else if let Ok(mut event_handler) =
+                    payload.event_handler.try_borrow_mut()
+                {
+                    event_handler
+                        .mouse_button_up_event(payload.id, btn, point.0, point.1);
                 }
             }
         }
@@ -1081,16 +1080,12 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             new_pressed: bool,
         ) {
             if new_pressed ^ old_pressed {
-                if new_pressed {
-                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
-                    {
-                        event_handler.modifiers_event(payload.id, keycode, mods);
-                    }
-                } else {
-                    if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
-                    {
-                        event_handler.modifiers_event(payload.id, keycode, mods);
-                    }
+                if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut() {
+                    // if new_pressed {
+                    event_handler.modifiers_event(payload.id, keycode, mods);
+                    // } else {
+                    //     event_handler.modifiers_event(payload.id, keycode, mods);
+                    // }
                 }
             }
         }
@@ -1328,6 +1323,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     if let Some(payload) = get_display_payload(this) {
+        // Every new window does have focus true
         if !payload.has_focus {
             return;
         }
@@ -1580,7 +1576,7 @@ unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub fn new(f: Rc<RefCell<dyn EventHandler + 'static>>) -> StrongPtr {
+    pub fn new(f: Rc<RefCell<dyn EventHandler + 'static>>) -> App {
         crate::set_handler();
 
         unsafe {
@@ -1604,7 +1600,7 @@ impl App {
                 inner: ns_app.clone(),
             });
 
-            ns_app
+            App { inner: ns_app }
         }
     }
 
@@ -1817,7 +1813,7 @@ impl Window {
                 current_cursor: CursorIcon::Default,
                 cursor_grabbed: false,
                 cursors: HashMap::new(),
-                event_handler: event_handler,
+                event_handler,
                 open_url: String::from(""),
                 modifiers: Modifiers::default(),
             };
