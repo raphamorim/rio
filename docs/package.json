@@ -15,8 +15,8 @@
     "format": "prettier \"**/*.{js,mjs,css,html,json,yml,md}\" --write"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.1.0",
-    "@docusaurus/preset-classic": "^3.1.0",
+    "@docusaurus/core": "^3.2.1",
+    "@docusaurus/preset-classic": "^3.2.1",
     "@mdx-js/react": "3.0.0",
     "clsx": "2.0.0",
     "prism-react-renderer": "2.1.0",
@@ -25,9 +25,9 @@
     "react-tweet": "3.1.1"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.1.0",
-    "@docusaurus/tsconfig": "^3.1.0",
-    "@docusaurus/types": "^3.1.0",
+    "@docusaurus/module-type-aliases": "^3.2.1",
+    "@docusaurus/tsconfig": "^3.2.1",
+    "@docusaurus/types": "^3.2.1",
     "prettier": "3.0.3"
   },
   "browserslist": {
