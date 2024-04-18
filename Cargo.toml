@@ -39,13 +39,13 @@ raw-window-handle = "0.6"
 parking_lot = "0.12.1"
 unicode-width = "0.1.11"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
-regex = "1.10.2"
+regex = "1.10.4"
 bytemuck = { version = "1.14.0", features = [ "derive" ] }
-log = "0.4.20"
-serde = { version = "1.0.188", features = ["derive"] }
-tokio = { version = "1.35.1", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
-wgpu = "0.19.3"
-libc = "0.2.148"
+log = "0.4.21"
+serde = { version = "1.0.198", features = ["derive"] }
+tokio = { version = "1.37.0", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
+wgpu = "0.19.4"
+libc = "0.2.153"
 smol_str = "0.2.1"
 futures = "0.3.29"
 wasm-bindgen = "0.2.87"
