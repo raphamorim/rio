@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 /* Example:
 
 [fonts]
-size = 18
-
+size = 16
 
 # You can also set family on root to overwritte all fonts
 # family = "cascadiamono"
@@ -54,7 +53,7 @@ impl SugarloafFont {
 }
 
 pub fn default_font_size() -> f32 {
-    18.
+    16.
 }
 
 fn default_font_family() -> String {
