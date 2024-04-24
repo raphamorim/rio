@@ -29,7 +29,7 @@ mod pipe {
         }
 
         pub fn wakeup(&self) -> io::Result<()> {
-            match (&self.writer).write(&[1]) {
+            match (&self.writer).write_all(&[1]) {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
