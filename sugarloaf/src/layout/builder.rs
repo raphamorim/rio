@@ -14,32 +14,34 @@ use super::span_style::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
-use std::collections::HashMap;
+use lru::LruCache;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
 use swash::{Setting, Synthesis};
 
-#[derive(Default)]
 pub struct RunCache {
-    inner: HashMap<usize, RunCacheEntry>,
+    inner: LruCache<u64, RunCacheEntry>,
 }
 
 impl RunCache {
-    fn clear(&mut self) {
-        self.inner.clear();
+    #[inline]
+    fn new() -> Self {
+        Self {
+            inner: LruCache::new(std::num::NonZeroUsize::new(4000).unwrap()),
+        }
     }
 
     #[inline]
-    fn insert(&mut self, line_number: usize, data: RunCacheEntry) {
+    fn insert(&mut self, line_hash: u64, data: RunCacheEntry) {
         if data.runs.is_empty() {
             return;
         }
 
-        if let Some(line) = self.inner.get_mut(&line_number) {
+        if let Some(line) = self.inner.get_mut(&line_hash) {
             *line = data;
         } else {
-            self.inner.insert(line_number, data);
+            self.inner.put(line_hash, data);
         }
     }
 }
@@ -63,7 +65,7 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
-            cache: RunCache::default(),
+            cache: RunCache::new(),
         }
     }
 
@@ -79,29 +81,6 @@ impl LayoutContext {
         &mut self,
         direction: Direction,
         _language: Option<Language>,
-        scale: f32,
-    ) -> ParagraphBuilder {
-        self.cache.clear();
-        self.state.clear();
-        self.state.begin();
-        self.state.scale = scale;
-        ParagraphBuilder {
-            fcx: &mut self.fcx,
-            bidi: &mut self.bidi,
-            needs_bidi: false,
-            dir: direction,
-            fonts: &self.fonts,
-            scx: &mut self.scx,
-            s: &mut self.state,
-            last_offset: 0,
-            cache: &mut self.cache,
-        }
-    }
-
-    #[inline]
-    pub fn cached_builder(
-        &mut self,
-        direction: Direction,
         scale: f32,
     ) -> ParagraphBuilder {
         self.state.clear();
@@ -167,6 +146,14 @@ impl<'a> ParagraphBuilder<'a> {
     //         }
     //     }
     // }
+
+    #[inline]
+    pub fn set_hash(&mut self, hash: u64) {
+        if hash > 0 {
+            let current_line = self.s.current_line();
+            self.s.lines[current_line].hash = Some(hash);
+        }
+    }
 
     #[inline]
     pub fn new_line(&mut self) {
@@ -368,17 +355,7 @@ impl<'a> ParagraphBuilder<'a> {
 
     /// Consumes the builder and fills the specified paragraph with the result.
     pub fn build_into(mut self, render_data: &mut RenderData) {
-        self.resolve(render_data, None);
-        render_data.finish();
-    }
-
-    /// Consumes the builder and fills the specified paragraph with the result.
-    pub fn build_into_specific_lines(
-        mut self,
-        render_data: &mut RenderData,
-        lines: &[usize],
-    ) {
-        self.resolve(render_data, Some(lines));
+        self.resolve(render_data);
         render_data.finish();
     }
 
@@ -391,25 +368,24 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
+    #[inline]
     fn process_from_cache(
         &mut self,
         render_data: &mut RenderData,
-        line_number: usize,
+        current_line: usize,
     ) -> bool {
-        if let Some(data) = self.cache.inner.get(&line_number) {
-            render_data.push_run_from_cached_line(data);
+        if let Some(line_hash) = self.s.lines[current_line].hash {
+            if let Some(data) = self.cache.inner.get(&line_hash) {
+                render_data.push_run_from_cached_line(data, current_line as u32);
 
-            true
-        } else {
-            false
+                return true;
+            }
         }
+
+        false
     }
 
-    fn resolve(
-        &mut self,
-        render_data: &mut RenderData,
-        lines_to_render: Option<&[usize]>,
-    ) {
+    fn resolve(&mut self, render_data: &mut RenderData) {
         // Bit of a hack: add a single trailing space fragment to account for
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
@@ -420,18 +396,12 @@ impl<'a> ParagraphBuilder<'a> {
         // self.push_char(PDI);
         // }
 
-        let lines_to_render = lines_to_render.unwrap_or_default();
-        let render_specific_lines = !lines_to_render.is_empty();
-
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
-            if render_specific_lines && !lines_to_render.contains(&line_number) {
-                if self.process_from_cache(render_data, line_number) {
-                    continue;
-                }
-            } else {
-                self.cache.inner.remove(&line_number);
+            // if render_specific_lines && !lines_to_render.contains(&line_number) {
+            if self.process_from_cache(render_data, line_number) {
+                continue;
             }
 
             let line = &mut self.s.lines[line_number];
@@ -691,7 +661,9 @@ fn shape_item(
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.to_owned());
+        if let Some(line_hash) = state.lines[current_line].hash {
+            cache.insert(line_hash, render_data.last_cached_run.to_owned());
+        }
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
@@ -729,7 +701,9 @@ fn shape_item(
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.to_owned());
+        if let Some(line_hash) = state.lines[current_line].hash {
+            cache.insert(line_hash, render_data.last_cached_run.to_owned());
+        }
     }
     Some(())
 }

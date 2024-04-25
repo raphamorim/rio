@@ -117,7 +117,11 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
+    pub(super) fn push_run_from_cached_line(
+        &mut self,
+        cached_entry: &RunCacheEntry,
+        line: u32,
+    ) {
         // Every time a line is cached we need to rebuild the indexes
         // so RunData, Clusters, DetailedClusterData and Glyphs need to be
         // pointed correctly across each other otherwise will lead to panic
@@ -160,7 +164,7 @@ impl RenderData {
                 coords: (coords_start, coords_end),
                 clusters: (clusters_start, clusters_end),
                 span: cached_run.span,
-                line: cached_run.line,
+                line,
                 font: cached_run.font,
                 color: cached_run.color,
                 background_color: cached_run.background_color,

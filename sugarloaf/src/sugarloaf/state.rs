@@ -5,7 +5,7 @@
 
 use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
-use super::tree::{Diff, SugarTree, SugarTreeDiff};
+use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
@@ -257,14 +257,12 @@ impl SugarState {
             return;
         }
 
-        let mut lines_to_update: Vec<usize> =
-            Vec::with_capacity(self.current.lines.len());
         let mut should_update = false;
         let mut should_clean_blocks = false;
         let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
-        self.latest_change = self.current.calculate_diff(&self.next);
+        self.latest_change = self.current.calculate_diff(&self.next, false);
         match &self.latest_change {
             SugarTreeDiff::Equal => {
                 // Do nothing
@@ -283,26 +281,26 @@ impl SugarState {
                 should_update = true;
                 should_compute_dimensions = true;
             }
-            SugarTreeDiff::Changes(changes) => {
+            SugarTreeDiff::Changes(_changes) => {
                 should_update = true;
-                for change in changes {
-                    match change {
-                        Diff::Line(diff) => {
-                            if lines_to_update.is_empty()
-                                || lines_to_update[lines_to_update.len() - 1] != diff.line
-                            {
-                                lines_to_update.push(diff.line)
-                            }
-                        }
-                        Diff::Char(diff) => {
-                            if lines_to_update.is_empty()
-                                || lines_to_update[lines_to_update.len() - 1] != diff.line
-                            {
-                                lines_to_update.push(diff.line)
-                            }
-                        }
-                    }
-                }
+                // for change in changes {
+                //     match change {
+                //         Diff::Line(diff) => {
+                //             if lines_to_update.is_empty()
+                //                 || lines_to_update[lines_to_update.len() - 1] != diff.line
+                //             {
+                //                 lines_to_update.push(diff.line)
+                //             }
+                //         }
+                //         Diff::Char(diff) => {
+                //             if lines_to_update.is_empty()
+                //                 || lines_to_update[lines_to_update.len() - 1] != diff.line
+                //             {
+                //                 lines_to_update.push(diff.line)
+                //             }
+                //         }
+                //     }
+                // }
             }
             _ => {
                 should_update = true;
@@ -320,14 +318,14 @@ impl SugarState {
                     .calculate_dimensions(&self.current);
             }
 
-            if lines_to_update.is_empty() {
-                self.compositors.advanced.update_layout(&self.current);
-            } else {
-                log::debug!("sugarloaf - update specific lines: {:?}", lines_to_update);
-                self.compositors
-                    .advanced
-                    .update_layout_with_lines(&self.current, &lines_to_update);
-            }
+            // if lines_to_update.is_empty() {
+            self.compositors.advanced.update_layout(&self.current);
+            // } else {
+            //     log::debug!("sugarloaf - update specific lines: {:?}", lines_to_update);
+            //     self.compositors
+            //         .advanced
+            //         .update_layout_with_lines(&self.current, &lines_to_update);
+            // }
         }
 
         if should_clean_blocks {
