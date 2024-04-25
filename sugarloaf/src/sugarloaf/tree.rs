@@ -182,9 +182,8 @@ impl SugarTree {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::Sugar;
     use crate::SugarDecoration::Disabled;
-    use crate::SugarStyle;
+    use crate::{Sugar, SugarCursor, SugarStyle};
 
     #[test]
     fn test_sugartree_calculate_is_empty() {
@@ -394,28 +393,20 @@ pub mod test {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
         })];
@@ -442,28 +433,20 @@ pub mod test {
                 content: 'k',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
                 content: 'z',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
         }));

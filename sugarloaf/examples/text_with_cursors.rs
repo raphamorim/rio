@@ -157,121 +157,77 @@ async fn main() {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 't',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'c',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: true,
-                    is_bold_italic: false,
-                    is_bold: false,
-                },
+                style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: ' ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [0.5, 0.5, 1.0, 1.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold_italic: false,
-                    is_bold: true,
-                },
+                style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold_italic: false,
-                    is_bold: true,
-                },
+                style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'o',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold_italic: false,
-                    is_bold: true,
-                },
+                style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'l',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold_italic: false,
-                    is_bold: true,
-                },
+                style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'd',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
                 background_color: [1.0, 1.0, 0.3, 1.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold_italic: false,
-                    is_bold: true,
-                },
+                style: SugarStyle::Bold,
                 ..Sugar::default()
             },
         ];

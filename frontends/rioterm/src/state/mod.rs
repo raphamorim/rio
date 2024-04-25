@@ -179,10 +179,15 @@ impl State {
             square.c
         };
 
-        let style = SugarStyle {
-            is_italic: flags.contains(Flags::ITALIC),
-            is_bold_italic: flags.contains(Flags::BOLD_ITALIC),
-            is_bold: flags.contains(Flags::BOLD),
+        let style = match (
+            flags.contains(Flags::ITALIC),
+            flags.contains(Flags::BOLD_ITALIC),
+            flags.contains(Flags::BOLD),
+        ) {
+            (true, _, _) => SugarStyle::Italic,
+            (_, true, _) => SugarStyle::BoldItalic,
+            (_, _, true) => SugarStyle::Bold,
+            _ => SugarStyle::Disabled,
         };
 
         if flags.contains(Flags::INVERSE) {
@@ -466,16 +471,23 @@ impl State {
 
     #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
+        let style = match (
+            square.flags.contains(Flags::ITALIC),
+            square.flags.contains(Flags::BOLD_ITALIC),
+            square.flags.contains(Flags::BOLD),
+        ) {
+            (true, _, _) => SugarStyle::Italic,
+            (_, true, _) => SugarStyle::BoldItalic,
+            (_, _, true) => SugarStyle::Bold,
+            _ => SugarStyle::Disabled,
+        };
+
         let mut sugar = Sugar {
             content: square.c,
             foreground_color: self.compute_fg_color(square),
             background_color: self.compute_bg_color(square),
             cursor: self.create_sugar_cursor(),
-            style: SugarStyle {
-                is_italic: square.flags.contains(Flags::ITALIC),
-                is_bold_italic: square.flags.contains(Flags::BOLD_ITALIC),
-                is_bold: square.flags.contains(Flags::BOLD),
-            },
+            style,
             ..Sugar::default()
         };
 

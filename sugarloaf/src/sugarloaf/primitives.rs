@@ -6,6 +6,7 @@
 use crate::sugarloaf::graphics::SugarGraphic;
 use crate::sugarloaf::Rect;
 use serde::Deserialize;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Index;
 
 #[derive(Debug, Copy, Clone)]
@@ -20,6 +21,15 @@ pub struct Sugar {
     pub media: Option<SugarGraphic>,
 }
 
+impl Sugar {
+    #[inline]
+    pub fn hash_key(&self) -> u64 {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        s.finish()
+    }
+}
+
 impl Default for Sugar {
     fn default() -> Self {
         Self {
@@ -32,6 +42,73 @@ impl Default for Sugar {
             cursor: SugarCursor::default(),
             media: None,
         }
+    }
+}
+
+impl Hash for Sugar {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.content.hash(state);
+        self.repeated.hash(state);
+        self.foreground_color[0].to_bits().hash(state);
+        self.foreground_color[1].to_bits().hash(state);
+        self.foreground_color[2].to_bits().hash(state);
+        self.foreground_color[3].to_bits().hash(state);
+        self.background_color[0].to_bits().hash(state);
+        self.background_color[1].to_bits().hash(state);
+        self.background_color[2].to_bits().hash(state);
+        self.background_color[3].to_bits().hash(state);
+        match self.style {
+            SugarStyle::Disabled => {
+                0.hash(state);
+            }
+            SugarStyle::Italic => {
+                1.hash(state);
+            }
+            SugarStyle::Bold => {
+                2.hash(state);
+            }
+            SugarStyle::BoldItalic => {
+                3.hash(state);
+            }
+        };
+        match self.decoration {
+            SugarDecoration::Disabled => {
+                0.hash(state);
+            }
+            SugarDecoration::Underline => {
+                1.hash(state);
+            }
+            SugarDecoration::Strikethrough => {
+                2.hash(state);
+            }
+        };
+        match self.cursor {
+            SugarCursor::Disabled => {
+                0.hash(state);
+            }
+            SugarCursor::Block(color) => {
+                1.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            SugarCursor::Caret(color) => {
+                2.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            SugarCursor::Underline(color) => {
+                3.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+        };
     }
 }
 
@@ -75,10 +152,12 @@ pub enum SugarDecoration {
 }
 
 #[derive(Debug, PartialEq, Default, Copy, Clone)]
-pub struct SugarStyle {
-    pub is_italic: bool,
-    pub is_bold: bool,
-    pub is_bold_italic: bool,
+pub enum SugarStyle {
+    #[default]
+    Disabled,
+    Italic,
+    Bold,
+    BoldItalic,
 }
 
 #[derive(Copy, PartialEq, Default, Debug, Clone)]
@@ -133,6 +212,16 @@ pub struct SugarLine {
     last_non_default: usize,
     non_default_count: usize,
     default_sugar: Sugar,
+}
+
+impl Hash for SugarLine {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.raw_len.hash(state);
+        self.first_non_default.hash(state);
+        self.last_non_default.hash(state);
+        self.inner.hash(state);
+    }
 }
 
 impl PartialEq for SugarLine {
@@ -205,6 +294,13 @@ impl SugarLine {
     //     self.acc += 1;
     //     self.len += 1;
     // }
+
+    #[inline]
+    pub fn hash_key(&self) -> u64 {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        s.finish()
+    }
 
     #[inline]
     pub fn insert(&mut self, sugar: &Sugar) {
@@ -520,5 +616,96 @@ pub mod test {
         assert!(!line_a.is_empty());
         assert!(!line_b.is_empty());
         assert!(line_a != line_b);
+    }
+
+    #[test]
+    fn test_sugar_hash() {
+        // Sugar a and b are exactly the same
+        let sugar_a = Sugar::default().hash_key();
+        let sugar_b = Sugar {
+            content: ' ',
+            repeated: 0,
+            foreground_color: [0., 0., 0., 0.],
+            background_color: [0., 0., 0., 0.],
+            style: SugarStyle::Disabled,
+            decoration: SugarDecoration::Disabled,
+            cursor: SugarCursor::Disabled,
+            media: None,
+        };
+        assert_eq!(sugar_a, sugar_b.hash_key());
+
+        // Changed bold
+        let sugar_b = Sugar {
+            content: ' ',
+            repeated: 0,
+            foreground_color: [0., 0., 0., 0.],
+            background_color: [0., 0., 0., 0.],
+            style: SugarStyle::Bold,
+            decoration: SugarDecoration::Disabled,
+            cursor: SugarCursor::Disabled,
+            media: None,
+        };
+        assert!(sugar_b.hash_key() != sugar_a);
+
+        // Changed decoration
+        let sugar_c = Sugar {
+            content: ' ',
+            repeated: 0,
+            foreground_color: [0., 0., 0., 0.],
+            background_color: [0., 0., 0., 0.],
+            style: SugarStyle::Disabled,
+            decoration: SugarDecoration::Strikethrough,
+            cursor: SugarCursor::Disabled,
+            media: None,
+        };
+        assert!(sugar_b.hash_key() != sugar_c.hash_key());
+    }
+
+    #[test]
+    fn test_sugar_line_hash() {
+        let mut line_a = SugarLine::default();
+        let vector = vec![
+            Sugar {
+                content: 't',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'e',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'r',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'm',
+                ..Sugar::default()
+            },
+        ];
+
+        line_a.from_vec(&vector);
+
+        let mut line_b = SugarLine::default();
+        let vector = vec![
+            Sugar {
+                content: 't',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'm',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'r',
+                ..Sugar::default()
+            },
+            Sugar {
+                content: 'e',
+                ..Sugar::default()
+            },
+        ];
+
+        line_b.from_vec(&vector);
+        assert!(line_a.hash_key() != line_b.hash_key());
     }
 }
