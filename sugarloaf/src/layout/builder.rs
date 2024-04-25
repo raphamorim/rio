@@ -13,7 +13,7 @@ use super::builder_data::*;
 use super::span_style::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
-use crate::layout::render_data::{RenderData, RunCacheEntry};
+use crate::layout::render_data::{RenderData, RunCacheEntry, ShaperCache};
 use std::collections::HashMap;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -51,7 +51,8 @@ pub struct LayoutContext {
     bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
-    cache: RunCache,
+    run_cache: RunCache,
+    shaper_cache: ShaperCache,
 }
 
 impl LayoutContext {
@@ -63,7 +64,8 @@ impl LayoutContext {
             bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
-            cache: RunCache::default(),
+            run_cache: RunCache::default(),
+            shaper_cache: ShaperCache::new(),
         }
     }
 
@@ -81,7 +83,7 @@ impl LayoutContext {
         _language: Option<Language>,
         scale: f32,
     ) -> ParagraphBuilder {
-        self.cache.clear();
+        self.run_cache.clear();
         self.state.clear();
         self.state.begin();
         self.state.scale = scale;
@@ -94,7 +96,8 @@ impl LayoutContext {
             scx: &mut self.scx,
             s: &mut self.state,
             last_offset: 0,
-            cache: &mut self.cache,
+            run_cache: &mut self.run_cache,
+            shaper_cache: &mut self.shaper_cache,
         }
     }
 
@@ -116,7 +119,8 @@ impl LayoutContext {
             scx: &mut self.scx,
             s: &mut self.state,
             last_offset: 0,
-            cache: &mut self.cache,
+            run_cache: &mut self.run_cache,
+            shaper_cache: &mut self.shaper_cache,
         }
     }
 }
@@ -131,7 +135,8 @@ pub struct ParagraphBuilder<'a> {
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
     last_offset: u32,
-    cache: &'a mut RunCache,
+    run_cache: &'a mut RunCache,
+    shaper_cache: &'a mut ShaperCache,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -396,8 +401,8 @@ impl<'a> ParagraphBuilder<'a> {
         render_data: &mut RenderData,
         line_number: usize,
     ) -> bool {
-        if let Some(data) = self.cache.inner.get(&line_number) {
-            render_data.push_run_from_cached_line(data);
+        if let Some(data) = self.run_cache.inner.get(&line_number) {
+            render_data.push_run_from_cached_run(data);
 
             true
         } else {
@@ -431,7 +436,7 @@ impl<'a> ParagraphBuilder<'a> {
                     continue;
                 }
             } else {
-                self.cache.inner.remove(&line_number);
+                self.run_cache.inner.remove(&line_number);
             }
 
             let line = &mut self.s.lines[line_number];
@@ -565,7 +570,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         let line = &self.s.lines[line_number];
         for item in &line.items {
@@ -578,11 +583,12 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 render_data,
                 line_number,
-                self.cache,
+                self.run_cache,
+                self.shaper_cache,
             );
         }
-        // let duration = start.elapsed();
-        // println!("Time elapsed in shape is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 
@@ -626,7 +632,8 @@ fn shape_item(
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
     current_line: usize,
-    cache: &mut RunCache,
+    run_cache: &mut RunCache,
+    shaper_cache: &mut ShaperCache,
 ) -> Option<()> {
     let dir = if item.level & 1 != 0 {
         shape::Direction::RightToLeft
@@ -688,10 +695,11 @@ fn shape_item(
             cluster,
             dir,
             render_data,
+            shaper_cache,
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.to_owned());
+        run_cache.insert(current_line, render_data.last_cached_run.to_owned());
     } else {
         let chars = state.lines[current_line].text.content[range.clone()]
             .iter()
@@ -726,10 +734,11 @@ fn shape_item(
             cluster,
             dir,
             render_data,
+            shaper_cache,
             current_line,
         ) {}
 
-        cache.insert(current_line, render_data.last_cached_run.to_owned());
+        run_cache.insert(current_line, render_data.last_cached_run.to_owned());
     }
     Some(())
 }
@@ -745,6 +754,7 @@ fn shape_clusters<I>(
     cluster: &mut CharCluster,
     dir: shape::Direction,
     render_data: &mut RenderData,
+    shaper_cache: &mut ShaperCache,
     current_line: usize,
 ) -> bool
 where
@@ -767,17 +777,39 @@ where
         .build();
 
     let mut synth = Synthesis::default();
+    let mut shaper_cache_key = String::new();
     loop {
+        for c in cluster.chars() {
+            shaper_cache_key.push(c.ch);
+        }
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            render_data.push_run(
-                &state.state.lines[current_line].styles,
-                &current_font_id,
-                state.size,
-                state.level,
-                current_line as u32,
-                shaper,
-            );
+            if let Some(cached_glyph_data) = shaper_cache.cache.get(&shaper_cache_key) {
+                println!("CACHE");
+                render_data.push_run(
+                    &state.state.lines[current_line].styles,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    Some(cached_glyph_data),
+                );
+            } else {
+                println!("NAUM CACHE");
+                if let Some(cache_entry) = render_data.push_run(
+                    &state.state.lines[current_line].styles,
+                    &current_font_id,
+                    state.size,
+                    state.level,
+                    current_line as u32,
+                    shaper,
+                    None,
+                ) {
+                    println!("salvar no cache {}", shaper_cache_key);
+                    shaper_cache.cache.put(shaper_cache_key, cache_entry);
+                };
+            }
             return false;
         }
 
@@ -805,6 +837,7 @@ where
                 state.level,
                 current_line as u32,
                 shaper,
+                None,
             );
             state.font_id = next_font;
             state.synth = synth;

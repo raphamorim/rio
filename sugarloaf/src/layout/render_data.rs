@@ -21,8 +21,9 @@ use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
+use lru::LruCache;
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use swash::text::cluster::{Boundary, ClusterInfo};
+use swash::text::cluster::{Boundary, ClusterInfo, SourceRange, UserData};
 use swash::{GlyphId, NormalizedCoord};
 
 /// Collection of text, organized into lines, runs and clusters.
@@ -117,11 +118,11 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
+    pub(super) fn push_run_from_cached_run(&mut self, run_cache_entry: &RunCacheEntry) {
         // Every time a line is cached we need to rebuild the indexes
         // so RunData, Clusters, DetailedClusterData and Glyphs need to be
         // pointed correctly across each other otherwise will lead to panic
-        for cached_run in &cached_entry.runs {
+        for cached_run in &run_cache_entry.runs {
             let coords_start = self.data.coords.len() as u32;
             self.data.coords.extend_from_slice(&cached_run.coords);
             let coords_end = self.data.coords.len() as u32;
@@ -193,7 +194,8 @@ impl RenderData {
         level: u8,
         line: u32,
         shaper: Shaper<'_>,
-    ) {
+        cached_shaper_data: Option<&ShaperCacheEntry>,
+    ) -> Option<ShaperCacheEntry> {
         // In case is a new line,
         // then needs to recompute the span index again
         if line != self.last_line {
@@ -214,7 +216,27 @@ impl RenderData {
         let mut last_span = self.data.last_span;
         let mut span_data = &styles[self.data.last_span];
 
-        shaper.shape_with(|c| {
+        // Skip shape_with if data already exist on cache
+        let mut shaper_data = vec![];
+
+        let shaper_data_ref: &Vec<CacheableGlyphData> = if cached_shaper_data.is_none() {
+            shaper.shape_with(|c| {
+                shaper_data.push(CacheableGlyphData {
+                    info: c.info,
+                    glyphs: c.glyphs.to_vec(),
+                    components: c.components.to_vec(),
+                    data: c.data,
+                    source: c.source,
+                });
+            });
+            println!("NOT CACHED {:?}", shaper_data);
+            &shaper_data
+        } else {
+            println!("CACHED {:?}", cached_shaper_data.unwrap().data);
+            &cached_shaper_data.unwrap().data
+        };
+
+        for c in shaper_data_ref {
             if c.info.boundary() == Boundary::Mandatory {
                 if let Some(c) = self.data.clusters.last_mut() {
                     c.flags |= CLUSTER_NEWLINE;
@@ -321,9 +343,9 @@ impl RenderData {
             }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
-            for glyph in c.glyphs {
+            for glyph in &c.glyphs {
                 cluster_advance += glyph.advance;
-                self.push_glyph(glyph);
+                self.push_glyph(&glyph);
             }
             advance += cluster_advance;
             let mut component_advance = cluster_advance;
@@ -383,10 +405,11 @@ impl RenderData {
                     c.flags |= CLUSTER_LAST_CONTINUATION
                 }
             }
-        });
+        }
+
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
-            return;
+            return Some(ShaperCacheEntry { data: shaper_data });
         }
         self.data.last_span = last_span;
         let run_data = RunData {
@@ -468,6 +491,7 @@ impl RenderData {
             strikeout_size: metrics.stroke_size,
             advance,
         });
+        return Some(ShaperCacheEntry { data: shaper_data });
     }
 
     #[inline]
@@ -996,4 +1020,31 @@ impl<'a> Iterator for Lines<'a> {
 
 pub fn make_range(r: (u32, u32)) -> Range<usize> {
     r.0 as usize..r.1 as usize
+}
+
+#[derive(Debug)]
+pub struct CacheableGlyphData {
+    source: SourceRange,
+    info: ClusterInfo,
+    glyphs: Vec<swash::shape::cluster::Glyph>,
+    components: Vec<SourceRange>,
+    data: UserData,
+}
+
+#[derive(Debug)]
+pub struct ShaperCacheEntry {
+    data: Vec<CacheableGlyphData>,
+}
+
+pub struct ShaperCache {
+    pub cache: LruCache<String, ShaperCacheEntry>,
+}
+
+impl ShaperCache {
+    #[inline]
+    pub fn new() -> Self {
+        ShaperCache {
+            cache: LruCache::new(std::num::NonZeroUsize::new(4000).unwrap()),
+        }
+    }
 }
