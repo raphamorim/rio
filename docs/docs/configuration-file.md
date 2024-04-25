@@ -392,7 +392,7 @@ args = ["new-session", "-c", "/var/www"]
 
 ## Colors
 
-Defining colors in the configuration file will override any colors set in the theme if you're using a theme.
+Defining colors in the configuration file will not have any effect if you're using a theme.
 
 The default configuration is without a theme.
 
