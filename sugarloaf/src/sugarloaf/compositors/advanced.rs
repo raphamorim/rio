@@ -45,24 +45,6 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
-        self.render_data = RenderData::default();
-
-        // Then process only lines that are different
-        let mut lb = self
-            .layout_context
-            .cached_builder(Direction::LeftToRight, tree.layout.dimensions.scale);
-        let content = self.content_builder.build_ref();
-        content.layout(&mut lb);
-        self.render_data.clear();
-        lb.build_into_specific_lines(&mut self.render_data, lines);
-
-        self.render_data
-            .break_lines()
-            .break_without_advance_or_alignment();
-    }
-
-    #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
         self.render_data = RenderData::default();
 
@@ -185,6 +167,7 @@ impl Advanced {
             }
         }
 
+        self.content_builder.set_current_line_hash(line.hash_key());
         self.content_builder.break_line();
     }
 }

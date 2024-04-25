@@ -16,9 +16,15 @@ pub struct Fragment {
     style: FragmentStyle,
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub struct LineFragments {
+    data: Vec<Fragment>,
+    hash: u64,
+}
+
 #[derive(Clone)]
 pub struct Content {
-    pub fragments: Vec<Vec<Fragment>>,
+    pub fragments: Vec<LineFragments>,
     pub text: String,
     pub current_line: usize,
 }
@@ -26,7 +32,12 @@ pub struct Content {
 impl Default for Content {
     fn default() -> Self {
         Self {
-            fragments: vec![vec![]],
+            fragments: vec![LineFragments {
+                data: vec![],
+                // 0 means uninitialized hash
+                // that will reflect in uncached
+                hash: 0,
+            }],
             text: String::default(),
             current_line: 0,
         }
@@ -50,7 +61,9 @@ impl Content {
     #[inline]
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
         for line in 0..self.current_line + 1 {
-            for e in &self.fragments[line] {
+            lcx.set_hash(self.fragments[line].hash);
+
+            for e in &self.fragments[line].data {
                 if e.start < e.end {
                     if let Some(s) = self.text.get(e.start as usize..e.end as usize) {
                         lcx.add_text(s, Some(e.style));
@@ -81,8 +94,8 @@ impl Content {
             self.text.insert_str(offset, text);
             let len = text.len() as u32;
             let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-            self.fragments[self.current_line][frag_index].end += len;
-            for frag in &mut self.fragments[self.current_line][frag_index + 1..] {
+            self.fragments[self.current_line].data[frag_index].end += len;
+            for frag in &mut self.fragments[self.current_line].data[frag_index + 1..] {
                 frag.start += len;
                 frag.end += len;
             }
@@ -97,8 +110,8 @@ impl Content {
             self.text.insert(offset, ch);
             let len = ch.len_utf8() as u32;
             let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-            self.fragments[self.current_line][frag_index].end += len;
-            for frag in &mut self.fragments[self.current_line][frag_index + 1..] {
+            self.fragments[self.current_line].data[frag_index].end += len;
+            for frag in &mut self.fragments[self.current_line].data[frag_index + 1..] {
                 frag.start += len;
                 frag.end += len;
             }
@@ -117,7 +130,7 @@ impl Content {
     }
 
     fn fragment_from_offset(&self, offset: usize) -> Option<usize> {
-        for (i, frag) in self.fragments[self.current_line].iter().enumerate() {
+        for (i, frag) in self.fragments[self.current_line].data.iter().enumerate() {
             if offset >= frag.start as usize && offset < frag.end as usize {
                 return Some(i);
             }
@@ -137,11 +150,9 @@ impl ContentBuilder {
         let start = self.content.text.len() as u32;
         self.content.text.push_str(text);
         let end = self.content.text.len() as u32;
-        self.content.fragments[self.content.current_line].push(Fragment {
-            start,
-            end,
-            style,
-        });
+        self.content.fragments[self.content.current_line]
+            .data
+            .push(Fragment { start, end, style });
     }
 
     #[inline]
@@ -149,11 +160,14 @@ impl ContentBuilder {
         let start = self.content.text.len() as u32;
         self.content.text.push(text);
         let end = self.content.text.len() as u32;
-        self.content.fragments[self.content.current_line].push(Fragment {
-            start,
-            end,
-            style,
-        });
+        self.content.fragments[self.content.current_line]
+            .data
+            .push(Fragment { start, end, style });
+    }
+
+    #[inline]
+    pub fn set_current_line_hash(&mut self, hash: u64) {
+        self.content.fragments[self.content.current_line].hash = hash;
     }
 
     #[inline]
@@ -165,7 +179,10 @@ impl ContentBuilder {
         self.add_char('\n', FragmentStyle::default());
 
         self.content.current_line += 1;
-        self.content.fragments.push(vec![]);
+        self.content.fragments.push(LineFragments {
+            data: vec![],
+            hash: 0,
+        });
     }
 
     #[inline]
