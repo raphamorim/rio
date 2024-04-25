@@ -416,8 +416,8 @@ impl<'a> ParagraphBuilder<'a> {
 
         self.add_text(" ", Some(FragmentStyle::default()));
         // for _ in 0..self.dir_depth {
-        const PDI: char = '\u{2069}';
-        self.push_char(PDI);
+        // const PDI: char = '\u{2069}';
+        // self.push_char(PDI);
         // }
 
         let lines_to_render = lines_to_render.unwrap_or_default();
@@ -586,16 +586,16 @@ impl<'a> ParagraphBuilder<'a> {
     }
 }
 
-impl<'a> ParagraphBuilder<'a> {
-    #[inline]
-    fn push_char(&mut self, ch: char) {
-        let current_line = self.s.current_line();
-        self.s.lines[current_line].text.content.push(ch);
-        self.s.lines[current_line].text.frags.push(0);
-        self.s.lines[current_line].text.spans.push(0);
-        self.s.lines[current_line].text.offsets.push(0);
-    }
-}
+// impl<'a> ParagraphBuilder<'a> {
+//     #[inline]
+//     fn push_char(&mut self, ch: char) {
+//         let current_line = self.s.current_line();
+//         self.s.lines[current_line].text.content.push(ch);
+//         self.s.lines[current_line].text.frags.push(0);
+//         self.s.lines[current_line].text.spans.push(0);
+//         self.s.lines[current_line].text.offsets.push(0);
+//     }
+// }
 
 #[inline]
 fn real_script(script: Script) -> bool {
@@ -677,7 +677,7 @@ fn shape_item(
         }
         let font_library = { &fonts.inner.read().unwrap() };
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, &style);
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
 
         while shape_clusters(
             fcx,
@@ -716,7 +716,7 @@ fn shape_item(
         }
         let font_library = { &fonts.inner.read().unwrap() };
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, &style);
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
         while shape_clusters(
             fcx,
             font_library,
@@ -795,7 +795,7 @@ where
         // fcx.select_group(state.font_id);
         // }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, state.span);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
             render_data.push_run(

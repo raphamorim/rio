@@ -10,13 +10,10 @@ pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
 use crate::font::constants::*;
-use crate::layout::FragmentStyle;
 use ab_glyph::FontArc;
-use fnv::FnvHashMap;
-use std::ops::Index;
-use std::ops::IndexMut;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::collections::HashMap;
+use std::ops::{Index, IndexMut};
+use std::sync::{Arc, RwLock};
 use swash::proxy::CharmapProxy;
 use swash::text::cluster::{CharCluster, Status};
 use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
@@ -42,7 +39,7 @@ impl Inner {
 
 #[derive(Default)]
 pub struct FontContext {
-    cache: FnvHashMap<char, usize>,
+    cache: HashMap<String, usize>,
 }
 
 impl FontContext {
@@ -73,31 +70,22 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
-        style: &FragmentStyle,
     ) -> Option<usize> {
-        let chars = cluster.chars();
-        let mut font_id = FONT_ID_REGULAR;
-
-        if let Some(cached_font_id) = self.cache.get(&chars[0].ch) {
-            font_id = *cached_font_id;
-        } else if cluster.info().is_emoji() {
-            if let Some(font_emoji_id) = library.inner.iter().position(|r| r.is_emoji) {
-                font_id = font_emoji_id;
-            }
+        let mut cache_key: String = String::default();
+        for c in cluster.chars().iter() {
+            cache_key.push(c.ch);
         }
+        let mut font_id = FONT_ID_REGULAR;
+        let is_cache_key_empty = cache_key.is_empty();
 
-        // TODO: there's a bug introduced on b949dd058ec5eb4c25b5977268a6044b9bc70835
-        // regarding the vim powerline first character
-        if !chars.is_empty() && font_id == 0 {
-            let is_italic = style.font_attrs.2 == Style::Italic;
-            let is_bold = style.font_attrs.1 == Weight::BOLD;
-
-            if is_bold && is_italic {
-                font_id = FONT_ID_BOLD_ITALIC;
-            } else if is_bold {
-                font_id = FONT_ID_BOLD;
-            } else if is_italic {
-                font_id = FONT_ID_ITALIC;
+        if !is_cache_key_empty {
+            if let Some(cached_font_id) = self.cache.get(&cache_key) {
+                font_id = *cached_font_id;
+            } else if cluster.info().is_emoji() {
+                if let Some(font_emoji_id) = library.inner.iter().position(|r| r.is_emoji)
+                {
+                    font_id = font_emoji_id;
+                }
             }
         }
 
@@ -119,10 +107,8 @@ impl FontContext {
             }
         }
 
-        let chars = cluster.chars();
-        // 0..4 are reserved spots
-        if font_id > 4 && !chars.is_empty() {
-            self.cache.insert(chars[0].ch, font_id);
+        if !is_cache_key_empty {
+            self.cache.insert(cache_key, font_id);
         }
 
         Some(font_id)

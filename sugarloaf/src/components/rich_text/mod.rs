@@ -707,7 +707,11 @@ fn draw_layout(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
-            let font = run.font();
+            let mut font = *run.font();
+            if font == 0 {
+                font = run.font_id_based_on_attr();
+            }
+
             let py = line.baseline() + y;
             let run_x = px;
             glyphs.clear();
@@ -723,7 +727,7 @@ fn draw_layout(
 
             let line_height = line.ascent() + line.descent() + line.leading();
             let mut style = TextRunStyle {
-                font: font_library[*font].as_ref(),
+                font: font_library[font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
