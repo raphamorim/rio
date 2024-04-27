@@ -30,6 +30,7 @@ pub enum Diff {
     Char(DiffChar),
     // (previous size, next size)
     Line(DiffLine),
+    Hash(bool),
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,7 +95,7 @@ impl Default for SugarTree {
 
 impl SugarTree {
     #[inline]
-    pub fn calculate_diff(&self, next: &SugarTree) -> SugarTreeDiff {
+    pub fn calculate_diff(&self, next: &SugarTree, exact: bool) -> SugarTreeDiff {
         if self.layout != next.layout {
             // In layout case, doesn't matter if blocks are different
             // or texts are different, it will repaint everything
@@ -129,15 +130,19 @@ impl SugarTree {
                         before: line.len(),
                         after: next_line.len(),
                     }));
-                } else {
-                    for column in 0..line.len() {
-                        if line[column] != next_line[column] {
-                            changes.push(Diff::Char(DiffChar {
-                                line: line_number,
-                                column,
-                                before: line[column],
-                                after: next_line[column],
-                            }));
+                } else if line.hash_key() != next_line.hash_key() {
+                    if !exact {
+                        changes.push(Diff::Hash(true));
+                    } else {
+                        for column in 0..line.len() {
+                            if line[column] != next_line[column] {
+                                changes.push(Diff::Char(DiffChar {
+                                    line: line_number,
+                                    column,
+                                    before: line[column],
+                                    after: next_line[column],
+                                }));
+                            }
                         }
                     }
                 }
@@ -182,9 +187,8 @@ impl SugarTree {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::Sugar;
     use crate::SugarDecoration::Disabled;
-    use crate::SugarStyle;
+    use crate::{Sugar, SugarCursor, SugarStyle};
 
     #[test]
     fn test_sugartree_calculate_is_empty() {
@@ -201,7 +205,7 @@ pub mod test {
         let mut sugartree_b = SugarTree::default();
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Equal
         );
 
@@ -218,14 +222,14 @@ pub mod test {
         });
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Equal
         );
 
         sugartree_a.layout.width = 300.0;
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::LayoutIsDifferent
         );
 
@@ -233,7 +237,7 @@ pub mod test {
         // sugartree_a.height = 100.0;
 
         // assert_eq!(
-        //     sugartree_a.calculate_diff(&sugartree_b),
+        //     sugartree_a.calculate_diff(&sugartree_b, true),
         //     SugarTreeDiff::HeightIsDifferent
         // );
     }
@@ -261,14 +265,14 @@ pub mod test {
         sugartree_a.insert(0, SugarLine::default());
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::LineQuantity(1)
         );
 
         sugartree_a.insert(1, SugarLine::default());
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::LineQuantity(2)
         );
 
@@ -277,7 +281,7 @@ pub mod test {
         sugartree_b.insert(2, SugarLine::default());
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::LineQuantity(-1)
         );
     }
@@ -305,7 +309,7 @@ pub mod test {
         });
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
                 line: 0,
                 before: 1,
@@ -319,7 +323,7 @@ pub mod test {
         });
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
                 line: 0,
                 before: 1,
@@ -341,7 +345,7 @@ pub mod test {
         });
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
                 line: 0,
                 before: 1,
@@ -355,7 +359,7 @@ pub mod test {
         });
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
                 line: 0,
                 before: 2,
@@ -365,7 +369,7 @@ pub mod test {
 
         sugartree_a.insert(1, SugarLine::default());
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::LineQuantity(1)
         );
     }
@@ -394,34 +398,26 @@ pub mod test {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
         })];
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(changes.clone())
         );
 
@@ -442,34 +438,26 @@ pub mod test {
                 content: 'k',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
             after: Sugar {
                 content: 'z',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
                 background_color: [0.0, 0.0, 0.0, 0.0],
-                style: SugarStyle {
-                    is_italic: false,
-                    is_bold: false,
-                    is_bold_italic: false,
-                },
+                style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
-                cursor: crate::SugarCursor::Disabled,
+                cursor: SugarCursor::Disabled,
                 media: None,
             },
         }));
 
         assert_eq!(
-            sugartree_a.calculate_diff(&sugartree_b),
+            sugartree_a.calculate_diff(&sugartree_b, true),
             SugarTreeDiff::Changes(changes)
         );
     }

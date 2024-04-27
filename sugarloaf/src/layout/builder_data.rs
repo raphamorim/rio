@@ -75,6 +75,8 @@ pub struct BuilderLine {
     pub items: Vec<ItemData>,
     /// Span index per character.
     pub styles: Vec<FragmentStyle>,
+    /// Line Hash
+    pub hash: Option<u64>,
 }
 
 /// Builder state.

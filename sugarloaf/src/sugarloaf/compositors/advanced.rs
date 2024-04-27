@@ -12,7 +12,7 @@ use crate::layout::{
     Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
 };
 use crate::sugarloaf::tree::SugarTree;
-use crate::{SugarCursor, SugarDecoration};
+use crate::{SugarCursor, SugarDecoration, SugarStyle};
 
 pub struct Advanced {
     pub render_data: RenderData,
@@ -42,24 +42,6 @@ impl Advanced {
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.layout_context = LayoutContext::new(fonts);
-    }
-
-    #[inline]
-    pub fn update_layout_with_lines(&mut self, tree: &SugarTree, lines: &[usize]) {
-        self.render_data = RenderData::default();
-
-        // Then process only lines that are different
-        let mut lb = self
-            .layout_context
-            .cached_builder(Direction::LeftToRight, tree.layout.dimensions.scale);
-        let content = self.content_builder.build_ref();
-        content.layout(&mut lb);
-        self.render_data.clear();
-        lb.build_into_specific_lines(&mut self.render_data, lines);
-
-        self.render_data
-            .break_lines()
-            .break_without_advance_or_alignment();
     }
 
     #[inline]
@@ -123,13 +105,18 @@ impl Advanced {
                 ..Default::default()
             };
 
-            if line[i].style.is_bold_italic {
-                style.font_attrs.1 = Weight::BOLD;
-                style.font_attrs.2 = Style::Italic;
-            } else if line[i].style.is_bold {
-                style.font_attrs.1 = Weight::BOLD;
-            } else if line[i].style.is_italic {
-                style.font_attrs.2 = Style::Italic;
+            match line[i].style {
+                SugarStyle::BoldItalic => {
+                    style.font_attrs.1 = Weight::BOLD;
+                    style.font_attrs.2 = Style::Italic;
+                }
+                SugarStyle::Bold => {
+                    style.font_attrs.1 = Weight::BOLD;
+                }
+                SugarStyle::Italic => {
+                    style.font_attrs.2 = Style::Italic;
+                }
+                _ => {}
             }
 
             let mut has_underline_cursor = false;
@@ -180,6 +167,7 @@ impl Advanced {
             }
         }
 
+        self.content_builder.set_current_line_hash(line.hash_key());
         self.content_builder.break_line();
     }
 }

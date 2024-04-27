@@ -14,6 +14,9 @@
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
+use crate::font::{
+    Style, Weight, FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR,
+};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
@@ -114,7 +117,11 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
+    pub(super) fn push_run_from_cached_line(
+        &mut self,
+        cached_entry: &RunCacheEntry,
+        line: u32,
+    ) {
         // Every time a line is cached we need to rebuild the indexes
         // so RunData, Clusters, DetailedClusterData and Glyphs need to be
         // pointed correctly across each other otherwise will lead to panic
@@ -157,7 +164,7 @@ impl RenderData {
                 coords: (coords_start, coords_end),
                 clusters: (clusters_start, clusters_end),
                 span: cached_run.span,
-                line: cached_run.line,
+                line,
                 font: cached_run.font,
                 color: cached_run.color,
                 background_color: cached_run.background_color,
@@ -547,31 +554,53 @@ impl<'a> Run<'a> {
         Self { layout, run }
     }
     /// Returns the span that contains the run.
+    #[inline]
     pub fn span(&self) -> FragmentStyle {
         self.run.span
     }
 
+    #[inline]
+    pub fn font_id_based_on_attr(&self) -> usize {
+        let is_italic = self.run.span.font_attrs.2 == Style::Italic;
+        let is_bold = self.run.span.font_attrs.1 == Weight::BOLD;
+
+        if is_bold && is_italic {
+            return FONT_ID_BOLD_ITALIC;
+        } else if is_bold {
+            return FONT_ID_BOLD;
+        } else if is_italic {
+            return FONT_ID_ITALIC;
+        }
+
+        FONT_ID_REGULAR
+    }
+
     /// Returns the font for the run.
+    #[inline]
     pub fn font(&self) -> &usize {
         &self.run.font
     }
 
     /// Returns the font size for the run.
+    #[inline]
     pub fn font_size(&self) -> f32 {
         self.run.size
     }
 
     /// Returns the color for the run.
+    #[inline]
     pub fn color(&self) -> [f32; 4] {
         self.run.color
     }
 
     /// Returns the bidi level of the run.
+    #[inline]
     pub fn level(&self) -> u8 {
         self.run.level
     }
 
     /// Returns the cursor
+    #[inline]
     pub fn cursor(&self) -> SugarCursor {
         self.run.cursor
     }
@@ -594,36 +623,43 @@ impl<'a> Run<'a> {
     }
 
     /// Returns the advance of the run.
+    #[inline]
     pub fn advance(&self) -> f32 {
         self.run.advance
     }
 
     /// Returns true if the run has an background color
+    #[inline]
     pub fn background_color(&self) -> Option<[f32; 4]> {
         self.run.background_color
     }
 
     /// Returns true if the run has an underline decoration.
+    #[inline]
     pub fn underline(&self) -> bool {
         self.run.underline
     }
 
     /// Returns the underline offset for the run.
+    #[inline]
     pub fn underline_offset(&self) -> f32 {
         self.run.underline_offset
     }
 
     /// Returns the underline color for the run.
+    #[inline]
     pub fn underline_color(&self) -> [f32; 4] {
         self.run.underline_color
     }
 
     /// Returns the underline size for the run.
+    #[inline]
     pub fn underline_size(&self) -> f32 {
         self.run.underline_size
     }
 
     /// Returns an iterator over the clusters in logical order.
+    #[inline]
     pub fn clusters(&self) -> Clusters<'a> {
         Clusters {
             layout: self.layout,
@@ -633,6 +669,7 @@ impl<'a> Run<'a> {
     }
 
     /// Returns an iterator over the clusters in visual order.
+    #[inline]
     pub fn visual_clusters(&self) -> Clusters<'a> {
         let rev = self.run.level & 1 != 0;
         Clusters {
