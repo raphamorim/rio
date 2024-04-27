@@ -1031,6 +1031,7 @@ pub fn platform_key_bindings(
         // https://github.com/alacritty/alacritty/issues/2930
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
         Key::Named(Backspace), Modifiers::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
+        Key::Named(Space), Modifiers::CONTROL | Modifiers::SHIFT, Action::ToggleViMode;
     );
 
     if use_navigation_key_bindings {
