@@ -9,7 +9,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
-    dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowBuilder,
+    dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 
 #[tokio::main]
@@ -18,13 +18,13 @@ async fn main() {
     let width = 400.0;
     let height = 200.0;
 
-    let window = WindowBuilder::new()
+    let window_attribute = WindowAttributes::default()
         .with_title("Rect transparency example")
         .with_inner_size(LogicalSize::new(width, height))
         .with_resizable(true)
-        .with_transparent(true)
-        .build(&event_loop)
-        .unwrap();
+        .with_transparent(true);
+    #[allow(deprecated)]
+    let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
     let font_size = 60.;
@@ -61,6 +61,7 @@ async fn main() {
 
     sugarloaf.set_background_color(wgpu::Color::TRANSPARENT);
 
+    #[allow(deprecated)]
     let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
