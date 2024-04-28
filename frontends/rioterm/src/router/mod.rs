@@ -316,15 +316,6 @@ impl RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder("Rio", config, None);
 
-        #[cfg(not(any(target_os = "macos", windows)))]
-        if let Some(token) = event_loop.read_token_from_env() {
-            log::debug!("Activating window with token: {token:?}");
-            window_builder = window_builder.with_activation_token(token);
-
-            // Remove the token from the env.
-            startup_notify::reset_activation_token_env();
-        }
-
         #[allow(deprecated)]
         let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
