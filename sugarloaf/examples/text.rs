@@ -10,7 +10,7 @@ use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
-    window::WindowBuilder,
+    window::WindowAttributes,
 };
 
 #[tokio::main]
@@ -19,12 +19,12 @@ async fn main() {
     let width = 1200.0;
     let height = 800.0;
 
-    let window = WindowBuilder::new()
+    let window_attribute = WindowAttributes::default()
         .with_title("Text example")
         .with_inner_size(LogicalSize::new(width, height))
-        .with_resizable(true)
-        .build(&event_loop)
-        .unwrap();
+        .with_resizable(true);
+    #[allow(deprecated)]
+    let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
     let font_size = 90.;
@@ -58,6 +58,7 @@ async fn main() {
     .await
     .expect("Sugarloaf instance should be created");
 
+    #[allow(deprecated)]
     let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
