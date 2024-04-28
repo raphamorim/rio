@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- default font size from 18 to 16.
-- update winit to 0.30.0.
+- Reduced font size to `16.0`.
+- Add VI toggle for CTRL + SHIFT + SPACE on win.
+- Update winit to 0.30.0.
 
 ## 0.0.36
 

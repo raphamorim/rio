@@ -424,10 +424,7 @@ impl Sequencer {
                                 route.window.winit_window.set_cursor_visible(true);
                             }
 
-                            route
-                                .window
-                                .winit_window
-                                .set_cursor(CursorIcon::Pointer);
+                            route.window.winit_window.set_cursor(CursorIcon::Pointer);
                             route.window.screen.context_manager.schedule_render(60);
                         }
                     }
@@ -584,10 +581,7 @@ impl Sequencer {
                         }
 
                         if route.path != RoutePath::Terminal {
-                            route
-                                .window
-                                .winit_window
-                                .set_cursor(CursorIcon::Default);
+                            route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
 
@@ -674,10 +668,7 @@ impl Sequencer {
                         }
 
                         if route.window.screen.search_nearest_hyperlink_from_pos() {
-                            route
-                                .window
-                                .winit_window
-                                .set_cursor(CursorIcon::Pointer);
+                            route.window.winit_window.set_cursor(CursorIcon::Pointer);
                             route.window.screen.context_manager.schedule_render(60);
                         } else {
                             let cursor_icon =
