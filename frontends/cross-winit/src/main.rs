@@ -14,7 +14,6 @@ mod router;
 mod scheduler;
 mod screen;
 mod sequencer;
-mod ui;
 mod watch;
 
 use crate::event::EventP;
@@ -130,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_environment_variables(&config);
 
     let window_event_loop =
-        winit::event_loop::EventLoopBuilder::<EventP>::with_user_event()
+        winit::event_loop::EventLoop::with_user_event()
             .build()
             .unwrap();
 

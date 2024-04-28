@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- TBD
+- default font size from 18 to 16.
+- update winit to 0.30.0.
 
 ## 0.0.36
 

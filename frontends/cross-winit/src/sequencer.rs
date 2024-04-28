@@ -15,7 +15,7 @@ use winit::event::{
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::EventLoopWindowTargetExtMacOS;
+use winit::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -62,6 +62,7 @@ impl Sequencer {
         self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
+        #[allow(deprecated)]
         let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
             match event {
                 Event::UserEvent(EventP {
@@ -376,12 +377,7 @@ impl Sequencer {
                     }
                 }
 
-                Event::NewEvents(StartCause::Init) => {
-                    #[cfg(target_os = "macos")]
-                    {
-                        crate::ui::appkit::create_toolbar();
-                    }
-                }
+                Event::NewEvents(StartCause::Init) => {}
 
                 Event::Resumed => {
                     #[cfg(not(any(target_os = "macos", windows)))]
@@ -431,7 +427,7 @@ impl Sequencer {
                             route
                                 .window
                                 .winit_window
-                                .set_cursor_icon(CursorIcon::Pointer);
+                                .set_cursor(CursorIcon::Pointer);
                             route.window.screen.context_manager.schedule_render(60);
                         }
                     }
@@ -591,7 +587,7 @@ impl Sequencer {
                             route
                                 .window
                                 .winit_window
-                                .set_cursor_icon(CursorIcon::Default);
+                                .set_cursor(CursorIcon::Default);
                             return;
                         }
 
@@ -619,18 +615,18 @@ impl Sequencer {
                                         route
                                             .window
                                             .winit_window
-                                            .set_cursor_icon(CursorIcon::Grabbing);
+                                            .set_cursor(CursorIcon::Grabbing);
                                     } else {
                                         route
                                             .window
                                             .winit_window
-                                            .set_cursor_icon(CursorIcon::Grab);
+                                            .set_cursor(CursorIcon::Grab);
                                     }
                                 } else {
                                     route
                                         .window
                                         .winit_window
-                                        .set_cursor_icon(CursorIcon::Default);
+                                        .set_cursor(CursorIcon::Default);
                                 }
 
                                 route.window.is_macos_deadzone = true;
@@ -681,7 +677,7 @@ impl Sequencer {
                             route
                                 .window
                                 .winit_window
-                                .set_cursor_icon(CursorIcon::Pointer);
+                                .set_cursor(CursorIcon::Pointer);
                             route.window.screen.context_manager.schedule_render(60);
                         } else {
                             let cursor_icon =
@@ -693,7 +689,7 @@ impl Sequencer {
                                     CursorIcon::Text
                                 };
 
-                            route.window.winit_window.set_cursor_icon(cursor_icon);
+                            route.window.winit_window.set_cursor(cursor_icon);
 
                             // In case hyperlink range has cleaned trigger one more render
                             if route.window.screen.state.has_hyperlink_range() {
