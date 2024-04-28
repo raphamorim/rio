@@ -8,21 +8,21 @@ use sugarloaf::core::Sugar;
 use sugarloaf::*;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::window::WindowAttributes;
 
 fn bench_sugar_pile(c: &mut Criterion) {
     const NUM: usize = 100_000;
 
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let width = 1200.0;
     let height = 800.0;
 
-    let window = WindowBuilder::new()
+    let window_attribute = WindowAttributes::default()
         .with_title("Bench")
         .with_inner_size(LogicalSize::new(width, height))
-        .with_resizable(true)
-        .build(&event_loop.unwrap())
-        .unwrap();
+        .with_resizable(true);
+    #[allow(deprecated)]
+    let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
     let font_size = 60.;

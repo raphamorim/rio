@@ -5,7 +5,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::{
-    dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowBuilder,
+    dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -20,12 +20,12 @@ async fn main() {
     let width = 400.0;
     let height = 200.0;
 
-    let window = WindowBuilder::new()
+    let window_attribute = WindowAttributes::default()
         .with_title("Image transparency example")
         .with_inner_size(LogicalSize::new(width, height))
-        .with_resizable(true)
-        .build(&event_loop)
-        .unwrap();
+        .with_resizable(true);
+    #[allow(deprecated)]
+    let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
     let font_size = 60.;
@@ -70,6 +70,7 @@ async fn main() {
         y: 0.,
     });
 
+    #[allow(deprecated)]
     let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
