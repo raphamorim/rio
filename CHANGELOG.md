@@ -5,6 +5,7 @@
 - *Breaking change:* Reduced font size to `16.0`.
 - *Breaking change:* Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
 - Update winit to 0.30.0.
+- Update rust version to 1.77.2.
 - Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
 
 ## 0.0.36
