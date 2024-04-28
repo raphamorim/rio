@@ -20,7 +20,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
 use winit::platform::startup_notify::{
-    self, EventLoopExtStartupNotify, WindowBuilderExtStartupNotify,
+    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
 use winit::window::{Window, WindowId};
 
