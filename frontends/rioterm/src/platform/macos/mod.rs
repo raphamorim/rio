@@ -10,7 +10,6 @@ use libc::{setlocale, LC_ALL, LC_CTYPE};
 use log::debug;
 use objc::runtime::{Class, Object};
 use objc::{msg_send, sel, sel_impl};
-
 const FALLBACK_LOCALE: &str = "UTF-8";
 
 pub fn set_locale_environment() {

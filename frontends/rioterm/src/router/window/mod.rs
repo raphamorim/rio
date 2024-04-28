@@ -11,7 +11,7 @@
 use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
 use std::rc::Rc;
-use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowBuilder};
+use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowAttributes};
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
 // Terminal W/H contraints
@@ -41,7 +41,7 @@ pub fn create_window_builder(
     title: &str,
     config: &Rc<Config>,
     #[allow(unused)] tab_id: Option<String>,
-) -> WindowBuilder {
+) -> WindowAttributes {
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
         image_icon.to_rgba8().into_raw(),
@@ -50,7 +50,7 @@ pub fn create_window_builder(
     )
     .unwrap();
 
-    let mut window_builder = WindowBuilder::new()
+    let mut window_builder = WindowAttributes::default()
         .with_title(title)
         .with_min_inner_size(winit::dpi::LogicalSize {
             width: DEFAULT_MINIMUM_WINDOW_WIDTH,
@@ -69,14 +69,14 @@ pub fn create_window_builder(
         Decorations::Transparent => {
             #[cfg(target_os = "macos")]
             {
-                use winit::platform::macos::WindowBuilderExtMacOS;
+                use winit::platform::macos::WindowAttributesExtMacOS;
                 window_builder = window_builder.with_titlebar_transparent(true)
             }
         }
         Decorations::Buttonless => {
             #[cfg(target_os = "macos")]
             {
-                use winit::platform::macos::WindowBuilderExtMacOS;
+                use winit::platform::macos::WindowAttributesExtMacOS;
                 window_builder = window_builder.with_titlebar_buttons_hidden(true)
             }
         }
@@ -97,7 +97,7 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowBuilderExtMacOS;
+        use winit::platform::macos::WindowAttributesExtMacOS;
         // MacOS is always transparent
         window_builder = window_builder.with_transparent(true);
 
@@ -134,7 +134,7 @@ pub fn create_window_builder(
 
 pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     let current_mouse_cursor = CursorIcon::Text;
-    winit_window.set_cursor_icon(current_mouse_cursor);
+    winit_window.set_cursor(current_mouse_cursor);
 
     // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
     winit_window.set_ime_purpose(ImePurpose::Terminal);
