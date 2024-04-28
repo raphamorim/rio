@@ -24,6 +24,7 @@
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
+- update winit to 0.30.0.
 
 ## 0.0.36
 

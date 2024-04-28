@@ -12,8 +12,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
-use winit::event_loop::EventLoop;
-use winit::event_loop::EventLoopWindowTarget;
+use winit::event_loop::{EventLoop, ActiveEventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
 use winit::platform::startup_notify::{
@@ -200,7 +199,7 @@ impl Router {
 
     pub fn open_config_window(
         &mut self,
-        event_loop: &EventLoopWindowTarget<EventPayload>,
+        event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
     ) {
@@ -246,7 +245,7 @@ impl Router {
     #[inline]
     pub fn create_window(
         &mut self,
-        event_loop: &EventLoopWindowTarget<EventPayload>,
+        event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
     ) {
@@ -272,7 +271,7 @@ impl Router {
     #[inline]
     pub fn create_native_tab(
         &mut self,
-        event_loop: &EventLoopWindowTarget<EventPayload>,
+        event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
         tab_id: Option<String>,
@@ -326,7 +325,8 @@ impl RouteWindow {
             startup_notify::reset_activation_token_env();
         }
 
-        let winit_window = window_builder.build(event_loop).unwrap();
+        #[allow(deprecated)]
+        let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
 
         let screen =
@@ -343,7 +343,7 @@ impl RouteWindow {
     }
 
     pub fn from_target(
-        event_loop: &EventLoopWindowTarget<EventPayload>,
+        event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
@@ -363,7 +363,8 @@ impl RouteWindow {
             startup_notify::reset_activation_token_env();
         }
 
-        let winit_window = window_builder.build(event_loop).unwrap();
+        #[allow(deprecated)]
+        let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
 
         let screen = futures::executor::block_on(Screen::new(
