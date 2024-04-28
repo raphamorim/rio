@@ -12,7 +12,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
-use winit::event_loop::{EventLoop, ActiveEventLoop};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
 use winit::platform::startup_notify::{

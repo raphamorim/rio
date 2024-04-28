@@ -12,7 +12,6 @@
 	- Sugarloaf now uses same render pass for each render.
 	- Ignore equal renderers.
 	- Compute layout updates only if layout is different.
-	- Reduced font size to `16.0`.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Fixes on font search for Microsoft Windows.
@@ -24,7 +23,9 @@
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
-- update winit to 0.30.0.
+- Reduced font size to `16.0`.
+- Add VI toggle for CTRL + SHIFT + SPACE on win.
+- Update winit to 0.30.0.
 
 ## 0.0.36
 
