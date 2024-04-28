@@ -38,7 +38,7 @@ language: 'en'
 | Action               | Key                                                         |
 | -------------------- | ----------------------------------------------------------- |
 | Open configuration   | `Control + Shift + Comma (,)`                               |
-| Toggle VI Mode       | `Alt + Shift + Space`                                       |
+| Toggle VI Mode       | `Control + Shift + Space`                                   |
 | Copy                 | `Control + Shift + C`                                       |
 | Paste                | `Control + Shift + V`                                       |
 | Create new window    | `Control + Shift + N`                                       |
