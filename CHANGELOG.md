@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Reduced font size to `16.0`.
-- Add VI toggle for CTRL + SHIFT + SPACE on win.
+- *Breaking change:* Reduced font size to `16.0`.
+- *Breaking change:* Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
 - Update winit to 0.30.0.
 - Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
 
