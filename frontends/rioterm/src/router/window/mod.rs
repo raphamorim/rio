@@ -85,13 +85,13 @@ pub fn create_window_builder(
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
-        use winit::platform::x11::WindowBuilderExtX11;
+        use winit::platform::x11::WindowAttributesExtX11;
         window_builder = window_builder.with_name(APPLICATION_ID, "");
     }
 
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     {
-        use winit::platform::wayland::WindowBuilderExtWayland;
+        use winit::platform::wayland::WindowAttributesExtWayland;
         window_builder = window_builder.with_name(APPLICATION_ID, "");
     }
 
