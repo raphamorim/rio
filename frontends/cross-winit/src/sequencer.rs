@@ -3,6 +3,7 @@ use crate::event::{ClickState, EventP, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::router::{RoutePath, RouteWindow, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
+use crate::touch::on_touch;
 use crate::watch::watch;
 use rio_backend::config::colors::ColorRgb;
 use std::error::Error;
@@ -408,6 +409,16 @@ impl Sequencer {
 
                     if self.router.routes.is_empty() {
                         event_loop_window_target.exit();
+                    }
+                }
+
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::Touch(touch),
+                    window_id,
+                    ..
+                } => {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        on_touch(route, touch);
                     }
                 }
 

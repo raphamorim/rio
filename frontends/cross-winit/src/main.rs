@@ -14,6 +14,7 @@ mod router;
 mod scheduler;
 mod screen;
 mod sequencer;
+mod touch;
 mod watch;
 
 use crate::event::EventP;

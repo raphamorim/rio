@@ -6,7 +6,7 @@
 // were retired from https://github.com/alacritty/alacritty/blob/c39c3c97f1a1213418c3629cc59a1d46e34070e0/alacritty/src/input.rs
 // which is licensed under Apache 2.0 license.
 
-mod bindings;
+pub mod bindings;
 mod constants;
 mod context;
 mod messenger;
@@ -35,6 +35,7 @@ use crate::screen::{
     mouse::{calculate_mouse_position, Mouse},
 };
 use crate::selection::{Selection, SelectionType};
+use crate::touch::TouchPurpose;
 use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -99,6 +100,7 @@ pub struct Screen {
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub modifiers: Modifiers,
+    pub touchpurpose: TouchPurpose,
     pub mouse: Mouse,
     pub ime: Ime,
     pub state: State,
@@ -229,6 +231,7 @@ impl Screen {
             ime,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
+            touchpurpose: TouchPurpose::default(),
             state,
             bindings,
             clipboard,
@@ -394,6 +397,11 @@ impl Screen {
         self.sugarloaf.calculate_bounds();
 
         self
+    }
+
+    #[inline]
+    pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
+        &mut self.touchpurpose
     }
 
     #[inline]

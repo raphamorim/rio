@@ -5,6 +5,7 @@
 - Reduced font size to `16.0`.
 - Add VI toggle for CTRL + SHIFT + SPACE on win.
 - Update winit to 0.30.0.
+- Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
 
 ## 0.0.36
 
