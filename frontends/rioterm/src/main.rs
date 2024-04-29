@@ -141,11 +141,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        let window_event_loop = winit::event_loop::EventLoopBuilder::<
-            crate::event::EventPayload,
-        >::with_user_event()
-        .build()
-        .unwrap();
+        let window_event_loop = winit::event_loop::EventLoop::with_user_event()
+            .build()
+            .unwrap();
 
         let mut sequencer = crate::sequencer::Sequencer::new(config, config_error);
         let _ = sequencer.run(window_event_loop).await;
