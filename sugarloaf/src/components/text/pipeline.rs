@@ -261,6 +261,7 @@ fn build<D>(
         label: None,
         layout: Some(&layout),
         vertex: wgpu::VertexState {
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             module: &shader,
             entry_point: "vs_main",
             buffers: &[wgpu::VertexBufferLayout {
@@ -284,6 +285,7 @@ fn build<D>(
         multisample,
         depth_stencil: None,
         fragment: Some(wgpu::FragmentState {
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             module: &shader,
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
