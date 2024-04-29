@@ -224,6 +224,7 @@ impl RichTextBrush {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[wgpu::VertexBufferLayout {
@@ -238,6 +239,7 @@ impl RichTextBrush {
                 }],
             },
             fragment: Some(wgpu::FragmentState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
