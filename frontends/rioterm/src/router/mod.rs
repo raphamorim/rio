@@ -306,7 +306,7 @@ pub struct RouteWindow {
 
 impl RouteWindow {
     pub async fn new(
-        event_loop: &ActiveEventLoop,
+        event_loop: &EventLoop<EventPayload>,
         config: &Rc<RioConfig>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Result<Self, Box<dyn Error>> {
