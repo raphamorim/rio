@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.37
+
 - *Breaking change:* Reduced font size to `16.0`.
 - *Breaking change:* Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
 - Update winit to 0.30.0.
