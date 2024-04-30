@@ -79,15 +79,11 @@ release-macos: app-universal
 	cp -rf ./target/release/osx/* ./release/
 	cd ./release && zip -r ./macos-unsigned.zip ./*
 
-release-macos-local: release-macos
-	rm -rf /Applications/$(APP_NAME)
-	mv ./release/$(APP_NAME) /Applications/
+release-macos-signed:
+	$(eval VERSION = $(shell echo $(version)))
+	$(if $(strip $(VERSION)),make release-macos-signed-app, make version-not-found)
 
-version-not-found:
-	@echo "Rio version was not specified"
-	@echo " - usage: $ make release-macos-signed version=0.0.0"
-
-release-macos-app-signed:
+release-macos-signed-app:
 	@make app-universal
 	@echo "Releasing Rio v$(version)"
 	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(TARGET_DIR_OSX)/$(APP_NAME)"
@@ -96,6 +92,14 @@ release-macos-app-signed:
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
 	rm -rf ./release/$(APP_NAME)
 	@unzip ./release/Rio-v$(version).zip -d ./release
+
+install-macos: release-macos
+	rm -rf /Applications/$(APP_NAME)
+	mv ./release/$(APP_NAME) /Applications/
+
+version-not-found:
+	@echo "Rio version was not specified"
+	@echo " - usage: $ make release-macos-signed version=0.0.0"
 
 # e.g: make update-version old-version=0.0.13 new-version=0.0.12
 update-version:
@@ -108,26 +112,6 @@ update-version:
 release-macos-dmg:
 # 	Using https://www.npmjs.com/package/create-dmg
 	cd ./release && create-dmg $(APP_NAME) --dmg-title="Rio ${version}" --overwrite
-
-# 	Using https://github.com/create-dmg/create-dmg
-# 	create-dmg \
-# 		--volname "Rio" \
-#   		--volicon "$(APP_EXTRAS_DIR)/Rio-stable.icns" \
-# 		--text-size 30 \
-# 		--window-pos 200 120 \
-# 		--window-size 800 400 \
-# 		--icon-size 100 \
-# 		--icon "Rio.app" 200 190 \
-#   		--hide-extension "Rio.app" \
-#   		--app-drop-link 600 185 \
-#   		--skip-jenkins \
-# 		--background "./resources/rio-colors.png" \
-# 		./release/Rio-v0.0.0.dmg ./release/Rio.app
-# 	mv "./release/Rio $(version).dmg" "./release/Rio-v$(version).dmg"
-
-release-macos-signed:
-	$(eval VERSION = $(shell echo $(version)))
-	$(if $(strip $(VERSION)),make release-macos-app-signed, make version-not-found)
 
 bump-brew:
 	brew bump-cask-pr rio --version ${version}
@@ -163,9 +147,6 @@ install-debian-x11:
 install-debian-wayland:
 	cargo install cargo-deb
 	cargo deb -p rioterm --install -- --release --no-default-features --features=wayland
-install-macos: release-macos
-	rm -rf /Applications/Rio.app
-	mv ./release/Rio.app /Applications/Rio.app
 
 # cargo install cargo-wix
 # https://github.com/volks73/cargo-wix
