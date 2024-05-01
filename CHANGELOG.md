@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.0.37
+
 - Migration from Winit to WA.
 	- Apple MacOS
 	- ⏳ Linux Wayland
@@ -18,14 +22,18 @@
 - All tabs/window instances now use same font data.
 - Updated wgpu to 0.19.3.
 - Removed support to DX11.
-- Add basic touch support by @androw [#226](https://github.com/raphamorim/rio/pull/226)
 - Support to `line-height` configuration.
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
-- Reduced font size to `16.0`.
-- Add VI toggle for CTRL + SHIFT + SPACE on win.
+
+## 0.0.37
+
+- *Breaking change:* Reduced font size to `16.0`.
+- *Breaking change:* Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
 - Update winit to 0.30.0.
+- Update rust version to 1.77.2.
+- Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
 
 ## 0.0.36
 
