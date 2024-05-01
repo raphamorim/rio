@@ -15,6 +15,8 @@ mod scheduler;
 mod screen;
 mod sequencer;
 mod touch;
+#[cfg(target_os = "macos")]
+mod ui;
 mod watch;
 
 use crate::event::EventP;

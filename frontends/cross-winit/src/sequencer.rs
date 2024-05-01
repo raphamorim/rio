@@ -378,7 +378,12 @@ impl Sequencer {
                     }
                 }
 
-                Event::NewEvents(StartCause::Init) => {}
+                Event::NewEvents(StartCause::Init) => {
+                    #[cfg(target_os = "macos")]
+                    {
+                        crate::ui::appkit::create_toolbar();
+                    }
+                }
 
                 Event::Resumed => {
                     #[cfg(not(any(target_os = "macos", windows)))]

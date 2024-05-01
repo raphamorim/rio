@@ -42,6 +42,20 @@ wgpu = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.2"
 cocoa = "0.25.0"
+objc2 = { version = "0.4.1" }
+
+[target.'cfg(target_os = "macos")'.dependencies.icrate]
+version = "0.0.4"
+features = [
+    "Foundation",
+    "Foundation_NSString",
+    "Foundation_NSArray",
+    "Foundation_NSThread",
+    "AppKit",
+    "AppKit_NSMenu",
+    "AppKit_NSMenuItem",
+    "AppKit_NSApplication",
+]
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }
