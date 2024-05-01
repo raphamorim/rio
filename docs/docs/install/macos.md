@@ -5,7 +5,7 @@ language: 'en'
 
 You can download Rio terminal application for macOS platform:
 
-- [Download Rio for MacOS v0.0.20](https://github.com/raphamorim/rio/releases/download/v0.0.20/Rio-v0.0.20.dmg)
+- [Download Rio for MacOS v0.0.37](https://github.com/raphamorim/rio/releases/download/v0.0.37/Rio-v0.0.37.dmg)
 
 Alternatively you can install Rio through [Homebrew](https://brew.sh/)
 
