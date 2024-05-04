@@ -325,6 +325,7 @@ impl Sugarloaf {
     #[inline]
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
+
         self.state.compute_changes();
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
@@ -337,6 +338,7 @@ impl Sugarloaf {
             self.clean_state();
             return;
         }
+
         // let duration = start.elapsed();
         // println!(
         //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
