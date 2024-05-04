@@ -9,7 +9,6 @@ use rio_backend::error::RioError;
 use rio_backend::event::{EventPayload, EventProxy, RioEventType};
 use rio_backend::sugarloaf::font::FontLibrary;
 use route::Route;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
@@ -155,7 +154,6 @@ impl EventHandler for EventHandlerInstance {
         }
     }
 
-    #[inline]
     fn process(&mut self) {
         if let Ok(event) = self.event_loop.receiver.try_recv() {
             let window_id = event.window_id;
@@ -639,10 +637,8 @@ pub async fn run(
     config: rio_backend::config::Config,
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    let event_handler = Rc::new(RefCell::new(EventHandlerInstance::new(config)));
-
-    App::new(event_handler.clone());
+    App::new(Box::new(EventHandlerInstance::new(config)));
     menu::create_menu();
-    App::run(event_handler);
+    App::run();
     Ok(())
 }

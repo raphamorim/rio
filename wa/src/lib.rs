@@ -14,6 +14,7 @@ pub mod conf;
 mod event;
 pub mod event_loop;
 pub mod native;
+pub mod app;
 mod resources;
 pub mod sync;
 pub use event::*;
