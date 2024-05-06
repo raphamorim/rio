@@ -577,3 +577,8 @@ pub extern "C" fn no1(_: &Object, _: Sel, _: ObjcId) -> BOOL {
 pub extern "C" fn yes1(_: &Object, _: Sel, _: ObjcId) -> BOOL {
     YES
 }
+
+pub extern "C" fn is_main_thread() -> bool {
+    let is_main_thread: BOOL = unsafe { msg_send![class!(NSThread), isMainThread] };
+    is_main_thread == YES
+}

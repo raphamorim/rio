@@ -8,6 +8,9 @@
 // The code has suffered several changes like support to multiple windows, extension of windows
 // properties, menu support, IME support, and etc.
 
+use std::collections::VecDeque;
+use std::cell::RefCell;
+use crate::events::{QueuedEvent, WindowEvent};
 use crate::app::{Handler, HandlerState, create_tab, create_window};
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use crate::native::macos::NSEventMask::NSAnyEventMask;
@@ -147,6 +150,7 @@ pub struct MacosDisplay {
     cursor_grabbed: bool,
     cursors: HashMap<CursorIcon, ObjcId>,
     has_initialized: bool,
+    pending_events: RefCell<VecDeque<QueuedEvent>>,
     has_focus: bool,
     // event_handler: Rc<RefCell<dyn EventHandler>>,
     modifiers: Modifiers,
@@ -885,33 +889,35 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            let mut this = Handler::get_mut();
-            match this.state_mut() {
-                &mut HandlerState::Running { ref mut handler , .. } => {
-                    handler.focus_event(payload.id, true);
-                },
-                &mut HandlerState::Waiting { ref mut handler , .. } => {
-                    handler.focus_event(payload.id, true);
-                },
-                _ => {},
-            }
-            drop(this);
+        //     let mut this = Handler::get_mut();
+        //     match this.state_mut() {
+        //         &mut HandlerState::Running { ref mut handler , .. } => {
+        //             handler.focus_event(payload.id, true);
+        //         },
+        //         &mut HandlerState::Waiting { ref mut handler , .. } => {
+        //             handler.focus_event(payload.id, true);
+        //         },
+        //         _ => {},
+        //     }
+        //     drop(this);
+            payload.pending_events.borrow_mut().push_back(QueuedEvent::Window(payload.id, WindowEvent::Focus(true)));
             payload.has_focus = true;
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
-            let mut this = Handler::get_mut();
-            match this.state_mut() {
-                &mut HandlerState::Running { ref mut handler , .. } => {
-                    handler.focus_event(payload.id, false);
-                },
-                &mut HandlerState::Waiting { ref mut handler , .. } => {
-                    handler.focus_event(payload.id, false);
-                },
-                _ => {},
-            }
-            drop(this);
+            // let mut this = Handler::get_mut();
+            // match this.state_mut() {
+            //     &mut HandlerState::Running { ref mut handler , .. } => {
+            //         handler.focus_event(payload.id, false);
+            //     },
+            //     &mut HandlerState::Waiting { ref mut handler , .. } => {
+            //         handler.focus_event(payload.id, false);
+            //     },
+            //     _ => {},
+            // }
+            // drop(this);
+            payload.pending_events.borrow_mut().push_back(QueuedEvent::Window(payload.id, WindowEvent::Focus(false)));
             payload.has_focus = false;
         }
     }
@@ -1765,6 +1771,15 @@ impl App {
         //     }
         // }
 
+        // let events = std::mem::take(&mut *self.ivars().pending_events.borrow_mut());
+        // for event in events {
+        //     match event {
+        //         QueuedEvent::WindowEvent(window_id, event) => {
+
+        //         }
+        //     }
+        // }
+
         let mut this = Handler::get_mut();
         match this.state_mut() {
             &mut HandlerState::Running { ref mut handler , .. } => {
@@ -1975,6 +1990,7 @@ impl Window {
             let mut display = MacosDisplay {
                 has_initialized: false,
                 id,
+                pending_events: Default::default(),
                 has_focus: true,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),

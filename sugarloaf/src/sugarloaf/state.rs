@@ -19,7 +19,7 @@ pub struct SugarState {
     pub compositors: SugarCompositors,
     // TODO: Decide if graphics should be in SugarTree or SugarState
     pub graphics: SugarloafGraphics,
-    last_update: std::time::Instant,
+    // last_update: std::time::Instant,
 }
 
 impl SugarState {
@@ -40,7 +40,7 @@ impl SugarState {
             next,
             dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
-            last_update: std::time::Instant::now(),
+            // last_update: std::time::Instant::now(),
         }
     }
 
@@ -314,12 +314,12 @@ impl SugarState {
         if should_update {
             std::mem::swap(&mut self.current, &mut self.next);
 
-            let interval_time = std::time::Duration::from_secs(1);
-            if !should_compute_dimensions && self.last_update.elapsed() > interval_time {
-                self.last_update = std::time::Instant::now();
-            } else {
-                return;
-            }
+            // let interval_time = std::time::Duration::from_secs(1);
+            // if !should_compute_dimensions && self.last_update.elapsed() > interval_time {
+            //     self.last_update = std::time::Instant::now();
+            // } else {
+            //     return;
+            // }
 
             if should_compute_dimensions {
                 self.compositors
