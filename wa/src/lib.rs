@@ -10,6 +10,7 @@
 
 #![cfg(target_os = "macos")]
 
+mod events;
 pub mod conf;
 mod event;
 pub mod event_loop;
