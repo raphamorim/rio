@@ -19,4 +19,4 @@ And native tabs for MacOS.
 
 <img alt="Demo native tabs" src="/rio/assets/posts/0.0.17/demo-native-tabs.png" width="70%"/>
 
-See more about it [here](/docs/navigation).
+See more about it [here](/docs/next/navigation).
