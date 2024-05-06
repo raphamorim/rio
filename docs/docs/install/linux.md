@@ -11,4 +11,4 @@ Installation options:
 - openSUSE package: [openSUSE:Factory/rioterm](https://software.opensuse.org/package/rioterm)
 - Void Linux package: https://github.com/void-linux/void-packages/tree/master/srcpkgs/rio
 
-In case your distro doesn't have the package manager option listed above, proceed to [build from the source](/docs/install/build-from-source).
+In case your distro doesn't have the package manager option listed above, proceed to [build from the source](/docs/next/install/build-from-source).

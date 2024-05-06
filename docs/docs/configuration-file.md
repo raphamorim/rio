@@ -333,7 +333,7 @@ divider = 1.0
   - `Plain`
 
 - `clickable` - Enable click on tabs to switch.
-- `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/configuration-file/#use-fork) to be set to false).
+- `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/next/configuration-file/#use-fork) to be set to false).
 - `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 
 ```toml
@@ -413,7 +413,7 @@ yellow = '#FCBA28'
 
 ## Bindings
 
-You can create custom key bindings for Rio terminal, [more information](/docs/key-bindings#custom-key-bindings)
+You can create custom key bindings for Rio terminal, [more information](/docs/next/key-bindings#custom-key-bindings)
 
 ```toml
 [bindings]

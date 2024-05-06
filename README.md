@@ -1,6 +1,6 @@
 # Rio terminal
 
-🚧 ⚠️ Currently, Rio is in the process of a major rewrite to 0.1.0 to bring more features and fix known issues of 0.0.x versions.
+🚧 ⚠️ Currently, Rio is in the process of a major rewrite to 1.0.0 to bring more features and fix known issues of 0.x.0 versions.
 
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
 
