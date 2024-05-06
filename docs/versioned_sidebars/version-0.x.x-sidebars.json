@@ -3,6 +3,7 @@
     "command-line-interface",
     "configuration-file",
     "escape-sequence-support",
+    "default-colors",
     {
       "type": "category",
       "label": "Features",
@@ -14,7 +15,6 @@
         "features/adaptive-theme",
         "features/color-automation-for-navigation",
         "features/hyperlinks",
-        "features/iterm-image-protocol",
         "features/kitty-keyboard-protocol",
         "features/multi-windows",
         "features/navigation",

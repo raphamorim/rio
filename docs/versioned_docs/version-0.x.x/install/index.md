@@ -5,11 +5,11 @@ language: 'en'
 
 Rio is available for:
 
-- [MacOS](/docs/install/macos)
-- [Linux](/docs/install/linux)
-- [Windows](/docs/install/windows)
-- [FreeBSD](/docs/install/freebsd)
-- [WebAssembly](/docs/install/webassembly)
+- [MacOS](/docs/0.x.x/install/macos)
+- [Linux](/docs/0.x.x/install/linux)
+- [Windows](/docs/0.x.x/install/windows)
+- [FreeBSD](/docs/0.x.x/install/freebsd)
+- [WebAssembly](/docs/0.x.x/install/webassembly)
 
 Rio has two type of builds: stable and nightly.
 
