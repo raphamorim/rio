@@ -67,6 +67,22 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
+          disableVersioning: false,
+          includeCurrentVersion: true,
+          lastVersion: undefined,
+          onlyIncludeVersions: ['current', '0.x.x'],
+          versions: {
+            current: {
+              label: '1.0.0 (unreleased)',
+              path: 'next',
+              banner: 'none',
+            },
+            '0.x.x': {
+              label: '0.x.x',
+              path: '0.x.x',
+              banner: 'none',
+            },
+          },
         },
         blog: {
           showReadingTime: true,
@@ -98,14 +114,20 @@ const config = {
           src: '/assets/rio-logo.svg',
         },
         items: [
-          { to: '/docs/install', label: 'Install', position: 'left' },
-          { to: '/docs/configuration-file', label: 'Config', position: 'left' },
-          { to: '/docs/features', label: 'Features', position: 'left' },
+          { to: '/docs/next/install', label: 'Install', position: 'left' },
+          { to: '/docs/next/configuration-file', label: 'Config', position: 'left' },
+          { to: '/docs/next/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
             label: 'Discord',
             position: 'left',
+          },
+          {
+            type: 'docsVersionDropdown',
+            position: 'right',
+            dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
+            dropdownActiveClassDisabled: true,
           },
           {
             type: 'localeDropdown',
@@ -127,15 +149,15 @@ const config = {
             items: [
               {
                 label: 'Install',
-                to: '/docs/install',
+                to: '/docs/next/install',
               },
               {
                 label: 'Config',
-                to: '/docs/configuration-file',
+                to: '/docs/next/configuration-file',
               },
               {
                 label: 'Features',
-                to: '/docs/features',
+                to: '/docs/next/features',
               },
             ],
           },
@@ -183,7 +205,7 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'If you use Rio terminal please consider support via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
+          'Support Rio via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
         backgroundColor: '#f712ff',
         textColor: '#FFFFFF',
         isCloseable: true,
