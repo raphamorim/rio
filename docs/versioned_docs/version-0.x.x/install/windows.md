@@ -20,7 +20,7 @@ There's a few things to note about the installer and the portable version:
 - The browser will ask if you want to keep the file, click "Keep" to save the installer/executable on your computer.
 - When opening the file, Windows will give you a warning, click "More info" and then "Run anyway" to run the installer/executable.
 
-If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Configuration file](/docs/configuration-file) for more information):
+If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Configuration file](/docs/0.x.x/configuration-file) for more information):
 
 ```toml
 shell = { program = "pwsh", args = ["--login"] }
