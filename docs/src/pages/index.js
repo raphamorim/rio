@@ -25,7 +25,7 @@ function HomepageHeader() {
         </Heading>
         <p className={styles.tagline}>{siteConfig.tagline}</p>
         <div className={styles.actionButtonSection}>
-          <Link to="/docs/install" className={styles.actionButton}>
+          <Link to="/docs/next/install" className={styles.actionButton}>
             <Translate>Install</Translate>
           </Link>
         </div>
