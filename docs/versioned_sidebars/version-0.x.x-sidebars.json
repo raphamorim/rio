@@ -1,0 +1,49 @@
+{
+  "docs": [
+    "command-line-interface",
+    "configuration-file",
+    "escape-sequence-support",
+    "default-colors",
+    {
+      "type": "category",
+      "label": "Features",
+      "link": {
+        "type": "doc",
+        "id": "features/index"
+      },
+      "items": [
+        "features/adaptive-theme",
+        "features/color-automation-for-navigation",
+        "features/hyperlinks",
+        "features/kitty-keyboard-protocol",
+        "features/multi-windows",
+        "features/navigation",
+        "features/rio-is-fast",
+        "features/spawn-or-fork",
+        "features/vi-mode"
+      ]
+    },
+    "frequently-asked-questions/index",
+    {
+      "type": "category",
+      "label": "Install",
+      "link": {
+        "type": "doc",
+        "id": "install/index"
+      },
+      "items": [
+        "install/build-from-source",
+        "install/freebsd",
+        "install/linux",
+        "install/macos",
+        "install/terminfo",
+        "install/using-cargo",
+        "install/webassembly",
+        "install/windows"
+      ]
+    },
+    "key-bindings",
+    "navigation",
+    "themes"
+  ]
+}
