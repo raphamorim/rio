@@ -13,7 +13,6 @@ use crate::layout::{
 };
 use crate::sugarloaf::tree::SugarTree;
 
-
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
