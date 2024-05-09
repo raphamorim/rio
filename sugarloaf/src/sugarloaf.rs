@@ -4,6 +4,7 @@ pub mod primitives;
 pub mod state;
 mod tree;
 
+use crate::components::core::image::Data;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -25,6 +26,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
+use std::path::PathBuf;
 
 #[cfg(target_arch = "wasm32")]
 pub struct Database;
@@ -225,7 +227,7 @@ impl Sugarloaf {
 
     #[inline]
     pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
-        let handle = Handle::from_path(image.path.to_owned());
+        let handle = Handle::from(Data::Path(PathBuf::from(image.path.clone())));
         self.background_image = Some(layer::types::Image::Raster {
             handle,
             bounds: Rectangle {

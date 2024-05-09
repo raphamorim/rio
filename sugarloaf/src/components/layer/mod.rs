@@ -297,7 +297,7 @@ impl LayerBrush {
 
     pub fn dimensions(&self, handle: &image::Handle) -> Size<u32> {
         let mut cache = self.raster_cache.borrow_mut();
-        let memory = cache.load(handle);
+        let memory = cache.load_mut(handle);
 
         memory.dimensions()
     }

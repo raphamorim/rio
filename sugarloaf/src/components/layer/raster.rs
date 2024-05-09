@@ -1,6 +1,5 @@
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
-use crate::components::layer::image::{Data, Handle};
 use image as image_rs;
 
 use std::collections::{HashMap, HashSet};
@@ -9,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug)]
 pub enum Memory {
     /// Image data on host
-    Host(image_rs::ImageBuffer<image_rs::Rgba<u8>, Vec<u8>>),
+    Host(image_rs::RgbaImage),
     /// Storage entry
     Device(atlas::Entry),
     /// Image not found
@@ -47,55 +46,24 @@ pub struct Cache {
     hits: HashSet<u64>,
 }
 
-/// Tries to load an image by its [`Handle`].
-pub fn load_image(handle: &Handle) -> image_rs::ImageResult<image_rs::DynamicImage> {
-    match handle.data() {
-        Data::Path(path) => {
-            let image = ::image::open(path)?;
-            Ok(image)
-        }
-        Data::Bytes(bytes) => {
-            let image = ::image::load_from_memory(bytes)?;
-            Ok(image)
-        }
-        Data::Rgba {
-            width,
-            height,
-            pixels,
-        } => {
-            if let Some(image) =
-                image_rs::ImageBuffer::from_vec(*width, *height, pixels.to_vec())
-            {
-                Ok(image_rs::DynamicImage::ImageRgba8(image))
-            } else {
-                Err(image_rs::error::ImageError::Limits(
-                    image_rs::error::LimitError::from_kind(
-                        image_rs::error::LimitErrorKind::DimensionError,
-                    ),
-                ))
-            }
-        }
-    }
-}
-
 impl Cache {
     /// Load image
-    pub fn load(
+    pub fn load_mut(
         &mut self,
         handle: &crate::components::layer::image::Handle,
     ) -> &mut Memory {
         if self.contains(handle) {
-            return self.get(handle).unwrap();
+            return self.get_mut(handle).unwrap();
         }
 
-        let memory = match load_image(handle) {
-            Ok(image) => Memory::Host(image.to_rgba8()),
+        let memory = match handle.load_image() {
+            Ok(img) => Memory::Host(img.to_rgba8()),
             Err(image_rs::error::ImageError::IoError(_)) => Memory::NotFound,
             Err(_) => Memory::Invalid,
         };
 
         self.insert(handle, memory);
-        self.get(handle).unwrap()
+        self.get_mut(handle).unwrap()
     }
 
     /// Load image and upload raster data
@@ -106,12 +74,10 @@ impl Cache {
         handle: &crate::components::layer::image::Handle,
         atlas: &mut Atlas,
     ) -> Option<&atlas::Entry> {
-        let memory = self.load(handle);
+        let memory = self.load_mut(handle);
 
-        if let Memory::Host(image) = memory {
-            let (width, height) = image.dimensions();
-
-            let entry = atlas.upload(device, encoder, width, height, image)?;
+        if let Memory::Host(img) = memory {
+            let entry = atlas.upload(device, encoder, img)?;
 
             *memory = Memory::Device(entry);
         }
@@ -142,7 +108,7 @@ impl Cache {
         self.hits.clear();
     }
 
-    fn get(
+    fn get_mut(
         &mut self,
         handle: &crate::components::layer::image::Handle,
     ) -> Option<&mut Memory> {

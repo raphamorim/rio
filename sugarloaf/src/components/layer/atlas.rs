@@ -71,10 +71,10 @@ impl Atlas {
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        width: u32,
-        height: u32,
-        data: &[u8],
+        img: &image::RgbaImage,
     ) -> Option<Entry> {
+        let width = img.width();
+        let height = img.height();
         let entry = {
             let current_size = self.layers.len();
             let entry = self.allocate(width, height)?;
@@ -103,7 +103,7 @@ impl Atlas {
             let offset = row * padded_width;
 
             padded_data[offset..offset + 4 * width as usize].copy_from_slice(
-                &data[row * 4 * width as usize..(row + 1) * 4 * width as usize],
+                &img.as_raw()[row * 4 * width as usize..(row + 1) * 4 * width as usize],
             )
         }
 

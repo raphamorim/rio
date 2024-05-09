@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::components::core::image::Handle;
+use crate::components::core::image::{Data, Handle};
 use fnv::FnvHashMap;
 
 pub struct SugarGraphicEntry {
@@ -39,11 +39,7 @@ impl SugarloafGraphics {
 
     #[inline]
     pub fn add(&mut self, graphic_data: SugarGraphicData) {
-        let handle = Handle::from_pixels(
-            graphic_data.width as u32,
-            graphic_data.height as u32,
-            graphic_data.pixels.clone(),
-        );
+        let handle = Handle::new(Data::Image(graphic_data.data));
         self.inner
             .entry(graphic_data.id)
             .or_insert(SugarGraphicEntry {
@@ -80,61 +76,28 @@ pub enum ColorType {
 }
 
 /// Defines a single graphic read from the PTY.
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct SugarGraphicData {
     /// Graphics identifier.
     pub id: SugarGraphicId,
 
-    /// Width, in pixels, of the graphic.
-    pub width: usize,
-
-    /// Height, in pixels, of the graphic.
-    pub height: usize,
-
-    /// Color type of the pixels.
-    pub color_type: ColorType,
-
-    /// Pixels data.
-    pub pixels: Vec<u8>,
-
-    /// Indicate if there are no transparent pixels.
-    pub is_opaque: bool,
+    /// The actual image data
+    pub data: image::DynamicImage,
 }
 
 impl SugarGraphicData {
-    /// Check if the image may contain transparent pixels. If it returns
-    /// `false`, it is guaranteed that there are no transparent pixels.
-    #[inline]
-    pub fn maybe_transparent(&self) -> bool {
-        !self.is_opaque && self.color_type == ColorType::Rgba
-    }
-
     /// Check if all pixels under a region are opaque.
     ///
     /// If the region exceeds the boundaries of the image it is considered as
     /// not filled.
     pub fn is_filled(&self, x: usize, y: usize, width: usize, height: usize) -> bool {
+        let image_width = self.data.width() as usize;
+        let image_height = self.data.height() as usize;
+
         // If there are pixels outside the picture we assume that the region is
         // not filled.
-        if x + width >= self.width || y + height >= self.height {
+        if x + width >= image_width || y + height >= image_height {
             return false;
-        }
-
-        // Don't check actual pixels if the image does not contain an alpha
-        // channel.
-        if !self.maybe_transparent() {
-            return true;
-        }
-
-        debug_assert!(self.color_type == ColorType::Rgba);
-
-        for offset_y in y..y + height {
-            let offset = offset_y * self.width * 4;
-            let row = &self.pixels[offset..offset + width * 4];
-
-            if row.chunks_exact(4).any(|pixel| pixel.last() != Some(&255)) {
-                return false;
-            }
         }
 
         true
