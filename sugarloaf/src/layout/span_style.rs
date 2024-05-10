@@ -12,6 +12,9 @@
 use crate::layout::builder_data::FontSettingKey;
 use crate::layout::builder_data::EMPTY_FONT_SETTINGS;
 use crate::sugarloaf::primitives::SugarCursor;
+use crate::Sugar;
+use crate::SugarDecoration;
+use crate::SugarStyle;
 pub use swash::text::Language;
 use swash::{Setting, Stretch, Style, Weight};
 
@@ -108,6 +111,66 @@ impl FragmentStyle {
             underline_size: None,
             text_transform: TextTransform::None,
         }
+    }
+}
+
+impl From<&Sugar> for FragmentStyle {
+    fn from(sugar: &Sugar) -> Self {
+        let mut style = FragmentStyle::default();
+
+        match sugar.style {
+            SugarStyle::BoldItalic => {
+                style.font_attrs.1 = Weight::BOLD;
+                style.font_attrs.2 = Style::Italic;
+            }
+            SugarStyle::Bold => {
+                style.font_attrs.1 = Weight::BOLD;
+            }
+            SugarStyle::Italic => {
+                style.font_attrs.2 = Style::Italic;
+            }
+            _ => {}
+        }
+
+        let mut has_underline_cursor = false;
+        match sugar.cursor {
+            SugarCursor::Underline(cursor_color) => {
+                style.underline = true;
+                style.underline_offset = Some(-1.);
+                style.underline_color = Some(cursor_color);
+                style.underline_size = Some(-1.);
+
+                has_underline_cursor = true;
+            }
+            SugarCursor::Block(cursor_color) => {
+                style.cursor = SugarCursor::Block(cursor_color);
+            }
+            SugarCursor::Caret(cursor_color) => {
+                style.cursor = SugarCursor::Caret(cursor_color);
+            }
+            _ => {}
+        }
+
+        match &sugar.decoration {
+            SugarDecoration::Underline => {
+                if !has_underline_cursor {
+                    style.underline = true;
+                    style.underline_offset = Some(-2.);
+                    style.underline_size = Some(1.);
+                }
+            }
+            SugarDecoration::Strikethrough => {
+                style.underline = true;
+                style.underline_offset = Some(style.font_size / 2.);
+                style.underline_size = Some(2.);
+            }
+            _ => {}
+        }
+
+        style.color = sugar.foreground_color;
+        style.background_color = Some(sugar.background_color);
+
+        style
     }
 }
 
