@@ -369,8 +369,7 @@ impl Route {
 
         if (lmb_pressed || rmb_pressed) && (self.modifiers.shift || !self.mouse_mode()) {
             self.update_selection(point, square_side);
-            // self.ctx.schedule_render(60);
-            self.render();
+            self.ctx.schedule_render(60);
         } else if square_changed && self.has_mouse_motion_and_drag() {
             if lmb_pressed {
                 self.mouse_report(32, true);
@@ -466,7 +465,7 @@ impl Route {
             }
             self.process_mouse_bindings(button);
 
-            // self.render();
+            self.render();
         } else {
             if !self.modifiers.shift && self.mouse_mode() {
                 let code = match button {

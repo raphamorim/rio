@@ -116,6 +116,7 @@ extern "C" {
     /* Getting a Run Loop */
     pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
     pub fn CFRunLoopGetMain() -> CFRunLoopRef;
+    pub fn CFAbsoluteTimeGetCurrent() -> CFAbsoluteTime;
 
     /* Starting and Stopping a Run Loop */
     pub fn CFRunLoopRun();

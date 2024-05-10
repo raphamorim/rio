@@ -154,7 +154,7 @@ impl EventHandler for EventHandlerInstance {
         }
     }
 
-    fn process(&mut self) {
+    fn process(&mut self) -> EventHandlerControl {
         if let Ok(event) = self.event_loop.receiver.try_recv() {
             let window_id = event.window_id;
             match event.payload {
@@ -319,7 +319,10 @@ impl EventHandler for EventHandlerInstance {
             };
         } else if let Some(scheduler) = &mut self.scheduler {
             scheduler.update();
+            return EventHandlerControl::Wait;
         }
+
+        EventHandlerControl::Running
     }
 
     fn focus_event(&mut self, window_id: u16, focused: bool) {

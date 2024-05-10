@@ -10,12 +10,12 @@
 
 #![cfg(target_os = "macos")]
 
-mod events;
+pub mod app;
 pub mod conf;
 mod event;
 pub mod event_loop;
+mod events;
 pub mod native;
-pub mod app;
 mod resources;
 pub mod sync;
 pub use event::*;
