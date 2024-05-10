@@ -1,7 +1,7 @@
 pub enum WindowEvent {
-	Focus(bool),
+    Focus(bool),
 }
 
 pub enum QueuedEvent {
-	Window(u16, WindowEvent),
+    Window(u16, WindowEvent),
 }
