@@ -7,12 +7,11 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::font::{Style, Weight};
+
 use crate::layout::{
     Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
 };
 use crate::sugarloaf::tree::SugarTree;
-use crate::{SugarCursor, SugarDecoration, SugarStyle};
 
 pub struct Advanced {
     pub render_data: RenderData,
@@ -98,72 +97,19 @@ impl Advanced {
         }
 
         let line = &tree.lines[line_number];
-
-        for i in 0..line.len() {
-            let mut style = FragmentStyle {
+        for sugar in line.inner() {
+            let style = FragmentStyle {
                 font_size: tree.layout.font_size,
-                ..Default::default()
+                ..FragmentStyle::from(sugar)
             };
 
-            match line[i].style {
-                SugarStyle::BoldItalic => {
-                    style.font_attrs.1 = Weight::BOLD;
-                    style.font_attrs.2 = Style::Italic;
-                }
-                SugarStyle::Bold => {
-                    style.font_attrs.1 = Weight::BOLD;
-                }
-                SugarStyle::Italic => {
-                    style.font_attrs.2 = Style::Italic;
-                }
-                _ => {}
-            }
-
-            let mut has_underline_cursor = false;
-            match line[i].cursor {
-                SugarCursor::Underline(cursor_color) => {
-                    style.underline = true;
-                    style.underline_offset = Some(-1.);
-                    style.underline_color = Some(cursor_color);
-                    style.underline_size = Some(-1.);
-
-                    has_underline_cursor = true;
-                }
-                SugarCursor::Block(cursor_color) => {
-                    style.cursor = SugarCursor::Block(cursor_color);
-                }
-                SugarCursor::Caret(cursor_color) => {
-                    style.cursor = SugarCursor::Caret(cursor_color);
-                }
-                _ => {}
-            }
-
-            match &line[i].decoration {
-                SugarDecoration::Underline => {
-                    if !has_underline_cursor {
-                        style.underline = true;
-                        style.underline_offset = Some(-2.);
-                        style.underline_size = Some(1.);
-                    }
-                }
-                SugarDecoration::Strikethrough => {
-                    style.underline = true;
-                    style.underline_offset = Some(style.font_size / 2.);
-                    style.underline_size = Some(2.);
-                }
-                _ => {}
-            }
-
-            style.color = line[i].foreground_color;
-            style.background_color = Some(line[i].background_color);
-
-            if line[i].repeated > 0 {
-                let text = std::iter::repeat(line[i].content)
-                    .take(line[i].repeated + 1)
+            if sugar.repeated > 0 {
+                let text = std::iter::repeat(sugar.content)
+                    .take(sugar.repeated + 1)
                     .collect::<String>();
                 self.content_builder.add_text(&text, style);
             } else {
-                self.content_builder.add_char(line[i].content, style);
+                self.content_builder.add_char(sugar.content, style);
             }
         }
 

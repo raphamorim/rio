@@ -340,6 +340,11 @@ impl SugarLine {
         self.inner.len()
     }
 
+    #[inline]
+    pub fn inner(&self) -> &Vec<Sugar> {
+        &self.inner
+    }
+
     // #[inline]
     // fn compute_hash(&mut self) {
     // 00000000000000
