@@ -307,7 +307,7 @@ pub enum Appearance {
 #[derive(PartialEq)]
 pub enum EventHandlerControl {
     Wait,
-    WaitUntil(std::time::Duration),
+    WaitUntil(std::time::Instant),
     Running,
 }
 
