@@ -155,7 +155,11 @@ impl EventHandler for EventHandlerInstance {
     }
 
     fn process(&mut self) -> EventHandlerControl {
-        if let Ok(event) = self.event_loop.receiver.try_recv() {
+        if let Ok(event) = self
+            .event_loop
+            .receiver
+            .recv_timeout(Duration::from_millis(30))
+        {
             let window_id = event.window_id;
             match event.payload {
                 RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -640,8 +644,8 @@ pub async fn run(
     config: rio_backend::config::Config,
     _config_error: Option<rio_backend::config::ConfigError>,
 ) -> Result<(), Box<dyn Error>> {
-    App::new(Box::new(EventHandlerInstance::new(config)));
+    let app = App::new(Box::new(EventHandlerInstance::new(config)));
     menu::create_menu();
-    App::run();
+    app.run();
     Ok(())
 }
