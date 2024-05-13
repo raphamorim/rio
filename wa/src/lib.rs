@@ -220,6 +220,12 @@ pub enum CursorIcon {
     NWSEResize,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum Target {
+    Game,
+    Application,
+}
+
 #[cfg(target_os = "macos")]
 pub type App = native::macos::App;
 #[cfg(target_os = "macos")]
