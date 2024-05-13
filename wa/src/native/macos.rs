@@ -158,6 +158,7 @@ pub struct MacosDisplay {
     window: ObjcId,
     view: ObjcId,
     app: ObjcId,
+    renderer: *mut ObjcId,
     fullscreen: bool,
     id: u16,
     ime: ImeState,
@@ -406,14 +407,17 @@ extern "C" fn application_did_finish_launching(
 ) {
     log::debug!("application_did_finish_launching");
     unsafe {
+        let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
         (*this).set_ivar("launched", YES);
-    }
 
-    if let Some(app) = NATIVE_APP.get() {
-        let delegate = unsafe { &**app.app_delegate };
-        if let Some(app_state) = get_app_state(delegate) {
-            app_state.waker.borrow_mut().start();
+        if let Some(app) = NATIVE_APP.get() {
+            let delegate = &**app.app_delegate;
+            if let Some(app_state) = get_app_state(delegate) {
+                app_state.waker.borrow_mut().start();
+            }
         }
+
+        let _: () = msg_send![pool, release];
     }
 }
 
@@ -593,6 +597,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     fn fire_mouse_event(this: &Object, event: ObjcId, down: bool, btn: MouseButton) {
+        log::info!("fire_mouse_event");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let point: NSPoint = msg_send!(event, locationInWindow);
@@ -1510,8 +1515,13 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     log::info!("draw_rect");
+    initialize_view(this);
+}
+
+#[inline]
+fn initialize_view(this: &Object) {
     if let Some(payload) = get_display_payload(this) {
-        if !payload.has_initialized && payload.has_focus {
+        if !payload.has_initialized {
             let id = payload.id;
 
             unsafe { payload.update_dimensions() };
@@ -1552,8 +1562,14 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     }
 }
 
-pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
-    let superclass = class!(MTKView);
+pub fn define_metal_view_class(
+    target: crate::Target,
+    view_class_name: &str,
+) -> *const Class {
+    let superclass = match target {
+        crate::Target::Application => class!(NSView),
+        crate::Target::Game => class!(MTKView),
+    };
     let mut decl = ClassDecl::new(view_class_name, superclass).unwrap();
 
     extern "C" fn display_layer(this: &mut Object, sel: Sel, _layer_id: ObjcId) {
@@ -1601,13 +1617,14 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
     // }
 
     extern "C" fn dealloc(this: &Object, _sel: Sel) {
+        // TODO: dealloc MTKView if target is game
         unsafe {
-            let superclass = class!(MTKView);
+            let superclass = class!(NSView); // MTKView
             let () = msg_send![super(this, superclass), dealloc];
         }
     }
 
-    extern "C" fn make_backing_layer(_this: &mut Object, _: Sel) -> ObjcId {
+    extern "C" fn make_backing_layer(this: &mut Object, _: Sel) -> ObjcId {
         log::trace!("make_backing_layer");
         let class = class!(CAMetalLayer);
         unsafe {
@@ -1615,6 +1632,19 @@ pub fn define_metal_view_class(view_class_name: &str) -> *const Class {
             let () = msg_send![layer, setDelegate: class];
             let () = msg_send![layer, setContentsScale: 1.0];
             let () = msg_send![layer, setOpaque: NO];
+            if let Some(payload) = get_display_payload(this) {
+                *payload.renderer = layer;
+            }
+
+            let mtl_device_obj = MTLCreateSystemDefaultDevice();
+            let () = msg_send![layer, setDevice: mtl_device_obj];
+            let () = msg_send![layer, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
+            let () = msg_send![
+                layer,
+                setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
+            ];
+            let () = msg_send![layer, setSampleCount: 1];
+            let () = msg_send![layer, setWantsLayer: YES];
             layer
         }
     }
@@ -1711,24 +1741,38 @@ struct View {
 }
 
 impl View {
-    unsafe fn create_metal_view(_: NSRect, sample_count: i32, class_name: &str) -> Self {
-        let mtl_device_obj = MTLCreateSystemDefaultDevice();
-        let view_class = define_metal_view_class(class_name);
+    unsafe fn create_metal_view(
+        target: crate::Target,
+        _: NSRect,
+        sample_count: i32,
+        class_name: &str,
+    ) -> Self {
+        let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
+        let view_class = define_metal_view_class(target, class_name);
         let view: ObjcId = msg_send![view_class, alloc];
         let view: StrongPtr = StrongPtr::new(msg_send![view, init]);
 
-        let () = msg_send![*view, setDevice: mtl_device_obj];
-        let () = msg_send![*view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
-        let () = msg_send![
-            *view,
-            setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
-        ];
-        let () = msg_send![*view, setSampleCount: sample_count];
-        let () = msg_send![*view, setWantsLayer: YES];
-        let _: () = msg_send![
-            *view,
-            setLayerContentsRedrawPolicy: NSViewLayerContentsRedrawDuringViewResize
-        ];
+        match target {
+            crate::Target::Game => {
+                let mtl_device_obj = MTLCreateSystemDefaultDevice();
+                let () = msg_send![*view, setDevice: mtl_device_obj];
+                let () =
+                    msg_send![*view, setColorPixelFormat: MTLPixelFormat::BGRA8Unorm];
+                let () = msg_send![
+                    *view,
+                    setDepthStencilPixelFormat: MTLPixelFormat::Depth32Float_Stencil8
+                ];
+                let () = msg_send![*view, setSampleCount: sample_count];
+            }
+            crate::Target::Application => {
+                let _: () = msg_send![
+                    *view,
+                    setLayerContentsRedrawPolicy: NSViewLayerContentsRedrawDuringViewResize
+                ];
+            }
+        }
+
+        let () = msg_send![pool, drain];
 
         Self { inner: view }
     }
@@ -1797,28 +1841,28 @@ pub enum NSWindowTabbingMode {
 pub struct App {
     pub inner: StrongPtr,
     app_delegate: StrongPtr,
+    target: crate::Target,
 }
 
 unsafe impl Send for App {}
 unsafe impl Sync for App {}
 
 impl App {
-    pub fn new(f: Box<dyn EventHandler + 'static>) -> App {
-        crate::set_handler();
-
-        let pool: ObjcId = unsafe { msg_send![class!(NSAutoreleasePool), new] };
-        let app_delegate_class = define_app_delegate();
-        let app_delegate_instance =
-            unsafe { StrongPtr::new(msg_send![app_delegate_class, new]) };
-
-        let ns_app = unsafe {
-            StrongPtr::new(msg_send![class!(NSApplication), sharedApplication])
-        };
-        // create AppState
-        let boxed_state = AppState::new(HandlerState::Running { handler: f });
-        let boxed_state = Box::into_raw(Box::new(boxed_state));
-
+    pub fn new(target: crate::Target, f: Box<dyn EventHandler + 'static>) -> App {
         unsafe {
+            let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
+            crate::set_handler();
+
+            let app_delegate_class = define_app_delegate();
+            let app_delegate_instance =
+                StrongPtr::new(msg_send![app_delegate_class, new]);
+
+            let ns_app =
+                { StrongPtr::new(msg_send![class!(NSApplication), sharedApplication]) };
+
+            // create AppState
+            let boxed_state = AppState::new(HandlerState::Running { handler: f });
+            let boxed_state = Box::into_raw(Box::new(boxed_state));
             (**app_delegate_instance).set_ivar(
                 APP_STATE_IVAR_NAME,
                 &mut *boxed_state as *mut _ as *mut c_void,
@@ -1831,17 +1875,23 @@ impl App {
                     as i64
             ];
             let () = msg_send![*ns_app, activateIgnoringOtherApps: YES];
+
+            if target == crate::Target::Application {
+                App::configure_observer();
+            }
+
             let _: () = msg_send![pool, release];
-        };
 
-        let _ = NATIVE_APP.set(App {
-            inner: ns_app.clone(),
-            app_delegate: app_delegate_instance.clone(),
-        });
-
-        App {
-            inner: ns_app,
-            app_delegate: app_delegate_instance,
+            let _ = NATIVE_APP.set(App {
+                inner: ns_app.clone(),
+                app_delegate: app_delegate_instance.clone(),
+                target,
+            });
+            App {
+                inner: ns_app,
+                app_delegate: app_delegate_instance,
+                target,
+            }
         }
     }
 
@@ -1911,6 +1961,10 @@ impl App {
                                             _ => {}
                                         };
                                     }
+                                    WindowEvent::Initialize(view) => {
+                                        let view = unsafe { &*view };
+                                        initialize_view(view);
+                                    }
                                 },
                             }
                         }
@@ -1937,60 +1991,29 @@ impl App {
                 }
             }
             #[allow(non_upper_case_globals)]
-            kCFRunLoopBeforeWaiting => {}
+            kCFRunLoopBeforeWaiting => {
+                // println!("kCFRunLoopBeforeWaiting");
+            }
             #[allow(non_upper_case_globals)]
             kCFRunLoopExit => {
                 // println!("kCFRunLoopExit");
             }
-            _ => unreachable!(),
+            _ => {}
         }
 
-        // if let Some(handler) = HANDLER.get() {
-        //     if let Ok(mut event_handler) = handler.inner.try_borrow_mut() {
-        //         drop(handler);
-        //         event_handler.process();
-        //     }
-        // }
-
-        // if let Some(app) = NATIVE_APP.get() {
-        //     let delegate = unsafe { &**app.app_delegate };
-        //     if let Some(app_state) = get_app_state(delegate) {
-        //         let events: VecDeque<QueuedEvent> = std::mem::take(&mut *app_state.pending_events.borrow_mut());
-        //         for event in events {
-        //             match event {
-        //                 QueuedEvent::Window(window_id, event) => {
-        //                     match event {
-        //                         WindowEvent::Focus(focus) => {
-        //                             let mut this = Handler::get_mut();
-        //                             match this.state_mut() {
-        //                                 &mut HandlerState::Running { ref mut handler , .. } => {
-        //                                     handler.focus_event(window_id, focus);
-        //                                 },
-        //                                 &mut HandlerState::Waiting { ref mut handler , .. } => {
-        //                                     handler.focus_event(window_id, focus);
-        //                                 },
-        //                                 _ => {},
-        //                             };
-        //                             drop(this);
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        // let _: () = msg_send![pool, release];
     }
 
-    fn configure_observer(&self) {
+    fn configure_observer() {
         unsafe {
             let observer = CFRunLoopObserverCreate(
                 std::ptr::null(),
                 // kCFRunLoopAllActivities,
                 kCFRunLoopAfterWaiting,
                 // kCFRunLoopExit | kCFRunLoopBeforeWaiting,
-                YES, // repeated
-                // CFIndex::min_value(), // priority (less is higher)
-                CFIndex::max_value(),
+                YES,                  // repeated
+                CFIndex::min_value(), // priority (less is higher)
+                // CFIndex::max_value(),
                 App::trigger,
                 std::ptr::null_mut(),
             );
@@ -2000,27 +2023,25 @@ impl App {
     }
 
     pub fn run(&self) {
-        let pool: ObjcId = unsafe { msg_send![class!(NSAutoreleasePool), new] };
-
-        if let Some(app_handler) = get_app_handler(&Some(*self.app_delegate)) {
-            match app_handler {
-                &mut HandlerState::Running {
-                    ref mut handler, ..
-                } => {
-                    handler.start();
-                }
-                &mut HandlerState::Waiting {
-                    ref mut handler, ..
-                } => {
-                    handler.start();
-                }
-                _ => {}
-            }
-        }
-
-        self.configure_observer();
-
         unsafe {
+            let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
+
+            if let Some(app_handler) = get_app_handler(&Some(*self.app_delegate)) {
+                match app_handler {
+                    &mut HandlerState::Running {
+                        ref mut handler, ..
+                    } => {
+                        handler.start();
+                    }
+                    &mut HandlerState::Waiting {
+                        ref mut handler, ..
+                    } => {
+                        handler.start();
+                    }
+                    _ => {}
+                }
+            }
+
             let () = msg_send![*self.inner, finishLaunching];
             let () = msg_send![*self.inner, run];
             // let _: () = msg_send![pool, release];
@@ -2163,6 +2184,7 @@ impl Window {
         conf: crate::conf::Conf,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         unsafe {
+            let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
             let id = crate::get_handler().lock().next_id();
 
             crate::set_display(
@@ -2176,10 +2198,10 @@ impl Window {
                 },
             );
 
-            let app = if let Some(app) = NATIVE_APP.get() {
-                *app.app_delegate
+            let (app, target) = if let Some(app) = NATIVE_APP.get() {
+                (*app.app_delegate, app.target)
             } else {
-                std::ptr::null_mut()
+                (std::ptr::null_mut(), crate::Target::Application)
             };
 
             let mut display = MacosDisplay {
@@ -2189,6 +2211,7 @@ impl Window {
                 has_focus: true,
                 view: std::ptr::null_mut(),
                 window: std::ptr::null_mut(),
+                renderer: std::ptr::null_mut(),
                 ime: ImeState::Disabled,
                 marked_text: String::from(""),
                 fullscreen: false,
@@ -2222,8 +2245,6 @@ impl Window {
                 },
             };
 
-            let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
-
             let window: ObjcId = msg_send![class!(NSWindow), alloc];
             let window = StrongPtr::new(msg_send![
                 window,
@@ -2243,6 +2264,7 @@ impl Window {
             let () = msg_send![*window, setAcceptsMouseMovedEvents: YES];
 
             let view = View::create_metal_view(
+                target,
                 window_frame,
                 conf.sample_count,
                 format!("{VIEW_CLASS_NAME}{id}").as_str(),
@@ -2376,7 +2398,20 @@ impl Window {
                 raw_display_handle,
             };
 
-            let _: () = msg_send![pool, release];
+            let _: () = msg_send![pool, drain];
+
+            if let Some(app) = NATIVE_APP.get() {
+                let delegate = &**app.app_delegate;
+                if let Some(app_state) = get_app_state(delegate) {
+                    app_state
+                        .pending_events
+                        .borrow_mut()
+                        .push_back(QueuedEvent::Window(
+                            id,
+                            WindowEvent::Initialize(**view.as_strong_ptr()),
+                        ));
+                }
+            }
 
             Ok(window_handle)
         }

@@ -18,58 +18,9 @@ pub enum HandlerState {
     Terminated,
 }
 
-// use std::cell::{RefCell, RefMut};
-// impl Handler {
-//     pub fn get_mut() -> RefMut<'static, Handler> {
-//         // basically everything in UIKit requires the main thread, so it's pointless to use the
-//         // std::sync APIs.
-//         // must be mut because plain `static` requires `Sync`
-//         static mut APP_STATE: RefCell<Option<Handler>> = RefCell::new(None);
-
-//         let mut guard = unsafe { APP_STATE.borrow_mut() };
-//         if guard.is_none() {
-//             #[inline(never)]
-//             #[cold]
-//             fn init_guard(guard: &mut RefMut<'static, Option<Handler>>) {
-//                 **guard = Some(Handler {
-//                     state: Some(HandlerState::NotLaunched),
-//                 });
-//             }
-//             init_guard(&mut guard);
-//         }
-//         RefMut::map(guard, |state| state.as_mut().unwrap())
-//     }
-
-//     fn state(&self) -> &HandlerState {
-//         match &self.state {
-//             Some(ref st) => st,
-//             None => panic!("`HandlerState` previously failed a state transition"),
-//         }
-//     }
-
-//     pub fn state_mut(&mut self) -> &mut HandlerState {
-//         match &mut self.state {
-//             Some(ref mut st) => st,
-//             None => panic!("`HandlerState` previously failed a state transition"),
-//         }
-//     }
-
-//     pub fn set_state(&mut self, new_state: HandlerState) {
-//         self.state = Some(new_state)
-//     }
-// }
-
 pub struct EventLoopWaker {
     timer: CFRunLoopTimerRef,
-
-    /// An arbitrary instant in the past, that will trigger an immediate wake
-    /// We save this as the `next_fire_date` for consistency so we can
-    /// easily check if the next_fire_date needs updating.
     start_instant: Instant,
-
-    /// This is what the `NextFireDate` has been set to.
-    /// `None` corresponds to `waker.stop()` and `start_instant` is used
-    /// for `waker.start()`
     next_fire_date: Option<Instant>,
 }
 
@@ -114,7 +65,7 @@ impl Default for EventLoopWaker {
 impl EventLoopWaker {
     pub fn stop(&mut self) {
         if self.next_fire_date.is_some() {
-            log::info!("stop");
+            log::info!("EventLoopWaker stop");
             self.next_fire_date = None;
             unsafe { CFRunLoopTimerSetNextFireDate(self.timer, std::f64::MAX) }
         }
@@ -122,7 +73,7 @@ impl EventLoopWaker {
 
     pub fn start(&mut self) {
         if self.next_fire_date != Some(self.start_instant) {
-            log::info!("start");
+            log::info!("EventLoopWaker start");
             self.next_fire_date = Some(self.start_instant);
             unsafe { CFRunLoopTimerSetNextFireDate(self.timer, std::f64::MIN) }
         }
