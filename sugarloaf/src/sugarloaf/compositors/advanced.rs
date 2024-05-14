@@ -113,7 +113,8 @@ impl Advanced {
             }
         }
 
-        self.content_builder.set_current_line_hash(line.hash_key());
+        self.content_builder
+            .set_current_line_hash(line.hash.unwrap());
         self.content_builder.break_line();
     }
 }
