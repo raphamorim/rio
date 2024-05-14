@@ -221,8 +221,26 @@ impl Route {
         if let Some(image) = background_image {
             sugarloaf.set_background_image(&image);
         }
+
+        // This is quite hacky and sugarloaf should provide a better
+        // approach for it soon, but basically the idea is
+        // resize then render to compute font dimensions and then
+        // update the terminal properties that will lead to a second
+        // render by wakeup event.
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
         sugarloaf.render();
+        let layout = sugarloaf.layout();
+        for created_ctx in context_manager.contexts() {
+            let mut terminal = created_ctx.terminal.lock();
+            terminal.resize::<SugarloafLayout>(layout);
+            drop(terminal);
+            let _ = created_ctx.messenger.send_resize(
+                layout.width as u16,
+                layout.height as u16,
+                layout.columns as u16,
+                layout.lines as u16,
+            );
+        }
 
         Ok(Route {
             is_focused: true,
