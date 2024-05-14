@@ -12,9 +12,9 @@
 
 | Name | Details |
 | --- | --- |
-| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/macos) |
-| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/linux) |
-| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows) |
+| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/macos) |
+| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/linux) |
+| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
 ## Demo Gallery
