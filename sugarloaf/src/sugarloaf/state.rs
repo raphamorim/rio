@@ -11,7 +11,7 @@ use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 
 pub struct SugarState {
-    pub current: SugarTree,
+    pub current: Box<SugarTree>,
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
@@ -35,7 +35,7 @@ impl SugarState {
             current_line: 0,
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
-            current: SugarTree::default(),
+            current: Box::<SugarTree>::default(),
             next,
             dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
@@ -74,6 +74,7 @@ impl SugarState {
 
     #[inline]
     pub fn compute_line_end(&mut self) {
+        self.next.lines[self.current_line].mark_hash_key();
         self.compositors
             .advanced
             .update_tree_with_new_line(self.current_line, &self.next);
@@ -244,7 +245,7 @@ impl SugarState {
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
         if self.current_has_empty_dimensions() {
-            std::mem::swap(&mut self.current, &mut self.next);
+            self.current = Box::new(std::mem::take(&mut self.next));
 
             self.compositors
                 .advanced
@@ -310,7 +311,7 @@ impl SugarState {
         log::info!("state compute_changes result: {:?}", self.latest_change);
 
         if should_update {
-            std::mem::swap(&mut self.current, &mut self.next);
+            self.current = Box::new(std::mem::take(&mut self.next));
 
             if should_compute_dimensions {
                 self.compositors

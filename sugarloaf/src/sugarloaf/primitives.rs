@@ -199,7 +199,7 @@ pub struct SugarBlock {
 
 /// Contains a visual representation that is hashable and comparable
 /// It often represents a line of text but can also be other elements like bitmap
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SugarLine {
     // hash: u64,
     // Sized arrays can take up to half of time to execute
@@ -212,6 +212,7 @@ pub struct SugarLine {
     last_non_default: usize,
     non_default_count: usize,
     default_sugar: Sugar,
+    pub hash: Option<u64>,
 }
 
 impl Hash for SugarLine {
@@ -252,21 +253,6 @@ impl PartialEq for SugarLine {
     }
 }
 
-impl Default for SugarLine {
-    fn default() -> Self {
-        Self {
-            // hash: 00000000000000,
-            raw_len: 0,
-            last_non_default: 0,
-            first_non_default: 0,
-            non_default_count: 0,
-            inner: Vec::with_capacity(600),
-            default_sugar: Sugar::default(),
-            // len: 0,
-        }
-    }
-}
-
 impl SugarLine {
     // #[inline]
     // pub fn insert(&mut self, sugar: &Sugar) {
@@ -296,10 +282,24 @@ impl SugarLine {
     // }
 
     #[inline]
-    pub fn hash_key(&self) -> u64 {
+    fn build_hash_key(&self) -> u64 {
         let mut s = DefaultHasher::new();
         self.hash(&mut s);
         s.finish()
+    }
+
+    #[inline]
+    pub fn mark_hash_key(&mut self) {
+        self.hash = Some(self.build_hash_key());
+    }
+
+    #[inline]
+    pub fn hash_key(&self) -> u64 {
+        if let Some(hash) = self.hash {
+            hash
+        } else {
+            self.build_hash_key()
+        }
     }
 
     #[inline]

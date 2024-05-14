@@ -59,8 +59,8 @@ pub struct SugarTree {
 impl Default for SugarTree {
     fn default() -> Self {
         Self {
-            lines: Vec::with_capacity(400),
-            blocks: Vec::with_capacity(20),
+            lines: Vec::new(),
+            blocks: Vec::with_capacity(14),
             layout: SugarloafLayout::default(),
         }
     }
