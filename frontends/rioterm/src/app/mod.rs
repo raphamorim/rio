@@ -58,7 +58,8 @@ pub fn create_window(
     };
 
     let event_proxy = EventProxy::new(event_loop_proxy);
-    let created_window = futures::executor::block_on(Window::new(wa_conf))?;
+    let (created_window, create_window_dimensions) =
+        futures::executor::block_on(Window::new(wa_conf))?;
 
     if config_error.is_some() {
         event_proxy.send_event(
@@ -76,7 +77,11 @@ pub fn create_window(
         created_window.raw_display_handle,
         config.clone(),
         font_library.clone(),
-        (config.window.width, config.window.height, 1.0),
+        (
+            create_window_dimensions.0,
+            create_window_dimensions.1,
+            create_window_dimensions.2,
+        ),
         open_file_url,
     )?;
 

@@ -1515,11 +1515,6 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     log::info!("draw_rect");
-    initialize_view(this);
-}
-
-#[inline]
-fn initialize_view(this: &Object) {
     if let Some(payload) = get_display_payload(this) {
         if !payload.has_initialized {
             let id = payload.id;
@@ -1560,6 +1555,23 @@ fn initialize_view(this: &Object) {
             }
         }
     }
+}
+
+#[inline]
+fn initialize_view(this: &Object) -> (i32, i32, f32) {
+    if let Some(payload) = get_display_payload(this) {
+        let id = payload.id;
+
+        unsafe { payload.update_dimensions() };
+
+        let d = get_handler().lock();
+        let d = d.get(id).unwrap();
+
+        return (d.screen_width, d.screen_height, d.dpi_scale);
+    }
+
+    // TODO: Use constants for defaults
+    (800, 600, 1.0)
 }
 
 pub fn define_metal_view_class(
@@ -1961,10 +1973,6 @@ impl App {
                                             _ => {}
                                         };
                                     }
-                                    WindowEvent::Initialize(view) => {
-                                        let view = unsafe { &*view };
-                                        initialize_view(view);
-                                    }
                                 },
                             }
                         }
@@ -2182,7 +2190,7 @@ pub struct Window {
 impl Window {
     pub async fn new(
         conf: crate::conf::Conf,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<(Self, (i32, i32, f32)), Box<dyn std::error::Error>> {
         unsafe {
             let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
             let id = crate::get_handler().lock().next_id();
@@ -2400,20 +2408,8 @@ impl Window {
 
             let _: () = msg_send![pool, drain];
 
-            if let Some(app) = NATIVE_APP.get() {
-                let delegate = &**app.app_delegate;
-                if let Some(app_state) = get_app_state(delegate) {
-                    app_state
-                        .pending_events
-                        .borrow_mut()
-                        .push_back(QueuedEvent::Window(
-                            id,
-                            WindowEvent::Initialize(**view.as_strong_ptr()),
-                        ));
-                }
-            }
-
-            Ok(window_handle)
+            let dimensions = initialize_view(window_handle.ns_view.as_ref().unwrap());
+            Ok((window_handle, dimensions))
         }
     }
 }
