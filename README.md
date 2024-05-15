@@ -1,6 +1,6 @@
 # Rio terminal
 
-🚧 ⚠️ Currently, Rio is in the process of a major rewrite to 1.0.0 to bring more features and fix known issues of 0.x.0 versions.
+🚧 ⚠️ Currently, Rio is in the process of a major rewrite to 0.1.x to bring more features and fix known issues of 0.0.x versions.
 
 > tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
 
@@ -12,9 +12,9 @@
 
 | Name | Details |
 | --- | --- |
-| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/macos) |
-| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/linux) |
-| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.x.x/install/windows) |
+| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/macos) |
+| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/linux) |
+| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
 ## Demo Gallery

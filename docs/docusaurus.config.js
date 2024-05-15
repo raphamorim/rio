@@ -70,16 +70,16 @@ const config = {
           disableVersioning: false,
           includeCurrentVersion: true,
           lastVersion: undefined,
-          onlyIncludeVersions: ['current', '0.x.x'],
+          onlyIncludeVersions: ['current', '0.0.x'],
           versions: {
             current: {
               label: '1.0.0 (unreleased)',
               path: 'next',
               banner: 'none',
             },
-            '0.x.x': {
-              label: '0.x.x',
-              path: '0.x.x',
+            '0.0.x': {
+              label: '0.0.x',
+              path: '0.0.x',
               banner: 'none',
             },
           },
