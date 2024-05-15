@@ -9,7 +9,7 @@ By default you can launch Vi mode by using `alt` + `shift` + `space`.
 
 ![Demo Vi mode](/assets/features/demo-vi-mode.gif)
 
-Below you can see the list of all default key bindings related to Vi mode. If you don't like of any specified key binding you can always turn off or modify (check [key bindings documentation section](/docs/0.x.x/key-bindings) for more information).
+Below you can see the list of all default key bindings related to Vi mode. If you don't like of any specified key binding you can always turn off or modify (check [key bindings documentation section](/docs/0.0.x/key-bindings) for more information).
 
 | Trigger                   | Action                     | Condition            |
 | :------------------------ | :------------------------- | :------------------- |

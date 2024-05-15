@@ -7,4 +7,4 @@ In POSIX-based systems, Rio spawn processes instead of forking due to some compa
 
 However you can also switch from spawn to fork, forking a process is faster than spawning a process.
 
-See how to configure it in the advanced section [here](/docs/0.x.x/configuration-file).
+See how to configure it in the advanced section [here](/docs/0.0.x/configuration-file).

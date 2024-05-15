@@ -1,5 +1,4 @@
 max_width = 90
-newline_style = "Unix"
 tab_spaces = 4
 hard_tabs = false
 use_small_heuristics = "Default"
