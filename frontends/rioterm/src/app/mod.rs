@@ -95,9 +95,10 @@ pub fn create_window(
 struct EventHandlerInstance {
     config: Rc<rio_backend::config::Config>,
     font_library: FontLibrary,
-    scheduler: Option<Scheduler>,
+    scheduler: Scheduler,
     routes: HashMap<u16, Router>,
-    event_loop: EventLoop<rio_backend::event::EventPayload>,
+    event_loop: EventLoop<EventPayload>,
+    event_loop_proxy: EventLoopProxy<EventPayload>,
     #[cfg(target_os = "macos")]
     last_tab_group: Option<u64>,
 }
@@ -116,10 +117,13 @@ impl EventHandlerInstance {
         let config = Rc::new(config);
         let event_loop = EventLoop::<rio_backend::event::EventPayload>::build()
             .expect("expected event loop to be created");
+        let event_loop_proxy = event_loop.create_proxy();
+        let scheduler = Scheduler::new(event_loop_proxy.clone());
         Self {
             routes: HashMap::default(),
             event_loop,
-            scheduler: None,
+            event_loop_proxy,
+            scheduler,
             font_library,
             config,
             #[cfg(target_os = "macos")]
@@ -131,7 +135,7 @@ impl EventHandlerInstance {
 impl EventHandler for EventHandlerInstance {
     fn create_window(&mut self) {
         if let Ok(router) = create_window(
-            self.event_loop.create_proxy(),
+            self.event_loop_proxy.clone(),
             &self.config,
             &None,
             self.font_library.clone(),
@@ -144,7 +148,7 @@ impl EventHandler for EventHandlerInstance {
 
     fn create_tab(&mut self, open_file_url: Option<&str>) {
         if let Ok(router) = create_window(
-            self.event_loop.create_proxy(),
+            self.event_loop_proxy.clone(),
             &self.config,
             &None,
             self.font_library.clone(),
@@ -182,7 +186,7 @@ impl EventHandler for EventHandlerInstance {
                         };
 
                         if let Ok(router) = create_window(
-                            self.event_loop.create_proxy(),
+                            self.event_loop_proxy.clone(),
                             &self.config,
                             &None,
                             self.font_library.clone(),
@@ -197,7 +201,7 @@ impl EventHandler for EventHandlerInstance {
                 RioEventType::Rio(RioEvent::CreateNativeTab(_)) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         if let Ok(router) = create_window(
-                            self.event_loop.create_proxy(),
+                            self.event_loop_proxy.clone(),
                             &self.config,
                             &None,
                             self.font_library.clone(),
@@ -309,25 +313,29 @@ impl EventHandler for EventHandlerInstance {
                     let event =
                         EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
 
-                    if let Some(scheduler) = &mut self.scheduler {
-                        if !scheduler.scheduled(timer_id) {
-                            scheduler.schedule(
-                                event,
-                                Duration::from_millis(millis),
-                                false,
-                                timer_id,
-                            );
-                        }
+                    if !self.scheduler.scheduled(timer_id) {
+                        self.scheduler.schedule(
+                            event,
+                            Duration::from_millis(millis),
+                            false,
+                            timer_id,
+                        );
                     }
                 }
                 _ => {}
             };
-        } else if let Some(scheduler) = &mut self.scheduler {
-            scheduler.update();
-            return EventHandlerControl::Wait;
+        } else {
+            // Update the scheduler after event processing to ensure
+            // the event loop deadline is as accurate as possible.
+            let control_flow = match self.scheduler.update() {
+                Some(instant) => EventHandlerControl::WaitUntil(instant),
+                None => EventHandlerControl::Wait,
+            };
+
+            return control_flow;
         }
 
-        EventHandlerControl::Running
+        EventHandlerControl::Wait
     }
 
     fn focus_event(&mut self, window_id: u16, focused: bool) {
@@ -411,9 +419,8 @@ impl EventHandler for EventHandlerInstance {
             if current.route.has_key_wait(keycode) {
                 if current.route.path != RoutePath::Terminal {
                     // Scheduler must be cleaned after leave the terminal route
-                    if let Some(scheduler) = &mut self.scheduler {
-                        scheduler.unschedule(TimerId::new(Topic::Render, window_id));
-                    }
+                    self.scheduler
+                        .unschedule(TimerId::new(Topic::Render, window_id));
                 }
 
                 return;
@@ -615,7 +622,6 @@ impl EventHandler for EventHandlerInstance {
     fn start(&mut self) {
         let proxy = self.event_loop.create_proxy();
 
-        self.scheduler = Some(Scheduler::new(proxy.clone()));
         self.last_tab_group = if self.config.navigation.is_native() {
             Some(0)
         } else {

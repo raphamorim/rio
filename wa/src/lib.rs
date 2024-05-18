@@ -14,7 +14,6 @@ pub mod app;
 pub mod conf;
 mod event;
 pub mod event_loop;
-mod events;
 pub mod native;
 mod resources;
 pub mod sync;

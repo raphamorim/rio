@@ -1,3 +1,11 @@
+// Copyright (c) 2024-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// A lot of this file has been originally retired from https://github.com/rust-windowing/winit/blob/ab33fb8eda45f9a23587465d787a70a309c67ec4/src/event_loop.rs licensed under MIT
+// https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 use crate::native::apple::frameworks::{
     kCFRunLoopCommonModes, CFIndex, CFRelease, CFRunLoopAddSource, CFRunLoopGetMain,
     CFRunLoopSourceContext, CFRunLoopSourceCreate, CFRunLoopSourceRef,

@@ -11,7 +11,7 @@
 #![allow(clippy::match_ref_pats)]
 
 use crate::app::{EventLoopWaker, HandlerState};
-use crate::events::{QueuedEvent, WindowEvent};
+use crate::event::{QueuedEvent, WindowEvent};
 use crate::native::apple::menu::{KeyAssignment, Menu, MenuItem, RepresentedItem};
 use crate::native::macos::NSEventMask::NSAnyEventMask;
 use crate::native::macos::NSEventType::NSApplicationDefined;
