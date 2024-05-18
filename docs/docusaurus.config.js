@@ -115,7 +115,11 @@ const config = {
         },
         items: [
           { to: '/docs/next/install', label: 'Install', position: 'left' },
-          { to: '/docs/next/configuration-file', label: 'Config', position: 'left' },
+          {
+            to: '/docs/next/configuration-file',
+            label: 'Config',
+            position: 'left',
+          },
           { to: '/docs/next/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
