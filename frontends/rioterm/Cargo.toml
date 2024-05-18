@@ -21,7 +21,7 @@ wgpu = { workspace = true }
 rio-backend = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-bitflags = "2.4.1"
+bitflags = { workspace = true }
 futures = "0.3.29"
 corcovado = { workspace = true }
 regex = { workspace = true }

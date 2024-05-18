@@ -19,7 +19,7 @@ log = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 toml = "0.8.10"
 base64 = "0.21.7"
-bitflags = "2.4.2"
+bitflags = { workspace = true }
 bytemuck = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
