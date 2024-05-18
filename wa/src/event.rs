@@ -304,7 +304,7 @@ pub enum Appearance {
     DarkHighContrast,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum EventHandlerControl {
     Wait,
     WaitUntil(std::time::Instant),
@@ -425,4 +425,12 @@ pub trait EventHandler {
         _drag_state: DragState,
     ) {
     }
+}
+
+pub enum WindowEvent {
+    Focus(bool),
+}
+
+pub enum QueuedEvent {
+    Window(u16, WindowEvent),
 }
