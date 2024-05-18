@@ -51,7 +51,8 @@ const MENTIONS = [
     username: 'ferfabricio',
     quote: (
       <>
-        Eu comecei a usar o Rio term faz uns dias e ta sendo uma experiência muito bacana! parabéns @raphamorims
+        Eu comecei a usar o Rio term faz uns dias e ta sendo uma experiência
+        muito bacana! parabéns @raphamorims
       </>
     ),
   },

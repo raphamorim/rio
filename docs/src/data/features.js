@@ -71,7 +71,8 @@ const FEATURES = [
     Icon: FontLigatures,
     description: (
       <Translate id="home.features.font-ligatures.description">
-        Rio provide font ligatures support as a way to improve readability of common expressions or operators.
+        Rio provide font ligatures support as a way to improve readability of
+        common expressions or operators.
       </Translate>
     ),
   },
