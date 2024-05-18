@@ -53,6 +53,7 @@ wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3"
 env_logger = "0.10"
 console_log = "0.2"
+bitflags = "2.5.0"
 console_error_panic_hook = "0.1.7"
 winit = { version = "0.30.0", default-features = false, features = ["rwh_06"] }
 
