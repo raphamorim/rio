@@ -45,7 +45,6 @@ mod awakener;
 mod eventedfd;
 mod io;
 mod ready;
-mod uio;
 
 #[cfg(feature = "with-deprecated")]
 mod uds;

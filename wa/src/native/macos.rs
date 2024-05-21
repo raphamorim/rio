@@ -112,16 +112,6 @@ pub type NSInteger = libc::c_long;
 #[cfg(target_pointer_width = "64")]
 pub type NSUInteger = libc::c_ulong;
 
-#[derive(Debug)]
-#[repr(C)]
-struct NSRangePointer(*mut NSRange);
-
-unsafe impl objc::Encode for NSRangePointer {
-    fn encode() -> objc::Encoding {
-        unsafe { objc::Encoding::from_str(&format!("^{}", NSRange::encode().as_str())) }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 enum ImeState {
     // The IME events are disabled, so only `ReceivedCharacter` is being sent to the user.
@@ -1797,31 +1787,6 @@ impl View {
     #[inline]
     pub fn is_null(&self) -> bool {
         self.inner.is_null()
-    }
-}
-
-struct MacosClipboard;
-impl crate::native::Clipboard for MacosClipboard {
-    fn get(&mut self) -> Option<String> {
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let content: ObjcId =
-                msg_send![pasteboard, stringForType: NSStringPboardType];
-            let string = nsstring_to_string(content);
-            if string.is_empty() {
-                return None;
-            }
-            Some(string)
-        }
-    }
-    fn set(&mut self, data: &str) {
-        let str: ObjcId = str_to_nsstring(data);
-        unsafe {
-            let pasteboard: ObjcId = msg_send![class!(NSPasteboard), generalPasteboard];
-            let () = msg_send![pasteboard, clearContents];
-            let arr: ObjcId = msg_send![class!(NSArray), arrayWithObject: str];
-            let () = msg_send![pasteboard, writeObjects: arr];
-        }
     }
 }
 

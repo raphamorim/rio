@@ -18,10 +18,6 @@ pub use ttf_parser::Width as Stretch;
 use slotmap::SlotMap;
 use tinyvec::TinyVec;
 
-trait FontLoader {
-    fn load(database: &mut Database);
-}
-
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Debug, Default)]
 pub struct ID(InnerId);
 
