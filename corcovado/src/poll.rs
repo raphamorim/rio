@@ -778,7 +778,7 @@ impl Poll {
     // #     try_main().unwrap();
     // # }
     // ```
-    pub fn register<E: ?Sized>(
+    pub fn register<E>(
         &self,
         handle: &E,
         token: Token,
@@ -786,7 +786,7 @@ impl Poll {
         opts: PollOpt,
     ) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         validate_args(token)?;
 
@@ -856,7 +856,7 @@ impl Poll {
     // [`register`]: #method.register
     // [`readable`]: struct.Ready.html#method.readable
     // [`writable`]: struct.Ready.html#method.writable
-    pub fn reregister<E: ?Sized>(
+    pub fn reregister<E>(
         &self,
         handle: &E,
         token: Token,
@@ -864,7 +864,7 @@ impl Poll {
         opts: PollOpt,
     ) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         validate_args(token)?;
 
@@ -919,9 +919,9 @@ impl Poll {
     // #     try_main().unwrap();
     // # }
     // ```
-    pub fn deregister<E: ?Sized>(&self, handle: &E) -> io::Result<()>
+    pub fn deregister<E>(&self, handle: &E) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         trace!("deregistering handle with poller");
 
