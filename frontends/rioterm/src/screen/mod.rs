@@ -305,7 +305,7 @@ impl Screen {
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
         self.sugarloaf
-            .set_background_color(state.dynamic_background);
+            .set_background_color(self.state.dynamic_background);
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }
