@@ -40,7 +40,7 @@ use core::fmt::Debug;
 use messenger::Messenger;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::config::{
-    colors::{term::List, ColorWGPU},
+    colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
 use rio_backend::sugarloaf::{
@@ -188,7 +188,7 @@ impl Screen {
             }
         };
 
-        let mut state = State::new(config, winit_window.theme());
+        let state = State::new(config, winit_window.theme());
 
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
@@ -198,10 +198,7 @@ impl Screen {
             config.keyboard,
         );
 
-        if config.window.background_opacity < 1. {
-            state.named_colors.background.1.a = config.window.background_opacity as f64;
-            sugarloaf.set_background_color(state.named_colors.background.1);
-        }
+        sugarloaf.set_background_color(state.dynamic_background);
 
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(&image);
@@ -354,7 +351,7 @@ impl Screen {
             bg_color.a = config.window.background_opacity as f64;
         }
 
-        self.init(bg_color, &config.window.background_image);
+        self.init();
     }
 
     #[inline]
@@ -1209,17 +1206,8 @@ impl Screen {
     }
 
     #[inline]
-    pub fn init(
-        &mut self,
-        color: ColorWGPU,
-        background_image: &Option<sugarloaf::core::ImageProperties>,
-    ) {
+    pub fn init(&mut self) {
         let initial_columns = self.sugarloaf.layout.columns;
-
-        self.sugarloaf.set_background_color(color);
-        if let Some(image) = background_image {
-            self.sugarloaf.set_background_image(image);
-        }
 
         self.sugarloaf.calculate_bounds();
 
