@@ -50,7 +50,7 @@ wa = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-windows-sys = { version = "0.48", features = [
+windows-sys = { version = "0.52", features = [
     "Win32_System_Console",
     "Win32_Foundation",
     "Win32_Security",

@@ -184,11 +184,7 @@ impl Screen {
             sugarloaf_errors,
         )?;
 
-        let mut bg_color = state.named_colors.background.1;
-        if config.window.background_opacity < 1. {
-            bg_color.a = config.window.background_opacity as f64;
-        }
-        sugarloaf.set_background_color(bg_color);
+        sugarloaf.set_background_color(state.dynamic_background);
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
@@ -308,13 +304,8 @@ impl Screen {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        let mut bg_color = self.state.named_colors.background.1;
-
-        if config.window.background_opacity < 1. {
-            bg_color.a = config.window.background_opacity as f64;
-        }
-
-        self.sugarloaf.set_background_color(bg_color);
+        self.sugarloaf
+            .set_background_color(state.dynamic_background);
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }

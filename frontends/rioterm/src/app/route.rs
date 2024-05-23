@@ -134,10 +134,6 @@ impl Route {
         let ime = Ime::new();
 
         let background_image = config.window.background_image.clone();
-        let background_color = wgpu::Color {
-            a: config.window.background_opacity as f64,
-            ..config.colors.background.1
-        };
 
         let power_preference = match config.renderer.performance {
             RendererPerformance::High => wgpu::PowerPreference::HighPerformance,
@@ -217,7 +213,7 @@ impl Route {
             config.keyboard,
         );
 
-        sugarloaf.set_background_color(background_color);
+        sugarloaf.set_background_color(state.dynamic_background);
         if let Some(image) = background_image {
             sugarloaf.set_background_image(&image);
         }
@@ -1129,13 +1125,8 @@ impl Route {
         layout.update();
         self.resize_all_contexts();
 
-        let mut bg_color = self.state.named_colors.background.1;
-
-        if config.window.background_opacity < 1. {
-            bg_color.a = config.window.background_opacity as f64;
-        }
-
-        self.sugarloaf.set_background_color(bg_color);
+        self.sugarloaf
+            .set_background_color(self.state.dynamic_background);
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }
