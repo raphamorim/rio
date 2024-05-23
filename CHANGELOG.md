@@ -4,6 +4,11 @@
 
 - TBD
 
+## 0.0.38
+
+- Corrections for transparency and blur for MacOS windows.
+- Apply dynamic background logic only for images and keep alpha channel on background.
+
 ## 0.0.37
 
 - *Breaking change:* Reduced font size to `16.0`.
