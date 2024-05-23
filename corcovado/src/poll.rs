@@ -1183,7 +1183,7 @@ impl Poll {
     }
 
     #[inline]
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::if_same_then_else))]
+    #[cfg_attr(feature = "clippy", allow(clippy::if_same_then_else))]
     fn poll2(
         &self,
         events: &mut Events,

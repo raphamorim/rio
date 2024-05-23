@@ -19,3 +19,9 @@ impl AtomicCounter {
         self.0.fetch_add(1, Ordering::Relaxed)
     }
 }
+
+impl Default for AtomicCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}

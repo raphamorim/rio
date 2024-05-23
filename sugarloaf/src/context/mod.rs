@@ -42,7 +42,7 @@ fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureF
         .collect();
 
     if !filtered_formats.is_empty() {
-        format = filtered_formats.first().unwrap().to_owned();
+        filtered_formats.first().unwrap().clone_into(&mut format);
     }
 
     log::info!("Sugarloaf selected format: {format:?} from {:?}", formats);

@@ -195,10 +195,10 @@ impl FontLibraryData {
 
         // If fonts.family does exist it will overwrite all families
         if let Some(font_family_overwrite) = spec.family {
-            spec.regular.family = font_family_overwrite.to_owned();
-            spec.bold.family = font_family_overwrite.to_owned();
-            spec.bold_italic.family = font_family_overwrite.to_owned();
-            spec.italic.family = font_family_overwrite.to_owned();
+            font_family_overwrite.clone_into(&mut spec.regular.family);
+            font_family_overwrite.clone_into(&mut spec.bold.family);
+            font_family_overwrite.clone_into(&mut spec.bold_italic.family);
+            font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
         let regular = find_font(&self.db, spec.regular);
