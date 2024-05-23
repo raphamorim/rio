@@ -133,6 +133,7 @@ impl SugarTree {
                 } else if line.hash_key() != next_line.hash_key() {
                     if !exact {
                         changes.push(Diff::Hash(true));
+                        break;
                     } else {
                         for column in 0..line.len() {
                             if line[column] != next_line[column] {
