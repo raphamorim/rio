@@ -7,13 +7,21 @@ You can download Rio terminal application for macOS platform:
 
 - [Download Rio for MacOS v0.0.37](https://github.com/raphamorim/rio/releases/download/v0.0.37/Rio-v0.0.37.dmg)
 
-Alternatively you can install Rio through [Homebrew](https://brew.sh/)
+Alternatively you can install Rio through [Homebrew](https://brew.sh/)...
 
 ```sh
 brew install --cask rio
 ```
 
-Remember to run a "brew update" in case Homebrew cannot find a rio cask to install.
+...or [MacPorts](https://www.macports.org):
+
+```sh
+sudo port install rio
+```
+
+**For Homebrew:** remember to run a "brew update" in case Homebrew cannot find a rio cask to install.
+
+**For MacPorts:** more details [here](https://ports.macports.org/port/rio/).
 
 Canary versions for MacOS are not notarized, so if you want to install a canary version you need to download and install the canary app from [github.com/raphamorim/rio/releases](https://github.com/raphamorim/rio/releases) and then follow the steps below:
 
