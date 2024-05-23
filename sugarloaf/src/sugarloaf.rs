@@ -504,7 +504,7 @@ impl Sugarloaf {
                     color: stack[i].background_color,
                     size: [
                         width_bound * quantity as f32,
-                        (self.layout.sugarheight - 0.5),
+                        (self.layout.sugarheight),
                     ],
                 });
 
@@ -529,9 +529,8 @@ impl Sugarloaf {
                     scaled_rect_pos_y,
                     stack[i].background_color,
                     width_bound * quantity as f32,
-                    // 0.5 is a modifier applied in the font size to don't
-                    // overflow rect height
-                    self.layout.sugarheight - 0.5,
+                    // 1.0 is subtracted on font size so to doesn't overflow rect height
+                    self.layout.sugarheight - 0.8,
                 );
 
                 // If the next rect background color is different the push rect
