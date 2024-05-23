@@ -172,7 +172,7 @@ impl Screen {
             backend,
         };
 
-        let sugarloaf: Sugarloaf = match Sugarloaf::new(
+        let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
             &sugarloaf_window,
             sugarloaf_renderer,
             config.fonts.to_owned(),
@@ -188,7 +188,7 @@ impl Screen {
             }
         };
 
-        let state = State::new(config, winit_window.theme());
+        let mut state = State::new(config, winit_window.theme());
 
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
@@ -197,6 +197,16 @@ impl Screen {
             config.navigation.has_navigation_key_bindings(),
             config.keyboard,
         );
+
+        if config.window.background_opacity < 1. {
+            state.named_colors.background.1.a = config.window.background_opacity as f64;
+            sugarloaf.set_background_color(state.named_colors.background.1);
+        }
+
+        if let Some(image) = &config.window.background_image {
+            sugarloaf.set_background_image(&image);
+        }
+
         let ime = Ime::new();
 
         let is_collapsed = config.navigation.is_collapsed_mode();
@@ -224,6 +234,7 @@ impl Screen {
             sugarloaf_errors,
         )?;
 
+        sugarloaf.render();
         Ok(Screen {
             mouse_bindings: bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),

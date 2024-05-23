@@ -1,7 +1,10 @@
 #[cfg(target_os = "macos")]
 use {
-    cocoa::base::{id, NO, YES},
-    objc::{msg_send, sel, sel_impl},
+    cocoa::{
+        appkit::NSColorSpace,
+        base::{id, nil, NO, YES},
+    },
+    objc::{class, msg_send, sel, sel_impl},
 };
 
 #[cfg(target_os = "macos")]
@@ -17,19 +20,6 @@ pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo
 // Terminal W/H contraints
 pub const DEFAULT_MINIMUM_WINDOW_HEIGHT: i32 = 150;
 pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
-
-#[cfg(target_os = "macos")]
-fn set_has_shadow(window: &Window, has_shadows: bool) {
-    let raw_window = match window.raw_window_handle() {
-        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
-        _ => return,
-    };
-
-    let value = if has_shadows { YES } else { NO };
-    unsafe {
-        let _: id = msg_send![raw_window, setHasShadow: value];
-    }
-}
 
 #[cfg(all(
     any(feature = "wayland", feature = "x11"),
@@ -80,7 +70,7 @@ pub fn create_window_builder(
                 window_builder = window_builder.with_titlebar_buttons_hidden(true)
             }
         }
-        _ => {}
+        Decorations::Enabled => {}
     };
 
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
@@ -168,7 +158,57 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
     #[cfg(target_os = "macos")]
     set_has_shadow(&winit_window, !is_transparent);
 
+    #[cfg(target_os = "macos")]
+    if is_transparent {
+        remove_bg_color(&winit_window);
+    }
+
+    #[cfg(target_os = "macos")]
+    use_srgb_color_space(&winit_window);
+
     winit_window.set_blur(config.window.blur);
 
     winit_window
+}
+
+#[cfg(target_os = "macos")]
+fn remove_bg_color(window: &Window) {
+    let raw_window = match window.raw_window_handle() {
+        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
+        _ => return,
+    };
+
+    unsafe {
+        let bg_color: id = msg_send![class!(NSColor), colorWithDeviceRed:0.0 green:0.0 blue:0.0 alpha:0.0];
+        let () = msg_send![
+            raw_window,
+            setBackgroundColor: bg_color
+        ];
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_has_shadow(window: &Window, has_shadows: bool) {
+    let raw_window = match window.raw_window_handle() {
+        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
+        _ => return,
+    };
+
+    let value = if has_shadows { YES } else { NO };
+    unsafe {
+        let _: id = msg_send![raw_window, setHasShadow: value];
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn use_srgb_color_space(window: &Window) {
+    let raw_window = match window.raw_window_handle() {
+        RawWindowHandle::AppKit(handle) => handle.ns_window as id,
+        _ => return,
+    };
+
+    unsafe {
+        let _: () =
+            msg_send![raw_window, setColorSpace: NSColorSpace::sRGBColorSpace(nil)];
+    }
 }
