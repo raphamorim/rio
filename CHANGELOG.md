@@ -23,6 +23,10 @@
 - Sixel graphics initial support.
 - iTerm2 image protocol.
 
+## 0.0.39
+
+- Minor fix on fixed transparency on backgrounds for Welcome/Dialog.
+
 ## 0.0.38
 
 - Corrections for transparency and blur for MacOS windows.
