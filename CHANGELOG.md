@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-- TBD
-
-## 0.0.37
-
 - Migration from Winit to WA.
 	- Apple MacOS
 	- ⏳ Linux Wayland
@@ -26,6 +22,11 @@
 - Updated ttf-parser and memmap2 on sugarloaf.
 - Sixel graphics initial support.
 - iTerm2 image protocol.
+
+## 0.0.38
+
+- Corrections for transparency and blur for MacOS windows.
+- Apply dynamic background logic only for images and keep alpha channel on background.
 
 ## 0.0.37
 
