@@ -46,7 +46,7 @@ linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
 fnv = "1.0.7"
-swash = "0.1.15"
+swash = "0.1.16"
 lru = "0.12.3"
 # smallvec = "1.13.1"
 
