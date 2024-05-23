@@ -7,8 +7,8 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v0.0.37/Rio-installer.msi)
-- [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.0.37/Rio-portable.exe)
+- [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v0.0.38/Rio-installer.msi)
+- [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.0.38/Rio-portable.exe)
 - [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
 
 ```sh
