@@ -711,7 +711,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
         if let Some(payload) = get_display_payload(this) {
             let preedit_string: String = s.to_string();
-            payload.marked_text = preedit_string.clone();
+            payload.marked_text.clone_from(&preedit_string);
 
             if payload.ime == ImeState::Disabled {
                 if let Some(&mut HandlerState::Running {
