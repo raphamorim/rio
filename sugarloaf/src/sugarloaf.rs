@@ -502,7 +502,7 @@ impl Sugarloaf {
                 self.rects.push(Rect {
                     position: [scaled_rect_pos_x, scaled_rect_pos_y],
                     color: stack[i].background_color,
-                    size: [width_bound * quantity as f32, self.layout.sugarheight],
+                    size: [width_bound * quantity as f32, (self.layout.sugarheight - 0.5)],
                 });
 
                 let dec_pos_y = (scaled_rect_pos_y)
@@ -526,7 +526,9 @@ impl Sugarloaf {
                     scaled_rect_pos_y,
                     stack[i].background_color,
                     width_bound * quantity as f32,
-                    self.layout.sugarheight,
+                    // 0.5 is a modifier applied in the font size to don't
+                    // overflow rect height
+                    self.layout.sugarheight - 0.5,
                 );
 
                 // If the next rect background color is different the push rect
