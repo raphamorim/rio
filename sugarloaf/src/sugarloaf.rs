@@ -502,7 +502,10 @@ impl Sugarloaf {
                 self.rects.push(Rect {
                     position: [scaled_rect_pos_x, scaled_rect_pos_y],
                     color: stack[i].background_color,
-                    size: [width_bound * quantity as f32, (self.layout.sugarheight - 0.5)],
+                    size: [
+                        width_bound * quantity as f32,
+                        (self.layout.sugarheight - 0.5),
+                    ],
                 });
 
                 let dec_pos_y = (scaled_rect_pos_y)

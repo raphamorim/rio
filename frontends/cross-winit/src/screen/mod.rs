@@ -201,7 +201,7 @@ impl Screen {
         sugarloaf.set_background_color(state.dynamic_background);
 
         if let Some(image) = &config.window.background_image {
-            sugarloaf.set_background_image(&image);
+            sugarloaf.set_background_image(image);
         }
 
         let ime = Ime::new();
