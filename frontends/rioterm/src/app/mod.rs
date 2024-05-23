@@ -170,7 +170,8 @@ impl EventHandler for EventHandlerInstance {
                 RioEventType::Rio(RioEvent::CloseWindow) => {
                     // TODO
                 }
-                RioEventType::Rio(RioEvent::Wakeup) => {
+                RioEventType::Rio(RioEvent::Wakeup)
+                | RioEventType::Rio(RioEvent::Render) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         current.route.render();
                     }
