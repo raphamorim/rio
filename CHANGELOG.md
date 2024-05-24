@@ -1,7 +1,5 @@
 # Changelog
 
-🥶
-
 ## Unreleased
 
 - Migration from Winit to WA.
