@@ -1563,12 +1563,12 @@ impl Route {
 
     #[inline]
     pub fn render(&mut self) {
-        // If sugarloaf does have pending updates to process then
-        // should abort current render
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-            return;
-        };
+        // // If sugarloaf does have pending updates to process then
+        // // should abort current render
+        // if self.sugarloaf.dimensions_changed() {
+        //     self.resize_all_contexts();
+        //     return;
+        // };
 
         // let start = std::time::Instant::now();
         match self.path {
@@ -1605,8 +1605,7 @@ impl Route {
                     && has_blinking_enabled
                     && self.selection_is_empty()
                 {
-                    // self.superloop
-                    // .send_event(RioEvent::PrepareRender(800), self.id);
+                    self.ctx.schedule_render(800);
                 }
             }
         }

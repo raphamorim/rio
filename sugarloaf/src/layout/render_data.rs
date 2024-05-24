@@ -14,9 +14,7 @@
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use crate::font::{
-    Style, Weight, FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR,
-};
+use crate::font::FontData;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
@@ -85,14 +83,15 @@ pub struct CachedClusterData {
     pub details: Vec<DetailedClusterData>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CachedRunData {
     pub clusters: Vec<CachedClusterData>,
     pub coords: Vec<i16>,
     pub span: FragmentStyle,
     pub line: u32,
     pub color: [f32; 4],
-    pub font: usize,
+    pub font_id: usize,
+    pub font: FontData,
     pub size: f32,
     pub level: u8,
     pub whitespace: bool,
@@ -109,6 +108,12 @@ pub struct CachedRunData {
     pub strikeout_size: f32,
     pub advance: f32,
     pub cursor: SugarCursor,
+}
+
+impl std::fmt::Debug for CachedRunData {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "CachedRunData {} {}", self.line, self.font_id)
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -165,7 +170,8 @@ impl RenderData {
                 clusters: (clusters_start, clusters_end),
                 span: cached_run.span,
                 line,
-                font: cached_run.font,
+                font_id: cached_run.font_id,
+                font: cached_run.font.clone(),
                 color: cached_run.color,
                 background_color: cached_run.background_color,
                 size: cached_run.size,
@@ -192,12 +198,13 @@ impl RenderData {
     pub(super) fn push_run(
         &mut self,
         styles: &[FragmentStyle],
-        font: &usize,
+        font_data: (&usize, &FontData),
         size: f32,
         level: u8,
         line: u32,
         shaper: Shaper<'_>,
     ) {
+        let (font_id, font) = font_data;
         // In case is a new line,
         // then needs to recompute the span index again
         if line != self.last_line {
@@ -232,8 +239,9 @@ impl RenderData {
                 if clusters_end != clusters_start {
                     let run_data = RunData {
                         span: styles[last_span],
+                        font_id: *font_id,
                         line,
-                        font: *font,
+                        font: font.clone(),
                         coords: (coords_start, coords_end),
                         color: span_data.color,
                         background_color: span_data.background_color,
@@ -290,9 +298,10 @@ impl RenderData {
                         });
                     }
                     self.last_cached_run.runs.push(CachedRunData {
+                        font_id: *font_id,
                         span: styles[last_span],
                         line,
-                        font: *font,
+                        font: font.clone(),
                         coords: coords.to_owned(),
                         color: span_data.color,
                         background_color: span_data.background_color,
@@ -394,9 +403,10 @@ impl RenderData {
         }
         self.data.last_span = last_span;
         let run_data = RunData {
+            font_id: *font_id,
             span: *span_data,
             line,
-            font: *font,
+            font: font.clone(),
             coords: (coords_start, coords_end),
             size,
             level,
@@ -447,9 +457,10 @@ impl RenderData {
             });
         }
         self.last_cached_run.runs.push(CachedRunData {
+            font_id: *font_id,
             span: styles[last_span],
             line,
-            font: *font,
+            font: font.clone(),
             coords: coords.to_owned(),
             color: span_data.color,
             background_color: span_data.background_color,
@@ -559,26 +570,16 @@ impl<'a> Run<'a> {
         self.run.span
     }
 
-    #[inline]
-    pub fn font_id_based_on_attr(&self) -> usize {
-        let is_italic = self.run.span.font_attrs.2 == Style::Italic;
-        let is_bold = self.run.span.font_attrs.1 == Weight::BOLD;
-
-        if is_bold && is_italic {
-            return FONT_ID_BOLD_ITALIC;
-        } else if is_bold {
-            return FONT_ID_BOLD;
-        } else if is_italic {
-            return FONT_ID_ITALIC;
-        }
-
-        FONT_ID_REGULAR
-    }
-
     /// Returns the font for the run.
     #[inline]
-    pub fn font(&self) -> &usize {
+    pub fn font(&self) -> &FontData {
         &self.run.font
+    }
+
+    /// Returns the font id for the run.
+    #[inline]
+    pub fn font_id(&self) -> &usize {
+        &self.run.font_id
     }
 
     /// Returns the font size for the run.

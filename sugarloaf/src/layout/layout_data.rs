@@ -7,6 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use super::{Alignment, Glyph};
+use crate::font::FontData;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
@@ -177,12 +178,13 @@ impl GlyphData {
     }
 }
 
-#[derive(Copy, Debug, Clone)]
+#[derive(Clone)]
 pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
     pub color: [f32; 4],
-    pub font: usize,
+    pub font_id: usize,
+    pub font: FontData,
     pub coords: (u32, u32),
     pub size: f32,
     pub level: u8,
@@ -201,6 +203,12 @@ pub struct RunData {
     pub strikeout_size: f32,
     pub advance: f32,
     pub cursor: SugarCursor,
+}
+
+impl std::fmt::Debug for RunData {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "RunData {} {}", self.line, self.font_id)
+    }
 }
 
 #[derive(Clone, Debug, Default)]

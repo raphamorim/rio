@@ -12,7 +12,7 @@ use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
 use super::MAX_ID;
-use crate::font::{FontContext, FontLibrary, FontLibraryData};
+use crate::font::{FontContext, FontLibrary};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use lru::LruCache;
 use swash::shape::{self, ShapeContext};
@@ -28,7 +28,7 @@ impl RunCache {
     #[inline]
     fn new() -> Self {
         Self {
-            inner: LruCache::new(std::num::NonZeroUsize::new(2048).unwrap()),
+            inner: LruCache::new(std::num::NonZeroUsize::new(256).unwrap()),
         }
     }
 
@@ -645,13 +645,13 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        let font_library = { &fonts.inner.read().unwrap() };
+
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+            fcx.map_cluster(cluster, &mut shape_state.synth, fonts, shape_state.span);
 
         while shape_clusters(
             fcx,
-            font_library,
+            fonts,
             scx,
             &mut shape_state,
             &mut parser,
@@ -686,12 +686,11 @@ fn shape_item(
         if !parser.next(cluster) {
             return Some(());
         }
-        let font_library = { &fonts.inner.read().unwrap() };
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+            fcx.map_cluster(cluster, &mut shape_state.synth, fonts, shape_state.span);
         while shape_clusters(
             fcx,
-            font_library,
+            fonts,
             scx,
             &mut shape_state,
             &mut parser,
@@ -712,7 +711,7 @@ fn shape_item(
 #[allow(clippy::too_many_arguments)]
 fn shape_clusters<I>(
     fcx: &mut FontContext,
-    fonts: &FontLibraryData,
+    fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &mut ShapeState,
     parser: &mut Parser<I>,
@@ -729,8 +728,14 @@ where
     }
 
     let current_font_id = state.font_id.unwrap();
+    let font_data = if let Some(data) = fcx.get(current_font_id) {
+        data.clone()
+    } else {
+        let binding = fonts.inner.read().unwrap();
+        binding[current_font_id].clone()
+    };
     let mut shaper = scx
-        .builder(fonts[current_font_id].as_ref())
+        .builder(font_data.as_ref())
         .script(state.script)
         .language(state.span.lang)
         .direction(dir)
@@ -746,7 +751,7 @@ where
         if !parser.next(cluster) {
             render_data.push_run(
                 &state.state.lines[current_line].styles,
-                &current_font_id,
+                (&current_font_id, &font_data),
                 state.size,
                 state.level,
                 current_line as u32,
@@ -769,12 +774,12 @@ where
         // fcx.select_group(state.font_id);
         // }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, state.span);
         if next_font != state.font_id || synth != state.synth {
             // let start = std::time::Instant::now();
             render_data.push_run(
                 &state.state.lines[current_line].styles,
-                &current_font_id,
+                (&current_font_id, &font_data),
                 state.size,
                 state.level,
                 current_line as u32,

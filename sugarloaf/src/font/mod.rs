@@ -10,9 +10,11 @@ pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
 use crate::font::constants::*;
+use crate::layout::FragmentStyle;
 use ab_glyph::FontArc;
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use swash::proxy::CharmapProxy;
 use swash::text::cluster::{CharCluster, Status};
@@ -39,10 +41,17 @@ impl Inner {
 
 #[derive(Default)]
 pub struct FontContext {
-    cache: HashMap<String, usize>,
+    cached: HashMap<usize, FontData>,
+    emoji: Option<usize>,
+    emoji_last_usage: Option<std::time::Instant>,
 }
 
 impl FontContext {
+    #[inline]
+    pub fn get(&self, id: usize) -> Option<&FontData> {
+        self.cached.get(&id)
+    }
+
     #[inline]
     pub fn lookup_for_best_font(
         &mut self,
@@ -69,26 +78,97 @@ impl FontContext {
         &mut self,
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
-        library: &FontLibraryData,
+        library: &FontLibrary,
+        style: &FragmentStyle,
     ) -> Option<usize> {
-        let mut cache_key: String = String::default();
-        for c in cluster.chars().iter() {
-            cache_key.push(c.ch);
-        }
         let mut font_id = FONT_ID_REGULAR;
-        let is_cache_key_empty = cache_key.is_empty();
 
-        if !is_cache_key_empty {
-            if let Some(cached_font_id) = self.cache.get(&cache_key) {
-                font_id = *cached_font_id;
-            } else if cluster.info().is_emoji() {
-                if let Some(font_emoji_id) = library.inner.iter().position(|r| r.is_emoji)
+        let is_italic = style.font_attrs.2 == Style::Italic;
+        let is_bold = style.font_attrs.1 == Weight::BOLD;
+        if is_italic || is_bold {
+            if is_bold && is_italic {
+                font_id = FONT_ID_BOLD_ITALIC;
+            } else if is_bold {
+                font_id = FONT_ID_BOLD;
+            } else if is_italic {
+                font_id = FONT_ID_ITALIC;
+            }
+
+            if let Some(font_data) = self.cached.get(&font_id) {
+                let charmap = font_data.charmap_proxy().materialize(&font_data.as_ref());
+                let status = cluster.map(|ch| charmap.map(ch));
+                if status != Status::Discard {
+                    *synth = font_data.synth;
+                }
+            } else {
+                let library = library.inner.read().unwrap();
+                let charmap = library[font_id]
+                    .charmap_proxy()
+                    .materialize(&library[font_id].as_ref());
+                let status = cluster.map(|ch| charmap.map(ch));
+                if status != Status::Discard {
+                    self.cached.insert(font_id, library[font_id].clone());
+                    *synth = library[font_id].synth;
+                }
+            }
+
+            return Some(font_id);
+        }
+
+        if cluster.info().is_emoji() {
+            if let Some(emoji_id) = self.emoji {
+                if let Some(font_data) = self.cached.get(&emoji_id) {
+                    let charmap =
+                        font_data.charmap_proxy().materialize(&font_data.as_ref());
+                    let status = cluster.map(|ch| charmap.map(ch));
+                    if status != Status::Discard {
+                        *synth = font_data.synth;
+                    }
+
+                    self.emoji_last_usage = Some(std::time::Instant::now());
+                    return Some(font_id);
+                }
+            }
+
+            {
+                let binding = library.inner.read().unwrap();
+                // If exists an emoji font loaded in memory
+                if let Some(font_emoji_id_to_load) =
+                    binding.lazy_inner.iter().position(|r| r.is_emoji)
                 {
-                    font_id = font_emoji_id;
+                    if let Some(font_data) = load_from_data_ref(
+                        binding.lazy_inner[font_emoji_id_to_load].clone(),
+                    ) {
+                        font_id = binding.len();
+
+                        let charmap =
+                            font_data.charmap_proxy().materialize(&font_data.as_ref());
+                        let status = cluster.map(|ch| charmap.map(ch));
+                        if status != Status::Discard {
+                            self.cached.insert(font_id, font_data.clone());
+                            self.emoji = Some(font_id);
+                            self.emoji_last_usage = Some(std::time::Instant::now());
+                            *synth = font_data.synth;
+                        }
+
+                        return Some(font_id);
+                    }
                 }
             }
         }
 
+        if let Some(emoji_last_usage) = self.emoji_last_usage {
+            let interval_time = std::time::Duration::from_secs(4);
+            if emoji_last_usage.elapsed() > interval_time {
+                if let Some(emoji_id) = self.emoji {
+                    self.cached.remove(&emoji_id);
+                    self.emoji = None;
+                    self.emoji_last_usage = None;
+                }
+            }
+        }
+
+        let library = library.inner.read().unwrap();
         let charmap = library[font_id]
             .charmap_proxy()
             .materialize(&library[font_id].as_ref());
@@ -98,7 +178,7 @@ impl FontContext {
         } else {
             log::info!("looking up for best font match for {:?}", cluster.chars());
             if let Some(found_font_id) =
-                self.lookup_for_best_font(cluster, synth, library)
+                self.lookup_for_best_font(cluster, synth, &library)
             {
                 log::info!(" -> found best font id {}", found_font_id);
                 font_id = found_font_id
@@ -107,8 +187,8 @@ impl FontContext {
             }
         }
 
-        if !is_cache_key_empty {
-            self.cache.insert(cache_key, font_id);
+        if self.cached.contains_key(&font_id) {
+            self.cached.insert(font_id, library[font_id].clone());
         }
 
         Some(font_id)
@@ -150,9 +230,16 @@ impl Default for FontLibrary {
     }
 }
 
+#[derive(Clone)]
+pub struct FontDataRef {
+    path: PathBuf,
+    is_emoji: bool,
+}
+
 pub struct FontLibraryData {
     pub main: FontArc,
     pub inner: Vec<FontData>,
+    pub lazy_inner: Vec<FontDataRef>,
     db: loader::Database,
 }
 
@@ -163,6 +250,7 @@ impl Default for FontLibraryData {
         Self {
             db,
             main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+            lazy_inner: vec![],
             inner: vec![],
         }
     }
@@ -170,8 +258,9 @@ impl Default for FontLibraryData {
 
 impl FontLibraryData {
     #[inline]
-    pub fn insert(&mut self, font_data: FontData) {
+    pub fn insert(&mut self, font_data: FontData) -> usize {
         self.inner.push(font_data);
+        self.inner.len() - 1
     }
 
     #[inline]
@@ -226,21 +315,29 @@ impl FontLibraryData {
         }
 
         for fallback in fallbacks::external_fallbacks() {
-            let is_emoji = fallback.contains("emoji");
-            let mut font_data = find_font(
-                &self.db,
-                SugarloafFont {
-                    family: fallback,
-                    ..SugarloafFont::default()
-                },
-            );
-            // Hacky way to declare emojis
+            // Hacky way to identify emojis
+            let is_emoji = fallback.contains("Emoji");
             if is_emoji {
-                font_data.0.is_emoji = true;
-            }
-            self.inner.push(font_data.0);
-            if let Some(err) = font_data.2 {
-                fonts_not_fount.push(err);
+                // Emojis often consumes a good amount of memory for keep stored
+                // so we save the font path in the lazy_inner to load once is needed
+                if let Some(path) = find_font_path(&self.db, fallback) {
+                    self.lazy_inner.push(FontDataRef {
+                        path,
+                        is_emoji: true,
+                    });
+                }
+            } else {
+                let font_data = find_font(
+                    &self.db,
+                    SugarloafFont {
+                        family: fallback,
+                        ..SugarloafFont::default()
+                    },
+                );
+                self.inner.push(font_data.0);
+                if let Some(err) = font_data.2 {
+                    fonts_not_fount.push(err);
+                }
             }
         }
 
@@ -340,7 +437,6 @@ pub struct FontData {
     key: CacheKey,
     charmap_proxy: CharmapProxy,
 
-    pub is_emoji: bool,
     pub weight: swash::Weight,
     pub style: swash::Style,
     pub stretch: swash::Stretch,
@@ -378,7 +474,6 @@ impl FontData {
         Ok(Self {
             data: SharedData::new(data),
             offset,
-            is_emoji: false,
             key,
             charmap_proxy,
             synth,
@@ -404,7 +499,6 @@ impl FontData {
         Ok(Self {
             data: SharedData::new(data.to_vec()),
             offset,
-            is_emoji: false,
             key,
             charmap_proxy,
             synth,
@@ -461,7 +555,6 @@ pub struct ComposedFontArc {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[inline]
 fn find_font(
     db: &crate::font::loader::Database,
     font_spec: SugarloafFont,
@@ -559,4 +652,49 @@ fn find_font(
     };
 
     (FontData::from_slice(font_to_load).unwrap(), true, not_found)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn find_font_path(
+    db: &crate::font::loader::Database,
+    font_family: String,
+) -> Option<PathBuf> {
+    info!("Font path search: family '{font_family}'");
+
+    let query = crate::font::loader::Query {
+        families: &[crate::font::loader::Family::Name(&font_family)],
+        ..crate::font::loader::Query::default()
+    };
+
+    if let Some(id) = db.query(&query) {
+        if let Some((crate::font::loader::Source::File(ref path), _index)) =
+            db.face_source(id)
+        {
+            return Some(path.to_path_buf());
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_from_data_ref(data_ref: FontDataRef) -> Option<FontData> {
+    use std::io::Read;
+
+    if let Ok(mut file) = std::fs::File::open(data_ref.path) {
+        let mut font_data = vec![];
+        if file.read_to_end(&mut font_data).is_ok() {
+            match FontData::from_data(font_data) {
+                Ok(d) => {
+                    return Some(d);
+                }
+                Err(err_message) => {
+                    log::info!("Failed to load font from source {err_message}");
+                    return None;
+                }
+            }
+        }
+    }
+
+    None
 }

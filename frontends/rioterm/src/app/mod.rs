@@ -159,9 +159,6 @@ impl EventHandler for EventHandlerInstance {
         ) {
             let id = router.id;
             self.routes.insert(id, router);
-            // if let Some(file_url) = open_file_url {
-            //     wa::window::open_url(id, file_url);
-            // }
         }
     }
 
@@ -482,12 +479,6 @@ impl EventHandler for EventHandlerInstance {
             current.route.paste(&filepath, true);
         }
     }
-    // fn open_url_event(&mut self, window_id: u16, url: &str) {
-    //     if let Some(current) = self.routes.get_mut(&window_id) {
-    //         current.route.paste(&url, true);
-    //         current.route.render();
-    //     }
-    // }
     fn mouse_wheel_event(&mut self, window_id: u16, mut x: f32, mut y: f32) {
         if let Some(current) = self.routes.get_mut(&window_id) {
             if current.route.path != RoutePath::Terminal {

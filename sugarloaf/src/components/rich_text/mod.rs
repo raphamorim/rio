@@ -6,7 +6,6 @@ pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::SugarCursor;
 use compositor::{
@@ -304,18 +303,16 @@ impl RichTextBrush {
         // Render
         self.comp.begin();
 
-        let library = state.compositors.advanced.font_library();
-        let font_library = { &library.inner.read().unwrap() };
-
-        draw_layout(
-            &mut self.comp,
-            &state.compositors.advanced.render_data,
-            state.current.layout.style.screen_position.0,
-            // TODO: Fix position
-            state.current.layout.style.screen_position.1,
-            font_library,
-            state.current.layout.dimensions,
-        );
+        {
+            draw_layout(
+                &mut self.comp,
+                &state.compositors.advanced.render_data,
+                state.current.layout.style.screen_position.0,
+                // TODO: Fix position
+                state.current.layout.style.screen_position.1,
+                state.current.layout.dimensions,
+            );
+        }
         self.dlist.clear();
         self.finish_composition(ctx);
     }
@@ -327,14 +324,11 @@ impl RichTextBrush {
     ) -> Option<SugarDimensions> {
         self.comp.begin();
 
-        let library = state.compositors.advanced.font_library();
-        let font_library = { &library.inner.read().unwrap() };
-
         let dimension = fetch_dimensions(
             &mut self.comp,
             &state.compositors.advanced.mocked_render_data,
-            font_library,
         );
+
         if dimension.height > 0. && dimension.width > 0. {
             Some(dimension)
         } else {
@@ -700,7 +694,6 @@ fn draw_layout(
     render_data: &crate::layout::RenderData,
     x: f32,
     y: f32,
-    font_library: &FontLibraryData,
     _rect: SugarDimensions,
 ) {
     let depth = 0.0;
@@ -709,11 +702,6 @@ fn draw_layout(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
-            let mut font = *run.font();
-            if font == 0 {
-                font = run.font_id_based_on_attr();
-            }
-
             let py = line.baseline() + y;
             let run_x = px;
             glyphs.clear();
@@ -729,7 +717,7 @@ fn draw_layout(
 
             let line_height = line.ascent() + line.descent() + line.leading();
             let mut style = TextRunStyle {
-                font: font_library[font].as_ref(),
+                font: run.font().into(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
@@ -773,7 +761,6 @@ fn draw_layout(
 fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     render_data: &crate::layout::RenderData,
-    font_library: &FontLibraryData,
 ) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
@@ -782,7 +769,6 @@ fn fetch_dimensions(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
-            let font = run.font();
             let py = line.baseline() + y;
             let run_x = px;
             let line_height = line.ascent() + line.descent() + line.leading();
@@ -798,7 +784,7 @@ fn fetch_dimensions(
             let color = run.color();
 
             let style = TextRunStyle {
-                font: font_library[*font].as_ref(),
+                font: run.font().into(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
