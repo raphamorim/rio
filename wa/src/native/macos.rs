@@ -2305,7 +2305,8 @@ impl Window {
 
             if conf.hide_toolbar {
                 // let () = msg_send![*window, setMovableByWindowBackground: YES];
-                let () = msg_send![*window, setTitleVisibility: YES];
+                let nswindow_title_hidden = 1;
+                let () = msg_send![*window, setTitleVisibility: nswindow_title_hidden];
                 let () = msg_send![*window, setTitlebarAppearsTransparent: YES];
             }
 
@@ -2361,6 +2362,7 @@ impl Window {
             let _: () = msg_send![*window, setRestorable: NO];
 
             let () = msg_send![*window, makeFirstResponder: **view.as_strong_ptr()];
+            // let () = msg_send![*window, initialFirstResponder: **view.as_strong_ptr()];
             let () = msg_send![*window, makeKeyAndOrderFront: nil];
 
             let window_handle = Window {

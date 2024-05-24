@@ -99,6 +99,7 @@ struct EventHandlerInstance {
     routes: HashMap<u16, Router>,
     event_loop: EventLoop<EventPayload>,
     event_loop_proxy: EventLoopProxy<EventPayload>,
+    modifiers: ModifiersState,
     #[cfg(target_os = "macos")]
     last_tab_group: Option<u64>,
 }
@@ -126,6 +127,7 @@ impl EventHandlerInstance {
             scheduler,
             font_library,
             config,
+            modifiers: ModifiersState::empty(),
             #[cfg(target_os = "macos")]
             last_tab_group: None,
         }
@@ -385,11 +387,13 @@ impl EventHandler for EventHandlerInstance {
         keycode: KeyCode,
         mods: ModifiersState,
     ) {
-        if let Some(current) = self.routes.get_mut(&window_id) {
-            current.route.set_modifiers(mods);
+        self.modifiers = mods;
 
+        if let Some(current) = self.routes.get_mut(&window_id) {
             if (keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper)
-                && current.route.search_nearest_hyperlink_from_pos()
+                && current
+                    .route
+                    .search_nearest_hyperlink_from_pos(&self.modifiers)
             {
                 window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
                 current.route.render();
@@ -410,9 +414,13 @@ impl EventHandler for EventHandlerInstance {
                 return;
             }
 
-            current
-                .route
-                .process_key_event(keycode, true, repeat, character);
+            current.route.process_key_event(
+                keycode,
+                true,
+                repeat,
+                character,
+                self.modifiers,
+            );
         }
     }
     fn key_up_event(&mut self, window_id: u16, keycode: KeyCode) {
@@ -427,7 +435,9 @@ impl EventHandler for EventHandlerInstance {
                 return;
             }
 
-            current.route.process_key_event(keycode, false, false, None);
+            current
+                .route
+                .process_key_event(keycode, false, false, None, self.modifiers);
             current.route.render();
         }
     }
@@ -441,7 +451,9 @@ impl EventHandler for EventHandlerInstance {
                 window::show_mouse(current.id, true);
             }
 
-            if let Some(cursor) = current.route.process_motion_event(x, y) {
+            if let Some(cursor) =
+                current.route.process_motion_event(x, y, &self.modifiers)
+            {
                 window::set_mouse_cursor(current.id, cursor);
             }
         }
@@ -506,7 +518,7 @@ impl EventHandler for EventHandlerInstance {
                 x = 0.;
             }
 
-            current.route.scroll(x.into(), y.into());
+            current.route.scroll(x.into(), y.into(), &self.modifiers);
             // current.render();
         }
     }
@@ -526,7 +538,9 @@ impl EventHandler for EventHandlerInstance {
                 window::show_mouse(current.id, true);
             }
 
-            current.route.process_mouse(button, x, y, true);
+            current
+                .route
+                .process_mouse(button, x, y, true, self.modifiers);
         }
     }
     fn mouse_button_up_event(
@@ -545,7 +559,9 @@ impl EventHandler for EventHandlerInstance {
                 window::show_mouse(current.id, true);
             }
 
-            current.route.process_mouse(button, x, y, false);
+            current
+                .route
+                .process_mouse(button, x, y, false, self.modifiers);
         }
     }
     fn resize_event(

@@ -39,7 +39,7 @@ use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::rc::Rc;
-use wa::{KeyCode, ModifiersState};
+use wa::KeyCode;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -57,7 +57,6 @@ pub struct Route {
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
     pub sugarloaf: Sugarloaf,
-    pub modifiers: ModifiersState,
     pub path: RoutePath,
     pub assistant: Assistant,
     pub is_focused: bool,
@@ -251,7 +250,6 @@ impl Route {
             state,
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
-            modifiers: ModifiersState::empty(),
         })
     }
 
@@ -285,7 +283,12 @@ impl Route {
     }
 
     #[inline]
-    pub fn process_motion_event(&mut self, x: f32, y: f32) -> Option<wa::CursorIcon> {
+    pub fn process_motion_event(
+        &mut self,
+        x: f32,
+        y: f32,
+        modifiers: &wa::ModifiersState,
+    ) -> Option<wa::CursorIcon> {
         let mut cursor = None;
         // if route.path != RoutePath::Terminal {
         //     route
@@ -362,11 +365,11 @@ impl Route {
             return None;
         }
 
-        if self.search_nearest_hyperlink_from_pos() {
+        if self.search_nearest_hyperlink_from_pos(modifiers) {
             cursor = Some(wa::CursorIcon::Pointer);
             self.render();
         } else {
-            cursor = if !self.modifiers.shift && self.mouse_mode() {
+            cursor = if !modifiers.shift && self.mouse_mode() {
                 Some(wa::CursorIcon::Default)
             } else {
                 Some(wa::CursorIcon::Text)
@@ -381,18 +384,18 @@ impl Route {
         self.mouse.inside_text_area = inside_text_area;
         self.mouse.square_side = square_side;
 
-        if (lmb_pressed || rmb_pressed) && (self.modifiers.shift || !self.mouse_mode()) {
+        if (lmb_pressed || rmb_pressed) && (modifiers.shift || !self.mouse_mode()) {
             self.update_selection(point, square_side);
             self.ctx.schedule_render(60);
         } else if square_changed && self.has_mouse_motion_and_drag() {
             if lmb_pressed {
-                self.mouse_report(32, true);
+                self.mouse_report(32, true, modifiers);
             } else if self.mouse.middle_button_state {
-                self.mouse_report(33, true);
+                self.mouse_report(33, true, modifiers);
             } else if self.mouse.right_button_state {
-                self.mouse_report(34, true);
+                self.mouse_report(34, true, modifiers);
             } else if self.has_mouse_motion() {
-                self.mouse_report(35, true);
+                self.mouse_report(35, true, modifiers);
             }
         }
 
@@ -418,6 +421,7 @@ impl Route {
         _x: f32,
         _y: f32,
         is_pressed: bool,
+        modifiers: wa::ModifiersState,
     ) {
         match button {
             wa::MouseButton::Left => self.mouse.left_button_state = is_pressed,
@@ -427,12 +431,12 @@ impl Route {
         }
 
         if is_pressed {
-            if self.trigger_hyperlink() {
+            if self.trigger_hyperlink(&modifiers) {
                 return;
             }
 
             // Process mouse press before bindings to update the `click_state`.
-            if !self.modifiers.shift && self.mouse_mode() {
+            if !modifiers.shift && self.mouse_mode() {
                 self.mouse.click_state = crate::event::ClickState::None;
 
                 let code = match button {
@@ -443,9 +447,9 @@ impl Route {
                     wa::MouseButton::Unknown => return,
                 };
 
-                self.mouse_report(code, true);
+                self.mouse_report(code, true, &modifiers);
 
-                self.process_mouse_bindings(button);
+                self.process_mouse_bindings(button, modifiers);
             } else {
                 // Calculate time since the last click to handle double/triple clicks.
                 let now = std::time::Instant::now();
@@ -474,14 +478,14 @@ impl Route {
 
                 if let wa::MouseButton::Left = button {
                     let pos = self.mouse_position(display_offset);
-                    self.on_left_click(pos);
+                    self.on_left_click(pos, &modifiers);
                 }
             }
-            self.process_mouse_bindings(button);
+            self.process_mouse_bindings(button, modifiers);
 
             self.render();
         } else {
-            if !self.modifiers.shift && self.mouse_mode() {
+            if !modifiers.shift && self.mouse_mode() {
                 let code = match button {
                     wa::MouseButton::Left => 0,
                     wa::MouseButton::Middle => 1,
@@ -489,7 +493,7 @@ impl Route {
                     // Can't properly report more than three buttons.
                     wa::MouseButton::Unknown => return,
                 };
-                self.mouse_report(code, false);
+                self.mouse_report(code, false, &modifiers);
                 return;
             }
 
@@ -501,11 +505,14 @@ impl Route {
     }
 
     #[inline]
-    pub fn process_mouse_bindings(&mut self, button: wa::MouseButton) {
+    pub fn process_mouse_bindings(
+        &mut self,
+        button: wa::MouseButton,
+        mods: wa::ModifiersState,
+    ) {
         let mode = self.get_mode();
         let binding_mode = BindingMode::new(&mode);
         let mouse_mode = self.mouse_mode();
-        let mods = self.modifiers;
 
         for i in 0..self.mouse_bindings.len() {
             let mut binding = self.mouse_bindings[i].clone();
@@ -547,9 +554,12 @@ impl Route {
     }
 
     #[inline]
-    pub fn search_nearest_hyperlink_from_pos(&mut self) -> bool {
+    pub fn search_nearest_hyperlink_from_pos(
+        &mut self,
+        modifiers: &wa::ModifiersState,
+    ) -> bool {
         #[cfg(target_os = "macos")]
-        let is_hyperlink_key_active = self.modifiers.logo;
+        let is_hyperlink_key_active = modifiers.logo;
 
         #[cfg(not(target_os = "macos"))]
         let is_hyperlink_key_active = self.modifiers.alt;
@@ -615,17 +625,13 @@ impl Route {
     }
 
     #[inline]
-    pub fn set_modifiers(&mut self, mods: ModifiersState) {
-        self.modifiers = mods;
-    }
-
-    #[inline]
     pub fn process_key_event(
         &mut self,
         key_code: KeyCode,
         is_pressed: bool,
         repeated: bool,
         text_with_modifiers: Option<smol_str::SmolStr>,
+        modifiers: wa::ModifiersState,
     ) {
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
@@ -652,7 +658,7 @@ impl Route {
                     KeyCode::Escape => [b'\x1b'].as_slice().into(),
                     _ => bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        self.modifiers,
+                        modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -675,11 +681,7 @@ impl Route {
 
             let key = BindingKey::Keycode { key: key_code };
 
-            if binding.is_triggered_by(
-                binding_mode.to_owned(),
-                self.modifiers.into(),
-                &key,
-            ) {
+            if binding.is_triggered_by(binding_mode.to_owned(), modifiers.into(), &key) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -918,7 +920,7 @@ impl Route {
                 }
 
                 let mut bytes = Vec::with_capacity(text.len() + 1);
-                if self.alt_send_esc() && text.len() == 1 {
+                if self.alt_send_esc(&modifiers) && text.len() == 1 {
                     bytes.push(b'\x1b');
                 }
                 bytes.extend_from_slice(text.as_bytes());
@@ -934,7 +936,7 @@ impl Route {
                     && !text.is_empty()
                     && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
                         || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                            && (self.modifiers.is_empty() || self.modifiers.shift)
+                            && (modifiers.is_empty() || modifiers.shift)
                             // && key.location != KeyLocation::Numpad
                             // Special case escape here.
                             && key_code != wa::KeyCode::Escape));
@@ -942,7 +944,7 @@ impl Route {
                 // Handle legacy char writing.
                 if write_legacy {
                     let mut bytes = Vec::with_capacity(text.len() + 1);
-                    if self.alt_send_esc() && text.len() == 1 {
+                    if self.alt_send_esc(&modifiers) && text.len() == 1 {
                         bytes.push(b'\x1b');
                     }
 
@@ -952,7 +954,7 @@ impl Route {
                     // Otherwise we should build the key sequence for the given input.
                     bindings::kitty_keyboard_protocol::build_key_sequence(
                         &key_code,
-                        self.modifiers,
+                        modifiers,
                         mode,
                         is_pressed,
                         repeated,
@@ -971,12 +973,12 @@ impl Route {
     }
 
     #[inline]
-    pub fn trigger_hyperlink(&self) -> bool {
+    pub fn trigger_hyperlink(&self, modifiers: &wa::ModifiersState) -> bool {
         #[cfg(target_os = "macos")]
-        let is_hyperlink_key_active = self.modifiers.logo;
+        let is_hyperlink_key_active = modifiers.logo;
 
         #[cfg(not(target_os = "macos"))]
-        let is_hyperlink_key_active = self.modifiers.alt;
+        let is_hyperlink_key_active = modifiers.alt;
 
         if !is_hyperlink_key_active || !self.state.has_hyperlink_range() {
             return false;
@@ -1004,7 +1006,12 @@ impl Route {
     }
 
     #[inline]
-    pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
+    pub fn scroll(
+        &mut self,
+        new_scroll_x_px: f64,
+        new_scroll_y_px: f64,
+        modifiers: &wa::ModifiersState,
+    ) {
         let layout = self.sugarloaf.layout();
         let width = layout.dimensions.width as f64;
         let height = layout.dimensions.height as f64;
@@ -1027,7 +1034,7 @@ impl Route {
             let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
 
             for _ in 0..lines {
-                self.mouse_report(code, true);
+                self.mouse_report(code, true, modifiers);
             }
 
             let code = if new_scroll_x_px > 0. {
@@ -1038,10 +1045,10 @@ impl Route {
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
 
             for _ in 0..columns {
-                self.mouse_report(code, true);
+                self.mouse_report(code, true, modifiers);
             }
         } else if mode.contains(Mode::ALT_SCREEN | Mode::ALTERNATE_SCROLL)
-            && !self.modifiers.shift
+            && !modifiers.shift
         {
             self.mouse.accumulated_scroll.x +=
                 (new_scroll_x_px * self.mouse.multiplier) / self.mouse.divider;
@@ -1135,7 +1142,12 @@ impl Route {
     }
 
     #[inline]
-    pub fn mouse_report(&mut self, button: u8, is_pressed: bool) {
+    pub fn mouse_report(
+        &mut self,
+        button: u8,
+        is_pressed: bool,
+        modifiers: &wa::ModifiersState,
+    ) {
         let mut terminal = self.ctx.current().terminal.lock();
         let display_offset = terminal.display_offset();
         let mode = terminal.mode();
@@ -1150,14 +1162,13 @@ impl Route {
 
         // Calculate modifiers value.
         let mut mods = 0;
-        let mod_state = self.modifiers;
-        if mod_state.shift {
+        if modifiers.shift {
             mods += 4;
         }
-        if mod_state.alt {
+        if modifiers.alt {
             mods += 8;
         }
-        if mod_state.control {
+        if modifiers.control {
             mods += 16;
         }
 
@@ -1245,14 +1256,14 @@ impl Route {
     // Whether we should send `ESC` due to `Alt` being pressed.
     #[cfg(not(target_os = "macos"))]
     #[inline]
-    fn alt_send_esc(&mut self, mods: &ModifiersState) -> bool {
-        self.modifiers.alt == true
+    fn alt_send_esc(&mut self, modifiers: &wa::ModifiersState) -> bool {
+        modifiers.alt == true
     }
 
     #[cfg(target_os = "macos")]
     #[inline]
-    fn alt_send_esc(&mut self) -> bool {
-        self.modifiers.alt
+    fn alt_send_esc(&mut self, modifiers: &wa::ModifiersState) -> bool {
+        modifiers.alt
             && (self.state.option_as_alt == *"both"
                 || (self.state.option_as_alt == *"left")
                     // && false)
@@ -1474,7 +1485,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn on_left_click(&mut self, point: Pos) {
+    pub fn on_left_click(&mut self, point: Pos, modifiers: &wa::ModifiersState) {
         let side = self.mouse.square_side;
 
         match self.mouse.click_state {
@@ -1482,7 +1493,7 @@ impl Route {
                 self.clear_selection();
 
                 // Start new empty selection.
-                if self.modifiers.control {
+                if modifiers.control {
                     self.start_selection(SelectionType::Block, point, side);
                 } else {
                     self.start_selection(SelectionType::Simple, point, side);
