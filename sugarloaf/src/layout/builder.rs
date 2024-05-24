@@ -28,7 +28,7 @@ impl RunCache {
     #[inline]
     fn new() -> Self {
         Self {
-            inner: LruCache::new(std::num::NonZeroUsize::new(256).unwrap()),
+            inner: LruCache::new(std::num::NonZeroUsize::new(512).unwrap()),
         }
     }
 
