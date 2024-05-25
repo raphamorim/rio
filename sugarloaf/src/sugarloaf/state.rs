@@ -263,6 +263,14 @@ impl SugarState {
         let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
+        if self.current.layout != self.next.layout {
+            self.latest_change = SugarTreeDiff::LayoutIsDifferent;
+            should_update = true;
+            should_compute_dimensions = true;
+            should_clean_blocks = true;
+            should_resize = true;
+        }
+
         self.latest_change = self.current.calculate_diff(&self.next, false);
         match &self.latest_change {
             SugarTreeDiff::Equal => {

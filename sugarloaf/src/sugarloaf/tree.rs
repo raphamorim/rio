@@ -36,13 +36,13 @@ pub enum Diff {
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
     Equal,
+    Different,
     CurrentTreeWasEmpty,
     BlocksAreDifferent,
     LineQuantity(i32),
     WidthIsDifferent,
     HeightIsDifferent,
     ScaleIsDifferent,
-    MarginIsDifferent,
     LayoutIsDifferent,
     Changes(Vec<Diff>),
 }
@@ -102,9 +102,12 @@ impl SugarTree {
             return SugarTreeDiff::LayoutIsDifferent;
         }
 
-        // TODO: Improve blocks comparisson
         if self.blocks != next.blocks {
             return SugarTreeDiff::BlocksAreDifferent;
+        }
+
+        if !exact {
+            return SugarTreeDiff::Different;
         }
 
         let current_len = self.lines.len();

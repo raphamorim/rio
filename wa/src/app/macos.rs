@@ -1,3 +1,11 @@
+// Copyright (c) 2024-present, Raphael Amorim.
+//
+// This source code is licensed under the MIT license found in the
+// LICENSE file in the root directory of this source tree.
+//
+// A lot of this file has been originally retired from winit licensed under MIT
+// https://github.com/rust-windowing/winit/blob/master/LICENSE
+
 use crate::native::apple::frameworks::*;
 use crate::EventHandler;
 use std::time::Instant;
@@ -49,8 +57,6 @@ impl Default for EventLoopWaker {
                 wakeup_main_loop,
                 std::ptr::null_mut(),
             );
-            let is_valid: bool = CFRunLoopTimerIsValid(timer);
-            assert!(is_valid);
 
             CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
             EventLoopWaker {
