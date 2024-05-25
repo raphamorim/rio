@@ -49,8 +49,6 @@ impl Default for EventLoopWaker {
                 wakeup_main_loop,
                 std::ptr::null_mut(),
             );
-            let is_valid: bool = CFRunLoopTimerIsValid(timer);
-            assert!(is_valid);
 
             CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
             EventLoopWaker {
