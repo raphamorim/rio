@@ -430,6 +430,7 @@ pub trait EventHandler {
 pub enum WindowEvent {
     Focus(bool),
     MouseMotion(f32, f32),
+    Resize(i32, i32, f32, bool),
 }
 
 pub enum QueuedEvent {
