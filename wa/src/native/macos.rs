@@ -1697,6 +1697,7 @@ pub fn define_metal_view_class(
     decl.register()
 }
 
+#[inline]
 pub fn get_display_payload(this: &Object) -> Option<&mut MacosDisplay> {
     unsafe {
         let ptr: *mut c_void = *this.get_ivar(VIEW_IVAR_NAME);
@@ -1708,6 +1709,7 @@ pub fn get_display_payload(this: &Object) -> Option<&mut MacosDisplay> {
     }
 }
 
+#[inline]
 fn get_app_state(this: &Object) -> Option<&mut AppState> {
     unsafe {
         let ptr: *mut c_void = *this.get_ivar(APP_STATE_IVAR_NAME);
@@ -1719,6 +1721,7 @@ fn get_app_state(this: &Object) -> Option<&mut AppState> {
     }
 }
 
+#[inline]
 fn get_app_handler(app: &Option<*mut Object>) -> Option<&mut HandlerState> {
     let delegate: *mut Object = if let Some(this) = app {
         *this

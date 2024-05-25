@@ -1,166 +1,166 @@
-name: Nightly
+# name: Nightly
 
-on:
-  workflow_dispatch:
-  schedule:
-    # 01:00 every day
-    - cron: '0 1 * * *'
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     # 01:00 every day
+#     - cron: '0 1 * * *'
 
-env:
-  CARGO_TERM_COLOR: always
-  GITHUB_REPOSITORY: raphamorim/rio
-  RUST_BACKTRACE: full
-  RUSTFLAGS: '-C link-arg=-s'
-  NIGHTLY_TAG: nightly
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# env:
+#   CARGO_TERM_COLOR: always
+#   GITHUB_REPOSITORY: raphamorim/rio
+#   RUST_BACKTRACE: full
+#   RUSTFLAGS: '-C link-arg=-s'
+#   NIGHTLY_TAG: nightly
+#   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-jobs:
-  create_tag:
-    outputs:
-      created: ${{ steps.status.outputs.created }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      discussions: write
+# jobs:
+#   create_tag:
+#     outputs:
+#       created: ${{ steps.status.outputs.created }}
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#       discussions: write
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Delete old nightly release
-        uses: dev-drprasad/delete-tag-and-release@v1.0
-        with:
-          tag_name: ${{ env.NIGHTLY_TAG }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          delete_release: true
+#       - name: Delete old nightly release
+#         uses: dev-drprasad/delete-tag-and-release@v1.0
+#         with:
+#           tag_name: ${{ env.NIGHTLY_TAG }}
+#           github_token: ${{ secrets.GITHUB_TOKEN }}
+#           delete_release: true
 
-      - name: Bump version and push tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.1
-        with:
-          custom_tag: ${{ env.NIGHTLY_TAG }}
-          tag_prefix: ''
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+#       - name: Bump version and push tag
+#         id: tag_version
+#         uses: mathieudutour/github-tag-action@v6.1
+#         with:
+#           custom_tag: ${{ env.NIGHTLY_TAG }}
+#           tag_prefix: ''
+#           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: status
-        run: echo "created=true" >> "$GITHUB_OUTPUT"
+#       - id: status
+#         run: echo "created=true" >> "$GITHUB_OUTPUT"
 
-  nightly-release-macos:
-    needs: create_tag
-    if: ${{ needs.create_tag.outputs.created == 'true' }}
-    runs-on: macos-14
-    permissions:
-      contents: write
-      discussions: write
+#   nightly-release-macos:
+#     needs: create_tag
+#     if: ${{ needs.create_tag.outputs.created == 'true' }}
+#     runs-on: macos-14
+#     permissions:
+#       contents: write
+#       discussions: write
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
+#       - name: rust cache
+#         uses: Swatinem/rust-cache@v2
 
-      - name: rustup toolchain install stable --profile minimal
-        run: rustup toolchain install stable --profile minimal
+#       - name: rustup toolchain install stable --profile minimal
+#         run: rustup toolchain install stable --profile minimal
 
-      - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+#       - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+#         run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
-      - name: make release-macos
-        run: make release-macos
+#       - name: make release-macos
+#         run: make release-macos
 
-      - name: Release nightly
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Nightly
-          tag_name: ${{ env.NIGHTLY_TAG }}
-          prerelease: true
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            release/macos-unsigned.zip
-            LICENSE
+#       - name: Release nightly
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           name: Nightly
+#           tag_name: ${{ env.NIGHTLY_TAG }}
+#           prerelease: true
+#           append_body: true
+#           token: ${{ secrets.GITHUB_TOKEN }}
+#           files: |
+#             release/macos-unsigned.zip
+#             LICENSE
 
-  nightly-release-deb:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      discussions: write
+#   nightly-release-deb:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#       discussions: write
 
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+#     steps:
+#       - uses: actions/checkout@v3
+#         with:
+#           fetch-depth: 0
 
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
+#       - name: rust cache
+#         uses: Swatinem/rust-cache@v2
+#         with:
+#           cache-all-crates: true
 
-      - run: sudo apt install rename
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo install cargo-deb
-      - run: mkdir -p release
+#       - run: sudo apt install rename
+#       - run: rustup toolchain install stable --profile minimal
+#       - run: cargo install cargo-deb
+#       - run: mkdir -p release
 
-      - run: make release-debian-x11
-      - run: make release-debian-wayland
+#       - run: make release-debian-x11
+#       - run: make release-debian-wayland
 
-      - name: Release nightly
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Nightly
-          tag_name: ${{ env.NIGHTLY_TAG }}
-          prerelease: true
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            release/debian/x11/*
-            release/debian/wayland/*
+#       - name: Release nightly
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           name: Nightly
+#           tag_name: ${{ env.NIGHTLY_TAG }}
+#           prerelease: true
+#           append_body: true
+#           token: ${{ secrets.GITHUB_TOKEN }}
+#           files: |
+#             release/debian/x11/*
+#             release/debian/wayland/*
 
-  nightly-release-windows:
-    needs: create_tag
-    if: ${{ needs.create_tag.outputs.created == 'true' }}
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
+#   nightly-release-windows:
+#     needs: create_tag
+#     if: ${{ needs.create_tag.outputs.created == 'true' }}
+#     runs-on: windows-latest
+#     defaults:
+#       run:
+#         shell: bash
 
-    permissions:
-      contents: write
-      discussions: write
+#     permissions:
+#       contents: write
+#       discussions: write
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-          cache-all-crates: "true"
+#       - name: rust cache
+#         uses: Swatinem/rust-cache@v2
+#         with:
+#           cache-on-failure: "true"
+#           cache-all-crates: "true"
 
-      - name: rustup toolchain install stable --profile minimal
-        run: rustup toolchain install stable --profile minimal
+#       - name: rustup toolchain install stable --profile minimal
+#         run: rustup toolchain install stable --profile minimal
 
-      - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.4
-      - run: wix --version
-      - run: wix extension add WixToolset.UI.wixext/4.0.4 WixToolset.Util.wixext/4.0.4
+#       - name: Install WiX
+#         run: dotnet tool install --global wix --version 4.0.4
+#       - run: wix --version
+#       - run: wix extension add WixToolset.UI.wixext/4.0.4 WixToolset.Util.wixext/4.0.4
 
-      - run: cargo build --release
+#       - run: cargo build --release
 
-      - name: Crate msi installer
-        run: |
-          wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
-          -out "./Rio-installer.msi" "misc/windows/rio.wxs"
+#       - name: Crate msi installer
+#         run: |
+#           wix build -arch "x64" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
+#           -out "./Rio-installer.msi" "misc/windows/rio.wxs"
 
-      - run: cp ./target/release/rio.exe ./Rio-portable.exe
+#       - run: cp ./target/release/rio.exe ./Rio-portable.exe
 
-      - name: Release Nightly
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Nightly
-          tag_name: ${{ env.NIGHTLY_TAG }}
-          prerelease: true
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            ./Rio-portable.exe
-            ./Rio-installer.msi
+#       - name: Release Nightly
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           name: Nightly
+#           tag_name: ${{ env.NIGHTLY_TAG }}
+#           prerelease: true
+#           append_body: true
+#           token: ${{ secrets.GITHUB_TOKEN }}
+#           files: |
+#             ./Rio-portable.exe
+#             ./Rio-installer.msi
