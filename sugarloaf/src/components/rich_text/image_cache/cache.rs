@@ -228,9 +228,10 @@ impl ImageCache {
                         data,
                     })
                 }
-                Event::UpdateTexture(id, region, data) => {
+                Event::UpdateTexture(id, format, region, data) => {
                     f(TextureEvent::UpdateTexture {
                         id,
+                        format,
                         x: region[0],
                         y: region[1],
                         width: region[2],
@@ -265,6 +266,7 @@ impl ImageCache {
             } else {
                 f(TextureEvent::UpdateTexture {
                     id: atlas.texture_id,
+                    format: atlas.format,
                     x: 0,
                     y: 0,
                     width: self.max_texture_size,
@@ -420,7 +422,7 @@ struct Standalone {
 enum Event {
     CreateTexture(TextureId, PixelFormat, u16, u16, Option<PendingData>),
     #[allow(unused)]
-    UpdateTexture(TextureId, [u16; 4], Option<PendingData>),
+    UpdateTexture(TextureId, PixelFormat, [u16; 4], Option<PendingData>),
     DestroyTexture(TextureId),
 }
 
