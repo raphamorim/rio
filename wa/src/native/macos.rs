@@ -1251,7 +1251,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         ) {
             if new_pressed ^ old_pressed {
                 // if new_pressed {
-                if let Some(app_handler) = get_app_handler(&None) {
+                if let Some(app_handler) = get_app_handler(&Some(payload.app)) {
                     match app_handler {
                         &mut HandlerState::Running {
                             ref mut handler, ..
