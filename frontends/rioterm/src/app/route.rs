@@ -1570,7 +1570,7 @@ impl Route {
             return;
         };
 
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         match self.path {
             RoutePath::Assistant => {
                 assistant::screen(&mut self.sugarloaf, &self.assistant)
@@ -1605,15 +1605,14 @@ impl Route {
                     && has_blinking_enabled
                     && self.selection_is_empty()
                 {
-                    // self.superloop
-                    // .send_event(RioEvent::PrepareRender(800), self.id);
+                    self.ctx.schedule_render(800);
                 }
             }
         }
 
         self.sugarloaf.render();
 
-        // let duration = start.elapsed();
-        // println!("Time elapsed in render() is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Time elapsed in render() is: {:?}", duration);
     }
 }

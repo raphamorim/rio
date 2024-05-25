@@ -438,7 +438,6 @@ impl EventHandler for EventHandlerInstance {
             current
                 .route
                 .process_key_event(keycode, false, false, None, self.modifiers);
-            current.route.render();
         }
     }
     fn mouse_motion_event(&mut self, window_id: u16, x: f32, y: f32) {
