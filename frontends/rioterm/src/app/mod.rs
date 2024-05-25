@@ -166,7 +166,7 @@ impl EventHandler for EventHandlerInstance {
     }
 
     fn process(&mut self) -> EventHandlerControl {
-        while let Ok(event) = self.event_loop.receiver.try_recv() {
+        for event in self.event_loop.receiver.try_iter() {
             let window_id = event.window_id;
             match event.payload {
                 RioEventType::Rio(RioEvent::CloseWindow) => {
