@@ -8,13 +8,7 @@ pub struct Handler {
 
 pub enum HandlerState {
     NotLaunched,
-    Running {
-        handler: Box<dyn EventHandler>,
-    },
-    Waiting {
-        handler: Box<dyn EventHandler>,
-        start: std::time::Instant,
-    },
+    Running { handler: Box<dyn EventHandler> },
     Terminated,
 }
 
