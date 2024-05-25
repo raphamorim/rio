@@ -50,30 +50,6 @@ fn set_display(id: u16, display: native::NativeDisplayData) {
 
 pub mod window {
     use super::*;
-    pub fn screen_size(id: u16) -> (f32, f32) {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            (d.screen_width as f32, d.screen_height as f32)
-        } else {
-            (800., 600.)
-        }
-    }
-    pub fn dpi_scale(id: u16) -> f32 {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            d.dpi_scale
-        } else {
-            1.0
-        }
-    }
-    pub fn high_dpi(id: u16) -> bool {
-        let d = get_handler().lock();
-        if let Some(d) = d.get(id) {
-            d.high_dpi
-        } else {
-            true
-        }
-    }
     pub fn order_quit(id: u16) {
         let mut d = get_handler().lock();
         if let Some(d) = d.get_mut(id) {
@@ -131,17 +107,6 @@ pub mod window {
             }
         }
     }
-
-    // pub fn open_url(id: u16, url: &str) {
-    //     let d = get_handler().lock();
-    //     let view = unwrap_or_return!(d.get(id)).view;
-    //     drop(d);
-    //     unsafe {
-    //         if let Some(display) = native::macos::get_display_payload(&*view) {
-    //             display.open_url = url.to_owned();
-    //         }
-    //     }
-    // }
 
     pub fn get_appearance() -> Appearance {
         App::appearance()

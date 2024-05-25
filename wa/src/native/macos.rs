@@ -164,6 +164,11 @@ pub struct MacosDisplay {
     has_initialized: bool,
     has_focus: bool,
     modifiers: Modifiers,
+    screen_width: i32,
+    screen_height: i32,
+    dpi_scale: f32,
+    #[allow(unused)]
+    high_dpi: bool,
 }
 
 impl MacosDisplay {
@@ -263,10 +268,8 @@ impl MacosDisplay {
 
 impl MacosDisplay {
     fn transform_mouse_point(&self, point: &NSPoint) -> (f32, f32) {
-        let binding = get_handler().lock();
-        let d = binding.get(self.id).unwrap();
-        let new_x = point.x as f32 * d.dpi_scale;
-        let new_y = d.screen_height as f32 - (point.y as f32 * d.dpi_scale) - 1.;
+        let new_x = point.x as f32 * self.dpi_scale;
+        let new_y = self.screen_height as f32 - (point.y as f32 * self.dpi_scale) - 1.;
 
         (new_x, new_y)
     }
@@ -284,24 +287,22 @@ impl MacosDisplay {
     }
 
     unsafe fn update_dimensions(&mut self) -> Option<(i32, i32, f32)> {
-        let mut binding = get_handler().lock();
-        let d = binding.get_mut(self.id).unwrap();
         let screen: ObjcId = msg_send![self.window, screen];
         let dpi_scale: f64 = msg_send![screen, backingScaleFactor];
-        d.dpi_scale = dpi_scale as f32;
+        self.dpi_scale = dpi_scale as f32;
 
         let bounds: NSRect = msg_send![self.view, bounds];
-        let screen_width = (bounds.size.width as f32 * d.dpi_scale) as i32;
-        let screen_height = (bounds.size.height as f32 * d.dpi_scale) as i32;
+        let screen_width = (bounds.size.width as f32 * self.dpi_scale) as i32;
+        let screen_height = (bounds.size.height as f32 * self.dpi_scale) as i32;
 
         let dim_changed =
-            screen_width != d.screen_width || screen_height != d.screen_height;
+            screen_width != self.screen_width || screen_height != self.screen_height;
 
-        d.screen_width = screen_width;
-        d.screen_height = screen_height;
+        self.screen_width = screen_width;
+        self.screen_height = screen_height;
 
         if dim_changed {
-            Some((screen_width, screen_height, d.dpi_scale))
+            Some((screen_width, screen_height, self.dpi_scale))
         } else {
             None
         }
@@ -559,6 +560,7 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: ObjcId) {
         log::info!("mouse_moved");
+
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 if payload.cursor_grabbed {
@@ -570,17 +572,24 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
                 } else {
                     let point: NSPoint = msg_send!(event, locationInWindow);
                     let point = payload.transform_mouse_point(&point);
-                    if let Some(&mut HandlerState::Running {
-                        ref mut handler, ..
-                    }) = get_app_handler(&Some(payload.app))
+
+                    // Point is outside of view
+                    if point.0.is_sign_negative()
+                        || point.1.is_sign_negative()
+                        || point.0 > payload.screen_width as f32
+                        || point.1 > payload.screen_height as f32
                     {
-                        handler.mouse_motion_event(payload.id, point.0, point.1);
+                        return;
                     }
 
-                    // if let Ok(mut event_handler) = payload.event_handler.try_borrow_mut()
-                    // {
-                    //     event_handler.mouse_motion_event(payload.id, point.0, point.1);
-                    // }
+                    if let Some(app_state) = get_app_state(&*payload.app) {
+                        app_state.pending_events.borrow_mut().push_back(
+                            QueuedEvent::Window(
+                                payload.id,
+                                WindowEvent::MouseMotion(point.0, point.1),
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -875,9 +884,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
         log::info!("window_did_become_key");
         if let Some(payload) = get_display_payload(this) {
-            if let Some(app) = NATIVE_APP.get() {
-                let delegate = unsafe { &**app.app_delegate };
-                if let Some(app_state) = get_app_state(delegate) {
+            unsafe {
+                if let Some(app_state) = get_app_state(&*payload.app) {
                     app_state
                         .pending_events
                         .borrow_mut()
@@ -893,9 +901,8 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
         log::info!("window_did_resign_key");
         if let Some(payload) = get_display_payload(this) {
-            if let Some(app) = NATIVE_APP.get() {
-                let delegate = unsafe { &**app.app_delegate };
-                if let Some(app_state) = get_app_state(delegate) {
+            unsafe {
+                if let Some(app_state) = get_app_state(&*payload.app) {
                     app_state
                         .pending_events
                         .borrow_mut()
@@ -1507,12 +1514,7 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
     log::info!("draw_rect");
     if let Some(payload) = get_display_payload(this) {
         if !payload.has_initialized {
-            let id = payload.id;
-
             unsafe { payload.update_dimensions() };
-
-            let d = get_handler().lock();
-            let d = d.get(id).unwrap();
 
             if let Some(app_handler) = get_app_handler(&Some(payload.app)) {
                 match app_handler {
@@ -1521,9 +1523,9 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
                     } => {
                         handler.resize_event(
                             payload.id,
-                            d.screen_width,
-                            d.screen_height,
-                            d.dpi_scale,
+                            payload.screen_width,
+                            payload.screen_height,
+                            payload.dpi_scale,
                             true,
                         );
                         payload.has_initialized = true;
@@ -1533,9 +1535,9 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
                     } => {
                         handler.resize_event(
                             payload.id,
-                            d.screen_width,
-                            d.screen_height,
-                            d.dpi_scale,
+                            payload.screen_width,
+                            payload.screen_height,
+                            payload.dpi_scale,
                             true,
                         );
                         payload.has_initialized = true;
@@ -1550,14 +1552,13 @@ extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
 #[inline]
 fn initialize_view(this: &Object) -> (i32, i32, f32) {
     if let Some(payload) = get_display_payload(this) {
-        let id = payload.id;
-
         unsafe { payload.update_dimensions() };
 
-        let d = get_handler().lock();
-        let d = d.get(id).unwrap();
-
-        return (d.screen_width, d.screen_height, d.dpi_scale);
+        return (
+            payload.screen_width,
+            payload.screen_height,
+            payload.dpi_scale,
+        );
     }
 
     // TODO: Use constants for defaults
@@ -1941,6 +1942,23 @@ impl App {
                                             _ => {}
                                         };
                                     }
+                                    WindowEvent::MouseMotion(pos_x, pos_y) => {
+                                        match app_state.handler {
+                                            Some(HandlerState::Running {
+                                                ref mut handler,
+                                                ..
+                                            }) => handler.mouse_motion_event(
+                                                window_id, pos_x, pos_y,
+                                            ),
+                                            Some(HandlerState::Waiting {
+                                                ref mut handler,
+                                                ..
+                                            }) => handler.mouse_motion_event(
+                                                window_id, pos_x, pos_y,
+                                            ),
+                                            _ => {}
+                                        };
+                                    }
                                 },
                             }
                         }
@@ -2166,11 +2184,7 @@ impl Window {
             crate::set_display(
                 id,
                 NativeDisplayData {
-                    ..NativeDisplayData::new(
-                        conf.window_width,
-                        conf.window_height,
-                        // clipboard,
-                    )
+                    ..NativeDisplayData::new()
                 },
             );
 
@@ -2197,6 +2211,10 @@ impl Window {
                 cursors: HashMap::new(),
                 // event_handler,
                 modifiers: Modifiers::default(),
+                screen_width: 0,
+                screen_height: 0,
+                high_dpi: false,
+                dpi_scale: 1.0,
             };
 
             let window_masks = if conf.hide_toolbar {
