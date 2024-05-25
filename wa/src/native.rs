@@ -56,10 +56,6 @@ impl Handler {
 }
 
 pub(crate) struct NativeDisplayData {
-    pub screen_width: i32,
-    pub screen_height: i32,
-    pub dpi_scale: f32,
-    pub high_dpi: bool,
     pub quit_requested: bool,
     pub quit_ordered: bool,
     // pub clipboard: Box<dyn Clipboard>,
@@ -75,16 +71,9 @@ unsafe impl Send for NativeDisplayData {}
 unsafe impl Sync for NativeDisplayData {}
 
 impl NativeDisplayData {
-    pub fn new(
-        screen_width: i32,
-        screen_height: i32,
-        // clipboard: Box<dyn Clipboard>,
+    pub fn new(// clipboard: Box<dyn Clipboard>,
     ) -> NativeDisplayData {
         NativeDisplayData {
-            screen_width,
-            screen_height,
-            dpi_scale: 1.,
-            high_dpi: false,
             quit_requested: false,
             quit_ordered: false,
             // clipboard,
