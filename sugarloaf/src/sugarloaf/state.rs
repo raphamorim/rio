@@ -16,6 +16,7 @@ pub struct SugarState {
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
     current_line: usize,
+    pub is_dirty: bool,
     pub compositors: SugarCompositors,
     // TODO: Decide if graphics should be in SugarTree or SugarState
     pub graphics: SugarloafGraphics,
@@ -32,6 +33,7 @@ impl SugarState {
             ..Default::default()
         };
         SugarState {
+            is_dirty: false,
             current_line: 0,
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
@@ -239,6 +241,7 @@ impl SugarState {
         self.current_line = 0;
         self.next.lines.clear();
         self.next.blocks.clear();
+        self.is_dirty = false;
     }
 
     #[inline]
@@ -263,7 +266,9 @@ impl SugarState {
         let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
-        self.latest_change = self.current.calculate_diff(&self.next, false);
+        self.latest_change =
+            self.current
+                .calculate_diff(&self.next, false, self.is_dirty);
         match &self.latest_change {
             SugarTreeDiff::Equal => {
                 // Do nothing
@@ -287,33 +292,12 @@ impl SugarState {
             }
             SugarTreeDiff::Changes(_changes) => {
                 should_update = true;
-                // for change in changes {
-                //     match change {
-                //         Diff::Line(diff) => {
-                //             if lines_to_update.is_empty()
-                //                 || lines_to_update[lines_to_update.len() - 1] != diff.line
-                //             {
-                //                 lines_to_update.push(diff.line)
-                //             }
-                //         }
-                //         Diff::Char(diff) => {
-                //             if lines_to_update.is_empty()
-                //                 || lines_to_update[lines_to_update.len() - 1] != diff.line
-                //             {
-                //                 lines_to_update.push(diff.line)
-                //             }
-                //         }
-                //     }
-                // }
-            }
-            _ => {
-                should_update = true;
             }
         }
 
         log::info!("state compute_changes result: {:?}", self.latest_change);
 
-        if should_update {
+        if should_update || should_resize || should_clean_blocks {
             self.current = std::mem::take(&mut self.next);
 
             if should_compute_dimensions {
@@ -325,7 +309,7 @@ impl SugarState {
             self.compositors.advanced.update_layout(&self.current);
         }
 
-        if should_clean_blocks {
+        if should_resize || should_clean_blocks {
             self.compositors.elementary.clean_blocks();
         }
 

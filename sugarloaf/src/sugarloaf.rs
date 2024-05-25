@@ -323,6 +323,11 @@ impl Sugarloaf {
     }
 
     #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.state.is_dirty = true;
+    }
+
+    #[inline]
     pub fn render(&mut self) {
         // let start = std::time::Instant::now();
 
