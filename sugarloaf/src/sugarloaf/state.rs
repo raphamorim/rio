@@ -12,7 +12,7 @@ use crate::{SugarBlock, SugarLine};
 
 pub struct SugarState {
     pub current: Box<SugarTree>,
-    pub next: SugarTree,
+    pub next: Box<SugarTree>,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
     current_line: usize,
@@ -36,7 +36,7 @@ impl SugarState {
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
             current: Box::<SugarTree>::default(),
-            next,
+            next: Box::new(next),
             dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
         }
@@ -282,6 +282,9 @@ impl SugarState {
                 should_update = true;
                 should_compute_dimensions = true;
             }
+            SugarTreeDiff::Different => {
+                should_update = true;
+            }
             SugarTreeDiff::Changes(_changes) => {
                 should_update = true;
                 // for change in changes {
@@ -311,7 +314,7 @@ impl SugarState {
         log::info!("state compute_changes result: {:?}", self.latest_change);
 
         if should_update {
-            self.current = Box::new(std::mem::take(&mut self.next));
+            self.current = std::mem::take(&mut self.next);
 
             if should_compute_dimensions {
                 self.compositors
