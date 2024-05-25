@@ -143,6 +143,7 @@ pub enum TextureEvent<'a> {
     /// Texture update event.
     UpdateTexture {
         id: TextureId,
+        format: PixelFormat,
         x: u16,
         y: u16,
         width: u16,

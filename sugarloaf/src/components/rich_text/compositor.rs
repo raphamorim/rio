@@ -91,6 +91,7 @@ impl Compositor {
 /// Drawing.
 impl Compositor {
     /// Draws a rectangle with the specified depth and color.
+    #[inline]
     pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: &[f32; 4]) {
         self.batches.add_rect(&rect.into(), depth, color);
     }

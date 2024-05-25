@@ -53,10 +53,6 @@ pub struct RichTextBrush {
     dlist: DisplayList,
     bind_group_needs_update: bool,
     first_run: bool,
-    // selection: Selection,
-    // selection_rects: Vec<[f32; 4]>,
-    // selecting: bool,
-    // selection_changed: bool,
     supported_vertex_buffer: usize,
 }
 
@@ -64,7 +60,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 1_000;
+        let supported_vertex_buffer = 5_000;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -286,10 +282,6 @@ impl RichTextBrush {
             vertex_buffer,
             first_run: true,
             bind_group_needs_update: true,
-            // selection: Selection::default(),
-            // selection_rects: Vec::new(),
-            // selecting: false,
-            // selection_changed: false,
             supported_vertex_buffer,
             current_transform,
         }
@@ -639,6 +631,7 @@ impl RichTextBrush {
                 }
                 TextureEvent::UpdateTexture {
                     id,
+                    format,
                     x,
                     y,
                     width,
@@ -654,12 +647,12 @@ impl RichTextBrush {
                             depth_or_array_layers: 1,
                         };
 
-                        // let channels = match format {
-                        //     // Mask
-                        //     image_cache::PixelFormat::A8 => 1,
-                        //     // Color
-                        //     image_cache::PixelFormat::Rgba8 => 4,
-                        // };
+                        let channels = match format {
+                            // Mask
+                            image_cache::PixelFormat::A8 => 1,
+                            // Color
+                            image_cache::PixelFormat::Rgba8 => 4,
+                        };
 
                         ctx.queue.write_texture(
                             // Tells wgpu where to copy the pixel data
@@ -678,7 +671,7 @@ impl RichTextBrush {
                             // The layout of the texture
                             wgpu::ImageDataLayout {
                                 offset: 0,
-                                bytes_per_row: Some((width * 4).into()),
+                                bytes_per_row: Some((width * channels).into()),
                                 rows_per_image: Some(height.into()),
                             },
                             texture_size,
