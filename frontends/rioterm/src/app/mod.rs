@@ -166,14 +166,19 @@ impl EventHandler for EventHandlerInstance {
     }
 
     fn process(&mut self) -> EventHandlerControl {
-        if let Ok(event) = self.event_loop.receiver.try_recv() {
+        while let Ok(event) = self.event_loop.receiver.try_recv() {
             let window_id = event.window_id;
             match event.payload {
                 RioEventType::Rio(RioEvent::CloseWindow) => {
                     // TODO
                 }
-                RioEventType::Rio(RioEvent::Wakeup)
-                | RioEventType::Rio(RioEvent::Render) => {
+                RioEventType::Rio(RioEvent::Wakeup) => {
+                    if let Some(current) = self.routes.get_mut(&window_id) {
+                        current.route.sugarloaf.mark_dirty();
+                        current.route.render();
+                    }
+                }
+                RioEventType::Rio(RioEvent::Render) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         current.route.render();
                     }
@@ -327,18 +332,14 @@ impl EventHandler for EventHandlerInstance {
                 }
                 _ => {}
             };
-        } else {
-            // Update the scheduler after event processing to ensure
-            // the event loop deadline is as accurate as possible.
-            let control_flow = match self.scheduler.update() {
-                Some(instant) => EventHandlerControl::WaitUntil(instant),
-                None => EventHandlerControl::Wait,
-            };
-
-            return control_flow;
         }
 
-        EventHandlerControl::Wait
+        // Update the scheduler after event processing to ensure
+        // the event loop deadline is as accurate as possible.
+        match self.scheduler.update() {
+            Some(instant) => EventHandlerControl::WaitUntil(instant),
+            None => EventHandlerControl::Wait,
+        }
     }
 
     fn focus_event(&mut self, window_id: u16, focused: bool) {

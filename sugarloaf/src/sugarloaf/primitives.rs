@@ -201,10 +201,6 @@ pub struct SugarBlock {
 /// It often represents a line of text but can also be other elements like bitmap
 #[derive(Debug, Clone, Default)]
 pub struct SugarLine {
-    // hash: u64,
-    // Sized arrays can take up to half of time to execute
-    // https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=b3face22f8c64b25803fa213be6a858f
-
     // inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
     pub raw_len: usize,
     inner: Vec<Sugar>,
