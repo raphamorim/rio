@@ -14,21 +14,21 @@ use super::span_style::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
-use lru::LruCache;
+use std::collections::HashMap;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
 use swash::{Setting, Synthesis};
 
 pub struct RunCache {
-    inner: LruCache<u64, RunCacheEntry>,
+    inner: HashMap<u64, RunCacheEntry>,
 }
 
 impl RunCache {
     #[inline]
     fn new() -> Self {
         Self {
-            inner: LruCache::new(std::num::NonZeroUsize::new(2048).unwrap()),
+            inner: HashMap::default(),
         }
     }
 
@@ -41,7 +41,14 @@ impl RunCache {
         if let Some(line) = self.inner.get_mut(&line_hash) {
             *line = data;
         } else {
-            self.inner.put(line_hash, data);
+            self.inner.insert(line_hash, data);
+        }
+    }
+
+    #[inline]
+    fn clear_on_max_capacity(&mut self) {
+        if self.inner.len() > 1024 {
+            self.inner.clear();
         }
     }
 }
@@ -395,6 +402,9 @@ impl<'a> ParagraphBuilder<'a> {
         // const PDI: char = '\u{2069}';
         // self.push_char(PDI);
         // }
+
+        // Cache needs to be cleaned before build lines
+        self.cache.clear_on_max_capacity();
 
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
