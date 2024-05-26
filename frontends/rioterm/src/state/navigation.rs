@@ -1,11 +1,14 @@
 use crate::constants::*;
+use rio_backend::sugarloaf::font::FONT_ID_BUILTIN;
 use rio_backend::config::navigation::NavigationMode;
 use rio_backend::sugarloaf::components::rect::Rect;
 use std::collections::HashMap;
 
+
 pub struct Text {
     pub position: (f32, f32),
     pub content: String,
+    pub font_id: usize,
     pub font_size: f32,
     pub color: [f32; 4],
 }
@@ -15,12 +18,14 @@ impl Text {
     pub fn new(
         position: (f32, f32),
         content: String,
+        font_id: usize,
         font_size: f32,
         color: [f32; 4],
     ) -> Self {
         Text {
             position,
             content,
+            font_id,
             font_size,
             color,
         }
@@ -219,6 +224,7 @@ impl ScreenNavigation {
         self.texts.push(Text::new(
             (initial_position - 12., 14.5),
             "".to_string(),
+            FONT_ID_BUILTIN,
             23.,
             icon_color,
         ));
@@ -226,6 +232,7 @@ impl ScreenNavigation {
         self.texts.push(Text::new(
             (initial_position + 4., 13.0),
             format!("{}.{}", current_index + 1, main_name),
+            FONT_ID_BUILTIN,
             14.,
             fg_color,
         ));
@@ -249,6 +256,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position + 36., 13.0),
                     format!("+ {}", len - 1),
+                    FONT_ID_BUILTIN,
                     13.,
                     self.colors.foreground,
                 ));
@@ -264,6 +272,7 @@ impl ScreenNavigation {
                     self.texts.push(Text::new(
                         (initial_position + 36., 13.0),
                         format!("+ {}", rendered),
+                        FONT_ID_BUILTIN,
                         13.,
                         self.colors.foreground,
                     ));
@@ -302,6 +311,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position - 12., 15.0),
                     "".to_string(),
+                    FONT_ID_BUILTIN,
                     22.,
                     icon_color,
                 ));
@@ -309,6 +319,7 @@ impl ScreenNavigation {
                 self.texts.push(Text::new(
                     (initial_position + 4., 13.0),
                     format!("{}.{}", iterator + 1, name),
+                    FONT_ID_BUILTIN,
                     14.,
                     fg_color,
                 ));
@@ -403,6 +414,7 @@ impl ScreenNavigation {
             self.texts.push(Text::new(
                 (initial_position_x + 4., position_y + text_pos_mod),
                 format!("{}.{}", i + 1, name),
+                FONT_ID_BUILTIN,
                 14.,
                 foreground_color,
             ));
@@ -429,7 +441,7 @@ fn get_color_overwrite<'a>(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::state::navigation::get_color_overwrite;
+    use crate::screen::navigation::get_color_overwrite;
 
     #[test]
     fn test_get_color_overwrite() {

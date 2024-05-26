@@ -8,6 +8,9 @@
 //
 // A router is a window, but it can contain a sub route that is a panel
 // For example /:window-id/:panel-one
+use rio_backend::crosswords::{MIN_COLUMNS, MIN_LINES};
+use rio_backend::sugarloaf::RenderableSugarloaf;
+
 use crate::bindings::{
     self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
@@ -30,7 +33,7 @@ use rio_backend::crosswords::{grid::Dimensions, pos::Pos, pos::Side, square::Hyp
 use rio_backend::error::{RioError, RioErrorType};
 use rio_backend::event::EventProxy;
 use rio_backend::selection::SelectionType;
-use rio_backend::sugarloaf::font::FontLibrary;
+use rio_backend::sugarloaf::font::loader::Database;
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
@@ -99,7 +102,7 @@ impl Route {
         raw_window_handle: raw_window_handle::RawWindowHandle,
         raw_display_handle: raw_window_handle::RawDisplayHandle,
         config: Rc<Config>,
-        font_library: FontLibrary,
+        font_library: Database,
         dimensions: (i32, i32, f32),
         open_url: Option<&str>,
     ) -> Result<Route, Box<dyn std::error::Error>> {
@@ -170,6 +173,7 @@ impl Route {
             dimensions.2,
             config.fonts.size,
             config.line_height,
+            (MIN_COLUMNS, MIN_LINES),
         );
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
@@ -187,8 +191,9 @@ impl Route {
         let mut sugarloaf = match futures::executor::block_on(Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            &font_library,
+            config.fonts.to_owned(),
             sugarloaf_layout,
+            Some(&font_library),
         )) {
             Ok(instance) => instance,
             Err(instance_with_errors) => {
@@ -202,7 +207,7 @@ impl Route {
             event_proxy,
             id,
             context_manager_config,
-            sugarloaf.layout_next(),
+            sugarloaf.layout.clone(),
             sugarloaf_errors,
         )?;
 
@@ -212,7 +217,7 @@ impl Route {
             config.keyboard,
         );
 
-        sugarloaf.set_background_color(state.dynamic_background);
+        sugarloaf.set_background_color(state.dynamic_background.1);
         if let Some(image) = background_image {
             sugarloaf.set_background_image(&image);
         }
@@ -224,18 +229,18 @@ impl Route {
         // render by wakeup event.
         sugarloaf.resize(dimensions.0 as u32, dimensions.1 as u32);
         sugarloaf.render();
-        let layout = sugarloaf.layout();
-        for created_ctx in context_manager.contexts() {
-            let mut terminal = created_ctx.terminal.lock();
-            terminal.resize::<SugarloafLayout>(layout);
-            drop(terminal);
-            let _ = created_ctx.messenger.send_resize(
-                layout.width as u16,
-                layout.height as u16,
-                layout.columns as u16,
-                layout.lines as u16,
-            );
-        }
+        // let layout = sugarloaf.layout;
+        // for created_ctx in context_manager.contexts() {
+        //     let mut terminal = created_ctx.terminal.lock();
+        //     terminal.resize::<SugarloafLayout>(layout);
+        //     drop(terminal);
+        //     let _ = created_ctx.messenger.send_resize(
+        //         layout.width as u16,
+        //         layout.height as u16,
+        //         layout.columns as u16,
+        //         layout.lines as u16,
+        //     );
+        // }
 
         Ok(Route {
             is_focused: true,
@@ -301,7 +306,7 @@ impl Route {
         let lmb_pressed = self.mouse.left_button_state;
         let rmb_pressed = self.mouse.right_button_state;
 
-        let layout = self.sugarloaf.layout();
+        let layout = &self.sugarloaf.layout;
         // If the terminal haven't started ignore the motion processing
         if layout.width == 0.0 || layout.height == 0.0 {
             return cursor;
@@ -344,7 +349,7 @@ impl Route {
         let display_offset = self.display_offset();
         let old_point = self.mouse_position(display_offset);
 
-        let layout = self.sugarloaf.layout();
+        let layout = &self.sugarloaf.layout;
         let x = x.clamp(0.0, layout.width - 1.) as usize;
         let y = y.clamp(0.0, layout.height - 1.) as usize;
         self.mouse.x = x;
@@ -404,12 +409,12 @@ impl Route {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let layout = self.sugarloaf.layout();
-        let width = layout.dimensions.width;
+        let layout = &self.sugarloaf.layout;
+        let width = layout.sugarwidth;
         x <= (layout.margin.x + layout.columns as f32 * width) as usize
-            && x > (layout.margin.x * layout.dimensions.scale) as usize
-            && y <= (layout.margin.top_y * layout.dimensions.scale
-                + layout.lines as f32 * layout.dimensions.height)
+            && x > (layout.margin.x * layout.scale_factor) as usize
+            && y <= (layout.margin.top_y * layout.scale_factor
+                + layout.lines as f32 * layout.sugarheight)
                 as usize
             && y > layout.margin.top_y as usize
     }
@@ -533,9 +538,9 @@ impl Route {
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
-        let layout = self.sugarloaf.layout();
-        let width = (layout.dimensions.width) as usize;
-        let margin_x = layout.margin.x * layout.dimensions.scale;
+        let layout = &self.sugarloaf.layout;
+        let width = (layout.sugarwidth) as usize;
+        let margin_x = layout.margin.x * layout.scale_factor;
 
         let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
@@ -596,8 +601,8 @@ impl Route {
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let layout = self.sugarloaf.layout();
-        let scale_factor = layout.dimensions.scale;
+        let layout = &self.sugarloaf.layout;
+        let scale_factor = layout.scale_factor;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
@@ -760,10 +765,9 @@ impl Route {
                     }
                     Act::TabCreateNew => {
                         let redirect = true;
-                        let layout = self.sugarloaf.layout();
                         self.ctx.add_context(
                             redirect,
-                            layout,
+                            self.sugarloaf.layout.clone(),
                             (
                                 &self.state.get_cursor_state_from_ref(),
                                 self.state.has_blinking_enabled,
@@ -1012,9 +1016,9 @@ impl Route {
         new_scroll_y_px: f64,
         modifiers: &wa::ModifiersState,
     ) {
-        let layout = self.sugarloaf.layout();
-        let width = layout.dimensions.width as f64;
-        let height = layout.dimensions.height as f64;
+        let layout = &self.sugarloaf.layout;
+        let width = layout.sugarwidth as f64;
+        let height = layout.sugarheight as f64;
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -1060,7 +1064,7 @@ impl Route {
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
             let lines = (self.mouse.accumulated_scroll.y
-                / (layout.dimensions.height) as f64)
+                / (layout.sugarheight) as f64)
                 .abs() as usize;
 
             let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
@@ -1086,7 +1090,7 @@ impl Route {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
             let lines = (self.mouse.accumulated_scroll.y
-                / layout.dimensions.height as f64) as i32;
+                / layout.sugarheight as f64) as i32;
 
             if lines != 0 {
                 let mut terminal = self.ctx.current().terminal.lock();
@@ -1120,7 +1124,7 @@ impl Route {
         let padding_y_bottom = padding_bottom_from_config(config);
         let padding_y_top = padding_top_from_config(config);
 
-        let mut layout = self.sugarloaf.layout_next();
+        let layout = &mut self.sugarloaf.layout;
         layout.recalculate(
             config.fonts.size,
             config.line_height,
@@ -1133,7 +1137,7 @@ impl Route {
         self.resize_all_contexts();
 
         self.sugarloaf
-            .set_background_color(self.state.dynamic_background);
+            .set_background_color(self.state.dynamic_background.1);
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }
@@ -1229,14 +1233,20 @@ impl Route {
 
     #[inline]
     pub fn change_font_size(&mut self, action: u8) {
-        self.sugarloaf.update_font_size(action);
-        self.render();
-
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
+        let should_update = match action {
+            0 => self.sugarloaf.layout.increase_font_size(),
+            1 => self.sugarloaf.layout.decrease_font_size(),
+            _ => self.sugarloaf.layout.reset_font_size(),
         };
 
-        self.render();
+        if !should_update {
+            return;
+        }
+
+        self.sugarloaf.layout.update();
+        self.sugarloaf.calculate_bounds();
+        self.sugarloaf.layout.update();
+
         self.resize_all_contexts();
     }
 
@@ -1371,16 +1381,15 @@ impl Route {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
-        let layout = self.sugarloaf.layout_next();
         for context in self.ctx.contexts() {
             let mut terminal = context.terminal.lock();
-            terminal.resize::<SugarloafLayout>(layout);
+            terminal.resize::<SugarloafLayout>(self.sugarloaf.layout.clone());
             drop(terminal);
             let _ = context.messenger.send_resize(
-                layout.width as u16,
-                layout.height as u16,
-                layout.columns as u16,
-                layout.lines as u16,
+                self.sugarloaf.layout.width as u16,
+                self.sugarloaf.layout.height as u16,
+                self.sugarloaf.layout.columns as u16,
+                self.sugarloaf.layout.lines as u16,
             );
         }
     }
@@ -1469,17 +1478,17 @@ impl Route {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let layout = self.sugarloaf.layout();
+        let layout = &self.sugarloaf.layout;
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            layout.dimensions.scale,
+            layout.scale_factor,
             (layout.columns, layout.lines),
             layout.margin.x,
             layout.margin.top_y,
             (
-                layout.dimensions.width,
-                layout.dimensions.height * layout.line_height,
+                layout.sugarwidth,
+                layout.sugarheight * layout.line_height,
             ),
         )
     }
@@ -1563,13 +1572,6 @@ impl Route {
 
     #[inline]
     pub fn render(&mut self) {
-        // If sugarloaf does have pending updates to process then
-        // should abort current render
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-            return;
-        };
-
         // let start = std::time::Instant::now();
         match self.path {
             RoutePath::Assistant => {

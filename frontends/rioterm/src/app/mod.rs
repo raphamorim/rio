@@ -1,3 +1,4 @@
+use rio_backend::sugarloaf::RenderableSugarloaf;
 mod menu;
 mod route;
 
@@ -7,7 +8,6 @@ use crate::routes::RoutePath;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use rio_backend::error::RioError;
 use rio_backend::event::{EventPayload, EventProxy, RioEventType};
-use rio_backend::sugarloaf::font::FontLibrary;
 use route::Route;
 use std::collections::HashMap;
 use std::error::Error;
@@ -27,7 +27,7 @@ pub fn create_window(
     event_loop_proxy: EventLoopProxy<EventPayload>,
     config: &Rc<rio_backend::config::Config>,
     config_error: &Option<rio_backend::config::ConfigError>,
-    font_library: FontLibrary,
+    font_library: rio_backend::sugarloaf::font::loader::Database,
     tab_group: Option<u64>,
     open_file_url: Option<&str>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
@@ -94,7 +94,7 @@ pub fn create_window(
 
 struct EventHandlerInstance {
     config: Rc<rio_backend::config::Config>,
-    font_library: FontLibrary,
+    font_library: rio_backend::sugarloaf::font::loader::Database,
     scheduler: Scheduler,
     routes: HashMap<u16, Router>,
     event_loop: EventLoop<EventPayload>,
@@ -106,7 +106,8 @@ struct EventHandlerInstance {
 
 impl EventHandlerInstance {
     fn new(config: rio_backend::config::Config) -> Self {
-        let font_library = FontLibrary::new(config.fonts.to_owned());
+        let mut font_library = rio_backend::sugarloaf::font::loader::Database::new();
+        font_library.load_system_fonts();
         // let mut sugarloaf_errors = None;
 
         // let (font_library, fonts_not_found) = loader;
@@ -174,12 +175,7 @@ impl EventHandler for EventHandlerInstance {
                 RioEventType::Rio(RioEvent::CloseWindow) => {
                     // TODO
                 }
-                RioEventType::Rio(RioEvent::Wakeup) => {
-                    if let Some(current) = self.routes.get_mut(&window_id) {
-                        current.route.sugarloaf.mark_dirty();
-                        current.route.render();
-                    }
-                }
+                RioEventType::Rio(RioEvent::Wakeup) |
                 RioEventType::Rio(RioEvent::Render) => {
                     if let Some(current) = self.routes.get_mut(&window_id) {
                         current.route.render();
@@ -304,20 +300,21 @@ impl EventHandler for EventHandlerInstance {
                     }
                 }
                 RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
-                    if let Some(current) = self.routes.get_mut(&window_id) {
-                        let mut terminal = current.route.ctx.current().terminal.lock();
-                        let graphics = terminal.graphics_take_queues();
-                        if let Some(graphic_queues) = graphics {
-                            let renderer = &mut current.route.sugarloaf;
-                            for graphic_data in graphic_queues.pending {
-                                renderer.add_graphic(graphic_data);
-                            }
+                    // TODO: Include graphics
+                    // if let Some(current) = self.routes.get_mut(&window_id) {
+                    //     let mut terminal = current.route.ctx.current().terminal.lock();
+                    //     let graphics = terminal.graphics_take_queues();
+                    //     if let Some(graphic_queues) = graphics {
+                    //         let renderer = &mut current.route.sugarloaf;
+                    //         for graphic_data in graphic_queues.pending {
+                    //             renderer.add_graphic(graphic_data);
+                    //         }
 
-                            for graphic_data in graphic_queues.remove_queue {
-                                renderer.remove_graphic(&graphic_data);
-                            }
-                        }
-                    }
+                    //         for graphic_data in graphic_queues.remove_queue {
+                    //             renderer.remove_graphic(&graphic_data);
+                    //         }
+                    //     }
+                    // }
                 }
                 RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                     let timer_id = TimerId::new(Topic::Render, 0);

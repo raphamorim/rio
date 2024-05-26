@@ -8,39 +8,39 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
     let black = [0.0, 0.0, 0.0, 1.0];
 
-    let layout = sugarloaf.layout();
-    let height = layout.height / layout.dimensions.scale;
+    let height = sugarloaf.layout.height / sugarloaf.layout.scale_factor;
 
     let assistant_background = vec![
         Rect {
             position: [0., 0.0],
             color: black,
-            size: [layout.width, layout.height],
+            size: [sugarloaf.layout.width, sugarloaf.layout.height],
         },
         Rect {
             position: [0., 30.0],
             color: blue,
-            size: [30., layout.height],
+            size: [30., sugarloaf.layout.height],
         },
         Rect {
-            position: [15., layout.margin.top_y + 40.],
+            position: [15., sugarloaf.layout.margin.top_y + 40.],
             color: yellow,
-            size: [30., layout.height],
+            size: [30., sugarloaf.layout.height],
         },
         Rect {
-            position: [30., layout.margin.top_y + 120.],
+            position: [30., sugarloaf.layout.margin.top_y + 120.],
             color: red,
-            size: [30., layout.height],
+            size: [30., sugarloaf.layout.height],
         },
     ];
 
-    sugarloaf.append_rects(assistant_background);
+    sugarloaf.pile_rects(assistant_background);
 
     let mid_screen = height / 2.;
 
     sugarloaf.text(
         (70., mid_screen - 10.),
         content.to_string(),
+        8,
         48.,
         [1., 1., 1., 1.],
         true,
@@ -49,6 +49,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     sugarloaf.text(
         (70., mid_screen + 30.),
         String::from("To quit press enter key"),
+        8,
         18.,
         yellow,
         true,
@@ -57,6 +58,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     sugarloaf.text(
         (70., mid_screen + 50.),
         String::from("To continue press escape key"),
+        8,
         18.,
         blue,
         true,

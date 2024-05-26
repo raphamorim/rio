@@ -6,19 +6,19 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
-use crate::selection::SelectionRange;
 use navigation::ScreenNavigation;
+use crate::selection::SelectionRange;
 use rio_backend::config::colors::{
     term::{List, TermColors},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
-use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::core::{Sugar, SugarDecoration, SugarStack, SugarStyle};
+use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
+
 use std::time::{Duration, Instant};
-#[cfg(not(target_os = "macos"))]
-use winit::window::Theme;
 
 struct Cursor {
     state: CursorState,
@@ -41,7 +41,7 @@ pub struct State {
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
-    pub dynamic_background: wgpu::Color,
+    pub dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
     background_opacity: f32,
     foreground_opacity: f32,
@@ -49,53 +49,32 @@ pub struct State {
 
 impl State {
     pub fn new(
-        #[cfg(not(target_os = "macos"))] config: &std::rc::Rc<Config>,
-        #[cfg(target_os = "macos")] config: &Config,
-        #[cfg(not(target_os = "macos"))] current_theme: Option<Theme>,
-        #[cfg(target_os = "macos")] appearance: wa::Appearance,
+        config: &Config,
+        appearance: wa::Appearance,
     ) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            if let Some(theme) = current_theme {
-                if let Some(adaptive_colors) = &config.adaptive_colors {
-                    match theme {
-                        Theme::Light => {
-                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                        }
-                        Theme::Dark => {
-                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                        }
-                    }
+        if let Some(adaptive_colors) = &config.adaptive_colors {
+            match appearance {
+                wa::Appearance::Light => {
+                    named_colors = adaptive_colors.light.unwrap_or(named_colors);
                 }
+                wa::Appearance::Dark => {
+                    named_colors = adaptive_colors.dark.unwrap_or(named_colors);
+                }
+                // TODO
+                wa::Appearance::LightHighContrast => {}
+                wa::Appearance::DarkHighContrast => {}
             }
         }
 
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(adaptive_colors) = &config.adaptive_colors {
-                match appearance {
-                    wa::Appearance::Light => {
-                        named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                    }
-                    wa::Appearance::Dark => {
-                        named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                    }
-                    // TODO
-                    wa::Appearance::LightHighContrast => {}
-                    wa::Appearance::DarkHighContrast => {}
-                }
-            }
-        }
-
-        let mut dynamic_background = named_colors.background.1;
+        let mut dynamic_background = named_colors.background;
         if config.window.background_image.is_some()
             || config.window.background_opacity < 1.
         {
-            dynamic_background = wgpu::Color::TRANSPARENT;
+            dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
         };
 
         let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
@@ -146,6 +125,16 @@ impl State {
     }
 
     #[inline]
+    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity -= acc;
+    }
+
+    #[inline]
+    pub fn increase_foreground_opacity(&mut self, acc: f32) {
+        self.foreground_opacity += acc;
+    }
+
+    #[inline]
     pub fn get_cursor_state_from_ref(&self) -> CursorState {
         CursorState::new(self.cursor.content_ref)
     }
@@ -178,56 +167,97 @@ impl State {
             square.c
         };
 
-        let style = match (
-            flags.contains(Flags::ITALIC),
-            flags.contains(Flags::BOLD_ITALIC),
-            flags.contains(Flags::BOLD),
-        ) {
-            (true, _, _) => SugarStyle::Italic,
-            (_, true, _) => SugarStyle::BoldItalic,
-            (_, _, true) => SugarStyle::Bold,
-            _ => SugarStyle::Disabled,
-        };
+        let mut style: Option<SugarStyle> = None;
+        let is_italic = flags.contains(Flags::ITALIC);
+        let is_bold_italic = flags.contains(Flags::BOLD_ITALIC);
+        let is_bold = flags.contains(Flags::BOLD);
+
+        if is_bold || is_bold_italic || is_italic {
+            style = Some(SugarStyle {
+                is_italic,
+                is_bold_italic,
+                is_bold,
+            });
+        }
 
         if flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
-        let mut decoration = SugarDecoration::Disabled;
+        let mut decoration = None;
         if flags.contains(Flags::UNDERLINE) {
-            decoration = SugarDecoration::Underline;
+            decoration = Some(SugarDecoration {
+                relative_position: (0.0, self.font_size - 1.),
+                size: (1.0, 0.005),
+                color: self.named_colors.foreground,
+            });
         } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = SugarDecoration::Strikethrough;
+            decoration = Some(SugarDecoration {
+                relative_position: (0.0, self.font_size / 2.),
+                size: (1.0, 0.025),
+                color: self.named_colors.foreground,
+            });
         }
 
         Sugar {
             content,
-            repeated: 0,
             foreground_color,
             background_color,
             style,
             decoration,
-            media: None,
-            cursor: SugarCursor::Disabled,
         }
     }
 
     #[inline]
     fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.decoration = SugarDecoration::Underline;
+        sugar.decoration = Some(SugarDecoration {
+            relative_position: (0.0, self.font_size - 1.),
+            size: (1.0, 0.005),
+            color: self.named_colors.foreground,
+        });
+
         sugar
     }
 
     #[inline]
-    fn create_sugar_line(
+    fn cursor_to_decoration(&self) -> Option<SugarDecoration> {
+        let color = if !self.is_vi_mode_enabled {
+            self.named_colors.cursor
+        } else {
+            self.named_colors.vi_cursor
+        };
+
+        match self.cursor.state.content {
+            CursorShape::Block => Some(SugarDecoration {
+                relative_position: (0.0, 0.0),
+                size: (1.0, 1.0),
+                color,
+            }),
+            CursorShape::Underline => Some(SugarDecoration {
+                relative_position: (0.0, self.font_size - 2.5),
+                size: (1.0, 0.08),
+                color,
+            }),
+            CursorShape::Beam => Some(SugarDecoration {
+                relative_position: (0.0, 0.0),
+                size: (0.1, 1.0),
+                color,
+            }),
+            CursorShape::Hidden => None,
+        }
+    }
+
+    // create_rich_sugar_stack is different than create_sugar_stack
+    // it activates features like hyperlinks and text selection
+    // this function is only called if state has either selection or hyperlink is some
+    #[inline]
+    fn create_rich_sugar_stack(
         &mut self,
-        sugarloaf: &mut Sugarloaf,
         row: &Row<Square>,
         has_cursor: bool,
-        current_line: pos::Line,
-    ) {
-        sugarloaf.start_line();
-
+        line: pos::Line,
+    ) -> SugarStack {
+        let mut stack: Vec<Sugar> = vec![];
         let columns: usize = row.len();
         for column in 0..columns {
             let square = &row.inner[column];
@@ -236,27 +266,22 @@ impl State {
                 continue;
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
-                continue;
-            }
-
             if has_cursor && column == self.cursor.state.pos.col {
-                sugarloaf.insert_on_current_line(&self.create_cursor(square));
+                stack.push(self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
                     .hyperlink_range
                     .unwrap()
-                    .contains(pos::Pos::new(current_line, pos::Column(column)))
+                    .contains(pos::Pos::new(line, pos::Column(column)))
             {
                 let sugar = self.create_sugar(square);
-                sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
+                stack.push(self.set_hyperlink_in_sugar(sugar));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
                     .unwrap()
-                    .contains(pos::Pos::new(current_line, pos::Column(column)))
+                    .contains(pos::Pos::new(line, pos::Column(column)))
             {
                 let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN)
                 {
@@ -273,11 +298,12 @@ impl State {
                         self.named_colors.selection_foreground
                     },
                     background_color: self.named_colors.selection_background,
-                    ..Sugar::default()
+                    style: None,
+                    decoration: None,
                 };
-                sugarloaf.insert_on_current_line(&selected_sugar);
+                stack.push(selected_sugar);
             } else {
-                sugarloaf.insert_on_current_line(&self.create_sugar(square));
+                stack.push(self.create_sugar(square));
             }
 
             // Render last column and break row
@@ -286,19 +312,7 @@ impl State {
             }
         }
 
-        sugarloaf.finish_line();
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity -= acc;
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn increase_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity += acc;
+        stack
     }
 
     #[inline]
@@ -381,7 +395,7 @@ impl State {
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
-                (NamedColor::Background, _) => self.named_colors.background.0,
+                (NamedColor::Background, _) => self.dynamic_background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
 
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,
@@ -440,55 +454,53 @@ impl State {
     }
 
     #[inline]
-    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let media = &square.graphics().unwrap()[0].texture;
-        Sugar {
-            media: Some(SugarGraphic {
-                id: media.id,
-                width: media.width,
-                height: media.height,
-            }),
-            ..Sugar::default()
-        }
-    }
+    fn create_sugar_stack(&mut self, row: &Row<Square>, has_cursor: bool) -> SugarStack {
+        let mut stack: Vec<Sugar> = vec![];
+        let columns: usize = row.len();
 
-    #[inline]
-    fn create_sugar_cursor(&self) -> SugarCursor {
-        let color = if !self.is_vi_mode_enabled {
-            self.named_colors.cursor
-        } else {
-            self.named_colors.vi_cursor
-        };
+        for column in 0..columns {
+            let square = &row.inner[column];
 
-        match self.cursor.state.content {
-            CursorShape::Block => SugarCursor::Block(color),
-            CursorShape::Underline => SugarCursor::Underline(color),
-            CursorShape::Beam => SugarCursor::Caret(color),
-            CursorShape::Hidden => SugarCursor::Disabled,
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+
+            if has_cursor && column == self.cursor.state.pos.col {
+                stack.push(self.create_cursor(square));
+            } else {
+                stack.push(self.create_sugar(square));
+            }
+
+            // Render last column and break row
+            if column == (columns - 1) {
+                break;
+            }
         }
+
+        stack
     }
 
     #[inline]
     fn create_cursor(&self, square: &Square) -> Sugar {
-        let style = match (
-            square.flags.contains(Flags::ITALIC),
-            square.flags.contains(Flags::BOLD_ITALIC),
-            square.flags.contains(Flags::BOLD),
-        ) {
-            (true, _, _) => SugarStyle::Italic,
-            (_, true, _) => SugarStyle::BoldItalic,
-            (_, _, true) => SugarStyle::Bold,
-            _ => SugarStyle::Disabled,
-        };
-
         let mut sugar = Sugar {
             content: square.c,
             foreground_color: self.compute_fg_color(square),
             background_color: self.compute_bg_color(square),
-            cursor: self.create_sugar_cursor(),
-            style,
-            ..Sugar::default()
+            style: None,
+            decoration: None,
         };
+
+        let is_italic = square.flags.contains(Flags::ITALIC);
+        let is_bold_italic = square.flags.contains(Flags::BOLD_ITALIC);
+        let is_bold = square.flags.contains(Flags::BOLD);
+
+        if is_bold || is_bold_italic || is_italic {
+            sugar.style = Some(SugarStyle {
+                is_italic,
+                is_bold_italic,
+                is_bold,
+            });
+        }
 
         if square.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
@@ -505,6 +517,7 @@ impl State {
             sugar.foreground_color = self.named_colors.background.0;
         }
 
+        sugar.decoration = self.cursor_to_decoration();
         sugar
     }
 
@@ -538,15 +551,14 @@ impl State {
         rows: Vec<Row<Square>>,
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
+        context_manager: &crate::context::ContextManager<EventProxy>,
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
-        let layout = sugarloaf.layout_next();
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
-        self.font_size = layout.font_size;
+        self.font_size = sugarloaf.layout.font_size;
 
         // Only blink cursor if does not contain selection
         let has_selection = self.selection_range.is_some();
@@ -564,31 +576,38 @@ impl State {
             }
         }
 
-        for (i, row) in rows.iter().enumerate() {
-            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-            self.create_sugar_line(
-                sugarloaf,
-                row,
-                has_cursor,
-                pos::Line((i as i32) - display_offset),
-            );
+        if has_selection || self.hyperlink_range.is_some() {
+            for (i, row) in rows.iter().enumerate() {
+                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+                sugarloaf.stack(self.create_rich_sugar_stack(
+                    row,
+                    has_cursor,
+                    pos::Line((i as i32) - display_offset),
+                ));
+            }
+        } else {
+            for (i, row) in rows.iter().enumerate() {
+                let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+                sugarloaf.stack(self.create_sugar_stack(row, has_cursor));
+            }
         }
 
         self.navigation.content(
-            (layout.width, layout.height),
-            layout.dimensions.scale,
+            (sugarloaf.layout.width, sugarloaf.layout.height),
+            sugarloaf.layout.scale_factor,
             context_manager.titles.key.as_str(),
             &context_manager.titles.titles,
             context_manager.current_index(),
             context_manager.len(),
         );
 
-        sugarloaf.append_rects(self.navigation.rects.to_owned());
+        sugarloaf.pile_rects(self.navigation.rects.to_owned());
 
         for text in self.navigation.texts.iter() {
             sugarloaf.text(
                 text.position,
                 text.content.to_owned(),
+                text.font_id,
                 text.font_size,
                 text.color,
                 true,
