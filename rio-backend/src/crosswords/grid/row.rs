@@ -3,6 +3,7 @@
 // which is licensed under Apache 2.0 license.
 
 use crate::crosswords::grid::GridSquare;
+use crate::crosswords::square::Flags;
 use crate::crosswords::square::ResetDiscriminant;
 use crate::crosswords::Column;
 use core::cmp::min;
@@ -81,7 +82,11 @@ impl<T: Clone + Default> Row<T> {
 
         self.occ = min(self.occ, columns);
 
-        if new_row.is_empty() {
+        if new_row.is_empty()
+            || new_row
+                .iter()
+                .all(|cell| cell.flags().contains(Flags::GRAPHICS))
+        {
             None
         } else {
             Some(new_row)

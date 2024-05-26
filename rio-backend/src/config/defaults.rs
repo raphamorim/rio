@@ -1,14 +1,4 @@
 #[inline]
-pub fn default_env_vars() -> Vec<String> {
-    vec![]
-}
-
-#[inline]
-pub fn default_padding_x() -> f32 {
-    0.
-}
-
-#[inline]
 pub fn default_bool_true() -> bool {
     true
 }
@@ -127,9 +117,15 @@ cursor = '▇'
 
 # Blinking Cursor
 #
-# Default is false
+# Default is true
 #
 blinking-cursor = false
+
+# Hide the cursor while typing
+#
+# Default is `false`
+#
+# hide-cursor-when-typing = false
 
 # Ignore theme selection foreground color
 #
@@ -156,26 +152,31 @@ blinking-cursor = false
 
 # Option as Alt
 #
-# This config only works on MacOs.
+# This config only works on MacOS.
 # Possible choices: 'both', 'left' and 'right'.
 #
 # Example:
 # option-as-alt = 'left'
+
+# Line height
+#
+# This option will apply an modifier to line-height
+# Default is `1.0`
+#
+# Example:
+# line-height = 1.2
 
 # Startup directory
 #
 # Directory the shell is started in. If this is unset the working
 # directory of the parent process will be used.
 #
-# This configuration only has effect if use-fork is disabled
+# This configuration only has effect if use-fork is disabled.
 #
 # Example:
 # working-dir = "/Users/raphael/Documents/"
 
 # Environment variables
-#
-# The example below sets fish as the default SHELL using env vars
-# please do not copy this if you do not need
 #
 # Example:
 # env-vars = []
@@ -188,6 +189,11 @@ blinking-cursor = false
 #
 # Example:
 # use-fork = false
+
+# Confirm before exiting Rio
+# Default is `true`
+#
+# confirm-before-quit = false
 
 # Window configuration
 #
@@ -231,16 +237,22 @@ blinking-cursor = false
 #   - GL: Supported on Linux/Android, and Windows and macOS/iOS via ANGLE
 #   - Vulkan: Supported on Windows, Linux/Android
 #   - DX12: Supported on Windows 10
-#   - DX11: Supported on Windows 7+
 #   - Metal: Supported on macOS/iOS
 #
-# • disable-renderer-when-unfocused: This property disable renderer processes while Rio is unfocused.
+# • disable-unfocused-render: This property disable renderer processes while Rio is unfocused.
 #
+# • level: Configure renderer level
+#   - Available options: 0 and 1.
+#       Higher the level more rendering features and computations
+#       will be done like enable font ligatures or emoji support.
+#       For more information please check the docs.
+# 
 # Example:
 # [renderer]
 # performance = "High"
 # backend = "Automatic"
-# disable-renderer-when-unfocused = false
+# disable-unfocused-render = false
+# level = 1
 
 # Keyboard
 #
@@ -313,7 +325,7 @@ blinking-cursor = false
 # Navigation
 #
 # "mode" - Define navigation mode
-#   • NativeTab (MacOs only)
+#   • NativeTab (MacOS only)
 #   • CollapsedTab
 #   • BottomTab
 #   • TopTab
@@ -321,7 +333,7 @@ blinking-cursor = false
 #   • Plain
 #
 # "clickable" - Enable click on tabs to switch.
-# "use-current-path" - Use same path whenever a new tab is created.
+# "use-current-path" - Use same path whenever a new tab is created (Note: requires `use-fork` to be set to false).
 # "color-automation" - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 #
 # Example:

@@ -409,20 +409,22 @@ fn is_boundary<T: EventListener>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::crosswords::pos::{Column, Line};
+    use crate::crosswords::CrosswordsSize;
     use crate::crosswords::{Crosswords, CursorShape};
     use crate::event::VoidListener;
     use crate::performer::handler::Handler;
-    use winit::window::WindowId;
 
     fn term() -> Crosswords<VoidListener> {
+        let size = CrosswordsSize::new(20, 20);
         Crosswords::new(
-            20,
-            20,
+            size,
             CursorShape::Underline,
             VoidListener,
-            WindowId::from(0),
+            #[cfg(not(target_os = "macos"))]
+            crate::event::WindowId::from(0),
+            #[cfg(target_os = "macos")]
+            0,
         )
     }
 

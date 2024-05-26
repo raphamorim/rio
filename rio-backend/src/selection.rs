@@ -438,23 +438,22 @@ impl Selection {
 /// look like [ B] and [E ].
 #[cfg(test)]
 mod tests {
+
     use super::*;
+    use crate::crosswords::CrosswordsSize;
+    use crate::event::VoidListener;
 
     use crate::crosswords::pos::{Column, Pos, Side};
-    use crate::crosswords::test::CrosswordsSize;
     use crate::crosswords::Crosswords;
-    use crate::event::VoidListener;
-    use winit::window::WindowId;
 
     fn term(height: usize, width: usize) -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(width, height);
-        Crosswords::new(
-            size.columns,
-            size.screen_lines,
-            CursorShape::Block,
-            VoidListener {},
-            WindowId::from(0),
-        )
+        #[cfg(not(target_os = "macos"))]
+        let window_id = crate::event::WindowId::from(0);
+        #[cfg(target_os = "macos")]
+        let window_id = 0;
+
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id)
     }
 
     /// Test case of single cell selection.

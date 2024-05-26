@@ -459,6 +459,12 @@ pub trait Dimensions {
     fn history_size(&self) -> usize {
         self.total_lines().saturating_sub(self.screen_lines())
     }
+
+    /// square height in pixels.
+    fn square_height(&self) -> f32;
+
+    /// square width in pixels.
+    fn square_width(&self) -> f32;
 }
 
 impl<G> Dimensions for Grid<G> {
@@ -476,6 +482,15 @@ impl<G> Dimensions for Grid<G> {
     fn columns(&self) -> usize {
         self.columns
     }
+
+    #[inline]
+    fn square_width(&self) -> f32 {
+        0.
+    }
+    #[inline]
+    fn square_height(&self) -> f32 {
+        0.
+    }
 }
 
 #[cfg(test)]
@@ -483,13 +498,17 @@ impl Dimensions for (usize, usize) {
     fn total_lines(&self) -> usize {
         self.0
     }
-
     fn screen_lines(&self) -> usize {
         self.0
     }
-
     fn columns(&self) -> usize {
         self.1
+    }
+    fn square_width(&self) -> f32 {
+        0.
+    }
+    fn square_height(&self) -> f32 {
+        0.
     }
 }
 
@@ -507,6 +526,14 @@ impl Dimensions for SugarloafLayout {
     #[inline]
     fn total_lines(&self) -> usize {
         self.screen_lines()
+    }
+
+    fn square_width(&self) -> f32 {
+        self.sugarwidth
+    }
+
+    fn square_height(&self) -> f32 {
+        self.sugarheight
     }
 }
 

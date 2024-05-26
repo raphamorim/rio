@@ -9,8 +9,26 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
+
+#[cfg(not(target_os = "macos"))]
 use winit::event_loop::EventLoopProxy;
-use winit::window::WindowId;
+
+#[cfg(target_os = "macos")]
+use wa::event_loop::EventLoopProxy;
+
+#[cfg(not(target_os = "macos"))]
+pub type WindowId = winit::window::WindowId;
+
+#[cfg(target_os = "macos")]
+pub type WindowId = u16;
+
+#[derive(Debug, Clone)]
+pub enum RioEventType {
+    Rio(RioEvent),
+    // Message(Message),
+    BlinkCursor,
+    BlinkCursorTimeout,
+}
 
 #[derive(Debug)]
 pub enum Msg {
@@ -35,6 +53,9 @@ pub enum ClickState {
 pub enum RioEvent {
     PrepareRender(u64),
     Render,
+    Paste,
+    Copy(String),
+    UpdateFontSize(u8),
     Scroll(Scroll),
     ToggleFullScreen,
     Minimize(bool),
@@ -58,6 +79,9 @@ pub enum RioEvent {
     /// Window title change.
     Title(String),
 
+    /// Window title change.
+    TitleWithSubtitle(String, String),
+
     /// Reset to the default window title.
     ResetTitle,
 
@@ -66,7 +90,7 @@ pub enum RioEvent {
 
     /// Request to write the contents of the clipboard to the PTY.
     ///
-    /// The attached function is a formatter which will corectly transform the clipboard content
+    /// The attached function is a formatter which will correctly transform the clipboard content
     /// into the expected escape sequence format.
     ClipboardLoad(
         ClipboardType,
@@ -75,7 +99,7 @@ pub enum RioEvent {
 
     /// Request to write the RGB value of a color to the PTY.
     ///
-    /// The attached function is a formatter which will corectly transform the RGB color into the
+    /// The attached function is a formatter which will correctly transform the RGB color into the
     /// expected escape sequence format.
     ColorRequest(
         usize,
@@ -100,8 +124,18 @@ pub enum RioEvent {
     /// Shutdown request.
     Exit,
 
+    /// Quit request.
+    Quit,
+
     /// Leave current terminal.
     CloseTerminal,
+
+    BlinkCursor,
+
+    UpdateGraphicLibrary,
+
+    // No operation
+    Noop,
 }
 
 impl Debug for RioEvent {
@@ -115,6 +149,9 @@ impl Debug for RioEvent {
             RioEvent::ColorRequest(index, _) => write!(f, "ColorRequest({index})"),
             RioEvent::PtyWrite(text) => write!(f, "PtyWrite({text})"),
             RioEvent::Title(title) => write!(f, "Title({title})"),
+            RioEvent::TitleWithSubtitle(title, subtitle) => {
+                write!(f, "TitleWithSubtitle({title}, {subtitle})")
+            }
             RioEvent::Minimize(cond) => write!(f, "Minimize({cond})"),
             RioEvent::Hide => write!(f, "Hide)"),
             RioEvent::HideOtherApplications => write!(f, "HideOtherApplications)"),
@@ -127,6 +164,7 @@ impl Debug for RioEvent {
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
+            RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal => write!(f, "CloseTerminal"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
@@ -143,40 +181,26 @@ impl Debug for RioEvent {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
             RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
+            RioEvent::BlinkCursor => write!(f, "BlinkCursor"),
+            RioEvent::Noop => write!(f, "Noop"),
+            RioEvent::Copy(_) => write!(f, "Copy"),
+            RioEvent::Paste => write!(f, "Paste"),
+            RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
+            RioEvent::UpdateGraphicLibrary => write!(f, "UpdateGraphicLibrary"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum RioEventType {
-    Rio(RioEvent),
-    // Message(Message),
-    BlinkCursor,
-    BlinkCursorTimeout,
-}
-
-impl From<RioEvent> for RioEventType {
-    fn from(rio_event: RioEvent) -> Self {
-        Self::Rio(rio_event)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct EventP {
+pub struct EventPayload {
     /// Event payload.
     pub payload: RioEventType,
     pub window_id: WindowId,
 }
 
-impl EventP {
+impl EventPayload {
     pub fn new(payload: RioEventType, window_id: WindowId) -> Self {
         Self { payload, window_id }
-    }
-}
-
-impl From<EventP> for winit::event::Event<EventP> {
-    fn from(event: EventP) -> Self {
-        winit::event::Event::UserEvent(event)
     }
 }
 
@@ -186,7 +210,13 @@ pub trait OnResize {
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
+    fn event(&self) -> (Option<RioEvent>, bool);
+
     fn send_event(&self, _event: RioEvent, _id: WindowId) {}
+
+    fn send_event_with_high_priority(&self, _event: RioEvent, _id: WindowId) {}
+
+    fn send_redraw(&self, _id: WindowId) {}
 
     fn send_global_event(&self, _event: RioEvent) {}
 }
@@ -194,34 +224,39 @@ pub trait EventListener {
 #[derive(Clone)]
 pub struct VoidListener;
 
-impl EventListener for VoidListener {}
+impl From<RioEvent> for RioEventType {
+    fn from(rio_event: RioEvent) -> Self {
+        Self::Rio(rio_event)
+    }
+}
+
+impl EventListener for VoidListener {
+    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
+        (None, false)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct EventProxy {
-    proxy: EventLoopProxy<EventP>,
+    proxy: EventLoopProxy<EventPayload>,
 }
 
 impl EventProxy {
-    pub fn new(proxy: EventLoopProxy<EventP>) -> Self {
+    pub fn new(proxy: EventLoopProxy<EventPayload>) -> Self {
         Self { proxy }
     }
 
-    #[allow(dead_code)]
     pub fn send_event(&self, event: RioEventType, id: WindowId) {
-        let _ = self.proxy.send_event(EventP::new(event, id));
+        let _ = self.proxy.send_event(EventPayload::new(event, id));
     }
-
-    // pub fn send_global_event(&self, event: RioEventType) {
-    //     let _ = self.proxy.send_event(EventP::new(event));
-    // }
 }
 
 impl EventListener for EventProxy {
-    fn send_event(&self, event: RioEvent, id: WindowId) {
-        let _ = self.proxy.send_event(EventP::new(event.into(), id));
+    fn event(&self) -> (std::option::Option<RioEvent>, bool) {
+        (None, false)
     }
 
-    // fn send_global_event(&self, event: RioEvent) {
-    // let _ = self.proxy.send_event(EventP::new(event.into(), id));
-    // }
+    fn send_event(&self, event: RioEvent, id: WindowId) {
+        let _ = self.proxy.send_event(EventPayload::new(event.into(), id));
+    }
 }

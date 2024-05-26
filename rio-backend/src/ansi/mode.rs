@@ -36,6 +36,8 @@ pub enum Mode {
     LineFeedNewLine = 20,
     /// ?25
     ShowCursor = 25,
+    /// ?80
+    SixelDisplay = 80,
     /// ?1000
     ReportMouseClicks = 1000,
     /// ?1002
@@ -54,8 +56,12 @@ pub enum Mode {
     UrgencyHints = 1042,
     /// ?1049
     SwapScreenAndSetRestoreCursor = 1049,
+    /// Use a private palette for each new graphic.
+    SixelPrivateColorRegisters = 1070,
     /// ?2004
     BracketedPaste = 2004,
+    /// Sixel scrolling leaves cursor to right of graphic.
+    SixelCursorToTheRight = 8452,
 }
 
 impl Mode {
@@ -75,6 +81,7 @@ impl Mode {
                 7 => Mode::LineWrap,
                 12 => Mode::BlinkingCursor,
                 25 => Mode::ShowCursor,
+                80 => Mode::SixelDisplay,
                 1000 => Mode::ReportMouseClicks,
                 1002 => Mode::ReportSquareMouseMotion,
                 1003 => Mode::ReportAllMouseMotion,
@@ -84,7 +91,9 @@ impl Mode {
                 1007 => Mode::AlternateScroll,
                 1042 => Mode::UrgencyHints,
                 1049 => Mode::SwapScreenAndSetRestoreCursor,
+                1070 => Mode::SixelPrivateColorRegisters,
                 2004 => Mode::BracketedPaste,
+                8452 => Mode::SixelCursorToTheRight,
                 _ => {
                     warn!("[unimplemented] primitive mode: {}", num);
                     return None;

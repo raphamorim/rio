@@ -54,3 +54,9 @@ impl Default for Window {
         }
     }
 }
+
+impl Window {
+    pub fn is_fullscreen(&self) -> bool {
+        self.mode == WindowMode::Fullscreen
+    }
+}

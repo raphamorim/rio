@@ -2,7 +2,8 @@ pub mod handler;
 
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
-use crate::event::{EventListener, Msg, RioEvent};
+use crate::event::RioEvent;
+use crate::event::{EventListener, Msg, WindowId};
 use corcovado::channel;
 #[cfg(unix)]
 use corcovado::unix::UnixReady;
@@ -14,7 +15,6 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Instant;
-use winit::window::WindowId;
 
 /// Like `thread::spawn`, but with a `name` argument.
 pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>
@@ -120,7 +120,6 @@ where
         event_proxy: U,
         window_id: WindowId,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
-        // let (mut sender, mut receiver) = unbounded::<Msg>();
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
@@ -308,6 +307,7 @@ where
                     state.parser.stop_sync(&mut *self.terminal.lock());
                     self.event_proxy
                         .send_event(RioEvent::Wakeup, self.window_id);
+
                     continue;
                 }
 
@@ -333,8 +333,10 @@ where
                                 // }
 
                                 self.terminal.lock().exit();
+
                                 self.event_proxy
                                     .send_event(RioEvent::Wakeup, self.window_id);
+
                                 break 'event_loop;
                             }
                         }

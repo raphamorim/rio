@@ -266,11 +266,22 @@ impl RectBrush {
         instances: &[Rect],
         ctx: &mut Context,
     ) {
+        let total = instances.len();
+        if total == 0 {
+            return;
+        }
+
         let transform: [f32; 16] = orthographic_projection(dimensions.0, dimensions.1);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
         // let device = &ctx.device;
         let queue = &mut ctx.queue;
+
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+        rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+        rpass.set_vertex_buffer(1, self.instances.slice(..));
 
         if transform != self.current_transform || scale != self.scale {
             let uniforms = Uniforms::new(transform, scale);

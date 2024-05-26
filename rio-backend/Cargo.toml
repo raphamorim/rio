@@ -14,13 +14,12 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-winit = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-toml = "0.7.3"
-base64 = "0.21.5"
-bitflags = "2.4.1"
+toml = "0.8.10"
+base64 = "0.21.7"
+bitflags = { workspace = true }
 bytemuck = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
@@ -37,6 +36,13 @@ unicode-width = { workspace = true }
 copa = { workspace = true }
 wgpu = { workspace = true }
 cursor-icon = { version = "1.0.0", default-features = false }
+smallvec = { version = "1.13.1", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wa = { workspace = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+winit = { workspace = true }
 
 [features]
 default = ["wayland", "x11"]
@@ -44,5 +50,5 @@ x11 = [
     "copypasta/x11"
 ]
 wayland = [
-    "copypasta/wayland"
+    "copypasta/wayland",
 ]

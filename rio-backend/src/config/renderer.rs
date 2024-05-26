@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 pub struct Renderer {
     #[serde(default = "Performance::default")]
     pub performance: Performance,
@@ -42,8 +42,6 @@ pub enum Backend {
     Vulkan,
     // Supported on Windows 10
     DX12,
-    // Supported on Windows 7+
-    DX11,
     // Supported on macOS/iOS
     Metal,
 }
@@ -65,9 +63,6 @@ impl Display for Backend {
             }
             Backend::DX12 => {
                 write!(f, "DX12")
-            }
-            Backend::DX11 => {
-                write!(f, "DX11")
             }
         }
     }
