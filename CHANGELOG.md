@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+<!-- ## In progress 
 
 - Migration from Winit to WA.
-	- Apple MacOS
-	- ⏳ Linux Wayland
-	- ⏳ Linux x11
-	- ⏳ Microsoft Windows
+- Apple MacOS
+- ⏳ Linux Wayland
+- ⏳ Linux x11
+- ⏳ Microsoft Windows
+- Sixel graphics initial support.
+- iTerm2 image protocol.
+-->
+
+## Unreleased
+
 - Major rewrite on sugarloaf.
 	- New rendering architecture.
 	- Sugarloaf now uses same render pass for each render.
@@ -16,12 +22,10 @@
 - Support to font ligatures.
 - Fixes on font search for Microsoft Windows.
 - All tabs/window instances now use same font data.
-- Updated wgpu to 0.19.3.
+- Updated wgpu to 0.20.0.
 - Removed support to DX11.
 - Support to `line-height` configuration.
 - Updated ttf-parser and memmap2 on sugarloaf.
-- Sixel graphics initial support.
-- iTerm2 image protocol.
 
 ## 0.0.39
 
