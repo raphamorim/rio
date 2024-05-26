@@ -40,7 +40,7 @@ pub struct State {
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
-    pub dynamic_background: wgpu::Color,
+    pub dynamic_background: ([f32; 4], wgpu::Color),
     hyperlink_range: Option<SelectionRange>,
     background_opacity: f32,
     foreground_opacity: f32,
@@ -65,11 +65,11 @@ impl State {
             }
         }
 
-        let mut dynamic_background = named_colors.background.1;
+        let mut dynamic_background = named_colors.background;
         if config.window.background_image.is_some()
             || config.window.background_opacity < 1.
         {
-            dynamic_background = wgpu::Color::TRANSPARENT;
+            dynamic_background = ([0., 0., 0., 0.], wgpu::Color::TRANSPARENT);
         };
 
         let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
@@ -304,7 +304,7 @@ impl State {
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
-                (NamedColor::Background, _) => self.named_colors.background.0,
+                (NamedColor::Background, _) => self.dynamic_background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
 
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,

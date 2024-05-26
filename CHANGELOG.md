@@ -4,6 +4,10 @@
 
 - TBD
 
+## 0.0.40
+
+- TBD
+
 ## 0.0.39
 
 - Minor fix on fixed transparency on backgrounds for Welcome/Dialog.

@@ -198,7 +198,7 @@ impl Screen {
             config.keyboard,
         );
 
-        sugarloaf.set_background_color(state.dynamic_background);
+        sugarloaf.set_background_color(state.dynamic_background.1);
 
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
