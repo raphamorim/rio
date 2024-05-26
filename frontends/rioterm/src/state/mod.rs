@@ -17,7 +17,7 @@ use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
 use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 use winit::window::Theme;
 
 struct Cursor {
@@ -49,16 +49,16 @@ pub struct State {
 
 impl State {
     pub fn new(
-        #[cfg(not(target_os = "macos"))] config: &std::rc::Rc<Config>,
-        #[cfg(target_os = "macos")] config: &Config,
-        #[cfg(not(target_os = "macos"))] current_theme: Option<Theme>,
-        #[cfg(target_os = "macos")] appearance: wa::Appearance,
+        #[cfg(not(use_wa))] config: &std::rc::Rc<Config>,
+        #[cfg(use_wa)] config: &Config,
+        #[cfg(not(use_wa))] current_theme: Option<Theme>,
+        #[cfg(use_wa)] appearance: wa::Appearance,
     ) -> State {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         {
             if let Some(theme) = current_theme {
                 if let Some(adaptive_colors) = &config.adaptive_colors {
@@ -74,7 +74,7 @@ impl State {
             }
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         {
             if let Some(adaptive_colors) = &config.adaptive_colors {
                 match appearance {
@@ -290,13 +290,13 @@ impl State {
     }
 
     #[inline]
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     pub fn decrease_foreground_opacity(&mut self, acc: f32) {
         self.foreground_opacity -= acc;
     }
 
     #[inline]
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     pub fn increase_foreground_opacity(&mut self, acc: f32) {
         self.foreground_opacity += acc;
     }

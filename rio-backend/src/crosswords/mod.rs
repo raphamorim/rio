@@ -2738,9 +2738,9 @@ mod tests {
     #[test]
     fn scroll_up() {
         let size = CrosswordsSize::new(1, 10);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
         let mut cw =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
@@ -2775,9 +2775,9 @@ mod tests {
     #[test]
     fn test_linefeed() {
         let size = CrosswordsSize::new(1, 1);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut cw =
@@ -2792,9 +2792,9 @@ mod tests {
     fn test_linefeed_moving_cursor() {
         let size = CrosswordsSize::new(1, 3);
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut cw =
@@ -2821,9 +2821,9 @@ mod tests {
     #[test]
     fn test_input() {
         let size = CrosswordsSize::new(5, 10);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut cw =
@@ -2846,9 +2846,9 @@ mod tests {
     #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut term =
@@ -2924,9 +2924,9 @@ mod tests {
     #[test]
     fn line_selection_works() {
         let size = CrosswordsSize::new(5, 1);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut term =
@@ -2954,9 +2954,9 @@ mod tests {
     #[test]
     fn block_selection_works() {
         let size = CrosswordsSize::new(5, 5);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
 
         let mut term =
@@ -3032,9 +3032,9 @@ mod tests {
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_single_line() {
         let size = CrosswordsSize::new(20, 3);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
@@ -3169,9 +3169,9 @@ mod tests {
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_multiple_lines() {
         let size = CrosswordsSize::new(4, 4);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
@@ -3252,9 +3252,9 @@ mod tests {
     #[test]
     fn test_search_nearest_hyperlink_from_pos_on_existent_hyperlink() {
         let size = CrosswordsSize::new(4, 4);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);

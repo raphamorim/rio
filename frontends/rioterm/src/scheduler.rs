@@ -5,10 +5,10 @@ use crate::event::EventPayload;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 use winit::event_loop::EventLoopProxy;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 use wa::event_loop::EventLoopProxy;
 
 /// ID uniquely identifying a timer.

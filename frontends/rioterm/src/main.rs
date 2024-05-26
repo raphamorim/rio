@@ -4,7 +4,7 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 mod app;
 mod bindings;
 mod cli;
@@ -18,13 +18,13 @@ mod mouse;
 mod panic;
 mod platform;
 mod renderer;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 mod router;
 mod routes;
 mod scheduler;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 mod screen;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 mod sequencer;
 mod state;
 mod watcher;
@@ -139,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     setup_environment_variables(&config);
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(use_wa))]
     {
         let window_event_loop = winit::event_loop::EventLoop::with_user_event()
             .build()
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = sequencer.run(window_event_loop).await;
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     let _ = app::run(config, config_error).await;
 
     #[cfg(windows)]

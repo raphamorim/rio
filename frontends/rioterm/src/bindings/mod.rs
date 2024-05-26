@@ -1,11 +1,11 @@
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 pub mod bindings_wa;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 pub use bindings_wa::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 pub mod bindings_winit;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 pub use bindings_winit::*;
