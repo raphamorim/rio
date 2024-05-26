@@ -144,6 +144,7 @@ impl EventHandler for EventHandlerInstance {
             None,
             None,
         ) {
+            self.modifiers = ModifiersState::empty();
             self.routes.insert(router.id, router);
         }
     }
@@ -158,6 +159,7 @@ impl EventHandler for EventHandlerInstance {
             open_file_url,
         ) {
             let id = router.id;
+            self.modifiers = ModifiersState::empty();
             self.routes.insert(id, router);
             // if let Some(file_url) = open_file_url {
             //     wa::window::open_url(id, file_url);
@@ -201,6 +203,7 @@ impl EventHandler for EventHandlerInstance {
                             new_tab_group,
                             None,
                         ) {
+                            self.modifiers = ModifiersState::empty();
                             self.routes.insert(router.id, router);
                         }
                     }
@@ -385,19 +388,20 @@ impl EventHandler for EventHandlerInstance {
     fn modifiers_event(
         &mut self,
         window_id: u16,
-        keycode: KeyCode,
+        keycode: Option<KeyCode>,
         mods: ModifiersState,
     ) {
         self.modifiers = mods;
 
-        if let Some(current) = self.routes.get_mut(&window_id) {
-            if (keycode == KeyCode::LeftSuper || keycode == KeyCode::RightSuper)
-                && current
-                    .route
-                    .search_nearest_hyperlink_from_pos(&self.modifiers)
-            {
-                window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
-                current.route.render();
+        if keycode == Some(KeyCode::LeftSuper) || keycode == Some(KeyCode::RightSuper)
+        {
+            if let Some(current) = self.routes.get_mut(&window_id) {
+                if current
+                .route
+                .search_nearest_hyperlink_from_pos(&self.modifiers) {
+                    window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
+                    current.route.render();
+                }
             }
         }
     }
