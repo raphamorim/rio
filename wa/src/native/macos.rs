@@ -1170,12 +1170,20 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
             new_pressed: bool,
         ) {
             if new_pressed ^ old_pressed {
-                // if new_pressed {
-                if let Some(&mut HandlerState::Running {
-                    ref mut handler, ..
-                }) = get_app_handler(&Some(payload.app))
-                {
-                    handler.modifiers_event(payload.id, keycode, mods);
+                if new_pressed {
+                    if let Some(&mut HandlerState::Running {
+                        ref mut handler, ..
+                    }) = get_app_handler(&Some(payload.app))
+                    {
+                        handler.modifiers_event(payload.id, Some(keycode), mods);
+                    }
+                } else {
+                    if let Some(&mut HandlerState::Running {
+                        ref mut handler, ..
+                    }) = get_app_handler(&Some(payload.app))
+                    {
+                        handler.modifiers_event(payload.id, None, mods);
+                    }
                 }
                 // } else {
                 //     event_handler.modifiers_event(payload.id, keycode, mods);
