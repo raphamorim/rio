@@ -304,7 +304,7 @@ impl State {
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
-                (NamedColor::Background, _) => self.dynamic_background.0,
+                (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
 
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,
@@ -380,7 +380,7 @@ impl State {
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
         let mut color = match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
-                (NamedColor::Background, _) => self.named_colors.background.0,
+                (NamedColor::Background, _) => self.dynamic_background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
 
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,
