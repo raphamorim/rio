@@ -199,11 +199,13 @@ impl RectBrush {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &vertex_buffers,
             },
             fragment: Some(wgpu::FragmentState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
@@ -256,11 +258,11 @@ impl RectBrush {
     //     // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     // }
 
-    pub fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        dimensions: (u32, u32),
+    #[inline]
+    pub fn render<'pass>(
+        &'pass mut self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        dimensions: (f32, f32),
         instances: &[Rect],
         ctx: &mut Context,
     ) {
@@ -299,36 +301,7 @@ impl RectBrush {
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
             queue.write_buffer(&self.instances, 0, instance_bytes);
-
-            {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-                // rpass.push_debug_group("Prepare data for draw.");
-                rpass.set_pipeline(&self.pipeline);
-                rpass.set_bind_group(0, &self.bind_group, &[]);
-                rpass.set_index_buffer(
-                    self.index_buf.slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-                rpass.set_vertex_buffer(1, self.instances.slice(..));
-                // rpass.pop_debug_group();
-                // rpass.insert_debug_marker("Draw!");
-                rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-                drop(rpass);
-            }
+            rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
 
             i += MAX_INSTANCES;
         }

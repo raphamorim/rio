@@ -6,9 +6,11 @@
 use super::{
     BuiltInLineBreaker, GlyphPositioner, LineBreaker, SectionGeometry, ToSectionText,
 };
-use crate::glyph::layout::{characters::Characters, GlyphChange, SectionGlyph};
-use crate::glyph::Layout::SingleLine;
-use crate::glyph::Layout::Wrap;
+use crate::components::text::glyph::layout::{
+    characters::Characters, GlyphChange, SectionGlyph,
+};
+use crate::components::text::glyph::Layout::SingleLine;
+use crate::components::text::glyph::Layout::Wrap;
 use ab_glyph::*;
 
 /// Built-in [`GlyphPositioner`](trait.GlyphPositioner.html) implementations.
@@ -65,7 +67,7 @@ impl Layout<BuiltInLineBreaker> {
 impl<L: LineBreaker> Layout<L> {
     /// Returns an identical `Layout` but with the input `h_align`
     pub fn h_align(self, h_align: HorizontalAlign) -> Self {
-        use crate::glyph::layout::Layout::*;
+        use crate::components::text::glyph::Layout::*;
         match self {
             SingleLine {
                 line_breaker,
@@ -90,7 +92,7 @@ impl<L: LineBreaker> Layout<L> {
 
     /// Returns an identical `Layout` but with the input `v_align`
     pub fn v_align(self, v_align: VerticalAlign) -> Self {
-        use crate::glyph::layout::Layout::*;
+        use crate::components::text::glyph::Layout::*;
         match self {
             SingleLine {
                 line_breaker,
@@ -115,7 +117,7 @@ impl<L: LineBreaker> Layout<L> {
 
     /// Returns an identical `Layout` but with the input `line_breaker`
     pub fn line_breaker<L2: LineBreaker>(self, line_breaker: L2) -> Layout<L2> {
-        use crate::glyph::layout::Layout::*;
+        use crate::components::text::glyph::Layout::*;
         match self {
             SingleLine {
                 h_align, v_align, ..
@@ -314,7 +316,7 @@ pub enum HorizontalAlign {
     /// Leftmost & rightmost characters are equidistant to the render position.<br/>
     /// Bounds start from the render position and advance equally left & right.
     Center,
-    /// Rightmost character is immetiately to the left of the render position.<br/>
+    /// Rightmost character is immediately to the left of the render position.<br/>
     /// Bounds start from the render position and advance leftwards.
     Right,
 }
@@ -382,7 +384,9 @@ mod bounds_test {
 #[cfg(test)]
 mod layout_test {
     use super::*;
-    use crate::glyph::layout::{BuiltInLineBreaker::*, FontId, SectionText};
+    use crate::components::text::glyph::layout::{
+        BuiltInLineBreaker::*, FontId, SectionText,
+    };
     use approx::assert_relative_eq;
     use once_cell::sync::Lazy;
     use ordered_float::OrderedFloat;
@@ -390,13 +394,13 @@ mod layout_test {
 
     static A_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
         FontRef::try_from_slice(include_bytes!(
-            "../../../resources/test-fonts/DejaVuSansMono.ttf"
+            "../../../../../resources/test-fonts/DejaVuSansMono.ttf"
         ))
         .unwrap()
     });
     static CJK_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
         FontRef::try_from_slice(include_bytes!(
-            "../../../resources/test-fonts/WenQuanYiMicroHei.ttf"
+            "../../../../../resources/test-fonts/WenQuanYiMicroHei.ttf"
         ))
         .unwrap()
     });

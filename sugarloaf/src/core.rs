@@ -1,5 +1,5 @@
 use crate::components::rect::Rect;
-use crate::glyph::FontId;
+use crate::components::text::glyph::FontId;
 use serde::Deserialize;
 
 #[derive(Debug)]

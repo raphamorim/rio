@@ -4,7 +4,7 @@
 // and licensed under Apache-2.0 license.
 
 use super::{HorizontalAlign, SectionGlyph, SectionText, VerticalAlign};
-use crate::glyph::layout::{linebreak::LineBreaker, words::*};
+use crate::components::text::glyph::layout::{linebreak::LineBreaker, words::*};
 use ab_glyph::*;
 use std::iter::{FusedIterator, Iterator, Peekable};
 
@@ -24,6 +24,7 @@ impl Line {
     }
 
     /// Returns line glyphs positioned on the screen and aligned.
+    #[inline]
     pub fn aligned_on_screen(
         mut self,
         (screen_x, screen_y): (f32, f32),

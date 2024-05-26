@@ -14,12 +14,15 @@ use crate::font::{
     FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
     FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
 };
-use crate::glyph::{FontId, GlyphCruncher};
+use crate::sugarloaf::text::glyph::{FontId, GlyphCruncher};
 use crate::layout::SugarloafLayout;
 use ab_glyph::{self, Font as GFont, FontArc, PxScale};
 use core::fmt::{Debug, Formatter};
 use fnv::FnvHashMap;
 use unicode_width::UnicodeWidthChar;
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+};
 
 #[cfg(target_arch = "wasm32")]
 pub struct Database;
@@ -68,9 +71,10 @@ impl Debug for SugarloafWithErrors {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct SugarloafWindowSize {
-    pub width: u32,
-    pub height: u32,
+    pub width: f32,
+    pub height: f32,
 }
 
 pub struct SugarloafWindow {
@@ -99,21 +103,36 @@ impl Default for SugarloafRenderer {
     }
 }
 
-unsafe impl raw_window_handle::HasRawWindowHandle for SugarloafWindow {
+impl SugarloafWindow {
     fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
         self.handle
     }
-}
 
-unsafe impl raw_window_handle::HasRawDisplayHandle for SugarloafWindow {
     fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
         self.display
     }
 }
 
+impl HasWindowHandle for SugarloafWindow {
+    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+        let raw = self.raw_window_handle();
+        Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
+
+impl HasDisplayHandle for SugarloafWindow {
+    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+        let raw = self.raw_display_handle();
+        Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+    }
+}
+
+unsafe impl Send for SugarloafWindow {}
+unsafe impl Sync for SugarloafWindow {}
+
 impl Sugarloaf {
     pub async fn new(
-        raw_window_handle: &SugarloafWindow,
+        raw_window_handle: SugarloafWindow,
         renderer: SugarloafRenderer,
         fonts: SugarloafFonts,
         layout: SugarloafLayout,
@@ -449,9 +468,9 @@ impl Sugarloaf {
                         screen_position: (text_builder.pos_x, section_pos_y),
                         bounds: (text_builder.width_bound, text_bound),
                         text: vec![text],
-                        layout: crate::glyph::Layout::default_single_line()
-                            .v_align(crate::glyph::VerticalAlign::Center)
-                            .h_align(crate::glyph::HorizontalAlign::Left),
+                        layout: crate::sugarloaf::text::glyph::Layout::default_single_line()
+                            .v_align(crate::sugarloaf::text::glyph::VerticalAlign::Center)
+                            .h_align(crate::sugarloaf::text::glyph::HorizontalAlign::Left),
                     };
 
                     self.text_brush.queue(&section);
@@ -472,9 +491,9 @@ impl Sugarloaf {
                     screen_position: (section_pos_x, section_pos_y),
                     bounds: (width_bound * quantity as f32, text_bound),
                     text: vec![text],
-                    layout: crate::glyph::Layout::default_single_line()
-                        .v_align(crate::glyph::VerticalAlign::Center)
-                        .h_align(crate::glyph::HorizontalAlign::Left),
+                    layout: crate::sugarloaf::text::glyph::Layout::default_single_line()
+                        .v_align(crate::sugarloaf::text::glyph::VerticalAlign::Center)
+                        .h_align(crate::sugarloaf::text::glyph::HorizontalAlign::Left),
                 };
 
                 self.text_brush.queue(&section);
@@ -580,9 +599,9 @@ impl Sugarloaf {
             screen_position: (0., 0.),
             bounds: (scale, scale),
             text: vec![text],
-            layout: crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left),
+            layout: crate::sugarloaf::text::glyph::Layout::default_single_line()
+                .v_align(crate::sugarloaf::text::glyph::VerticalAlign::Center)
+                .h_align(crate::sugarloaf::text::glyph::HorizontalAlign::Left),
         };
 
         self.text_brush.queue(section);
@@ -679,13 +698,13 @@ impl Sugarloaf {
         };
 
         let layout = if single_line {
-            crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
+            crate::sugarloaf::text::glyph::Layout::default_single_line()
+                .v_align(crate::sugarloaf::text::glyph::VerticalAlign::Center)
+                .h_align(crate::sugarloaf::text::glyph::HorizontalAlign::Left)
         } else {
-            crate::glyph::Layout::default()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
+            crate::sugarloaf::text::glyph::Layout::default()
+                .v_align(crate::sugarloaf::text::glyph::VerticalAlign::Center)
+                .h_align(crate::sugarloaf::text::glyph::HorizontalAlign::Left)
         };
 
         let section = &crate::components::text::Section {
@@ -732,45 +751,52 @@ impl RenderableSugarloaf for Sugarloaf {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    label: Some("sugarloaf::render -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-
                 if let Some(bg_image) = &self.layout.background_image {
                     self.layer_brush.prepare_ref(
                         &mut encoder,
                         &mut self.ctx,
                         &[bg_image],
                     );
-
-                    self.layer_brush
-                        .render_with_encoder(0, view, &mut encoder, None);
                 }
 
-                self.rect_brush.render(
-                    &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                    &self.rects,
-                    &mut self.ctx,
-                );
+                {
 
-                self.rects = vec![];
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        label: Some("sugarloaf::render -> Clear frame"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(self.layout.background_color),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
 
-                let _ = self
-                    .text_brush
-                    .draw_queued(&mut self.ctx, &mut encoder, view);
+                    if self.layout.background_image.is_some() {
+                        self.layer_brush.render(0, &mut rpass, None);
+                    }
+
+                    self.rect_brush.render(
+                        &mut rpass,
+                        (self.ctx.size.width, self.ctx.size.height),
+                        &self.rects,
+                        &mut self.ctx,
+                    );
+
+                    self.rects = vec![];
+
+                    let _ = self
+                        .text_brush
+                        .render(&mut self.ctx, &mut rpass);
+                }
+
+                if self.layout.background_image.is_some() {
+                    self.layer_brush.end_frame();
+                }
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

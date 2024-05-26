@@ -953,7 +953,7 @@ impl DrawCache {
     /// glyph that is deemed close enough to the requested glyph as specified by
     /// the cache tolerance parameters.
     ///
-    /// A sucessful result is `Some` if the glyph is not an empty glyph (no
+    /// A successful result is `Some` if the glyph is not an empty glyph (no
     /// shape, and thus no rect to return).
     ///
     /// Ensure that `font_id` matches the `font_id` that was passed to
@@ -1020,12 +1020,12 @@ fn draw_glyph(
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::glyph::layout::*;
+    use crate::components::text::glyph::cache::*;
+    use crate::components::text::glyph::layout::*;
     use approx::*;
 
     const FONT: &[u8] =
-        include_bytes!("../../../resources/test-fonts/WenQuanYiMicroHei.ttf");
+        include_bytes!("../../../../../resources/test-fonts/WenQuanYiMicroHei.ttf");
 
     #[test]
     fn cache_test() {
@@ -1048,7 +1048,7 @@ mod test {
         for &(text, scale) in &strings {
             println!("Caching {:?}", (text, scale));
 
-            let glyphs = crate::glyph::layout::Layout::default_single_line()
+            let glyphs = crate::components::text::glyph::Layout::default_single_line()
                 .calculate_glyphs(
                     &[&font],
                     &SectionGeometry::default(),
@@ -1200,7 +1200,7 @@ mod test {
             .position_tolerance(0.1)
             .build();
 
-        let glyphs = crate::glyph::layout::Layout::default_single_line()
+        let glyphs = crate::components::text::glyph::Layout::default_single_line()
             .calculate_glyphs(
                 fontmap,
                 &SectionGeometry::default(),
@@ -1215,7 +1215,7 @@ mod test {
         }
         assert_eq!(cache.cache_queued(fontmap, |_, _| {}), Ok(CachedBy::Adding));
 
-        let glyphs = crate::glyph::layout::Layout::default_single_line()
+        let glyphs = crate::components::text::glyph::Layout::default_single_line()
             .calculate_glyphs(
                 fontmap,
                 &SectionGeometry::default(),

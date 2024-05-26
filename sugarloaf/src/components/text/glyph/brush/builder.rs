@@ -3,9 +3,9 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::cache::*;
-use crate::glyph::layout::ab_glyph::*;
-use crate::glyph::{DefaultSectionHasher, Font, FontId, GlyphBrush};
+use crate::components::text::glyph::cache::*;
+use crate::components::text::glyph::layout::ab_glyph::*;
+use crate::components::text::glyph::{DefaultSectionHasher, Font, FontId, GlyphBrush};
 use std::hash::BuildHasher;
 
 /// Builder for a [`GlyphBrush`].
@@ -232,8 +232,10 @@ impl<F: Font, H: BuildHasher> GlyphBrushBuilder<F, H> {
 
             keep_in_cache: <_>::default(),
 
-            cache_glyph_positioning: self.cache_glyph_positioning,
-            cache_redraws: self.cache_redraws && self.cache_glyph_positioning,
+            // cache_glyph_positioning: self.cache_glyph_positioning,
+            cache_glyph_positioning: true,
+            // cache_redraws: self.cache_redraws && self.cache_glyph_positioning,
+            cache_redraws: true,
 
             section_hasher: self.section_hasher,
 

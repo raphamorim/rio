@@ -3,7 +3,7 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::layout::{
+use crate::components::text::glyph::layout::{
     linebreak::{EolLineBreak, LineBreak, LineBreaker},
     words::Words,
     FontId, SectionText,
@@ -134,6 +134,7 @@ where
                     self.fonts[*font_id].as_scaled(*scale);
 
                 let glyph = scale_font.scaled_glyph(c);
+                // println!("{:?} {:?}", c, scale);
 
                 let c_len = c.len_utf8();
                 let mut line_break =

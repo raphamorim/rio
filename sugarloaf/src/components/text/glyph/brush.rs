@@ -6,15 +6,15 @@
 mod builder;
 
 pub use self::builder::*;
-use crate::glyph::cache::{CachedBy, DrawCache};
-use crate::glyph::calculator::{GlyphCruncher, GlyphedSection};
-use crate::glyph::{
+use super::cache::{CachedBy, DrawCache};
+use super::calculator::{GlyphCruncher, GlyphedSection};
+use super::{
     DefaultSectionHasher, FontId, GlyphChange, GlyphPositioner, Rectangle, Section,
     SectionGeometry, SectionGlyph, SectionGlyphIter,
 };
 use ab_glyph::{point, Font, FontArc, Glyph, Rect};
 
-use crate::glyph::extra::Extra;
+use super::extra::Extra;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     borrow::Cow,
@@ -193,6 +193,7 @@ where
     /// [`Layout`](enum.Layout.html) simply use [`queue`](struct.GlyphBrush.html#method.queue)
     ///
     /// Benefits from caching, see [caching behaviour](#caching-behaviour).
+    #[inline]
     pub fn queue_custom_layout<'a, S, G>(&mut self, section: S, custom_layout: &G)
     where
         G: GlyphPositioner,
@@ -220,6 +221,7 @@ where
     /// # let font: FontArc = unimplemented!();
     /// # let mut glyph_brush: GlyphBrush<()> = GlyphBrushBuilder::using_font(font).build();
     /// glyph_brush.queue(Section::default().add_text(Text::new("Hello glyph_brush")));
+    #[inline]
     pub fn queue<'a, S>(&mut self, section: S)
     where
         X: 'a,
@@ -248,6 +250,7 @@ where
 
     /// Returns the calculate_glyph_cache key for this sections glyphs
     #[allow(clippy::map_entry)] // further borrows are required after the contains_key check
+    #[inline]
     fn cache_glyphs<L>(&mut self, section: &Section<'_, X>, layout: &L) -> SectionHash
     where
         L: GlyphPositioner,
@@ -343,6 +346,7 @@ where
         self.texture_cache.dimensions()
     }
 
+    #[inline]
     fn cleanup_frame(&mut self) {
         if self.cache_glyph_positioning {
             // clear section_buffer & trim calculate_glyph_cache to active sections
@@ -736,8 +740,8 @@ impl<V, X> Glyphed<V, X> {
 #[cfg(test)]
 mod hash_diff_test {
     use super::*;
-    use crate::glyph::layout::Layout;
-    use crate::glyph::{PxScale, Text};
+    use crate::components::text::glyph::layout::Layout;
+    use crate::components::text::glyph::{PxScale, Text};
 
     fn section() -> Section<'static> {
         Section {
@@ -824,16 +828,16 @@ mod hash_diff_test {
 
 #[cfg(test)]
 mod test {
-    use crate::glyph::*;
+    use crate::components::text::glyph::*;
 
     #[test]
     fn is_draw_cached() {
         let font_a = FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/DejaVuSans.ttf"
+            "../../../../resources/test-fonts/DejaVuSans.ttf"
         ))
         .unwrap();
         let font_b = FontRef::try_from_slice(include_bytes!(
-            "../../resources/test-fonts/Exo2-Light.otf"
+            "../../../../resources/test-fonts/Exo2-Light.otf"
         ))
         .unwrap();
         let unqueued_glyph = font_a.glyph_id('c').with_scale(50.0);

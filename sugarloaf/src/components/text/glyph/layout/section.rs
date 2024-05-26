@@ -3,7 +3,7 @@
 // glyph-brush was originally written Alex Butler (https://github.com/alexheretic)
 // and licensed under Apache-2.0 license.
 
-use crate::glyph::FontId;
+use crate::components::text::glyph::FontId;
 use ab_glyph::*;
 use std::f32;
 
