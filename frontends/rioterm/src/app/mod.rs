@@ -393,12 +393,12 @@ impl EventHandler for EventHandlerInstance {
     ) {
         self.modifiers = mods;
 
-        if keycode == Some(KeyCode::LeftSuper) || keycode == Some(KeyCode::RightSuper)
-        {
+        if keycode == Some(KeyCode::LeftSuper) || keycode == Some(KeyCode::RightSuper) {
             if let Some(current) = self.routes.get_mut(&window_id) {
                 if current
-                .route
-                .search_nearest_hyperlink_from_pos(&self.modifiers) {
+                    .route
+                    .search_nearest_hyperlink_from_pos(&self.modifiers)
+                {
                     window::set_mouse_cursor(current.id, wa::CursorIcon::Pointer);
                     current.route.render();
                 }
