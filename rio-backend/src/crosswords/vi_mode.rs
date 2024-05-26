@@ -421,9 +421,9 @@ mod tests {
             size,
             CursorShape::Underline,
             VoidListener,
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(use_wa))]
             crate::event::WindowId::from(0),
-            #[cfg(target_os = "macos")]
+            #[cfg(use_wa)]
             0,
         )
     }

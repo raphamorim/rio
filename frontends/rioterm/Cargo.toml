@@ -38,10 +38,11 @@ tokio = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(not(use_wa))'.dependencies]
+objc = "0.2.7"
 winit = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(use_wa)'.dependencies]
 objc = "0.2.7"
 url = "2.5.0"
 smol_str = { workspace = true }

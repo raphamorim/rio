@@ -1,5 +1,5 @@
 pub mod assistant;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 pub mod dialog;
 pub mod welcome;
 
@@ -8,6 +8,6 @@ pub enum RoutePath {
     Assistant,
     Terminal,
     Welcome,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(use_wa))]
     ConfirmQuit,
 }

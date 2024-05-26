@@ -38,9 +38,9 @@ pub fn configuration_file_updates<
                     | EventKind::Modify(_)
                     | EventKind::Other => {
                         log::info!("config directory has dispatched an event {event:?}");
-                        #[cfg(target_os = "macos")]
+                        #[cfg(use_wa)]
                         event_proxy.send_event(RioEvent::UpdateConfig, 0);
-                        #[cfg(not(target_os = "macos"))]
+                        #[cfg(not(use_wa))]
                         event_proxy.send_event(
                             RioEvent::UpdateConfig,
                             rio_backend::event::WindowId::from(0),
