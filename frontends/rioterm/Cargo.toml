@@ -1,0 +1,96 @@
+[package]
+name = "rioterm"
+description = "Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[[bin]]
+name = "rio"
+path = "src/main.rs"
+
+[dependencies]
+log = { workspace = true }
+wgpu = { workspace = true }
+rio-backend = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bitflags = { workspace = true }
+futures = "0.3.29"
+corcovado = { workspace = true }
+regex = { workspace = true }
+raw-window-handle = { workspace = true }
+clap = { version = "4.4.7", features = ["derive"] }
+dirs = "5.0.1"
+notify = "6.1.1"
+image = { workspace = true }
+libc = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+teletypewriter = { workspace = true }
+tokio = { workspace = true }
+unicode-width = { workspace = true }
+copa = { workspace = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+winit = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2.7"
+url = "2.5.0"
+smol_str = { workspace = true }
+wa = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+ahash = { version = "0.8.2", default-features = false, features = ["std"] }
+tinyvec = { version = "1.6.0", features = ["alloc"] }
+windows-sys = { version = "0.52", features = [
+    "Win32_System_Console",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_IO",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]}
+
+[features]
+default = ["wayland", "x11"]
+x11 = [
+    "rio-backend/x11",
+    "winit/x11"
+]
+wayland = [
+    "rio-backend/wayland",
+    "winit/wayland",
+    "winit/wayland-dlopen",
+    "winit/wayland-csd-adwaita-crossfont",
+]
+
+[package.metadata.deb]
+name = "rio"
+maintainer = "Raphael Amorim <rapha850@gmail.com>"
+copyright = "2024, Raphael Amorim <rapha850@gmail.com>"
+depends = "$auto"
+section = "admin"
+priority = "optional"
+assets = [
+    ["../../target/release/rio", "usr/local/bin/", "755"],
+    ["../../misc/rio.desktop", "usr/share/applications/", "644"],
+    ["../../misc/rio.terminfo", "usr/share/info/", "644"],
+    ["../../misc/logo.svg", "usr/share/icons/hicolor/scalable/apps/rio.svg", "644"],
+    ["../../README.md", "usr/share/doc/rio/", "644"],
+    ["../../LICENSE", "usr/share/doc/rio/", "664"]
+]
+extended-description = """\
+Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers.
+The supported platforms currently consist of BSD, Linux, macOS and Windows."""
