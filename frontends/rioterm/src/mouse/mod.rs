@@ -5,12 +5,12 @@ use crate::event::ClickState;
 use rio_backend::crosswords::pos::Pos;
 use std::time::Instant;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 use winit::event::ElementState;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 use winit::event::MouseButton;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 use wa::MouseButton;
 
 #[derive(Default, Debug)]
@@ -26,17 +26,17 @@ pub struct AccumulatedScroll {
 pub struct Mouse {
     pub multiplier: f64,
     pub divider: f64,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(use_wa))]
     pub left_button_state: ElementState,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(use_wa))]
     pub middle_button_state: ElementState,
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(use_wa))]
     pub right_button_state: ElementState,
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     pub left_button_state: bool,
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     pub middle_button_state: bool,
-    #[cfg(target_os = "macos")]
+    #[cfg(use_wa)]
     pub right_button_state: bool,
     pub last_click_timestamp: Instant,
     pub last_click_button: MouseButton,
@@ -56,17 +56,17 @@ impl Default for Mouse {
             divider: 1.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(use_wa))]
             left_button_state: ElementState::Released,
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(use_wa))]
             middle_button_state: ElementState::Released,
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(use_wa))]
             right_button_state: ElementState::Released,
-            #[cfg(target_os = "macos")]
+            #[cfg(use_wa)]
             left_button_state: false,
-            #[cfg(target_os = "macos")]
+            #[cfg(use_wa)]
             middle_button_state: false,
-            #[cfg(target_os = "macos")]
+            #[cfg(use_wa)]
             right_button_state: false,
             click_state: ClickState::None,
             square_side: Side::Left,

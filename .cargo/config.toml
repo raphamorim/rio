@@ -5,7 +5,7 @@ test-rio = "test --release -p rioterm --"
 [target.wasm32-unknown-unknown]
 rustflags = [
     # Enabled unstable APIs from web_sys
-    "--cfg=web_sys_unstable_apis"
+    "--cfg=web_sys_unstable_apis",
 ]
 runner = 'wasm-bindgen-test-runner'
 
@@ -13,5 +13,7 @@ runner = 'wasm-bindgen-test-runner'
 rustflags = [
     # We can guarantee that this target will always run on a CPU with _at least_
     # these capabilities, so let's optimize for them
-    "-Ctarget-cpu=apple-m1"
+    "-Ctarget-cpu=apple-m1",
+    # Enable WA instead of WINIT
+    # "--cfg=use_wa"
 ]

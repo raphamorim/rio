@@ -38,10 +38,10 @@ wgpu = { workspace = true }
 cursor-icon = { version = "1.0.0", default-features = false }
 smallvec = { version = "1.13.1", default-features = false }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(use_wa)'.dependencies]
 wa = { workspace = true }
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(not(use_wa))'.dependencies]
 winit = { workspace = true }
 
 [features]

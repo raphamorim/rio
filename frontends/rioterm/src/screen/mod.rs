@@ -1171,6 +1171,7 @@ impl Screen {
     pub fn render(&mut self) {
         // If sugarloaf does have pending updates to process then
         // should abort current render
+        #[cfg(use_wa)]
         if self.sugarloaf.dimensions_changed() {
             self.resize_all_contexts();
             return;

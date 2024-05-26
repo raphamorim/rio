@@ -29,6 +29,9 @@ run:
 dev:
 	cargo run -p rioterm
 
+dev-wa:
+	cargo run -p rioterm
+
 dev-debug:
 	RIO_LOG_LEVEL=debug make dev
 

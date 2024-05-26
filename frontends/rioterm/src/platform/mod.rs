@@ -1,7 +1,7 @@
 #[cfg(target_os = "macos")]
 pub mod macos;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 pub fn create_config_file() {
     use std::fs::File;
     use std::io::Write;

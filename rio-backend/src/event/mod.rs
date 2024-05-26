@@ -10,16 +10,16 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 use winit::event_loop::EventLoopProxy;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 use wa::event_loop::EventLoopProxy;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(use_wa))]
 pub type WindowId = winit::window::WindowId;
 
-#[cfg(target_os = "macos")]
+#[cfg(use_wa)]
 pub type WindowId = u16;
 
 #[derive(Debug, Clone)]
