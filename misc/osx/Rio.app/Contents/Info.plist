@@ -119,6 +119,8 @@
   <string>An application in Rio would like to access AppleScript.</string>
   <key>NSSystemAdministrationUsageDescription</key>
   <string>An application in Rio requires elevated permissions.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>An application in Rio wants to use Bluetooth.</string>
   <key>NSCalendarsUsageDescription</key>
   <string>An application in Rio would like to access calendar data.</string>
   <key>NSCameraUsageDescription</key>

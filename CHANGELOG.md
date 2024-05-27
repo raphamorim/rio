@@ -20,6 +20,8 @@
 	- Compute layout updates only if layout is different.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
+- Support bluetooh access on MacOs.
+- Support "open here" on Microsoft Windows.
 - Fixes on font search for Microsoft Windows.
 - All tabs/window instances now use same font data.
 - Updated wgpu to 0.20.0.
