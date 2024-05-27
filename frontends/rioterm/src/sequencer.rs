@@ -188,7 +188,16 @@ impl Sequencer {
                         }
                         RioEventType::Rio(RioEvent::Title(title)) => {
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.set_window_title(title);
+                                route.set_window_title(&title);
+                            }
+                        }
+                        RioEventType::Rio(RioEvent::TitleWithSubtitle(
+                            title,
+                            subtitle,
+                        )) => {
+                            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                                route.set_window_title(&title);
+                                route.set_window_subtitle(&subtitle);
                             }
                         }
                         RioEventType::BlinkCursor | RioEventType::BlinkCursorTimeout => {}

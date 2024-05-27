@@ -441,7 +441,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         context.shell_pid,
                     );
 
-                    #[cfg(use_wa)]
+                    #[cfg(any(use_wa, target_os = "macos"))]
                     let path = teletypewriter::foreground_process_path(
                         *context.main_fd,
                         context.shell_pid,
@@ -449,7 +449,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                    #[cfg(not(use_wa))]
+                    #[cfg(not(any(use_wa, target_os = "macos")))]
                     let path = String::default();
 
                     #[cfg(not(target_os = "macos"))]
@@ -473,13 +473,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        #[cfg(use_wa)]
+                        #[cfg(any(use_wa, target_os = "macos"))]
                         self.event_proxy.send_event(
                             RioEvent::TitleWithSubtitle(window_title, path.clone()),
                             self.window_id,
                         );
 
-                        #[cfg(not(use_wa))]
+                        #[cfg(not(any(use_wa, target_os = "macos")))]
                         self.event_proxy
                             .send_event(RioEvent::Title(window_title), self.window_id);
                     }
