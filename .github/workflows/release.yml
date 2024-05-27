@@ -76,9 +76,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.4
+        run: dotnet tool install --global wix --version 4.0.5
       - run: wix --version
-      - run: wix extension add WixToolset.UI.wixext/4.0.4 WixToolset.Util.wixext/4.0.4
+      - run: wix extension add WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release
       - name: Crate msi installer
