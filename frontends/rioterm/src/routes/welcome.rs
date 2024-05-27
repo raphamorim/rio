@@ -23,7 +23,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
             size: [30., layout.height],
         },
         Rect {
-            position: [15., layout.margin.top_y + 40.],
+            position: [15., layout.margin.top_y + 60.],
             color: yellow,
             size: [30., layout.height],
         },
@@ -53,22 +53,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
             false,
         );
 
-        sugarloaf.text(
-            (width - 50., layout.margin.top_y + 320.),
-            String::from("󰌑"),
-            26.,
-            yellow,
-            true,
-        );
-
-        sugarloaf.text(
-            (width - 50., layout.margin.top_y + 340.),
-            String::from("nice"),
-            14.,
-            yellow,
-            true,
-        );
-
         return;
     }
 
@@ -95,22 +79,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         [1., 1., 1., 1.],
         false,
     );
-
-    sugarloaf.text(
-        (width - 50., layout.margin.top_y + 320.),
-        String::from("󰌑"),
-        26.,
-        yellow,
-        true,
-    );
-
-    sugarloaf.text(
-        (width - 50., layout.margin.top_y + 340.),
-        String::from("nice"),
-        14.,
-        yellow,
-        true,
-    );
 }
 
 #[inline]
@@ -121,6 +89,6 @@ fn welcome_content() -> String {
     #[cfg(not(target_os = "macos"))]
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
-    format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in raphamorim.io/rio/docs
+    format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in raphamorim.io/rio
     ", rio_backend::config::config_file_path().display(), shortcut)
 }
