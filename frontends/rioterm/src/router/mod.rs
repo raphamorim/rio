@@ -236,6 +236,7 @@ impl Router {
             &self.font_library,
             "Rio Settings",
             None,
+            None,
         );
         let id = window.winit_window.id();
         self.routes.insert(
@@ -255,6 +256,7 @@ impl Router {
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
+        open_url: Option<&str>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -263,6 +265,7 @@ impl Router {
             &self.font_library,
             "Rio",
             None,
+            open_url,
         );
         self.routes.insert(
             window.winit_window.id(),
@@ -282,6 +285,7 @@ impl Router {
         event_proxy: EventProxy,
         config: &Rc<RioConfig>,
         tab_id: Option<String>,
+        open_url: Option<&str>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -290,6 +294,7 @@ impl Router {
             &self.font_library,
             "Rio",
             tab_id,
+            open_url,
         );
         self.routes.insert(
             window.winit_window.id(),
@@ -316,6 +321,7 @@ impl RouteWindow {
         event_loop: &EventLoop<EventPayload>,
         config: &Rc<RioConfig>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        open_url: Option<&str>,
     ) -> Result<Self, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
@@ -328,7 +334,7 @@ impl RouteWindow {
         let winit_window = configure_window(winit_window, config);
 
         let screen =
-            Screen::new(&winit_window, config, event_proxy, font_library).await?;
+            Screen::new(&winit_window, config, event_proxy, font_library, open_url).await?;
 
         Ok(Self {
             is_focused: false,
@@ -347,6 +353,7 @@ impl RouteWindow {
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
         tab_id: Option<String>,
+        open_url: Option<&str>
     ) -> Self {
         #[allow(unused_mut)]
         let mut window_builder =
@@ -370,6 +377,7 @@ impl RouteWindow {
             config,
             event_proxy,
             font_library,
+            open_url,
         ))
         .expect("Screen not created");
 

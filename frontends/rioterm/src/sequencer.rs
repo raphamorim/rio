@@ -59,7 +59,7 @@ impl Sequencer {
         let mut scheduler = Scheduler::new(proxy);
 
         let window =
-            RouteWindow::new(&event_loop, &self.config, &self.router.font_library)
+            RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)
                 .await?;
         self.router.create_route_from_window(window);
 
@@ -286,6 +286,7 @@ impl Sequencer {
                                 event_loop_window_target,
                                 self.event_proxy.clone().unwrap(),
                                 &self.config,
+                                None,
                             );
                         }
                         #[cfg(target_os = "macos")]
@@ -322,6 +323,7 @@ impl Sequencer {
                                     self.event_proxy.clone().unwrap(),
                                     &self.config,
                                     Some(route.window.winit_window.tabbing_identifier()),
+                                    None,
                                 );
 
                                 if let Some(old_config) = should_revert_to_previous_config
@@ -354,6 +356,7 @@ impl Sequencer {
                                             event_loop_window_target,
                                             self.event_proxy.clone().unwrap(),
                                             &self.config,
+                                            None,
                                         );
                                     }
                                 }
@@ -419,12 +422,31 @@ impl Sequencer {
                 }
 
                 Event::Opened { urls } => {
-                    for _url in urls {
-                        self.router.create_window(
-                            event_loop_window_target,
-                            self.event_proxy.clone().unwrap(),
-                            &self.config,
-                        );
+                    let mut tab_identifier = None;
+                    for (_id, route) in self.router.routes.iter() {
+                        if route.window.is_focused {
+                            tab_identifier = Some(route.window.winit_window.tabbing_identifier());
+                            break;
+                        }
+                    }
+
+                    for url in urls {
+                        if self.config.navigation.is_native() && tab_identifier.is_some() {
+                            self.router.create_native_tab(
+                                event_loop_window_target,
+                                self.event_proxy.clone().unwrap(),
+                                &self.config,
+                                tab_identifier.clone(),
+                                Some(&url),
+                            );
+                        } else {
+                            self.router.create_window(
+                                event_loop_window_target,
+                                self.event_proxy.clone().unwrap(),
+                                &self.config,
+                                Some(&url)
+                            );
+                        }
                     }
                 }
 

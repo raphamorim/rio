@@ -13,7 +13,7 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
-use crate::context::{self, ContextManager};
+use crate::context::{self, ContextManager, process_open_url};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -78,6 +78,7 @@ impl Screen {
         config: &Rc<rio_backend::config::Config>,
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        open_url: Option<&str>,
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
@@ -162,12 +163,20 @@ impl Screen {
 
         let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
+
+        let (shell, working_dir) = process_open_url(
+            config.shell.to_owned(),
+            config.working_dir.to_owned(),
+            config.editor.to_owned(),
+            open_url,
+        );
+
         let context_manager_config = context::ContextManagerConfig {
             use_current_path: config.navigation.use_current_path,
-            shell: config.shell.to_owned(),
+            shell,
+            working_dir,
             spawn_performer: true,
             use_fork: config.use_fork,
-            working_dir: config.working_dir.to_owned(),
             is_collapsed,
             is_native,
             // When navigation is collapsed and does not contain any color rule
