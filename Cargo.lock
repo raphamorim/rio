@@ -884,6 +884,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.1"
+source = "git+https://github.com/raphamorim/winit?rev=0363111#0363111bafb136a163e3a03edd84ce79d1616585"
 
 [[package]]
 name = "dwrote"
@@ -2412,9 +2413,9 @@ checksum = "9c8a99fddc9f0ba0a85884b8d14e3592853e787d581ca1816c91349b10e4eeab"
 
 [[package]]
 name = "raw-window-handle"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cc3bcbdb1ddfc11e700e62968e6b4cc9c75bb466464ad28fb61c5b2c964418b"
+checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "rayon"
@@ -3862,6 +3863,7 @@ checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
 [[package]]
 name = "winit"
 version = "0.30.0"
+source = "git+https://github.com/raphamorim/winit?rev=0363111#0363111bafb136a163e3a03edd84ce79d1616585"
 dependencies = [
  "ahash",
  "android-activity",

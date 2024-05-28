@@ -35,7 +35,7 @@ teletypewriter = { path = "teletypewriter", version = "0.1.0" }
 rio-backend = { path = "rio-backend", version = "0.1.0" }
 wa = { path = "wa", version = "0.1.0" }
 
-raw-window-handle = "0.6"
+raw-window-handle = "0.6.2"
 parking_lot = "0.12.1"
 unicode-width = "0.1.11"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
@@ -50,13 +50,13 @@ smol_str = "0.2.1"
 futures = "0.3.29"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.34"
-wasm-bindgen-test = "0.3"
-env_logger = "0.10"
+wasm-bindgen-test = "0.3.42"
+env_logger = "0.11.3"
 console_log = "0.2"
 bitflags = "2.5.0"
 console_error_panic_hook = "0.1.7"
-winit = { path = "../winit", default-features = false, features = ["rwh_06"] }
-# winit = { git = "https://github.com/raphamorim/winit", rev = "ffd01c8", default-features = false, features = ["rwh_06"] }
+# winit = { path = "../winit", default-features = false, features = ["rwh_06"] }
+winit = { git = "https://github.com/raphamorim/winit", rev = "0363111", default-features = false, features = ["rwh_06"] }
 
 [profile.release]
 opt-level = 3
