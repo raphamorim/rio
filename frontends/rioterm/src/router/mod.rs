@@ -49,7 +49,9 @@ impl Route {
     }
 
     #[inline]
+    #[allow(unused_variables)]
     pub fn set_window_subtitle(&mut self, subtitle: &str) {
+        #[cfg(target_os = "macos")]
         self.window.winit_window.set_subtitle(subtitle);
     }
 
