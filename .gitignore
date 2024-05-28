@@ -5,6 +5,7 @@
 .DS_Store
 .vs
 .vscode
+.swp
 release
 .jekyll-cache
 .jekyll-metadata

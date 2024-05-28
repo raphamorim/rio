@@ -58,9 +58,10 @@ impl Sequencer {
         );
         let mut scheduler = Scheduler::new(proxy);
 
-        let window =
+        let mut window =
             RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)
                 .await?;
+        window.is_focused = true;
         self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
@@ -422,29 +423,40 @@ impl Sequencer {
                 }
 
                 Event::Opened { urls } => {
-                    let mut tab_identifier = None;
-                    for (_id, route) in self.router.routes.iter() {
-                        if route.window.is_focused {
-                            tab_identifier = Some(route.window.winit_window.tabbing_identifier());
-                            break;
-                        }
-                    }
-
-                    for url in urls {
-                        if self.config.navigation.is_native() && tab_identifier.is_some() {
-                            self.router.create_native_tab(
-                                event_loop_window_target,
-                                self.event_proxy.clone().unwrap(),
-                                &self.config,
-                                tab_identifier.clone(),
-                                Some(&url),
-                            );
-                        } else {
+                    if !self.config.navigation.is_native() {
+                        for url in urls {
                             self.router.create_window(
                                 event_loop_window_target,
                                 self.event_proxy.clone().unwrap(),
                                 &self.config,
-                                Some(&url)
+                                Some(&url),
+                            );
+                        }
+                        return;
+                    }
+
+                    let mut tab_id = None;
+
+                    // In case only have one window
+                    for (_, route) in self.router.routes.iter() {
+                        if tab_id.is_none() {
+                            tab_id = Some(route.window.winit_window.tabbing_identifier());
+                        }
+
+                        if route.window.is_focused {
+                            tab_id = Some(route.window.winit_window.tabbing_identifier());
+                            break;
+                        }
+                    }
+
+                    if tab_id.is_some() {
+                        for url in urls {
+                            self.router.create_native_tab(
+                                event_loop_window_target,
+                                self.event_proxy.clone().unwrap(),
+                                &self.config,
+                                tab_id.clone(),
+                                Some(&url),
                             );
                         }
                     }
