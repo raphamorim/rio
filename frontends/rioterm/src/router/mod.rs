@@ -334,7 +334,8 @@ impl RouteWindow {
         let winit_window = configure_window(winit_window, config);
 
         let screen =
-            Screen::new(&winit_window, config, event_proxy, font_library, open_url).await?;
+            Screen::new(&winit_window, config, event_proxy, font_library, open_url)
+                .await?;
 
         Ok(Self {
             is_focused: false,
@@ -353,7 +354,7 @@ impl RouteWindow {
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
         tab_id: Option<String>,
-        open_url: Option<&str>
+        open_url: Option<&str>,
     ) -> Self {
         #[allow(unused_mut)]
         let mut window_builder =
