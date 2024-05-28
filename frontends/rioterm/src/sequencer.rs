@@ -418,6 +418,16 @@ impl Sequencer {
                     // noop
                 }
 
+                Event::Opened { urls } => {
+                    for _url in urls {
+                        self.router.create_window(
+                            event_loop_window_target,
+                            self.event_proxy.clone().unwrap(),
+                            &self.config,
+                        );
+                    }
+                }
+
                 Event::Resumed => {
                     #[cfg(not(any(target_os = "macos", windows)))]
                     {
