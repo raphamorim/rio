@@ -21,8 +21,9 @@
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Support bluetooh access on MacOs.
-- Support "open here" on Microsoft Windows.
+- Support "open here" for Microsoft Windows.
 - Fixes on font search for Microsoft Windows.
+- Open Url support for MacOS.
 - All tabs/window instances now use same font data.
 - Updated wgpu to 0.20.0.
 - Removed support to DX11.
