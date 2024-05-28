@@ -11,7 +11,7 @@
 use crate::bindings::{
     self, Action as Act, BindingKey, BindingMode, KeyBindings, MouseBinding, ViAction,
 };
-use crate::context::{self, ContextManager};
+use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{grid::Scroll, vi_mode::ViMotion, Mode};
 use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
@@ -60,35 +60,6 @@ pub struct Route {
     pub path: RoutePath,
     pub assistant: Assistant,
     pub is_focused: bool,
-}
-
-#[inline]
-fn process_open_url(
-    mut shell: Shell,
-    mut working_dir: Option<String>,
-    editor: String,
-    open_url: Option<&str>,
-) -> (Shell, Option<String>) {
-    if open_url.is_none() {
-        return (shell, working_dir);
-    }
-
-    if let Ok(url) = url::Url::parse(open_url.unwrap_or_default()) {
-        if let Ok(path_buf) = url.to_file_path() {
-            if path_buf.exists() {
-                if path_buf.is_file() {
-                    shell = Shell {
-                        program: editor,
-                        args: vec![path_buf.display().to_string()],
-                    }
-                } else if path_buf.is_dir() {
-                    working_dir = Some(path_buf.display().to_string());
-                }
-            }
-        }
-    }
-
-    (shell, working_dir)
 }
 
 impl Route {
