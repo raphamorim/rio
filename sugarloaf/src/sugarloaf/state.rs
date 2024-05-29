@@ -143,12 +143,6 @@ impl SugarState {
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
     ) -> bool {
-        // TODO: Fix drop of rendering context on wayland if diff is equal
-        #[cfg(not(feature = "render_equal_updates"))]
-        if self.latest_change == SugarTreeDiff::Equal {
-            return false;
-        }
-
         advance_brush.prepare(context, self);
 
         for section in &self.compositors.elementary.blocks_sections {
@@ -297,7 +291,7 @@ impl SugarState {
 
         log::info!("state compute_changes result: {:?}", self.latest_change);
 
-        if should_update || should_resize || should_clean_blocks {
+        if should_update {
             self.current = std::mem::take(&mut self.next);
 
             if should_compute_dimensions {
@@ -309,7 +303,7 @@ impl SugarState {
             self.compositors.advanced.update_layout(&self.current);
         }
 
-        if should_resize || should_clean_blocks {
+        if should_clean_blocks {
             self.compositors.elementary.clean_blocks();
         }
 
