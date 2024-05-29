@@ -881,10 +881,10 @@ impl Sequencer {
                         route.window.screen.state.last_typing = Some(Instant::now());
                         route.window.screen.process_key_event(&key_event);
 
-                        if key_event.state == ElementState::Released {
-                            if self.config.hide_cursor_when_typing {
-                                route.window.winit_window.set_cursor_visible(false);
-                            }
+                        if key_event.state == ElementState::Released
+                            && self.config.hide_cursor_when_typing
+                        {
+                            route.window.winit_window.set_cursor_visible(false);
 
                             // route.redraw();
                         }
