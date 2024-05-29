@@ -741,15 +741,6 @@ fn draw_layout(
                 },
             };
 
-            // // TODO: Fix cursor repetition on render data
-            // if style.cursor != SugarCursor::Disabled {
-            //     if drawn_cursor {
-            //         style.cursor = SugarCursor::Disabled;
-            //     }
-
-            //     drawn_cursor = true;
-            // }
-
             comp.draw_glyphs(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,

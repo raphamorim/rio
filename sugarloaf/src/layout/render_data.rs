@@ -189,7 +189,7 @@ impl RenderData {
         if line != self.last_line {
             self.last_line = line;
             self.data.last_span = 0;
-            self.last_cached_run = RunCacheEntry::default();
+            self.last_cached_run.runs.clear();
         }
 
         let coords_start = self.data.coords.len() as u32;
@@ -202,7 +202,7 @@ impl RenderData {
 
         let mut advance = 0.;
         let mut last_span = self.data.last_span;
-        let mut span_data = &styles[self.data.last_span];
+        let mut span_data = &styles[last_span];
 
         shaper.shape_with(|c| {
             if c.info.boundary() == Boundary::Mandatory {
@@ -354,7 +354,7 @@ impl RenderData {
         }
         self.data.last_span = last_span;
         let run_data = RunData {
-            span: *span_data,
+            span: styles[last_span],
             line,
             font: *font,
             coords: (coords_start, coords_end),
@@ -598,8 +598,10 @@ impl<'a> Run<'a> {
     /// Returns the underline size for the run.
     #[inline]
     pub fn underline_size(&self) -> f32 {
-        // span_data.underline_size.unwrap_or(metrics.stroke_size),
-        self.run.span.underline_size.unwrap_or(0.0)
+        self.run
+            .span
+            .underline_size
+            .unwrap_or(self.run.strikeout_size)
     }
 
     /// Returns an iterator over the clusters in logical order.
@@ -734,48 +736,57 @@ impl<'a> Cluster<'a> {
     }
 
     /// Returns the cluster information.
+    #[inline]
     pub fn info(&self) -> ClusterInfo {
         self.cluster.info
     }
 
     /// Returns true if the cluster is empty. This occurs when ignorable
     /// glyphs are removed by the shaper.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.cluster.is_empty()
     }
 
     /// Returns true if the cluster is a ligature.
+    #[inline]
     pub fn is_ligature(&self) -> bool {
         self.cluster.is_ligature()
     }
 
     /// Returns true if the cluster is a continuation of a ligature.
+    #[inline]
     pub fn is_continuation(&self) -> bool {
         self.cluster.is_continuation()
     }
 
     /// Returns true if the cluster is the final continuation of a ligature.
+    #[inline]
     pub fn is_last_continuation(&self) -> bool {
         self.cluster.is_last_continuation()
     }
 
     /// Returns true if the following cluster is a mandatory line break.
+    #[inline]
     pub fn is_newline(&self) -> bool {
         self.cluster.is_newline()
     }
 
     /// Returns the byte offset of the cluster in the source text.
+    #[inline]
     pub fn offset(&self) -> usize {
         self.cluster.offset as usize
     }
 
     /// Returns the byte range of the cluster in the source text.
+    #[inline]
     pub fn range(&self) -> Range<usize> {
         let start = self.cluster.offset as usize;
         start..start + self.cluster.len as usize
     }
 
     /// Returns an iterator over the glyphs for the cluster.
+    #[inline]
     pub fn glyphs(&self) -> Glyphs<'a> {
         let glyphs = self
             .cluster
@@ -787,6 +798,7 @@ impl<'a> Cluster<'a> {
     }
 
     /// Returns the advance of the cluster.
+    #[inline]
     pub fn advance(&self) -> f32 {
         self.cluster.advance(
             &self.layout.detailed_clusters,
@@ -950,6 +962,7 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+#[inline]
 pub fn make_range(r: (u32, u32)) -> Range<usize> {
     r.0 as usize..r.1 as usize
 }
