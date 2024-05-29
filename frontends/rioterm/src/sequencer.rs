@@ -422,6 +422,7 @@ impl Sequencer {
                     // noop
                 }
 
+                #[cfg(target_os = "macos")]
                 Event::Opened { urls } => {
                     if !self.config.navigation.is_native() {
                         for url in urls {
