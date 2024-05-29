@@ -168,7 +168,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, text: &str, style: Option<FragmentStyle>) -> Option<()> {
+    pub fn add_text(&mut self, text: &str, mut style: FragmentStyle) -> Option<()> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
@@ -176,19 +176,10 @@ impl<'a> ParagraphBuilder<'a> {
             return None;
         }
 
-        let mut should_insert_style = false;
-
         let mut offset = self.last_offset;
-        let style = if let Some(mut val) = style {
-            should_insert_style = true;
-            val.font_size *= self.s.scale;
-            val
-        } else {
-            *line
-                .styles
-                .last()
-                .unwrap_or(&FragmentStyle::scaled_default(self.s.scale))
-        };
+        style.font_size *= self.s.scale;
+        line.styles.push(style);
+        let span_id = line.styles.len() - 1;
 
         // if let Some(dir) = style.dir {
         //     const LRI: char = '\u{2066}';
@@ -313,41 +304,33 @@ impl<'a> ParagraphBuilder<'a> {
         }
         let end = line.text.content.len();
         let break_shaping = if let Some(prev_frag) = line.fragments.last() {
-            if prev_frag.is_text {
-                if style == prev_frag.span {
-                    false
-                } else {
-                    style.font_size != prev_frag.span.font_size
-                        || style.letter_spacing != prev_frag.span.letter_spacing
-                        || style.lang != prev_frag.span.lang
-                        // || style.font != prev_frag.spanfont
-                        || style.font_features != prev_frag.span.font_features
-                        || style.font_vars != prev_frag.span.font_vars
-                }
+            let prev_style = line.styles[prev_frag.span];
+            if prev_style == style {
+                false
             } else {
-                true
+                style.font_size != prev_style.font_size
+                    || style.letter_spacing != prev_style.letter_spacing
+                    || style.lang != prev_style.lang
+                    // || style.font != prev_stylefont
+                    || style.font_features != prev_style.font_features
+                    || style.font_vars != prev_style.font_vars
             }
         } else {
             true
         };
+
         let len = end - start;
         line.text.frags.reserve(len);
         for _ in 0..len {
             line.text.frags.push(id as u32);
         }
 
-        let mut style_index = 0;
-        if should_insert_style {
-            line.styles.push(style);
-            style_index = line.styles.len() - 1;
-        }
         line.text.spans.reserve(len);
         for _ in 0..len {
-            line.text.spans.push(style_index);
+            line.text.spans.push(span_id);
         }
         line.fragments.push(FragmentData {
-            span: style,
-            is_text: true,
+            span: span_id,
             break_shaping,
             start,
             end,
@@ -397,7 +380,7 @@ impl<'a> ParagraphBuilder<'a> {
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
 
-        self.add_text(" ", Some(FragmentStyle::default()));
+        self.add_text(" ", FragmentStyle::default());
         // for _ in 0..self.dir_depth {
         // const PDI: char = '\u{2069}';
         // self.push_char(PDI);
@@ -625,7 +608,7 @@ fn shape_item(
         vars,
         synth: Synthesis::default(),
         state,
-        span: &state.lines[current_line].styles[0],
+        span: &state.lines[current_line].styles[span_index],
         font_id: None,
         span_index,
         size: style.font_size,
@@ -646,7 +629,6 @@ fn shape_item(
                     offset,
                     len: ch.len_utf8() as u8,
                     info,
-                    // data: i as u32,
                     data: span_index as u32,
                 }
             });
@@ -682,13 +664,15 @@ fn shape_item(
             .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
+                // if current_line == 0 {
+                //     println!("{:?} {:?} {:?}", ch, span_index as u32, state.lines[current_line].styles[span_index]);
+                // }
                 Token {
                     ch,
                     offset,
                     len: ch.len_utf8() as u8,
                     info,
                     data: span_index as u32,
-                    // data: i as u32,
                 }
             });
 
@@ -769,19 +753,17 @@ where
         if cluster_span != state.span_index {
             state.span_index = cluster_span;
             state.span = &state.state.lines[current_line].styles[state.span_index];
-        }
-        // state.span = state.state.spans.get(cluster_span as usize).unwrap();
 
-        // TODO?: Fix state.span.font overwrite
-        // if state.span.font != current_font_id {
-        // state.font_id = Some(state.span.font);
-        // }
-        // fcx.select_group(state.font_id);
-        // }
+            // TODO?: Fix state.span.font overwrite
+            // if state.span.font != current_font_id {
+            // state.font_id = Some(state.span.font);
+            // }
+            // fcx.select_group(state.font_id);
+            // }
+        }
 
         let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
         if next_font != state.font_id || synth != state.synth {
-            // let start = std::time::Instant::now();
             render_data.push_run(
                 &state.state.lines[current_line].styles,
                 &current_font_id,

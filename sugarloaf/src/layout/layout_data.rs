@@ -8,7 +8,6 @@
 
 use super::{Alignment, Glyph};
 use crate::layout::FragmentStyle;
-use crate::sugarloaf::primitives::SugarCursor;
 use swash::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
@@ -181,7 +180,6 @@ impl GlyphData {
 pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
-    pub color: [f32; 4],
     pub font: usize,
     pub coords: (u32, u32),
     pub size: f32,
@@ -192,15 +190,9 @@ pub struct RunData {
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
-    pub background_color: Option<[f32; 4]>,
-    pub underline: bool,
-    pub underline_offset: f32,
-    pub underline_size: f32,
-    pub underline_color: [f32; 4],
     pub strikeout_offset: f32,
     pub strikeout_size: f32,
     pub advance: f32,
-    pub cursor: SugarCursor,
 }
 
 #[derive(Clone, Debug, Default)]
