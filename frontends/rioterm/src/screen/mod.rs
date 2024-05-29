@@ -462,6 +462,7 @@ impl Screen {
                     .into(),
                 };
 
+                self.sugarloaf.mark_dirty();
                 self.ctx_mut().current_mut().messenger.send_write(bytes);
             }
 
@@ -739,6 +740,7 @@ impl Screen {
             return;
         }
 
+        self.sugarloaf.mark_dirty();
         let text = key.text_with_all_modifiers().unwrap_or_default();
 
         let bytes = if !self.state.is_kitty_keyboard_enabled {

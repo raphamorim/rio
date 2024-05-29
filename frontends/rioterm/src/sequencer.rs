@@ -75,7 +75,6 @@ impl Sequencer {
                         RioEventType::Rio(RioEvent::Wakeup) => {
                             // Emitted when the application has been resumed.
                             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                                route.window.screen.sugarloaf.mark_dirty();
                                 route.redraw();
                             }
                         }
