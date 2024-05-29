@@ -14,14 +14,12 @@ use swash::text::{cluster::CharInfo, Script};
 use swash::Setting;
 
 /// Data that describes a fragment.
-#[derive(Copy, Clone)]
+#[derive(Copy, Debug, Clone)]
 pub struct FragmentData {
     /// Identifier of the span that contains the fragment.
-    pub span: FragmentStyle,
+    pub span: usize,
     /// True if this fragment breaks shaping with the previous fragment.
     pub break_shaping: bool,
-    /// True if this fragment is text.
-    pub is_text: bool,
     /// Offset of the text.
     pub start: usize,
     /// End of the text.

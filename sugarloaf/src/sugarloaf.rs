@@ -329,8 +329,6 @@ impl Sugarloaf {
 
     #[inline]
     pub fn render(&mut self) {
-        // let start = std::time::Instant::now();
-
         self.state.compute_changes();
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
@@ -344,12 +342,6 @@ impl Sugarloaf {
             return;
         }
 
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed in rich_text_brush.prepare() is: {:?} \n",
-        //     duration
-        // );
-
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
                 let mut encoder = self.ctx.device.create_command_encoder(
@@ -360,11 +352,6 @@ impl Sugarloaf {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                // let load = if self.state.layout_was_updated() {
-                //     wgpu::LoadOp::Clear(self.background_color)
-                // } else {
-                //     wgpu::LoadOp::Load
-                // };
                 if let Some(bg_image) = &self.background_image {
                     self.layer_brush.prepare_ref(
                         &mut encoder,

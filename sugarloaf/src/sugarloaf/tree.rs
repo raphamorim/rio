@@ -3,10 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-// use std::ops::Range;
 use crate::sugarloaf::SugarloafLayout;
 use crate::{Sugar, SugarBlock, SugarLine};
-// use smallvec::SmallVec;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct DiffChar {
@@ -14,8 +12,6 @@ pub struct DiffChar {
     pub column: usize,
     pub before: Sugar,
     pub after: Sugar,
-    // range: Range<usize>,
-    // content: Vec<char>,
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -43,8 +39,6 @@ pub enum SugarTreeDiff {
     Changes(Vec<Diff>),
 }
 
-// const LINE_MAX_LINES: usize = 140;
-
 #[derive(Clone)]
 pub struct SugarTree {
     pub lines: Vec<SugarLine>,
@@ -56,38 +50,11 @@ impl Default for SugarTree {
     fn default() -> Self {
         Self {
             lines: Vec::new(),
-            blocks: Vec::with_capacity(14),
+            blocks: Vec::with_capacity(20),
             layout: SugarloafLayout::default(),
         }
     }
 }
-
-// impl Default for SugarTree {
-//     fn default() -> Self {
-//         // let inner = {
-//         //     // Create an array of uninitialized values.
-//         //     let mut array: [MaybeUninit<SugarLine>; LINE_MAX_LINES] =
-//         //         unsafe { MaybeUninit::uninit().assume_init() };
-
-//         //     for element in array.iter_mut() {
-//         //         *element = MaybeUninit::new(SugarLine::default());
-//         //     }
-
-//         //     unsafe { std::mem::transmute::<_, [SugarLine; LINE_MAX_LINES]>(array) }
-//         // };
-//         let mut inner_vec: Vec<SugarLine> = Vec::with_capacity(LINE_MAX_LINES);
-//         for _i in 0..LINE_MAX_LINES {
-//             inner_vec.push(SugarLine::default());
-//         }
-
-//         Self {
-//             // hash: 00000000000000,
-//             inner: inner_vec.try_into().unwrap(),
-//             len: 0,
-//             cursor_position: (0, 0),
-//         }
-//     }
-// }
 
 impl SugarTree {
     #[inline]
@@ -237,14 +204,6 @@ pub mod test {
             sugartree_a.calculate_diff(&sugartree_b, true, false),
             SugarTreeDiff::LayoutIsDifferent
         );
-
-        // sugartree_a.width = 0.0;
-        // sugartree_a.height = 100.0;
-
-        // assert_eq!(
-        //     sugartree_a.calculate_diff(&sugartree_b, true, false),
-        //     SugarTreeDiff::HeightIsDifferent
-        // );
     }
 
     #[test]
