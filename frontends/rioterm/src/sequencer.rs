@@ -886,7 +886,7 @@ impl Sequencer {
                                 route.window.winit_window.set_cursor_visible(false);
                             }
 
-                            route.redraw();
+                            // route.redraw();
                         }
                     }
                 }
