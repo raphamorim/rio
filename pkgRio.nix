@@ -1,28 +1,28 @@
-{
-  rust-toolchain,
-  makeRustPlatform,
-  stdenv,
-  lib,
-  fontconfig,
-  darwin,
-  gcc-unwrapped,
-  libGL,
-  libxkbcommon,
-  vulkan-loader,
-  libX11,
-  libXcursor,
-  libXi,
-  libXrandr,
-  libxcb,
-  wayland,
-  ncurses,
-  pkg-config,
-  cmake,
-  autoPatchelfHook,
-  withX11 ? !stdenv.isDarwin,
-  withWayland ? !stdenv.isDarwin,
-  ...
-}: let
+{ rust-toolchain
+, makeRustPlatform
+, stdenv
+, lib
+, fontconfig
+, darwin
+, gcc-unwrapped
+, libGL
+, libxkbcommon
+, vulkan-loader
+, libX11
+, libXcursor
+, libXi
+, libXrandr
+, libxcb
+, wayland
+, ncurses
+, pkg-config
+, cmake
+, autoPatchelfHook
+, withX11 ? !stdenv.isDarwin
+, withWayland ? !stdenv.isDarwin
+, ...
+}:
+let
   cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
   rustPlatform = makeRustPlatform {
     cargo = rust-toolchain;
@@ -56,35 +56,41 @@
         wayland
       ];
 in
-  rustPlatform.buildRustPackage {
-    inherit (cargoToml.workspace.package) version;
-    name = "rio";
-    src = ./.;
-    cargoLock.lockFile = ./Cargo.lock;
+rustPlatform.buildRustPackage {
+  inherit (cargoToml.workspace.package) version;
+  name = "rio";
+  src = ./.;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
 
-    cargoBuildFlags = "-p rioterm";
-
-    buildInputs = rlinkLibs;
-    runtimeDependencies = rlinkLibs;
-
-    nativeBuildInputs =
-      [
-        ncurses
-      ]
-      ++ lib.optionals stdenv.isLinux [
-        pkg-config
-        cmake
-        autoPatchelfHook
-      ];
-
-    buildNoDefaultFeatures = true;
-    buildFeatures = ["x11" "wayland"];
-    meta = {
-      description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers";
-      homepage = "https://raphamorim.io/rio";
-      license = lib.licenses.mit;
-      platforms = lib.platforms.unix;
-      changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
-      mainProgram = "rio";
+    outputHashes = {
+      "dpi-0.1.1" = "sha256-LoA66thPDtA9Q6QkSkQU1M2ekYM3kN1qFnGEJFojFPs=";
     };
-  }
+  };
+
+  cargoBuildFlags = "-p rioterm";
+
+  buildInputs = rlinkLibs;
+  runtimeDependencies = rlinkLibs;
+
+  nativeBuildInputs =
+    [
+      ncurses
+    ]
+    ++ lib.optionals stdenv.isLinux [
+      pkg-config
+      cmake
+      autoPatchelfHook
+    ];
+
+  buildNoDefaultFeatures = true;
+  buildFeatures = [ "x11" "wayland" ];
+  meta = {
+    description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers";
+    homepage = "https://raphamorim.io/rio";
+    license = lib.licenses.mit;
+    platforms = lib.platforms.unix;
+    changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
+    mainProgram = "rio";
+  };
+}
