@@ -60,7 +60,13 @@ in
     inherit (cargoToml.workspace.package) version;
     name = "rio";
     src = ./.;
-    cargoLock.lockFile = ./Cargo.lock;
+    cargoLock = {
+      lockFile = ./Cargo.lock;
+
+      outputHashes = {
+        "dpi-0.1.1" = "sha256-LoA66thPDtA9Q6QkSkQU1M2ekYM3kN1qFnGEJFojFPs=";
+      };
+    };
 
     cargoBuildFlags = "-p rioterm";
 
