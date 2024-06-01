@@ -105,6 +105,11 @@ impl LayoutContext {
             cache: &mut self.cache,
         }
     }
+
+    #[inline]
+    pub fn clear_cache(&mut self) {
+        self.cache.inner.clear();
+    }
 }
 
 /// Builder for computing the layout of a paragraph.

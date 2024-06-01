@@ -1028,10 +1028,11 @@ impl Sequencer {
                     ..
                 } => {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        route.window.screen.set_scale(
-                            scale_factor as f32,
-                            route.window.winit_window.inner_size(),
-                        );
+                        let scale = scale_factor as f32;
+                        route
+                            .window
+                            .screen
+                            .set_scale(scale, route.window.winit_window.inner_size());
                         route.redraw();
                     }
                 }

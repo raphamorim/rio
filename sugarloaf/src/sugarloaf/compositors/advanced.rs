@@ -31,7 +31,9 @@ impl Advanced {
     }
 
     pub fn reset(&mut self) {}
-    pub fn clean(&mut self) {}
+    pub fn clean(&mut self) {
+        self.layout_context.clear_cache();
+    }
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
