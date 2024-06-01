@@ -51,6 +51,9 @@ impl SugarState {
 
     #[inline]
     pub fn compute_layout_rescale(&mut self, scale: f32) {
+        // In rescale case, we actually need to clean cache from the compositors
+        // because it's based on sugarline hash which only consider the font size
+        self.compositors.advanced.clean();
         self.next.layout.rescale(scale).update();
     }
 

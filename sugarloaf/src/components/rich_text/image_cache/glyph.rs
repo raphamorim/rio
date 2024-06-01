@@ -133,11 +133,11 @@ impl<'a> GlyphCacheSession<'a> {
             }
         }
         self.scaled_image.data.clear();
-        let embolden = if IS_MACOS { 0.25 } else { 0. };
+        // let embolden = if IS_MACOS { 0.25 } else { 0. };
         if Render::new(SOURCES)
             .format(Format::CustomSubpixel([0.3, 0., -0.3]))
             .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
-            .embolden(embolden)
+            // .embolden(embolden)
             .render_into(&mut self.scaler, id, self.scaled_image)
         {
             let p = self.scaled_image.placement;

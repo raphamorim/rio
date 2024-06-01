@@ -356,7 +356,12 @@ impl Screen {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.resize_all_contexts();
+        self.render();
+
+        if self.sugarloaf.dimensions_changed() {
+            self.resize_all_contexts();
+        }
+
         self
     }
 
