@@ -56,7 +56,7 @@ console_log = "0.2.2"
 bitflags = "2.5.0"
 console_error_panic_hook = "0.1.7"
 # winit = { path = "../winit", default-features = false, features = ["rwh_06"] }
-winit = { git = "https://github.com/raphamorim/winit", rev = "e6433ca", default-features = false, features = ["rwh_06"] }
+winit = { git = "https://github.com/raphamorim/winit", rev = "74c7e012", default-features = false, features = ["rwh_06"] }
 
 [profile.release]
 opt-level = 3
