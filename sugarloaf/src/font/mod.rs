@@ -9,6 +9,7 @@ pub const FONT_ID_ITALIC: usize = 1;
 pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
+use std::collections::HashSet;
 use crate::font::constants::*;
 use ab_glyph::FontArc;
 use std::collections::HashMap;
@@ -78,8 +79,18 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
-        fonts_to_load: &mut Vec<(usize, PathBuf)>,
+        fonts_to_load: &mut HashMap<usize, bool>,
     ) -> Option<usize> {
+        if !library.promoted_extensions.is_empty() {
+            for i in library.promoted_extensions.keys() {
+                if fonts_to_load.get(i).is_some() {
+                    break;
+                }
+
+                fonts_to_load.insert(*i, false);
+            }
+        }
+
         let mut cache_key: String = String::default();
         for c in cluster.chars().iter() {
             cache_key.push(c.ch);
@@ -103,8 +114,11 @@ impl FontContext {
                             // In this case we will actually need to load
                             if font_data_extension.is_emoji {
                                 font_id = id;
-                                fonts_to_load
-                                    .push((font_id, font_data_extension.path.clone()));
+                                if let Some(font_to_load) = fonts_to_load.get_mut(&font_id) {
+                                    *font_to_load = true;
+                                } else {
+                                    fonts_to_load.insert(font_id, true);
+                                }
                                 break;
                             }
                         }
@@ -194,6 +208,7 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub standard: FontData,
     pub inner: Vec<FontSource>,
+    promoted_extensions: HashMap<usize, FontDataExtension>,
     db: loader::Database,
 }
 
@@ -206,6 +221,7 @@ impl Default for FontLibraryData {
             main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
+            promoted_extensions: HashMap::default(),
         }
     }
 }
@@ -227,11 +243,29 @@ impl FontLibraryData {
     }
 
     #[inline]
-    pub fn upsert(&mut self, font_id: usize, path: PathBuf) {
-        if let Some(font_data) = self.inner.get_mut(font_id) {
-            if let Some(loaded_font_data) = load_from_font_source(&path) {
-                *font_data = FontSource::Data(loaded_font_data);
+    pub fn promote(&mut self, font_id: usize) {
+        if let Some(font_source) = self.inner.get_mut(font_id) {
+            if let FontSource::Extension(extension) = font_source {
+                if let Some(loaded_font_data) = load_from_font_source(&extension.path) {
+                    let cloned_extension = extension.clone();
+                    *font_source = FontSource::Data(loaded_font_data);
+                    self.promoted_extensions.insert(font_id, cloned_extension);
+                }
             };
+        }
+    }
+
+    #[inline]
+    pub fn demote(&mut self, font_id: usize) {
+        println!("demoted {}", font_id);
+        if let Some(font_source) = self.inner.get_mut(font_id) {
+            if let Some(promoted) = self.promoted_extensions.get(&font_id) {
+                *font_source = FontSource::Extension(FontDataExtension {
+                    path: promoted.path.clone(),
+                    is_emoji: promoted.is_emoji,
+                });
+                self.promoted_extensions.remove(&font_id);
+            }
         }
     }
 

@@ -15,7 +15,6 @@ use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
@@ -62,7 +61,7 @@ pub struct LayoutContext {
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
-    fonts_to_load: Vec<(usize, PathBuf)>,
+    fonts_to_load: HashMap<usize, bool>,
 }
 
 impl LayoutContext {
@@ -75,7 +74,7 @@ impl LayoutContext {
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
-            fonts_to_load: vec![],
+            fonts_to_load: HashMap::default(),
         }
     }
 
@@ -127,7 +126,7 @@ pub struct ParagraphBuilder<'a> {
     s: &'a mut BuilderState,
     last_offset: u32,
     cache: &'a mut RunCache,
-    fonts_to_load: &'a mut Vec<(usize, PathBuf)>,
+    fonts_to_load: &'a mut HashMap<usize, bool>,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -439,20 +438,31 @@ impl<'a> ParagraphBuilder<'a> {
         // In this case, we actually have found fonts that have not been loaded yet
         // We need to load and then restart the whole resolve function again
         if !self.fonts_to_load.is_empty() {
+            let mut has_promoted = false;
             {
                 let font_library = { &mut self.fonts.inner.write().unwrap() };
-                while let Some(font_to_load) = self.fonts_to_load.pop() {
-                    let (font_id, path) = font_to_load;
-                    font_library.upsert(font_id, path);
+                for (font_id, should_promote) in self.fonts_to_load.iter() {
+                    if should_promote == &true {
+                        println!("to promote {:?}", font_id);
+                        font_library.promote(*font_id);
+                        has_promoted = true;
+                    } else {
+                        println!("to demote {:?}", font_id);
+                        // font_library.demote(*font_id);
+                    }
                 }
+
+                self.fonts_to_load.clear();
             }
 
-            self.cache.inner.clear();
-            *render_data = RenderData::default();
-            self.last_offset = 0;
-            self.needs_bidi = false;
+            if has_promoted {
+                self.cache.inner.clear();
+                *render_data = RenderData::default();
+                self.last_offset = 0;
+                self.needs_bidi = false;
 
-            return self.resolve(render_data);
+                return self.resolve(render_data);
+            }
         };
 
         render_data.apply_spacing();
@@ -620,7 +630,7 @@ fn shape_item(
     render_data: &mut RenderData,
     current_line: usize,
     cache: &mut RunCache,
-    fonts_to_load: &mut Vec<(usize, PathBuf)>,
+    fonts_to_load: &mut HashMap<usize, bool>,
 ) -> Option<()> {
     let dir = if item.level & 1 != 0 {
         shape::Direction::RightToLeft
@@ -747,7 +757,7 @@ fn shape_clusters<I>(
     dir: shape::Direction,
     render_data: &mut RenderData,
     current_line: usize,
-    fonts_to_load: &mut Vec<(usize, PathBuf)>,
+    fonts_to_load: &mut HashMap<usize, bool>,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
