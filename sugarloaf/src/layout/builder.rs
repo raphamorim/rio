@@ -15,6 +15,7 @@ use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
@@ -61,6 +62,7 @@ pub struct LayoutContext {
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
+    fonts_to_load: Vec<(usize, PathBuf)>,
 }
 
 impl LayoutContext {
@@ -73,6 +75,7 @@ impl LayoutContext {
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
+            fonts_to_load: vec![],
         }
     }
 
@@ -103,6 +106,7 @@ impl LayoutContext {
             s: &mut self.state,
             last_offset: 0,
             cache: &mut self.cache,
+            fonts_to_load: &mut self.fonts_to_load,
         }
     }
 
@@ -123,6 +127,7 @@ pub struct ParagraphBuilder<'a> {
     s: &'a mut BuilderState,
     last_offset: u32,
     cache: &'a mut RunCache,
+    fonts_to_load: &'a mut Vec<(usize, PathBuf)>,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -431,6 +436,25 @@ impl<'a> ParagraphBuilder<'a> {
             self.shape(render_data, line_number);
         }
 
+        // In this case, we actually have found fonts that have not been loaded yet
+        // We need to load and then restart the whole resolve function again
+        if !self.fonts_to_load.is_empty() {
+            {
+                let font_library = { &mut self.fonts.inner.write().unwrap() };
+                while let Some(font_to_load) = self.fonts_to_load.pop() {
+                    let (font_id, path) = font_to_load;
+                    font_library.upsert(font_id, path);
+                }
+            }
+
+            self.cache.inner.clear();
+            *render_data = RenderData::default();
+            self.last_offset = 0;
+            self.needs_bidi = false;
+
+            return self.resolve(render_data);
+        };
+
         render_data.apply_spacing();
     }
 
@@ -547,6 +571,7 @@ impl<'a> ParagraphBuilder<'a> {
                 render_data,
                 line_number,
                 self.cache,
+                self.fonts_to_load,
             );
         }
         // let duration = start.elapsed();
@@ -595,6 +620,7 @@ fn shape_item(
     render_data: &mut RenderData,
     current_line: usize,
     cache: &mut RunCache,
+    fonts_to_load: &mut Vec<(usize, PathBuf)>,
 ) -> Option<()> {
     let dir = if item.level & 1 != 0 {
         shape::Direction::RightToLeft
@@ -644,7 +670,7 @@ fn shape_item(
         }
         let font_library = { &fonts.inner.read().unwrap() };
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, fonts_to_load);
 
         while shape_clusters(
             fcx,
@@ -656,6 +682,7 @@ fn shape_item(
             dir,
             render_data,
             current_line,
+            fonts_to_load,
         ) {}
 
         if let Some(line_hash) = state.lines[current_line].hash {
@@ -687,7 +714,7 @@ fn shape_item(
         }
         let font_library = { &fonts.inner.read().unwrap() };
         shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library);
+            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, fonts_to_load);
         while shape_clusters(
             fcx,
             font_library,
@@ -698,6 +725,7 @@ fn shape_item(
             dir,
             render_data,
             current_line,
+            fonts_to_load,
         ) {}
 
         if let Some(line_hash) = state.lines[current_line].hash {
@@ -719,6 +747,7 @@ fn shape_clusters<I>(
     dir: shape::Direction,
     render_data: &mut RenderData,
     current_line: usize,
+    fonts_to_load: &mut Vec<(usize, PathBuf)>,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
@@ -767,7 +796,7 @@ where
             // }
         }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth, fonts);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, fonts_to_load);
         if next_font != state.font_id || synth != state.synth {
             render_data.push_run(
                 &state.state.lines[current_line].styles,
