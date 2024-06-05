@@ -181,7 +181,7 @@ pub struct ImageProperties {
     pub y: f32,
 }
 
-#[derive(Default, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct SugarText {
     pub position: (f32, f32),
     pub content: String,
@@ -191,7 +191,7 @@ pub struct SugarText {
     pub single_line: bool,
 }
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct SugarBlock {
     pub rects: Vec<Rect>,
     pub text: Option<SugarText>,

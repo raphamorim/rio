@@ -292,6 +292,11 @@ impl RichTextBrush {
         ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
     ) {
+        if state.compositors.advanced.render_data.is_empty() {
+            self.dlist.clear();
+            return;
+        }
+
         // Render
         self.comp.begin();
 

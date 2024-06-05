@@ -30,7 +30,15 @@ impl Advanced {
         }
     }
 
-    pub fn reset(&mut self) {}
+    #[inline]
+    pub fn reset(&mut self) {
+        println!("reset??");
+        self.content_builder = ContentBuilder::default();
+        self.render_data = RenderData::default();
+        self.layout_context.clear_cache();
+    }
+
+    #[inline]
     pub fn clean(&mut self) {
         self.layout_context.clear_cache();
     }

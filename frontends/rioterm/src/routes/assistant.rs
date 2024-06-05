@@ -88,7 +88,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
         if report.level == RioErrorLevel::Warning {
             sugarloaf.text(
                 (70., layout.margin.top_y + 80.),
-                String::from("(press enter to continue)"),
+                String::from("(press enter twice to continue)"),
                 18.,
                 [1., 1., 1., 1.],
                 true,
