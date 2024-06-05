@@ -10,6 +10,7 @@ pub const FONT_ID_BOLD: usize = 2;
 pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
 use crate::font::constants::*;
+use crate::SugarloafErrors;
 use ab_glyph::FontArc;
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
@@ -146,22 +147,22 @@ pub struct FontLibrary {
 }
 
 impl FontLibrary {
-    pub fn new(spec: SugarloafFonts) -> Self {
+    pub fn new(spec: SugarloafFonts) -> (Self, Option<SugarloafErrors>) {
         let mut font_library = FontLibraryData::default();
 
-        // let mut sugarloaf_errors = None;
+        let mut font_errors = None;
 
-        // let (font_library, fonts_not_found) = loader;
-
-        // if !fonts_not_found.is_empty() {
-        //     sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
-        // }
-
-        let _fonts_not_found = font_library.load(spec);
-
-        Self {
-            inner: Arc::new(RwLock::new(font_library)),
+        let fonts_not_found = font_library.load(spec);
+        if !fonts_not_found.is_empty() {
+            font_errors = Some(SugarloafErrors { fonts_not_found });
         }
+
+        (
+            Self {
+                inner: Arc::new(RwLock::new(font_library)),
+            },
+            font_errors,
+        )
     }
 }
 
@@ -195,6 +196,7 @@ pub struct FontLibraryData {
     pub standard: FontData,
     pub inner: Vec<FontSource>,
     db: loader::Database,
+    spec: Option<SugarloafFonts>,
 }
 
 impl Default for FontLibraryData {
@@ -206,6 +208,7 @@ impl Default for FontLibraryData {
             main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
+            spec: None,
         }
     }
 }
@@ -237,6 +240,15 @@ impl FontLibraryData {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
+        if let Some(last_spec) = &self.spec {
+            if last_spec == &spec {
+                println!("naum atualizou");
+                return vec![];
+            }
+        }
+
+        self.spec = Some(spec.clone());
+
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
         // If fonts.family does exist it will overwrite all families
