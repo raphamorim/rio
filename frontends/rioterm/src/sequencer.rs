@@ -128,8 +128,24 @@ impl Sequencer {
                                     ),
                                 };
 
+                            let new_font_library =
+                                rio_backend::sugarloaf::font::FontLibrary::new(
+                                    config.fonts.to_owned(),
+                                );
+                            self.router.font_library = new_font_library.0;
+                            let font_library_errors = &new_font_library.1;
                             self.config = config.into();
                             for (_id, route) in self.router.routes.iter_mut() {
+                                if let Some(err) = font_library_errors {
+                                    route
+                                        .window
+                                        .screen
+                                        .context_manager
+                                        .report_error_fonts_not_found(
+                                            err.fonts_not_found.clone(),
+                                        );
+                                }
+
                                 route.update_config(
                                     &self.config,
                                     &self.router.font_library,

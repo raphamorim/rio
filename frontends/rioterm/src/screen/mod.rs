@@ -276,16 +276,9 @@ impl Screen {
         &mut self,
         config: &Rc<rio_backend::config::Config>,
         current_theme: Option<winit::window::Theme>,
-        _font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        // if let Some(err) = self
-        //     .sugarloaf
-        //     .update_font(config.fonts.to_owned(), Some(db))
-        // {
-        //     self.context_manager
-        //         .report_error_fonts_not_found(err.fonts_not_found);
-        //     return;
-        // }
+        self.sugarloaf.update_font(font_library);
 
         let padding_y_bottom = padding_bottom_from_config(config);
 

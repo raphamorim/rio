@@ -131,10 +131,12 @@ impl Sugarloaf {
         //     sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
         // }
 
-        let data = { &font_library.inner.read().unwrap().main };
+        let text_brush = {
+            let data = { &font_library.inner.read().unwrap().main };
+            text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
+                .build(&ctx.device, ctx.format)
+        };
 
-        let text_brush = text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
-            .build(&ctx.device, ctx.format);
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
@@ -160,36 +162,24 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn update_font(
-        &mut self,
-        _fonts: SugarloafFonts,
-        #[allow(unused)] db: Option<&Database>,
-    ) -> Option<SugarloafErrors> {
-        // if self.fonts != fonts {
-        //     log::info!("requested a font change");
+    pub fn update_font(&mut self, font_library: &FontLibrary) {
+        log::info!("requested a font change");
 
-        //     #[cfg(not(target_arch = "wasm32"))]
-        //     let loader = Font::load(fonts.to_owned(), db);
-        //     #[cfg(target_arch = "wasm32")]
-        //     let loader = Font::load(fonts.to_owned());
+        // let text_brush = {
+        //     let data = { &font_library.inner.read().unwrap().main };
+        //     text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
+        //     .build(&self.ctx.device, self.ctx.format)
+        // };
 
-        //     let (font_library, fonts_not_found) = loader;
-        //     if !fonts_not_found.is_empty() {
-        //         return Some(SugarloafErrors { fonts_not_found });
-        //     }
-
-        //     let text_brush =
-        //         text::GlyphBrushBuilder::using_fonts(font_library.font_arcs())
-        //             .build(&self.ctx.device, self.ctx.format);
-
-        //     self.text_brush = text_brush;
-        //     self.fonts = fonts;
-
-        //     self.state.reset_compositor();
-        //     self.state.set_fonts(font_library);
+        // let (font_library, fonts_not_found) = loader;
+        // if !fonts_not_found.is_empty() {
+        //     return Some(SugarloafErrors { fonts_not_found });
         // }
 
-        None
+        // self.text_brush = text_brush;
+
+        self.state.reset_compositor();
+        self.state.set_fonts(font_library);
     }
 
     #[inline]
