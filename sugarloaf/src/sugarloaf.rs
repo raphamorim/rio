@@ -10,9 +10,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::context::Context;
-use crate::font::fonts::{SugarloafFont, SugarloafFonts};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::font::loader::Database;
+use crate::font::fonts::SugarloafFont;
 use crate::font::FontLibrary;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
@@ -25,9 +23,6 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
-
-#[cfg(target_arch = "wasm32")]
-pub struct Database;
 
 pub struct Sugarloaf {
     pub ctx: Context,
@@ -123,13 +118,6 @@ impl Sugarloaf {
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
         let ctx = Context::new(window, &renderer).await;
-        // let mut sugarloaf_errors = None;
-
-        // let (font_library, fonts_not_found) = loader;
-
-        // if !fonts_not_found.is_empty() {
-        //     sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
-        // }
 
         let text_brush = {
             let data = { &font_library.inner.read().unwrap().main };
@@ -154,10 +142,6 @@ impl Sugarloaf {
             text_brush,
         };
 
-        // if let Some(errors) = sugarloaf_errors {
-        //     return Err(SugarloafWithErrors { instance, errors });
-        // }
-
         Ok(instance)
     }
 
@@ -165,20 +149,8 @@ impl Sugarloaf {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         log::info!("requested a font change");
 
-        // let text_brush = {
-        //     let data = { &font_library.inner.read().unwrap().main };
-        //     text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
-        //     .build(&self.ctx.device, self.ctx.format)
-        // };
-
-        // let (font_library, fonts_not_found) = loader;
-        // if !fonts_not_found.is_empty() {
-        //     return Some(SugarloafErrors { fonts_not_found });
-        // }
-
-        // self.text_brush = text_brush;
-
         self.state.reset_compositor();
+        self.state.compositors.advanced.clean();
         self.state.set_fonts(font_library);
     }
 
@@ -256,6 +228,11 @@ impl Sugarloaf {
     #[inline]
     pub fn finish_line(&mut self) {
         self.state.compute_line_end();
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.state.clean_screen();
     }
 
     #[inline]

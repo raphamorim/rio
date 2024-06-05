@@ -35,6 +35,11 @@ pub struct RenderData {
 }
 
 impl RenderData {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.line_data.lines.is_empty()
+    }
+
     pub fn dump_clusters(&self) {
         for (i, cluster) in self.line_data.clusters.iter().enumerate() {
             println!("[{}] {} @ {}", i, cluster.0, cluster.1);

@@ -110,6 +110,14 @@ impl SugarState {
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
+        self.is_dirty = true;
+    }
+
+    #[inline]
+    pub fn clean_screen(&mut self) {
+        self.current.lines.clear();
+        self.current.blocks.clear();
+        self.compositors.advanced.reset();
     }
 
     #[inline]
@@ -120,20 +128,12 @@ impl SugarState {
 
     #[inline]
     pub fn reset_compositor(&mut self) {
-        // if self.level.is_advanced() {
-        //     self.compositors.advanced.reset();
-        // }
-
         self.compositors.elementary.reset();
         self.dimensions_changed = false;
     }
 
     #[inline]
     pub fn clean_compositor(&mut self) {
-        // if self.level.is_advanced() {
-        //     self.compositors.advanced.clean();
-        // }
-
         self.compositors.elementary.clean();
         self.dimensions_changed = false;
     }
@@ -146,6 +146,10 @@ impl SugarState {
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
     ) -> bool {
+        if !self.is_dirty && self.latest_change == SugarTreeDiff::Equal {
+            return false;
+        }
+
         advance_brush.prepare(context, self);
 
         for section in &self.compositors.elementary.blocks_sections {

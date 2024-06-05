@@ -150,18 +150,18 @@ impl FontLibrary {
     pub fn new(spec: SugarloafFonts) -> (Self, Option<SugarloafErrors>) {
         let mut font_library = FontLibraryData::default();
 
-        let mut font_errors = None;
+        let mut sugarloaf_errors = None;
 
         let fonts_not_found = font_library.load(spec);
         if !fonts_not_found.is_empty() {
-            font_errors = Some(SugarloafErrors { fonts_not_found });
+            sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
         }
 
         (
             Self {
                 inner: Arc::new(RwLock::new(font_library)),
             },
-            font_errors,
+            sugarloaf_errors,
         )
     }
 }
@@ -196,7 +196,6 @@ pub struct FontLibraryData {
     pub standard: FontData,
     pub inner: Vec<FontSource>,
     db: loader::Database,
-    spec: Option<SugarloafFonts>,
 }
 
 impl Default for FontLibraryData {
@@ -208,7 +207,6 @@ impl Default for FontLibraryData {
             main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
-            spec: None,
         }
     }
 }
@@ -240,15 +238,6 @@ impl FontLibraryData {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        if let Some(last_spec) = &self.spec {
-            if last_spec == &spec {
-                println!("naum atualizou");
-                return vec![];
-            }
-        }
-
-        self.spec = Some(spec.clone());
-
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
         // If fonts.family does exist it will overwrite all families

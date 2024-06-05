@@ -1160,18 +1160,21 @@ impl Screen {
 
     #[inline]
     pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+        self.sugarloaf.clear();
         crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_welcome(&mut self) {
+        self.sugarloaf.clear();
         crate::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
     #[inline]
     pub fn render_dialog(&mut self, content: &str) {
+        self.sugarloaf.clear();
         crate::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
