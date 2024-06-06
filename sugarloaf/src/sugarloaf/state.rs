@@ -110,7 +110,8 @@ impl SugarState {
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
-        self.is_dirty = true;
+        self.next.layout.dimensions.height = 0.0;
+        self.next.layout.dimensions.width = 0.0;
     }
 
     #[inline]
