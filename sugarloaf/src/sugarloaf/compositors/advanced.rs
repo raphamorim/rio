@@ -39,7 +39,8 @@ impl Advanced {
 
     #[inline]
     pub fn clean(&mut self) {
-        self.layout_context.clear_cache();
+        self.content_builder = ContentBuilder::default();
+        self.render_data = RenderData::default();
     }
 
     #[inline]
