@@ -34,7 +34,7 @@ impl Sequencer {
         config: rio_backend::config::Config,
         config_error: Option<rio_backend::config::ConfigError>,
     ) -> Sequencer {
-        let mut router = Router::new();
+        let mut router = Router::new(config.fonts.to_owned());
         if let Some(error) = config_error {
             router.propagate_error_to_next_route(error.into());
         }

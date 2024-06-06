@@ -6,7 +6,7 @@ use crate::routes::{assistant, RoutePath};
 use crate::screen::Screen;
 use assistant::Assistant;
 use rio_backend::config::Config as RioConfig;
-use rio_backend::error::{RioError, RioErrorType};
+use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -171,12 +171,22 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new() -> Self {
-        let font_library = rio_backend::sugarloaf::font::FontLibrary::default();
+    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Self {
+        let (font_library, fonts_not_found) =
+            rio_backend::sugarloaf::font::FontLibrary::new(fonts);
+
+        let mut propagated_report = None;
+
+        if let Some(err) = fonts_not_found {
+            propagated_report = Some(RioError {
+                report: RioErrorType::FontsNotFound(err.fonts_not_found),
+                level: RioErrorLevel::Warning,
+            });
+        }
 
         Router {
             routes: HashMap::new(),
-            propagated_report: None,
+            propagated_report,
             config_route: None,
             font_library,
         }

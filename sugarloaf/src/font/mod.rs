@@ -46,7 +46,7 @@ pub struct FontContext {
 
 impl FontContext {
     #[inline]
-    pub fn lookup_for_best_font(
+    pub fn lookup_for_font_match(
         &mut self,
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
@@ -85,59 +85,64 @@ impl FontContext {
         for c in cluster.chars().iter() {
             cache_key.push(c.ch);
         }
-        let mut font_id = FONT_ID_REGULAR;
         let is_cache_key_empty = cache_key.is_empty();
 
         if !is_cache_key_empty {
             if let Some(cached_font_id) = self.cache.get(&cache_key) {
-                font_id = *cached_font_id;
-            } else if cluster.info().is_emoji() {
-                for (id, font_source) in library.inner.iter().enumerate() {
-                    match font_source {
-                        FontSource::Data(font_data) => {
-                            if font_data.is_emoji {
-                                font_id = id;
-                                break;
-                            }
+                let cached_font_id = *cached_font_id;
+                let charmap = library[cached_font_id]
+                    .charmap_proxy()
+                    .materialize(&library[cached_font_id].as_ref());
+                let status = cluster.map(|ch| charmap.map(ch));
+                if status != Status::Discard {
+                    *synth = library[cached_font_id].synth;
+                }
+
+                return Some(cached_font_id);
+            }
+        }
+
+        if let Some(found_font_id) = self.lookup_for_font_match(cluster, synth, library) {
+            if !is_cache_key_empty {
+                self.cache.insert(cache_key, found_font_id);
+            }
+            return Some(found_font_id);
+        }
+
+        let mut emoji_font_id = None;
+        if cluster.info().is_emoji() {
+            for (id, font_source) in library.inner.iter().enumerate() {
+                match font_source {
+                    FontSource::Data(font_data) => {
+                        if font_data.is_emoji {
+                            emoji_font_id = Some(id);
+                            break;
                         }
-                        FontSource::Extension(font_data_extension) => {
-                            // In this case we will actually need to load
-                            if font_data_extension.is_emoji {
-                                font_id = id;
-                                fonts_to_load
-                                    .push((font_id, font_data_extension.path.clone()));
-                                break;
-                            }
-                        }
-                        FontSource::Standard => {}
                     }
+                    FontSource::Extension(font_data_extension) => {
+                        // In this case we will actually need to load
+                        if font_data_extension.is_emoji {
+                            emoji_font_id = Some(id);
+                            fonts_to_load.push((id, font_data_extension.path.clone()));
+                            break;
+                        }
+                    }
+                    FontSource::Standard => {}
                 }
             }
         }
 
-        let charmap = library[font_id]
-            .charmap_proxy()
-            .materialize(&library[font_id].as_ref());
-        let status = cluster.map(|ch| charmap.map(ch));
-        if status != Status::Discard {
-            *synth = library[font_id].synth;
-        } else {
-            log::info!("looking up for best font match for {:?}", cluster.chars());
-            if let Some(found_font_id) =
-                self.lookup_for_best_font(cluster, synth, library)
-            {
-                log::info!(" -> found best font id {}", found_font_id);
-                font_id = found_font_id
-            } else {
-                return None;
+        if let Some(emoji_font_id) = emoji_font_id {
+            let charmap = library[emoji_font_id]
+                .charmap_proxy()
+                .materialize(&library[emoji_font_id].as_ref());
+            let status = cluster.map(|ch| charmap.map(ch));
+            if status != Status::Discard {
+                *synth = library[emoji_font_id].synth;
             }
         }
 
-        if !is_cache_key_empty {
-            self.cache.insert(cache_key, font_id);
-        }
-
-        Some(font_id)
+        None
     }
 }
 
