@@ -302,14 +302,14 @@ impl State {
 
     #[inline]
     #[cfg(use_wa)]
-    pub fn decrease_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity -= acc;
+    pub fn decrease_foreground_opacity(&mut self, _acc: f32) {
+        // self.foreground_opacity -= acc;
     }
 
     #[inline]
     #[cfg(use_wa)]
-    pub fn increase_foreground_opacity(&mut self, acc: f32) {
-        self.foreground_opacity += acc;
+    pub fn increase_foreground_opacity(&mut self, _acc: f32) {
+        // self.foreground_opacity += acc;
     }
 
     #[inline]
