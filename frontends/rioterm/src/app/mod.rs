@@ -48,7 +48,7 @@ pub fn create_window(
         window_width: config.window.width,
         window_height: config.window.height,
         fullscreen: config.window.is_fullscreen(),
-        transparency: config.window.background_opacity < 1.,
+        transparency: config.window.opacity < 1.,
         blur: config.window.blur,
         hide_toolbar: !config.navigation.is_native(),
         hide_toolbar_buttons,

@@ -13,6 +13,19 @@
 
 ## Unreleased
 
+**Breaking change: Opacity API has changed**
+
+- `background-opacity` has been renamed to `opacity`. It sets window background opacity.
+- Removed `foreground-opacity` property.
+- Removed support to DX11.
+
+Example:
+
+```toml
+[window]
+opacity = 0.8
+```
+
 - Major rewrite on sugarloaf.
 	- New rendering architecture.
 	- Sugarloaf now uses same render pass for each render.
@@ -26,7 +39,6 @@
 - Open Url support for MacOS.
 - All tabs/window instances now use same font data.
 - Updated wgpu to 0.20.0.
-- Removed support to DX11.
 - Support to `line-height` configuration.
 - Updated ttf-parser and memmap2 on sugarloaf.
 

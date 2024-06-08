@@ -35,7 +35,7 @@ pub fn create_window_builder(
         })
         .with_resizable(true)
         .with_decorations(true)
-        .with_transparent(config.window.background_opacity < 1.)
+        .with_transparent(config.window.opacity < 1.)
         .with_blur(config.window.blur)
         .with_window_icon(Some(icon));
 
@@ -140,7 +140,7 @@ pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
         }
     }
 
-    let is_transparent = config.window.background_opacity < 1.;
+    let is_transparent = config.window.opacity < 1.;
     winit_window.set_transparent(is_transparent);
 
     #[cfg(target_os = "macos")]

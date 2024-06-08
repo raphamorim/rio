@@ -28,10 +28,8 @@ pub struct Window {
     pub height: i32,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
-    #[serde(default = "default_opacity", rename = "background-opacity")]
-    pub background_opacity: f32,
-    #[serde(default = "default_opacity", rename = "foreground-opacity")]
-    pub foreground_opacity: f32,
+    #[serde(default = "default_opacity")]
+    pub opacity: f32,
     #[serde(default = "bool::default")]
     pub blur: bool,
     #[serde(rename = "background-image", skip_serializing)]
@@ -46,8 +44,7 @@ impl Default for Window {
             width: default_window_width(),
             height: default_window_height(),
             mode: WindowMode::default(),
-            background_opacity: default_opacity(),
-            foreground_opacity: default_opacity(),
+            opacity: default_opacity(),
             background_image: None,
             decorations: Decorations::default(),
             blur: false,

@@ -14,7 +14,7 @@ pub struct Sugar {
     pub content: char,
     pub repeated: usize,
     pub foreground_color: [f32; 4],
-    pub background_color: [f32; 4],
+    pub background_color: Option<[f32; 4]>,
     pub style: SugarStyle,
     pub decoration: SugarDecoration,
     pub cursor: SugarCursor,
@@ -36,7 +36,7 @@ impl Default for Sugar {
             content: ' ',
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
-            background_color: [0., 0., 0., 0.],
+            background_color: None,
             style: SugarStyle::default(),
             decoration: SugarDecoration::default(),
             cursor: SugarCursor::default(),
@@ -54,10 +54,13 @@ impl Hash for Sugar {
         self.foreground_color[1].to_bits().hash(state);
         self.foreground_color[2].to_bits().hash(state);
         self.foreground_color[3].to_bits().hash(state);
-        self.background_color[0].to_bits().hash(state);
-        self.background_color[1].to_bits().hash(state);
-        self.background_color[2].to_bits().hash(state);
-        self.background_color[3].to_bits().hash(state);
+
+        if let Some(bg_color) = self.background_color {
+            bg_color[0].to_bits().hash(state);
+            bg_color[1].to_bits().hash(state);
+            bg_color[2].to_bits().hash(state);
+            bg_color[3].to_bits().hash(state);
+        }
         match self.style {
             SugarStyle::Disabled => {
                 0.hash(state);
@@ -592,7 +595,7 @@ pub mod test {
             content: ' ',
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
-            background_color: [0., 0., 0., 0.],
+            background_color: None,
             style: SugarStyle::Disabled,
             decoration: SugarDecoration::Disabled,
             cursor: SugarCursor::Disabled,
@@ -605,7 +608,7 @@ pub mod test {
             content: ' ',
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
-            background_color: [0., 0., 0., 0.],
+            background_color: None,
             style: SugarStyle::Bold,
             decoration: SugarDecoration::Disabled,
             cursor: SugarCursor::Disabled,
@@ -618,7 +621,7 @@ pub mod test {
             content: ' ',
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
-            background_color: [0., 0., 0., 0.],
+            background_color: None,
             style: SugarStyle::Disabled,
             decoration: SugarDecoration::Strikethrough,
             cursor: SugarCursor::Disabled,
