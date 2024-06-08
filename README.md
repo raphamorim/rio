@@ -17,15 +17,9 @@
 | Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
-## Demo Gallery
+Demo usage of Rio terminal on MacOS using [Fira Code](https://fonts.google.com/specimen/Fira+Code) and font ligatures enabled:
 
-| ![Demo rio](docs/static/assets/posts/0.0.11/demo-rio.png) | ![Demo tmux](docs/static/assets/demos/demo-tmux.png) |
-| ----------- | ----------- |
-| ![Demo linux x11](docs/static/assets/posts/0.0.15/demo-navigation-x11.png) | ![Demo linux wayland](docs/static/assets/posts/0.0.15/demo-navigation-wayland.png) |
-| ![Demo Windows 10](docs/static/assets/posts/0.0.8/demo-windows-10.png) |<img src="docs/static/assets/demos/demo-emacs.png" alt="Demo emacs" width="500px"/> |
-| ![Demo native tabs macos](docs/static/assets/posts/0.0.17/demo-native-tabs.png) | ![Demo error handling](docs/static/assets/posts/0.0.19/demo-error-handling.png) |
-
-Note: Emojis are rendered with Noto Emoji.
+![Demo Rio on MacOS](docs/static/assets/posts/0.1.0/demo-rio.png)
 
 ## About
 
