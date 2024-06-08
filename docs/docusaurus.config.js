@@ -73,7 +73,7 @@ const config = {
           onlyIncludeVersions: ['current', '0.0.x'],
           versions: {
             current: {
-              label: '0.1.0 (unreleased)',
+              label: '0.1.x',
               path: 'next',
               banner: 'none',
             },
