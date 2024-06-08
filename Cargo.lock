@@ -884,7 +884,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.1"
-source = "git+https://github.com/raphamorim/winit?rev=74c7e012#74c7e012fc754abbb5eb8878e72736b1f9664c26"
+source = "git+https://github.com/raphamorim/winit?rev=c9dc7cf#c9dc7cf5ca2ea46e5343a825b1f2f54757b1d785"
 
 [[package]]
 name = "dwrote"
@@ -3869,7 +3869,7 @@ checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
 [[package]]
 name = "winit"
 version = "0.30.0"
-source = "git+https://github.com/raphamorim/winit?rev=74c7e012#74c7e012fc754abbb5eb8878e72736b1f9664c26"
+source = "git+https://github.com/raphamorim/winit?rev=c9dc7cf#c9dc7cf5ca2ea46e5343a825b1f2f54757b1d785"
 dependencies = [
  "ahash",
  "android-activity",
