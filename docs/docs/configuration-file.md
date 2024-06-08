@@ -151,11 +151,7 @@ confirm-before-quit = true
   - `Maximized` window is created with maximized
   - `Fullscreen` window is created with fullscreen
 
-- `foreground-opacity` Set text opacity.
-
-  - Default: `1.0`.
-
-- `background-opacity` Set background opacity.
+- `opacity` Set window background opacity.
 
   - Default: `1.0`.
 
@@ -180,8 +176,7 @@ Example:
 width = 600
 height = 400
 mode = "Windowed"
-foreground-opacity = 1.0
-background-opacity = 1.0
+opacity = 1.0
 blur = false
 decorations = "Enabled"
 ```
@@ -190,8 +185,7 @@ decorations = "Enabled"
 
 ```toml
 [window]
-foreground-opacity = 1.0
-background-opacity = 0.5
+opacity = 0.5
 blur = true
 ```
 

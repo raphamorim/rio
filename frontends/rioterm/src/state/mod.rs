@@ -41,10 +41,10 @@ pub struct State {
     pub has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
-    pub dynamic_background: wgpu::Color,
+    // Dynamic background keep track of the original bg color and
+    // the same r,g,b with the mutated alpha channel.
+    pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
-    background_opacity: f32,
-    foreground_opacity: f32,
 }
 
 impl State {
@@ -91,12 +91,15 @@ impl State {
             }
         }
 
-        let mut dynamic_background = named_colors.background.1;
-        if config.window.background_image.is_some()
-            || config.window.background_opacity < 1.
-        {
-            dynamic_background = wgpu::Color::TRANSPARENT;
-        };
+        let mut dynamic_background =
+            (named_colors.background.0, named_colors.background.1, false);
+        if config.window.opacity < 1. {
+            dynamic_background.1.a = config.window.opacity as f64;
+            dynamic_background.2 = true;
+        } else if config.window.background_image.is_some() {
+            dynamic_background.1 = wgpu::Color::TRANSPARENT;
+            dynamic_background.2 = true;
+        }
 
         let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
             HashMap::new();
@@ -109,8 +112,6 @@ impl State {
         }
 
         State {
-            background_opacity: config.window.background_opacity,
-            foreground_opacity: config.window.foreground_opacity,
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
@@ -200,6 +201,16 @@ impl State {
             decoration = SugarDecoration::Strikethrough;
         }
 
+        let background_color = if self.dynamic_background.2
+            && background_color[0] == self.dynamic_background.0[0]
+            && background_color[1] == self.dynamic_background.0[1]
+            && background_color[2] == self.dynamic_background.0[2]
+        {
+            None
+        } else {
+            Some(background_color)
+        };
+
         Sugar {
             content,
             repeated: 0,
@@ -272,7 +283,7 @@ impl State {
                     } else {
                         self.named_colors.selection_foreground
                     },
-                    background_color: self.named_colors.selection_background,
+                    background_color: Some(self.named_colors.selection_background),
                     ..Sugar::default()
                 };
                 sugarloaf.insert_on_current_line(&selected_sugar);
@@ -303,7 +314,7 @@ impl State {
 
     #[inline]
     fn compute_fg_color(&self, square: &Square) -> ColorArray {
-        let mut color = match square.fg {
+        match square.fg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -368,18 +379,12 @@ impl State {
 
                 self.colors[index]
             }
-        };
-
-        if self.foreground_opacity < 1. {
-            color[3] = self.foreground_opacity;
         }
-
-        color
     }
 
     #[inline]
     fn compute_bg_color(&self, square: &Square) -> ColorArray {
-        let mut color = match square.bg {
+        match square.bg {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
@@ -430,13 +435,7 @@ impl State {
             },
             AnsiColor::Spec(rgb) => rgb.to_arr(),
             AnsiColor::Indexed(idx) => self.colors[idx as usize],
-        };
-
-        if color[3] >= 1.0 && self.background_opacity < 1. {
-            color[3] = self.background_opacity;
         }
-
-        color
     }
 
     #[inline]
@@ -481,18 +480,21 @@ impl State {
             _ => SugarStyle::Disabled,
         };
 
+        let mut foreground_color = self.compute_fg_color(square);
+        let mut background_color = self.compute_bg_color(square);
+
+        if square.flags.contains(Flags::INVERSE) {
+            std::mem::swap(&mut background_color, &mut foreground_color);
+        }
+
         let mut sugar = Sugar {
             content: square.c,
-            foreground_color: self.compute_fg_color(square),
-            background_color: self.compute_bg_color(square),
+            foreground_color,
+            background_color: Some(background_color),
             cursor: self.create_sugar_cursor(),
             style,
             ..Sugar::default()
         };
-
-        if square.flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut sugar.background_color, &mut sugar.foreground_color);
-        }
 
         // If IME is enabled we get the current content to cursor
         if self.is_ime_enabled {

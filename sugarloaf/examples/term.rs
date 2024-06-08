@@ -71,52 +71,52 @@ async fn main() {
             Sugar {
                 content: 'S',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 style: SugarStyle::Bold,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 style: SugarStyle::Italic,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 style: SugarStyle::Italic,
                 media: None,
                 ..Sugar::default()
@@ -124,49 +124,49 @@ async fn main() {
             Sugar {
                 content: 'u',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
         ];
@@ -175,97 +175,97 @@ async fn main() {
             Sugar {
                 content: ' ',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'r',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'i',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 0.0, 1.0],
+                background_color: Some([0.0, 1.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '¼',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 0.0, 1.0],
+                background_color: Some([1.0, 1.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '¬',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 0.0, 1.0],
+                background_color: Some([0.0, 1.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '|',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'f',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'g',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             // // Font Unicode (unicode font)
             Sugar {
                 content: '㏑',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
+                background_color: Some([0.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             // Font Symbol (apple symbols font)
             Sugar {
                 content: '⫹',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             // Font Regular (firamono)
             Sugar {
                 content: 'λ',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
+                background_color: Some([0.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             // // Font Emojis
             Sugar {
                 content: '🥇',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '👷',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 0.0, 1.0, 1.0],
+                background_color: Some([0.0, 0.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
         ];
@@ -275,14 +275,14 @@ async fn main() {
             Sugar {
                 content: '✔',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 decoration: SugarDecoration::Underline,
                 ..Sugar::default()
             },
             Sugar {
                 content: '➜',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 decoration: SugarDecoration::Underline,
                 media: None,
                 ..Sugar::default()
@@ -290,44 +290,44 @@ async fn main() {
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '％',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [0.0, 1.0, 1.0, 1.0],
+                background_color: Some([0.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.5, 0.5, 0.5, 1.0],
+                background_color: Some([0.5, 0.5, 0.5, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: [1.0, 1.0, 1.0, 1.0],
+                background_color: Some([1.0, 1.0, 1.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 // content: '',
                 content: '\u{e602}',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '🥇',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
             Sugar {
                 content: '',
                 foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: [0.0, 0.0, 0.0, 1.0],
+                background_color: Some([0.0, 0.0, 0.0, 1.0]),
                 ..Sugar::default()
             },
         ];

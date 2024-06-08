@@ -168,7 +168,7 @@ impl From<&Sugar> for FragmentStyle {
         }
 
         style.color = sugar.foreground_color;
-        style.background_color = Some(sugar.background_color);
+        style.background_color = sugar.background_color;
 
         style
     }

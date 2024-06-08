@@ -193,7 +193,7 @@ impl Screen {
             sugarloaf_errors,
         )?;
 
-        sugarloaf.set_background_color(state.dynamic_background);
+        sugarloaf.set_background_color(state.dynamic_background.1);
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
@@ -307,7 +307,7 @@ impl Screen {
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
         self.sugarloaf
-            .set_background_color(self.state.dynamic_background);
+            .set_background_color(self.state.dynamic_background.1);
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }

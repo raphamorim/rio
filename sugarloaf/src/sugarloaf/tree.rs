@@ -361,7 +361,7 @@ pub mod test {
             before: Sugar {
                 content: 'a',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
-                background_color: [0.0, 0.0, 0.0, 0.0],
+                background_color: Some([0.0, 0.0, 0.0, 0.0]),
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
@@ -371,7 +371,7 @@ pub mod test {
             after: Sugar {
                 content: 'b',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
-                background_color: [0.0, 0.0, 0.0, 0.0],
+                background_color: Some([0.0, 0.0, 0.0, 0.0]),
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
@@ -401,7 +401,7 @@ pub mod test {
             before: Sugar {
                 content: 'k',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
-                background_color: [0.0, 0.0, 0.0, 0.0],
+                background_color: Some([0.0, 0.0, 0.0, 0.0]),
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
@@ -411,7 +411,7 @@ pub mod test {
             after: Sugar {
                 content: 'z',
                 foreground_color: [0.0, 0.0, 0.0, 0.0],
-                background_color: [0.0, 0.0, 0.0, 0.0],
+                background_color: Some([0.0, 0.0, 0.0, 0.0]),
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,

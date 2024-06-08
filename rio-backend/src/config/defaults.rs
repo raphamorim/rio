@@ -208,9 +208,7 @@ blinking-cursor = false
 #     - "Maximized" window is created with maximized
 #     - "Fullscreen" window is created with fullscreen
 #
-# • background-opacity - Set background opacity
-#
-# • foreground-opacity - Set foreground opacity
+# • opacity - Set window opacity
 #
 # • blur - Set blur on the window background. Changing this config requires restarting Rio to take effect.
 #
@@ -221,8 +219,7 @@ blinking-cursor = false
 # width = 600
 # height = 400
 # mode = "Windowed"
-# foreground-opacity = 1.0
-# background-opacity = 1.0
+# opacity = 1.0
 # blur = false
 # decorations = "Enabled"
 
