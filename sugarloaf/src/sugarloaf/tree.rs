@@ -39,21 +39,11 @@ pub enum SugarTreeDiff {
     Changes(Vec<Diff>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SugarTree {
     pub lines: Vec<SugarLine>,
     pub blocks: Vec<SugarBlock>,
     pub layout: SugarloafLayout,
-}
-
-impl Default for SugarTree {
-    fn default() -> Self {
-        Self {
-            lines: Vec::new(),
-            blocks: Vec::with_capacity(20),
-            layout: SugarloafLayout::default(),
-        }
-    }
 }
 
 impl SugarTree {

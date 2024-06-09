@@ -59,7 +59,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 5_000;
+        let supported_vertex_buffer = 2_000;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
