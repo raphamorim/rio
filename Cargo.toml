@@ -35,7 +35,7 @@ teletypewriter = { path = "teletypewriter", version = "0.1.0" }
 rio-backend = { path = "rio-backend", version = "0.1.0" }
 wa = { path = "wa", version = "0.1.0" }
 
-raw-window-handle = "0.5.2"
+raw-window-handle = "0.6.2"
 parking_lot = "0.12.1"
 unicode-width = "0.1.11"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
@@ -44,7 +44,7 @@ bytemuck = { version = "1.16.0", features = [ "derive" ] }
 log = "0.4.21"
 serde = { version = "1.0.198", features = ["derive"] }
 tokio = { version = "1.37.0", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
-wgpu = "0.18.0"
+wgpu = "0.20.0"
 libc = "0.2.153"
 smol_str = "0.2.1"
 futures = "0.3.30"
