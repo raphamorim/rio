@@ -121,8 +121,8 @@ impl Context<'_> {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
-                                features: wgpu::Features::empty(),
-                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                                required_features: wgpu::Features::empty(),
+                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
                             },
                             None,
                         )
@@ -157,6 +157,7 @@ impl Context<'_> {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
             },
         );
 
@@ -188,6 +189,7 @@ impl Context<'_> {
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
             },
         );
     }
