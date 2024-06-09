@@ -2,7 +2,7 @@ use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 
 pub struct Context {
     pub device: wgpu::Device,
-    pub surface: wgpu::Surface<'static>,
+    pub surface: wgpu::Surface,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
@@ -87,8 +87,9 @@ impl Context {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface: wgpu::Surface<'static> =
-            instance.create_surface(sugarloaf_window).unwrap();
+        let surface: wgpu::Surface = unsafe {
+            instance.create_surface(&sugarloaf_window).unwrap()
+        };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: renderer_config.power_preference,
@@ -120,8 +121,8 @@ impl Context {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
-                                required_features: wgpu::Features::empty(),
-                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
+                                features: wgpu::Features::empty(),
+                                limits: wgpu::Limits::downlevel_webgl2_defaults(
                                 ),
                             },
                             None,
@@ -157,7 +158,6 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
-                desired_maximum_frame_latency: 2,
             },
         );
 
@@ -189,7 +189,6 @@ impl Context {
                 view_formats: vec![],
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
-                desired_maximum_frame_latency: 2,
             },
         );
     }
