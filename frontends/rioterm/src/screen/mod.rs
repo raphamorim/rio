@@ -105,8 +105,10 @@ impl Screen {
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
         let sugarloaf_window = SugarloafWindow {
-            handle: raw_window_handle.into(),
-            display: raw_display_handle.into(),
+            // handle: raw_window_handle.into(),
+            // display: raw_display_handle.into(),
+            handle: raw_window_handle,
+            display: raw_display_handle,
             scale: scale as f32,
             size: SugarloafWindowSize {
                 width: size.width as f32,
@@ -156,7 +158,8 @@ impl Screen {
 
         let state = State::new(config, winit_window.theme());
 
-        let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
+        // let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
+        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
 
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),

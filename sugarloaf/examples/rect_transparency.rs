@@ -1,7 +1,8 @@
 extern crate png;
 extern crate tokio;
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+// use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
@@ -41,8 +42,10 @@ async fn main() {
 
     let size = window.inner_size();
     let sugarloaf_window = SugarloafWindow {
-        handle: window.window_handle().unwrap().into(),
-        display: window.display_handle().unwrap().into(),
+        // handle: window.window_handle().unwrap().into(),
+        // display: window.display_handle().unwrap().into(),
+        handle: window.raw_window_handle(),
+        display: window.raw_display_handle(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
             width: size.width as f32,
