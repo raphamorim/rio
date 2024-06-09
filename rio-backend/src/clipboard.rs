@@ -33,7 +33,8 @@ impl Clipboard {
             RawDisplayHandle::Wayland(display) => {
                 let (selection, clipboard) =
                     wayland_clipboard::create_clipboards_from_external(
-                        display.display.as_ptr(),
+                        // display.display.as_ptr() (raw_window_handle 0.6),
+                        display.display,
                     );
                 Self {
                     clipboard: Box::new(clipboard),
