@@ -27,8 +27,7 @@ use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::selection::{Selection, SelectionType};
 use crate::state;
 use core::fmt::Debug;
-// use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
     colors::term::List,
@@ -60,7 +59,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
-pub struct Screen {
+pub struct Screen<'a> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
@@ -69,26 +68,33 @@ pub struct Screen {
     pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
-    pub sugarloaf: Sugarloaf,
+    pub sugarloaf: Sugarloaf<'a>,
     pub context_manager: context::ContextManager<EventProxy>,
 }
 
-impl Screen {
-    pub async fn new(
-        winit_window: &winit::window::Window,
-        config: &Rc<rio_backend::config::Config>,
-        event_proxy: EventProxy,
-        font_library: &rio_backend::sugarloaf::font::FontLibrary,
-        open_url: Option<&str>,
-    ) -> Result<Screen, Box<dyn Error>> {
-        let size = winit_window.inner_size();
-        let scale = winit_window.scale_factor();
-        // let raw_window_handle = winit_window.window_handle().unwrap();
-        // let raw_display_handle = winit_window.display_handle().unwrap();
-        let raw_window_handle = winit_window.raw_window_handle();
-        let raw_display_handle = winit_window.raw_display_handle();
+pub struct ScreenWindowProperties {
+    size: winit::dpi::PhysicalSize<u32>,
+    scale: f64,
+    raw_window_handle: RawWindowHandle,
+    raw_display_handle: RawDisplayHandle,
+    window_id: winit::window::WindowId,
+    theme: Option<winit::window::Theme>,
+}
 
-        let window_id = winit_window.id();
+impl<'a> Screen<'_> {
+    pub async fn new(
+        window_properties: ScreenWindowProperties,
+        config: &'a Rc<rio_backend::config::Config>,
+        event_proxy: EventProxy,
+        font_library: rio_backend::sugarloaf::font::FontLibrary,
+        open_url: Option<&'a str>,
+    ) -> Result<Screen<'a>, Box<dyn Error>> {
+        let size = window_properties.size;
+        let scale = window_properties.scale;
+        let raw_window_handle = window_properties.raw_window_handle;
+        let raw_display_handle = window_properties.raw_display_handle;
+        let window_id = window_properties.window_id;
+        let theme = window_properties.theme;
 
         let padding_y_bottom = padding_bottom_from_config(config);
         let padding_y_top = padding_top_from_config(config);
@@ -144,7 +150,7 @@ impl Screen {
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            font_library,
+            &font_library,
             sugarloaf_layout,
         )
         .await
@@ -156,7 +162,7 @@ impl Screen {
             }
         };
 
-        let state = State::new(config, winit_window.theme());
+        let state = State::new(config, theme);
 
         // let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
