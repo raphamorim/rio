@@ -29,8 +29,8 @@ use raw_window_handle::{
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use state::SugarState;
 
-pub struct Sugarloaf {
-    pub ctx: Context,
+pub struct Sugarloaf<'a> {
+    pub ctx: Context<'a>,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
@@ -45,12 +45,12 @@ pub struct SugarloafErrors {
     pub fonts_not_found: Vec<SugarloafFont>,
 }
 
-pub struct SugarloafWithErrors {
-    pub instance: Sugarloaf,
+pub struct SugarloafWithErrors<'a> {
+    pub instance: Sugarloaf<'a>,
     pub errors: SugarloafErrors,
 }
 
-impl Debug for SugarloafWithErrors {
+impl Debug for SugarloafWithErrors<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.errors)
     }
@@ -127,14 +127,14 @@ unsafe impl HasRawDisplayHandle for SugarloafWindow {
 unsafe impl Send for SugarloafWindow {}
 unsafe impl Sync for SugarloafWindow {}
 
-impl Sugarloaf {
-    pub async fn new(
+impl Sugarloaf<'_> {
+    pub async fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf, SugarloafWithErrors> {
-        let ctx = Context::new(window, &renderer).await;
+        let ctx = Context::new(window, renderer).await;
 
         let text_brush = {
             let data = { &font_library.inner.read().unwrap().main };

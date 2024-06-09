@@ -23,17 +23,17 @@ use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Fullscreen};
 
-pub struct Sequencer {
+pub struct Sequencer<'a> {
     config: Rc<rio_backend::config::Config>,
     event_proxy: Option<EventProxy>,
-    router: Router,
+    router: Router<'a>,
 }
 
-impl Sequencer {
+impl<'a> Sequencer<'a> {
     pub fn new(
         config: rio_backend::config::Config,
         config_error: Option<rio_backend::config::ConfigError>,
-    ) -> Sequencer {
+    ) -> Sequencer<'a> {
         let mut router = Router::new(config.fonts.to_owned());
         if let Some(error) = config_error {
             router.propagate_error_to_next_route(error.into());
@@ -47,7 +47,7 @@ impl Sequencer {
     }
 
     pub async fn run(
-        &mut self,
+        &'a mut self,
         mut event_loop: EventLoop<EventPayload>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
@@ -59,7 +59,7 @@ impl Sequencer {
         let mut scheduler = Scheduler::new(proxy);
 
         let mut window =
-            RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)
+            RouteWindow::new(&event_loop, &self.config, self.router.font_library, None)
                 .await?;
         window.is_focused = true;
         self.router.create_route_from_window(window);
