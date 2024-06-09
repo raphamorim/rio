@@ -1739,7 +1739,7 @@ dependencies = [
  "log 0.4.21",
  "ndk-sys",
  "num_enum",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "thiserror",
 ]
 
@@ -2387,6 +2387,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2ff9a1f06a88b01621b7ae906ef0211290d1c8a168a15542486a8f61c0833b9"
 
 [[package]]
+name = "raw-window-handle"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
+
+[[package]]
 name = "rayon"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2514,7 +2520,7 @@ dependencies = [
  "libc",
  "log 0.4.21",
  "parking_lot",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "regex",
  "serde",
  "smallvec",
@@ -2552,7 +2558,7 @@ dependencies = [
  "notify",
  "objc",
  "parking_lot",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "regex",
  "rio-backend",
  "serde",
@@ -2834,7 +2840,7 @@ dependencies = [
  "once_cell",
  "ordered-float",
  "png",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "rayon",
  "rustc-hash",
  "serde",
@@ -3179,7 +3185,7 @@ dependencies = [
  "objc",
  "once_cell",
  "parking_lot",
- "raw-window-handle",
+ "raw-window-handle 0.6.2",
  "smol_str",
 ]
 
@@ -3439,7 +3445,7 @@ dependencies = [
  "naga",
  "parking_lot",
  "profiling",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
@@ -3464,7 +3470,7 @@ dependencies = [
  "naga",
  "parking_lot",
  "profiling",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "rustc-hash",
  "smallvec",
  "thiserror",
@@ -3505,7 +3511,7 @@ dependencies = [
  "parking_lot",
  "profiling",
  "range-alloc",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "renderdoc-sys",
  "rustc-hash",
  "smallvec",
@@ -3846,7 +3852,7 @@ dependencies = [
  "orbclient",
  "percent-encoding",
  "pin-project",
- "raw-window-handle",
+ "raw-window-handle 0.5.2",
  "redox_syscall 0.4.1",
  "rustix",
  "sctk-adwaita",

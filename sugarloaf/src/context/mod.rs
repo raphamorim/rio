@@ -87,9 +87,8 @@ impl Context {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
-        let surface: wgpu::Surface = unsafe {
-            instance.create_surface(&sugarloaf_window).unwrap()
-        };
+        let surface: wgpu::Surface =
+            unsafe { instance.create_surface(&sugarloaf_window).unwrap() };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: renderer_config.power_preference,
@@ -122,8 +121,7 @@ impl Context {
                             &wgpu::DeviceDescriptor {
                                 label: None,
                                 features: wgpu::Features::empty(),
-                                limits: wgpu::Limits::downlevel_webgl2_defaults(
-                                ),
+                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
                             },
                             None,
                         )

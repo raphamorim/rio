@@ -4,8 +4,6 @@ pub mod primitives;
 pub mod state;
 mod tree;
 
-#[allow(deprecated)]
-use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -22,9 +20,13 @@ use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
-    DisplayHandle, HandleError, HasDisplayHandle, 
+    DisplayHandle,
+    HandleError,
+    HasDisplayHandle,
     // HasWindowHandle, WindowHandle,
 };
+#[allow(deprecated)]
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use state::SugarState;
 
 pub struct Sugarloaf {
