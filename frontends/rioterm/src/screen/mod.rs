@@ -27,7 +27,8 @@ use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::selection::{Selection, SelectionType};
 use crate::state;
 use core::fmt::Debug;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+// use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
     colors::term::List,
@@ -82,8 +83,11 @@ impl Screen {
     ) -> Result<Screen, Box<dyn Error>> {
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor();
-        let raw_window_handle = winit_window.window_handle().unwrap();
-        let raw_display_handle = winit_window.display_handle().unwrap();
+        // let raw_window_handle = winit_window.window_handle().unwrap();
+        // let raw_display_handle = winit_window.display_handle().unwrap();
+        let raw_window_handle = winit_window.raw_window_handle();
+        let raw_display_handle = winit_window.raw_display_handle();
+
         let window_id = winit_window.id();
 
         let padding_y_bottom = padding_bottom_from_config(config);

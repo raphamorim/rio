@@ -195,7 +195,6 @@ impl LayerBrush {
             label: Some("image pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[
@@ -224,7 +223,6 @@ impl LayerBrush {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: Some(wgpu::BlendState {

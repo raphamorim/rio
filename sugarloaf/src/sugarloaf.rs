@@ -4,6 +4,8 @@ pub mod primitives;
 pub mod state;
 mod tree;
 
+#[allow(deprecated)]
+use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -20,7 +22,8 @@ use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
-    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+    DisplayHandle, HandleError, HasDisplayHandle, 
+    // HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
 
@@ -83,27 +86,39 @@ impl Default for SugarloafRenderer {
     }
 }
 
-impl SugarloafWindow {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.handle
-    }
+// impl SugarloafWindow {
+//     fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+//         self.handle
+//     }
 
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        self.display
-    }
-}
+//     fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+//         self.display
+//     }
+// }
 
-impl HasWindowHandle for SugarloafWindow {
-    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
-        let raw = self.raw_window_handle();
-        Ok(unsafe { WindowHandle::borrow_raw(raw) })
-    }
-}
+// impl HasWindowHandle for SugarloafWindow {
+//     fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+//         let raw = self.raw_window_handle();
+//         Ok(unsafe { WindowHandle::borrow_raw(raw) })
+//     }
+// }
 
 impl HasDisplayHandle for SugarloafWindow {
     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
         let raw = self.raw_display_handle();
         Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+    }
+}
+
+unsafe impl HasRawWindowHandle for SugarloafWindow {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.handle
+    }
+}
+
+unsafe impl HasRawDisplayHandle for SugarloafWindow {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        self.display
     }
 }
 
