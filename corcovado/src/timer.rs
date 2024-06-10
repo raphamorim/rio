@@ -242,7 +242,7 @@ impl<T> Timer<T> {
 
         self.schedule_readiness(tick);
 
-        trace!("inserted timout; slot={}; token={:?}", slot, token);
+        trace!("inserted timeout; slot={}; token={:?}", slot, token);
 
         // Return the new timeout
         Timeout { token, tick }
