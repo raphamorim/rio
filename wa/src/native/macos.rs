@@ -124,7 +124,7 @@ enum ImeState {
     // The IME is in preedit.
     Preedit,
 
-    // The text was just commited, so the next input from the keyboard must be ignored.
+    // The text was just committed, so the next input from the keyboard must be ignored.
     Commited,
 }
 
