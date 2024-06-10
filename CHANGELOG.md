@@ -13,6 +13,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.0
+
 **Breaking change: Opacity API has changed**
 
 - `background-opacity` has been renamed to `opacity`. It sets window background opacity.
