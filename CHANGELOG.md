@@ -34,6 +34,7 @@ opacity = 0.8
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Support bluetooh access on MacOs.
+- Upgraded wgpu to 0.20.0.
 - Support "open here" for Microsoft Windows.
 - Fixes on font search for Microsoft Windows.
 - Open Url support for MacOS.
