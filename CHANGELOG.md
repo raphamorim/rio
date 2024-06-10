@@ -513,7 +513,7 @@ clickable = false
 - Fixed over-rendering when scrolling.
 - Fix selection.
 - Support to copy using VIM.
-- Fix for MacOS deadzone chaging cursor to draggable on window buttons.
+- Fix for MacOS deadzone changing cursor to draggable on window buttons.
 - Fix for scroll using tmux.
 
 ## 0.0.11
