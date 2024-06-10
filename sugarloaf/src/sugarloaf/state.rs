@@ -11,8 +11,8 @@ use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 
 pub struct SugarState {
-    pub current: SugarTree,
-    pub next: SugarTree,
+    pub current: Box<SugarTree>,
+    pub next: Box<SugarTree>,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
     current_line: usize,
@@ -37,8 +37,8 @@ impl SugarState {
             current_line: 0,
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
-            current: SugarTree::default(),
-            next,
+            current: Box::<SugarTree>::default(),
+            next: Box::new(next),
             dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
         }
