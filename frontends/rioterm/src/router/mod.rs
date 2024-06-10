@@ -1,17 +1,16 @@
 mod window;
-
 use crate::event::{EventPayload, EventProxy};
 use crate::router::window::{configure_window, create_window_builder};
 use crate::routes::{assistant, RoutePath};
-use crate::screen::Screen;
+use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
-use std::rc::Rc;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -27,6 +26,22 @@ pub struct Route {
 }
 
 impl Route {
+    /// Create a performer.
+    #[inline]
+    pub fn new(
+        assistant: assistant::Assistant,
+        path: RoutePath,
+        window: RouteWindow,
+    ) -> Route {
+        Route {
+            assistant,
+            path,
+            window,
+        }
+    }
+}
+
+impl<'a> Route {
     #[inline]
     pub fn redraw(&self) {
         self.window.winit_window.request_redraw();
@@ -35,7 +50,7 @@ impl Route {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<RioConfig>,
+        config: &RioConfig,
         db: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
         self.window
@@ -166,12 +181,12 @@ impl Route {
 pub struct Router {
     pub routes: HashMap<WindowId, Route>,
     propagated_report: Option<RioError>,
-    pub font_library: rio_backend::sugarloaf::font::FontLibrary,
+    pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
 }
 
 impl Router {
-    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Self {
+    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Router {
         let (font_library, fonts_not_found) =
             rio_backend::sugarloaf::font::FontLibrary::new(fonts);
 
@@ -185,10 +200,10 @@ impl Router {
         }
 
         Router {
-            routes: HashMap::new(),
+            routes: HashMap::default(),
             propagated_report,
             config_route: None,
-            font_library,
+            font_library: Box::new(font_library),
         }
     }
 
@@ -218,7 +233,7 @@ impl Router {
         &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &Rc<RioConfig>,
+        config: RioConfig,
     ) {
         // In case configuration window does exists already
         if let Some(route_id) = self.config_route {
@@ -228,7 +243,7 @@ impl Router {
             }
         }
 
-        let current_config: RioConfig = config.as_ref().clone();
+        let current_config: RioConfig = config.clone();
         let new_config = RioConfig {
             shell: rio_backend::config::Shell {
                 program: config.editor.clone(),
@@ -242,21 +257,15 @@ impl Router {
         let window = RouteWindow::from_target(
             event_loop,
             event_proxy,
-            &new_config.into(),
+            &new_config,
             &self.font_library,
             "Rio Settings",
             None,
             None,
         );
         let id = window.winit_window.id();
-        self.routes.insert(
-            id,
-            Route {
-                window,
-                path: RoutePath::Terminal,
-                assistant: Assistant::new(),
-            },
-        );
+        let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
+        self.routes.insert(id, route);
         self.config_route = Some(id);
     }
 
@@ -265,8 +274,8 @@ impl Router {
         &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &Rc<RioConfig>,
-        open_url: Option<&str>,
+        config: &rio_backend::config::Config,
+        open_url: Option<String>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -293,9 +302,9 @@ impl Router {
         &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &Rc<RioConfig>,
+        config: &rio_backend::config::Config,
         tab_id: Option<String>,
-        open_url: Option<&str>,
+        open_url: Option<String>,
     ) {
         let window = RouteWindow::from_target(
             event_loop,
@@ -321,7 +330,7 @@ pub struct RouteWindow {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub winit_window: Window,
-    pub screen: Screen,
+    pub screen: Screen<'static>,
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
 }
@@ -329,10 +338,10 @@ pub struct RouteWindow {
 impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventPayload>,
-        config: &Rc<RioConfig>,
-        font_library: &rio_backend::sugarloaf::font::FontLibrary,
-        open_url: Option<&str>,
-    ) -> Result<Self, Box<dyn Error>> {
+        config: &rio_backend::config::Config,
+        font_library: &Box<rio_backend::sugarloaf::font::FontLibrary>,
+        open_url: Option<String>,
+    ) -> Result<RouteWindow, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
 
@@ -343,9 +352,23 @@ impl RouteWindow {
         let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
 
-        let screen =
-            Screen::new(&winit_window, config, event_proxy, font_library, open_url)
-                .await?;
+        let properties = ScreenWindowProperties {
+            size: winit_window.inner_size(),
+            scale: winit_window.scale_factor(),
+            raw_window_handle: winit_window.window_handle().unwrap().into(),
+            raw_display_handle: winit_window.display_handle().unwrap().into(),
+            window_id: winit_window.id(),
+            theme: winit_window.theme(),
+        };
+
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy,
+            *font_library.clone(),
+            open_url,
+        )
+        .await?;
 
         Ok(Self {
             is_focused: false,
@@ -360,15 +383,15 @@ impl RouteWindow {
     pub fn from_target(
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &Rc<RioConfig>,
+        config: &RioConfig,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
         tab_id: Option<String>,
-        open_url: Option<&str>,
-    ) -> Self {
+        open_url: Option<String>,
+    ) -> RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder =
-            create_window_builder(window_name, config, tab_id.clone());
+            create_window_builder(window_name, &config, tab_id.clone());
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
@@ -381,13 +404,22 @@ impl RouteWindow {
 
         #[allow(deprecated)]
         let winit_window = event_loop.create_window(window_builder).unwrap();
-        let winit_window = configure_window(winit_window, config);
+        let winit_window = configure_window(winit_window, &config);
+
+        let properties = ScreenWindowProperties {
+            size: winit_window.inner_size(),
+            scale: winit_window.scale_factor(),
+            raw_window_handle: winit_window.window_handle().unwrap().into(),
+            raw_display_handle: winit_window.display_handle().unwrap().into(),
+            window_id: winit_window.id(),
+            theme: winit_window.theme(),
+        };
 
         let screen = futures::executor::block_on(Screen::new(
-            &winit_window,
-            config,
+            properties,
+            &config,
             event_proxy,
-            font_library,
+            font_library.clone(),
             open_url,
         ))
         .expect("Screen not created");

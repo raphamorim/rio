@@ -19,18 +19,13 @@ use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
-// use raw_window_handle::{
-    // DisplayHandle,
-    // HandleError,
-    // HasDisplayHandle,
-    // HasWindowHandle, WindowHandle,
-// };
-#[allow(deprecated)]
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+};
 use state::SugarState;
 
-pub struct Sugarloaf {
-    pub ctx: Context,
+pub struct Sugarloaf<'a> {
+    pub ctx: Context<'a>,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     layer_brush: LayerBrush,
@@ -45,12 +40,12 @@ pub struct SugarloafErrors {
     pub fonts_not_found: Vec<SugarloafFont>,
 }
 
-pub struct SugarloafWithErrors {
-    pub instance: Sugarloaf,
+pub struct SugarloafWithErrors<'a> {
+    pub instance: Sugarloaf<'a>,
     pub errors: SugarloafErrors,
 }
 
-impl Debug for SugarloafWithErrors {
+impl Debug for SugarloafWithErrors<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.errors)
     }
@@ -88,22 +83,22 @@ impl Default for SugarloafRenderer {
     }
 }
 
-// impl SugarloafWindow {
-//     fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-//         self.handle
-//     }
+impl SugarloafWindow {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.handle
+    }
 
-//     fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-//         self.display
-//     }
-// }
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        self.display
+    }
+}
 
-// impl HasWindowHandle for SugarloafWindow {
-//     fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
-//         let raw = self.raw_window_handle();
-//         Ok(unsafe { WindowHandle::borrow_raw(raw) })
-//     }
-// }
+impl HasWindowHandle for SugarloafWindow {
+    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+        let raw = self.raw_window_handle();
+        Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
 
 // impl HasDisplayHandle for SugarloafWindow {
 //     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
@@ -112,29 +107,17 @@ impl Default for SugarloafRenderer {
 //     }
 // }
 
-unsafe impl HasRawWindowHandle for SugarloafWindow {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.handle
-    }
-}
+unsafe impl Send for SugarloafWindow {}
+unsafe impl Sync for SugarloafWindow {}
 
-unsafe impl HasRawDisplayHandle for SugarloafWindow {
-    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
-        self.display
-    }
-}
-
-// unsafe impl Send for SugarloafWindow {}
-// unsafe impl Sync for SugarloafWindow {}
-
-impl Sugarloaf {
-    pub async fn new(
+impl Sugarloaf<'_> {
+    pub async fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
-        font_library: &FontLibrary,
+        font_library: FontLibrary,
         layout: SugarloafLayout,
-    ) -> Result<Sugarloaf, SugarloafWithErrors> {
-        let ctx = Context::new(window, &renderer).await;
+    ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
+        let ctx = Context::new(window, renderer).await;
 
         let text_brush = {
             let data = { &font_library.inner.read().unwrap().main };
@@ -146,7 +129,7 @@ impl Sugarloaf {
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
-        let state = SugarState::new(layout, font_library);
+        let state = SugarState::new(layout, &font_library);
 
         let instance = Sugarloaf {
             state,

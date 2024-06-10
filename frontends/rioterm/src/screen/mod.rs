@@ -27,8 +27,7 @@ use crate::renderer::{padding_bottom_from_config, padding_top_from_config};
 use crate::selection::{Selection, SelectionType};
 use crate::state;
 use core::fmt::Debug;
-// use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::{
     colors::term::List,
@@ -44,7 +43,6 @@ use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::rc::Rc;
 use touch::TouchPurpose;
 use winit::event::ElementState;
 use winit::event::Modifiers;
@@ -60,7 +58,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
-pub struct Screen {
+pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
@@ -69,26 +67,39 @@ pub struct Screen {
     pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
-    pub sugarloaf: Sugarloaf,
+    pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
 }
 
-impl Screen {
-    pub async fn new(
-        winit_window: &winit::window::Window,
-        config: &Rc<rio_backend::config::Config>,
-        event_proxy: EventProxy,
-        font_library: &rio_backend::sugarloaf::font::FontLibrary,
-        open_url: Option<&str>,
-    ) -> Result<Screen, Box<dyn Error>> {
-        let size = winit_window.inner_size();
-        let scale = winit_window.scale_factor();
-        // let raw_window_handle = winit_window.window_handle().unwrap();
-        // let raw_display_handle = winit_window.display_handle().unwrap();
-        let raw_window_handle = winit_window.raw_window_handle();
-        let raw_display_handle = winit_window.raw_display_handle();
+// impl<'a> Drop for Screen<'a> {
+//     fn drop(&mut self) {
+//         println!("dropped screen");
+//     }
+// }
 
-        let window_id = winit_window.id();
+pub struct ScreenWindowProperties {
+    pub size: winit::dpi::PhysicalSize<u32>,
+    pub scale: f64,
+    pub raw_window_handle: RawWindowHandle,
+    pub raw_display_handle: RawDisplayHandle,
+    pub window_id: winit::window::WindowId,
+    pub theme: Option<winit::window::Theme>,
+}
+
+impl Screen<'_> {
+    pub async fn new<'screen>(
+        window_properties: ScreenWindowProperties,
+        config: &rio_backend::config::Config,
+        event_proxy: EventProxy,
+        font_library: rio_backend::sugarloaf::font::FontLibrary,
+        open_url: Option<String>,
+    ) -> Result<Screen<'screen>, Box<dyn Error>> {
+        let size = window_properties.size;
+        let scale = window_properties.scale;
+        let raw_window_handle = window_properties.raw_window_handle;
+        let raw_display_handle = window_properties.raw_display_handle;
+        let window_id = window_properties.window_id;
+        let theme = window_properties.theme;
 
         let padding_y_bottom = padding_bottom_from_config(config);
         let padding_y_top = padding_top_from_config(config);
@@ -105,8 +116,6 @@ impl Screen {
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
         let sugarloaf_window = SugarloafWindow {
-            // handle: raw_window_handle.into(),
-            // display: raw_display_handle.into(),
             handle: raw_window_handle,
             display: raw_display_handle,
             scale: scale as f32,
@@ -156,7 +165,7 @@ impl Screen {
             }
         };
 
-        let state = State::new(config, winit_window.theme());
+        let state = State::new(config, theme);
 
         // let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
         let clipboard = unsafe { Clipboard::new(raw_display_handle) };
@@ -175,7 +184,7 @@ impl Screen {
             config.shell.to_owned(),
             config.working_dir.to_owned(),
             config.editor.to_owned(),
-            open_url,
+            open_url.as_deref(),
         );
 
         let context_manager_config = context::ContextManagerConfig {
@@ -281,7 +290,7 @@ impl Screen {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<rio_backend::config::Config>,
+        config: &rio_backend::config::Config,
         current_theme: Option<winit::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
