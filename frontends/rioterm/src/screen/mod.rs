@@ -43,7 +43,6 @@ use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::rc::Rc;
 use touch::TouchPurpose;
 use winit::event::ElementState;
 use winit::event::Modifiers;
@@ -73,21 +72,21 @@ pub struct Screen<'a> {
 }
 
 pub struct ScreenWindowProperties {
-    size: winit::dpi::PhysicalSize<u32>,
-    scale: f64,
-    raw_window_handle: RawWindowHandle,
-    raw_display_handle: RawDisplayHandle,
-    window_id: winit::window::WindowId,
-    theme: Option<winit::window::Theme>,
+    pub size: winit::dpi::PhysicalSize<u32>,
+    pub scale: f64,
+    pub raw_window_handle: RawWindowHandle,
+    pub raw_display_handle: RawDisplayHandle,
+    pub window_id: winit::window::WindowId,
+    pub theme: Option<winit::window::Theme>,
 }
 
 impl<'a> Screen<'_> {
     pub async fn new(
         window_properties: ScreenWindowProperties,
-        config: &'a Rc<rio_backend::config::Config>,
+        config: &rio_backend::config::Config,
         event_proxy: EventProxy,
         font_library: rio_backend::sugarloaf::font::FontLibrary,
-        open_url: Option<&'a str>,
+        open_url: Option<String>,
     ) -> Result<Screen<'a>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -150,7 +149,7 @@ impl<'a> Screen<'_> {
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
             sugarloaf_window,
             sugarloaf_renderer,
-            &font_library,
+            font_library,
             sugarloaf_layout,
         )
         .await
@@ -181,7 +180,7 @@ impl<'a> Screen<'_> {
             config.shell.to_owned(),
             config.working_dir.to_owned(),
             config.editor.to_owned(),
-            open_url,
+            open_url.as_deref(),
         );
 
         let context_manager_config = context::ContextManagerConfig {
@@ -287,7 +286,7 @@ impl<'a> Screen<'_> {
     #[inline]
     pub fn update_config(
         &mut self,
-        config: &Rc<rio_backend::config::Config>,
+        config: &rio_backend::config::Config,
         current_theme: Option<winit::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {

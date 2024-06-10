@@ -1771,7 +1771,7 @@ dependencies = [
  "log 0.4.21",
  "ndk-sys 0.6.0+11769913",
  "num_enum",
- "raw-window-handle 0.5.2",
+ "raw-window-handle",
  "thiserror",
 ]
 
@@ -2413,12 +2413,6 @@ checksum = "9c8a99fddc9f0ba0a85884b8d14e3592853e787d581ca1816c91349b10e4eeab"
 
 [[package]]
 name = "raw-window-handle"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2ff9a1f06a88b01621b7ae906ef0211290d1c8a168a15542486a8f61c0833b9"
-
-[[package]]
-name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
@@ -2551,7 +2545,7 @@ dependencies = [
  "libc",
  "log 0.4.21",
  "parking_lot",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "regex",
  "serde",
  "smallvec",
@@ -2589,7 +2583,7 @@ dependencies = [
  "notify",
  "objc",
  "parking_lot",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "regex",
  "rio-backend",
  "serde",
@@ -2870,7 +2864,7 @@ dependencies = [
  "once_cell",
  "ordered-float",
  "png",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "rayon",
  "rustc-hash",
  "serde",
@@ -3226,7 +3220,7 @@ dependencies = [
  "objc",
  "once_cell",
  "parking_lot",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "smol_str",
 ]
 
@@ -3487,7 +3481,7 @@ dependencies = [
  "naga",
  "parking_lot",
  "profiling",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
@@ -3516,7 +3510,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "profiling",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "rustc-hash",
  "smallvec",
  "thiserror",
@@ -3559,7 +3553,7 @@ dependencies = [
  "parking_lot",
  "profiling",
  "range-alloc",
- "raw-window-handle 0.6.2",
+ "raw-window-handle",
  "renderdoc-sys",
  "rustc-hash",
  "smallvec",
@@ -3900,7 +3894,7 @@ dependencies = [
  "orbclient",
  "percent-encoding",
  "pin-project",
- "raw-window-handle 0.5.2",
+ "raw-window-handle",
  "redox_syscall 0.4.1",
  "rustix",
  "sctk-adwaita",

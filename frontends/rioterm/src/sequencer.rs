@@ -8,7 +8,6 @@ use crate::watcher::configuration_file_updates;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::colors::ColorRgb;
 use std::error::Error;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
@@ -16,6 +15,7 @@ use winit::event::{
 };
 use winit::event_loop::ControlFlow;
 use winit::event_loop::{DeviceEvents, EventLoop};
+use winit::event_loop::{ActiveEventLoop};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
@@ -23,31 +23,32 @@ use winit::platform::macos::WindowExtMacOS;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Fullscreen};
 
-pub struct Sequencer<'a> {
-    config: Rc<rio_backend::config::Config>,
+pub struct Sequencer {
+    config: rio_backend::config::Config,
     event_proxy: Option<EventProxy>,
-    router: Router<'a>,
+    router: Router<'static>,
+
 }
 
-impl<'a> Sequencer<'a> {
+impl Sequencer {
     pub fn new(
         config: rio_backend::config::Config,
         config_error: Option<rio_backend::config::ConfigError>,
-    ) -> Sequencer<'a> {
+    ) -> Sequencer {
         let mut router = Router::new(config.fonts.to_owned());
         if let Some(error) = config_error {
             router.propagate_error_to_next_route(error.into());
         }
 
         Sequencer {
-            config: Rc::new(config),
+            config: config,
             event_proxy: None,
             router,
         }
     }
 
     pub async fn run(
-        &'a mut self,
+        &mut self,
         mut event_loop: EventLoop<EventPayload>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
@@ -59,14 +60,14 @@ impl<'a> Sequencer<'a> {
         let mut scheduler = Scheduler::new(proxy);
 
         let mut window =
-            RouteWindow::new(&event_loop, &self.config, self.router.font_library, None)
+            RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)
                 .await?;
         window.is_focused = true;
         self.router.create_route_from_window(window);
 
         event_loop.listen_device_events(DeviceEvents::Never);
         #[allow(deprecated)]
-        let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
+        let _ = event_loop.run_on_demand(move |event: Event<EventPayload>, event_loop_window_target: &ActiveEventLoop| {
             match event {
                 Event::UserEvent(EventPayload {
                     payload, window_id, ..
@@ -135,7 +136,7 @@ impl<'a> Sequencer<'a> {
                                     rio_backend::sugarloaf::font::FontLibrary::new(
                                         config.fonts.to_owned(),
                                     );
-                                self.router.font_library = new_font_library.0;
+                                self.router.font_library = Box::new(new_font_library.0);
                                 new_font_library.1
                             } else {
                                 None
@@ -305,12 +306,13 @@ impl<'a> Sequencer<'a> {
                             }
                         }
                         RioEventType::Rio(RioEvent::CreateWindow) => {
-                            self.router.create_window(
-                                event_loop_window_target,
-                                self.event_proxy.clone().unwrap(),
-                                &self.config,
-                                None,
-                            );
+                            // let config = &self.config;
+                            // self.router.create_window(
+                            //     event_loop_window_target,
+                            //     self.event_proxy.clone().unwrap(),
+                            //     &config,
+                            //     None,
+                            // );
                         }
                         #[cfg(target_os = "macos")]
                         RioEventType::Rio(RioEvent::CreateNativeTab(
@@ -330,24 +332,25 @@ impl<'a> Sequencer<'a> {
                                     rio_backend::config::Config,
                                 > = None;
                                 if working_dir_overwrite.is_some() {
-                                    let current_config = (*self.config).clone();
+                                    let current_config = &self.config;
                                     should_revert_to_previous_config =
                                         Some(current_config.clone());
 
                                     let config = rio_backend::config::Config {
                                         working_dir: working_dir_overwrite,
-                                        ..current_config
+                                        ..current_config.clone()
                                     };
                                     self.config = config.into();
                                 }
 
-                                self.router.create_native_tab(
-                                    event_loop_window_target,
-                                    self.event_proxy.clone().unwrap(),
-                                    &self.config,
-                                    Some(route.window.winit_window.tabbing_identifier()),
-                                    None,
-                                );
+                                let config = &self.config;
+                                // self.router.create_native_tab(
+                                //     event_loop_window_target,
+                                //     self.event_proxy.clone().unwrap(),
+                                //     &config,
+                                //     Some(route.window.winit_window.tabbing_identifier()),
+                                //     None,
+                                // );
 
                                 if let Some(old_config) = should_revert_to_previous_config
                                 {
@@ -356,11 +359,12 @@ impl<'a> Sequencer<'a> {
                             }
                         }
                         RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                            self.router.open_config_window(
-                                event_loop_window_target,
-                                self.event_proxy.clone().unwrap(),
-                                &self.config,
-                            );
+                            let config = &self.config;
+                            // self.router.open_config_window(
+                            //     event_loop_window_target,
+                            //     self.event_proxy.clone().unwrap(),
+                            //     config.clone(),
+                            // );
                         }
                         #[cfg(target_os = "macos")]
                         RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -374,13 +378,14 @@ impl<'a> Sequencer<'a> {
                                     self.router.routes.remove(&window_id);
                                     // If was the last last window opened then hide the application
                                     if routes_len == 1 {
+                                        let config = &self.config;
                                         event_loop_window_target.hide_application();
-                                        self.router.create_window(
-                                            event_loop_window_target,
-                                            self.event_proxy.clone().unwrap(),
-                                            &self.config,
-                                            None,
-                                        );
+                                        // self.router.create_window(
+                                        //     event_loop_window_target,
+                                        //     self.event_proxy.clone().unwrap(),
+                                        //     &config,
+                                        //     None,
+                                        // );
                                     }
                                 }
                             }
@@ -447,13 +452,14 @@ impl<'a> Sequencer<'a> {
                 #[cfg(target_os = "macos")]
                 Event::Opened { urls } => {
                     if !self.config.navigation.is_native() {
+                        let config = &self.config;
                         for url in urls {
-                            self.router.create_window(
-                                event_loop_window_target,
-                                self.event_proxy.clone().unwrap(),
-                                &self.config,
-                                Some(&url),
-                            );
+                            // self.router.create_window(
+                            //     event_loop_window_target,
+                            //     self.event_proxy.clone().unwrap(),
+                            //     &config,
+                            //     Some(url),
+                            // );
                         }
                         return;
                     }
@@ -473,14 +479,15 @@ impl<'a> Sequencer<'a> {
                     }
 
                     if tab_id.is_some() {
+                        let config = &self.config;
                         for url in urls {
-                            self.router.create_native_tab(
-                                event_loop_window_target,
-                                self.event_proxy.clone().unwrap(),
-                                &self.config,
-                                tab_id.clone(),
-                                Some(&url),
-                            );
+                            // self.router.create_native_tab(
+                            //     event_loop_window_target,
+                            //     self.event_proxy.clone().unwrap(),
+                            //     config,
+                            //     tab_id.clone(),
+                            //     Some(url),
+                            // );
                         }
                     }
                 }

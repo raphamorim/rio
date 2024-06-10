@@ -49,7 +49,7 @@ pub struct State {
 
 impl State {
     pub fn new(
-        #[cfg(not(use_wa))] config: &std::rc::Rc<Config>,
+        #[cfg(not(use_wa))] config: &Config,
         #[cfg(use_wa)] config: &Config,
         #[cfg(not(use_wa))] current_theme: Option<Theme>,
         #[cfg(use_wa)] appearance: wa::Appearance,
