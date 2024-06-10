@@ -367,7 +367,7 @@ mode = "Windowed"
 # • opacity - changes the background transparency state
 #   Default: 1.0
 #
-# • mode - defines background mode bewteen "Color" and "Image"
+# • mode - defines background mode between "Color" and "Image"
 #   Default: Color
 #
 # • image - Set an image as background
