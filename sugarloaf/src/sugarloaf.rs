@@ -19,12 +19,12 @@ use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
-use raw_window_handle::{
-    DisplayHandle,
-    HandleError,
-    HasDisplayHandle,
+// use raw_window_handle::{
+    // DisplayHandle,
+    // HandleError,
+    // HasDisplayHandle,
     // HasWindowHandle, WindowHandle,
-};
+// };
 #[allow(deprecated)]
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use state::SugarState;
@@ -105,12 +105,12 @@ impl Default for SugarloafRenderer {
 //     }
 // }
 
-impl HasDisplayHandle for SugarloafWindow {
-    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
-        let raw = self.raw_display_handle();
-        Ok(unsafe { DisplayHandle::borrow_raw(raw) })
-    }
-}
+// impl HasDisplayHandle for SugarloafWindow {
+//     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+//         let raw = self.raw_display_handle();
+//         Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+//     }
+// }
 
 unsafe impl HasRawWindowHandle for SugarloafWindow {
     fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
@@ -124,8 +124,8 @@ unsafe impl HasRawDisplayHandle for SugarloafWindow {
     }
 }
 
-unsafe impl Send for SugarloafWindow {}
-unsafe impl Sync for SugarloafWindow {}
+// unsafe impl Send for SugarloafWindow {}
+// unsafe impl Sync for SugarloafWindow {}
 
 impl Sugarloaf {
     pub async fn new(
