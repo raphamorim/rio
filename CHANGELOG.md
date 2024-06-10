@@ -624,7 +624,7 @@ font-size = 18
 - Performance fixes (Related: [#101](https://github.com/raphamorim/rio/issues/101)).
 - Sugarloaf WebAssembly support.
 - Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.
-- Fixed cursor incosistencies [#95](https://github.com/raphamorim/rio/issues/95).
+- Fixed cursor inconsistencies [#95](https://github.com/raphamorim/rio/issues/95).
 - Added command line interface support (`--help`, `--version`, `-e` and `--command`).
 - Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.
 - Added `padding-x` to configuration.
