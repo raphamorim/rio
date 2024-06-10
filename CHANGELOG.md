@@ -46,6 +46,22 @@ opacity = 0.8
 - Disabled `line-height` configuration in this version (it will be re added eventually).
 - Updated ttf-parser and memmap2 on sugarloaf.
 
+#### Bug fixes
+
+- closed: #514 Odd background transparency on macOS (Intel)
+- closed: #398 Neovim and Helix rendering with line spacing
+- closed: #512 Visible lines on transparent background
+- closed: #491 Noticeable text update
+- closed: #476 Glyphs have very weird rendering
+- closed: #422 Background opacity
+- closed: #355 Issues with double-width chars
+- closed: #259 Sugarloaf: Positioning glyphs
+- closed: #167 Tab bar overlaps text
+- closed: #328 Some font issues
+- closed: #225 Doesn't work with touchscreen
+- closed: #307 default offset height is above the bottom position since update
+- closed: #392 Box drawing issue with Berkeley Mono on MacOS
+
 ## 0.0.39
 
 - Minor fix on fixed transparency on backgrounds for Welcome/Dialog.
