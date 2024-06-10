@@ -678,7 +678,7 @@ font-size = 18
 - Common Keybindings and keybindings for MacOS.
 - Allow to configure `option-as-alt` for Winit on MacOs. Issue originally bought by Alacritty on Winit (https://github.com/rust-windowing/winit/issues/768).
 - Allow to configure environment variables through config file.
-- Stabilization of Sugarloaf render on emojis, symbos and unicode.
+- Stabilization of Sugarloaf render on emojis, symbols and unicode.
 
 ## 0.0.2
 
