@@ -349,7 +349,7 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 # • width - define the initial window width.
 #   Default: 600
 #
-# • height - define the inital window height.
+# • height - define the initial window height.
 #   Default: 400
 #
 # • mode - define how the window will be created
