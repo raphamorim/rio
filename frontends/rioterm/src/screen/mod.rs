@@ -58,7 +58,7 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
-pub struct Screen<'a> {
+pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     clipboard: Clipboard,
@@ -67,9 +67,15 @@ pub struct Screen<'a> {
     pub touchpurpose: TouchPurpose,
     pub ime: Ime,
     pub state: State,
-    pub sugarloaf: Sugarloaf<'a>,
+    pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
 }
+
+// impl<'a> Drop for Screen<'a> {
+//     fn drop(&mut self) {
+//         println!("dropped screen");
+//     }
+// }
 
 pub struct ScreenWindowProperties {
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -80,14 +86,14 @@ pub struct ScreenWindowProperties {
     pub theme: Option<winit::window::Theme>,
 }
 
-impl<'a> Screen<'_> {
-    pub async fn new(
+impl Screen<'_> {
+    pub async fn new<'screen>(
         window_properties: ScreenWindowProperties,
         config: &rio_backend::config::Config,
         event_proxy: EventProxy,
         font_library: rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
-    ) -> Result<Screen<'a>, Box<dyn Error>> {
+    ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
         let raw_window_handle = window_properties.raw_window_handle;
@@ -110,8 +116,6 @@ impl<'a> Screen<'_> {
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
         let sugarloaf_window = SugarloafWindow {
-            // handle: raw_window_handle.into(),
-            // display: raw_display_handle.into(),
             handle: raw_window_handle,
             display: raw_display_handle,
             scale: scale as f32,

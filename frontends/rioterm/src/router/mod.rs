@@ -1,10 +1,10 @@
 mod window;
-use raw_window_handle::{HasWindowHandle, HasDisplayHandle};
 use crate::event::{EventPayload, EventProxy};
 use crate::router::window::{configure_window, create_window_builder};
 use crate::routes::{assistant, RoutePath};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use std::collections::HashMap;
@@ -19,13 +19,29 @@ use winit::platform::startup_notify::{
 };
 use winit::window::{Window, WindowId};
 
-pub struct Route<'a> {
+pub struct Route {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
-    pub window: RouteWindow<'a>,
+    pub window: RouteWindow,
 }
 
-impl<'a> Route<'a> {
+impl Route {
+    /// Create a performer.
+    #[inline]
+    pub fn new(
+        assistant: assistant::Assistant,
+        path: RoutePath,
+        window: RouteWindow,
+    ) -> Route {
+        Route {
+            assistant,
+            path,
+            window,
+        }
+    }
+}
+
+impl<'a> Route {
     #[inline]
     pub fn redraw(&self) {
         self.window.winit_window.request_redraw();
@@ -162,15 +178,15 @@ impl<'a> Route<'a> {
     }
 }
 
-pub struct Router<'a> {
-    pub routes: HashMap<WindowId, Route<'a>>,
+pub struct Router {
+    pub routes: HashMap<WindowId, Route>,
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
 }
 
-impl<'a> Router<'a> {
-    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Self {
+impl Router {
+    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Router {
         let (font_library, fonts_not_found) =
             rio_backend::sugarloaf::font::FontLibrary::new(fonts);
 
@@ -184,7 +200,7 @@ impl<'a> Router<'a> {
         }
 
         Router {
-            routes: HashMap::new(),
+            routes: HashMap::default(),
             propagated_report,
             config_route: None,
             font_library: Box::new(font_library),
@@ -197,7 +213,7 @@ impl<'a> Router<'a> {
     }
 
     #[inline]
-    pub fn create_route_from_window(&mut self, route_window: RouteWindow<'a>) {
+    pub fn create_route_from_window(&mut self, route_window: RouteWindow) {
         let id = route_window.winit_window.id();
         let mut route = Route {
             window: route_window,
@@ -214,7 +230,7 @@ impl<'a> Router<'a> {
     }
 
     pub fn open_config_window(
-        &'a mut self,
+        &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: RioConfig,
@@ -248,23 +264,17 @@ impl<'a> Router<'a> {
             None,
         );
         let id = window.winit_window.id();
-        self.routes.insert(
-            id,
-            Route {
-                window,
-                path: RoutePath::Terminal,
-                assistant: Assistant::new(),
-            },
-        );
+        let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
+        self.routes.insert(id, route);
         self.config_route = Some(id);
     }
 
     #[inline]
     pub fn create_window(
-        &'a mut self,
+        &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &'a rio_backend::config::Config,
+        config: &rio_backend::config::Config,
         open_url: Option<String>,
     ) {
         let window = RouteWindow::from_target(
@@ -289,7 +299,7 @@ impl<'a> Router<'a> {
     #[cfg(target_os = "macos")]
     #[inline]
     pub fn create_native_tab(
-        &'a mut self,
+        &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &rio_backend::config::Config,
@@ -316,22 +326,22 @@ impl<'a> Router<'a> {
     }
 }
 
-pub struct RouteWindow<'a> {
+pub struct RouteWindow {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub winit_window: Window,
-    pub screen: Screen<'a>,
+    pub screen: Screen<'static>,
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
 }
 
-impl<'a> RouteWindow<'a> {
+impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventPayload>,
         config: &rio_backend::config::Config,
         font_library: &Box<rio_backend::sugarloaf::font::FontLibrary>,
         open_url: Option<String>,
-    ) -> Result<RouteWindow<'a>, Box<dyn Error>> {
+    ) -> Result<RouteWindow, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         let event_proxy = EventProxy::new(proxy.clone());
 
@@ -351,9 +361,14 @@ impl<'a> RouteWindow<'a> {
             theme: winit_window.theme(),
         };
 
-        let screen =
-            Screen::new(properties, config, event_proxy, *font_library.clone(), open_url)
-                .await?;
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy,
+            *font_library.clone(),
+            open_url,
+        )
+        .await?;
 
         Ok(Self {
             is_focused: false,
@@ -369,11 +384,11 @@ impl<'a> RouteWindow<'a> {
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &RioConfig,
-        font_library: &'a rio_backend::sugarloaf::font::FontLibrary,
-        window_name: &'a str,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        window_name: &str,
         tab_id: Option<String>,
         open_url: Option<String>,
-    ) -> Self {
+    ) -> RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder =
             create_window_builder(window_name, &config, tab_id.clone());

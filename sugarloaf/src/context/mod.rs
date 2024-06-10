@@ -1,5 +1,5 @@
-use crate::SugarloafRenderer;
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
+use crate::SugarloafRenderer;
 
 pub struct Context<'a> {
     pub device: wgpu::Device,
@@ -122,7 +122,8 @@ impl Context<'_> {
                             &wgpu::DeviceDescriptor {
                                 label: None,
                                 required_features: wgpu::Features::empty(),
-                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
+                                ),
                             },
                             None,
                         )

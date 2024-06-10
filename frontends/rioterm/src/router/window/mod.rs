@@ -1,6 +1,5 @@
 use rio_backend::config::window::{Decorations, WindowMode};
 use rio_backend::config::Config;
-use std::rc::Rc;
 use winit::window::{CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowAttributes};
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
