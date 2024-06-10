@@ -2186,7 +2186,7 @@ impl ReadinessQueue {
         if dst.len() == dst.capacity() {
             // If `dst` is already full, the readiness queue won't be drained.
             // This might result in `sleep_marker` staying in the queue and
-            // unecessary pipe writes occurring.
+            // unnecessary pipe writes occurring.
             self.inner.clear_sleep_marker();
         }
 
