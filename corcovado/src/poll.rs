@@ -2090,7 +2090,7 @@ impl RegistrationInner {
         self.update_lock.store(false, Release);
 
         if !state.is_queued() && next.is_queued() {
-            // We are responsible for enqueing the node.
+            // We are responsible for enqueuing the node.
             enqueue_with_wakeup(queue, self)?;
         }
 
