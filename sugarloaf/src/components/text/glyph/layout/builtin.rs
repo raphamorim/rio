@@ -954,7 +954,7 @@ mod layout_test {
     }
 
     /// Chinese sentence squeezed into a vertical pipe meaning each character is on
-    /// a seperate line.
+    /// a separate line.
     #[test]
     fn wrap_word_chinese() {
         let glyphs = Layout::default().calculate_glyphs(
