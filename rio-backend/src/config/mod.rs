@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_explict_defaults_match() {
+    fn test_if_explicit_defaults_match() {
         let result = create_temporary_config("defaults", &default_config_file_content());
 
         assert_eq!(

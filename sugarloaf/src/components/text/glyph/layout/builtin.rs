@@ -1032,7 +1032,7 @@ mod layout_test {
             .collect();
         assert_eq!(y_positions.len(), 2, "{y_positions:?}");
 
-        // explict wrap should include the space in the layout width,
+        // explicit wrap should include the space in the layout width,
         // so the explicit newline `F` should be to the left of the no_newline `F`.
         let newline_f = &glyphs_newline[0];
         let no_newline_f = &glyphs_no_newline[0];
