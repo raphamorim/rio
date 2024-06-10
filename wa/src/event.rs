@@ -403,13 +403,13 @@ pub trait EventHandler {
 
     /// Window has been minimized
     /// Right now is only implemented on Android, X11 and wasm,
-    /// On Andoid window_minimized_event is called on a Pause ndk callback
+    /// On Android window_minimized_event is called on a Pause ndk callback
     /// On X11 and wasm it will be called on focus change events.
     fn window_minimized_event(&mut self) {}
 
     /// Window has been restored
     /// Right now is only implemented on Android, X11 and wasm,
-    /// On Andoid window_minimized_event is called on a Pause ndk callback
+    /// On Android window_minimized_event is called on a Pause ndk callback
     /// On X11 and wasm it will be called on focus change events.
     fn window_restored_event(&mut self) {}
 

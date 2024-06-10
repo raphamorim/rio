@@ -2090,7 +2090,7 @@ impl RegistrationInner {
         self.update_lock.store(false, Release);
 
         if !state.is_queued() && next.is_queued() {
-            // We are responsible for enqueing the node.
+            // We are responsible for enqueuing the node.
             enqueue_with_wakeup(queue, self)?;
         }
 
@@ -2186,7 +2186,7 @@ impl ReadinessQueue {
         if dst.len() == dst.capacity() {
             // If `dst` is already full, the readiness queue won't be drained.
             // This might result in `sleep_marker` staying in the queue and
-            // unecessary pipe writes occuring.
+            // unnecessary pipe writes occurring.
             self.inner.clear_sleep_marker();
         }
 

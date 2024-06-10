@@ -1173,7 +1173,7 @@ impl Sequencer {
                     // You generally want to treat this as an “do on quit” event.
                     Event::LoopExiting { .. } => {
                         // TODO: Now we are forcing an exit operation
-                        // but it should be revaluated since CloseRequested in MacOs
+                        // but it should be reevaluated since CloseRequested in MacOs
                         // not necessarily exit the process
                         std::process::exit(0);
                     }

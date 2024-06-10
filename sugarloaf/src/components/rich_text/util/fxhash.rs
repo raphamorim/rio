@@ -25,7 +25,7 @@
 //! not use this hash for cryptographic purproses.  Furthermore, this hashing algorithm was
 //! not designed to prevent any attacks for determining collisions which could be used to
 //! potentially cause quadratic behavior in `HashMap`s.  So it is not recommended to expose
-//! this hash in places where collissions or DDOS attacks may be a concern.
+//! this hash in places where collisions or DDOS attacks may be a concern.
 
 use core::default::Default;
 use core::hash::{BuildHasherDefault, Hasher};

@@ -197,10 +197,10 @@ blinking-cursor = false
 
 # Window configuration
 #
-# • width - define the intial window width.
+# • width - define the initial window width.
 #   Default: 600
 #
-# • height - define the inital window height.
+# • height - define the initial window height.
 #   Default: 400
 #
 # • mode - define how the window will be created
@@ -243,7 +243,7 @@ blinking-cursor = false
 #       Higher the level more rendering features and computations
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
-# 
+#
 # Example:
 # [renderer]
 # performance = "High"
@@ -270,7 +270,7 @@ blinking-cursor = false
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# You can also set family on root to overwritte all fonts
+# You can also set family on root to overwrite all fonts
 # [fonts]
 #   family = "cascadiamono"
 #

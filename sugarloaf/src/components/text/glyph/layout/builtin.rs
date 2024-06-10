@@ -953,8 +953,8 @@ mod layout_test {
         );
     }
 
-    /// Chinese sentance squeezed into a vertical pipe meaning each character is on
-    /// a seperate line.
+    /// Chinese sentence squeezed into a vertical pipe meaning each character is on
+    /// a separate line.
     #[test]
     fn wrap_word_chinese() {
         let glyphs = Layout::default().calculate_glyphs(
@@ -986,7 +986,7 @@ mod layout_test {
         assert_eq!(y_positions.len(), 7, "{y_positions:?}");
     }
 
-    /// #130 - Respect trailing whitespace in words if directly preceeding a hard break.
+    /// #130 - Respect trailing whitespace in words if directly preceding a hard break.
     /// So right-aligned wrapped on 2 lines `Foo bar` will look different to `Foo \nbar`.
     #[test]
     fn include_spaces_in_layout_width_preceeded_hard_break() {
@@ -1032,7 +1032,7 @@ mod layout_test {
             .collect();
         assert_eq!(y_positions.len(), 2, "{y_positions:?}");
 
-        // explict wrap should include the space in the layout width,
+        // explicit wrap should include the space in the layout width,
         // so the explicit newline `F` should be to the left of the no_newline `F`.
         let newline_f = &glyphs_newline[0];
         let no_newline_f = &glyphs_no_newline[0];
@@ -1044,7 +1044,7 @@ mod layout_test {
         );
     }
 
-    /// #130 - Respect trailing whitespace in words if directly preceeding end-of-glyphs.
+    /// #130 - Respect trailing whitespace in words if directly preceding end-of-glyphs.
     /// So right-aligned `Foo ` will look different to `Foo`.
     #[test]
     fn include_spaces_in_layout_width_preceeded_end() {

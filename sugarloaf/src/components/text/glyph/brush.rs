@@ -26,7 +26,7 @@ use std::{
 /// A hash of `Section` data
 type SectionHash = u64;
 
-/// Object allowing glyph drawing, containing cache state. Manages glyph positioning cacheing,
+/// Object allowing glyph drawing, containing cache state. Manages glyph positioning caching,
 /// glyph draw caching & efficient GPU texture cache updating.
 ///
 /// Build using a [`GlyphBrushBuilder`].
