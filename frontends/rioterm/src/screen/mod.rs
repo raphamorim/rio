@@ -91,7 +91,7 @@ impl Screen<'_> {
         window_properties: ScreenWindowProperties,
         config: &rio_backend::config::Config,
         event_proxy: EventProxy,
-        font_library: rio_backend::sugarloaf::font::FontLibrary,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;

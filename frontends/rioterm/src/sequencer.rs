@@ -40,7 +40,7 @@ impl Sequencer {
         }
 
         Sequencer {
-            config: config,
+            config,
             event_proxy: None,
             router,
         }
@@ -157,7 +157,7 @@ impl Sequencer {
                                     None
                                 };
 
-                                self.config = config.into();
+                                self.config = config;
                                 for (_id, route) in self.router.routes.iter_mut() {
                                     if has_font_updates {
                                         if let Some(ref err) = font_library_errors {
@@ -349,11 +349,10 @@ impl Sequencer {
                                 }
                             }
                             RioEventType::Rio(RioEvent::CreateWindow) => {
-                                let config = &self.config;
                                 self.router.create_window(
                                     event_loop_window_target,
                                     self.event_proxy.clone().unwrap(),
-                                    &config,
+                                    &self.config,
                                     None,
                                 );
                             }
@@ -383,14 +382,13 @@ impl Sequencer {
                                             working_dir: working_dir_overwrite,
                                             ..current_config.clone()
                                         };
-                                        self.config = config.into();
+                                        self.config = config;
                                     }
 
-                                    let config = &self.config;
                                     self.router.create_native_tab(
                                         event_loop_window_target,
                                         self.event_proxy.clone().unwrap(),
-                                        &config,
+                                        &self.config,
                                         Some(
                                             route
                                                 .window
@@ -403,16 +401,15 @@ impl Sequencer {
                                     if let Some(old_config) =
                                         should_revert_to_previous_config
                                     {
-                                        self.config = old_config.into();
+                                        self.config = old_config;
                                     }
                                 }
                             }
                             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                                let config = &self.config;
                                 self.router.open_config_window(
                                     event_loop_window_target,
                                     self.event_proxy.clone().unwrap(),
-                                    config.clone(),
+                                    &self.config,
                                 );
                             }
                             #[cfg(target_os = "macos")]
@@ -434,7 +431,7 @@ impl Sequencer {
                                             self.router.create_window(
                                                 event_loop_window_target,
                                                 self.event_proxy.clone().unwrap(),
-                                                &config,
+                                                config,
                                                 None,
                                             );
                                         }
@@ -525,7 +522,7 @@ impl Sequencer {
                                 self.router.create_window(
                                     event_loop_window_target,
                                     self.event_proxy.clone().unwrap(),
-                                    &config,
+                                    config,
                                     Some(url),
                                 );
                             }
