@@ -43,7 +43,7 @@ pub trait GlyphPositioner: Hash {
     /// Recalculate a glyph sequence after a change.
     ///
     /// The default implementation simply calls `calculate_glyphs` so must be implemented
-    /// to provide benefits as such benefits are spefic to the internal layout logic.
+    /// to provide benefits as such benefits are specific to the internal layout logic.
     fn recalculate_glyphs<F, S, P>(
         &self,
         previous: P,
