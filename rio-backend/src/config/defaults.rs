@@ -270,7 +270,7 @@ blinking-cursor = false
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# You can also set family on root to overwritte all fonts
+# You can also set family on root to overwrite all fonts
 # [fonts]
 #   family = "cascadiamono"
 #
