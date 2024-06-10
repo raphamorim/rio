@@ -263,7 +263,7 @@ impl Config {
                     decoded
                 }
                 Err(err_message) => {
-                    warn!("failure to parse config file, failling back to default...\n{err_message:?}");
+                    warn!("failure to parse config file, falling back to default...\n{err_message:?}");
                     Config::default()
                 }
             }
