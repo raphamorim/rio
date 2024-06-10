@@ -39,7 +39,7 @@ opacity = 0.8
 - Fixes on font search for Microsoft Windows.
 - Open Url support for MacOS.
 - All tabs/window instances now use same font data.
-- Support to `line-height` configuration.
+- Disabled `line-height` configuration in this version (it will be re added eventually).
 - Updated ttf-parser and memmap2 on sugarloaf.
 
 ## 0.0.39
