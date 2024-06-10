@@ -155,7 +155,7 @@ mod stress {
                 }
             }
 
-            // Finall polls, repeat until readiness-queue empty
+            // Finally polls, repeat until readiness-queue empty
             loop {
                 // Might not read all events from custom-event-queue at once, implementation dependent
                 poll.poll(&mut events, Some(Duration::from_millis(0)))
