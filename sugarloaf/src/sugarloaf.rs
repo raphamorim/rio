@@ -20,7 +20,10 @@ use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
-    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+    DisplayHandle,
+    HandleError,
+    HasDisplayHandle,
+    HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
 
@@ -100,12 +103,12 @@ impl HasWindowHandle for SugarloafWindow {
     }
 }
 
-// impl HasDisplayHandle for SugarloafWindow {
-//     fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
-//         let raw = self.raw_display_handle();
-//         Ok(unsafe { DisplayHandle::borrow_raw(raw) })
-//     }
-// }
+impl HasDisplayHandle for SugarloafWindow {
+    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+        let raw = self.raw_display_handle();
+        Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+    }
+}
 
 unsafe impl Send for SugarloafWindow {}
 unsafe impl Sync for SugarloafWindow {}
