@@ -37,7 +37,7 @@ opacity = 0.8
 	- Compute layout updates only if layout is different.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
-- Support bluetooh access on MacOs.
+- Support bluetooth access on MacOs.
 - Upgraded wgpu to 0.20.0.
 - Support "open here" for Microsoft Windows.
 - Fixes on font search for Microsoft Windows.
