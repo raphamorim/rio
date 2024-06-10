@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- ## In progress 
+<!-- ## In progress
 
 - Migration from Winit to WA.
 - Apple MacOS
@@ -145,7 +145,7 @@ backend = "Automatic"
 ```
 - Fix: update padding top on config change [#378](https://github.com/raphamorim/rio/pull/378) by [@hougesen](https://github.com/hougesen)
 - Fixed bug where color automation did not work on Linux because of line ending character.
-- Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371) 
+- Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371)
 - Fix: remove duplicate kitty backspace keybinds [#375](https://github.com/raphamorim/rio/pull/375) by [@hougesen](https://github.com/hougesen)
 - Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. [#344](https://github.com/raphamorim/rio/issues/344) by [@hougesen](https://github.com/hougesen)
 
@@ -346,7 +346,7 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 ```toml
 # Window configuration
 #
-# • width - define the intial window width.
+# • width - define the initial window width.
 #   Default: 600
 #
 # • height - define the inital window height.

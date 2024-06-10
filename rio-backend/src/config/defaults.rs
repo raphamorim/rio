@@ -197,7 +197,7 @@ blinking-cursor = false
 
 # Window configuration
 #
-# • width - define the intial window width.
+# • width - define the initial window width.
 #   Default: 600
 #
 # • height - define the inital window height.
@@ -243,7 +243,7 @@ blinking-cursor = false
 #       Higher the level more rendering features and computations
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
-# 
+#
 # Example:
 # [renderer]
 # performance = "High"
