@@ -953,7 +953,7 @@ mod layout_test {
         );
     }
 
-    /// Chinese sentance squeezed into a vertical pipe meaning each character is on
+    /// Chinese sentence squeezed into a vertical pipe meaning each character is on
     /// a seperate line.
     #[test]
     fn wrap_word_chinese() {
