@@ -1404,7 +1404,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         sel!(insertText:replacementRange:),
         insert_text_replacement_range as extern "C" fn(&Object, Sel, ObjcId, NSRange),
     );
-    // Appearence
+    // Appearance
     decl.add_method(
         sel!(appearanceDidChange:),
         appearance_did_change as extern "C" fn(&Object, Sel, ObjcId),
