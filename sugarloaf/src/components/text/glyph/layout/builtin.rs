@@ -986,7 +986,7 @@ mod layout_test {
         assert_eq!(y_positions.len(), 7, "{y_positions:?}");
     }
 
-    /// #130 - Respect trailing whitespace in words if directly preceeding a hard break.
+    /// #130 - Respect trailing whitespace in words if directly preceding a hard break.
     /// So right-aligned wrapped on 2 lines `Foo bar` will look different to `Foo \nbar`.
     #[test]
     fn include_spaces_in_layout_width_preceeded_hard_break() {
@@ -1044,7 +1044,7 @@ mod layout_test {
         );
     }
 
-    /// #130 - Respect trailing whitespace in words if directly preceeding end-of-glyphs.
+    /// #130 - Respect trailing whitespace in words if directly preceding end-of-glyphs.
     /// So right-aligned `Foo ` will look different to `Foo`.
     #[test]
     fn include_spaces_in_layout_width_preceeded_end() {
