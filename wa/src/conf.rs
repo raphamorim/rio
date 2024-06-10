@@ -85,7 +85,7 @@ impl Icon {
         }
     }
 }
-// Printing 64x64 array with a default formatter is not meaningfull,
+// Printing 64x64 array with a default formatter is not meaningful,
 // so debug will skip the data fields of an Icon
 impl std::fmt::Debug for Icon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
