@@ -880,7 +880,7 @@ pub fn config_key_bindings(
                     if let Some(idx) = found_idx {
                         bindings.remove(idx);
                         log::warn!(
-                            "overwritted a previous key_binding with new one: {:?}",
+                            "overwritten a previous key_binding with new one: {:?}",
                             key_binding
                         );
                     } else {

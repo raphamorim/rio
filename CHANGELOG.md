@@ -1,6 +1,6 @@
 # Changelog
 
-<!-- ## In progress 
+<!-- ## In progress
 
 - Migration from Winit to WA.
 - Apple MacOS
@@ -37,7 +37,7 @@ opacity = 0.8
 	- Compute layout updates only if layout is different.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
-- Support bluetooh access on MacOs.
+- Support bluetooth access on MacOs.
 - Upgraded wgpu to 0.20.0.
 - Support "open here" for Microsoft Windows.
 - Fixes on font search for Microsoft Windows.
@@ -145,7 +145,7 @@ backend = "Automatic"
 ```
 - Fix: update padding top on config change [#378](https://github.com/raphamorim/rio/pull/378) by [@hougesen](https://github.com/hougesen)
 - Fixed bug where color automation did not work on Linux because of line ending character.
-- Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371) 
+- Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371)
 - Fix: remove duplicate kitty backspace keybinds [#375](https://github.com/raphamorim/rio/pull/375) by [@hougesen](https://github.com/hougesen)
 - Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. [#344](https://github.com/raphamorim/rio/issues/344) by [@hougesen](https://github.com/hougesen)
 
@@ -270,8 +270,8 @@ keys = [
 
 #### Other changes
 
-- Rendering performance small improvements towards to Sugar text for regular font, dropped in redudancy processing (avg 68ms to 22ms with tests using 155x94 without repetition like `vim Cargo.lock`).
-- Rendering performance small improvements towards to Sugar rect calculation, dropped in redudancy processing. Now Sugarloaf computes better Rects duplication in a line. It gains significant performance for large screens (avg ~12ms).
+- Rendering performance small improvements towards to Sugar text for regular font, dropped in redundancy processing (avg 68ms to 22ms with tests using 155x94 without repetition like `vim Cargo.lock`).
+- Rendering performance small improvements towards to Sugar rect calculation, dropped in redundancy processing. Now Sugarloaf computes better Rects duplication in a line. It gains significant performance for large screens (avg ~12ms).
 - Fix Backspace behaviour misplace on Windows (Ref https://github.com/raphamorim/rio/issues/220).
 - `ClearHistory` key binding is available to use per configuration file.
 - Introduce Alacritty's VI Mode (Ref https://github.com/raphamorim/rio/issues/186).
@@ -312,7 +312,7 @@ extras = [{ family = "Microsoft JhengHei" }]
 - Switched to queue rendering instead of use staging_belt.
 - Fixed leaks whenever buffer dropped map callbacks.
 - Forked and embedded glyph-brush project to sugarloaf. Glyph-brush was originally created @alexheretic and is licensed under Apache-2.0 license.
-- Upgrate wgpu to 0.17.1.
+- Upgrade wgpu to 0.17.1.
 
 ## 0.0.21
 
@@ -346,10 +346,10 @@ Configuration properties: `window_height`, `window_width` and `window_opacity` h
 ```toml
 # Window configuration
 #
-# • width - define the intial window width.
+# • width - define the initial window width.
 #   Default: 600
 #
-# • height - define the inital window height.
+# • height - define the initial window height.
 #   Default: 400
 #
 # • mode - define how the window will be created
@@ -367,7 +367,7 @@ mode = "Windowed"
 # • opacity - changes the background transparency state
 #   Default: 1.0
 #
-# • mode - defines background mode bewteen "Color" and "Image"
+# • mode - defines background mode between "Color" and "Image"
 #   Default: Color
 #
 # • image - Set an image as background
@@ -392,7 +392,7 @@ x = 0.0
 - Added support to MacOS display native top bar items.
 - Support to adaptive theme (theme selection based on user system theme variant `dark` or `light`).
 - Implemented `ScrollPageUp`, `ScrollPageDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`, `ScrollToBottom`, `ScrollLineUp`, `ScrollLineDown` (Ref: https://github.com/raphamorim/rio/issues/206).
-- Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
+- Support to `fonts.family` (it overwrites regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
 - Exposes `RIO_CONFIG` environment variable that contains the path of the configuration.
@@ -513,7 +513,7 @@ clickable = false
 - Fixed over-rendering when scrolling.
 - Fix selection.
 - Support to copy using VIM.
-- Fix for MacOS deadzone chaging cursor to draggable on window buttons.
+- Fix for MacOS deadzone changing cursor to draggable on window buttons.
 - Fix for scroll using tmux.
 
 ## 0.0.11
@@ -560,7 +560,7 @@ theme = "dracula"
 disable-unfocused-render = true
 ```
 
-- Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compability in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable `use-fork` in the configuration file:
+- Support to **spawn and fork processes**, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable `use-fork` in the configuration file:
 
 ```toml
 use-fork = true
@@ -624,7 +624,7 @@ font-size = 18
 - Performance fixes (Related: [#101](https://github.com/raphamorim/rio/issues/101)).
 - Sugarloaf WebAssembly support.
 - Fixed resize for all contexts: removed the glitch when resizing and switching between tabs.
-- Fixed cursor incosistencies [#95](https://github.com/raphamorim/rio/issues/95).
+- Fixed cursor inconsistencies [#95](https://github.com/raphamorim/rio/issues/95).
 - Added command line interface support (`--help`, `--version`, `-e` and `--command`).
 - Added a fallback for WPGU request device operation: downlevel limits, which will allow the code to run on all possible hardware.
 - Added `padding-x` to configuration.
@@ -678,7 +678,7 @@ font-size = 18
 - Common Keybindings and keybindings for MacOS.
 - Allow to configure `option-as-alt` for Winit on MacOs. Issue originally bought by Alacritty on Winit (https://github.com/rust-windowing/winit/issues/768).
 - Allow to configure environment variables through config file.
-- Stabilization of Sugarloaf render on emojis, symbos and unicode.
+- Stabilization of Sugarloaf render on emojis, symbols and unicode.
 
 ## 0.0.2
 

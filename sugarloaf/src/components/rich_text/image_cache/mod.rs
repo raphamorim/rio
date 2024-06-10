@@ -78,7 +78,7 @@ impl ImageId {
 pub struct ImageLocation {
     /// Texture that contains the image.
     pub texture_id: TextureId,
-    /// Mininum x and y texture coordinates.
+    /// Minimum x and y texture coordinates.
     pub min: (f32, f32),
     /// Maximum x and y texture coordinates.
     pub max: (f32, f32),

@@ -564,13 +564,13 @@ pub struct GridIterator<'a, T> {
 }
 
 impl<'a, T> GridIterator<'a, T> {
-    /// Current iteratior position.
+    /// Current iterator position.
     #[allow(unused)]
     pub fn pos(&self) -> Pos {
         self.current
     }
 
-    /// Cell at the current iteratior position.
+    /// Cell at the current iterator position.
     #[allow(unused)]
     pub fn square(&self) -> &'a T {
         &self.grid[self.current]

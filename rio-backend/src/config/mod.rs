@@ -263,7 +263,7 @@ impl Config {
                     decoded
                 }
                 Err(err_message) => {
-                    warn!("failure to parse config file, failling back to default...\n{err_message:?}");
+                    warn!("failure to parse config file, falling back to default...\n{err_message:?}");
                     Config::default()
                 }
             }
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_explict_defaults_match() {
+    fn test_if_explicit_defaults_match() {
         let result = create_temporary_config("defaults", &default_config_file_content());
 
         assert_eq!(
