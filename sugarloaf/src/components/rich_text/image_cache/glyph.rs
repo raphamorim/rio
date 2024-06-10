@@ -195,7 +195,7 @@ enum Coords<'a> {
     Ref(&'a [i16]),
 }
 
-impl Coords<'static> {
+impl<'a> Coords<'a> {
     fn new(coords: &[i16]) -> Self {
         let len = coords.len();
         if len == 0 {
