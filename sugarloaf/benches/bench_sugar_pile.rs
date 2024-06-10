@@ -3,8 +3,7 @@ extern crate sugarloaf;
 
 use crate::layout::SugarloafLayout;
 use criterion::{criterion_group, criterion_main, Criterion};
-// use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::*;
 use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
@@ -30,10 +29,8 @@ fn bench_sugar_pile(c: &mut Criterion) {
 
     let size = window.inner_size();
     let sugarloaf_window = SugarloafWindow {
-        // handle: window.window_handle().unwrap().into(),
-        // display: window.display_handle().unwrap().into(),
-        handle: window.raw_window_handle(),
-        display: window.raw_display_handle(),
+        handle: window.window_handle().unwrap().into(),
+        display: window.display_handle().unwrap().into(),
         scale: scale_factor as f32,
         size: SugarloafWindowSize {
             width: size.width as f32,

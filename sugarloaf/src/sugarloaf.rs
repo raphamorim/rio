@@ -20,10 +20,7 @@ use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
-    DisplayHandle,
-    HandleError,
-    HasDisplayHandle,
-    HasWindowHandle, WindowHandle,
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
 
@@ -117,7 +114,7 @@ impl Sugarloaf<'_> {
     pub async fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
-        font_library: FontLibrary,
+        font_library: &FontLibrary,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
         let ctx = Context::new(window, renderer).await;
@@ -132,7 +129,7 @@ impl Sugarloaf<'_> {
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
-        let state = SugarState::new(layout, &font_library);
+        let state = SugarState::new(layout, font_library);
 
         let instance = Sugarloaf {
             state,

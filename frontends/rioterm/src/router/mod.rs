@@ -41,7 +41,7 @@ impl Route {
     }
 }
 
-impl<'a> Route {
+impl Route {
     #[inline]
     pub fn redraw(&self) {
         self.window.winit_window.request_redraw();
@@ -233,7 +233,7 @@ impl Router {
         &mut self,
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
-        config: RioConfig,
+        config: &RioConfig,
     ) {
         // In case configuration window does exists already
         if let Some(route_id) = self.config_route {
@@ -339,7 +339,7 @@ impl RouteWindow {
     pub async fn new(
         event_loop: &EventLoop<EventPayload>,
         config: &rio_backend::config::Config,
-        font_library: &Box<rio_backend::sugarloaf::font::FontLibrary>,
+        font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
@@ -361,14 +361,8 @@ impl RouteWindow {
             theme: winit_window.theme(),
         };
 
-        let screen = Screen::new(
-            properties,
-            config,
-            event_proxy,
-            *font_library.clone(),
-            open_url,
-        )
-        .await?;
+        let screen =
+            Screen::new(properties, config, event_proxy, font_library, open_url).await?;
 
         Ok(Self {
             is_focused: false,
@@ -391,7 +385,7 @@ impl RouteWindow {
     ) -> RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder =
-            create_window_builder(window_name, &config, tab_id.clone());
+            create_window_builder(window_name, config, tab_id.clone());
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
@@ -404,7 +398,7 @@ impl RouteWindow {
 
         #[allow(deprecated)]
         let winit_window = event_loop.create_window(window_builder).unwrap();
-        let winit_window = configure_window(winit_window, &config);
+        let winit_window = configure_window(winit_window, config);
 
         let properties = ScreenWindowProperties {
             size: winit_window.inner_size(),
@@ -417,9 +411,9 @@ impl RouteWindow {
 
         let screen = futures::executor::block_on(Screen::new(
             properties,
-            &config,
+            config,
             event_proxy,
-            font_library.clone(),
+            font_library,
             open_url,
         ))
         .expect("Screen not created");
