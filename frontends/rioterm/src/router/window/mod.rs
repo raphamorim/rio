@@ -16,7 +16,7 @@ pub const APPLICATION_ID: &str = "rio";
 
 pub fn create_window_builder(
     title: &str,
-    config: &Rc<Config>,
+    config: &Config,
     #[allow(unused)] tab_id: Option<String>,
 ) -> WindowAttributes {
     let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
@@ -109,7 +109,7 @@ pub fn create_window_builder(
     window_builder
 }
 
-pub fn configure_window(winit_window: Window, config: &Rc<Config>) -> Window {
+pub fn configure_window(winit_window: Window, config: &Config) -> Window {
     let current_mouse_cursor = CursorIcon::Text;
     winit_window.set_cursor(current_mouse_cursor);
 

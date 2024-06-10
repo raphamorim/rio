@@ -117,9 +117,9 @@ impl Sugarloaf<'_> {
     pub async fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
-        font_library: &FontLibrary,
+        font_library: FontLibrary,
         layout: SugarloafLayout,
-    ) -> Result<Sugarloaf, SugarloafWithErrors> {
+    ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
         let ctx = Context::new(window, renderer).await;
 
         let text_brush = {
@@ -132,7 +132,7 @@ impl Sugarloaf<'_> {
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
 
-        let state = SugarState::new(layout, font_library);
+        let state = SugarState::new(layout, &font_library);
 
         let instance = Sugarloaf {
             state,
