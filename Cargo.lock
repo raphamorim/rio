@@ -884,7 +884,8 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.1"
-source = "git+https://github.com/raphamorim/winit?rev=c9dc7cf#c9dc7cf5ca2ea46e5343a825b1f2f54757b1d785"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f25c0e292a7ca6d6498557ff1df68f32c99850012b6ea401cf8daf771f22ff53"
 
 [[package]]
 name = "dwrote"
@@ -2547,6 +2548,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle",
  "regex",
+ "rio-winit-fork",
  "serde",
  "smallvec",
  "sugarloaf",
@@ -2555,7 +2557,6 @@ dependencies = [
  "unicode-width",
  "wa",
  "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -2564,6 +2565,57 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "rio-winit-fork"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "214f2e44c24c1b13b8bfc60bcbab94a86ed5bddd5c5f41e6c6e50a762c99c3e6"
+dependencies = [
+ "ahash",
+ "android-activity",
+ "atomic-waker",
+ "bitflags 2.5.0",
+ "bytemuck",
+ "calloop",
+ "cfg_aliases 0.2.1",
+ "concurrent-queue",
+ "core-foundation",
+ "core-graphics",
+ "cursor-icon",
+ "dpi",
+ "js-sys",
+ "libc",
+ "memmap2",
+ "ndk",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-ui-kit",
+ "orbclient",
+ "percent-encoding",
+ "pin-project",
+ "raw-window-handle",
+ "redox_syscall 0.4.1",
+ "rustix",
+ "sctk-adwaita",
+ "smithay-client-toolkit",
+ "smol_str",
+ "tracing",
+ "unicode-segmentation",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-plasma",
+ "web-sys",
+ "web-time",
+ "windows-sys 0.52.0",
+ "x11-dl",
+ "x11rb",
+ "xkbcommon-dl",
 ]
 
 [[package]]
@@ -2586,6 +2638,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "rio-backend",
+ "rio-winit-fork",
  "serde",
  "smol_str",
  "teletypewriter",
@@ -2596,7 +2649,6 @@ dependencies = [
  "wa",
  "wgpu",
  "windows-sys 0.52.0",
- "winit",
 ]
 
 [[package]]
@@ -2866,6 +2918,7 @@ dependencies = [
  "png",
  "raw-window-handle",
  "rayon",
+ "rio-winit-fork",
  "rustc-hash",
  "serde",
  "slotmap",
@@ -2880,7 +2933,6 @@ dependencies = [
  "wasm-bindgen-test",
  "web-sys",
  "wgpu",
- "winit",
  "xi-unicode",
 ]
 
@@ -3865,56 +3917,6 @@ name = "windows_x86_64_msvc"
 version = "0.52.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
-
-[[package]]
-name = "winit"
-version = "0.30.0"
-source = "git+https://github.com/raphamorim/winit?rev=c9dc7cf#c9dc7cf5ca2ea46e5343a825b1f2f54757b1d785"
-dependencies = [
- "ahash",
- "android-activity",
- "atomic-waker",
- "bitflags 2.5.0",
- "bytemuck",
- "calloop",
- "cfg_aliases 0.2.1",
- "concurrent-queue",
- "core-foundation",
- "core-graphics",
- "cursor-icon",
- "dpi",
- "js-sys",
- "libc",
- "memmap2",
- "ndk",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "objc2-ui-kit",
- "orbclient",
- "percent-encoding",
- "pin-project",
- "raw-window-handle",
- "redox_syscall 0.4.1",
- "rustix",
- "sctk-adwaita",
- "smithay-client-toolkit",
- "smol_str",
- "tracing",
- "unicode-segmentation",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wayland-backend",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-plasma",
- "web-sys",
- "web-time",
- "windows-sys 0.52.0",
- "x11-dl",
- "x11rb",
- "xkbcommon-dl",
-]
 
 [[package]]
 name = "winnow"
