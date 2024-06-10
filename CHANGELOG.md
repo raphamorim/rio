@@ -392,7 +392,7 @@ x = 0.0
 - Added support to MacOS display native top bar items.
 - Support to adaptive theme (theme selection based on user system theme variant `dark` or `light`).
 - Implemented `ScrollPageUp`, `ScrollPageDown`, `ScrollHalfPageUp`, `ScrollHalfPageDown`, `ScrollToTop`, `ScrollToBottom`, `ScrollLineUp`, `ScrollLineDown` (Ref: https://github.com/raphamorim/rio/issues/206).
-- Support to `fonts.family` (it overwrittes regular, bold, bold-italic and italic font families).
+- Support to `fonts.family` (it overwrites regular, bold, bold-italic and italic font families).
 - Added a welcome screen UI.
 - Added a settings UI.
 - Exposes `RIO_CONFIG` environment variable that contains the path of the configuration.
