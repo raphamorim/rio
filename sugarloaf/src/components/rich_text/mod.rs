@@ -698,7 +698,7 @@ fn draw_layout(
     x: f32,
     y: f32,
     font_library: &FontLibraryData,
-    _rect: SugarDimensions,
+    rect: SugarDimensions,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
@@ -717,7 +717,8 @@ fn draw_layout(
                 for glyph in cluster.glyphs() {
                     let x = px + glyph.x;
                     let y = py - glyph.y;
-                    px += glyph.advance;
+                    // px += glyph.advance;
+                    px += rect.width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }

@@ -783,6 +783,12 @@ impl<'a> Cluster<'a> {
         self.cluster.offset as usize
     }
 
+    /// Returns the byte offset of the cluster in the source text.
+    #[inline]
+    pub fn is_emoji(&self) -> bool {
+        self.cluster.info.is_emoji()
+    }
+
     /// Returns the byte range of the cluster in the source text.
     #[inline]
     pub fn range(&self) -> Range<usize> {

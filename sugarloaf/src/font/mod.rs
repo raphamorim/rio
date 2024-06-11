@@ -261,7 +261,9 @@ impl FontLibraryData {
             FindResult::NotFound(spec) => {
                 self.standard = load_fallback_from_memory(&spec);
                 self.inner = vec![FontSource::Standard];
-                fonts_not_fount.push(spec);
+                if !spec.is_default_family() {
+                    fonts_not_fount.push(spec);
+                }
             }
         }
 
@@ -272,7 +274,9 @@ impl FontLibraryData {
             FindResult::NotFound(spec) => {
                 self.inner
                     .push(FontSource::Data(load_fallback_from_memory(&spec)));
-                fonts_not_fount.push(spec);
+                if !spec.is_default_family() {
+                    fonts_not_fount.push(spec);
+                }
             }
         }
 
@@ -283,7 +287,9 @@ impl FontLibraryData {
             FindResult::NotFound(spec) => {
                 self.inner
                     .push(FontSource::Data(load_fallback_from_memory(&spec)));
-                fonts_not_fount.push(spec);
+                if !spec.is_default_family() {
+                    fonts_not_fount.push(spec);
+                }
             }
         }
 
@@ -294,7 +300,9 @@ impl FontLibraryData {
             FindResult::NotFound(spec) => {
                 self.inner
                     .push(FontSource::Data(load_fallback_from_memory(&spec)));
-                fonts_not_fount.push(spec);
+                if !spec.is_default_family() {
+                    fonts_not_fount.push(spec);
+                }
             }
         }
 
