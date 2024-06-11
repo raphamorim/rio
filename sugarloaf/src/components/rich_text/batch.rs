@@ -67,6 +67,7 @@ impl Batch {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[inline]
     fn add_rect(
         &mut self,
         rect: &Rect,
@@ -109,6 +110,7 @@ impl Batch {
         true
     }
 
+    #[inline]
     fn push_rect(
         &mut self,
         rect: &Rect,
@@ -161,6 +163,7 @@ impl Batch {
         ]);
     }
 
+    #[inline]
     fn build_display_list(&self, list: &mut DisplayList) {
         let first_vertex = list.vertices.len() as u32;
         let first_index = list.indices.len() as u32;
@@ -195,6 +198,7 @@ impl BatchManager {
         }
     }
 
+    #[inline]
     pub fn reset(&mut self) {
         self.batches.append(&mut self.opaque);
         self.batches.append(&mut self.transparent);
@@ -279,6 +283,7 @@ impl BatchManager {
         );
     }
 
+    #[inline]
     pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
         let transparent = color[3] != 1.0;
         if transparent {
@@ -298,32 +303,23 @@ impl BatchManager {
             .add_rect(rect, depth, color, None, None, None, false);
     }
 
+    #[inline]
     pub fn build_display_list(&self, list: &mut DisplayList) {
-        list.commands.push(Command::BindPipeline(Pipeline::Opaque));
         for batch in &self.opaque {
             if batch.vertices.is_empty() {
                 continue;
             }
             batch.build_display_list(list);
         }
-        let mut mode = Pipeline::Opaque;
         for batch in &self.transparent {
             if batch.vertices.is_empty() {
                 continue;
-            }
-            let batch_mode = if batch.subpix {
-                Pipeline::Subpixel
-            } else {
-                Pipeline::Transparent
-            };
-            if mode != batch_mode {
-                mode = batch_mode;
-                list.commands.push(Command::BindPipeline(batch_mode));
             }
             batch.build_display_list(list);
         }
     }
 
+    #[inline]
     fn alloc_batch(&mut self, transparent: bool) -> &mut Batch {
         let batch = self.batches.pop().unwrap_or_default();
         if transparent {
@@ -382,8 +378,6 @@ impl DisplayList {
 pub enum Command {
     /// Bind a texture at the specified slot.
     BindTexture(u32, TextureId),
-    /// Switch to the specified render mode.
-    BindPipeline(Pipeline),
     /// Draw the specified range of indexed triangles.
     Draw { start: u32, count: u32 },
 }
