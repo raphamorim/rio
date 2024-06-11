@@ -414,36 +414,6 @@ impl RichTextBrush {
 
         for command in self.dlist.commands() {
             match command {
-                Command::BindPipeline(pipeline) => {
-                    log::info!("BindPipeline {:?}", pipeline);
-                    // TODO:
-                    // rpass.set_blend_constant
-
-                    // match pipeline {
-                    //     Pipeline::Opaque => {
-                    //         unsafe {
-                    //             gl::DepthMask(1);
-                    //             gl::Disable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //             gl::BlendEquation(gl::FUNC_ADD);
-                    //         }
-                    //     }
-                    //     Pipeline::Transparent => {
-                    //         unsafe {
-                    //             gl::DepthMask(0);
-                    //             gl::Enable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    //         }
-                    //     }
-                    //     Pipeline::Subpixel => {
-                    //         unsafe {
-                    //             gl::DepthMask(0);
-                    //             gl::Enable(gl::BLEND);
-                    //             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
-                    //         }
-                    //     }
-                    // }
-                }
                 Command::BindTexture(unit, id) => {
                     if self.bind_group_needs_update {
                         match unit {
@@ -537,20 +507,6 @@ impl RichTextBrush {
             });
         }
 
-        // let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //     label: None,
-        //     timestamp_writes: None,
-        //     occlusion_query_set: None,
-        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //         view,
-        //         resolve_target: None,
-        //         ops: wgpu::Operations {
-        //             load: wgpu::LoadOp::Load,
-        //             store: wgpu::StoreOp::Store,
-        //         },
-        //     })],
-        //     depth_stencil_attachment: None,
-        // });
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -559,7 +515,6 @@ impl RichTextBrush {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
-        // drop(rpass);
         self.bind_group_needs_update = false;
         self.first_run = false;
     }
