@@ -253,29 +253,49 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
-        let regular = find_font(&self.db, spec.regular);
-        self.standard = regular.0;
-        self.inner = vec![FontSource::Standard];
-        if let Some(err) = regular.2 {
-            fonts_not_fount.push(err);
+        match find_font(&self.db, spec.regular) {
+            FindResult::Found(data) => {
+                self.standard = data;
+                self.inner = vec![FontSource::Standard];
+            }
+            FindResult::NotFound(spec) => {
+                self.standard = load_fallback_from_memory(&spec);
+                self.inner = vec![FontSource::Standard];
+                fonts_not_fount.push(spec);
+            }
         }
 
-        let italic = find_font(&self.db, spec.italic);
-        self.inner.push(FontSource::Data(italic.0));
-        if let Some(err) = italic.2 {
-            fonts_not_fount.push(err);
+        match find_font(&self.db, spec.italic) {
+            FindResult::Found(data) => {
+                self.inner.push(FontSource::Data(data));
+            }
+            FindResult::NotFound(spec) => {
+                self.inner
+                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                fonts_not_fount.push(spec);
+            }
         }
 
-        let bold = find_font(&self.db, spec.bold);
-        self.inner.push(FontSource::Data(bold.0));
-        if let Some(err) = bold.2 {
-            fonts_not_fount.push(err);
+        match find_font(&self.db, spec.bold) {
+            FindResult::Found(data) => {
+                self.inner.push(FontSource::Data(data));
+            }
+            FindResult::NotFound(spec) => {
+                self.inner
+                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                fonts_not_fount.push(spec);
+            }
         }
 
-        let bold_italic = find_font(&self.db, spec.bold_italic);
-        self.inner.push(FontSource::Data(bold_italic.0));
-        if let Some(err) = bold_italic.2 {
-            fonts_not_fount.push(err);
+        match find_font(&self.db, spec.bold_italic) {
+            FindResult::Found(data) => {
+                self.inner.push(FontSource::Data(data));
+            }
+            FindResult::NotFound(spec) => {
+                self.inner
+                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                fonts_not_fount.push(spec);
+            }
         }
 
         for fallback in fallbacks::external_fallbacks() {
@@ -289,35 +309,39 @@ impl FontLibraryData {
                     }));
                 }
             } else {
-                let font_data = find_font(
+                match find_font(
                     &self.db,
                     SugarloafFont {
                         family: fallback,
                         ..SugarloafFont::default()
                     },
-                );
-
-                self.inner.push(FontSource::Data(font_data.0));
-
-                if let Some(err) = font_data.2 {
-                    fonts_not_fount.push(err);
+                ) {
+                    FindResult::Found(data) => {
+                        self.inner.push(FontSource::Data(data));
+                    }
+                    FindResult::NotFound(_spec) => {
+                        // Fallback should not add errors
+                    }
                 }
             }
         }
 
         if !spec.extras.is_empty() {
             for extra_font in spec.extras {
-                let extra_font_arc = find_font(
+                match find_font(
                     &self.db,
                     SugarloafFont {
                         family: extra_font.family,
                         style: extra_font.style,
                         weight: extra_font.weight,
                     },
-                );
-                self.inner.push(FontSource::Data(extra_font_arc.0));
-                if let Some(err) = extra_font_arc.2 {
-                    fonts_not_fount.push(err);
+                ) {
+                    FindResult::Found(data) => {
+                        self.inner.push(FontSource::Data(data));
+                    }
+                    FindResult::NotFound(spec) => {
+                        fonts_not_fount.push(spec);
+                    }
                 }
             }
         }
@@ -529,40 +553,37 @@ pub struct ComposedFontArc {
     pub bold_italic: FontArc,
 }
 
+enum FindResult {
+    Found(FontData),
+    NotFound(SugarloafFont),
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[inline]
-fn find_font(
-    db: &crate::font::loader::Database,
-    font_spec: SugarloafFont,
-) -> (FontData, bool, Option<SugarloafFont>) {
+fn find_font(db: &crate::font::loader::Database, font_spec: SugarloafFont) -> FindResult {
     use std::io::Read;
-
-    let weight = font_spec.weight.unwrap_or(400);
-    let style = font_spec
-        .style
-        .to_owned()
-        .unwrap_or(String::from("normal"))
-        .to_lowercase();
-
-    let mut not_found = None;
 
     if !font_spec.is_default_family() {
         let family = font_spec.family.to_string();
-        info!(
-            "Font search: family '{family}' with style '{style}' and weight '{weight}'"
-        );
-
-        let query_style = match style.as_str() {
-            "italic" => crate::font::loader::Style::Italic,
-            _ => crate::font::loader::Style::Normal,
-        };
-
-        let query = crate::font::loader::Query {
+        let mut query = crate::font::loader::Query {
             families: &[crate::font::loader::Family::Name(&family)],
-            weight: crate::font::loader::Weight(weight),
-            style: query_style,
             ..crate::font::loader::Query::default()
         };
+
+        if let Some(weight) = font_spec.weight {
+            query.weight = crate::font::loader::Weight(weight);
+        }
+
+        if let Some(ref style) = font_spec.style {
+            let query_style = match style.to_lowercase().as_str() {
+                "italic" => crate::font::loader::Style::Italic,
+                _ => crate::font::loader::Style::Normal,
+            };
+
+            query.style = query_style;
+        }
+
+        info!("Font search: '{query:?}'");
 
         match db.query(&query) {
             Some(id) => {
@@ -579,18 +600,13 @@ fn find_font(
                                         family,
                                         path.display()
                                     );
-                                    return (d, false, None);
+                                    return FindResult::Found(d);
                                 }
                                 Err(err_message) => {
-                                    log::info!("Failed to load font '{family}' with style '{style}' and weight '{weight}', {err_message}");
-                                    return (
-                                        FontData::from_slice(
-                                            constants::FONT_CASCADIAMONO_REGULAR,
-                                        )
-                                        .unwrap(),
-                                        true,
-                                        Some(font_spec),
+                                    log::info!(
+                                        "Failed to load font '{query:?}', {err_message}"
                                     );
+                                    return FindResult::NotFound(font_spec);
                                 }
                             }
                         }
@@ -598,11 +614,17 @@ fn find_font(
                 }
             }
             None => {
-                not_found = Some(font_spec);
-                warn!("Failed to find font '{family}' with style '{style}' and weight '{weight}'");
+                warn!("Failed to find font '{query:?}'");
             }
         }
     }
+
+    FindResult::NotFound(font_spec)
+}
+
+fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
+    let style = font_spec.style.to_owned().unwrap_or("regular".to_string());
+    let weight = font_spec.weight.unwrap_or(400);
 
     let font_to_load = match (weight, style.as_str()) {
         (100, "italic") => constants::FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
@@ -627,7 +649,7 @@ fn find_font(
         (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
     };
 
-    (FontData::from_slice(font_to_load).unwrap(), true, not_found)
+    FontData::from_slice(font_to_load).unwrap()
 }
 
 fn find_font_path(
