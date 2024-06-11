@@ -176,10 +176,8 @@ impl Batch {
         if let Some(tex) = self.image {
             list.commands.push(Command::BindTexture(1, tex));
         }
-        list.commands.push(Command::Draw {
-            start: first_index,
-            count: self.indices.len() as u32,
-        });
+        list.indices_to_draw
+            .push((first_index, first_index + self.indices.len() as u32));
     }
 }
 
@@ -337,6 +335,7 @@ impl BatchManager {
 pub struct DisplayList {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
+    indices_to_draw: Vec<(u32, u32)>,
     commands: Vec<Command>,
 }
 
@@ -350,6 +349,12 @@ impl DisplayList {
     #[inline]
     pub fn vertices(&self) -> &[Vertex] {
         &self.vertices
+    }
+
+    /// Returns the buffered indices to draw.
+    #[inline]
+    pub fn indices_to_draw(&self) -> &[(u32, u32)] {
+        &self.indices_to_draw
     }
 
     /// Returns the buffered indices for the display list.
@@ -370,6 +375,7 @@ impl DisplayList {
         self.vertices.clear();
         self.indices.clear();
         self.commands.clear();
+        self.indices_to_draw.clear();
     }
 }
 
@@ -378,14 +384,4 @@ impl DisplayList {
 pub enum Command {
     /// Bind a texture at the specified slot.
     BindTexture(u32, TextureId),
-    /// Draw the specified range of indexed triangles.
-    Draw { start: u32, count: u32 },
-}
-
-/// Pipelines used by a display list.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Pipeline {
-    Opaque,
-    Transparent,
-    Subpixel,
 }
