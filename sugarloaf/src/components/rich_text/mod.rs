@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
-use wgpu::Texture;
+use wgpu::{Texture, PrimitiveState, PrimitiveTopology};
 
 // Note: currently it's using Indexed drawing instead of Instance drawing could be worth to
 // evaluate if would make sense move to instance drawing instead
@@ -46,8 +46,6 @@ pub struct RichTextBrush {
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     textures: FxHashMap<TextureId, Texture>,
-    index_buffer: wgpu::Buffer,
-    index_buffer_size: u64,
     current_transform: [f32; 16],
     comp: Compositor,
     draw_layout_cache: DrawLayoutCache,
@@ -63,7 +61,7 @@ impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 2_000;
+        let supported_vertex_buffer = 1;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -230,7 +228,7 @@ impl RichTextBrush {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: mem::size_of::<Vertex>() as u64,
                     // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-                    step_mode: wgpu::VertexStepMode::Vertex,
+                    step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array!(
                         0 => Float32x4,
                         1 => Float32x4,
@@ -248,7 +246,10 @@ impl RichTextBrush {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState::default(),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
@@ -261,19 +262,8 @@ impl RichTextBrush {
             mapped_at_creation: false,
         });
 
-        let index_buffer_size: &[u32] = bytemuck::cast_slice(dlist.indices());
-        let index_buffer_size = index_buffer_size.len() as u64;
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rich_text::Indices Buffer"),
-            size: index_buffer_size,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         RichTextBrush {
             bind_group_layout,
-            index_buffer_size,
-            index_buffer,
             color_texture_view,
             mask_texture_view,
             sampler,
@@ -373,7 +363,6 @@ impl RichTextBrush {
     ) {
         // let start = std::time::Instant::now();
         let vertices: &[Vertex] = self.dlist.vertices();
-        let indices: &[u32] = self.dlist.indices();
 
         // There's nothing to render
         if vertices.is_empty() {
@@ -409,29 +398,6 @@ impl RichTextBrush {
         let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
         if !vertices_bytes.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
-        }
-
-        let indices_raw: &[u8] = bytemuck::cast_slice(indices);
-        let indices_raw_size = indices_raw.len() as u64;
-
-        if self.index_buffer_size >= indices_raw_size {
-            queue.write_buffer(&self.index_buffer, 0, indices_raw);
-        } else {
-            self.index_buffer.destroy();
-
-            let size = next_copy_buffer_size(indices_raw_size);
-            let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rich_text::Indices"),
-                size,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: true,
-            });
-            buffer.slice(..).get_mapped_range_mut()[..indices_raw.len()]
-                .copy_from_slice(indices_raw);
-            buffer.unmap();
-
-            self.index_buffer = buffer;
-            self.index_buffer_size = size;
         }
 
         let mut color_texture_updated: Option<&TextureId> = None;
@@ -531,12 +497,7 @@ impl RichTextBrush {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        // Draw the specified range of indexed triangles.
-        for items in self.dlist.indices_to_draw() {
-            rpass.draw_indexed(items.0..items.1, 0, 0..1);
-        }
+        rpass.draw(0..4, 0..vertices.len() as u32);
 
         self.bind_group_needs_update = false;
         self.first_run = false;
@@ -924,11 +885,4 @@ fn fetch_dimensions(
     }
 
     dimension
-}
-
-#[inline]
-fn next_copy_buffer_size(size: u64) -> u64 {
-    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
-    ((size.next_power_of_two() + align_mask) & !align_mask)
-        .max(wgpu::COPY_BUFFER_ALIGNMENT)
 }
