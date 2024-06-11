@@ -8,7 +8,7 @@ struct Globals {
 @group(0) @binding(3) var font_sampler: sampler;
 
 struct VertexInput {
-    @builtin(vertex_index) vertex_index: u32,
+    @builtin(vertex_index) v_index: u32,
     @location(0) v_pos: vec4<f32>,
     @location(1) v_color: vec4<f32>,
     @location(2) v_uv: vec2<f32>,
@@ -28,6 +28,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.f_color = input.v_color;
     out.f_uv = input.v_uv;
 
+    let v = input.v_index;
     var use_tex: i32 = 0;
     var use_mask: i32 = 0;
 

@@ -50,14 +50,14 @@ pub struct RichTextBrush {
     dlist: DisplayList,
     bind_group_needs_update: bool,
     first_run: bool,
-    supported_vertex_buffer: usize,
+    vertices_quantity: usize,
 }
 
 impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let dlist = DisplayList::new();
-        let supported_vertex_buffer = 1;
+        let vertices_quantity = 1;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -169,8 +169,8 @@ impl RichTextBrush {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            // mag_filter: wgpu::FilterMode::Linear,
+            // mag_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: 0f32,
@@ -221,7 +221,7 @@ impl RichTextBrush {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: mem::size_of::<Vertex>() as u64,
+                    array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
                     // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array!(
@@ -252,7 +252,7 @@ impl RichTextBrush {
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Instances Buffer"),
-            size: mem::size_of::<Vertex>() as u64 * supported_vertex_buffer as u64,
+            size: mem::size_of::<Vertex>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -271,7 +271,7 @@ impl RichTextBrush {
             vertex_buffer,
             first_run: true,
             bind_group_needs_update: true,
-            supported_vertex_buffer,
+            vertices_quantity,
             current_transform,
         }
     }
@@ -355,14 +355,14 @@ impl RichTextBrush {
             self.current_transform = transform;
         }
 
-        if vertices.len() > self.supported_vertex_buffer {
+        if vertices.len() > self.vertices_quantity {
             self.vertex_buffer.destroy();
 
-            self.supported_vertex_buffer = vertices.len();
+            self.vertices_quantity = vertices.len();
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rich_text::Pipeline instances"),
                 size: mem::size_of::<Vertex>() as u64
-                    * self.supported_vertex_buffer as u64,
+                    * self.vertices_quantity as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
