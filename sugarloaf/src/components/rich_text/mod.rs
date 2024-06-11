@@ -16,7 +16,7 @@ use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
-use wgpu::{Texture, PrimitiveState};
+use wgpu::Texture;
 
 // Note: currently it's using Indexed drawing instead of Instance drawing could be worth to
 // evaluate if would make sense move to instance drawing instead
@@ -246,7 +246,10 @@ impl RichTextBrush {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: PrimitiveState::default(),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
