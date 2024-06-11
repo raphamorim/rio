@@ -407,8 +407,6 @@ impl RichTextBrush {
             self.index_buffer_size = size;
         }
 
-        let mut ranges = vec![];
-
         let mut color_texture_updated: Option<&TextureId> = None;
         let mut mask_texture_updated: Option<&TextureId> = None;
 
@@ -446,10 +444,6 @@ impl RichTextBrush {
                             }
                         }
                     };
-                }
-                Command::Draw { start, count } => {
-                    let end = start + count;
-                    ranges.push((*start, end));
                 }
             }
         }
@@ -511,7 +505,9 @@ impl RichTextBrush {
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        for items in ranges {
+
+        // Draw the specified range of indexed triangles.
+        for items in self.dlist.indices_to_draw() {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
@@ -653,7 +649,7 @@ fn draw_layout(
     x: f32,
     y: f32,
     font_library: &FontLibraryData,
-    rect: SugarDimensions,
+    _rect: SugarDimensions,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
@@ -672,8 +668,8 @@ fn draw_layout(
                 for glyph in cluster.glyphs() {
                     let x = px + glyph.x;
                     let y = py - glyph.y;
-                    // px += glyph.advance;
-                    px += rect.width;
+                    px += glyph.advance;
+                    // px += rect.width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
