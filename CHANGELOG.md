@@ -13,7 +13,8 @@
 
 ## Unreleased
 
-- TBD
+- Improvements on font loader (avoid set weight or style in the lookup if isn't defined).
+- Fallbacks fonts doesn't trigger alerts anymore.
 
 ## 0.1.0
 
