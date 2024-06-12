@@ -8,6 +8,8 @@
 
 //! Unicode bidirectional algorithm.
 
+#![allow(unused)]
+
 use swash::text::{BidiClass, Codepoint as _};
 use BidiClass::*;
 

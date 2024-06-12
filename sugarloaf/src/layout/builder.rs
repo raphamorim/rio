@@ -8,7 +8,7 @@
 
 //! Render data builder.
 
-use super::bidi::*;
+// use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
 use super::MAX_ID;
@@ -58,7 +58,7 @@ impl RunCache {
 pub struct LayoutContext {
     fcx: FontContext,
     fonts: FontLibrary,
-    bidi: BidiResolver,
+    // bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
@@ -71,7 +71,7 @@ impl LayoutContext {
         Self {
             fonts: font_library.clone(),
             fcx: FontContext::default(),
-            bidi: BidiResolver::new(),
+            // bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
@@ -89,7 +89,7 @@ impl LayoutContext {
     #[inline]
     pub fn builder(
         &mut self,
-        direction: Direction,
+        _direction: Direction,
         _language: Option<Language>,
         scale: f32,
     ) -> ParagraphBuilder {
@@ -98,9 +98,9 @@ impl LayoutContext {
         self.state.scale = scale;
         ParagraphBuilder {
             fcx: &mut self.fcx,
-            bidi: &mut self.bidi,
-            needs_bidi: false,
-            dir: direction,
+            // bidi: &mut self.bidi,
+            // needs_bidi: false,
+            // dir: direction,
             fonts: &self.fonts,
             scx: &mut self.scx,
             s: &mut self.state,
@@ -119,10 +119,10 @@ impl LayoutContext {
 /// Builder for computing the layout of a paragraph.
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
-    bidi: &'a mut BidiResolver,
+    // bidi: &'a mut BidiResolver,
     fonts: &'a FontLibrary,
-    needs_bidi: bool,
-    dir: Direction,
+    // needs_bidi: bool,
+    // dir: Direction,
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
     last_offset: u32,
@@ -412,25 +412,25 @@ impl<'a> ParagraphBuilder<'a> {
             for (props, boundary) in analysis.by_ref() {
                 line.text.info.push(CharInfo::new(props, boundary));
             }
-            if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
-                let dir = match self.dir {
-                    Direction::Auto => None,
-                    Direction::LeftToRight => Some(BidiDirection::LeftToRight),
-                    Direction::RightToLeft => Some(BidiDirection::RightToLeft),
-                };
-                self.bidi.resolve_with_types(
-                    &self.s.lines[line_number].text.content,
-                    self.s.lines[line_number]
-                        .text
-                        .info
-                        .iter()
-                        .map(|i| i.bidi_class()),
-                    dir,
-                );
-                if !self.needs_bidi {
-                    self.needs_bidi = true;
-                }
-            }
+            // if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
+            //     let dir = match self.dir {
+            //         Direction::Auto => None,
+            //         Direction::LeftToRight => Some(BidiDirection::LeftToRight),
+            //         Direction::RightToLeft => Some(BidiDirection::RightToLeft),
+            //     };
+            //     self.bidi.resolve_with_types(
+            //         &self.s.lines[line_number].text.content,
+            //         self.s.lines[line_number]
+            //             .text
+            //             .info
+            //             .iter()
+            //             .map(|i| i.bidi_class()),
+            //         dir,
+            //     );
+            //     if !self.needs_bidi {
+            //         self.needs_bidi = true;
+            //     }
+            // }
 
             self.itemize(line_number);
             self.shape(render_data, line_number);
@@ -450,7 +450,6 @@ impl<'a> ParagraphBuilder<'a> {
             self.cache.inner.clear();
             *render_data = RenderData::default();
             self.last_offset = 0;
-            self.needs_bidi = false;
 
             return self.resolve(render_data);
         };
@@ -471,13 +470,14 @@ impl<'a> ParagraphBuilder<'a> {
             .map(|i| i.script())
             .find(|s| real_script(*s))
             .unwrap_or(Script::Latin);
-        let levels = self.bidi.levels();
+        // let levels = self.bidi.levels();
         let mut last_frag = line.fragments.first().unwrap();
-        let mut last_level = if self.needs_bidi {
-            levels[last_frag.start]
-        } else {
-            0
-        };
+        // let mut last_level = if self.needs_bidi {
+        //     levels[last_frag.start]
+        // } else {
+        //     0
+        // };
+        let last_level = 0;
         let mut last_features = last_frag.features;
         let mut last_vars = last_frag.vars;
         let mut item = ItemData {
@@ -500,34 +500,34 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             };
         }
-        if self.needs_bidi {
-            for frag in &line.fragments {
-                if frag.break_shaping || frag.start != last_frag.end {
-                    push_item!();
-                    item.start = frag.start;
-                    item.end = frag.start;
-                }
-                last_frag = frag;
-                last_features = frag.features;
-                last_vars = frag.vars;
-                let range = frag.start..frag.end;
-                for (&props, &level) in
-                    line.text.info[range.clone()].iter().zip(&levels[range])
-                {
-                    let script = props.script();
-                    let real = real_script(script);
-                    if (script != last_script && real) || level != last_level {
-                        //item.end += 1;
-                        push_item!();
-                        if real {
-                            last_script = script;
-                        }
-                        last_level = level;
-                    }
-                    item.end += 1;
-                }
-            }
-        } else {
+        // if self.needs_bidi {
+        //     for frag in &line.fragments {
+        //         if frag.break_shaping || frag.start != last_frag.end {
+        //             push_item!();
+        //             item.start = frag.start;
+        //             item.end = frag.start;
+        //         }
+        //         last_frag = frag;
+        //         last_features = frag.features;
+        //         last_vars = frag.vars;
+        //         let range = frag.start..frag.end;
+        //         for (&props, &level) in
+        //             line.text.info[range.clone()].iter().zip(&levels[range])
+        //         {
+        //             let script = props.script();
+        //             let real = real_script(script);
+        //             if (script != last_script && real) || level != last_level {
+        //                 //item.end += 1;
+        //                 push_item!();
+        //                 if real {
+        //                     last_script = script;
+        //                 }
+        //                 last_level = level;
+        //             }
+        //             item.end += 1;
+        //         }
+        //     }
+        // } else {
             for frag in &line.fragments {
                 if frag.break_shaping || frag.start != last_frag.end {
                     push_item!();
@@ -552,7 +552,7 @@ impl<'a> ParagraphBuilder<'a> {
                     }
                 }
             }
-        }
+        // }
         push_item!();
     }
 
