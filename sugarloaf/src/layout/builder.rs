@@ -187,6 +187,7 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         let mut offset = self.last_offset;
+        // let mut offset = self.last_offset;
         style.font_size *= self.s.scale;
         line.styles.push(style);
         let span_id = line.styles.len() - 1;
@@ -212,106 +213,111 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         let start = line.text.content.len();
-        match style.text_transform {
-            TextTransform::Uppercase => {
-                if let Some(lang) = &style.lang {
-                    match lang.language() {
-                        "tr" | "az" | "crh" | "tt" | "ba" => {
-                            for ch in text.chars() {
-                                match ch {
-                                    'i' => push_char!('İ'),
-                                    'ı' => push_char!('I'),
-                                    _ => {
-                                        for ch in ch.to_uppercase() {
-                                            push_char!(ch);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            for ch in text.chars() {
-                                for ch in ch.to_uppercase() {
-                                    push_char!(ch);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    for ch in text.chars() {
-                        for ch in ch.to_uppercase() {
-                            push_char!(ch);
-                        }
-                    }
-                }
-            }
-            TextTransform::Lowercase => {
-                let mut iter = text.chars().peekable();
-                while let Some(ch) = iter.next() {
-                    if ch == 'Σ' {
-                        match iter.peek() {
-                            Some(ch) => {
-                                if ch.is_alphanumeric() || *ch == '-' {
-                                    push_char!('σ');
-                                } else {
-                                    push_char!('ς');
-                                }
-                            }
-                            None => {
-                                push_char!('ς');
-                            }
-                        }
-                    } else {
-                        for ch in ch.to_lowercase() {
-                            push_char!(ch);
-                        }
-                    }
-                }
-            }
-            TextTransform::Capitalize => {
-                let is_turkic = if let Some(lang) = &style.lang {
-                    matches!(lang.language(), "tr" | "az" | "crh" | "tt" | "ba")
-                } else {
-                    false
-                };
-                let mut cap_next = true;
-                for ch in text.chars() {
-                    if !ch.is_alphabetic() {
-                        // if ch.is_whitespace() || ch == '፡' {
-                        cap_next = true;
-                        push_char!(ch);
-                    } else if cap_next {
-                        if !ch.is_alphabetic() {
-                            push_char!(ch);
-                            continue;
-                        }
-                        if is_turkic {
-                            match ch {
-                                'i' => push_char!('İ'),
-                                'ı' => push_char!('I'),
-                                _ => {
-                                    for ch in ch.to_uppercase() {
-                                        push_char!(ch);
-                                    }
-                                }
-                            }
-                        } else {
-                            for ch in ch.to_uppercase() {
-                                push_char!(ch);
-                            }
-                        }
-                        cap_next = false;
-                    } else {
-                        push_char!(ch);
-                    }
-                }
-            }
-            _ => {
-                for ch in text.chars() {
-                    push_char!(ch);
-                }
-            }
+        // match style.text_transform {
+        //     TextTransform::Uppercase => {
+        //         if let Some(lang) = &style.lang {
+        //             match lang.language() {
+        //                 "tr" | "az" | "crh" | "tt" | "ba" => {
+        //                     for ch in text.chars() {
+        //                         match ch {
+        //                             'i' => push_char!('İ'),
+        //                             'ı' => push_char!('I'),
+        //                             _ => {
+        //                                 for ch in ch.to_uppercase() {
+        //                                     push_char!(ch);
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //                 _ => {
+        //                     for ch in text.chars() {
+        //                         for ch in ch.to_uppercase() {
+        //                             push_char!(ch);
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         } else {
+        //             for ch in text.chars() {
+        //                 for ch in ch.to_uppercase() {
+        //                     push_char!(ch);
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     TextTransform::Lowercase => {
+        //         let mut iter = text.chars().peekable();
+        //         while let Some(ch) = iter.next() {
+        //             if ch == 'Σ' {
+        //                 match iter.peek() {
+        //                     Some(ch) => {
+        //                         if ch.is_alphanumeric() || *ch == '-' {
+        //                             push_char!('σ');
+        //                         } else {
+        //                             push_char!('ς');
+        //                         }
+        //                     }
+        //                     None => {
+        //                         push_char!('ς');
+        //                     }
+        //                 }
+        //             } else {
+        //                 for ch in ch.to_lowercase() {
+        //                     push_char!(ch);
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     TextTransform::Capitalize => {
+        //         let is_turkic = if let Some(lang) = &style.lang {
+        //             matches!(lang.language(), "tr" | "az" | "crh" | "tt" | "ba")
+        //         } else {
+        //             false
+        //         };
+        //         let mut cap_next = true;
+        //         for ch in text.chars() {
+        //             if !ch.is_alphabetic() {
+        //                 // if ch.is_whitespace() || ch == '፡' {
+        //                 cap_next = true;
+        //                 push_char!(ch);
+        //             } else if cap_next {
+        //                 if !ch.is_alphabetic() {
+        //                     push_char!(ch);
+        //                     continue;
+        //                 }
+        //                 if is_turkic {
+        //                     match ch {
+        //                         'i' => push_char!('İ'),
+        //                         'ı' => push_char!('I'),
+        //                         _ => {
+        //                             for ch in ch.to_uppercase() {
+        //                                 push_char!(ch);
+        //                             }
+        //                         }
+        //                     }
+        //                 } else {
+        //                     for ch in ch.to_uppercase() {
+        //                         push_char!(ch);
+        //                     }
+        //                 }
+        //                 cap_next = false;
+        //             } else {
+        //                 push_char!(ch);
+        //             }
+        //         }
+        //     }
+        //     _ => {
+        //         for ch in text.chars() {
+        //             push_char!(ch);
+        //         }
+        //     }
+        // }
+
+        for ch in text.chars() {
+            push_char!(ch);
         }
+
         let end = line.text.content.len();
         let break_shaping = if let Some(prev_frag) = line.fragments.last() {
             let prev_style = line.styles[prev_frag.span];
@@ -320,8 +326,7 @@ impl<'a> ParagraphBuilder<'a> {
             } else {
                 style.font_size != prev_style.font_size
                     || style.letter_spacing != prev_style.letter_spacing
-                    || style.lang != prev_style.lang
-                    // || style.font != prev_stylefont
+                    // || style.lang != prev_style.lang
                     || style.font_features != prev_style.font_features
                     || style.font_vars != prev_style.font_vars
             }
@@ -528,30 +533,30 @@ impl<'a> ParagraphBuilder<'a> {
         //         }
         //     }
         // } else {
-            for frag in &line.fragments {
-                if frag.break_shaping || frag.start != last_frag.end {
+        for frag in &line.fragments {
+            if frag.break_shaping || frag.start != last_frag.end {
+                push_item!();
+                item.start = frag.start;
+                item.end = frag.start;
+            }
+            last_frag = frag;
+            last_features = frag.features;
+            last_vars = frag.vars;
+            let range = frag.start..frag.end;
+            for &props in &line.text.info[range] {
+                let script = props.script();
+                let real = real_script(script);
+                if script != last_script && real {
+                    //item.end += 1;
                     push_item!();
-                    item.start = frag.start;
-                    item.end = frag.start;
-                }
-                last_frag = frag;
-                last_features = frag.features;
-                last_vars = frag.vars;
-                let range = frag.start..frag.end;
-                for &props in &line.text.info[range] {
-                    let script = props.script();
-                    let real = real_script(script);
-                    if script != last_script && real {
-                        //item.end += 1;
-                        push_item!();
-                        if real {
-                            last_script = script;
-                        }
-                    } else {
-                        item.end += 1;
+                    if real {
+                        last_script = script;
                     }
+                } else {
+                    item.end += 1;
                 }
             }
+        }
         // }
         push_item!();
     }
@@ -646,10 +651,10 @@ fn shape_item(
     };
 
     if item.level & 1 != 0 {
-        let chars = state.lines[current_line].text.content[range.clone()]
+        let chars = state.lines[current_line].text.content[range.to_owned()]
             .iter()
-            .zip(&state.lines[current_line].text.offsets[range.clone()])
-            .zip(&state.lines[current_line].text.spans[range.clone()])
+            .zip(&state.lines[current_line].text.offsets[range.to_owned()])
+            .zip(&state.lines[current_line].text.spans[range.to_owned()])
             .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 use swash::text::Codepoint;
@@ -689,10 +694,10 @@ fn shape_item(
             cache.insert(line_hash, render_data.last_cached_run.to_owned());
         }
     } else {
-        let chars = state.lines[current_line].text.content[range.clone()]
+        let chars = state.lines[current_line].text.content[range.to_owned()]
             .iter()
-            .zip(&state.lines[current_line].text.offsets[range.clone()])
-            .zip(&state.lines[current_line].text.spans[range.clone()])
+            .zip(&state.lines[current_line].text.offsets[range.to_owned()])
+            .zip(&state.lines[current_line].text.spans[range.to_owned()])
             .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
@@ -760,7 +765,7 @@ where
     let mut shaper = scx
         .builder(fonts[current_font_id].as_ref())
         .script(state.script)
-        .language(state.span.lang)
+        // .language(state.span.lang)
         .direction(dir)
         .size(state.size)
         .features(state.features.iter().copied())
@@ -770,7 +775,14 @@ where
 
     let mut synth = Synthesis::default();
     loop {
+        // for c in cluster.chars().iter() {
+        //     let width = c.ch.width().unwrap_or(1);
+        //     if width > 1 {
+        //         println!("{:?} {}", c, c.ch.width().unwrap_or(1));
+        //     }
+        // }
         shaper.add_cluster(cluster);
+
         if !parser.next(cluster) {
             render_data.push_run(
                 &state.state.lines[current_line].styles,

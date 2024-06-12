@@ -25,7 +25,7 @@ pub struct BreakLines<'a> {
     lines: &'a mut LineLayoutData,
     state: BreakerState,
     prev_state: Option<BreakerState>,
-    use_same_line_height: bool,
+    lines_uses_same_height: bool,
 }
 
 impl<'a> BreakLines<'a> {
@@ -37,178 +37,8 @@ impl<'a> BreakLines<'a> {
             prev_state: None,
             // This should be configurable but since sugarloaf is used
             // mainly in Rio terminal should be ok leave this way for now
-            use_same_line_height: true,
+            lines_uses_same_height: true,
         }
-    }
-
-    /// Computes the next line in the paragraph. Returns the advance and size
-    /// (width and height for horizontal layouts) of the line.
-    pub fn break_next(
-        &mut self,
-        max_advance: f32,
-        alignment: Alignment,
-    ) -> Option<(f32, f32)> {
-        use swash::text::cluster::Boundary;
-        self.prev_state = Some(self.state);
-        let run_count = self.layout.runs.len();
-        while self.state.i < run_count {
-            let run = &self.layout.runs[self.state.i];
-            let cluster_end = run.clusters.1 as usize;
-            while self.state.j < cluster_end {
-                let cluster =
-                    Cluster::new(self.layout, self.layout.clusters[self.state.j]);
-                let boundary = cluster.info().boundary();
-                match boundary {
-                    Boundary::Mandatory => {
-                        if !self.state.line.skip_mandatory_break {
-                            self.state.prev_boundary = None;
-                            self.state.line.clusters.1 = self.state.j as u32;
-                            self.state.line.runs.1 = self.state.i as u32 + 1;
-                            self.state.line.skip_mandatory_break = true;
-                            if commit_line(
-                                self.layout,
-                                self.lines,
-                                &mut self.state.line,
-                                Some(max_advance),
-                                alignment,
-                                true,
-                            ) {
-                                self.state.runs = self.lines.runs.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                return Some((line.width, line.size()));
-                            }
-                        }
-                    }
-                    Boundary::Line => {
-                        self.state.prev_boundary = Some(PrevBoundaryState {
-                            i: self.state.i,
-                            j: self.state.j,
-                            state: self.state.line,
-                        });
-                    }
-                    _ => {}
-                }
-                self.state.line.skip_mandatory_break = false;
-                let advance = cluster.advance();
-                let next_x = self.state.line.x + advance;
-                if next_x > max_advance {
-                    if cluster.info().whitespace().is_space_or_nbsp() {
-                        // Hang overflowing whitespace
-                        self.state.line.runs.1 = self.state.i as u32 + 1;
-                        self.state.line.clusters.1 = self.state.j as u32 + 1;
-                        self.state.line.x = next_x;
-                        if commit_line(
-                            self.layout,
-                            self.lines,
-                            &mut self.state.line,
-                            Some(max_advance),
-                            alignment,
-                            false,
-                        ) {
-                            self.state.runs = self.lines.runs.len();
-                            self.state.lines = self.lines.lines.len();
-                            self.state.line.x = 0.;
-                            let line = self.lines.lines.last().unwrap();
-                            self.state.prev_boundary = None;
-                            self.state.j += 1;
-                            return Some((line.width, line.size()));
-                        }
-                    } else if let Some(prev) = self.state.prev_boundary.take() {
-                        if prev.state.x == 0. {
-                            // This will cycle if we try to rewrap. Accept the overflowing fragment.
-                            self.state.line.runs.1 = self.state.i as u32 + 1;
-                            self.state.line.clusters.1 = self.state.j as u32 + 1;
-                            self.state.line.x = next_x;
-                            self.state.j += 1;
-                            if commit_line(
-                                self.layout,
-                                self.lines,
-                                &mut self.state.line,
-                                Some(max_advance),
-                                alignment,
-                                false,
-                            ) {
-                                self.state.runs = self.lines.runs.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                self.state.prev_boundary = None;
-                                self.state.j += 1;
-                                return Some((line.width, line.size()));
-                            }
-                        } else {
-                            self.state.line = prev.state;
-                            if commit_line(
-                                self.layout,
-                                self.lines,
-                                &mut self.state.line,
-                                Some(max_advance),
-                                alignment,
-                                false,
-                            ) {
-                                self.state.runs = self.lines.runs.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                self.state.i = prev.i;
-                                self.state.j = prev.j;
-                                return Some((line.width, line.size()));
-                            }
-                        }
-                    } else {
-                        if self.state.line.x == 0. {
-                            // If we're at the start of the line, this particular
-                            // cluster will never fit, so consume it and accept
-                            // the overflow.
-                            self.state.line.runs.1 = self.state.i as u32 + 1;
-                            self.state.line.clusters.1 = self.state.j as u32 + 1;
-                            self.state.line.x = next_x;
-                            self.state.j += 1;
-                        }
-                        if commit_line(
-                            self.layout,
-                            self.lines,
-                            &mut self.state.line,
-                            Some(max_advance),
-                            alignment,
-                            false,
-                        ) {
-                            self.state.runs = self.lines.runs.len();
-                            self.state.lines = self.lines.lines.len();
-                            self.state.line.x = 0.;
-                            let line = self.lines.lines.last().unwrap();
-                            self.state.prev_boundary = None;
-                            self.state.j += 1;
-                            return Some((line.width, line.size()));
-                        }
-                    }
-                } else {
-                    // Commit the cluster to the line.
-                    self.state.line.runs.1 = self.state.i as u32 + 1;
-                    self.state.line.clusters.1 = self.state.j as u32 + 1;
-                    self.state.line.x = next_x;
-                    self.state.j += 1;
-                }
-            }
-            self.state.i += 1;
-        }
-        if commit_line(
-            self.layout,
-            self.lines,
-            &mut self.state.line,
-            Some(max_advance),
-            alignment,
-            true,
-        ) {
-            self.state.runs = self.lines.runs.len();
-            self.state.lines = self.lines.lines.len();
-            self.state.line.x = 0.;
-            let line = self.lines.lines.last().unwrap();
-            return Some((line.width, line.size()));
-        }
-        None
     }
 
     /// Reverts the last computed line, returning to the previous state.
@@ -223,16 +53,8 @@ impl<'a> BreakLines<'a> {
         }
     }
 
-    /// Breaks all remaining lines with the specified maximum advance. This
-    /// consumes the line breaker.
     #[inline]
-    pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
-        while self.break_next(max_advance, alignment).is_some() {}
-        self.finish();
-    }
-
-    #[inline]
-    pub fn break_without_advance_or_alignment(mut self) {
+    pub fn break_without_advance_or_alignment(&'a mut self) {
         let run_len = self.layout.runs.len();
 
         for i in 0..self.layout.runs.len() {
@@ -250,16 +72,6 @@ impl<'a> BreakLines<'a> {
                     should_commit_line = true;
                 }
             }
-
-            // If we would case about max_advance
-            // let cluster_end = run.clusters.1 as usize;
-            // while self.state.j < cluster_end {
-            //     let cluster =
-            //         Cluster::new(self.layout, self.layout.clusters[self.state.j]);
-            //     let advance = cluster.advance();
-            //     self.state.line.x += advance;
-            //     self.state.j += 1;
-            // }
 
             self.state.line.runs.1 = i as u32 + 1;
             // self.state.line.clusters.1 = self.state.j as u32;
@@ -287,7 +99,7 @@ impl<'a> BreakLines<'a> {
     }
 
     /// Consumes the line breaker and finalizes all line computations.
-    pub fn finish(self) {
+    pub fn finish(&'a mut self) {
         for run in &mut self.lines.runs {
             run.whitespace = true;
             if run.level & 1 != 0 {
@@ -314,30 +126,10 @@ impl<'a> BreakLines<'a> {
         }
         let mut y = 0.;
         for line in &mut self.lines.lines {
-            let run_base = line.runs.0 as usize;
-            let run_count = line.runs.1 as usize - run_base;
             line.x = 0.;
             line.ascent = 0.;
             line.descent = 0.;
             line.leading = 0.;
-            let mut have_metrics = false;
-            let mut needs_reorder = false;
-            // Compute metrics for the line, but ignore trailing whitespace.
-            for run in self.lines.runs[make_range(line.runs)].iter().rev() {
-                if run.level != 0 {
-                    needs_reorder = true;
-                }
-                if !have_metrics && run.whitespace {
-                    continue;
-                }
-                line.ascent = line.ascent.max(run.ascent);
-                line.descent = line.descent.max(run.descent);
-                line.leading = line.leading.max(run.leading);
-                have_metrics = true;
-            }
-            if needs_reorder && run_count > 1 {
-                reorder_runs(&mut self.lines.runs[make_range(line.runs)]);
-            }
             let mut total_advance = 0.;
             for run in self.lines.runs[make_range(line.runs)].iter() {
                 let r = Run::new(self.layout, run);
@@ -387,23 +179,11 @@ impl<'a> BreakLines<'a> {
                     }
                 }
             }
-            if line.explicit_break {
-                // self.lines.clusters.get_mut(line.clusters.1.saturating_sub(1) as usize).map(|c| c.flags |= CLUSTER_NEWLINE);
-            }
             line.width = total_advance;
             line.trailing_whitespace =
                 self.lines.runs[line.runs.1 as usize - 1].trailing_whitespace;
-            if !have_metrics {
-                // Line consisting entirely of whitespace?
-                if line.runs.0 != line.runs.1 {
-                    let run = &self.lines.runs[line.runs.0 as usize];
-                    line.ascent = run.ascent;
-                    line.descent = run.descent;
-                    line.leading = run.leading;
-                }
-            }
 
-            if self.use_same_line_height {
+            if self.lines_uses_same_height {
                 let run = &self.lines.runs[line.runs.0 as usize];
                 line.ascent = run.ascent;
                 line.descent = run.descent;
@@ -426,24 +206,13 @@ struct LineState {
     x: f32,
     runs: (u32, u32),
     clusters: (u32, u32),
-    skip_mandatory_break: bool,
-}
-
-#[derive(Copy, Clone, Default)]
-struct PrevBoundaryState {
-    i: usize,
-    j: usize,
-    state: LineState,
 }
 
 #[derive(Copy, Clone, Default)]
 struct BreakerState {
     runs: usize,
     lines: usize,
-    i: usize,
-    j: usize,
     line: LineState,
-    prev_boundary: Option<PrevBoundaryState>,
 }
 
 #[inline]
@@ -496,40 +265,4 @@ fn commit_line(
     state.clusters.1 += 1;
     state.runs.0 = state.runs.1 - 1;
     true
-}
-
-#[inline]
-fn reorder_runs(runs: &mut [RunData]) {
-    let mut max_level = 0;
-    let mut lowest_odd_level = 255;
-    let len = runs.len();
-    for element in runs.iter() {
-        let level = element.level;
-        if level > max_level {
-            max_level = level;
-        }
-        if level & 1 != 0 && level < lowest_odd_level {
-            lowest_odd_level = level;
-        }
-    }
-    for level in (lowest_odd_level..=max_level).rev() {
-        let mut i = 0;
-        while i < len {
-            if runs[i].level >= level {
-                let mut end = i + 1;
-                while end < len && runs[end].level >= level {
-                    end += 1;
-                }
-                let mut j = i;
-                let mut k = end - 1;
-                while j < k {
-                    runs.swap(j, k);
-                    j += 1;
-                    k -= 1;
-                }
-                i = end;
-            }
-            i += 1;
-        }
-    }
 }
