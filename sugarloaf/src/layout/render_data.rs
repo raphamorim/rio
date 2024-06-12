@@ -10,7 +10,6 @@
 // underline_color, background_color, text color and other functionalities
 
 //! RenderData.
-
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
@@ -215,6 +214,7 @@ impl RenderData {
                     c.flags |= CLUSTER_NEWLINE;
                 }
             }
+
             let span = c.data;
             if span as usize != last_span {
                 span_data = &styles[last_span];
@@ -735,10 +735,12 @@ pub struct Cluster<'a> {
     cluster: ClusterData,
 }
 
+// gar.content.width().unwrap_or(
+
 impl<'a> Cluster<'a> {
-    pub(super) fn new(layout: &'a LayoutData, cluster: ClusterData) -> Self {
-        Self { layout, cluster }
-    }
+    // pub(super) fn new(layout: &'a LayoutData, cluster: ClusterData) -> Self {
+    //     Self { layout, cluster }
+    // }
 
     /// Returns the cluster information.
     #[inline]
@@ -907,28 +909,28 @@ impl<'a> Line<'a> {
     }
 
     /// Returns the total advance of the line excluding trailing whitespace.
-    pub fn advance_without_trailing_whitespace(&self) -> f32 {
-        let mut advance = self.line.width;
-        for run in self.line_layout.runs[make_range(self.line.runs)]
-            .iter()
-            .rev()
-        {
-            if !run.trailing_whitespace {
-                break;
-            }
-            for cluster in self.layout.clusters[make_range(run.clusters)].iter().rev() {
-                if !cluster.info.is_whitespace() {
-                    break;
-                }
-                advance -= Cluster {
-                    layout: self.layout,
-                    cluster: *cluster,
-                }
-                .advance();
-            }
-        }
-        advance
-    }
+    // pub fn advance_without_trailing_whitespace(&self) -> f32 {
+    //     let mut advance = self.line.width;
+    //     for run in self.line_layout.runs[make_range(self.line.runs)]
+    //         .iter()
+    //         .rev()
+    //     {
+    //         if !run.trailing_whitespace {
+    //             break;
+    //         }
+    //         for cluster in self.layout.clusters[make_range(run.clusters)].iter().rev() {
+    //             if !cluster.info.is_whitespace() {
+    //                 break;
+    //             }
+    //             advance -= Cluster {
+    //                 layout: self.layout,
+    //                 cluster: *cluster,
+    //             }
+    //             .advance();
+    //         }
+    //     }
+    //     advance
+    // }
 
     /// Returns the size of the line (height for horizontal and width
     /// for vertical layouts).
