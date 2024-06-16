@@ -44,7 +44,7 @@ bytemuck = { version = "1.16.0", features = [ "derive" ] }
 log = "0.4.21"
 serde = { version = "1.0.198", features = ["derive"] }
 tokio = { version = "1.37.0", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
-wgpu = "0.20.0"
+wgpu = "0.20.1"
 libc = "0.2.153"
 smol_str = "0.2.1"
 futures = "0.3.30"

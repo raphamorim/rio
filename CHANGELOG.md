@@ -20,6 +20,8 @@
 
 ## 0.1.1
 
+- Fix the validation errors whenever a surface is used with the vulkan backend.
+- Clean up weak references to texture views and bind groups to prevent memory leaks.
 - Fix crashes whenever reading binary files.
 - Improvements on font loader (avoid set weight or style in the lookup if isn't defined).
 - Fallbacks fonts doesn't trigger alerts anymore.
