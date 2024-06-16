@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes 0.3.0",
  "cfg-if 0.1.10",
@@ -2532,7 +2532,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "bitflags 2.5.0",
@@ -2561,7 +2561,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2620,7 +2620,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "bitflags 2.5.0",
@@ -2893,7 +2893,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -2977,7 +2977,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "corcovado",
  "dirs",
@@ -3261,7 +3261,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "wa"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitflags 2.5.0",
  "fnv",
@@ -3520,9 +3520,9 @@ checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 
 [[package]]
 name = "wgpu"
-version = "0.20.0"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32ff1bfee408e1028e2e3acbf6d32d98b08a5a059ccbf5f33305534453ba5d3e"
+checksum = "90e37c7b9921b75dfd26dd973fdcbce36f13dfa6e2dc82aece584e0ed48c355c"
 dependencies = [
  "arrayvec",
  "cfg-if 1.0.0",
@@ -3546,9 +3546,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6a86eaa5e763e59c73cf9e97d55fffd4dfda69fd8bda19589fcf851ddfef1f"
+checksum = "d59e0d5fc509601c69e4e1fa06c1eb3c4c9f12956a5e30c79b61ef1c1be7daf0"
 dependencies = [
  "arrayvec",
  "bit-vec",
@@ -3573,9 +3573,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-hal"
-version = "0.20.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d71c8ae05170583049b65ee562fd839fdc0b3e9ddb84f4e40c9d5f8ea0d4c8c"
+checksum = "6aa24c3889f885a3fb9133b454c8418bfcfaadcfe4ed3be96ac80e76703b863b"
 dependencies = [
  "android_system_properties",
  "arrayvec",

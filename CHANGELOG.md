@@ -1,5 +1,8 @@
 # Changelog
 
+> [!NOTE]
+> The `v0.1.x` releases are yet unstable compared to `v0.0.x`. If any new release from `v0.1.x` doesn't work for you, it is highly recommended to keep with `v0.0.x` versions until the issue is fixed.
+
 <!-- ## In progress
 
 - Migration from Winit to WA.
@@ -13,6 +16,13 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.1
+
+- Fix the validation errors whenever a surface is used with the vulkan backend.
+- Clean up weak references to texture views and bind groups to prevent memory leaks.
+- Fix crashes whenever reading binary files.
 - Improvements on font loader (avoid set weight or style in the lookup if isn't defined).
 - Fallbacks fonts doesn't trigger alerts anymore.
 
