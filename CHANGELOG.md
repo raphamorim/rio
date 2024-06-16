@@ -16,6 +16,11 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.1
+
+- Fix crashes whenever reading binary files.
 - Improvements on font loader (avoid set weight or style in the lookup if isn't defined).
 - Fallbacks fonts doesn't trigger alerts anymore.
 
