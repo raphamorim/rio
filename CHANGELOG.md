@@ -1,5 +1,8 @@
 # Changelog
 
+> [!NOTE]
+> The `v0.1.x` releases are yet unstable compared to `v0.0.x`. If any new release from `v0.1.x` doesn't work for you, it is highly recommended to keep with `v0.0.x` versions until the issue is fixed.
+
 <!-- ## In progress
 
 - Migration from Winit to WA.
