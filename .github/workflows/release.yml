@@ -50,10 +50,8 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deb
       - run: mkdir -p release
-
       - run: make release-debian-x11
       - run: make release-debian-wayland
-
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
