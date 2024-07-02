@@ -25,14 +25,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - name: Delete old nightly release
         uses: dev-drprasad/delete-tag-and-release@v1.0
         with:
           tag_name: ${{ env.NIGHTLY_TAG }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           delete_release: true
-
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.1
@@ -40,7 +38,6 @@ jobs:
           custom_tag: ${{ env.NIGHTLY_TAG }}
           tag_prefix: ''
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
       - id: status
         run: echo "created=true" >> "$GITHUB_OUTPUT"
 
@@ -54,19 +51,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - name: rust cache
         uses: Swatinem/rust-cache@v2
-
+        with:
+          cache-all-crates: true
       - name: rustup toolchain install stable --profile minimal
         run: rustup toolchain install stable --profile minimal
-
       - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
         run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-
       - name: make release-macos
         run: make release-macos
-
       - name: Release nightly
         uses: softprops/action-gh-release@v2
         with:
@@ -89,20 +83,16 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: true
-
       - run: sudo apt install rename
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deb
       - run: mkdir -p release
-
       - run: make release-debian-x11
       - run: make release-debian-wayland
-
       - name: Release nightly
         uses: softprops/action-gh-release@v2
         with:
