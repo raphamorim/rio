@@ -25,7 +25,7 @@ jobs:
       - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - run: make release-macos
       - name: Release version
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           append_body: true
           token: ${{ secrets.GITHUB_TOKEN }}
