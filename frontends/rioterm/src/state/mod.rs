@@ -27,6 +27,7 @@ struct Cursor {
 }
 
 pub struct State {
+    #[allow(unused)]
     pub option_as_alt: String,
     is_ime_enabled: bool,
     is_vi_mode_enabled: bool,
