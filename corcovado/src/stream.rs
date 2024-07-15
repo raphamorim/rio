@@ -141,7 +141,7 @@ impl UnixStream {
     pub fn read_bufs(&self, bufs: &mut [&mut IoVec]) -> io::Result<usize> {
         unsafe {
             let slice = as_os_slice_mut(bufs);
-            let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
+            let len = cmp::min(<libc::c_int>::MAX as usize, slice.len());
             let rc =
                 libc::readv(self.inner.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {
@@ -167,7 +167,7 @@ impl UnixStream {
     pub fn write_bufs(&self, bufs: &[&IoVec]) -> io::Result<usize> {
         unsafe {
             let slice = as_os_slice(bufs);
-            let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
+            let len = cmp::min(<libc::c_int>::MAX as usize, slice.len());
             let rc =
                 libc::writev(self.inner.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {

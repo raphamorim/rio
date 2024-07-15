@@ -5,7 +5,7 @@ use slab::Slab;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{cmp, fmt, io, iter, thread, u64, usize};
+use std::{cmp, fmt, io, iter, thread};
 
 mod convert {
     use std::time::Duration;

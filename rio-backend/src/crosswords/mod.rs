@@ -1797,11 +1797,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_title(&mut self, title: Option<String>) {
-        let title_str: String = match title {
-            Some(title) => title,
-            None => String::from(""),
-        };
-        self.title = title_str;
+        self.title = title.unwrap_or_default();
     }
 
     #[inline]

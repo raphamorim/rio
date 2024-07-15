@@ -349,7 +349,6 @@ impl<'a> ParagraphBuilder<'a> {
             break_shaping,
             start,
             end,
-            font: style.font,
             features: style.font_features,
             vars: style.font_vars,
         });

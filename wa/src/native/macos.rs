@@ -1885,8 +1885,8 @@ impl App {
                 // kCFRunLoopAllActivities,
                 kCFRunLoopAfterWaiting,
                 // kCFRunLoopExit | kCFRunLoopBeforeWaiting,
-                YES,                  // repeated
-                CFIndex::min_value(), // priority (less is higher)
+                YES,          // repeated
+                CFIndex::MIN, // priority (less is higher)
                 // CFIndex::max_value(),
                 App::trigger,
                 std::ptr::null_mut(),

@@ -10,8 +10,8 @@ use std::sync::atomic::Ordering::{self, AcqRel, Acquire, Relaxed, Release, SeqCs
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use std::{fmt, io, ptr, usize};
-use std::{isize, mem, ops};
+use std::{fmt, io, ptr};
+use std::{mem, ops};
 use {sys, Token};
 
 // Poll is backed by two readiness queues. The first is a system readiness queue

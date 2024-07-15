@@ -41,7 +41,6 @@ pub struct ContextManagerConfig {
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
     pub use_current_path: bool,
-    pub is_collapsed: bool,
     pub is_native: bool,
     pub should_update_titles: bool,
 }
@@ -294,7 +293,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 args: vec![],
             },
             spawn_performer: false,
-            is_collapsed: true,
             is_native: false,
             should_update_titles: false,
             use_current_path: false,
