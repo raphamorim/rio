@@ -2569,9 +2569,9 @@ dependencies = [
 
 [[package]]
 name = "rio-winit-fork"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "214f2e44c24c1b13b8bfc60bcbab94a86ed5bddd5c5f41e6c6e50a762c99c3e6"
+checksum = "6d230c13b6c681f387798293d8341c625817e13eb017cc7fe113e649838a960d"
 dependencies = [
  "ahash",
  "android-activity",

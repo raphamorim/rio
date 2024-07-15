@@ -16,7 +16,7 @@
 
 ## Unreleased
 
-- TBD
+- On Wayland, avoid crashing when compositor is misbehaving. (ref: raphamorim/winit 22522c9b37e9734c9a2408fae8d34b2599ff4574).
 
 ## 0.1.1
 
