@@ -1,9 +1,9 @@
 #![allow(deprecated)]
+use std::cmp;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::time::Duration;
-use std::{cmp, i32};
 
 use libc::{self, c_int};
 use libc::{EPOLLERR, EPOLLHUP, EPOLLONESHOT};
@@ -68,7 +68,7 @@ impl Selector {
         #[cfg(target_pointer_width = "32")]
         const MAX_SAFE_TIMEOUT: u64 = 1789569;
         #[cfg(not(target_pointer_width = "32"))]
-        const MAX_SAFE_TIMEOUT: u64 = c_int::max_value() as u64;
+        const MAX_SAFE_TIMEOUT: u64 = c_int::MAX as u64;
 
         let timeout_ms = timeout
             .map(|to| cmp::min(millis(to), MAX_SAFE_TIMEOUT) as c_int)
