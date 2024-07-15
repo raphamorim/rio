@@ -35,7 +35,7 @@ impl ID {
     /// Should be used in tandem with [`Database::push_face_info`].
     #[inline]
     pub fn dummy() -> Self {
-        Self(InnerId::from(slotmap::KeyData::from_ffi(core::u64::MAX)))
+        Self(InnerId::from(slotmap::KeyData::from_ffi(u64::MAX)))
     }
 }
 

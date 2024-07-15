@@ -364,20 +364,37 @@ impl VerticalAlign {
 #[cfg(test)]
 mod bounds_test {
     use super::*;
-    use std::f32::INFINITY as inf;
 
     #[test]
     fn v_align_y_bounds_inf() {
-        assert_eq!(VerticalAlign::Top.y_bounds(0.0, inf), (0.0, inf));
-        assert_eq!(VerticalAlign::Center.y_bounds(0.0, inf), (-inf, inf));
-        assert_eq!(VerticalAlign::Bottom.y_bounds(0.0, inf), (-inf, 0.0));
+        assert_eq!(
+            VerticalAlign::Top.y_bounds(0.0, f32::INFINITY),
+            (0.0, f32::INFINITY)
+        );
+        assert_eq!(
+            VerticalAlign::Center.y_bounds(0.0, f32::INFINITY),
+            (-f32::INFINITY, f32::INFINITY)
+        );
+        assert_eq!(
+            VerticalAlign::Bottom.y_bounds(0.0, f32::INFINITY),
+            (-f32::INFINITY, 0.0)
+        );
     }
 
     #[test]
     fn h_align_x_bounds_inf() {
-        assert_eq!(HorizontalAlign::Left.x_bounds(0.0, inf), (0.0, inf));
-        assert_eq!(HorizontalAlign::Center.x_bounds(0.0, inf), (-inf, inf));
-        assert_eq!(HorizontalAlign::Right.x_bounds(0.0, inf), (-inf, 0.0));
+        assert_eq!(
+            HorizontalAlign::Left.x_bounds(0.0, f32::INFINITY),
+            (0.0, f32::INFINITY)
+        );
+        assert_eq!(
+            HorizontalAlign::Center.x_bounds(0.0, f32::INFINITY),
+            (-f32::INFINITY, f32::INFINITY)
+        );
+        assert_eq!(
+            HorizontalAlign::Right.x_bounds(0.0, f32::INFINITY),
+            (-f32::INFINITY, 0.0)
+        );
     }
 }
 
@@ -837,7 +854,7 @@ mod layout_test {
         let glyphs = Layout::default_wrap().calculate_glyphs(
             &*FONT_MAP,
             &SectionGeometry {
-                bounds: (50.0, ::std::f32::INFINITY),
+                bounds: (50.0, f32::INFINITY),
                 ..SectionGeometry::default()
             },
             &[

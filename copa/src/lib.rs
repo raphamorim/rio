@@ -823,7 +823,7 @@ mod tests {
 
         assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
-            Sequence::Csi(params, ..) => assert_eq!(params, &[[std::u16::MAX]]),
+            Sequence::Csi(params, ..) => assert_eq!(params, &[[u16::MAX]]),
             _ => panic!("expected csi sequence"),
         }
     }

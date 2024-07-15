@@ -98,7 +98,7 @@ fn get_entry<'a>(
         // hold a borrow until the end of the function, or HashMap gets an
         // entry API that accepts borrowed keys (in which case, the double
         // lookup here can be removed altogether)
-        return unsafe { core::mem::transmute(entry) };
+        return unsafe { core::mem::transmute::<&mut FontEntry, &mut FontEntry>(entry) };
     }
     let key = FontKey {
         key: (id, Coords::new(coords)),

@@ -193,7 +193,6 @@ impl Screen<'_> {
             working_dir,
             spawn_performer: true,
             use_fork: config.use_fork,
-            is_collapsed,
             is_native,
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names

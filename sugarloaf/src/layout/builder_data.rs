@@ -24,8 +24,6 @@ pub struct FragmentData {
     pub start: usize,
     /// End of the text.
     pub end: usize,
-    /// Internal identifier for a list of font families and attributes.
-    pub font: usize,
     /// Font features.
     pub features: FontSettingKey,
     /// Font variations.
