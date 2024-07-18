@@ -667,6 +667,8 @@ fn draw_layout(
     let depth = 0.0;
     let mut glyphs = Vec::new();
     for line in render_data.lines() {
+        println!("{:?}", line.hash());
+
         let mut px = x + line.offset();
         for run in line.runs() {
             let mut font = *run.font();

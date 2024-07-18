@@ -91,7 +91,7 @@ impl Compositor {
 /// Drawing.
 impl Compositor {
     /// Draws a rectangle with the specified depth and color.
-    #[inline]
+    #[allow(unused)]
     pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: &[f32; 4]) {
         self.batches.add_rect(&rect.into(), depth, color);
     }
@@ -245,8 +245,8 @@ impl Compositor {
             }
             let end = x + rect.width;
             if ux < end {
-                self.draw_rect(
-                    Rect::new(ux, uy, end - ux, underline_size),
+                self.batches.add_rect(
+                    &Rect::new(ux, uy, end - ux, underline_size),
                     depth,
                     &underline_color,
                 );
