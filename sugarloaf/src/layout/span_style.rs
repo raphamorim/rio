@@ -29,7 +29,7 @@ pub struct FragmentStyle {
     /// Internal identifier for a list of font families and attributes.
     pub font: usize,
     //  Unicode width
-    pub width: usize,
+    pub width: f32,
     /// Font attributes.
     pub font_attrs: (Stretch, Weight, Style),
     /// Font size in ppem.
@@ -69,7 +69,7 @@ impl Default for FragmentStyle {
             // dir_changed: false,
             // lang: None,
             font: 0,
-            width: 1,
+            width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16.,
             font_features: EMPTY_FONT_SETTINGS,
@@ -96,7 +96,7 @@ impl FragmentStyle {
             // dir_changed: false,
             // lang: None,
             font: 0,
-            width: 1,
+            width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16. * scale,
             font_features: EMPTY_FONT_SETTINGS,

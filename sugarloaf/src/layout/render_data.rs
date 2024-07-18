@@ -542,7 +542,7 @@ impl<'a> Run<'a> {
 
     #[inline]
     pub fn char_width(&self) -> f32 {
-        self.run.span.width as f32
+        self.run.span.width
     }
 
     /// Returns the bidi level of the run.
