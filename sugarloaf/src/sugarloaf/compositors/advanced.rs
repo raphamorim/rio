@@ -7,17 +7,20 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
+use fnv::FnvHashMap;
 
 use crate::layout::{
     Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
 };
 use crate::sugarloaf::tree::SugarTree;
+use unicode_width::UnicodeWidthChar;
 
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
     content_builder: ContentBuilder,
     layout_context: LayoutContext,
+    width_cache: FnvHashMap<char, usize>,
 }
 
 impl Advanced {
@@ -27,6 +30,7 @@ impl Advanced {
             content_builder: ContentBuilder::default(),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
+            width_cache: FnvHashMap::default(),
         }
     }
 
@@ -108,7 +112,16 @@ impl Advanced {
 
         let line = &tree.lines[line_number];
         for sugar in line.inner() {
+            let width = if let Some(w) = self.width_cache.get(&sugar.content) {
+                *w
+            } else {
+                let w = sugar.content.width().unwrap_or(1);
+                self.width_cache.insert(sugar.content, w);
+                w
+            };
+
             let style = FragmentStyle {
+                width,
                 font_size: tree.layout.font_size,
                 ..FragmentStyle::from(sugar)
             };

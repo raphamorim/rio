@@ -540,6 +540,11 @@ impl<'a> Run<'a> {
         self.run.span.color
     }
 
+    #[inline]
+    pub fn char_width(&self) -> f32 {
+        self.run.span.width as f32
+    }
+
     /// Returns the bidi level of the run.
     #[inline]
     pub fn level(&self) -> u8 {
