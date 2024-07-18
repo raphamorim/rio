@@ -192,6 +192,7 @@ impl LayerBrush {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            cache: None,
             label: Some("image pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {

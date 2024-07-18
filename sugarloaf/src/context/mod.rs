@@ -120,6 +120,7 @@ impl Context<'_> {
                     adapter
                         .request_device(
                             &wgpu::DeviceDescriptor {
+                                memory_hints: wgpu::MemoryHints::Performance,
                                 label: None,
                                 required_features: wgpu::Features::empty(),
                                 required_limits: wgpu::Limits::downlevel_webgl2_defaults(

@@ -259,6 +259,7 @@ fn build<D>(
 
     let raw = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
+        cache: None,
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             compilation_options: wgpu::PipelineCompilationOptions::default(),
