@@ -59,6 +59,7 @@ impl Advanced {
 
     #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
+        let start = std::time::Instant::now();
         self.render_data = RenderData::default();
 
         let mut lb = self.layout_context.builder(
@@ -73,6 +74,9 @@ impl Advanced {
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
+
+        let duration = start.elapsed();
+        println!(" - advanced::update_layout() is: {:?}", duration);
     }
 
     #[inline]

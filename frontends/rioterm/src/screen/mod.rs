@@ -1216,6 +1216,10 @@ impl Screen<'_> {
     pub fn render(&mut self) {
         // If sugarloaf does have pending updates to process then
         // should abort current render
+
+        let start = std::time::Instant::now();
+        println!("Render time elapsed");
+
         #[cfg(use_wa)]
         if self.sugarloaf.dimensions_changed() {
             self.resize_all_contexts();
@@ -1252,6 +1256,9 @@ impl Screen<'_> {
         {
             self.context_manager.schedule_render(800);
         }
+
+        let duration = start.elapsed();
+        println!("Total render time is: {:?}\n", duration);
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
