@@ -216,6 +216,7 @@ impl RichTextBrush {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            cache: None,
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
