@@ -85,7 +85,7 @@ impl<'a> BreakLines<'a> {
                     None,
                     Alignment::Start,
                     true,
-                    run.line,
+                    run.hash,
                 )
             {
                 self.state.runs = self.lines.runs.len();
@@ -224,12 +224,13 @@ fn commit_line(
     max_advance: Option<f32>,
     alignment: Alignment,
     explicit: bool,
-    line_hash: u64,
+    line_hash: Option<u64>,
 ) -> bool {
     state.clusters.1 = state.clusters.1.min(layout.clusters.len() as u32);
     if state.runs.0 == state.runs.1 || state.clusters.0 == state.clusters.1 {
         return false;
     }
+    // let line_index = lines.lines.len() as u64;
     let last_run = (state.runs.1 - state.runs.0) as usize - 1;
     let runs_start = lines.runs.len() as u32;
     for (i, run) in layout.runs[make_range(state.runs)].iter().enumerate() {
@@ -245,6 +246,7 @@ fn commit_line(
         }
         let mut copy = run.to_owned();
         copy.clusters = cluster_range;
+        // copy.line = line_index;
         lines.runs.push(copy);
     }
     let runs_end = lines.runs.len() as u32;
