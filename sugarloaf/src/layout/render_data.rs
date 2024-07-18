@@ -28,7 +28,7 @@ use swash::{GlyphId, NormalizedCoord};
 #[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub data: LayoutData,
-    last_line: u32,
+    last_line: u64,
     pub last_cached_run: RunCacheEntry,
     pub line_data: LineLayoutData,
 }
@@ -94,7 +94,7 @@ pub struct CachedRunData {
     pub clusters: Vec<CachedClusterData>,
     pub coords: Vec<i16>,
     pub span: FragmentStyle,
-    pub line: u32,
+    pub line: u64,
     pub font: usize,
     pub size: f32,
     pub level: u8,
@@ -114,11 +114,7 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(
-        &mut self,
-        cached_entry: &RunCacheEntry,
-        line: u32,
-    ) {
+    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry) {
         // Every time a line is cached we need to rebuild the indexes
         // so RunData, Clusters, DetailedClusterData and Glyphs need to be
         // pointed correctly across each other otherwise will lead to panic
@@ -161,7 +157,7 @@ impl RenderData {
                 coords: (coords_start, coords_end),
                 clusters: (clusters_start, clusters_end),
                 span: cached_run.span,
-                line,
+                line: cached_run.line,
                 font: cached_run.font,
                 size: cached_run.size,
                 level: cached_run.level,
@@ -185,7 +181,7 @@ impl RenderData {
         font: &usize,
         size: f32,
         level: u8,
-        line: u32,
+        line: u64,
         shaper: Shaper<'_>,
     ) {
         // In case is a new line,
@@ -952,6 +948,11 @@ impl<'a> Line<'a> {
             layout: self.layout,
             iter: self.line_layout.runs[range].iter(),
         }
+    }
+
+    #[inline]
+    pub fn hash(&self) -> &u64 {
+        &self.line.hash
     }
 
     // pub(super) fn data(&self) -> &'a LineData {

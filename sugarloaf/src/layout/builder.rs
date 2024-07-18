@@ -8,7 +8,6 @@
 
 //! Render data builder.
 
-// use super::bidi::*;
 use super::builder_data::*;
 use super::span_style::*;
 use super::MAX_ID;
@@ -58,7 +57,6 @@ impl RunCache {
 pub struct LayoutContext {
     fcx: FontContext,
     fonts: FontLibrary,
-    // bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
@@ -71,7 +69,6 @@ impl LayoutContext {
         Self {
             fonts: font_library.clone(),
             fcx: FontContext::default(),
-            // bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
@@ -98,8 +95,6 @@ impl LayoutContext {
         self.state.scale = scale;
         ParagraphBuilder {
             fcx: &mut self.fcx,
-            // bidi: &mut self.bidi,
-            // needs_bidi: false,
             // dir: direction,
             fonts: &self.fonts,
             scx: &mut self.scx,
@@ -119,9 +114,7 @@ impl LayoutContext {
 /// Builder for computing the layout of a paragraph.
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
-    // bidi: &'a mut BidiResolver,
     fonts: &'a FontLibrary,
-    // needs_bidi: bool,
     // dir: Direction,
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
@@ -131,39 +124,6 @@ pub struct ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    /// Enters a new span with the specified styles.
-    // pub fn push_span<'p, I>(&mut self, styles: I) -> Option<SpanId>
-    // where
-    //     I: IntoIterator,
-    //     I::Item: Borrow<SpanStyle>,
-    // {
-    //     // let (id, dir) = self.s.push(self.fcx, self.scale, styles)?;
-    //     let (id, dir) = self.s.push(self.scale, styles)?;
-    //     if let Some(dir) = dir {
-    //         const LRI: char = '\u{2066}';
-    //         const RLI: char = '\u{2067}';
-    //         const FSI: char = '\u{2068}';
-    //         match dir {
-    //             Direction::Auto => self.push_char(FSI),
-    //             Direction::LeftToRight => self.push_char(LRI),
-    //             Direction::RightToLeft => self.push_char(RLI),
-    //         }
-    //         self.dir_depth += 1;
-    //     }
-    //     Some(id)
-    // }
-
-    // /// Pops the current span, restoring the styles of the parent.
-    // pub fn pop_span(&mut self) {
-    //     if let Some((_, dir_changed)) = self.s.pop() {
-    //         if dir_changed {
-    //             const PDI: char = '\u{2069}';
-    //             self.dir_depth = self.dir_depth.saturating_sub(1);
-    //             self.push_char(PDI);
-    //         }
-    //     }
-    // }
-
     #[inline]
     pub fn set_hash(&mut self, hash: u64) {
         if hash > 0 {
@@ -187,22 +147,9 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         let mut offset = self.last_offset;
-        // let mut offset = self.last_offset;
         style.font_size *= self.s.scale;
         line.styles.push(style);
         let span_id = line.styles.len() - 1;
-
-        // if let Some(dir) = style.dir {
-        //     const LRI: char = '\u{2066}';
-        //     const RLI: char = '\u{2067}';
-        //     const FSI: char = '\u{2068}';
-        //     match dir {
-        //         Direction::Auto => self.push_char(FSI, style),
-        //         Direction::LeftToRight => self.push_char(LRI, style),
-        //         Direction::RightToLeft => self.push_char(RLI, style),
-        //     }
-        //     // self.dir_depth += 1;
-        // }
 
         macro_rules! push_char {
             ($ch: expr) => {{
@@ -213,107 +160,6 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         let start = line.text.content.len();
-        // match style.text_transform {
-        //     TextTransform::Uppercase => {
-        //         if let Some(lang) = &style.lang {
-        //             match lang.language() {
-        //                 "tr" | "az" | "crh" | "tt" | "ba" => {
-        //                     for ch in text.chars() {
-        //                         match ch {
-        //                             'i' => push_char!('İ'),
-        //                             'ı' => push_char!('I'),
-        //                             _ => {
-        //                                 for ch in ch.to_uppercase() {
-        //                                     push_char!(ch);
-        //                                 }
-        //                             }
-        //                         }
-        //                     }
-        //                 }
-        //                 _ => {
-        //                     for ch in text.chars() {
-        //                         for ch in ch.to_uppercase() {
-        //                             push_char!(ch);
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         } else {
-        //             for ch in text.chars() {
-        //                 for ch in ch.to_uppercase() {
-        //                     push_char!(ch);
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     TextTransform::Lowercase => {
-        //         let mut iter = text.chars().peekable();
-        //         while let Some(ch) = iter.next() {
-        //             if ch == 'Σ' {
-        //                 match iter.peek() {
-        //                     Some(ch) => {
-        //                         if ch.is_alphanumeric() || *ch == '-' {
-        //                             push_char!('σ');
-        //                         } else {
-        //                             push_char!('ς');
-        //                         }
-        //                     }
-        //                     None => {
-        //                         push_char!('ς');
-        //                     }
-        //                 }
-        //             } else {
-        //                 for ch in ch.to_lowercase() {
-        //                     push_char!(ch);
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     TextTransform::Capitalize => {
-        //         let is_turkic = if let Some(lang) = &style.lang {
-        //             matches!(lang.language(), "tr" | "az" | "crh" | "tt" | "ba")
-        //         } else {
-        //             false
-        //         };
-        //         let mut cap_next = true;
-        //         for ch in text.chars() {
-        //             if !ch.is_alphabetic() {
-        //                 // if ch.is_whitespace() || ch == '፡' {
-        //                 cap_next = true;
-        //                 push_char!(ch);
-        //             } else if cap_next {
-        //                 if !ch.is_alphabetic() {
-        //                     push_char!(ch);
-        //                     continue;
-        //                 }
-        //                 if is_turkic {
-        //                     match ch {
-        //                         'i' => push_char!('İ'),
-        //                         'ı' => push_char!('I'),
-        //                         _ => {
-        //                             for ch in ch.to_uppercase() {
-        //                                 push_char!(ch);
-        //                             }
-        //                         }
-        //                     }
-        //                 } else {
-        //                     for ch in ch.to_uppercase() {
-        //                         push_char!(ch);
-        //                     }
-        //                 }
-        //                 cap_next = false;
-        //             } else {
-        //                 push_char!(ch);
-        //             }
-        //         }
-        //     }
-        //     _ => {
-        //         for ch in text.chars() {
-        //             push_char!(ch);
-        //         }
-        //     }
-        // }
-
         for ch in text.chars() {
             push_char!(ch);
         }
@@ -380,7 +226,7 @@ impl<'a> ParagraphBuilder<'a> {
     ) -> bool {
         if let Some(line_hash) = self.s.lines[current_line].hash {
             if let Some(data) = self.cache.inner.get(&line_hash) {
-                render_data.push_run_from_cached_line(data, current_line as u32);
+                render_data.push_run_from_cached_line(data);
 
                 return true;
             }
@@ -395,10 +241,6 @@ impl<'a> ParagraphBuilder<'a> {
         // in a newline.
 
         self.add_text(" ", FragmentStyle::default());
-        // for _ in 0..self.dir_depth {
-        // const PDI: char = '\u{2069}';
-        // self.push_char(PDI);
-        // }
 
         // Cache needs to be cleaned before build lines
         self.cache.clear_on_max_capacity();
@@ -416,25 +258,6 @@ impl<'a> ParagraphBuilder<'a> {
             for (props, boundary) in analysis.by_ref() {
                 line.text.info.push(CharInfo::new(props, boundary));
             }
-            // if analysis.needs_bidi_resolution() || self.dir != Direction::LeftToRight {
-            //     let dir = match self.dir {
-            //         Direction::Auto => None,
-            //         Direction::LeftToRight => Some(BidiDirection::LeftToRight),
-            //         Direction::RightToLeft => Some(BidiDirection::RightToLeft),
-            //     };
-            //     self.bidi.resolve_with_types(
-            //         &self.s.lines[line_number].text.content,
-            //         self.s.lines[line_number]
-            //             .text
-            //             .info
-            //             .iter()
-            //             .map(|i| i.bidi_class()),
-            //         dir,
-            //     );
-            //     if !self.needs_bidi {
-            //         self.needs_bidi = true;
-            //     }
-            // }
 
             self.itemize(line_number);
             self.shape(render_data, line_number);
@@ -474,13 +297,7 @@ impl<'a> ParagraphBuilder<'a> {
             .map(|i| i.script())
             .find(|s| real_script(*s))
             .unwrap_or(Script::Latin);
-        // let levels = self.bidi.levels();
         let mut last_frag = line.fragments.first().unwrap();
-        // let mut last_level = if self.needs_bidi {
-        //     levels[last_frag.start]
-        // } else {
-        //     0
-        // };
         let last_level = 0;
         let mut last_features = last_frag.features;
         let mut last_vars = last_frag.vars;
@@ -504,34 +321,6 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             };
         }
-        // if self.needs_bidi {
-        //     for frag in &line.fragments {
-        //         if frag.break_shaping || frag.start != last_frag.end {
-        //             push_item!();
-        //             item.start = frag.start;
-        //             item.end = frag.start;
-        //         }
-        //         last_frag = frag;
-        //         last_features = frag.features;
-        //         last_vars = frag.vars;
-        //         let range = frag.start..frag.end;
-        //         for (&props, &level) in
-        //             line.text.info[range.clone()].iter().zip(&levels[range])
-        //         {
-        //             let script = props.script();
-        //             let real = real_script(script);
-        //             if (script != last_script && real) || level != last_level {
-        //                 //item.end += 1;
-        //                 push_item!();
-        //                 if real {
-        //                     last_script = script;
-        //                 }
-        //                 last_level = level;
-        //             }
-        //             item.end += 1;
-        //         }
-        //     }
-        // } else {
         for frag in &line.fragments {
             if frag.break_shaping || frag.start != last_frag.end {
                 push_item!();
@@ -556,12 +345,10 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             }
         }
-        // }
         push_item!();
     }
 
     fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
-        // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         let line = &self.s.lines[line_number];
         for item in &line.items {
@@ -578,21 +365,8 @@ impl<'a> ParagraphBuilder<'a> {
                 self.fonts_to_load,
             );
         }
-        // let duration = start.elapsed();
-        // println!("Time elapsed in shape is: {:?}", duration);
     }
 }
-
-// impl<'a> ParagraphBuilder<'a> {
-//     #[inline]
-//     fn push_char(&mut self, ch: char) {
-//         let current_line = self.s.current_line();
-//         self.s.lines[current_line].text.content.push(ch);
-//         self.s.lines[current_line].text.frags.push(0);
-//         self.s.lines[current_line].text.spans.push(0);
-//         self.s.lines[current_line].text.offsets.push(0);
-//     }
-// }
 
 #[inline]
 fn real_script(script: Script) -> bool {
@@ -700,9 +474,6 @@ fn shape_item(
             .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
-                // if current_line == 0 {
-                //     println!("{:?} {:?} {:?}", ch, span_index as u32, state.lines[current_line].styles[span_index]);
-                // }
                 Token {
                     ch,
                     offset,
@@ -774,12 +545,6 @@ where
 
     let mut synth = Synthesis::default();
     loop {
-        // for c in cluster.chars().iter() {
-        //     let width = c.ch.width().unwrap_or(1);
-        //     if width > 1 {
-        //         println!("{:?} {}", c, c.ch.width().unwrap_or(1));
-        //     }
-        // }
         shaper.add_cluster(cluster);
 
         if !parser.next(cluster) {
@@ -788,7 +553,7 @@ where
                 &current_font_id,
                 state.size,
                 state.level,
-                current_line as u32,
+                state.state.lines[current_line].hash.unwrap_or(0),
                 shaper,
             );
             return false;
@@ -814,7 +579,7 @@ where
                 &current_font_id,
                 state.size,
                 state.level,
-                current_line as u32,
+                state.state.lines[current_line].hash.unwrap_or(0),
                 shaper,
             );
             state.font_id = next_font;
