@@ -20,7 +20,7 @@ pub struct Advanced {
     pub mocked_render_data: RenderData,
     content_builder: ContentBuilder,
     layout_context: LayoutContext,
-    width_cache: FnvHashMap<char, usize>,
+    width_cache: FnvHashMap<char, f32>,
 }
 
 impl Advanced {
@@ -115,7 +115,7 @@ impl Advanced {
             let width = if let Some(w) = self.width_cache.get(&sugar.content) {
                 *w
             } else {
-                let w = sugar.content.width().unwrap_or(1);
+                let w = sugar.content.width().unwrap_or(1) as f32;
                 self.width_cache.insert(sugar.content, w);
                 w
             };
