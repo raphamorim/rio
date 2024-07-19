@@ -32,6 +32,20 @@ use crate::SugarCursor;
 
 use std::borrow::Borrow;
 
+pub struct ComposedRect {
+    rect: Rect,
+    coords: [f32; 4],
+    color: [f32; 4],
+    has_alpha: bool,
+    image: TextureId,
+}
+
+pub enum CachedRect {
+    Image(ComposedRect),
+    Mask(ComposedRect),
+    Standard((Rect, [f32; 4])),
+}
+
 pub struct Compositor {
     images: ImageCache,
     glyphs: GlyphCache,
@@ -117,6 +131,36 @@ impl Compositor {
         }
     }
 
+    pub fn draw_glyphs_from_cache(&mut self, cache: &Vec<CachedRect>, depth: f32) {
+        for val in cache {
+            match val {
+                CachedRect::Image(data) => {
+                    self.batches.add_image_rect(
+                        &data.rect,
+                        depth,
+                        &data.color,
+                        &data.coords,
+                        data.image,
+                        data.has_alpha,
+                    );
+                }
+                CachedRect::Mask(data) => {
+                    self.batches.add_mask_rect(
+                        &data.rect,
+                        depth,
+                        &data.color,
+                        &data.coords,
+                        data.image,
+                        data.has_alpha,
+                    );
+                }
+                CachedRect::Standard((rect, bg_color)) => {
+                    self.batches.add_rect(rect, depth, bg_color);
+                }
+            }
+        }
+    }
+
     /// Draws a text run.
     pub fn draw_glyphs<I>(
         &mut self,
@@ -125,7 +169,8 @@ impl Compositor {
         style: &TextRunStyle,
         glyphs: I,
         // dimension: SugarDimensions,
-    ) where
+    ) -> Vec<CachedRect>
+    where
         I: Iterator,
         I::Item: Borrow<Glyph>,
     {
@@ -150,6 +195,7 @@ impl Compositor {
             style.font_coords,
             style.font_size,
         );
+        let mut result = Vec::new();
         let subpx_bias = (0.125, 0.);
         let color = style.color;
         let x = rect.x;
@@ -160,58 +206,75 @@ impl Compositor {
                 if let Some(img) = session.get_image(entry.image) {
                     let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
                     let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
+
                     if entry.is_bitmap {
+                        let rect =
+                            Rect::new(gx, gy, entry.width as f32, entry.height as f32);
+                        let color = [1.0, 1.0, 1.0, 1.0];
+                        let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
                         self.batches.add_image_rect(
-                            &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
+                            &rect,
                             depth,
-                            &[1.0, 1.0, 1.0, 1.0],
-                            &[img.min.0, img.min.1, img.max.0, img.max.1],
+                            &color,
+                            &coords,
                             img.texture_id,
                             entry.image.has_alpha(),
                         );
+                        result.push(CachedRect::Image(ComposedRect {
+                            rect,
+                            color,
+                            coords,
+                            image: img.texture_id,
+                            has_alpha: entry.image.has_alpha(),
+                        }));
                     } else {
+                        let rect =
+                            Rect::new(gx, gy, entry.width as f32, entry.height as f32);
+                        let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
                         self.batches.add_mask_rect(
-                            &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
+                            &rect,
                             depth,
                             &color,
-                            &[img.min.0, img.min.1, img.max.0, img.max.1],
+                            &coords,
                             img.texture_id,
                             true,
                         );
+                        result.push(CachedRect::Mask(ComposedRect {
+                            rect,
+                            color,
+                            coords,
+                            image: img.texture_id,
+                            has_alpha: true,
+                        }));
                     }
 
                     if let Some(bg_color) = style.background_color {
-                        self.batches.add_rect(
-                            &Rect::new(
-                                rect.x,
-                                style.topline,
-                                rect.width,
-                                style.line_height,
-                            ),
-                            depth,
-                            &bg_color,
+                        let rect = Rect::new(
+                            rect.x,
+                            style.topline,
+                            rect.width,
+                            style.line_height,
                         );
+                        self.batches.add_rect(&rect, depth, &bg_color);
+                        result.push(CachedRect::Standard((rect, bg_color)));
                     }
 
                     match style.cursor {
                         SugarCursor::Block(cursor_color) => {
-                            self.batches.add_rect(
-                                &Rect::new(
-                                    rect.x,
-                                    style.topline,
-                                    rect.width,
-                                    style.line_height,
-                                ),
-                                depth,
-                                &cursor_color,
+                            let rect = Rect::new(
+                                rect.x,
+                                style.topline,
+                                rect.width,
+                                style.line_height,
                             );
+                            self.batches.add_rect(&rect, depth, &cursor_color);
+                            result.push(CachedRect::Standard((rect, cursor_color)));
                         }
                         SugarCursor::Caret(cursor_color) => {
-                            self.batches.add_rect(
-                                &Rect::new(rect.x, style.topline, 3.0, style.line_height),
-                                depth,
-                                &cursor_color,
-                            );
+                            let rect =
+                                Rect::new(rect.x, style.topline, 3.0, style.line_height);
+                            self.batches.add_rect(&rect, depth, &cursor_color);
+                            result.push(CachedRect::Standard((rect, cursor_color)));
                         }
                         _ => {}
                     }
@@ -235,22 +298,20 @@ impl Compositor {
             let uy = style.baseline - underline_offset as f32;
             for range in self.intercepts.iter() {
                 if ux < range.0 {
-                    self.batches.add_rect(
-                        &Rect::new(ux, uy, range.0 - ux, underline_size),
-                        depth,
-                        &underline_color,
-                    );
+                    let rect = Rect::new(ux, uy, range.0 - ux, underline_size);
+                    self.batches.add_rect(&rect, depth, &underline_color);
+                    result.push(CachedRect::Standard((rect, underline_color)));
                 }
                 ux = range.1;
             }
             let end = x + rect.width;
             if ux < end {
-                self.batches.add_rect(
-                    &Rect::new(ux, uy, end - ux, underline_size),
-                    depth,
-                    &underline_color,
-                );
+                let rect = Rect::new(ux, uy, end - ux, underline_size);
+                self.batches.add_rect(&rect, depth, &underline_color);
+                result.push(CachedRect::Standard((rect, underline_color)));
             }
         }
+
+        result
     }
 }
