@@ -204,7 +204,6 @@ pub struct SugarBlock {
 /// It often represents a line of text but can also be other elements like bitmap
 #[derive(Debug, Clone, Default)]
 pub struct SugarLine {
-    // inner: [Sugar; SUGAR_LINE_MAX_CONTENT_SIZE],
     pub raw_len: usize,
     inner: Vec<Sugar>,
     first_non_default: usize,

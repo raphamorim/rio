@@ -9,7 +9,7 @@ use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use compositor::{
-    Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
+    CachedRect, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
 use fnv::FnvHashMap;
 use std::{borrow::Cow, mem};
@@ -49,6 +49,7 @@ pub struct RichTextBrush {
     index_buffer_size: u64,
     current_transform: [f32; 16],
     comp: Compositor,
+    draw_layout_cache: DrawLayoutCache,
     dlist: DisplayList,
     bind_group_needs_update: bool,
     first_run: bool,
@@ -275,6 +276,7 @@ impl RichTextBrush {
             sampler,
             textures: FnvHashMap::default(),
             comp: Compositor::new(2048),
+            draw_layout_cache: DrawLayoutCache::default(),
             dlist,
             bind_group,
             transform,
@@ -314,7 +316,9 @@ impl RichTextBrush {
             state.current.layout.style.screen_position.1,
             font_library,
             state.current.layout.dimensions,
+            &mut self.draw_layout_cache,
         );
+        self.draw_layout_cache.clean();
         let duration = start.elapsed();
         println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
 
@@ -655,6 +659,27 @@ impl RichTextBrush {
     }
 }
 
+#[derive(Default)]
+struct DrawLayoutCache {
+    inner: std::collections::HashMap<String, Vec<CachedRect>>,
+}
+
+impl DrawLayoutCache {
+    fn get(&self, id: String) -> Option<&Vec<CachedRect>> {
+        self.inner.get(&id)
+    }
+
+    fn insert(&mut self, id: String, data: Vec<CachedRect>) {
+        self.inner.insert(id, data);
+    }
+
+    fn clean(&mut self) {
+        if self.inner.len() > 1024 {
+            self.inner.clear();
+        }
+    }
+}
+
 #[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
@@ -663,13 +688,22 @@ fn draw_layout(
     y: f32,
     font_library: &FontLibraryData,
     rect: SugarDimensions,
+    draw_layout_cache: &mut DrawLayoutCache,
 ) {
     let depth = 0.0;
     let mut glyphs = Vec::new();
     for line in render_data.lines() {
-        println!("{:?}", line.hash());
-
+        let hash = line.hash().unwrap_or(0);
         let mut px = x + line.offset();
+        let id = format!("{}-{}-{}", hash, line.baseline(), px);
+        if hash > 0 {
+            if let Some(data) = draw_layout_cache.get(id.to_owned()) {
+                comp.draw_glyphs_from_cache(data, depth);
+                continue;
+            }
+        }
+
+        let mut cache = Vec::new();
         for run in line.runs() {
             let mut font = *run.font();
             if font == 0 {
@@ -713,12 +747,18 @@ fn draw_layout(
                 },
             };
 
-            comp.draw_glyphs(
-                Rect::new(run_x, py, style.advance, 1.),
-                depth,
-                &style,
-                glyphs.iter(),
-            );
+            if hash > 0 {
+                cache.extend(comp.draw_glyphs(
+                    Rect::new(run_x, py, style.advance, 1.),
+                    depth,
+                    &style,
+                    glyphs.iter(),
+                ));
+            }
+        }
+
+        if hash > 0 && !cache.is_empty() {
+            draw_layout_cache.insert(id, cache);
         }
     }
 }

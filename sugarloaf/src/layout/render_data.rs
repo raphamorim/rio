@@ -115,7 +115,11 @@ pub struct RunCacheEntry {
 }
 
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(&mut self, cached_entry: &RunCacheEntry, line: u32) {
+    pub(super) fn push_run_from_cached_line(
+        &mut self,
+        cached_entry: &RunCacheEntry,
+        line: u32,
+    ) {
         // Every time a line is cached we need to rebuild the indexes
         // so RunData, Clusters, DetailedClusterData and Glyphs need to be
         // pointed correctly across each other otherwise will lead to panic
@@ -177,6 +181,7 @@ impl RenderData {
         self.data.last_span = 0;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
         styles: &[FragmentStyle],
