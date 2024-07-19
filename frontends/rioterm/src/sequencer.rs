@@ -79,7 +79,7 @@ impl Sequencer {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    route.redraw();
+                                    route.window.winit_window.request_redraw();
                                 }
                             }
                             RioEventType::Rio(RioEvent::Render) => {
@@ -91,7 +91,7 @@ impl Sequencer {
                                     {
                                         return;
                                     }
-                                    route.redraw();
+                                    route.window.winit_window.request_redraw();
                                 }
                             }
                             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
