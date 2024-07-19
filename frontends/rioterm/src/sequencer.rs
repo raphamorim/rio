@@ -332,7 +332,7 @@ impl Sequencer {
                                 // Rio doesn't cover this case yet.
                                 //
                                 // In the future should try first get
-                                // from Crosrouteords then state colors
+                                // from Crosswords then state colors
                                 // screen.colors()[index] or screen.state.colors[index]
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
