@@ -230,7 +230,7 @@ fn commit_line(
     if state.runs.0 == state.runs.1 || state.clusters.0 == state.clusters.1 {
         return false;
     }
-    // let line_index = lines.lines.len() as u64;
+    let line_index = lines.lines.len() as u32;
     let last_run = (state.runs.1 - state.runs.0) as usize - 1;
     let runs_start = lines.runs.len() as u32;
     for (i, run) in layout.runs[make_range(state.runs)].iter().enumerate() {
@@ -246,7 +246,7 @@ fn commit_line(
         }
         let mut copy = run.to_owned();
         copy.clusters = cluster_range;
-        // copy.line = line_index;
+        copy.line = line_index;
         lines.runs.push(copy);
     }
     let runs_end = lines.runs.len() as u32;
