@@ -295,7 +295,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         if state.compositors.advanced.render_data.is_empty() {
             self.dlist.clear();
@@ -319,14 +319,14 @@ impl RichTextBrush {
             &mut self.draw_layout_cache,
         );
         self.draw_layout_cache.clean();
-        let duration = start.elapsed();
-        println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
 
         self.dlist.clear();
         self.finish_composition(ctx);
 
-        let duration = start.elapsed();
-        println!(" - rich_text::prepare() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!(" - rich_text::prepare() is: {:?}", duration);
     }
 
     #[inline]
@@ -358,7 +358,7 @@ impl RichTextBrush {
         state: &crate::sugarloaf::state::SugarState,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         let vertices: &[Vertex] = self.dlist.vertices();
         let indices: &[u32] = self.dlist.indices();
 
@@ -528,8 +528,8 @@ impl RichTextBrush {
         self.bind_group_needs_update = false;
         self.first_run = false;
 
-        let duration = start.elapsed();
-        println!(" - rich_text::render() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!(" - rich_text::render() is: {:?}", duration);
     }
 
     #[inline]
