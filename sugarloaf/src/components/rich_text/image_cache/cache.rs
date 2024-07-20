@@ -113,6 +113,9 @@ impl ImageCache {
         ImageId::new(entry.generation, entry_index as u32, request.has_alpha)
     }
 
+    // Evaluate if does make sense to deallocate from atlas and if yes, which case?
+    // considering that a terminal uses a short/limited of glyphs compared to a wide text editor
+    // if deallocate an image then is necessary to cleanup cache of draw_layout fn
     /// Deallocates the specified image.
     pub fn deallocate(&mut self, image: ImageId) -> Option<()> {
         let entry = self.entries.get_mut(image.index())?;
