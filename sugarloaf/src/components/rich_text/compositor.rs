@@ -19,7 +19,6 @@ pub use crate::components::rich_text::batch::{
 };
 pub use crate::components::rich_text::image_cache::{
     AddImage,
-    Epoch,
     ImageId,
     ImageLocation,
     TextureEvent,
@@ -50,7 +49,6 @@ pub struct Compositor {
     images: ImageCache,
     glyphs: GlyphCache,
     batches: BatchManager,
-    epoch: Epoch,
     intercepts: Vec<(f32, f32)>,
 }
 
@@ -61,15 +59,14 @@ impl Compositor {
             images: ImageCache::new(max_texture_size),
             glyphs: GlyphCache::new(),
             batches: BatchManager::new(),
-            epoch: Epoch(0),
             intercepts: Vec::new(),
         }
     }
 
     /// Advances the epoch for the compositor and clears all batches.
     pub fn begin(&mut self) {
-        self.glyphs.prune(self.epoch, &mut self.images);
-        self.epoch.0 += 1;
+        // TODO: Write a better prune system that doesn't rely on epoch
+        // self.glyphs.prune(&mut self.images);
         self.batches.reset();
     }
 
@@ -86,13 +83,13 @@ impl Compositor {
     /// Adds an image to the compositor.
     #[allow(unused)]
     pub fn add_image(&mut self, request: AddImage) -> Option<ImageId> {
-        self.images.allocate(self.epoch, request)
+        self.images.allocate(request)
     }
 
     /// Returns the image associated with the specified identifier.
     #[allow(unused)]
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
-        self.images.get(self.epoch, image)
+        self.images.get(image)
     }
 
     /// Removes the image from the compositor.
@@ -119,7 +116,7 @@ impl Compositor {
         color: &[f32; 4],
         image: ImageId,
     ) {
-        if let Some(img) = self.images.get(self.epoch, image) {
+        if let Some(img) = self.images.get(image) {
             self.batches.add_image_rect(
                 &rect.into(),
                 depth,
@@ -189,7 +186,6 @@ impl Compositor {
             self.intercepts.clear();
         }
         let mut session = self.glyphs.session(
-            self.epoch,
             &mut self.images,
             style.font,
             style.font_coords,

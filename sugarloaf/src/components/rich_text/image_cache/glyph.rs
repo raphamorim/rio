@@ -1,6 +1,6 @@
 use super::cache::ImageCache;
 use super::PixelFormat;
-use super::{AddImage, Epoch, ImageData, ImageId, ImageLocation};
+use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use std::collections::HashMap;
@@ -11,11 +11,11 @@ use swash::scale::{
 use swash::zeno::{Format, Vector};
 use swash::FontRef;
 
-const IS_MACOS: bool = cfg!(target_os = "macos");
+// const IS_MACOS: bool = cfg!(target_os = "macos");
 
 const SOURCES: &[Source] = &[
-    Source::ColorBitmap(StrikeWith::BestFit),
     Source::ColorOutline(0),
+    Source::ColorBitmap(StrikeWith::BestFit),
     // Source::Bitmap(StrikeWith::ExactSize),
     Source::Outline,
 ];
@@ -37,25 +37,24 @@ impl GlyphCache {
 
     pub fn session<'a>(
         &'a mut self,
-        epoch: Epoch,
         images: &'a mut ImageCache,
         font: FontRef<'a>,
         coords: &[i16],
         size: f32,
     ) -> GlyphCacheSession<'a> {
-        let quant_size = (size * 32.) as u16;
+        // let quant_size = (size * 32.) as u16;
+        let quant_size = size as u16;
         let entry = get_entry(&mut self.fonts, font.key.value(), coords);
-        entry.epoch = epoch;
         let scaler = self
             .scx
             .builder(font)
-            .hint(!IS_MACOS)
+            // .hint(!IS_MACOS)
+            .hint(true)
             .size(size)
-            .normalized_coords(coords)
+            // .normalized_coords(coords)
             .build();
         GlyphCacheSession {
             entry,
-            epoch,
             images,
             scaler,
             scaled_image: &mut self.img,
@@ -63,20 +62,21 @@ impl GlyphCache {
         }
     }
 
-    pub fn prune(&mut self, epoch: Epoch, images: &mut ImageCache) {
-        if let Some(time) = epoch.0.checked_sub(8) {
-            self.fonts.retain(|_, entry| {
-                if entry.epoch.0 < time {
-                    for glyph in &entry.glyphs {
-                        images.deallocate(glyph.1.image);
-                    }
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-    }
+    // #[allow(unused)]
+    // pub fn prune(&mut self, epoch: Epoch, images: &mut ImageCache) {
+    //     if let Some(time) = epoch.0.checked_sub(8) {
+    //         self.fonts.retain(|_, entry| {
+    //             if entry.epoch.0 < time {
+    //                 for glyph in &entry.glyphs {
+    //                     images.deallocate(glyph.1.image);
+    //                 }
+    //                 false
+    //             } else {
+    //                 true
+    //             }
+    //         });
+    //     }
+    // }
 
     #[allow(unused)]
     pub fn clear_evicted(&mut self, images: &mut ImageCache) {
@@ -108,7 +108,6 @@ fn get_entry<'a>(
 
 pub struct GlyphCacheSession<'a> {
     entry: &'a mut FontEntry,
-    epoch: Epoch,
     images: &'a mut ImageCache,
     scaler: Scaler<'a>,
     scaled_image: &'a mut GlyphImage,
@@ -117,7 +116,7 @@ pub struct GlyphCacheSession<'a> {
 
 impl<'a> GlyphCacheSession<'a> {
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
-        self.images.get(self.epoch, image)
+        self.images.get(image)
     }
 
     pub fn get(&mut self, id: u16, x: f32, y: f32) -> Option<GlyphEntry> {
@@ -136,8 +135,17 @@ impl<'a> GlyphCacheSession<'a> {
         // let embolden = if IS_MACOS { 0.25 } else { 0. };
         if Render::new(SOURCES)
             .format(Format::CustomSubpixel([0.3, 0., -0.3]))
+            // .format(Format::Alpha)
             .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
             // .embolden(embolden)
+            // .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
+            //     Some(Transform::skew(
+            //         Angle::from_degrees(14.0),
+            //         Angle::from_degrees(0.0),
+            //     ))
+            // } else {
+            //     None
+            // })
             .render_into(&mut self.scaler, id, self.scaled_image)
         {
             let p = self.scaled_image.placement;
@@ -151,7 +159,7 @@ impl<'a> GlyphCacheSession<'a> {
                 evictable: true,
                 data: ImageData::Borrowed(&self.scaled_image.data),
             };
-            let image = self.images.allocate(self.epoch, req)?;
+            let image = self.images.allocate(req)?;
             let entry = GlyphEntry {
                 left: p.left,
                 top: p.top,
@@ -182,7 +190,6 @@ impl<'a> Borrow<(u64, Coords<'a>)> for FontKey {
 
 #[derive(Default)]
 struct FontEntry {
-    epoch: Epoch,
     glyphs: HashMap<GlyphKey, GlyphEntry>,
 }
 
@@ -325,6 +332,7 @@ impl DescenderRegion {
         Self { start, end }
     }
 
+    #[inline]
     pub fn range(&self) -> Option<(f32, f32)> {
         if self.start <= self.end {
             Some((self.start as f32, self.end as f32))
@@ -346,6 +354,7 @@ pub enum SubpixelOffset {
 impl SubpixelOffset {
     // Skia quantizes subpixel offsets into 1/4 increments.
     // Given the absolute position, return the quantized increment
+    #[inline]
     fn quantize(pos: f32) -> Self {
         // Following the conventions of Gecko and Skia, we want
         // to quantize the subpixel position, such that abs(pos) gives:
@@ -364,6 +373,7 @@ impl SubpixelOffset {
         }
     }
 
+    #[inline]
     fn to_f32(self) -> f32 {
         match self {
             SubpixelOffset::Zero => 0.0,
