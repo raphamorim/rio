@@ -26,7 +26,7 @@ futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.9", features = ["derive"] }
 dirs = "5.0.1"
 notify = "6.1.1"
 image = { workspace = true }
@@ -37,7 +37,7 @@ teletypewriter = { workspace = true }
 tokio = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
-url = "2.5.0"
+url = "2.5.2"
 
 [target.'cfg(not(use_wa))'.dependencies]
 winit = { workspace = true }

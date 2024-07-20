@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -26,34 +26,34 @@ documentation = "https://github.com/raphamorim/rio#readme"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-sugarloaf = { path = "sugarloaf", version = "0.1.1" }
-corcovado = { path = "corcovado", version = "0.1.1" }
-rio-config = { path = "rio-config", version = "0.1.1" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.1.1" }
-copa = { path = "copa", default-features = true, version = "0.1.1" }
-teletypewriter = { path = "teletypewriter", version = "0.1.1" }
-rio-backend = { path = "rio-backend", version = "0.1.1" }
-wa = { path = "wa", version = "0.1.1" }
+sugarloaf = { path = "sugarloaf", version = "0.1.2" }
+corcovado = { path = "corcovado", version = "0.1.2" }
+rio-config = { path = "rio-config", version = "0.1.2" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.1.2" }
+copa = { path = "copa", default-features = true, version = "0.1.2" }
+teletypewriter = { path = "teletypewriter", version = "0.1.2" }
+rio-backend = { path = "rio-backend", version = "0.1.2" }
+wa = { path = "wa", version = "0.1.2" }
 
 raw-window-handle = "0.6.2"
-parking_lot = "0.12.1"
-unicode-width = "0.1.11"
+parking_lot = "0.12.3"
+unicode-width = "0.1.13"
 image = { version = "0.24.7", default-features = false, features = ["ico"] }
-regex = "1.10.4"
+regex = "1.10.5"
 bytemuck = { version = "1.16.0", features = [ "derive" ] }
-log = "0.4.21"
-serde = { version = "1.0.198", features = ["derive"] }
-tokio = { version = "1.37.0", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
+log = "0.4.22"
+serde = { version = "1.0.204", features = ["derive"] }
+tokio = { version = "1.38.1", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
 wgpu = "22.0.0"
-libc = "0.2.153"
-smol_str = "0.2.1"
+libc = "0.2.155"
+smol_str = "0.2.2"
 futures = "0.3.30"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3.42"
 env_logger = "0.11.3"
 console_log = "0.2.2"
-bitflags = "2.5.0"
+bitflags = "2.6.0"
 console_error_panic_hook = "0.1.7"
 # winit = { package = "rio-winit-fork", path = "../winit", default-features = false, features = ["rwh_06"] }
 # winit = { package = "rio-winit-fork", git = "https://github.com/raphamorim/winit", rev = "c9dc7cf", default-features = false, features = ["rwh_06"] }
