@@ -205,6 +205,7 @@ impl BatchManager {
         }
     }
 
+    #[inline]
     pub fn add_mask_rect(
         &mut self,
         rect: &Rect,
@@ -231,6 +232,7 @@ impl BatchManager {
         );
     }
 
+    #[inline]
     pub fn add_image_rect(
         &mut self,
         rect: &Rect,
@@ -341,6 +343,7 @@ pub struct DisplayList {
 
 impl DisplayList {
     /// Creates a new empty display list.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }

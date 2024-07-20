@@ -15,6 +15,7 @@ pub struct ImageCache {
 
 impl ImageCache {
     /// Creates a new image cache.
+    #[inline]
     pub fn new(max_texture_size: u16) -> Self {
         let max_texture_size = max_texture_size.clamp(1024, 4096);
         Self {
@@ -30,7 +31,7 @@ impl ImageCache {
     }
 
     /// Allocates a new image and optionally fills it with the specified data.
-    pub fn allocate(&mut self, epoch: Epoch, request: AddImage) -> Option<ImageId> {
+    pub fn allocate(&mut self, request: AddImage) -> Option<ImageId> {
         let format = request.format;
         let width = request.width;
         let height = request.height;
@@ -56,19 +57,11 @@ impl ImageCache {
             entry.y = 0;
             entry.width = width;
             entry.height = height;
-            entry.epoch = epoch.0;
             return ImageId::new(entry.generation, entry_index as u32, has_alpha);
         }
         let mut atlas_data = self.alloc_from_atlases(format, width, height);
         if atlas_data.is_none() {
-            if epoch.0 > 1 && self.evict_from_atlases(epoch.0 - 1) > 0 {
-                atlas_data = self.alloc_from_atlases(format, width, height);
-            }
-
-            if atlas_data.is_none() && epoch.0 > 0 && self.evict_from_atlases(epoch.0) > 0
-            {
-                atlas_data = self.alloc_from_atlases(format, width, height);
-            }
+            atlas_data = self.alloc_from_atlases(format, width, height);
         }
         if atlas_data.is_none() {
             let dim = self.max_texture_size;
@@ -103,7 +96,6 @@ impl ImageCache {
         entry.y = y;
         entry.width = width;
         entry.height = height;
-        entry.epoch = epoch.0;
         if let Some(data) = request.data() {
             let atlas = self.atlases.get_mut(atlas_index)?;
             fill(
@@ -138,18 +130,16 @@ impl ImageCache {
             atlas.alloc.deallocate(entry.x, entry.y, entry.width);
         }
         entry.flags = 0;
-        entry.epoch = self.free_entries as u64;
         self.free_entries = image.index() as u32;
         Some(())
     }
 
     /// Retrieves the image for the specified handle and updates the epoch.
-    pub fn get(&mut self, epoch: Epoch, handle: ImageId) -> Option<ImageLocation> {
+    pub fn get(&mut self, handle: ImageId) -> Option<ImageLocation> {
         let entry = self.entries.get_mut(handle.index())?;
         if entry.flags & ENTRY_ALLOCATED == 0 || entry.generation != handle.generation() {
             return None;
         }
-        entry.epoch = epoch.0;
         Some(if entry.flags & ENTRY_STANDALONE != 0 {
             let image = self.images.get(entry.owner as usize)?;
             let texture_id = image.texture_id;
@@ -279,31 +269,32 @@ impl ImageCache {
         }
     }
 
-    fn evict_from_atlases(&mut self, epoch: u64) -> usize {
-        let len = self.entries.len();
-        let mut count = 0;
-        for i in 0..len {
-            if let Some((flags, entry_gen, entry_epoch)) = self
-                .entries
-                .get(i)
-                .map(|e| (e.flags, e.generation, e.epoch))
-            {
-                if flags & (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
-                    != (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
-                {
-                    continue;
-                }
-                if entry_epoch < epoch {
-                    let handle = ImageId::new(entry_gen, i as u32, false).unwrap();
-                    if self.deallocate(handle).is_some() {
-                        count += 1;
-                    }
-                }
-            }
-        }
-        log::info!("rich_text::atlases::cache: evicted {}", count);
-        count
-    }
+    // fn evict_from_atlases(&mut self) -> usize {
+    // let len = self.entries.len();
+    // let mut count = 0;
+    // for i in 0..len {
+    //     if let Some((flags, entry_gen, entry_epoch)) = self
+    //         .entries
+    //         .get(i)
+    //         .map(|e| (e.flags, e.generation, e.epoch))
+    //     {
+    //         if flags & (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
+    //             != (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
+    //         {
+    //             continue;
+    //         }
+    //         if entry_epoch < epoch {
+    //             let handle = ImageId::new(entry_gen, i as u32, false).unwrap();
+    //             if self.deallocate(handle).is_some() {
+    //                 count += 1;
+    //             }
+    //         }
+    //     }
+    // }
+    // log::info!("rich_text::atlases::cache: evicted {}", count);
+    // count
+    // 0
+    // }
 
     fn alloc_from_atlases(
         &mut self,
@@ -324,10 +315,9 @@ impl ImageCache {
 
     fn alloc_entry(&mut self) -> Option<usize> {
         Some(if self.free_entries != END_OF_LIST {
-            let index = self.free_entries as usize;
-            let entry = self.entries.get(index)?;
-            self.free_entries = entry.epoch as u32;
-            index
+            self.free_entries as usize
+            // let entry = self.entries.get(index)?;
+            // self.free_entries = entry.epoch as u32;
         } else {
             let index = self.entries.len();
             if index >= MAX_ENTRIES as usize {
@@ -398,9 +388,6 @@ struct Entry {
     width: u16,
     /// Height of the image.
     height: u16,
-    /// Last epoch when this entry was used if allocated. Otherwise,
-    /// index of next entry in the free list.
-    epoch: u64,
 }
 
 struct Atlas {
