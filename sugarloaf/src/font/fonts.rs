@@ -75,6 +75,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
+    pub features: Vec<String>,
     #[serde(default = "Option::default")]
     pub family: Option<String>,
     #[serde(default = "default_font_regular")]
@@ -92,6 +93,7 @@ pub struct SugarloafFonts {
 impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
+            features: vec![],
             size: default_font_size(),
             family: None,
             regular: default_font_regular(),
