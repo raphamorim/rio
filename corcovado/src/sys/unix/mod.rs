@@ -20,7 +20,6 @@ mod epoll;
 pub use self::epoll::{Events, Selector};
 
 #[cfg(any(
-    target_os = "bitrig",
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "ios",
@@ -31,7 +30,6 @@ pub use self::epoll::{Events, Selector};
 mod kqueue;
 
 #[cfg(any(
-    target_os = "bitrig",
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "ios",
@@ -46,17 +44,11 @@ mod eventedfd;
 mod io;
 mod ready;
 
-#[cfg(feature = "with-deprecated")]
-mod uds;
-
 pub use self::awakener::Awakener;
 pub use self::eventedfd::EventedFd;
 // pub use self::io::{set_nonblock, Io};
 pub use self::io::Io;
 pub use self::ready::{UnixReady, READY_ALL};
-
-#[cfg(feature = "with-deprecated")]
-pub use self::uds::UnixSocket;
 
 // pub use iovec::IoVec;
 
