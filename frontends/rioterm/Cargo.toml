@@ -66,6 +66,9 @@ windows-sys = { version = "0.52", features = [
     "Win32_UI_WindowsAndMessaging",
 ]}
 
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(use_wa)'] }
+
 [features]
 default = ["wayland", "x11"]
 x11 = [
