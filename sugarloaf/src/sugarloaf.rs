@@ -22,7 +22,7 @@ use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use state::{SugarState, SugarStateContext};
+use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -67,7 +67,7 @@ pub struct SugarloafWindow {
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
-    pub font_features: Option<Vec<String>>
+    pub font_features: Option<Vec<String>>,
 }
 
 impl Default for SugarloafRenderer {
@@ -119,9 +119,7 @@ impl Sugarloaf<'_> {
         font_library: &FontLibrary,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
-        let state_context = SugarStateContext {
-            font_features: renderer.font_features.to_owned(),
-        };
+        let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer).await;
 
         let text_brush = {
@@ -133,7 +131,7 @@ impl Sugarloaf<'_> {
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
-        let state = SugarState::new(layout, font_library, state_context);
+        let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
@@ -150,11 +148,16 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn update_font(&mut self, font_library: &FontLibrary) {
+    pub fn update_font(
+        &mut self,
+        font_library: &FontLibrary,
+        font_features: Option<Vec<String>>,
+    ) {
         log::info!("requested a font change");
 
         self.state.reset_compositor();
         self.state.compositors.advanced.clean();
+        self.state.set_font_features(&font_features);
         self.state.set_fonts(font_library);
     }
 

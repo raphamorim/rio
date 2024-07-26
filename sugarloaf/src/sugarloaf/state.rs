@@ -10,17 +10,12 @@ use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{SugarBlock, SugarLine};
 
-pub struct SugarStateContext {
-    pub font_features: Option<Vec<String>>
-}
-
 pub struct SugarState {
     pub current: Box<SugarTree>,
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
     dimensions_changed: bool,
     current_line: usize,
-    state_context: SugarStateContext,
     pub is_dirty: bool,
     pub compositors: SugarCompositors,
     // TODO: Decide if graphics should be in SugarTree or SugarState
@@ -31,14 +26,15 @@ impl SugarState {
     pub fn new(
         initial_layout: SugarloafLayout,
         font_library: &FontLibrary,
-        state_context: SugarStateContext 
+        font_features: &Option<Vec<String>>,
     ) -> SugarState {
         // First time computing changes should obtain dimensions
         let next = SugarTree {
             layout: initial_layout,
             ..Default::default()
         };
-        SugarState {
+
+        let mut state = SugarState {
             is_dirty: false,
             current_line: 0,
             compositors: SugarCompositors::new(font_library),
@@ -47,8 +43,10 @@ impl SugarState {
             next,
             dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
-            state_context,
-        }
+        };
+
+        state.compositors.advanced.set_font_features(&font_features);
+        state
     }
 
     #[inline]
@@ -202,8 +200,8 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn layout_was_updated(&self) -> bool {
-        self.latest_change == SugarTreeDiff::LayoutIsDifferent
+    pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
+        self.compositors.advanced.set_font_features(font_features);
     }
 
     #[inline]
@@ -212,7 +210,7 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
 
-        if !self.layout_was_updated() {
+        if self.latest_change != SugarTreeDiff::LayoutIsDifferent {
             return;
         }
 
@@ -259,8 +257,6 @@ impl SugarState {
         // If sugar dimensions are empty then need to find it
         if self.current_has_empty_dimensions() {
             self.current = Box::new(std::mem::take(&mut self.next));
-
-            self.compositors.advanced.set_font_features(&self.state_context.font_features);
 
             self.compositors
                 .advanced
