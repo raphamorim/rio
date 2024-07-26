@@ -6,6 +6,7 @@ mod signals;
 
 extern crate libc;
 
+use std::os::fd::OwnedFd;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
 #[cfg(target_os = "macos")]
@@ -493,9 +494,11 @@ pub fn create_pty_with_spawn(
     // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
     // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
     // error on libc::close.).
-    builder.stdin(unsafe { Stdio::from_raw_fd(child) });
-    builder.stderr(unsafe { Stdio::from_raw_fd(child) });
-    builder.stdout(unsafe { Stdio::from_raw_fd(child) });
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+
+    builder.stdin(owned_child.try_clone()?);
+    builder.stderr(owned_child.try_clone()?);
+    builder.stdout(owned_child);
 
     builder.env("USER", user.user);
     builder.env("HOME", user.home);
