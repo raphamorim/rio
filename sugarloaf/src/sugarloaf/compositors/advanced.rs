@@ -62,9 +62,8 @@ impl Advanced {
         let mut found_font_features = vec![];
         if let Some(features) = font_features {
             for feature in features {
-                if let Some(parsed_feature) = swash::Setting::<u16>::parse(feature) {
-                    found_font_features.push(parsed_feature)
-                };
+                let setting: swash::Setting<u16> = (feature.as_str(), 1).into();
+                found_font_features.push(setting);
             }
         }
 

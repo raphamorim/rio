@@ -294,12 +294,11 @@ impl Screen<'_> {
         current_theme: Option<winit::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        self.sugarloaf.update_font(font_library);
-
         let padding_y_bottom = padding_bottom_from_config(config);
-
         let padding_y_top = padding_top_from_config(config);
 
+        self.sugarloaf
+            .update_font(font_library, config.fonts.features.to_owned());
         self.sugarloaf.layout_next().recalculate(
             config.fonts.size,
             config.line_height,

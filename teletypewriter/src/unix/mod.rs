@@ -6,7 +6,6 @@ mod signals;
 
 extern crate libc;
 
-use std::os::fd::OwnedFd;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use corcovado::unix::EventedFd;
 #[cfg(target_os = "macos")]
@@ -19,6 +18,7 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
+use std::os::fd::OwnedFd;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
