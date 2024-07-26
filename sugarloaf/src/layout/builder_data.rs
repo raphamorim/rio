@@ -24,8 +24,6 @@ pub struct FragmentData {
     pub start: usize,
     /// End of the text.
     pub end: usize,
-    /// Font features.
-    pub features: FontSettingKey,
     /// Font variations.
     pub vars: FontSettingKey,
 }
@@ -41,8 +39,6 @@ pub struct ItemData {
     pub start: usize,
     /// End of the text.
     pub end: usize,
-    /// Font features.
-    pub features: FontSettingKey,
     /// Font variations.
     pub vars: FontSettingKey,
 }
@@ -80,8 +76,6 @@ pub struct BuilderLine {
 pub struct BuilderState {
     /// Lines State
     pub lines: Vec<BuilderLine>,
-    /// Font feature setting cache.
-    pub features: FontSettingCache<u16>,
     /// Font variation setting cache.
     pub vars: FontSettingCache<f32>,
     /// User specified scale.
@@ -118,7 +112,6 @@ impl BuilderState {
     #[inline]
     pub fn clear(&mut self) {
         self.lines.clear();
-        self.features.clear();
         self.vars.clear();
     }
 
@@ -130,9 +123,6 @@ impl BuilderState {
 
 /// Index into a font setting cache.
 pub type FontSettingKey = u32;
-
-/// Sentinel for an empty set of font settings.
-pub const EMPTY_FONT_SETTINGS: FontSettingKey = !0;
 
 /// Cache of tag/value pairs for font settings.
 #[derive(Default)]
@@ -160,6 +150,9 @@ impl<T: Copy + PartialOrd + PartialEq> FontSettingCache<T> {
         self.tmp.clear();
     }
 }
+
+/// Sentinel for an empty set of font settings.
+pub const EMPTY_FONT_SETTINGS: FontSettingKey = !0;
 
 /// Range within a font setting cache.
 #[derive(Copy, Clone)]

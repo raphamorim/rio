@@ -148,6 +148,7 @@ impl Screen<'_> {
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
+            font_features: config.fonts.features.clone(),
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(

@@ -58,6 +58,20 @@ impl Advanced {
     }
 
     #[inline]
+    pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
+        let mut found_font_features = vec![];
+        if let Some(features) = font_features {
+            for feature in features {
+                if let Some(parsed_feature) = swash::Setting::<u16>::parse(feature) {
+                    found_font_features.push(parsed_feature)
+                };
+            }
+        }
+
+        self.layout_context.set_font_features(found_font_features);
+    }
+
+    #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
         // let start = std::time::Instant::now();
         self.render_data = RenderData::default();
