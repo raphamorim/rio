@@ -9,8 +9,7 @@
 // This file however suffered updates made by Raphael Amorim to support
 // underline_color, background_color, text color and other functionalities
 
-use crate::layout::builder_data::FontSettingKey;
-use crate::layout::builder_data::EMPTY_FONT_SETTINGS;
+use crate::layout::builder_data::{FontSettingKey, EMPTY_FONT_SETTINGS};
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::Sugar;
 use crate::SugarDecoration;
@@ -38,8 +37,6 @@ pub struct FragmentStyle {
     pub color: [f32; 4],
     /// Background color.
     pub background_color: Option<[f32; 4]>,
-    /// Font features.
-    pub font_features: FontSettingKey,
     /// Font variations.
     pub font_vars: FontSettingKey,
     /// Additional spacing between letters (clusters) of text.
@@ -72,7 +69,6 @@ impl Default for FragmentStyle {
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16.,
-            font_features: EMPTY_FONT_SETTINGS,
             font_vars: EMPTY_FONT_SETTINGS,
             letter_spacing: 0.,
             word_spacing: 0.,
@@ -99,7 +95,6 @@ impl FragmentStyle {
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16. * scale,
-            font_features: EMPTY_FONT_SETTINGS,
             font_vars: EMPTY_FONT_SETTINGS,
             letter_spacing: 0.,
             word_spacing: 0.,

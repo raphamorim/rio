@@ -58,6 +58,7 @@ impl RunCache {
 pub struct LayoutContext {
     fcx: FontContext,
     fonts: FontLibrary,
+    font_features: Vec<swash::Setting<u16>>,
     // bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
@@ -76,12 +77,18 @@ impl LayoutContext {
             state: BuilderState::new(),
             cache: RunCache::new(),
             fonts_to_load: vec![],
+            font_features: vec![],
         }
     }
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
         &self.fonts
+    }
+
+    #[inline]
+    pub fn set_font_features(&mut self, font_features: Vec<swash::Setting<u16>>) {
+        self.font_features = font_features;
     }
 
     /// Creates a new builder for computing a paragraph layout with the
@@ -101,6 +108,7 @@ impl LayoutContext {
             // bidi: &mut self.bidi,
             // needs_bidi: false,
             // dir: direction,
+            font_features: &self.font_features,
             fonts: &self.fonts,
             scx: &mut self.scx,
             s: &mut self.state,
@@ -121,6 +129,7 @@ pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
     // bidi: &'a mut BidiResolver,
     fonts: &'a FontLibrary,
+    font_features: &'a Vec<swash::Setting<u16>>,
     // needs_bidi: bool,
     // dir: Direction,
     scx: &'a mut ShapeContext,
@@ -327,7 +336,7 @@ impl<'a> ParagraphBuilder<'a> {
                 style.font_size != prev_style.font_size
                     || style.letter_spacing != prev_style.letter_spacing
                     // || style.lang != prev_style.lang
-                    || style.font_features != prev_style.font_features
+                    // || style.font_features != prev_style.font_features
                     || style.font_vars != prev_style.font_vars
             }
         } else {
@@ -344,12 +353,12 @@ impl<'a> ParagraphBuilder<'a> {
         for _ in 0..len {
             line.text.spans.push(span_id);
         }
+
         line.fragments.push(FragmentData {
             span: span_id,
             break_shaping,
             start,
             end,
-            features: style.font_features,
             vars: style.font_vars,
         });
 
@@ -482,14 +491,12 @@ impl<'a> ParagraphBuilder<'a> {
         //     0
         // };
         let last_level = 0;
-        let mut last_features = last_frag.features;
         let mut last_vars = last_frag.vars;
         let mut item = ItemData {
             script: last_script,
             level: last_level,
             start: last_frag.start,
             end: last_frag.start,
-            features: last_features,
             vars: last_vars,
         };
         macro_rules! push_item {
@@ -498,7 +505,6 @@ impl<'a> ParagraphBuilder<'a> {
                     item.script = last_script;
                     item.level = last_level;
                     item.vars = last_vars;
-                    item.features = last_features;
                     line.items.push(item);
                     item.start = item.end;
                 }
@@ -539,7 +545,6 @@ impl<'a> ParagraphBuilder<'a> {
                 item.end = frag.start;
             }
             last_frag = frag;
-            last_features = frag.features;
             last_vars = frag.vars;
             let range = frag.start..frag.end;
             for &props in &line.text.info[range] {
@@ -570,6 +575,7 @@ impl<'a> ParagraphBuilder<'a> {
                 self.fonts,
                 self.scx,
                 self.s,
+                self.font_features,
                 item,
                 &mut char_cluster,
                 render_data,
@@ -619,6 +625,7 @@ fn shape_item(
     fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &BuilderState,
+    font_features: &[swash::Setting<u16>],
     item: &ItemData,
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
@@ -634,12 +641,11 @@ fn shape_item(
     let range = item.start..item.end;
     let span_index = state.lines[current_line].text.spans[item.start];
     let style = state.lines[current_line].styles[span_index];
-    let features = state.features.get(item.features);
     let vars = state.vars.get(item.vars);
     let mut shape_state = ShapeState {
         script: item.script,
         level: item.level,
-        features,
+        features: font_features,
         vars,
         synth: Synthesis::default(),
         state,

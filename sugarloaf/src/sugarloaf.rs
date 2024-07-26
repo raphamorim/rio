@@ -22,7 +22,7 @@ use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
-use state::SugarState;
+use state::{SugarState, SugarStateContext};
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -67,6 +67,7 @@ pub struct SugarloafWindow {
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
+    pub font_features: Option<Vec<String>>
 }
 
 impl Default for SugarloafRenderer {
@@ -79,6 +80,7 @@ impl Default for SugarloafRenderer {
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
+            font_features: None,
         }
     }
 }
@@ -117,6 +119,9 @@ impl Sugarloaf<'_> {
         font_library: &FontLibrary,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
+        let state_context = SugarStateContext {
+            font_features: renderer.font_features.to_owned(),
+        };
         let ctx = Context::new(window, renderer).await;
 
         let text_brush = {
@@ -128,8 +133,7 @@ impl Sugarloaf<'_> {
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
-
-        let state = SugarState::new(layout, font_library);
+        let state = SugarState::new(layout, font_library, state_context);
 
         let instance = Sugarloaf {
             state,
