@@ -45,7 +45,7 @@ impl SugarState {
             latest_change: SugarTreeDiff::LayoutIsDifferent,
         };
 
-        state.compositors.advanced.set_font_features(&font_features);
+        state.compositors.advanced.set_font_features(font_features);
         state
     }
 
@@ -135,6 +135,7 @@ impl SugarState {
     #[inline]
     pub fn reset_compositor(&mut self) {
         self.compositors.elementary.reset();
+        self.compositors.advanced.reset();
         self.dimensions_changed = false;
     }
 

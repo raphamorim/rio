@@ -665,14 +665,17 @@ struct DrawLayoutCache {
 }
 
 impl DrawLayoutCache {
+    #[inline]
     fn get(&self, id: String) -> Option<&Vec<CachedRect>> {
         self.inner.get(&id)
     }
 
+    #[inline]
     fn insert(&mut self, id: String, data: Vec<CachedRect>) {
         self.inner.insert(id, data);
     }
 
+    #[inline]
     fn clean(&mut self) {
         if self.inner.len() > 1024 {
             self.inner.clear();

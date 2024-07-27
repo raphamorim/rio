@@ -64,6 +64,7 @@ impl Compositor {
     }
 
     /// Advances the epoch for the compositor and clears all batches.
+    #[inline]
     pub fn begin(&mut self) {
         // TODO: Write a better prune system that doesn't rely on epoch
         // self.glyphs.prune(&mut self.images);
