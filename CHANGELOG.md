@@ -16,6 +16,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.13
+
 - Added support to font features (ref: #548 #551)
 
 ```toml
