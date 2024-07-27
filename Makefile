@@ -104,7 +104,7 @@ version-not-found:
 	@echo "Rio version was not specified"
 	@echo " - usage: $ make release-macos-signed version=0.0.0"
 
-# e.g: make update-version old-version=0.0.13 new-version=0.0.12
+# e.g: make update-version old-version=0.1.13 new-version=0.1.12
 update-version:
 	@echo "Switching from $(old-version) to $(new-version)"
 	find Cargo.toml -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
