@@ -54,5 +54,5 @@ x11 = [
 ]
 wayland = [
     "copypasta/wayland",
-    "sugarloaf/render_equal_updates"
+    "sugarloaf/always_dirty"
 ]

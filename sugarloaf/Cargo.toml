@@ -75,7 +75,7 @@ once_cell = "1.18.0"
 
 [features]
 default = []
-render_equal_updates = []
+always_dirty = []
 
 [[bench]]
 name = "bench_sugar_pile"
