@@ -122,7 +122,7 @@ pub fn calculate_mouse_position(
     // TODO: Refactor row position
     let row = mouse
         .y
-        .saturating_sub((margin_y_top * 2. * scale_factor) as usize)
+        .saturating_sub((margin_y_top * scale_factor) as usize)
         / cell_height;
     let calc_row = std::cmp::min(row, config_columns_rows.1 - 1);
     let row = Line(calc_row as i32) - (display_offset);

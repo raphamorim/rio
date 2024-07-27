@@ -123,7 +123,7 @@ fn compute(
     margin: Delta<f32>,
 ) -> (usize, usize) {
     let margin_x = ((margin.x) * dimensions.scale).floor();
-    let margin_spaces = (margin.top_y * 2.) + margin.bottom_y;
+    let margin_spaces = margin.top_y + margin.bottom_y;
 
     let mut lines = (height / dimensions.scale) - margin_spaces;
     lines /= (dimensions.height / dimensions.scale) * line_height;
