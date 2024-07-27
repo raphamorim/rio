@@ -26,14 +26,14 @@ documentation = "https://github.com/raphamorim/rio#readme"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-sugarloaf = { path = "sugarloaf", version = "0.1.2" }
-corcovado = { path = "corcovado", version = "0.1.2" }
-rio-config = { path = "rio-config", version = "0.1.2" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.1.2" }
-copa = { path = "copa", default-features = true, version = "0.1.2" }
-teletypewriter = { path = "teletypewriter", version = "0.1.2" }
-rio-backend = { path = "rio-backend", version = "0.1.2" }
-wa = { path = "wa", version = "0.1.2" }
+sugarloaf = { path = "sugarloaf", version = "0.1.3" }
+corcovado = { path = "corcovado", version = "0.1.3" }
+rio-config = { path = "rio-config", version = "0.1.3" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.1.3" }
+copa = { path = "copa", default-features = true, version = "0.1.3" }
+teletypewriter = { path = "teletypewriter", version = "0.1.3" }
+rio-backend = { path = "rio-backend", version = "0.1.3" }
+wa = { path = "wa", version = "0.1.3" }
 
 raw-window-handle = "0.6.2"
 parking_lot = "0.12.3"
