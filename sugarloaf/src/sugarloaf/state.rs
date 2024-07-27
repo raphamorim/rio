@@ -153,6 +153,7 @@ impl SugarState {
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
     ) -> bool {
+        #[cfg(not(feature = "always_dirty"))]
         if !self.is_dirty && self.latest_change == SugarTreeDiff::Equal {
             self.compositors.advanced.clean();
             return false;
