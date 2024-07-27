@@ -25,6 +25,7 @@ features = ["ss01", "ss02", "ss03", "ss04", "ss05", "ss06", "ss07", "ss08", "ss0
 
 Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
 
+- fix: Wayland - No input after first run [#566](https://github.com/raphamorim/rio/issues/566).
 - fix: Mouse pointer location differs from selected text #573.
 - fix: IO Safety violation from dropping RawFd (fatal runtime error: IO Safety violation: owned file descriptor already closed).
 - Upgrade to Rust 1.80.0.
