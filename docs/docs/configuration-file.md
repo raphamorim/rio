@@ -254,11 +254,23 @@ You can also specify extra fonts to load:
 extras = [{ family = "Microsoft JhengHei" }]
 ```
 
+In case you want to specify any font feature:
+
+```toml
+[fonts]
+features = ["ss02", "ss03", "ss05", "ss19"]
+```
+
+Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
+
+---
+
 The font configuration default:
 
 ```toml
 [fonts]
 size = 18
+features = []
 
 [fonts.regular]
 family = "cascadiamono"
