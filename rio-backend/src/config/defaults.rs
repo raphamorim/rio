@@ -278,6 +278,12 @@ blinking-cursor = false
 # [fonts]
 # extras = [{ family = "Microsoft JhengHei" }]
 #
+# In case you want to specify any font feature:
+# [fonts]
+# features = ["ss02", "ss03", "ss05", "ss19"]
+#
+# Note: Font features do not have support to live reload on configuration,
+# so to reflect your changes, you will need to close and reopen Rio.
 #
 # Example:
 # [fonts]
