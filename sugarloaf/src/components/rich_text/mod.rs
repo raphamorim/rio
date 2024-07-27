@@ -312,7 +312,6 @@ impl RichTextBrush {
             &mut self.comp,
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
-            // TODO: Fix position
             state.current.layout.style.screen_position.1,
             font_library,
             state.current.layout.dimensions,
