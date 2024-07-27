@@ -297,8 +297,7 @@ impl Screen<'_> {
         let padding_y_bottom = padding_bottom_from_config(config);
         let padding_y_top = padding_top_from_config(config);
 
-        self.sugarloaf
-            .update_font(font_library, config.fonts.features.to_owned());
+        self.sugarloaf.update_font(font_library);
         self.sugarloaf.layout_next().recalculate(
             config.fonts.size,
             config.line_height,
