@@ -16,7 +16,15 @@
 
 ## Unreleased
 
-- TBD
+- Support to padding-y (ref: [#400](https://github.com/raphamorim/rio/issues/400))
+
+Define y axis padding based on a format `[top, left]`, default is `[0, 0]`.
+
+Example:
+
+```toml
+padding-y = [30, 10]
+```
 
 ## 0.1.13
 

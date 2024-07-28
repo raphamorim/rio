@@ -176,6 +176,11 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn layout_next_mut(&mut self) -> &mut SugarloafLayout {
+        &mut self.state.next.layout
+    }
+
+    #[inline]
     pub fn update_font_size(&mut self, operation: u8) {
         self.state.compute_layout_font_size(operation);
     }

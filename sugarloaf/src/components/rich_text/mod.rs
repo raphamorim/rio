@@ -290,6 +290,11 @@ impl RichTextBrush {
     }
 
     #[inline]
+    pub fn clean_cache(&mut self) {
+        self.draw_layout_cache.clear();
+    }
+
+    #[inline]
     pub fn prepare(
         &mut self,
         ctx: &mut Context,
@@ -317,7 +322,7 @@ impl RichTextBrush {
             state.current.layout.dimensions,
             &mut self.draw_layout_cache,
         );
-        self.draw_layout_cache.clean();
+        self.draw_layout_cache.clear_on_demand();
         // let duration = start.elapsed();
         // println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
 
@@ -675,10 +680,15 @@ impl DrawLayoutCache {
     }
 
     #[inline]
-    fn clean(&mut self) {
+    fn clear_on_demand(&mut self) {
         if self.inner.len() > 1024 {
             self.inner.clear();
         }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.inner.clear();
     }
 }
 

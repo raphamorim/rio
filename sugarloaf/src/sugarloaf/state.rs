@@ -216,6 +216,8 @@ impl SugarState {
             return;
         }
 
+        advance_brush.clean_cache();
+
         if let Some(dimension) = advance_brush.dimensions(self) {
             let mut dimensions_changed = false;
             if dimension.height != self.current.layout.dimensions.height {

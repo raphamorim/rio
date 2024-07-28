@@ -253,11 +253,6 @@ impl SugarloafLayout {
         }
     }
 
-    #[inline]
-    pub fn set_margin_top_y(&mut self, top_y: f32) {
-        self.margin.top_y = top_y;
-    }
-
     // This method will run over the new font and font_size
     #[inline]
     pub fn recalculate(
@@ -298,6 +293,7 @@ impl SugarloafLayout {
         if should_apply_changes {
             update_styles(self);
         }
+
         self
     }
 }
