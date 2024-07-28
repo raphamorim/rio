@@ -298,7 +298,7 @@ impl Screen<'_> {
         let padding_y_top = padding_top_from_config(config);
 
         self.sugarloaf.update_font(font_library);
-        self.sugarloaf.layout_next().recalculate(
+        self.sugarloaf.layout_next_mut().recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
@@ -306,7 +306,7 @@ impl Screen<'_> {
             padding_y_bottom,
         );
 
-        self.sugarloaf.layout_next().update();
+        self.sugarloaf.layout_next_mut().update();
         self.state = State::new(config, current_theme);
 
         for context in self.ctx().contexts() {

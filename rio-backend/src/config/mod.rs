@@ -100,6 +100,8 @@ pub struct Config {
     pub editor: String,
     #[serde(rename = "padding-x", default = "f32::default")]
     pub padding_x: f32,
+    #[serde(rename = "padding-y", default = "default_padding_y")]
+    pub padding_y: [f32; 2],
     #[serde(default = "default_cursor")]
     pub cursor: char,
     #[serde(default = "Vec::default", rename = "env-vars")]
@@ -360,6 +362,7 @@ impl Default for Config {
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
             padding_x: f32::default(),
+            padding_y: default_padding_y(),
             renderer: Renderer::default(),
             shell: default_shell(),
             theme: String::default(),

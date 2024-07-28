@@ -9,6 +9,11 @@ pub fn default_line_height() -> f32 {
 }
 
 #[inline]
+pub fn default_padding_y() -> [f32; 2] {
+    [0., 0.]
+}
+
+#[inline]
 pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {
@@ -149,6 +154,14 @@ blinking-cursor = false
 #
 # Example:
 # padding-x = 10
+
+# Padding-y
+#
+# define y axis padding based on a format [top, left]
+# (default is [0, 0])
+#
+# Example:
+# padding-y = [30, 10]
 
 # Option as Alt
 #
