@@ -12,7 +12,7 @@ pub const FONT_ID_BOLD_ITALIC: usize = 3;
 use crate::font::constants::*;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -41,7 +41,7 @@ impl Inner {
 
 #[derive(Default)]
 pub struct FontContext {
-    cache: HashMap<String, usize>,
+    cache: FxHashMap<String, usize>,
 }
 
 impl FontContext {

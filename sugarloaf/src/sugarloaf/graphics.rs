@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::components::core::image::Handle;
-use fnv::FnvHashMap;
+use rustc_hash::FxHashMap;
 
 pub struct SugarGraphicEntry {
     pub id: SugarGraphicId,
@@ -13,7 +13,7 @@ pub struct SugarGraphicEntry {
 
 #[derive(Default)]
 pub struct SugarloafGraphics {
-    inner: FnvHashMap<SugarGraphicId, SugarGraphicEntry>,
+    inner: FxHashMap<SugarGraphicId, SugarGraphicEntry>,
 }
 
 impl SugarloafGraphics {

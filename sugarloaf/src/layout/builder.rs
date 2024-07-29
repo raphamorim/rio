@@ -14,7 +14,7 @@ use super::span_style::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::PathBuf;
 use swash::shape::{self, ShapeContext};
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
@@ -22,14 +22,14 @@ use swash::text::{analyze, Language, Script};
 use swash::{Setting, Synthesis};
 
 pub struct RunCache {
-    inner: HashMap<u64, RunCacheEntry>,
+    inner: FxHashMap<u64, RunCacheEntry>,
 }
 
 impl RunCache {
     #[inline]
     fn new() -> Self {
         Self {
-            inner: HashMap::default(),
+            inner: FxHashMap::default(),
         }
     }
 
