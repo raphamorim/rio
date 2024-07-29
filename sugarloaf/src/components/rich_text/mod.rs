@@ -11,7 +11,7 @@ use crate::layout::SugarDimensions;
 use compositor::{
     CachedRect, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
-use fnv::FnvHashMap;
+use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle, UnderlineStyle};
 use wgpu::util::DeviceExt;
@@ -44,7 +44,7 @@ pub struct RichTextBrush {
     transform: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
-    textures: FnvHashMap<TextureId, Texture>,
+    textures: FxHashMap<TextureId, Texture>,
     index_buffer: wgpu::Buffer,
     index_buffer_size: u64,
     current_transform: [f32; 16],
@@ -274,7 +274,7 @@ impl RichTextBrush {
             color_texture_view,
             mask_texture_view,
             sampler,
-            textures: FnvHashMap::default(),
+            textures: FxHashMap::default(),
             comp: Compositor::new(2048),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
@@ -665,7 +665,7 @@ impl RichTextBrush {
 
 #[derive(Default)]
 struct DrawLayoutCache {
-    inner: std::collections::HashMap<String, Vec<CachedRect>>,
+    inner: FxHashMap<String, Vec<CachedRect>>,
 }
 
 impl DrawLayoutCache {

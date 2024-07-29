@@ -7,7 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use fnv::FnvHashMap;
+use rustc_hash::FxHashMap;
 
 use crate::layout::{
     Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
@@ -20,7 +20,7 @@ pub struct Advanced {
     pub mocked_render_data: RenderData,
     content_builder: ContentBuilder,
     layout_context: LayoutContext,
-    width_cache: FnvHashMap<char, f32>,
+    width_cache: FxHashMap<char, f32>,
 }
 
 impl Advanced {
@@ -30,7 +30,7 @@ impl Advanced {
             content_builder: ContentBuilder::default(),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
-            width_cache: FnvHashMap::default(),
+            width_cache: FxHashMap::default(),
         }
     }
 

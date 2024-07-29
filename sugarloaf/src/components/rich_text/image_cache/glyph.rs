@@ -4,6 +4,7 @@ use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use swash::scale::{
     image::{Content, Image as GlyphImage},
     *,
@@ -200,7 +201,7 @@ impl<'a> Borrow<(u64, Coords<'a>)> for FontKey {
 
 #[derive(Default)]
 struct FontEntry {
-    glyphs: HashMap<GlyphKey, GlyphEntry>,
+    glyphs: FxHashMap<GlyphKey, GlyphEntry>,
 }
 
 #[derive(Clone, Debug)]

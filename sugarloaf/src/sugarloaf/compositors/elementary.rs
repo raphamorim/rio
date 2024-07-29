@@ -8,7 +8,7 @@ use crate::components::text::glyph::{FontId, OwnedSection};
 use crate::sugarloaf::graphics;
 use crate::sugarloaf::tree::SugarTree;
 use crate::sugarloaf::{PxScale, Rect, SugarText};
-use fnv::FnvHashMap;
+use rustc_hash::FxHashMap;
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct CachedSugar {
@@ -31,7 +31,7 @@ struct GraphicRect {
 
 #[derive(Default)]
 pub struct Elementary {
-    sugar_cache: FnvHashMap<char, CachedSugar>,
+    sugar_cache: FxHashMap<char, CachedSugar>,
     pub rects: Vec<Rect>,
     pub blocks_rects: Vec<Rect>,
     pub sections: Vec<OwnedSection>,
@@ -39,7 +39,7 @@ pub struct Elementary {
     pub should_resize: bool,
     text_y: f32,
     current_row: u16,
-    graphic_rects: FnvHashMap<crate::SugarGraphicId, GraphicRect>,
+    graphic_rects: FxHashMap<crate::SugarGraphicId, GraphicRect>,
 }
 
 impl Elementary {
