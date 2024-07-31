@@ -3,7 +3,6 @@ use super::PixelFormat;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
-use std::collections::HashMap;
 use rustc_hash::FxHashMap;
 use swash::scale::{
     image::{Content, Image as GlyphImage},
@@ -23,7 +22,7 @@ const SOURCES: &[Source] = &[
 
 pub struct GlyphCache {
     scx: ScaleContext,
-    fonts: HashMap<FontKey, FontEntry>,
+    fonts: FxHashMap<FontKey, FontEntry>,
     img: GlyphImage,
 }
 
@@ -31,7 +30,7 @@ impl GlyphCache {
     pub fn new() -> Self {
         GlyphCache {
             scx: ScaleContext::new(),
-            fonts: HashMap::default(),
+            fonts: FxHashMap::default(),
             img: GlyphImage::new(),
         }
     }
@@ -99,7 +98,7 @@ impl GlyphCache {
 }
 
 fn get_entry<'a>(
-    fonts: &'a mut HashMap<FontKey, FontEntry>,
+    fonts: &'a mut FxHashMap<FontKey, FontEntry>,
     id: u64,
     coords: &[i16],
 ) -> &'a mut FontEntry {
