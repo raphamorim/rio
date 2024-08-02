@@ -38,7 +38,7 @@ wa = { path = "wa", version = "0.1.4" }
 raw-window-handle = "0.6.2"
 parking_lot = "0.12.3"
 unicode-width = "0.1.13"
-image = { version = "0.25.2", default-features = false, features = ["ico"] }
+image = { version = "0.24.9", default-features = false, features = ["ico"] }
 regex = "1.10.5"
 bytemuck = { version = "1.16.3", features = [ "derive" ] }
 log = "0.4.22"
