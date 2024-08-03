@@ -41,6 +41,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
     window_id: WindowId,
+    route_id: usize,
 }
 
 #[derive(Default)]
@@ -119,6 +120,7 @@ where
         pty: T,
         event_proxy: U,
         window_id: WindowId,
+        route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
@@ -131,6 +133,7 @@ where
             terminal,
             event_proxy,
             window_id,
+            route_id,
         })
     }
 
@@ -190,7 +193,7 @@ where
         // Queue terminal redraw unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             self.event_proxy
-                .send_event(RioEvent::Wakeup, self.window_id);
+                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
         }
 
         Ok(())
@@ -306,7 +309,7 @@ where
                 if events.is_empty() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
                     self.event_proxy
-                        .send_event(RioEvent::Wakeup, self.window_id);
+                        .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
 
                     continue;
                 }

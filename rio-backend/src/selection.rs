@@ -453,7 +453,7 @@ mod tests {
         #[cfg(use_wa)]
         let window_id = 0;
 
-        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id)
+        Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0)
     }
 
     /// Test case of single cell selection.

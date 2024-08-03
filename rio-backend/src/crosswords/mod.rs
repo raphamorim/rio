@@ -378,7 +378,8 @@ where
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
-    window_id: WindowId,
+    pub window_id: WindowId,
+    pub route_id: usize,
     title_stack: Vec<String>,
     hyperlink_re: regex::Regex,
 
@@ -395,6 +396,7 @@ impl<U: EventListener> Crosswords<U> {
         cursor_shape: CursorShape,
         event_proxy: U,
         window_id: WindowId,
+        route_id: usize,
     ) -> Crosswords<U> {
         let cols = dimensions.columns();
         let rows = dimensions.screen_lines();
@@ -432,6 +434,7 @@ impl<U: EventListener> Crosswords<U> {
             cursor_shape,
             blinking_cursor: false,
             window_id,
+            route_id,
             title_stack: Default::default(),
             keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_stack: Default::default(),
@@ -2739,7 +2742,7 @@ mod tests {
         #[cfg(use_wa)]
         let window_id = 0;
         let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         for i in 0..10 {
             cw.grid[Line(i)][Column(0)].c = i as u8 as char;
         }
@@ -2777,7 +2780,7 @@ mod tests {
         let window_id = 0;
 
         let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         assert_eq!(cw.grid.total_lines(), 1);
 
         cw.linefeed();
@@ -2794,7 +2797,7 @@ mod tests {
         let window_id = 0;
 
         let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let cursor = cw.cursor();
         assert_eq!(cursor.pos.col, 0);
         assert_eq!(cursor.pos.row, 0);
@@ -2823,7 +2826,7 @@ mod tests {
         let window_id = 0;
 
         let mut cw =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         for i in 0..4 {
             cw.grid[Line(0)][Column(i)].c = i as u8 as char;
         }
@@ -2848,7 +2851,7 @@ mod tests {
         let window_id = 0;
 
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let grid = &mut term.grid;
         for i in 0..4 {
             if i == 1 {
@@ -2926,7 +2929,7 @@ mod tests {
         let window_id = 0;
 
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let mut grid: Grid<Square> = Grid::new(1, 5, 0);
         for i in 0..5 {
             grid[Line(0)][Column(i)].c = 'a';
@@ -2956,7 +2959,7 @@ mod tests {
         let window_id = 0;
 
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
         let grid = &mut term.grid;
         for i in 1..4 {
             grid[Line(i)][Column(0)].c = '"';
@@ -3033,7 +3036,7 @@ mod tests {
         #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
 
         let grid = &mut term.grid;
         for i in 0..19 {
@@ -3170,7 +3173,7 @@ mod tests {
         #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
 
         let grid = &mut term.grid;
         grid[Line(0)][Column(0)].c = 'h';
@@ -3253,7 +3256,7 @@ mod tests {
         #[cfg(use_wa)]
         let window_id = 0;
         let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id);
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
 
         let grid = &mut term.grid;
         let hyperlink = Hyperlink::new(None, "https://rio.io");

@@ -94,6 +94,13 @@ impl Sequencer {
                                     route.window.winit_window.request_redraw();
                                 }
                             }
+                            RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.screen.render_route(route_id);
+                                }
+                            }
                             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
@@ -219,6 +226,25 @@ impl Sequencer {
                                 let timer_id = TimerId::new(Topic::Render, 0);
                                 let event = EventPayload::new(
                                     RioEventType::Rio(RioEvent::Render),
+                                    window_id,
+                                );
+
+                                if !scheduler.scheduled(timer_id) {
+                                    scheduler.schedule(
+                                        event,
+                                        Duration::from_millis(millis),
+                                        false,
+                                        timer_id,
+                                    );
+                                }
+                            }
+                            RioEventType::Rio(RioEvent::PrepareRenderOnRoute(
+                                millis,
+                                route_id,
+                            )) => {
+                                let timer_id = TimerId::new(Topic::Render, 0);
+                                let event = EventPayload::new(
+                                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                                     window_id,
                                 );
 
