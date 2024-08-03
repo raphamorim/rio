@@ -551,7 +551,7 @@ pub mod test {
             margin_y_top,
             (cell_dimension_width, cell_dimension_height),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(0)));
+        assert_eq!(pos, Pos::new(Line(0), Column(1)));
 
         let mouse = Mouse {
             x: 23,
@@ -581,7 +581,7 @@ pub mod test {
             margin_y_top,
             (cell_dimension_width, cell_dimension_height),
         );
-        assert_eq!(pos, Pos::new(Line(0), Column(1)));
+        assert_eq!(pos, Pos::new(Line(0), Column(2)));
 
         let mouse = Mouse {
             x: 36,
