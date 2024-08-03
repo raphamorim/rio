@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- Improvements for mouse selection.
 - Performance improvements for background renders for all navigations besides `Plain` and `NativeTab`.
 - Fix Cursor blinking is triggered by changes in inactive tabs [#437](https://github.com/raphamorim/rio/issues/437).
 - Fix key bindings when key is uppercased (`alt` or `shift` is inputted along).

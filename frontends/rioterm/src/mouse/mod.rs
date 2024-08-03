@@ -108,9 +108,9 @@ pub fn calculate_mouse_position(
         return Pos::default();
     }
 
-    let cell_width = cell_dimension.0.round() as usize;
-    let cell_height = cell_dimension.1.round() as usize;
-    let scaled_margin_x = (margin_x_left * scale_factor).round() as usize;
+    let cell_width = cell_dimension.0 as usize;
+    let cell_height = cell_dimension.1 as usize;
+    let scaled_margin_x = (margin_x_left * scale_factor) as usize;
 
     let col: Column = if (scaled_margin_x + cell_width) > mouse.x {
         Column(0)
