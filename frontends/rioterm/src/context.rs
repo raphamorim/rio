@@ -26,6 +26,7 @@ use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
 pub struct Context<T: EventListener> {
+    pub route_id: usize,
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
@@ -86,6 +87,8 @@ impl ContextManagerTitles {
 pub struct ContextManager<T: EventListener> {
     contexts: Vec<Context<T>>,
     current_index: usize,
+    current_route: usize,
+    acc_current_route: usize,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -108,6 +111,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let (sender, _receiver) = corcovado::channel::channel();
 
         Context {
+            route_id,
             #[cfg(not(target_os = "windows"))]
             main_fd: Arc::new(-1),
             #[cfg(not(target_os = "windows"))]
@@ -219,6 +223,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         };
 
         Ok(Context {
+            route_id,
             #[cfg(not(target_os = "windows"))]
             main_fd,
             #[cfg(not(target_os = "windows"))]
@@ -292,6 +297,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         Ok(ContextManager {
             current_index: 0,
+            current_route: 0,
+            acc_current_route: 0,
             contexts: vec![initial_context],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -333,6 +340,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         Ok(ContextManager {
             current_index: 0,
+            current_route: 0,
+            acc_current_route: 0,
             contexts: vec![initial_context],
             capacity,
             event_proxy,
@@ -353,7 +362,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // PrepareRender will force a render for any route that is focused on window
         // PrepareRenderOnRoute only call render function for specific route ids.
         self.event_proxy.send_event(
-            RioEvent::PrepareRenderOnRoute(scheduled_time, self.current_index),
+            RioEvent::PrepareRenderOnRoute(scheduled_time, self.current_route),
             self.window_id,
         );
     }
@@ -557,6 +566,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
+            self.current_route = self.contexts[self.current_index].route_id;
         }
     }
 
@@ -564,6 +574,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn close_context(&mut self) {
         if self.contexts.len() <= 1 {
             self.current_index = 0;
+            self.current_route = self.contexts[self.current_index].route_id;
             return;
         }
 
@@ -582,6 +593,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn kill_current_context(&mut self) {
         if self.contexts.len() <= 1 {
             self.current_index = 0;
+            self.current_route = self.contexts[self.current_index].route_id;
             // In MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background if allow_close_last_tab is true
             #[cfg(target_os = "macos")]
@@ -641,6 +653,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         } else {
             self.current_index += 1;
         }
+
+        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -656,6 +670,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         } else {
             self.current_index -= 1;
         }
+
+        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -704,11 +720,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cloned_config.working_dir = working_dir;
             }
 
+            self.acc_current_route += 1;
             match ContextManager::create_context(
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
-                self.current_index + 1,
+                self.acc_current_route,
                 layout,
                 &cloned_config,
             ) {
@@ -716,6 +733,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     self.contexts.push(new_context);
                     if redirect {
                         self.current_index = last_index;
+                        self.current_route = self.contexts[self.current_index].route_id;
                     }
                 }
                 Err(..) => {
