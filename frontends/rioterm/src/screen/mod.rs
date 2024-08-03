@@ -204,6 +204,7 @@ impl Screen<'_> {
             (&state.get_cursor_state(), config.blinking_cursor),
             event_proxy,
             window_id,
+            0,
             context_manager_config,
             sugarloaf.layout_next(),
             sugarloaf_errors,
@@ -1213,6 +1214,13 @@ impl Screen<'_> {
         self.sugarloaf.clear();
         crate::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
+    }
+
+    #[inline]
+    pub fn render_route(&mut self, route_id: usize) {
+        if route_id == self.ctx().current_index() {
+            self.render();
+        }
     }
 
     #[inline]

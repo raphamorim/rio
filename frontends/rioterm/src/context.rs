@@ -96,9 +96,14 @@ pub struct ContextManager<T: EventListener> {
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
-    pub fn create_dead_context(event_proxy: T, window_id: WindowId) -> Context<T> {
+    pub fn create_dead_context(
+        event_proxy: T,
+        window_id: WindowId,
+        route_id: usize,
+    ) -> Context<T> {
         let size = CrosswordsSize::new(MIN_COLUMNS, MIN_LINES);
-        let terminal = Crosswords::new(size, CursorShape::Block, event_proxy, window_id);
+        let terminal =
+            Crosswords::new(size, CursorShape::Block, event_proxy, window_id, route_id);
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
         let (sender, _receiver) = corcovado::channel::channel();
 
@@ -117,6 +122,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
+        route_id: usize,
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
@@ -129,8 +135,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
 
-        let mut terminal =
-            Crosswords::new(size, cursor_state.0.content, event_proxy.clone(), window_id);
+        let mut terminal = Crosswords::new(
+            size,
+            cursor_state.0.content,
+            event_proxy.clone(),
+            window_id,
+            route_id,
+        );
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -184,8 +195,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             );
         }
 
-        let machine =
-            Machine::new(Arc::clone(&terminal), pty, event_proxy.clone(), window_id)?;
+        let machine = Machine::new(
+            Arc::clone(&terminal),
+            pty,
+            event_proxy.clone(),
+            window_id,
+            route_id,
+        )?;
         let channel = machine.channel();
         if config.spawn_performer {
             machine.spawn();
@@ -217,6 +233,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         cursor_state: (&CursorState, bool),
         event_proxy: T,
         window_id: WindowId,
+        route_id: usize,
         ctx_config: ContextManagerConfig,
         size: SugarloafLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
@@ -225,6 +242,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cursor_state,
             event_proxy.clone(),
             window_id,
+            route_id,
             size,
             &ctx_config,
         ) {
@@ -242,7 +260,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     window_id,
                 );
 
-                ContextManager::create_dead_context(event_proxy.clone(), window_id)
+                ContextManager::create_dead_context(
+                    event_proxy.clone(),
+                    window_id,
+                    route_id,
+                )
             }
         };
 
@@ -301,6 +323,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             (&CursorState::new('_'), false),
             event_proxy.clone(),
             window_id,
+            0,
             SugarloafLayout::default(),
             &config,
         )?;
@@ -320,14 +343,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
             .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
     }
 
     #[inline]
-    #[allow(unused)]
+    pub fn schedule_render_on_route(&mut self, scheduled_time: u64) {
+        // PrepareRender will force a render for any route that is focused on window
+        // PrepareRenderOnRoute only call render function for specific route ids.
+        self.event_proxy.send_event(
+            RioEvent::PrepareRenderOnRoute(scheduled_time, self.current_index),
+            self.window_id,
+        );
+    }
+
+    #[inline]
     pub fn report_error_fonts_not_found(&mut self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
@@ -677,6 +708,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
+                self.current_index + 1,
                 layout,
                 &cloned_config,
             ) {

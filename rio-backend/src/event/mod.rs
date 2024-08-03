@@ -52,7 +52,9 @@ pub enum ClickState {
 #[derive(Clone)]
 pub enum RioEvent {
     PrepareRender(u64),
+    PrepareRenderOnRoute(u64, usize),
     Render,
+    RenderRoute(usize),
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -160,7 +162,11 @@ impl Debug for RioEvent {
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::Wakeup => write!(f, "Wakeup"),
             RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
+            RioEvent::PrepareRenderOnRoute(millis, route) => {
+                write!(f, "PrepareRender({millis} on route {route})")
+            }
             RioEvent::Render => write!(f, "Render"),
+            RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
