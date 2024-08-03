@@ -98,7 +98,7 @@ pub fn calculate_mouse_position(
     mouse: &Mouse,
     display_offset: usize,
     scale_factor: f32,
-    config_columns_rows: (usize, usize),
+    columns_rows: (usize, usize),
     margin_x_left: f32,
     margin_y_top: f32,
     cell_dimension: (f32, f32),
@@ -116,7 +116,7 @@ pub fn calculate_mouse_position(
         Column(0)
     } else {
         let col = (mouse.x - scaled_margin_x) / cell_width;
-        std::cmp::min(Column(col), Column(config_columns_rows.0 - 1))
+        std::cmp::min(Column(col), Column(columns_rows.0 - 1))
     };
 
     // TODO: Refactor row position
@@ -124,7 +124,7 @@ pub fn calculate_mouse_position(
         .y
         .saturating_sub((margin_y_top * scale_factor) as usize)
         / cell_height;
-    let calc_row = std::cmp::min(row, config_columns_rows.1 - 1);
+    let calc_row = std::cmp::min(row, columns_rows.1 - 1);
     let row = Line(calc_row as i32) - (display_offset);
 
     Pos::new(row, col)
