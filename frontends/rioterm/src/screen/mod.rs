@@ -516,7 +516,12 @@ impl Screen<'_> {
                 // preventing them from being used in bindings
                 //
                 // For more see https://github.com/rust-windowing/winit/issues/2945.
-                if (cfg!(windows) && mods.control_key()) && mods.alt_key() {
+                // if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
+                //     && mods.alt_key()
+                let has_alt_key = mods.alt_key();
+                if (cfg!(target_os = "macos") && (mods.shift_key() || has_alt_key))
+                    || (cfg!(windows) && mods.control_key() && has_alt_key)
+                {
                     key.key_without_modifiers()
                 } else {
                     Key::Character(ch.to_lowercase().into())

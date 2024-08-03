@@ -1014,8 +1014,6 @@ impl Sequencer {
                                 && self.config.hide_cursor_when_typing
                             {
                                 route.window.winit_window.set_cursor_visible(false);
-
-                                // route.redraw();
                             }
                         }
                     }

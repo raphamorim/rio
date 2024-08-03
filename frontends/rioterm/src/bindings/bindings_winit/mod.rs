@@ -795,6 +795,8 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "return" => (Key::Named(Enter), KeyLocation::Standard),
             "[" => (Key::Character("[".into()), KeyLocation::Standard),
             "]" => (Key::Character("]".into()), KeyLocation::Standard),
+            "{" => (Key::Character("{".into()), KeyLocation::Standard),
+            "}" => (Key::Character("}".into()), KeyLocation::Standard),
             ";" => (Key::Character(";".into()), KeyLocation::Standard),
             "\\" => (Key::Character("\\".into()), KeyLocation::Standard),
             "+" => (Key::Character("+".into()), KeyLocation::Standard),
