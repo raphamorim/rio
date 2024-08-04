@@ -291,11 +291,6 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn dimensions_changed(&self) -> bool {
-        self.state.dimensions_changed()
-    }
-
-    #[inline]
     pub fn mark_dirty(&mut self) {
         self.state.is_dirty = true;
     }
