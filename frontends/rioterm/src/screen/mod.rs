@@ -725,9 +725,11 @@ impl Screen<'_> {
                     }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
+                        self.render();
                     }
                     Act::SelectLastTab => {
                         self.context_manager.select_last_tab();
+                        self.render();
                     }
                     Act::SelectNextTab => {
                         self.clear_selection();
