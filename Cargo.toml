@@ -55,9 +55,9 @@ env_logger = "0.11.3"
 console_log = "0.2.2"
 bitflags = "2.6.0"
 console_error_panic_hook = "0.1.7"
-# winit = { package = "rio-winit-fork", path = "../winit", default-features = false, features = ["rwh_06"] }
+# winit = { package = "rio-winit-fork", path = "../rio-winit-fork", default-features = false, features = ["rwh_06"] }
 # winit = { package = "rio-winit-fork", git = "https://github.com/raphamorim/winit", rev = "c9dc7cf", default-features = false, features = ["rwh_06"] }
-winit = { package = "rio-winit-fork", version = "0.30.2", default-features = false, features = ["rwh_06"] }
+winit = { package = "rio-winit-fork", version = "0.30.3", default-features = false, features = ["rwh_06"] }
 
 [profile.release]
 opt-level = 3
