@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- Update Cascadia Code to 2404.23 (it includes native 'Nerd Font' variant). Every glyph of NF is metrics-compatible with the rest of Cascadia.
 - Improvements for mouse selection.
 - Performance improvements for background renders for all navigations besides `Plain` and `NativeTab`.
 - Fix Cursor blinking is triggered by changes in inactive tabs [#437](https://github.com/raphamorim/rio/issues/437).
