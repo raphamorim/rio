@@ -14,7 +14,6 @@ pub struct SugarState {
     pub current: Box<SugarTree>,
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
-    dimensions_changed: bool,
     current_line: usize,
     pub is_dirty: bool,
     pub compositors: SugarCompositors,
@@ -41,7 +40,6 @@ impl SugarState {
             graphics: SugarloafGraphics::default(),
             current: Box::<SugarTree>::default(),
             next,
-            dimensions_changed: false,
             latest_change: SugarTreeDiff::LayoutIsDifferent,
         };
 
@@ -136,13 +134,11 @@ impl SugarState {
     pub fn reset_compositor(&mut self) {
         self.compositors.elementary.reset();
         self.compositors.advanced.reset();
-        self.dimensions_changed = false;
     }
 
     #[inline]
     pub fn clean_compositor(&mut self) {
         self.compositors.elementary.clean();
-        self.dimensions_changed = false;
     }
 
     #[inline]
@@ -236,15 +232,10 @@ impl SugarState {
             if dimensions_changed {
                 self.current.layout.update();
                 self.next.layout = self.current.layout;
-                self.dimensions_changed = true;
+                self.is_dirty = true;
                 log::info!("sugar_state: dimensions has changed");
             }
         }
-    }
-
-    #[inline]
-    pub fn dimensions_changed(&self) -> bool {
-        self.dimensions_changed
     }
 
     #[inline]
@@ -265,6 +256,8 @@ impl SugarState {
             self.compositors
                 .advanced
                 .calculate_dimensions(&self.current);
+
+            self.compositors.advanced.update_layout(&self.current);
 
             self.compositors.elementary.set_should_resize();
             self.reset_next();

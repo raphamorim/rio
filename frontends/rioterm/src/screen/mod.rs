@@ -327,17 +327,6 @@ impl Screen<'_> {
             self.sugarloaf.set_background_image(image);
         }
 
-        // TODO: Forcefull hack to compute render updates
-        // Currently sugarloaf, doesn't render if dimensions has changed
-        // and it returns a flag dimensions_changed as true
-        // Ideally resize_all_contexts should be passed as a pointer so we can trigger
-        // in the sugarloaf size and then render there instead.
-        self.render();
-
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-        };
-
         self.render();
         self.resize_all_contexts();
     }
@@ -351,17 +340,6 @@ impl Screen<'_> {
         };
 
         self.sugarloaf.update_font_size(action);
-
-        // TODO: Forcefull hack to compute render updates
-        // Currently sugarloaf, doesn't render if dimensions has changed
-        // and it returns a flag dimensions_changed as true
-        // Ideally resize_all_contexts should be passed as a pointer so we can trigger
-        // in the sugarloaf size and then render there instead.
-        self.render();
-
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-        };
 
         self.render();
         self.resize_all_contexts();
@@ -383,10 +361,7 @@ impl Screen<'_> {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
         self.render();
-
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-        }
+        self.resize_all_contexts();
 
         self
     }

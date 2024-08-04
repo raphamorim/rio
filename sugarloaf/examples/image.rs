@@ -9,7 +9,6 @@ use winit::{
 };
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
 use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
@@ -76,19 +75,12 @@ async fn main() {
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => {
+                if let WindowEvent::Resized(new_size) = event {
+                    sugarloaf.resize(new_size.width, new_size.height);
+                    window.request_redraw();
+                }
+
                 if let WindowEvent::RedrawRequested { .. } = event {
-                    sugarloaf.append_rects(vec![
-                        Rect {
-                            position: [10.0, 10.0],
-                            color: [1.0, 0.0, 1.0, 1.0],
-                            size: [100.0, 100.0],
-                        },
-                        Rect {
-                            position: [115.0, 10.0],
-                            color: [0.0, 1.0, 1.0, 1.0],
-                            size: [100.0, 100.0],
-                        },
-                    ]);
                     sugarloaf.render();
                 }
             }
