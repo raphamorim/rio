@@ -337,6 +337,7 @@ impl<'a> ParagraphBuilder<'a> {
                     || style.letter_spacing != prev_style.letter_spacing
                     // || style.lang != prev_style.lang
                     // || style.font_features != prev_style.font_features
+                    || style.font_attrs != prev_style.font_attrs
                     || style.font_vars != prev_style.font_vars
             }
         } else {
@@ -679,8 +680,13 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, fonts_to_load);
+        shape_state.font_id = fcx.map_cluster(
+            cluster,
+            &mut shape_state.synth,
+            font_library,
+            fonts_to_load,
+            &style,
+        );
 
         while shape_clusters(
             fcx,
@@ -723,8 +729,13 @@ fn shape_item(
             return Some(());
         }
         let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id =
-            fcx.map_cluster(cluster, &mut shape_state.synth, font_library, fonts_to_load);
+        shape_state.font_id = fcx.map_cluster(
+            cluster,
+            &mut shape_state.synth,
+            font_library,
+            fonts_to_load,
+            &style,
+        );
         while shape_clusters(
             fcx,
             font_library,
@@ -780,12 +791,6 @@ where
 
     let mut synth = Synthesis::default();
     loop {
-        // for c in cluster.chars().iter() {
-        //     let width = c.ch.width().unwrap_or(1);
-        //     if width > 1 {
-        //         println!("{:?} {}", c, c.ch.width().unwrap_or(1));
-        //     }
-        // }
         shaper.add_cluster(cluster);
 
         if !parser.next(cluster) {
@@ -805,16 +810,10 @@ where
         if cluster_span != state.span_index {
             state.span_index = cluster_span;
             state.span = &state.state.lines[current_line].styles[state.span_index];
-
-            // TODO?: Fix state.span.font overwrite
-            // if state.span.font != current_font_id {
-            // state.font_id = Some(state.span.font);
-            // }
-            // fcx.select_group(state.font_id);
-            // }
         }
 
-        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, fonts_to_load);
+        let next_font =
+            fcx.map_cluster(cluster, &mut synth, fonts, fonts_to_load, state.span);
         if next_font != state.font_id || synth != state.synth {
             render_data.push_run(
                 &state.state.lines[current_line].styles,

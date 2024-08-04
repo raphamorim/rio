@@ -5,11 +5,9 @@ pub mod fonts;
 pub mod loader;
 
 pub const FONT_ID_REGULAR: usize = 0;
-pub const FONT_ID_ITALIC: usize = 1;
-pub const FONT_ID_BOLD: usize = 2;
-pub const FONT_ID_BOLD_ITALIC: usize = 3;
 
 use crate::font::constants::*;
+use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
 use rustc_hash::FxHashMap;
@@ -51,6 +49,7 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
+        spec_font_attr_opt: Option<&(swash::Style, bool)>,
     ) -> Option<usize> {
         let mut font_id = None;
         for (current_font_id, font) in library.inner.iter().enumerate() {
@@ -61,6 +60,22 @@ impl FontContext {
                 }
                 FontSource::Standard => (&library.standard, library.standard.as_ref()),
             };
+
+            // In this case, the font does match however
+            // we need to check if is indeed a match
+            if let Some(spec_font_attr) = spec_font_attr_opt {
+                if font.style != spec_font_attr.0 {
+                    continue;
+                }
+
+                // In case bold is required
+                // It follows spec on Bold (>=700)
+                // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
+                if spec_font_attr.1 && font.weight < swash::Weight(700) {
+                    continue;
+                }
+            }
+
             let charmap = font.charmap_proxy().materialize(&font_ref);
             let status = cluster.map(|ch| charmap.map(ch));
             if status != Status::Discard {
@@ -80,12 +95,32 @@ impl FontContext {
         synth: &mut Synthesis,
         library: &FontLibraryData,
         fonts_to_load: &mut Vec<(usize, PathBuf)>,
+        fragment_style: &FragmentStyle,
     ) -> Option<usize> {
-        let mut cache_key: String = String::default();
-        for c in cluster.chars().iter() {
+        let is_italic = fragment_style.font_attrs.2 == Style::Italic;
+        let is_bold = fragment_style.font_attrs.1 == Weight::BOLD;
+
+        let chars = cluster.chars();
+        let is_cache_key_empty = chars.is_empty();
+
+        let mut cache_key: String = String::with_capacity(chars.len() + 1);
+        let spec_font_attr = if is_bold && is_italic {
+            cache_key.push('m');
+            Some((Style::Italic, true))
+        } else if is_bold {
+            cache_key.push('b');
+            Some((Style::Normal, true))
+        } else if is_italic {
+            cache_key.push('i');
+            Some((Style::Italic, false))
+        } else {
+            cache_key.push('r');
+            None
+        };
+
+        for c in chars.iter() {
             cache_key.push(c.ch);
         }
-        let is_cache_key_empty = cache_key.is_empty();
 
         if !is_cache_key_empty {
             if let Some(cached_font_id) = self.cache.get(&cache_key) {
@@ -102,7 +137,9 @@ impl FontContext {
             }
         }
 
-        if let Some(found_font_id) = self.lookup_for_font_match(cluster, synth, library) {
+        if let Some(found_font_id) =
+            self.lookup_for_font_match(cluster, synth, library, spec_font_attr.as_ref())
+        {
             if !is_cache_key_empty {
                 self.cache.insert(cache_key, found_font_id);
             }
@@ -450,8 +487,8 @@ pub struct FontData {
 
 impl PartialEq for FontData {
     fn eq(&self, other: &Self) -> bool {
-        // self.data == other.data && self.offset == other.offset &&
-        self.key == other.key
+        // self.data == other.data &&
+        self.offset == other.offset && self.key == other.key
     }
 }
 

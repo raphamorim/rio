@@ -251,7 +251,8 @@ impl SugarState {
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
         if self.current.layout.dimensions.width == 0.0
-            || self.current.layout.dimensions.height == 0.0 {
+            || self.current.layout.dimensions.height == 0.0
+        {
             self.current = Box::new(std::mem::take(&mut self.next));
 
             self.compositors

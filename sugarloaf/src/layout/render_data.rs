@@ -13,9 +13,6 @@
 use super::layout_data::*;
 use super::line_breaker::BreakLines;
 use super::Direction;
-use crate::font::{
-    Style, Weight, FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_ITALIC, FONT_ID_REGULAR,
-};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
@@ -512,22 +509,6 @@ impl<'a> Run<'a> {
     #[inline]
     pub fn span(&self) -> FragmentStyle {
         self.run.span
-    }
-
-    #[inline]
-    pub fn font_id_based_on_attr(&self) -> usize {
-        let is_italic = self.run.span.font_attrs.2 == Style::Italic;
-        let is_bold = self.run.span.font_attrs.1 == Weight::BOLD;
-
-        if is_bold && is_italic {
-            return FONT_ID_BOLD_ITALIC;
-        } else if is_bold {
-            return FONT_ID_BOLD;
-        } else if is_italic {
-            return FONT_ID_ITALIC;
-        }
-
-        FONT_ID_REGULAR
     }
 
     /// Returns the font for the run.

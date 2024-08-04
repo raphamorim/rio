@@ -717,10 +717,7 @@ fn draw_layout(
 
         let mut cache = Vec::new();
         for run in line.runs() {
-            let mut font = *run.font();
-            if font == 0 {
-                font = run.font_id_based_on_attr();
-            }
+            let font = *run.font();
 
             let py = line.baseline() + y;
             let run_x = px;
