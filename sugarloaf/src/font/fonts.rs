@@ -1,4 +1,4 @@
-use crate::font::{DEFAULT_FONT_FAMILY, DEFAULT_FONT_FAMILY_VARIANT};
+use crate::font::DEFAULT_FONT_FAMILY;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -23,7 +23,7 @@ impl SugarloafFont {
     #[inline]
     pub fn is_default_family(&self) -> bool {
         let current = self.family.replace(' ', "").trim().to_lowercase();
-        current == default_font_family() || current == default_font_family_variant()
+        current == default_font_family()
     }
 }
 
@@ -34,9 +34,6 @@ pub fn default_font_size() -> f32 {
 
 fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
-}
-fn default_font_family_variant() -> String {
-    DEFAULT_FONT_FAMILY_VARIANT.to_string()
 }
 
 pub fn default_font_regular() -> SugarloafFont {

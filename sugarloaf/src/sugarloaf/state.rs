@@ -118,6 +118,11 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
+        self.compositors.advanced.set_font_features(font_features);
+    }
+
+    #[inline]
     pub fn clean_screen(&mut self) {
         self.current.lines.clear();
         self.current.blocks.clear();
@@ -198,11 +203,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
-        self.compositors.advanced.set_font_features(font_features);
-    }
-
-    #[inline]
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
         // If layout is different or current has empty dimensions
         // then current will flip with next and will try to obtain
@@ -250,7 +250,8 @@ impl SugarState {
     #[inline]
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
-        if self.current_has_empty_dimensions() {
+        if self.current.layout.dimensions.width == 0.0
+            || self.current.layout.dimensions.height == 0.0 {
             self.current = Box::new(std::mem::take(&mut self.next));
 
             self.compositors
@@ -262,7 +263,7 @@ impl SugarState {
             self.compositors.elementary.set_should_resize();
             self.reset_next();
             self.latest_change = SugarTreeDiff::LayoutIsDifferent;
-            log::info!("current_has_empty_dimensions, will try to find...");
+            log::info!("has empty dimensions, will try to find...");
             return;
         }
 
@@ -323,12 +324,6 @@ impl SugarState {
         }
 
         self.reset_next();
-    }
-
-    #[inline]
-    pub fn current_has_empty_dimensions(&self) -> bool {
-        self.current.layout.dimensions.width == 0.0
-            || self.current.layout.dimensions.height == 0.0
     }
 }
 
