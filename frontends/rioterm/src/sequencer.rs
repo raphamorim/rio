@@ -391,8 +391,6 @@ impl Sequencer {
                                 working_dir_overwrite,
                             )) => {
                                 if let Some(route) = self.router.routes.get(&window_id) {
-                                    route.redraw();
-
                                     // This case happens only for native tabs
                                     // every time that a new tab is created through context
                                     // it also reaches for the foreground process path if

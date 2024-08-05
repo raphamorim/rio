@@ -120,7 +120,7 @@ impl SugarState {
 
     #[inline]
     pub fn reset_compositor(&mut self) {
-        self.compositors.elementary.reset();
+        self.compositors.elementary.clean();
         self.compositors.advanced.reset();
     }
 
@@ -145,10 +145,6 @@ impl SugarState {
 
         advance_brush.prepare(context, self);
 
-        for section in &self.compositors.elementary.blocks_sections {
-            elementary_brush.queue(section);
-        }
-
         if self.compositors.elementary.should_resize {
             rect_brush.resize(context);
         }
@@ -158,29 +154,20 @@ impl SugarState {
         // ...
         // If current tree has blocks and compositor has empty blocks
         // It means that's either the first render or blocks were erased on compute_diff() step
-        if !self.current.blocks.is_empty()
-            && self.compositors.elementary.blocks_are_empty()
-        {
-            for block in &self.current.blocks {
-                if let Some(text) = &block.text {
-                    elementary_brush.queue(
-                        self.compositors
-                            .elementary
-                            .create_section_from_text(text, &self.current),
-                    );
-                }
+        for block in &self.current.blocks {
+            if let Some(text) = &block.text {
+                elementary_brush.queue(
+                    &self
+                        .compositors
+                        .elementary
+                        .create_section_from_text(text, &self.current),
+                );
+            }
 
-                if !block.rects.is_empty() {
-                    self.compositors.elementary.extend_block_rects(&block.rects);
-                }
+            if !block.rects.is_empty() {
+                self.compositors.elementary.rects.extend(&block.rects);
             }
         }
-
-        // Add block rects to main rects
-        self.compositors
-            .elementary
-            .rects
-            .extend(&self.compositors.elementary.blocks_rects);
 
         true
     }
@@ -252,13 +239,13 @@ impl SugarState {
         }
 
         let mut should_update = false;
-        let mut should_clean_blocks = false;
         let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
         self.latest_change =
             self.current
                 .calculate_diff(&self.next, false, self.is_dirty);
+
         match &self.latest_change {
             SugarTreeDiff::Equal => {
                 // Do nothing
@@ -266,12 +253,7 @@ impl SugarState {
             SugarTreeDiff::LayoutIsDifferent => {
                 should_update = true;
                 should_compute_dimensions = true;
-                should_clean_blocks = true;
                 should_resize = true;
-            }
-            SugarTreeDiff::BlocksAreDifferent => {
-                should_clean_blocks = true;
-                should_update = true;
             }
             SugarTreeDiff::LineQuantity(_) => {
                 should_update = true;
@@ -297,10 +279,6 @@ impl SugarState {
             }
 
             self.compositors.advanced.update_layout(&self.current);
-        }
-
-        if should_clean_blocks {
-            self.compositors.elementary.clean_blocks();
         }
 
         if should_resize {
