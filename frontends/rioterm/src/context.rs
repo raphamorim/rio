@@ -631,6 +631,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn current_route(&self) -> usize {
+        self.current_route
+    }
+
+    #[inline]
     pub fn current(&self) -> &Context<T> {
         &self.contexts[self.current_index]
     }

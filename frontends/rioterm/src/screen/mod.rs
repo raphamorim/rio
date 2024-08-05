@@ -1194,13 +1194,6 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn render_route(&mut self, route_id: usize) {
-        if route_id == self.ctx().current_index() {
-            self.render();
-        }
-    }
-
-    #[inline]
     pub fn render(&mut self) {
         // If sugarloaf does have pending updates to process then
         // should abort current render
