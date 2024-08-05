@@ -23,7 +23,7 @@
 - Fix Bug Text Rendering Bug [#543](https://github.com/raphamorim/rio/issues/543).
 - Fix Abnormal font display and incomplete Navigation content display [#554](https://github.com/raphamorim/rio/issues/554).
 - Fix Bug switch tabs doesn't work [#536](https://github.com/raphamorim/rio/issues/536).
-- Update Cascadia Code to 2404.23 (it includes native 'Nerd Font' variant). Every glyph of NF is metrics-compatible with the rest of Cascadia.
+- Update Cascadia Code to 2404.23.
 - Improvements for mouse selection.
 - Performance improvements for background renders for all navigations besides `Plain` and `NativeTab`.
 - Fix Cursor blinking is triggered by changes in inactive tabs [#437](https://github.com/raphamorim/rio/issues/437).
