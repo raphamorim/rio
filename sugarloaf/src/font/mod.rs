@@ -143,6 +143,7 @@ impl FontContext {
             if !is_cache_key_empty {
                 self.cache.insert(cache_key, found_font_id);
             }
+
             return Some(found_font_id);
         }
 
