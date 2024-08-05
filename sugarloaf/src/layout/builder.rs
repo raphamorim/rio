@@ -566,6 +566,7 @@ impl<'a> ParagraphBuilder<'a> {
         push_item!();
     }
 
+    #[inline]
     fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
         // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();

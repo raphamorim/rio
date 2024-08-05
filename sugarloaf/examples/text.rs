@@ -1,7 +1,7 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, Sugar, SugarDecoration, Sugarloaf, SugarloafWindow,
+    layout::SugarloafLayout, Sugar, SugarStyle, SugarDecoration, Sugarloaf, SugarloafWindow,
     SugarloafWindowSize,
 };
 use winit::event_loop::ControlFlow;
@@ -16,8 +16,8 @@ use winit::{
 #[tokio::main]
 async fn main() {
     let mut event_loop = EventLoop::new().unwrap();
-    let width = 1200.0;
-    let height = 800.0;
+    let width = 400.0;
+    let height = 300.0;
 
     let window_attribute = WindowAttributes::default()
         .with_title("Text example")
@@ -27,7 +27,7 @@ async fn main() {
     let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
-    let font_size = 90.;
+    let font_size = 40.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -62,209 +62,6 @@ async fn main() {
     let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {
         event_loop_window_target.set_control_flow(ControlFlow::Wait);
 
-        let sugar = vec![
-            Sugar {
-                content: 'S',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'u',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'g',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'a',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'r',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'g',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '|',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-        ];
-
-        let loaf = vec![
-            Sugar {
-                content: 'l',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'o',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'a',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'f',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'g',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '|',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-        ];
-
-        let rio = vec![
-            Sugar {
-                content: ' ',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'r',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                decoration: SugarDecoration::Underline,
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'i',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                decoration: SugarDecoration::Underline,
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'o',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                decoration: SugarDecoration::Underline,
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'g',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 1.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '¼',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '¬',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 1.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-        ];
-
-        let special = vec![
-            // Font Unicode (unicode font)
-            Sugar {
-                content: '㏑',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            // Font Symbol (apple symbols font)
-            Sugar {
-                content: '⫹',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            // Font Regular (firamono)
-            Sugar {
-                content: 'λ',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            // Font Emojis
-            Sugar {
-                content: '🥇',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '👷',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-        ];
-
-        let special_2 = vec![
-            // Font Symbol (char width 2)
-            Sugar {
-                content: 'a',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '％',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([0.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.5, 0.5, 0.5, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: 'a',
-                foreground_color: [0.0, 0.0, 0.0, 1.0],
-                background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                ..Sugar::default()
-            },
-            Sugar {
-                content: '',
-                foreground_color: [1.0, 1.0, 1.0, 1.0],
-                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                ..Sugar::default()
-            },
-        ];
-
         match event {
             Event::Resumed => {
                 sugarloaf.set_background_color(wgpu::Color::RED);
@@ -289,26 +86,147 @@ async fn main() {
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
                     sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&sugar);
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'S',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        style: SugarStyle::Bold,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'u',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        style: SugarStyle::Bold,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'g',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'a',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'r',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        ..Sugar::default()
+                    });
+
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'l',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        decoration: SugarDecoration::Strikethrough,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'o',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        decoration: SugarDecoration::Strikethrough,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'a',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        decoration: SugarDecoration::Strikethrough,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'f',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
+                        decoration: SugarDecoration::Strikethrough,
+                        ..Sugar::default()
+                    });
                     sugarloaf.finish_line();
 
                     sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&loaf);
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'R',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
+                        decoration: SugarDecoration::Underline,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'i',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        decoration: SugarDecoration::Underline,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'o',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        decoration: SugarDecoration::Underline,
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: ' ',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: '¼',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 0.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: '㏑',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([0.0, 1.0, 0.0, 1.0]),
+                        ..Sugar::default()
+                    });
                     sugarloaf.finish_line();
 
                     sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&loaf);
-
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&special_2);
-
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&rio);
+                    // Font Symbol (char width 2)
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: '',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: 'a',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    // Font Symbol (apple symbols font)
+                    // Sugar {
+                    //     content: '⫹',
+                    //     foreground_color: [1.0, 1.0, 1.0, 1.0],
+                    //     background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                    //     ..Sugar::default()
+                    // },
+                    // Font Emojis
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: '🥶',
+                        foreground_color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        ..Sugar::default()
+                    });
+                    sugarloaf.insert_on_current_line(&Sugar {
+                        content: '🐶',
+                        foreground_color: [0.0, 0.0, 0.0, 1.0],
+                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
+                        ..Sugar::default()
+                    });
                     sugarloaf.finish_line();
 
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line_from_vec_owned(&special);
-                    sugarloaf.finish_line();
                     sugarloaf.render();
                 }
                 _ => (),

@@ -94,23 +94,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&crate::Sugar>) {
-        for sugar in sugar_vec {
-            self.next.lines[self.current_line].insert(sugar);
-        }
-    }
-
-    #[inline]
-    pub fn insert_on_current_line_from_vec_owned(
-        &mut self,
-        sugar_vec: &Vec<crate::Sugar>,
-    ) {
-        for sugar in sugar_vec {
-            self.next.lines[self.current_line].insert(sugar);
-        }
-    }
-
-    #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
         self.next.layout.dimensions.height = 0.0;

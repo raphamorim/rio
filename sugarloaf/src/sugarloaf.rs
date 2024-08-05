@@ -222,16 +222,6 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn insert_on_current_line_from_vec(&mut self, sugar_vec: &Vec<&Sugar>) {
-        self.state.insert_on_current_line_from_vec(sugar_vec);
-    }
-
-    #[inline]
-    pub fn insert_on_current_line_from_vec_owned(&mut self, sugar_vec: &Vec<Sugar>) {
-        self.state.insert_on_current_line_from_vec_owned(sugar_vec);
-    }
-
-    #[inline]
     pub fn finish_line(&mut self) {
         self.state.compute_line_end();
     }

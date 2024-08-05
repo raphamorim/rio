@@ -59,6 +59,7 @@ impl<'a> BreakLines<'a> {
 
         for i in 0..self.layout.runs.len() {
             let run = &self.layout.runs[i];
+
             let mut should_commit_line = false;
             // self.state.prev_boundary = None;
 
