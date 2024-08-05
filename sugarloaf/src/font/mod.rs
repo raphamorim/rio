@@ -42,52 +42,54 @@ pub struct FontContext {
     cache: FxHashMap<String, usize>,
 }
 
-impl FontContext {
-    #[inline]
-    pub fn lookup_for_font_match(
-        &mut self,
-        cluster: &mut CharCluster,
-        synth: &mut Synthesis,
-        library: &FontLibraryData,
-        spec_font_attr_opt: Option<&(swash::Style, bool)>,
-    ) -> Option<usize> {
-        let mut font_id = None;
-        for (current_font_id, font) in library.inner.iter().enumerate() {
-            let (font, font_ref) = match font {
-                FontSource::Data(font_data) => (font_data, font_data.as_ref()),
-                FontSource::Extension(_) => {
-                    (&library.standard, library.standard.as_ref())
-                }
-                FontSource::Standard => (&library.standard, library.standard.as_ref()),
-            };
+pub fn lookup_for_font_match(
+    cluster: &mut CharCluster,
+    synth: &mut Synthesis,
+    library: &FontLibraryData,
+    spec_font_attr_opt: Option<&(swash::Style, bool)>,
+) -> Option<usize> {
+    let mut font_id = None;
+    for (current_font_id, font) in library.inner.iter().enumerate() {
+        let (font, font_ref) = match font {
+            FontSource::Data(font_data) => (font_data, font_data.as_ref()),
+            FontSource::Extension(_) => (&library.standard, library.standard.as_ref()),
+            FontSource::Standard => (&library.standard, library.standard.as_ref()),
+        };
 
-            // In this case, the font does match however
-            // we need to check if is indeed a match
-            if let Some(spec_font_attr) = spec_font_attr_opt {
-                if font.style != spec_font_attr.0 {
-                    continue;
-                }
-
-                // In case bold is required
-                // It follows spec on Bold (>=700)
-                // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
-                if spec_font_attr.1 && font.weight < swash::Weight(700) {
-                    continue;
-                }
+        // In this case, the font does match however
+        // we need to check if is indeed a match
+        if let Some(spec_font_attr) = spec_font_attr_opt {
+            if font.style != spec_font_attr.0 {
+                continue;
             }
 
-            let charmap = font.charmap_proxy().materialize(&font_ref);
-            let status = cluster.map(|ch| charmap.map(ch));
-            if status != Status::Discard {
-                *synth = library[current_font_id].synth;
-                font_id = Some(current_font_id);
-                break;
+            // In case bold is required
+            // It follows spec on Bold (>=700)
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
+            if spec_font_attr.1 && font.weight < swash::Weight(700) {
+                continue;
             }
         }
 
-        font_id
+        let charmap = font.charmap_proxy().materialize(&font_ref);
+        let status = cluster.map(|ch| charmap.map(ch));
+        if status != Status::Discard {
+            *synth = library[current_font_id].synth;
+            font_id = Some(current_font_id);
+            break;
+        }
     }
 
+    // In case no font_id is found and exists a font spec requirement
+    // then drop requirement and try to find something that can match.
+    if font_id.is_none() && spec_font_attr_opt.is_some() {
+        return lookup_for_font_match(cluster, synth, library, None);
+    }
+
+    font_id
+}
+
+impl FontContext {
     #[inline]
     pub fn map_cluster(
         &mut self,
@@ -138,7 +140,7 @@ impl FontContext {
         }
 
         if let Some(found_font_id) =
-            self.lookup_for_font_match(cluster, synth, library, spec_font_attr.as_ref())
+            lookup_for_font_match(cluster, synth, library, spec_font_attr.as_ref())
         {
             if !is_cache_key_empty {
                 self.cache.insert(cache_key, found_font_id);
