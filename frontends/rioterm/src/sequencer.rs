@@ -98,7 +98,17 @@ impl Sequencer {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    route.window.screen.render_route(route_id);
+                                    if self.config.renderer.disable_unfocused_render
+                                        && !route.window.is_focused
+                                    {
+                                        return;
+                                    }
+
+                                    if route_id
+                                        == route.window.screen.ctx().current_route()
+                                    {
+                                        route.window.winit_window.request_redraw();
+                                    }
                                 }
                             }
                             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
