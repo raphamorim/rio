@@ -407,6 +407,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(tab_index);
+        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -448,6 +449,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(self.contexts.len() - 1);
+        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -566,7 +568,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
-            self.current_route = self.contexts[self.current_index].route_id;
         }
     }
 
@@ -587,6 +588,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
+        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]

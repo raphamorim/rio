@@ -33,7 +33,6 @@ pub enum Diff {
 pub enum SugarTreeDiff {
     Equal,
     Different,
-    BlocksAreDifferent,
     LineQuantity(i32),
     LayoutIsDifferent,
     Changes(Vec<Diff>),
@@ -60,11 +59,7 @@ impl SugarTree {
             return SugarTreeDiff::LayoutIsDifferent;
         }
 
-        if self.blocks != next.blocks {
-            return SugarTreeDiff::BlocksAreDifferent;
-        }
-
-        if is_dirty {
+        if is_dirty || self.blocks != next.blocks {
             return SugarTreeDiff::Different;
         }
 
