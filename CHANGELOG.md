@@ -16,6 +16,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.4
+
 - Fix Bug Text Rendering Bug [#543](https://github.com/raphamorim/rio/issues/543).
 - Fix Abnormal font display and incomplete Navigation content display [#554](https://github.com/raphamorim/rio/issues/554).
 - Fix Bug switch tabs doesn't work [#536](https://github.com/raphamorim/rio/issues/536).
