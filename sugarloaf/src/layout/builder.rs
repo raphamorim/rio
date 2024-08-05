@@ -461,12 +461,23 @@ impl<'a> ParagraphBuilder<'a> {
                 }
             }
 
-            self.cache.inner.clear();
             *render_data = RenderData::default();
-            self.last_offset = 0;
-
-            return self.resolve(render_data);
+            return self.shape_and_apply_spacing(render_data);
         };
+
+        render_data.apply_spacing();
+    }
+
+    #[inline]
+    fn shape_and_apply_spacing(&mut self, render_data: &mut RenderData) {
+        // This case is only used when extra fonts are loaded
+        // we cannot reset items on state neither ignore otherwise will
+        // double the items to shape.
+        // So, clear the cache of processed lines and shape everything again.
+        self.cache.inner.clear();
+        for line_number in 0..self.s.lines.len() {
+            self.shape(render_data, line_number);
+        }
 
         render_data.apply_spacing();
     }

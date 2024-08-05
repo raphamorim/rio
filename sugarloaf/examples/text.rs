@@ -200,7 +200,7 @@ async fn main() {
                         ..Sugar::default()
                     });
                     sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'a',
+                        content: '!',
                         foreground_color: [0.0, 0.0, 0.0, 1.0],
                         background_color: Some([1.0, 1.0, 1.0, 1.0]),
                         ..Sugar::default()
