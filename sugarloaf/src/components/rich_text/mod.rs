@@ -731,14 +731,13 @@ fn draw_layout(
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
-            let color = run.color();
 
             let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
                 font: font_library[font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
-                color,
+                color: run.color(),
                 cursor: run.cursor(),
                 background_color: run.background_color(),
                 baseline: py,
