@@ -108,7 +108,7 @@ where
             font_id,
             line_break,
             control,
-            // whitespace,
+            whitespace,
             section_index,
             byte_index,
         } in &mut self.characters
@@ -134,10 +134,10 @@ where
                 });
                 caret += advance_width;
 
-                // if !whitespace {
-                // not an invisible trail
-                caret_no_trail = caret;
-                // }
+                if !whitespace {
+                    // not an invisible trail
+                    caret_no_trail = caret;
+                }
             }
 
             if let Some(lbreak) = line_break {
