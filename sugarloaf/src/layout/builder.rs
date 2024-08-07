@@ -530,13 +530,6 @@ where
         return false;
     }
 
-    if current_line == 3 {
-        println!(
-            "{} {:?}",
-            current_line, state.state.lines[current_line].text.content
-        );
-    }
-
     let current_font_id = state.font_id.unwrap();
     let mut shaper = scx
         .builder(fonts[current_font_id].as_ref())
@@ -556,7 +549,7 @@ where
         if !parser.next(cluster) {
             render_data.push_run(
                 &state.state.lines[current_line].styles,
-                &current_font_id,
+                &state.font_id.unwrap(),
                 state.size,
                 current_line as u32,
                 state.state.lines[current_line].hash,
@@ -576,7 +569,7 @@ where
         if next_font != state.font_id || synth != state.synth {
             render_data.push_run(
                 &state.state.lines[current_line].styles,
-                &current_font_id,
+                &state.font_id.unwrap(),
                 state.size,
                 current_line as u32,
                 state.state.lines[current_line].hash,
