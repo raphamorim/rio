@@ -96,8 +96,8 @@ pub struct CachedRunData {
     pub font: usize,
     pub size: f32,
     pub level: u8,
-    pub whitespace: bool,
-    pub trailing_whitespace: bool,
+    // pub whitespace: bool,
+    // pub trailing_whitespace: bool,
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
@@ -164,8 +164,8 @@ impl RenderData {
                 font: cached_run.font,
                 size: cached_run.size,
                 level: cached_run.level,
-                whitespace: false,
-                trailing_whitespace: false,
+                // whitespace: false,
+                // trailing_whitespace: false,
                 ascent: cached_run.ascent,
                 descent: cached_run.descent,
                 leading: cached_run.leading,
@@ -230,8 +230,8 @@ impl RenderData {
                         coords: (coords_start, coords_end),
                         size,
                         level,
-                        whitespace: false,
-                        trailing_whitespace: false,
+                        // whitespace: false,
+                        // trailing_whitespace: false,
                         clusters: (clusters_start, clusters_end),
                         ascent: metrics.ascent * span_data.line_spacing,
                         descent: metrics.descent * span_data.line_spacing,
@@ -277,8 +277,8 @@ impl RenderData {
                         coords: coords.to_owned(),
                         size,
                         level,
-                        whitespace: false,
-                        trailing_whitespace: false,
+                        // whitespace: false,
+                        // trailing_whitespace: false,
                         clusters: owned_clusters,
                         ascent: metrics.ascent * span_data.line_spacing,
                         descent: metrics.descent * span_data.line_spacing,
@@ -369,8 +369,8 @@ impl RenderData {
             coords: (coords_start, coords_end),
             size,
             level,
-            whitespace: false,
-            trailing_whitespace: false,
+            // whitespace: false,
+            // trailing_whitespace: false,
             clusters: (clusters_start, clusters_end),
             ascent: metrics.ascent * span_data.line_spacing,
             descent: metrics.descent * span_data.line_spacing,
@@ -414,8 +414,8 @@ impl RenderData {
             coords: coords.to_owned(),
             size,
             level,
-            whitespace: false,
-            trailing_whitespace: false,
+            // whitespace: false,
+            // trailing_whitespace: false,
             clusters: owned_clusters,
             ascent: metrics.ascent * span_data.line_spacing,
             descent: metrics.descent * span_data.line_spacing,
@@ -449,6 +449,7 @@ impl RenderData {
         });
     }
 
+    #[allow(unused)]
     pub(super) fn apply_spacing(&mut self) {
         for run in &mut self.data.runs {
             let word = run.span.word_spacing;
@@ -488,10 +489,10 @@ impl RenderData {
         }
     }
 
-    pub(super) fn finish(&mut self) {
+    // pub(super) fn finish(&mut self) {
         // Zero out the advance for the extra trailing space.
-        self.data.glyphs.last_mut().unwrap().clear_advance();
-    }
+        // self.data.glyphs.last_mut().unwrap().clear_advance();
+    // }
 }
 
 /// Sequence of clusters sharing the same font, size and span.
@@ -502,9 +503,9 @@ pub struct Run<'a> {
 }
 
 impl<'a> Run<'a> {
-    pub(super) fn new(layout: &'a LayoutData, run: &'a RunData) -> Self {
-        Self { layout, run }
-    }
+    // pub(super) fn new(layout: &'a LayoutData, run: &'a RunData) -> Self {
+    //     Self { layout, run }
+    // }
     /// Returns the span that contains the run.
     #[inline]
     pub fn span(&self) -> FragmentStyle {

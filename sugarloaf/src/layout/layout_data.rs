@@ -6,7 +6,7 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use super::{Alignment, Glyph};
+use super::Glyph;
 use crate::layout::FragmentStyle;
 use swash::text::cluster::ClusterInfo;
 
@@ -185,8 +185,8 @@ pub struct RunData {
     pub coords: (u32, u32),
     pub size: f32,
     pub level: u8,
-    pub whitespace: bool,
-    pub trailing_whitespace: bool,
+    // pub whitespace: bool,
+    // pub trailing_whitespace: bool,
     pub clusters: (u32, u32),
     pub ascent: f32,
     pub descent: f32,
@@ -232,8 +232,8 @@ pub struct LineData {
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
-    pub alignment: Alignment,
-    pub trailing_whitespace: bool,
+    // pub alignment: Alignment,
+    // pub trailing_whitespace: bool,
     pub explicit_break: bool,
     pub width: f32,
     pub max_advance: Option<f32>,

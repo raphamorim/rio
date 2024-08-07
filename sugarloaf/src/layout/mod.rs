@@ -30,7 +30,7 @@ pub mod iter {
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
-pub use line_breaker::{Alignment, BreakLines};
+pub use line_breaker::BreakLines;
 pub use render_data::{Cluster, Glyph, Line, Run};
 pub use span_style::*;
 
