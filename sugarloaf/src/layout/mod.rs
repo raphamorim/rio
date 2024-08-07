@@ -16,9 +16,6 @@ mod render_data;
 pub use content::{Content, ContentBuilder};
 pub use render_data::RenderData;
 
-#[doc(inline)]
-pub use swash::text::Language;
-
 /// Iterators over elements of a paragraph.
 pub mod iter {
     pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
