@@ -7,14 +7,11 @@
 // nav and span_style were originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-//! Experimental paragraph layout engine.
-
 mod builder;
 mod builder_data;
 mod content;
 mod layout_data;
 mod render_data;
-mod span_style;
 
 pub use content::{Content, ContentBuilder};
 pub use render_data::RenderData;
@@ -28,8 +25,8 @@ pub mod iter {
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
+pub use builder_data::FragmentStyle;
 pub use render_data::{Cluster, Glyph, Line, Run};
-pub use span_style::*;
 
 /// Largest allowable span or fragment identifier.
 const MAX_ID: usize = i32::MAX as usize;

@@ -9,9 +9,13 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use super::span_style::*;
+use crate::sugarloaf::primitives::SugarCursor;
+use crate::Sugar;
+use crate::SugarDecoration;
+use crate::SugarStyle;
 use swash::text::{cluster::CharInfo, Script};
 use swash::Setting;
+use swash::{Stretch, Style, Weight};
 
 /// Data that describes a fragment.
 #[derive(Copy, Debug, Clone)]
@@ -166,5 +170,146 @@ impl FontSettingList {
         elements
             .get(self.start as usize..self.end as usize)
             .unwrap_or(&[])
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct FragmentStyle {
+    /// Internal identifier for a list of font families and attributes.
+    pub font: usize,
+    //  Unicode width
+    pub width: f32,
+    /// Font attributes.
+    pub font_attrs: (Stretch, Weight, Style),
+    /// Font size in ppem.
+    pub font_size: f32,
+    /// Font color.
+    pub color: [f32; 4],
+    /// Background color.
+    pub background_color: Option<[f32; 4]>,
+    /// Font variations.
+    pub font_vars: FontSettingKey,
+    /// Additional spacing between letters (clusters) of text.
+    pub letter_spacing: f32,
+    /// Additional spacing between words of text.
+    pub word_spacing: f32,
+    /// Multiplicative line spacing factor.
+    pub line_spacing: f32,
+    /// Enable underline decoration.
+    pub underline: bool,
+    /// Offset of an underline.
+    pub underline_offset: Option<f32>,
+    /// Color of an underline.
+    pub underline_color: Option<[f32; 4]>,
+    /// Thickness of an underline.
+    pub underline_size: Option<f32>,
+    /// Cursor
+    pub cursor: SugarCursor,
+}
+
+impl Default for FragmentStyle {
+    fn default() -> Self {
+        Self {
+            // dir: Direction::LeftToRight,
+            // dir_changed: false,
+            // lang: None,
+            font: 0,
+            width: 1.0,
+            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+            font_size: 16.,
+            font_vars: EMPTY_FONT_SETTINGS,
+            letter_spacing: 0.,
+            word_spacing: 0.,
+            line_spacing: 1.,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            cursor: SugarCursor::Disabled,
+            underline: false,
+            underline_offset: None,
+            underline_color: None,
+            underline_size: None,
+        }
+    }
+}
+
+impl FragmentStyle {
+    pub fn scaled_default(scale: f32) -> Self {
+        Self {
+            font: 0,
+            width: 1.0,
+            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+            font_size: 16. * scale,
+            font_vars: EMPTY_FONT_SETTINGS,
+            letter_spacing: 0.,
+            word_spacing: 0.,
+            line_spacing: 1.,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            cursor: SugarCursor::Disabled,
+            underline: false,
+            underline_offset: None,
+            underline_color: None,
+            underline_size: None,
+        }
+    }
+}
+
+impl From<&Sugar> for FragmentStyle {
+    fn from(sugar: &Sugar) -> Self {
+        let mut style = FragmentStyle::default();
+
+        match sugar.style {
+            SugarStyle::BoldItalic => {
+                style.font_attrs.1 = Weight::BOLD;
+                style.font_attrs.2 = Style::Italic;
+            }
+            SugarStyle::Bold => {
+                style.font_attrs.1 = Weight::BOLD;
+            }
+            SugarStyle::Italic => {
+                style.font_attrs.2 = Style::Italic;
+            }
+            _ => {}
+        }
+
+        let mut has_underline_cursor = false;
+        match sugar.cursor {
+            SugarCursor::Underline(cursor_color) => {
+                style.underline = true;
+                style.underline_offset = Some(-1.);
+                style.underline_color = Some(cursor_color);
+                style.underline_size = Some(-1.);
+
+                has_underline_cursor = true;
+            }
+            SugarCursor::Block(cursor_color) => {
+                style.cursor = SugarCursor::Block(cursor_color);
+            }
+            SugarCursor::Caret(cursor_color) => {
+                style.cursor = SugarCursor::Caret(cursor_color);
+            }
+            _ => {}
+        }
+
+        match &sugar.decoration {
+            SugarDecoration::Underline => {
+                if !has_underline_cursor {
+                    style.underline = true;
+                    style.underline_offset = Some(-2.);
+                    style.underline_size = Some(1.);
+                }
+            }
+            SugarDecoration::Strikethrough => {
+                style.underline = true;
+                style.underline_offset = Some(style.font_size / 2.);
+                style.underline_size = Some(2.);
+            }
+            _ => {}
+        }
+
+        style.color = sugar.foreground_color;
+        style.background_color = sugar.background_color;
+
+        style
     }
 }
