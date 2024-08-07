@@ -280,6 +280,7 @@ impl<'a> ParagraphBuilder<'a> {
         };
     }
 
+    #[inline]
     fn itemize(&mut self, line_number: usize) {
         let line = &mut self.s.lines[line_number];
         let limit = line.text.content.len();
