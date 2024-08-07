@@ -11,8 +11,6 @@
 
 //! RenderData.
 use super::layout_data::*;
-use super::line_breaker::BreakLines;
-use super::Direction;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
@@ -95,9 +93,6 @@ pub struct CachedRunData {
     pub hash: Option<u64>,
     pub font: usize,
     pub size: f32,
-    pub level: u8,
-    // pub whitespace: bool,
-    // pub trailing_whitespace: bool,
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
@@ -163,9 +158,6 @@ impl RenderData {
                 hash: cached_run.hash,
                 font: cached_run.font,
                 size: cached_run.size,
-                level: cached_run.level,
-                // whitespace: false,
-                // trailing_whitespace: false,
                 ascent: cached_run.ascent,
                 descent: cached_run.descent,
                 leading: cached_run.leading,
@@ -184,7 +176,6 @@ impl RenderData {
         styles: &[FragmentStyle],
         font: &usize,
         size: f32,
-        level: u8,
         line: u32,
         hash: Option<u64>,
         shaper: Shaper<'_>,
@@ -229,9 +220,6 @@ impl RenderData {
                         font: *font,
                         coords: (coords_start, coords_end),
                         size,
-                        level,
-                        // whitespace: false,
-                        // trailing_whitespace: false,
                         clusters: (clusters_start, clusters_end),
                         ascent: metrics.ascent * span_data.line_spacing,
                         descent: metrics.descent * span_data.line_spacing,
@@ -276,9 +264,6 @@ impl RenderData {
                         font: *font,
                         coords: coords.to_owned(),
                         size,
-                        level,
-                        // whitespace: false,
-                        // trailing_whitespace: false,
                         clusters: owned_clusters,
                         ascent: metrics.ascent * span_data.line_spacing,
                         descent: metrics.descent * span_data.line_spacing,
@@ -368,9 +353,6 @@ impl RenderData {
             font: *font,
             coords: (coords_start, coords_end),
             size,
-            level,
-            // whitespace: false,
-            // trailing_whitespace: false,
             clusters: (clusters_start, clusters_end),
             ascent: metrics.ascent * span_data.line_spacing,
             descent: metrics.descent * span_data.line_spacing,
@@ -413,9 +395,6 @@ impl RenderData {
             font: *font,
             coords: coords.to_owned(),
             size,
-            level,
-            // whitespace: false,
-            // trailing_whitespace: false,
             clusters: owned_clusters,
             ascent: metrics.ascent * span_data.line_spacing,
             descent: metrics.descent * span_data.line_spacing,
@@ -488,11 +467,6 @@ impl RenderData {
             }
         }
     }
-
-    // pub(super) fn finish(&mut self) {
-        // Zero out the advance for the extra trailing space.
-        // self.data.glyphs.last_mut().unwrap().clear_advance();
-    // }
 }
 
 /// Sequence of clusters sharing the same font, size and span.
@@ -503,9 +477,6 @@ pub struct Run<'a> {
 }
 
 impl<'a> Run<'a> {
-    // pub(super) fn new(layout: &'a LayoutData, run: &'a RunData) -> Self {
-    //     Self { layout, run }
-    // }
     /// Returns the span that contains the run.
     #[inline]
     pub fn span(&self) -> FragmentStyle {
@@ -535,25 +506,10 @@ impl<'a> Run<'a> {
         self.run.span.width
     }
 
-    /// Returns the bidi level of the run.
-    #[inline]
-    pub fn level(&self) -> u8 {
-        self.run.level
-    }
-
     /// Returns the cursor
     #[inline]
     pub fn cursor(&self) -> SugarCursor {
         self.run.span.cursor
-    }
-
-    /// Returns the direction of the run.
-    pub fn direction(&self) -> Direction {
-        if self.run.level & 1 != 0 {
-            Direction::RightToLeft
-        } else {
-            Direction::LeftToRight
-        }
     }
 
     /// Returns the normalized variation coordinates for the run.
@@ -617,11 +573,10 @@ impl<'a> Run<'a> {
     /// Returns an iterator over the clusters in visual order.
     #[inline]
     pub fn visual_clusters(&self) -> Clusters<'a> {
-        let rev = self.run.level & 1 != 0;
         Clusters {
             layout: self.layout,
             iter: self.layout.clusters[make_range(self.run.clusters)].iter(),
-            rev,
+            rev: false,
         }
     }
 }
@@ -859,14 +814,6 @@ pub struct Line<'a> {
 }
 
 impl<'a> Line<'a> {
-    // pub(super) fn new(layout: &'a RenderData, line_index: usize) -> Self {
-    //     Self {
-    //         layout: &layout.data,
-    //         line_layout: &layout.line_data,
-    //         line: &layout.line_data.lines[line_index],
-    //     }
-    // }
-
     /// Returns the offset in line direction.
     #[inline]
     pub fn offset(&self) -> f32 {
@@ -903,30 +850,6 @@ impl<'a> Line<'a> {
         self.line.width
     }
 
-    /// Returns the total advance of the line excluding trailing whitespace.
-    // pub fn advance_without_trailing_whitespace(&self) -> f32 {
-    //     let mut advance = self.line.width;
-    //     for run in self.line_layout.runs[make_range(self.line.runs)]
-    //         .iter()
-    //         .rev()
-    //     {
-    //         if !run.trailing_whitespace {
-    //             break;
-    //         }
-    //         for cluster in self.layout.clusters[make_range(run.clusters)].iter().rev() {
-    //             if !cluster.info.is_whitespace() {
-    //                 break;
-    //             }
-    //             advance -= Cluster {
-    //                 layout: self.layout,
-    //                 cluster: *cluster,
-    //             }
-    //             .advance();
-    //         }
-    //     }
-    //     advance
-    // }
-
     /// Returns the size of the line (height for horizontal and width
     /// for vertical layouts).
     #[inline]
@@ -948,10 +871,6 @@ impl<'a> Line<'a> {
     pub fn hash(&self) -> &Option<u64> {
         &self.line.hash
     }
-
-    // pub(super) fn data(&self) -> &'a LineData {
-    //     self.line
-    // }
 }
 
 /// Iterator over the lines of a paragraph.

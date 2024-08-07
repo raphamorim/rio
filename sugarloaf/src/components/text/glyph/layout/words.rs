@@ -135,8 +135,8 @@ where
                 caret += advance_width;
 
                 // if !whitespace {
-                    // not an invisible trail
-                    caret_no_trail = caret;
+                // not an invisible trail
+                caret_no_trail = caret;
                 // }
             }
 

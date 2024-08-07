@@ -151,7 +151,6 @@ where
                     line_break,
                     control: c.is_control(),
                     // whitespace: c.is_whitespace(),
-
                     section_index: *section_index,
                     byte_index,
                 });

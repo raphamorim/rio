@@ -9,9 +9,7 @@
 use crate::font::FontLibrary;
 use rustc_hash::FxHashMap;
 
-use crate::layout::{
-    Content, ContentBuilder, Direction, FragmentStyle, LayoutContext, RenderData,
-};
+use crate::layout::{Content, ContentBuilder, FragmentStyle, LayoutContext, RenderData};
 use crate::sugarloaf::tree::SugarTree;
 use unicode_width::UnicodeWidthChar;
 
@@ -75,11 +73,7 @@ impl Advanced {
         // let start = std::time::Instant::now();
         self.render_data = RenderData::default();
 
-        let mut lb = self.layout_context.builder(
-            Direction::LeftToRight,
-            None,
-            tree.layout.dimensions.scale,
-        );
+        let mut lb = self.layout_context.builder(tree.layout.dimensions.scale);
         let content = self.content_builder.build_ref();
         content.layout(&mut lb);
         self.render_data.clear();
@@ -106,11 +100,7 @@ impl Advanced {
         // ]);
         content_builder.add_char(' ', style);
 
-        let mut lb = self.layout_context.builder(
-            Direction::LeftToRight,
-            None,
-            tree.layout.dimensions.scale,
-        );
+        let mut lb = self.layout_context.builder(tree.layout.dimensions.scale);
         let content = content_builder.build_ref();
         content.layout(&mut lb);
         self.mocked_render_data.clear();
@@ -154,7 +144,7 @@ impl Advanced {
         }
 
         self.content_builder
-            .set_current_line_hash(line.hash.unwrap());
+            .set_hash_on_last_line(line.hash.unwrap_or(0));
         self.content_builder.break_line();
     }
 }
