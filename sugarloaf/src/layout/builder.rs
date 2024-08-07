@@ -178,7 +178,7 @@ impl<'a> ParagraphBuilder<'a> {
                     || style.letter_spacing != prev_style.letter_spacing
                     // || style.lang != prev_style.lang
                     // || style.font_features != prev_style.font_features
-                    || style.font_attrs != prev_style.font_attrs
+                    // || style.font_attrs != prev_style.font_attrs
                     || style.font_vars != prev_style.font_vars
             }
         } else {
@@ -287,19 +287,19 @@ impl<'a> ParagraphBuilder<'a> {
         if line.text.frags.is_empty() || limit == 0 {
             return;
         }
-        let mut last_script = line
-            .text
-            .info
-            .iter()
-            .map(|i| i.script())
-            .find(|s| real_script(*s))
-            .unwrap_or(Script::Latin);
+        // let mut last_script = line
+        //     .text
+        //     .info
+        //     .iter()
+        //     .map(|i| i.script())
+        //     .find(|s| real_script(*s))
+        //     .unwrap_or(Script::Latin);
         let mut last_frag = line.fragments.first().unwrap();
-        let last_level = 0;
+        // let last_level = 0;
         let mut last_vars = last_frag.vars;
         let mut item = ItemData {
-            script: last_script,
-            level: last_level,
+            // script: last_script,
+            // level: last_level,
             start: last_frag.start,
             end: last_frag.start,
             vars: last_vars,
@@ -307,8 +307,8 @@ impl<'a> ParagraphBuilder<'a> {
         macro_rules! push_item {
             () => {
                 if item.start < limit && item.start < item.end {
-                    item.script = last_script;
-                    item.level = last_level;
+                    // item.script = last_script;
+                    // item.level = last_level;
                     item.vars = last_vars;
                     line.items.push(item);
                     item.start = item.end;
@@ -324,18 +324,19 @@ impl<'a> ParagraphBuilder<'a> {
             last_frag = frag;
             last_vars = frag.vars;
             let range = frag.start..frag.end;
-            for &props in &line.text.info[range] {
-                let script = props.script();
-                let real = real_script(script);
-                if script != last_script && real {
-                    //item.end += 1;
-                    push_item!();
-                    if real {
-                        last_script = script;
-                    }
-                } else {
-                    item.end += 1;
-                }
+            // for &props in &line.text.info[range] {
+            for &_props in &line.text.info[range] {
+                //     let script = props.script();
+                // let real = real_script(script);
+                // if script != last_script && real {
+                //     //item.end += 1;
+                //     // push_item!();
+                //     if real {
+                //         last_script = script;
+                //     }
+                // } else {
+                item.end += 1;
+                // }
             }
         }
         push_item!();
@@ -366,10 +367,10 @@ impl<'a> ParagraphBuilder<'a> {
     }
 }
 
-#[inline]
-fn real_script(script: Script) -> bool {
-    script != Script::Common && script != Script::Inherited && script != Script::Unknown
-}
+// #[inline]
+// fn real_script(script: Script) -> bool {
+//     script != Script::Common && script != Script::Inherited && script != Script::Unknown
+// }
 
 struct ShapeState<'a> {
     state: &'a BuilderState,
@@ -403,7 +404,8 @@ fn shape_item(
     let style = state.lines[current_line].styles[span_index];
     let vars = state.vars.get(item.vars);
     let mut shape_state = ShapeState {
-        script: item.script,
+        // script: item.script,
+        script: Script::Latin,
         features: font_features,
         vars,
         synth: Synthesis::default(),
@@ -414,99 +416,51 @@ fn shape_item(
         size: style.font_size,
     };
 
-    if item.level & 1 != 0 {
-        let chars = state.lines[current_line].text.content[range.to_owned()]
-            .iter()
-            .zip(&state.lines[current_line].text.offsets[range.to_owned()])
-            .zip(&state.lines[current_line].text.spans[range.to_owned()])
-            .zip(&state.lines[current_line].text.info[range])
-            .map(|z| {
-                use swash::text::Codepoint;
-                let (((&ch, &offset), &span_index), &info) = z;
-                let ch = ch.mirror().unwrap_or(ch);
-                Token {
-                    ch,
-                    offset,
-                    len: ch.len_utf8() as u8,
-                    info,
-                    data: span_index as u32,
-                }
-            });
+    let chars = state.lines[current_line].text.content[range.to_owned()]
+        .iter()
+        .zip(&state.lines[current_line].text.offsets[range.to_owned()])
+        .zip(&state.lines[current_line].text.spans[range.to_owned()])
+        .zip(&state.lines[current_line].text.info[range])
+        .map(|z| {
+            let (((&ch, &offset), &span_index), &info) = z;
+            Token {
+                ch,
+                offset,
+                len: ch.len_utf8() as u8,
+                info,
+                data: span_index as u32,
+            }
+        });
 
-        let mut parser = Parser::new(item.script, chars);
-        if !parser.next(cluster) {
-            return Some(());
-        }
-        let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id = fcx.map_cluster(
-            cluster,
-            &mut shape_state.synth,
-            font_library,
-            fonts_to_load,
-            &style,
-        );
-
-        while shape_clusters(
-            fcx,
-            font_library,
-            scx,
-            &mut shape_state,
-            &mut parser,
-            cluster,
-            render_data,
-            current_line,
-            fonts_to_load,
-        ) {}
-
-        if let Some(line_hash) = state.lines[current_line].hash {
-            cache.insert(line_hash, render_data.last_cached_run.to_owned());
-        }
-    } else {
-        let chars = state.lines[current_line].text.content[range.to_owned()]
-            .iter()
-            .zip(&state.lines[current_line].text.offsets[range.to_owned()])
-            .zip(&state.lines[current_line].text.spans[range.to_owned()])
-            .zip(&state.lines[current_line].text.info[range])
-            .map(|z| {
-                let (((&ch, &offset), &span_index), &info) = z;
-                Token {
-                    ch,
-                    offset,
-                    len: ch.len_utf8() as u8,
-                    info,
-                    data: span_index as u32,
-                }
-            });
-
-        let mut parser = Parser::new(item.script, chars);
-        if !parser.next(cluster) {
-            return Some(());
-        }
-        let font_library = { &fonts.inner.read().unwrap() };
-        shape_state.font_id = fcx.map_cluster(
-            cluster,
-            &mut shape_state.synth,
-            font_library,
-            fonts_to_load,
-            &style,
-        );
-        while shape_clusters(
-            fcx,
-            font_library,
-            scx,
-            &mut shape_state,
-            &mut parser,
-            cluster,
-            // dir,
-            render_data,
-            current_line,
-            fonts_to_load,
-        ) {}
-
-        if let Some(line_hash) = state.lines[current_line].hash {
-            cache.insert(line_hash, render_data.last_cached_run.to_owned());
-        }
+    let mut parser = Parser::new(Script::Latin, chars);
+    if !parser.next(cluster) {
+        return Some(());
     }
+    let font_library = { &fonts.inner.read().unwrap() };
+    shape_state.font_id = fcx.map_cluster(
+        cluster,
+        &mut shape_state.synth,
+        font_library,
+        fonts_to_load,
+        &style,
+    );
+    while shape_clusters(
+        fcx,
+        font_library,
+        scx,
+        &mut shape_state,
+        &mut parser,
+        cluster,
+        // dir,
+        render_data,
+        current_line,
+        fonts_to_load,
+    ) {}
+
+    if let Some(line_hash) = state.lines[current_line].hash {
+        cache.insert(line_hash, render_data.last_cached_run.to_owned());
+    }
+
     Some(())
 }
 
