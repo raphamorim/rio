@@ -13,7 +13,7 @@ use crate::sugarloaf::primitives::SugarCursor;
 use crate::Sugar;
 use crate::SugarDecoration;
 use crate::SugarStyle;
-use swash::text::{cluster::CharInfo, Script};
+use swash::text::cluster::CharInfo;
 use swash::Setting;
 use swash::{Stretch, Style, Weight};
 
@@ -35,10 +35,10 @@ pub struct FragmentData {
 /// Data that describes an item.
 #[derive(Copy, Debug, Clone)]
 pub struct ItemData {
-    /// Script of the item.
-    pub script: Script,
-    /// Bidi level of the item.
-    pub level: u8,
+    // Script of the item.
+    // pub script: Script,
+    // Bidi level of the item.
+    // pub level: u8,
     /// Offset of the text.
     pub start: usize,
     /// End of the text.
