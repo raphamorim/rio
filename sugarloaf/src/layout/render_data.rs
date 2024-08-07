@@ -685,13 +685,7 @@ pub struct Cluster<'a> {
     cluster: ClusterData,
 }
 
-// gar.content.width().unwrap_or(
-
 impl<'a> Cluster<'a> {
-    // pub(super) fn new(layout: &'a LayoutData, cluster: ClusterData) -> Self {
-    //     Self { layout, cluster }
-    // }
-
     /// Returns the cluster information.
     #[inline]
     pub fn info(&self) -> ClusterInfo {

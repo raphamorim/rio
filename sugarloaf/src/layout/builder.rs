@@ -8,9 +8,7 @@
 
 //! Render data builder.
 
-// use super::bidi::*;
 use super::builder_data::*;
-use super::span_style::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
@@ -59,7 +57,6 @@ pub struct LayoutContext {
     fcx: FontContext,
     fonts: FontLibrary,
     font_features: Vec<swash::Setting<u16>>,
-    // bidi: BidiResolver,
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
@@ -72,7 +69,6 @@ impl LayoutContext {
         Self {
             fonts: font_library.clone(),
             fcx: FontContext::default(),
-            // bidi: BidiResolver::new(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
@@ -121,10 +117,8 @@ impl LayoutContext {
 /// Builder for computing the layout of a paragraph.
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
-    // bidi: &'a mut BidiResolver,
     fonts: &'a FontLibrary,
     font_features: &'a Vec<swash::Setting<u16>>,
-    // needs_bidi: bool,
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
     last_offset: u32,
@@ -217,7 +211,6 @@ impl<'a> ParagraphBuilder<'a> {
     /// Consumes the builder and fills the specified paragraph with the result.
     pub fn build_into(mut self, render_data: &mut RenderData) {
         self.resolve(render_data);
-        // render_data.finish();
     }
 
     /// Consumes the builder and returns the resulting paragraph.
@@ -372,17 +365,6 @@ impl<'a> ParagraphBuilder<'a> {
     }
 }
 
-// impl<'a> ParagraphBuilder<'a> {
-//     #[inline]
-//     fn push_char(&mut self, ch: char) {
-//         let current_line = self.s.current_line();
-//         self.s.lines[current_line].text.content.push(ch);
-//         self.s.lines[current_line].text.frags.push(0);
-//         self.s.lines[current_line].text.spans.push(0);
-//         self.s.lines[current_line].text.offsets.push(0);
-//     }
-// }
-
 #[inline]
 fn real_script(script: Script) -> bool {
     script != Script::Common && script != Script::Inherited && script != Script::Unknown
@@ -470,7 +452,6 @@ fn shape_item(
             &mut shape_state,
             &mut parser,
             cluster,
-            // dir,
             render_data,
             current_line,
             fonts_to_load,
@@ -487,9 +468,6 @@ fn shape_item(
             .zip(&state.lines[current_line].text.info[range])
             .map(|z| {
                 let (((&ch, &offset), &span_index), &info) = z;
-                // if current_line == 0 {
-                //     println!("{:?} {:?} {:?}", ch, span_index as u32, state.lines[current_line].styles[span_index]);
-                // }
                 Token {
                     ch,
                     offset,
