@@ -82,12 +82,12 @@ pub fn default_editor() -> String {
 
 #[inline]
 pub fn default_window_width() -> i32 {
-    600
+    800
 }
 
 #[inline]
 pub fn default_window_height() -> i32 {
-    400
+    500
 }
 
 #[inline]

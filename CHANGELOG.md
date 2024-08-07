@@ -16,7 +16,8 @@
 
 ## Unreleased
 
-- TBD
+- Changed default font family to Cascadia Code.
+- Changed default width to 800 and default height to 500.
 
 ## 0.1.4
 
