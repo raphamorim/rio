@@ -105,7 +105,7 @@ impl FontContext {
         let chars = cluster.chars();
         let is_cache_key_empty = chars.is_empty();
 
-        let mut cache_key: String = String::with_capacity(chars.len() + 1);
+        let mut cache_key: String = String::default();
         let spec_font_attr = if is_bold && is_italic {
             cache_key.push('m');
             Some((Style::Italic, true))
@@ -491,7 +491,8 @@ pub struct FontData {
 impl PartialEq for FontData {
     fn eq(&self, other: &Self) -> bool {
         // self.data == other.data &&
-        self.offset == other.offset && self.key == other.key
+        self.key == other.key
+        // self.offset == other.offset && self.key == other.key
     }
 }
 

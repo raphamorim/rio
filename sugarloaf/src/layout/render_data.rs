@@ -427,46 +427,6 @@ impl RenderData {
             size: glyph.data as usize,
         });
     }
-
-    #[allow(unused)]
-    pub(super) fn apply_spacing(&mut self) {
-        for run in &mut self.data.runs {
-            let word = run.span.word_spacing;
-            let letter = run.span.letter_spacing;
-            if word == 0. && letter == 0. {
-                continue;
-            }
-            let clusters =
-                &mut self.data.clusters[run.clusters.0 as usize..run.clusters.1 as usize];
-            for cluster in clusters {
-                let mut spacing = letter;
-                if word != 0. && cluster.info.whitespace().is_space_or_nbsp() {
-                    spacing += word;
-                }
-                if spacing != 0. {
-                    let detailed_glyphs = &mut self.data.detailed_glyphs[..];
-                    if cluster.is_detailed() && !cluster.is_ligature() {
-                        self.data.detailed_clusters[cluster.glyphs as usize].advance +=
-                            spacing;
-                    } else if cluster.is_last_continuation() {
-                        cluster.glyphs =
-                            (f32::from_bits(cluster.glyphs) + spacing).to_bits();
-                    }
-                    if let Some(g) = cluster
-                        .glyphs_mut(&self.data.detailed_clusters, &mut self.data.glyphs)
-                        .last_mut()
-                    {
-                        if g.is_simple() {
-                            g.add_spacing(spacing);
-                        } else {
-                            detailed_glyphs[g.detail_index()].advance += spacing;
-                        }
-                        run.advance += spacing;
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// Sequence of clusters sharing the same font, size and span.
