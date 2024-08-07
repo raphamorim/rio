@@ -176,7 +176,7 @@ impl ContentBuilder {
         // however whenever process styles from span like background color
         // will apply the line width based on last char before \n and not
         // the remaining space.
-        self.add_char('\n', FragmentStyle::default());
+        // self.add_char('\n', FragmentStyle::default());
 
         self.content.current_line += 1;
         self.content.fragments.push(LineFragments {

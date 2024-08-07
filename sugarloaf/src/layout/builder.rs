@@ -16,7 +16,7 @@ use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use rustc_hash::FxHashMap;
 use std::path::PathBuf;
-use swash::shape::{self, ShapeContext};
+use swash::shape::ShapeContext;
 use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use swash::text::{analyze, Language, Script};
 use swash::{Setting, Synthesis};
@@ -370,7 +370,7 @@ impl<'a> ParagraphBuilder<'a> {
     /// Consumes the builder and fills the specified paragraph with the result.
     pub fn build_into(mut self, render_data: &mut RenderData) {
         self.resolve(render_data);
-        render_data.finish();
+        // render_data.finish();
     }
 
     /// Consumes the builder and returns the resulting paragraph.
@@ -404,7 +404,7 @@ impl<'a> ParagraphBuilder<'a> {
         // empty paragraphs and to force an extra break if the paragraph ends
         // in a newline.
 
-        self.add_text(" ", FragmentStyle::default());
+        // self.add_text(" ", FragmentStyle::default());
         // for _ in 0..self.dir_depth {
         // const PDI: char = '\u{2069}';
         // self.push_char(PDI);
@@ -462,24 +462,14 @@ impl<'a> ParagraphBuilder<'a> {
             }
 
             *render_data = RenderData::default();
-            return self.shape_and_apply_spacing(render_data);
+            self.cache.inner.clear();
+            for line_number in 0..self.s.lines.len() {
+                self.shape(render_data, line_number);
+            }
         };
 
-        render_data.apply_spacing();
-    }
-
-    #[inline]
-    fn shape_and_apply_spacing(&mut self, render_data: &mut RenderData) {
-        // This case is only used when extra fonts are loaded
-        // we cannot reset items on state neither ignore otherwise will
-        // double the items to shape.
-        // So, clear the cache of processed lines and shape everything again.
-        self.cache.inner.clear();
-        for line_number in 0..self.s.lines.len() {
-            self.shape(render_data, line_number);
-        }
-
-        render_data.apply_spacing();
+        // Currently we do not have support to spacing in Rio via configuration
+        // render_data.apply_spacing();
     }
 
     fn itemize(&mut self, line_number: usize) {
@@ -646,11 +636,11 @@ fn shape_item(
     cache: &mut RunCache,
     fonts_to_load: &mut Vec<(usize, PathBuf)>,
 ) -> Option<()> {
-    let dir = if item.level & 1 != 0 {
-        shape::Direction::RightToLeft
-    } else {
-        shape::Direction::LeftToRight
-    };
+    // let dir = if item.level & 1 != 0 {
+    //     shape::Direction::RightToLeft
+    // } else {
+    //     shape::Direction::LeftToRight
+    // };
     let range = item.start..item.end;
     let span_index = state.lines[current_line].text.spans[item.start];
     let style = state.lines[current_line].styles[span_index];
@@ -707,7 +697,7 @@ fn shape_item(
             &mut shape_state,
             &mut parser,
             cluster,
-            dir,
+            // dir,
             render_data,
             current_line,
             fonts_to_load,
@@ -755,7 +745,7 @@ fn shape_item(
             &mut shape_state,
             &mut parser,
             cluster,
-            dir,
+            // dir,
             render_data,
             current_line,
             fonts_to_load,
@@ -777,7 +767,7 @@ fn shape_clusters<I>(
     state: &mut ShapeState,
     parser: &mut Parser<I>,
     cluster: &mut CharCluster,
-    dir: shape::Direction,
+    // dir: shape::Direction,
     render_data: &mut RenderData,
     current_line: usize,
     fonts_to_load: &mut Vec<(usize, PathBuf)>,
@@ -789,12 +779,16 @@ where
         return false;
     }
 
+    if current_line == 3 {
+        println!("{} {:?}", current_line, state.state.lines[current_line].text.content);
+    }
+
     let current_font_id = state.font_id.unwrap();
     let mut shaper = scx
         .builder(fonts[current_font_id].as_ref())
         .script(state.script)
         // .language(state.span.lang)
-        .direction(dir)
+        // .direction(dir)
         .size(state.size)
         .features(state.features.iter().copied())
         .variations(state.synth.variations().iter().copied())

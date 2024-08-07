@@ -24,7 +24,7 @@ pub(crate) struct Character<'b, F: Font> {
     /// Equivalent to `char::is_control()`.
     pub control: bool,
     /// Equivalent to `char::is_whitespace()`.
-    pub whitespace: bool,
+    // pub whitespace: bool,
     /// Index of the `SectionText` this character is from.
     pub section_index: usize,
     /// Position of the char within the `SectionText` text.
@@ -150,7 +150,7 @@ where
                     font_id: *font_id,
                     line_break,
                     control: c.is_control(),
-                    whitespace: c.is_whitespace(),
+                    // whitespace: c.is_whitespace(),
 
                     section_index: *section_index,
                     byte_index,

@@ -182,7 +182,7 @@ impl FontContext {
             }
         }
 
-        None
+        Some(0)
     }
 }
 
