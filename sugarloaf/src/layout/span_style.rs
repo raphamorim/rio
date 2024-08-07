@@ -171,20 +171,6 @@ impl From<&Sugar> for FragmentStyle {
     }
 }
 
-/// Paragraph direction.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Direction {
-    Auto,
-    LeftToRight,
-    RightToLeft,
-}
-
-impl Default for Direction {
-    fn default() -> Self {
-        Self::LeftToRight
-    }
-}
-
 /// Specifies a case transformation for text.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum TextTransform {

@@ -9,12 +9,10 @@
 
 //! Experimental paragraph layout engine.
 
-mod bidi;
 mod builder;
 mod builder_data;
 mod content;
 mod layout_data;
-mod line_breaker;
 mod render_data;
 mod span_style;
 
@@ -30,7 +28,6 @@ pub mod iter {
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
-pub use line_breaker::BreakLines;
 pub use render_data::{Cluster, Glyph, Line, Run};
 pub use span_style::*;
 

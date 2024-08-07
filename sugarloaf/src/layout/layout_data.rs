@@ -6,6 +6,7 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
+use super::render_data::*;
 use super::Glyph;
 use crate::layout::FragmentStyle;
 use swash::text::cluster::ClusterInfo;
@@ -184,7 +185,6 @@ pub struct RunData {
     pub font: usize,
     pub coords: (u32, u32),
     pub size: f32,
-    pub level: u8,
     // pub whitespace: bool,
     // pub trailing_whitespace: bool,
     pub clusters: (u32, u32),
@@ -307,11 +307,142 @@ impl LineLayoutData {
         let index = (cluster as usize).min(limit - 1);
         self.clusters.get(index).map(|x| x.0).unwrap_or(0)
     }
+}
 
-    pub fn is_rtl(&self, cluster: u32) -> bool {
-        self.run_data_for_cluster(cluster)
-            .or_else(|| self.runs.last())
-            .map(|r| r.level & 1 != 0)
-            .unwrap_or(false)
+pub struct BreakLines<'a> {
+    layout: &'a mut LayoutData,
+    lines: &'a mut LineLayoutData,
+    state: BreakerState,
+}
+
+impl<'a> BreakLines<'a> {
+    pub(super) fn new(layout: &'a mut LayoutData, lines: &'a mut LineLayoutData) -> Self {
+        Self {
+            layout,
+            lines,
+            state: BreakerState::default(),
+        }
     }
+
+    #[inline]
+    pub fn break_without_advance_or_alignment(&'a mut self) {
+        let run_len = self.layout.runs.len();
+        let mut y = 0.;
+
+        for i in 0..self.layout.runs.len() {
+            let run = &self.layout.runs[i];
+
+            let mut should_commit_line = false;
+
+            if i == run_len - 1 {
+                should_commit_line = true;
+            } else {
+                // If next run has a different line number then
+                // try to commit line
+                let next_run = &self.layout.runs[i + 1];
+                if next_run.line != run.line {
+                    should_commit_line = true;
+                }
+            }
+
+            self.state.line.runs.1 = i as u32 + 1;
+            // self.state.line.clusters.1 = self.state.j as u32;
+            self.state.line.clusters.1 = run.clusters.1;
+
+            if should_commit_line
+                && commit_line(
+                    self.layout,
+                    self.lines,
+                    &mut self.state.line,
+                    None,
+                    true,
+                    run,
+                    &mut y,
+                )
+            {
+                self.state.runs = self.lines.runs.len();
+                self.state.lines = self.lines.lines.len();
+                self.state.line.x = 0.;
+                // self.state.j += 1;
+                self.state.line.clusters.1 = run.clusters.1 + 1;
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default)]
+struct LineState {
+    x: f32,
+    runs: (u32, u32),
+    clusters: (u32, u32),
+}
+
+#[derive(Copy, Clone, Default)]
+struct BreakerState {
+    runs: usize,
+    lines: usize,
+    line: LineState,
+}
+
+#[inline]
+fn commit_line(
+    layout: &LayoutData,
+    lines: &mut LineLayoutData,
+    state: &mut LineState,
+    max_advance: Option<f32>,
+    explicit: bool,
+    run_data: &RunData,
+    y: &mut f32,
+) -> bool {
+    state.clusters.1 = state.clusters.1.min(layout.clusters.len() as u32);
+    if state.runs.0 == state.runs.1 || state.clusters.0 == state.clusters.1 {
+        return false;
+    }
+    let line_index = lines.lines.len() as u32;
+    let last_run = (state.runs.1 - state.runs.0) as usize - 1;
+    let runs_start = lines.runs.len() as u32;
+    for (i, run) in layout.runs[make_range(state.runs)].iter().enumerate() {
+        let mut cluster_range = run.clusters;
+        if i == 0 {
+            cluster_range.0 = state.clusters.0;
+        }
+        if i == last_run {
+            cluster_range.1 = state.clusters.1;
+        }
+        if cluster_range.0 >= cluster_range.1 {
+            continue;
+        }
+        let mut copy = run.to_owned();
+        copy.clusters = cluster_range;
+        copy.line = line_index;
+        lines.runs.push(copy);
+    }
+    let runs_end = lines.runs.len() as u32;
+    if runs_start == runs_end {
+        return false;
+    }
+    let mut line = LineData {
+        runs: (runs_start, runs_end),
+        clusters: state.clusters,
+        width: state.x,
+        max_advance,
+        explicit_break: explicit,
+        hash: run_data.hash,
+        ascent: run_data.ascent.round(),
+        descent: run_data.descent.round(),
+        leading: (run_data.leading * 0.5).round() * 2.,
+        ..Default::default()
+    };
+
+    let above = (line.ascent + line.leading * 0.5).round();
+    let below = (line.descent + line.leading * 0.5).round();
+    line.baseline = *y + above;
+    *y = line.baseline + below;
+
+    lines.lines.push(line);
+    state.clusters.0 = state.clusters.1;
+    state.clusters.1 += 1;
+    state.runs.0 = state.runs.1 - 1;
+
+    true
 }
