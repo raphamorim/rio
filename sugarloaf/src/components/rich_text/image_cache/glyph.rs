@@ -82,7 +82,6 @@ impl GlyphCache {
         self.fonts.retain(|_, entry| {
             for glyph in &entry.glyphs {
                 images.deallocate(glyph.1.image);
-                println!("deallocate");
             }
             false
         });
@@ -129,6 +128,7 @@ impl<'a> GlyphCacheSession<'a> {
         self.images.get(image)
     }
 
+    #[inline]
     pub fn get(&mut self, id: u16, x: f32, y: f32) -> Option<GlyphEntry> {
         let subpx = [SubpixelOffset::quantize(x), SubpixelOffset::quantize(y)];
         let key = GlyphKey {
@@ -141,6 +141,7 @@ impl<'a> GlyphCacheSession<'a> {
                 return Some(*entry);
             }
         }
+
         self.scaled_image.data.clear();
         // let embolden = if IS_MACOS { 0.25 } else { 0. };
         if Render::new(SOURCES)

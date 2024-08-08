@@ -16,6 +16,8 @@
 
 ## Unreleased
 
+- Fix Bug cell disappearance [#579](https://github.com/raphamorim/rio/issues/579).
+- Fix Bug Rendering problem with TUIs using cursor movement control sequences in rio (v0.1.1+) [#574](https://github.com/raphamorim/rio/issues/574).
 - Changed default font family to Cascadia Code.
 - Changed default width to 800 and default height to 500.
 

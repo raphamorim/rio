@@ -5,6 +5,7 @@ pub mod text;
 pub mod util;
 
 use crate::components::core::orthographic_projection;
+use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
@@ -54,6 +55,8 @@ pub struct RichTextBrush {
     bind_group_needs_update: bool,
     first_run: bool,
     supported_vertex_buffer: usize,
+    images: ImageCache,
+    glyphs: GlyphCache,
 }
 
 impl RichTextBrush {
@@ -275,7 +278,9 @@ impl RichTextBrush {
             mask_texture_view,
             sampler,
             textures: FxHashMap::default(),
-            comp: Compositor::new(2048),
+            comp: Compositor::new(),
+            images: ImageCache::new(2048),
+            glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
             bind_group,
@@ -315,6 +320,8 @@ impl RichTextBrush {
 
         draw_layout(
             &mut self.comp,
+            &mut self.images,
+            &mut self.glyphs,
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position.0,
             state.current.layout.style.screen_position.1,
@@ -345,6 +352,8 @@ impl RichTextBrush {
 
         let dimension = fetch_dimensions(
             &mut self.comp,
+            &mut self.images,
+            &mut self.glyphs,
             &state.compositors.advanced.mocked_render_data,
             font_library,
         );
@@ -538,128 +547,132 @@ impl RichTextBrush {
 
     #[inline]
     fn finish_composition(&mut self, ctx: &mut Context) {
-        self.comp.finish(&mut self.dlist, |event| {
-            match event {
-                TextureEvent::CreateTexture {
-                    id,
-                    format,
-                    width,
-                    height,
-                    data,
-                } => {
-                    log::info!(
-                        "rich_text::CreateTexture with id ({:?}) and format {:?}",
+        self.comp
+            .finish(&mut self.dlist, &mut self.images, |event| {
+                match event {
+                    TextureEvent::CreateTexture {
                         id,
-                        format
-                    );
-                    let texture_size = wgpu::Extent3d {
-                        width: width.into(),
-                        height: height.into(),
-                        depth_or_array_layers: 1,
-                    };
-                    let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
-                        size: texture_size,
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: wgpu::TextureDimension::D2,
-                        format: match format {
-                            image_cache::PixelFormat::A8 => wgpu::TextureFormat::R8Unorm,
-                            image_cache::PixelFormat::Rgba8 => {
-                                wgpu::TextureFormat::Rgba8Unorm
-                            }
-                        },
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING
-                            | wgpu::TextureUsages::COPY_DST,
-                        label: Some("rich_text::Cache"),
-                        view_formats: &[],
-                    });
-
-                    if let Some(data) = data {
-                        self.bind_group_needs_update = true;
-                        let channels = match format {
-                            // Mask
-                            image_cache::PixelFormat::A8 => 1,
-                            // Color
-                            image_cache::PixelFormat::Rgba8 => 4,
-                        };
-
-                        ctx.queue.write_texture(
-                            // Tells wgpu where to copy the pixel data
-                            wgpu::ImageCopyTexture {
-                                texture: &texture,
-                                mip_level: 0,
-                                origin: wgpu::Origin3d::ZERO,
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            // The actual pixel data
-                            data,
-                            // The layout of the texture
-                            wgpu::ImageDataLayout {
-                                offset: 0,
-                                bytes_per_row: Some((width * channels).into()),
-                                rows_per_image: Some(height.into()),
-                            },
-                            texture_size,
+                        format,
+                        width,
+                        height,
+                        data,
+                    } => {
+                        log::info!(
+                            "rich_text::CreateTexture with id ({:?}) and format {:?}",
+                            id,
+                            format
                         );
-                    }
-
-                    self.textures.insert(id, texture);
-                }
-                TextureEvent::UpdateTexture {
-                    id,
-                    format,
-                    x,
-                    y,
-                    width,
-                    height,
-                    data,
-                } => {
-                    log::info!("rich_text::UpdateTexture id ({:?})", id);
-                    if let Some(texture) = self.textures.get(&id) {
-                        self.bind_group_needs_update = true;
                         let texture_size = wgpu::Extent3d {
                             width: width.into(),
                             height: height.into(),
                             depth_or_array_layers: 1,
                         };
-
-                        let channels = match format {
-                            // Mask
-                            image_cache::PixelFormat::A8 => 1,
-                            // Color
-                            image_cache::PixelFormat::Rgba8 => 4,
-                        };
-
-                        ctx.queue.write_texture(
-                            // Tells wgpu where to copy the pixel data
-                            wgpu::ImageCopyTexture {
-                                texture,
-                                mip_level: 0,
-                                origin: wgpu::Origin3d {
-                                    x: u32::from(x),
-                                    y: u32::from(y),
-                                    z: 0,
+                        let texture =
+                            ctx.device.create_texture(&wgpu::TextureDescriptor {
+                                size: texture_size,
+                                mip_level_count: 1,
+                                sample_count: 1,
+                                dimension: wgpu::TextureDimension::D2,
+                                format: match format {
+                                    image_cache::PixelFormat::A8 => {
+                                        wgpu::TextureFormat::R8Unorm
+                                    }
+                                    image_cache::PixelFormat::Rgba8 => {
+                                        wgpu::TextureFormat::Rgba8Unorm
+                                    }
                                 },
-                                aspect: wgpu::TextureAspect::All,
-                            },
-                            // The actual pixel data
-                            data,
-                            // The layout of the texture
-                            wgpu::ImageDataLayout {
-                                offset: 0,
-                                bytes_per_row: Some((width * channels).into()),
-                                rows_per_image: Some(height.into()),
-                            },
-                            texture_size,
-                        );
+                                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                                    | wgpu::TextureUsages::COPY_DST,
+                                label: Some("rich_text::Cache"),
+                                view_formats: &[],
+                            });
+
+                        if let Some(data) = data {
+                            self.bind_group_needs_update = true;
+                            let channels = match format {
+                                // Mask
+                                image_cache::PixelFormat::A8 => 1,
+                                // Color
+                                image_cache::PixelFormat::Rgba8 => 4,
+                            };
+
+                            ctx.queue.write_texture(
+                                // Tells wgpu where to copy the pixel data
+                                wgpu::ImageCopyTexture {
+                                    texture: &texture,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                // The actual pixel data
+                                data,
+                                // The layout of the texture
+                                wgpu::ImageDataLayout {
+                                    offset: 0,
+                                    bytes_per_row: Some((width * channels).into()),
+                                    rows_per_image: Some(height.into()),
+                                },
+                                texture_size,
+                            );
+                        }
+
+                        self.textures.insert(id, texture);
+                    }
+                    TextureEvent::UpdateTexture {
+                        id,
+                        format,
+                        x,
+                        y,
+                        width,
+                        height,
+                        data,
+                    } => {
+                        log::info!("rich_text::UpdateTexture id ({:?})", id);
+                        if let Some(texture) = self.textures.get(&id) {
+                            self.bind_group_needs_update = true;
+                            let texture_size = wgpu::Extent3d {
+                                width: width.into(),
+                                height: height.into(),
+                                depth_or_array_layers: 1,
+                            };
+
+                            let channels = match format {
+                                // Mask
+                                image_cache::PixelFormat::A8 => 1,
+                                // Color
+                                image_cache::PixelFormat::Rgba8 => 4,
+                            };
+
+                            ctx.queue.write_texture(
+                                // Tells wgpu where to copy the pixel data
+                                wgpu::ImageCopyTexture {
+                                    texture,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d {
+                                        x: u32::from(x),
+                                        y: u32::from(y),
+                                        z: 0,
+                                    },
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                // The actual pixel data
+                                data,
+                                // The layout of the texture
+                                wgpu::ImageDataLayout {
+                                    offset: 0,
+                                    bytes_per_row: Some((width * channels).into()),
+                                    rows_per_image: Some(height.into()),
+                                },
+                                texture_size,
+                            );
+                        }
+                    }
+                    TextureEvent::DestroyTexture(id) => {
+                        log::info!("rich_text::DestroyTexture id ({:?})", id);
+                        self.textures.remove(&id);
                     }
                 }
-                TextureEvent::DestroyTexture(id) => {
-                    log::info!("rich_text::DestroyTexture id ({:?})", id);
-                    self.textures.remove(&id);
-                }
-            }
-        });
+            });
     }
 }
 
@@ -670,8 +683,8 @@ struct DrawLayoutCache {
 
 impl DrawLayoutCache {
     #[inline]
-    fn get(&self, id: String) -> Option<&Vec<CachedRect>> {
-        self.inner.get(&id)
+    fn get(&self, id: &str) -> Option<&Vec<CachedRect>> {
+        self.inner.get(id)
     }
 
     #[inline]
@@ -693,8 +706,11 @@ impl DrawLayoutCache {
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn draw_layout(
     comp: &mut compositor::Compositor,
+    images: &mut ImageCache,
+    glyphs_cache: &mut GlyphCache,
     render_data: &crate::layout::RenderData,
     x: f32,
     y: f32,
@@ -702,20 +718,39 @@ fn draw_layout(
     rect: SugarDimensions,
     draw_layout_cache: &mut DrawLayoutCache,
 ) {
+    // let start = std::time::Instant::now();
     let depth = 0.0;
     let mut glyphs = Vec::new();
+    let mut current_font = 0;
+    let mut current_font_size = 0.0;
+    let mut current_font_coords: Vec<i16> = Vec::with_capacity(0);
+    if let Some(line) = render_data.lines().next() {
+        if let Some(run) = line.runs().next() {
+            current_font = *run.font();
+            current_font_size = run.font_size();
+            current_font_coords = run.normalized_coords().to_vec();
+        }
+    }
+
+    let mut session = glyphs_cache.session(
+        images,
+        font_library[current_font].as_ref(),
+        &current_font_coords,
+        current_font_size,
+    );
+
     for line in render_data.lines() {
         let hash = line.hash().unwrap_or(0);
         let mut px = x + line.offset();
         let id = format!("{}-{}-{}", hash, line.baseline(), px);
         if hash > 0 {
-            if let Some(data) = draw_layout_cache.get(id.to_owned()) {
+            if let Some(data) = draw_layout_cache.get(&id) {
                 comp.draw_glyphs_from_cache(data, depth);
                 continue;
             }
         }
 
-        let mut cache = Vec::new();
+        let mut cache = Vec::default();
         for run in line.runs() {
             let font = *run.font();
 
@@ -728,6 +763,7 @@ fn draw_layout(
                     let y = py - glyph.y;
                     // px += glyph.advance;
                     px += rect.width * run.char_width();
+                    // cache.glyphs.push(Glyph { id: glyph.id, x, y });
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
@@ -755,8 +791,25 @@ fn draw_layout(
                 },
             };
 
+            if font != current_font
+                || style.font_size != current_font_size
+                || style.font_coords != current_font_coords
+            {
+                session = glyphs_cache.session(
+                    images,
+                    style.font,
+                    style.font_coords,
+                    style.font_size,
+                );
+
+                current_font = font;
+                current_font_coords = style.font_coords.to_vec();
+                current_font_size = style.font_size;
+            }
+
             if hash > 0 {
                 cache.extend(comp.draw_glyphs(
+                    &mut session,
                     Rect::new(run_x, py, style.advance, 1.),
                     depth,
                     &style,
@@ -769,16 +822,40 @@ fn draw_layout(
             draw_layout_cache.insert(id, cache);
         }
     }
+
+    // let duration = start.elapsed();
+    // println!(" - draw_layout() is: {:?}\n", duration);
 }
 
 #[inline]
 fn fetch_dimensions(
     comp: &mut compositor::Compositor,
+    images: &mut ImageCache,
+    glyphs_cache: &mut GlyphCache,
     render_data: &crate::layout::RenderData,
     font_library: &FontLibraryData,
 ) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
+
+    let mut current_font = 0;
+    let mut current_font_size = 0.0;
+    let mut current_font_coords: Vec<i16> = Vec::with_capacity(0);
+    if let Some(line) = render_data.lines().next() {
+        if let Some(run) = line.runs().next() {
+            current_font = *run.font();
+            current_font_size = run.font_size();
+            current_font_coords = run.normalized_coords().to_vec();
+        }
+    }
+
+    let mut session = glyphs_cache.session(
+        images,
+        font_library[current_font].as_ref(),
+        &current_font_coords,
+        current_font_size,
+    );
+
     let mut glyphs = Vec::with_capacity(3);
     let mut dimension = SugarDimensions::default();
     for line in render_data.lines() {
@@ -818,7 +895,24 @@ fn fetch_dimensions(
                 dimension.height = line_height;
             }
 
+            if font != &current_font
+                || style.font_size != current_font_size
+                || style.font_coords != current_font_coords
+            {
+                session = glyphs_cache.session(
+                    images,
+                    style.font,
+                    style.font_coords,
+                    style.font_size,
+                );
+
+                current_font = *font;
+                current_font_coords = style.font_coords.to_vec();
+                current_font_size = style.font_size;
+            }
+
             comp.draw_glyphs(
+                &mut session,
                 Rect::new(run_x, py, style.advance, 1.),
                 0.0,
                 &style,
