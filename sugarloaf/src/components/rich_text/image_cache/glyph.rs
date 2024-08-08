@@ -8,10 +8,8 @@ use swash::scale::{
     image::{Content, Image as GlyphImage},
     *,
 };
-use swash::zeno::{Format, Vector};
+use swash::zeno::Format;
 use swash::FontRef;
-
-// const IS_MACOS: bool = cfg!(target_os = "macos");
 
 const SOURCES: &[Source] = &[
     Source::ColorOutline(0),
@@ -129,11 +127,9 @@ impl<'a> GlyphCacheSession<'a> {
     }
 
     #[inline]
-    pub fn get(&mut self, id: u16, x: f32, y: f32) -> Option<GlyphEntry> {
-        let subpx = [SubpixelOffset::quantize(x), SubpixelOffset::quantize(y)];
+    pub fn get(&mut self, id: u16) -> Option<GlyphEntry> {
         let key = GlyphKey {
             id,
-            subpx,
             size: self.quant_size,
         };
         if let Some(entry) = self.entry.glyphs.get(&key) {
@@ -147,7 +143,7 @@ impl<'a> GlyphCacheSession<'a> {
         if Render::new(SOURCES)
             .format(Format::CustomSubpixel([0.3, 0., -0.3]))
             // .format(Format::Alpha)
-            .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
+            // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
             // .embolden(embolden)
             // .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
             //     Some(Transform::skew(
@@ -256,7 +252,7 @@ impl Hash for Coords<'_> {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 struct GlyphKey {
     id: u16,
-    subpx: [SubpixelOffset; 2],
+    // subpx: [SubpixelOffset; 2],
     size: u16,
 }
 
@@ -349,48 +345,6 @@ impl DescenderRegion {
             Some((self.start as f32, self.end as f32))
         } else {
             None
-        }
-    }
-}
-
-#[derive(Hash, Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
-pub enum SubpixelOffset {
-    Zero = 0,
-    Quarter = 1,
-    Half = 2,
-    ThreeQuarters = 3,
-}
-
-impl SubpixelOffset {
-    // Skia quantizes subpixel offsets into 1/4 increments.
-    // Given the absolute position, return the quantized increment
-    #[inline]
-    fn quantize(pos: f32) -> Self {
-        // Following the conventions of Gecko and Skia, we want
-        // to quantize the subpixel position, such that abs(pos) gives:
-        // [0.0, 0.125) -> Zero
-        // [0.125, 0.375) -> Quarter
-        // [0.375, 0.625) -> Half
-        // [0.625, 0.875) -> ThreeQuarters,
-        // [0.875, 1.0) -> Zero
-        // The unit tests below check for this.
-        let apos = ((pos - pos.floor()) * 8.0) as i32;
-        match apos {
-            1..=2 => SubpixelOffset::Quarter,
-            3..=4 => SubpixelOffset::Half,
-            5..=6 => SubpixelOffset::ThreeQuarters,
-            _ => SubpixelOffset::Zero,
-        }
-    }
-
-    #[inline]
-    fn to_f32(self) -> f32 {
-        match self {
-            SubpixelOffset::Zero => 0.0,
-            SubpixelOffset::Quarter => 0.25,
-            SubpixelOffset::Half => 0.5,
-            SubpixelOffset::ThreeQuarters => 0.75,
         }
     }
 }

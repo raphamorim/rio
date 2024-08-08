@@ -205,7 +205,7 @@ impl Compositor {
         let x = rect.x;
         for g in glyphs {
             let glyph = g.borrow();
-            let entry = session.get(glyph.id, glyph.x, glyph.y);
+            let entry = session.get(glyph.id);
             if let Some(entry) = entry {
                 if let Some(img) = session.get_image(entry.image) {
                     let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
