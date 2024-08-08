@@ -745,7 +745,7 @@ fn draw_layout(
         let py = line.baseline() + y;
         if hash > 0 {
             if let Some(data) = draw_layout_cache.get(&hash) {
-                px = comp.draw_glyphs_from_cache(data, depth, px, py, rect);
+                comp.draw_glyphs_from_cache(data, depth, px, py, rect);
                 continue;
             }
         }
@@ -767,7 +767,7 @@ fn draw_layout(
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
-                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y, rects: vec![] });
+                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y });
 
                     let x = px + glyph.x;
                     let y = py - glyph.y;
@@ -817,13 +817,16 @@ fn draw_layout(
             }
 
             if hash > 0 {
-                cached_line_runs.extend(comp.draw_glyphs(
+                comp.draw_glyphs(
                     &mut session,
                     Rect::new(run_x, py, style.advance, 1.),
                     depth,
                     &style,
                     glyphs.iter(),
-                ));
+                    &mut Some(&mut cached_run.rects_per_glyph)
+                );
+
+                cached_line_runs.push(cached_run);
             }
         }
 
@@ -926,6 +929,7 @@ fn fetch_dimensions(
                 0.0,
                 &style,
                 glyphs.iter(),
+                &mut None,
             );
         }
     }

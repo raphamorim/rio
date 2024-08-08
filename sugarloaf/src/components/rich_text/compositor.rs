@@ -9,6 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use rustc_hash::FxHashMap;
 use crate::layout::SugarDimensions;
 use crate::layout::iter::Glyphs;
 use crate::components::rich_text::batch::BatchManager;
@@ -51,11 +52,11 @@ pub struct CachedRunGlyph {
     pub id: u16,
     pub x: f32,
     pub y: f32,
-    rects: Vec<CachedRect>,
 }
 
 pub struct CachedRun {
     pub glyphs: Vec<CachedRunGlyph>,
+    pub rects_per_glyph: FxHashMap<usize, Vec<CachedRect>>,
     char_width: f32
 }
 
@@ -64,6 +65,7 @@ impl CachedRun {
         Self {
             char_width,
             glyphs: Vec::new(),
+            rects_per_glyph: FxHashMap::default(),
         }
     }
 }
@@ -163,7 +165,7 @@ impl Compositor {
     }
 
     #[inline]
-    pub fn draw_glyphs_from_cache(&mut self, cache_line: &Vec<CachedRun>, px: f32, py: f32, depth: f32, rect: SugarDimensions) -> f32 {
+    pub fn draw_glyphs_from_cache(&mut self, cache_line: &Vec<CachedRun>, px: f32, py: f32, depth: f32, rect: SugarDimensions) {
         let mut glyphs = Vec::new();
         let mut px = px;
         let subpx_bias = (0.125, 0.);
@@ -179,37 +181,40 @@ impl Compositor {
             
             let mut index = 0;
             for glyph in &glyphs {
-                for rect in &cached_run.glyphs[index].rects {
-                    match rect {
-                        CachedRect::Image(data) => {
-                            let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
-                            let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
-                            let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
+                if let Some(rects) = cached_run.rects_per_glyph.get(&index) {
+                    for rect in rects {
+                        match rect {
+                            CachedRect::Image(data) => {
+                                let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
+                                let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
+                                let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
 
-                            self.batches.add_image_rect(
-                                &rect,
-                                depth,
-                                &data.color,
-                                &data.coords,
-                                data.image,
-                                data.has_alpha,
-                            );
-                        }
-                        CachedRect::Mask(data) => {
-                            let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
-                            let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
-                            let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
+                                self.batches.add_image_rect(
+                                    &rect,
+                                    depth,
+                                    &data.color,
+                                    &data.coords,
+                                    data.image,
+                                    data.has_alpha,
+                                );
+                            }
+                            CachedRect::Mask(data) => {
+                                let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
+                                let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
+                                println!("cached {:?} {:?}", gx, gy);
+                                let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
 
-                            self.batches.add_mask_rect(
-                                &rect,
-                                depth,
-                                &data.color,
-                                &data.coords,
-                                data.image,
-                                data.has_alpha,
-                            );
+                                self.batches.add_mask_rect(
+                                    &rect,
+                                    depth,
+                                    &data.color,
+                                    &data.coords,
+                                    data.image,
+                                    data.has_alpha,
+                                );
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
 
@@ -229,8 +234,6 @@ impl Compositor {
         //         }
             }
         }
-
-        px
     }
 
     /// Draws a text run.
@@ -242,8 +245,9 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: I,
+        rects_per_glyph: &mut Option<&mut FxHashMap<usize, Vec<CachedRect>>>, 
         // dimension: SugarDimensions,
-    ) -> Vec<CachedRect>
+    )
     where
         I: Iterator,
         I::Item: Borrow<Glyph>,
@@ -264,11 +268,12 @@ impl Compositor {
         if underline {
             self.intercepts.clear();
         }
-        let mut result = Vec::new();
         let subpx_bias = (0.125, 0.);
         let color = style.color;
         let x = rect.x;
+        let mut glyph_acc = 0;
         for g in glyphs {
+            let mut glyphs_to_cache = Vec::new();
             let glyph = g.borrow();
             let entry = session.get(glyph.id);
             if let Some(entry) = entry {
@@ -289,7 +294,7 @@ impl Compositor {
                             img.texture_id,
                             entry.image.has_alpha(),
                         );
-                        result.push(CachedRect::Image(ComposedRect {
+                        glyphs_to_cache.push(CachedRect::Image(ComposedRect {
                             rect: Rect::new(entry.left as f32, entry.top as f32, entry.width as f32, entry.height as f32),
                             color,
                             coords,
@@ -297,6 +302,8 @@ impl Compositor {
                             has_alpha: entry.image.has_alpha(),
                         }));
                     } else {
+                        println!("{:?} {:?}", gx, gy);
+
                         let rect =
                             Rect::new(gx, gy, entry.width as f32, entry.height as f32);
                         let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
@@ -308,7 +315,7 @@ impl Compositor {
                             img.texture_id,
                             true,
                         );
-                        result.push(CachedRect::Mask(ComposedRect {
+                        glyphs_to_cache.push(CachedRect::Mask(ComposedRect {
                             rect: Rect::new(entry.left as f32, entry.top as f32, entry.width as f32, entry.height as f32),
                             color,
                             coords,
@@ -325,7 +332,7 @@ impl Compositor {
                             style.line_height,
                         );
                         self.batches.add_rect(&rect, depth, &bg_color);
-                        result.push(CachedRect::Standard((rect, bg_color)));
+                        glyphs_to_cache.push(CachedRect::Standard((rect, bg_color)));
                     }
 
                     match style.cursor {
@@ -337,13 +344,13 @@ impl Compositor {
                                 style.line_height,
                             );
                             self.batches.add_rect(&rect, depth, &cursor_color);
-                            result.push(CachedRect::Standard((rect, cursor_color)));
+                            glyphs_to_cache.push(CachedRect::Standard((rect, cursor_color)));
                         }
                         SugarCursor::Caret(cursor_color) => {
                             let rect =
                                 Rect::new(rect.x, style.topline, 3.0, style.line_height);
                             self.batches.add_rect(&rect, depth, &cursor_color);
-                            result.push(CachedRect::Standard((rect, cursor_color)));
+                            glyphs_to_cache.push(CachedRect::Standard((rect, cursor_color)));
                         }
                         _ => {}
                     }
@@ -357,6 +364,11 @@ impl Compositor {
                     }
                 }
             }
+
+            if let Some(cached_rects) = rects_per_glyph {
+                cached_rects.insert(glyph_acc, glyphs_to_cache);
+            }
+            glyph_acc += 1;
         }
         if underline {
             for range in self.intercepts.iter_mut() {
@@ -369,7 +381,7 @@ impl Compositor {
                 if ux < range.0 {
                     let rect = Rect::new(ux, uy, range.0 - ux, underline_size);
                     self.batches.add_rect(&rect, depth, &underline_color);
-                    result.push(CachedRect::Standard((rect, underline_color)));
+                    // result.push(CachedRect::Standard((rect, underline_color)));
                 }
                 ux = range.1;
             }
@@ -377,13 +389,11 @@ impl Compositor {
             if ux < end {
                 let rect = Rect::new(ux, uy, end - ux, underline_size);
                 self.batches.add_rect(&rect, depth, &underline_color);
-                result.push(CachedRect::Standard((rect, underline_color)));
+                // result.push(CachedRect::Standard((rect, underline_color)));
             }
         }
 
         // let duration = start.elapsed();
         // println!(" - draw_glyphs() is: {:?}", duration);
-
-        result
     }
 }
