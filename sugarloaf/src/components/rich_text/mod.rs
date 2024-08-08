@@ -753,6 +753,7 @@ fn draw_layout(
         let mut cache = Vec::default();
         for run in line.runs() {
             let font = *run.font();
+            let char_width = run.char_width();
 
             let py = line.baseline() + y;
             let run_x = px;
@@ -762,7 +763,7 @@ fn draw_layout(
                     let x = px + glyph.x;
                     let y = py - glyph.y;
                     // px += glyph.advance;
-                    px += rect.width * run.char_width();
+                    px += rect.width * char_width;
                     // cache.glyphs.push(Glyph { id: glyph.id, x, y });
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
