@@ -67,6 +67,7 @@ impl ImageCache {
             let dim = self.max_texture_size;
             let atlas_index = self.atlases.len();
             if atlas_index >= MAX_ATLASES as usize {
+                println!("falhous?");
                 return None;
             }
             let mut alloc = AtlasAllocator::new(dim, dim);
@@ -271,33 +272,6 @@ impl ImageCache {
             atlas.dirty = false;
         }
     }
-
-    // fn evict_from_atlases(&mut self) -> usize {
-    // let len = self.entries.len();
-    // let mut count = 0;
-    // for i in 0..len {
-    //     if let Some((flags, entry_gen, entry_epoch)) = self
-    //         .entries
-    //         .get(i)
-    //         .map(|e| (e.flags, e.generation, e.epoch))
-    //     {
-    //         if flags & (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
-    //             != (ENTRY_EVICTABLE | ENTRY_ALLOCATED)
-    //         {
-    //             continue;
-    //         }
-    //         if entry_epoch < epoch {
-    //             let handle = ImageId::new(entry_gen, i as u32, false).unwrap();
-    //             if self.deallocate(handle).is_some() {
-    //                 count += 1;
-    //             }
-    //         }
-    //     }
-    // }
-    // log::info!("rich_text::atlases::cache: evicted {}", count);
-    // count
-    // 0
-    // }
 
     fn alloc_from_atlases(
         &mut self,

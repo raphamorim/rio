@@ -60,22 +60,6 @@ impl GlyphCache {
         }
     }
 
-    // #[allow(unused)]
-    // pub fn prune(&mut self, epoch: Epoch, images: &mut ImageCache) {
-    //     if let Some(time) = epoch.0.checked_sub(8) {
-    //         self.fonts.retain(|_, entry| {
-    //             if entry.epoch.0 < time {
-    //                 for glyph in &entry.glyphs {
-    //                     images.deallocate(glyph.1.image);
-    //                 }
-    //                 false
-    //             } else {
-    //                 true
-    //             }
-    //         });
-    //     }
-    // }
-
     pub fn prune(&mut self, images: &mut ImageCache) {
         self.fonts.retain(|_, entry| {
             for glyph in &entry.glyphs {
