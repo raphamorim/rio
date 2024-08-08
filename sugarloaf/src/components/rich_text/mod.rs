@@ -767,7 +767,7 @@ fn draw_layout(
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
-                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y });
+                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y, rects: vec![] });
 
                     let x = px + glyph.x;
                     let y = py - glyph.y;
