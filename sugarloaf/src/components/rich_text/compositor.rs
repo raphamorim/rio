@@ -48,9 +48,10 @@ pub enum CachedRect {
 }
 
 pub struct CachedRunGlyph {
-    id: u16,
-    x: f32,
-    y: f32
+    pub id: u16,
+    pub x: f32,
+    pub y: f32,
+    rects: Vec<CachedRect>,
 }
 
 pub struct CachedRun {
@@ -165,6 +166,8 @@ impl Compositor {
     pub fn draw_glyphs_from_cache(&mut self, cache_line: &Vec<CachedRun>, px: f32, py: f32, depth: f32, rect: SugarDimensions) -> f32 {
         let mut glyphs = Vec::new();
         let mut px = px;
+        let subpx_bias = (0.125, 0.);
+
         for cached_run in cache_line {
             for glyph in &cached_run.glyphs {
                 let x = px + glyph.x;
@@ -173,22 +176,44 @@ impl Compositor {
                 px += rect.width * cached_run.char_width;
                 glyphs.push(Glyph { id: glyph.id, x, y });
             }
-        }
+            
+            let mut index = 0;
+            for glyph in &glyphs {
+                for rect in &cached_run.glyphs[index].rects {
+                    match rect {
+                        CachedRect::Image(data) => {
+                            let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
+                            let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
+                            let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
 
-        px
+                            self.batches.add_image_rect(
+                                &rect,
+                                depth,
+                                &data.color,
+                                &data.coords,
+                                data.image,
+                                data.has_alpha,
+                            );
+                        }
+                        CachedRect::Mask(data) => {
+                            let gx = (glyph.x + subpx_bias.0).floor() + data.rect.x;
+                            let gy = (glyph.y + subpx_bias.1).floor() - data.rect.y;
+                            let rect = Rect::new(gx, gy, data.rect.width, data.rect.height);
 
-        // for val in cache {
-        //     match val {
-        //         CachedRect::Image(data) => {
-        //             self.batches.add_image_rect(
-        //                 &data.rect,
-        //                 depth,
-        //                 &data.color,
-        //                 &data.coords,
-        //                 data.image,
-        //                 data.has_alpha,
-        //             );
-        //         }
+                            self.batches.add_mask_rect(
+                                &rect,
+                                depth,
+                                &data.color,
+                                &data.coords,
+                                data.image,
+                                data.has_alpha,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                index += 1;
         //         CachedRect::Mask(data) => {
         //             self.batches.add_mask_rect(
         //                 &data.rect,
@@ -202,8 +227,10 @@ impl Compositor {
         //         CachedRect::Standard((rect, bg_color)) => {
         //             self.batches.add_rect(rect, depth, bg_color);
         //         }
-        //     }
-        // }
+            }
+        }
+
+        px
     }
 
     /// Draws a text run.
@@ -263,7 +290,7 @@ impl Compositor {
                             entry.image.has_alpha(),
                         );
                         result.push(CachedRect::Image(ComposedRect {
-                            rect,
+                            rect: Rect::new(entry.left as f32, entry.top as f32, entry.width as f32, entry.height as f32),
                             color,
                             coords,
                             image: img.texture_id,
@@ -282,7 +309,7 @@ impl Compositor {
                             true,
                         );
                         result.push(CachedRect::Mask(ComposedRect {
-                            rect,
+                            rect: Rect::new(entry.left as f32, entry.top as f32, entry.width as f32, entry.height as f32),
                             color,
                             coords,
                             image: img.texture_id,
