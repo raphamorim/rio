@@ -17,6 +17,8 @@ pub use crate::components::rich_text::batch::{
     Rect,
     Vertex,
 };
+use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
+use crate::components::rich_text::image_cache::ImageCache;
 pub use crate::components::rich_text::image_cache::{
     AddImage,
     ImageId,
@@ -25,10 +27,8 @@ pub use crate::components::rich_text::image_cache::{
     TextureId,
     // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
-use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text::*;
 use crate::SugarCursor;
-
 use std::borrow::Borrow;
 
 pub struct ComposedRect {
@@ -46,18 +46,14 @@ pub enum CachedRect {
 }
 
 pub struct Compositor {
-    images: ImageCache,
-    glyphs: GlyphCache,
     batches: BatchManager,
     intercepts: Vec<(f32, f32)>,
 }
 
 impl Compositor {
     /// Creates a new compositor.
-    pub fn new(max_texture_size: u16) -> Self {
+    pub fn new() -> Self {
         Self {
-            images: ImageCache::new(max_texture_size),
-            glyphs: GlyphCache::new(),
             batches: BatchManager::new(),
             intercepts: Vec::new(),
         }
@@ -73,8 +69,13 @@ impl Compositor {
 
     /// Builds a display list for the current batched geometry and enumerates
     /// all texture events with the specified closure.
-    pub fn finish(&mut self, list: &mut DisplayList, events: impl FnMut(TextureEvent)) {
-        self.images.drain_events(events);
+    pub fn finish(
+        &mut self,
+        list: &mut DisplayList,
+        images: &mut ImageCache,
+        events: impl FnMut(TextureEvent),
+    ) {
+        images.drain_events(events);
         self.batches.build_display_list(list);
     }
 }
@@ -83,20 +84,28 @@ impl Compositor {
 impl Compositor {
     /// Adds an image to the compositor.
     #[allow(unused)]
-    pub fn add_image(&mut self, request: AddImage) -> Option<ImageId> {
-        self.images.allocate(request)
+    pub fn add_image(
+        &mut self,
+        images: &mut ImageCache,
+        request: AddImage,
+    ) -> Option<ImageId> {
+        images.allocate(request)
     }
 
     /// Returns the image associated with the specified identifier.
     #[allow(unused)]
-    pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
-        self.images.get(image)
+    pub fn get_image(
+        &mut self,
+        images: &mut ImageCache,
+        image: ImageId,
+    ) -> Option<ImageLocation> {
+        images.get(image)
     }
 
     /// Removes the image from the compositor.
     #[allow(unused)]
-    pub fn remove_image(&mut self, image: ImageId) -> bool {
-        self.images.deallocate(image).is_some()
+    pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
+        images.deallocate(image).is_some()
     }
 }
 
@@ -112,12 +121,13 @@ impl Compositor {
     #[allow(unused)]
     pub fn draw_image(
         &mut self,
+        images: &mut ImageCache,
         rect: impl Into<Rect>,
         depth: f32,
         color: &[f32; 4],
         image: ImageId,
     ) {
-        if let Some(img) = self.images.get(image) {
+        if let Some(img) = images.get(image) {
             self.batches.add_image_rect(
                 &rect.into(),
                 depth,
@@ -162,6 +172,7 @@ impl Compositor {
     /// Draws a text run.
     pub fn draw_glyphs<I>(
         &mut self,
+        session: &mut GlyphCacheSession,
         rect: impl Into<Rect>,
         depth: f32,
         style: &TextRunStyle,
@@ -172,6 +183,8 @@ impl Compositor {
         I: Iterator,
         I::Item: Borrow<Glyph>,
     {
+        // let start = std::time::Instant::now();
+
         let rect = rect.into();
         let (underline, underline_offset, underline_size, underline_color) =
             match style.underline {
@@ -186,12 +199,6 @@ impl Compositor {
         if underline {
             self.intercepts.clear();
         }
-        let mut session = self.glyphs.session(
-            &mut self.images,
-            style.font,
-            style.font_coords,
-            style.font_size,
-        );
         let mut result = Vec::new();
         let subpx_bias = (0.125, 0.);
         let color = style.color;
@@ -308,6 +315,9 @@ impl Compositor {
                 result.push(CachedRect::Standard((rect, underline_color)));
             }
         }
+
+        // let duration = start.elapsed();
+        // println!(" - draw_glyphs() is: {:?}", duration);
 
         result
     }
