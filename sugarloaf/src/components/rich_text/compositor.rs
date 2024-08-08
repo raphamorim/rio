@@ -9,6 +9,8 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::layout::SugarDimensions;
+use crate::layout::iter::Glyphs;
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
     // Command, DisplayList, Pipeline, Rect, Vertex,
@@ -43,6 +45,26 @@ pub enum CachedRect {
     Image(ComposedRect),
     Mask(ComposedRect),
     Standard((Rect, [f32; 4])),
+}
+
+pub struct CachedRunGlyph {
+    id: u16,
+    x: f32,
+    y: f32
+}
+
+pub struct CachedRun {
+    pub glyphs: Vec<CachedRunGlyph>,
+    char_width: f32
+}
+
+impl CachedRun {
+    pub fn new(char_width: f32) -> Self {
+        Self {
+            char_width,
+            glyphs: Vec::new(),
+        }
+    }
 }
 
 pub struct Compositor {
@@ -139,37 +161,53 @@ impl Compositor {
         }
     }
 
-    pub fn draw_glyphs_from_cache(&mut self, cache: &Vec<CachedRect>, depth: f32) {
-        for val in cache {
-            match val {
-                CachedRect::Image(data) => {
-                    self.batches.add_image_rect(
-                        &data.rect,
-                        depth,
-                        &data.color,
-                        &data.coords,
-                        data.image,
-                        data.has_alpha,
-                    );
-                }
-                CachedRect::Mask(data) => {
-                    self.batches.add_mask_rect(
-                        &data.rect,
-                        depth,
-                        &data.color,
-                        &data.coords,
-                        data.image,
-                        data.has_alpha,
-                    );
-                }
-                CachedRect::Standard((rect, bg_color)) => {
-                    self.batches.add_rect(rect, depth, bg_color);
-                }
+    #[inline]
+    pub fn draw_glyphs_from_cache(&mut self, cache_line: &Vec<CachedRun>, px: f32, py: f32, depth: f32, rect: SugarDimensions) -> f32 {
+        let mut glyphs = Vec::new();
+        let mut px = px;
+        for cached_run in cache_line {
+            for glyph in &cached_run.glyphs {
+                let x = px + glyph.x;
+                let y = py - glyph.y;
+                // px += glyph.advance;
+                px += rect.width * cached_run.char_width;
+                glyphs.push(Glyph { id: glyph.id, x, y });
             }
         }
+
+        px
+
+        // for val in cache {
+        //     match val {
+        //         CachedRect::Image(data) => {
+        //             self.batches.add_image_rect(
+        //                 &data.rect,
+        //                 depth,
+        //                 &data.color,
+        //                 &data.coords,
+        //                 data.image,
+        //                 data.has_alpha,
+        //             );
+        //         }
+        //         CachedRect::Mask(data) => {
+        //             self.batches.add_mask_rect(
+        //                 &data.rect,
+        //                 depth,
+        //                 &data.color,
+        //                 &data.coords,
+        //                 data.image,
+        //                 data.has_alpha,
+        //             );
+        //         }
+        //         CachedRect::Standard((rect, bg_color)) => {
+        //             self.batches.add_rect(rect, depth, bg_color);
+        //         }
+        //     }
+        // }
     }
 
     /// Draws a text run.
+    #[inline]
     pub fn draw_glyphs<I>(
         &mut self,
         session: &mut GlyphCacheSession,

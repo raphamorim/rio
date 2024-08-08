@@ -10,7 +10,7 @@ use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use compositor::{
-    CachedRect, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
+    CachedRun, CachedRunGlyph, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
@@ -678,18 +678,18 @@ impl RichTextBrush {
 
 #[derive(Default)]
 struct DrawLayoutCache {
-    inner: FxHashMap<String, Vec<CachedRect>>,
+    inner: FxHashMap<u64, Vec<CachedRun>>,
 }
 
 impl DrawLayoutCache {
     #[inline]
-    fn get(&self, id: &str) -> Option<&Vec<CachedRect>> {
-        self.inner.get(id)
+    fn get(&self, hash: &u64) -> Option<&Vec<CachedRun>> {
+        self.inner.get(hash)
     }
 
     #[inline]
-    fn insert(&mut self, id: String, data: Vec<CachedRect>) {
-        self.inner.insert(id, data);
+    fn insert(&mut self, hash: u64, data: Vec<CachedRun>) {
+        self.inner.insert(hash, data);
     }
 
     #[inline]
@@ -742,29 +742,37 @@ fn draw_layout(
     for line in render_data.lines() {
         let hash = line.hash().unwrap_or(0);
         let mut px = x + line.offset();
-        let id = format!("{}-{}-{}", hash, line.baseline(), px);
+        let py = line.baseline() + y;
         if hash > 0 {
-            if let Some(data) = draw_layout_cache.get(&id) {
-                comp.draw_glyphs_from_cache(data, depth);
+            if let Some(data) = draw_layout_cache.get(&hash) {
+                px = comp.draw_glyphs_from_cache(data, depth, px, py, rect);
                 continue;
             }
         }
 
-        let mut cache = Vec::default();
+        let mut cached_line_runs = Vec::new();
         for run in line.runs() {
+            let char_width = run.char_width();
+            let mut cached_run = CachedRun::new(char_width);
             let font = *run.font();
             let char_width = run.char_width();
 
-            let py = line.baseline() + y;
+            // 1. Cada run soma o px
+            // 2. Adicionam todos os glyphs
+            // 3. Depois adiciona o rect no batch fazendo o calculo
+                // let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
+                // let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
+
             let run_x = px;
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
+                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y });
+
                     let x = px + glyph.x;
                     let y = py - glyph.y;
                     // px += glyph.advance;
                     px += rect.width * char_width;
-                    // cache.glyphs.push(Glyph { id: glyph.id, x, y });
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
@@ -809,7 +817,7 @@ fn draw_layout(
             }
 
             if hash > 0 {
-                cache.extend(comp.draw_glyphs(
+                cached_line_runs.extend(comp.draw_glyphs(
                     &mut session,
                     Rect::new(run_x, py, style.advance, 1.),
                     depth,
@@ -819,8 +827,8 @@ fn draw_layout(
             }
         }
 
-        if hash > 0 && !cache.is_empty() {
-            draw_layout_cache.insert(id, cache);
+        if hash > 0 && !cached_line_runs.is_empty() {
+            draw_layout_cache.insert(hash, cached_line_runs);
         }
     }
 

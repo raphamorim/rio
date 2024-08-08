@@ -3,7 +3,6 @@ mod cache;
 pub mod glyph;
 
 use std::sync::atomic::{AtomicU64, Ordering};
-// use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PixelFormat {
@@ -24,7 +23,6 @@ impl PixelFormat {
 }
 
 pub use cache::ImageCache;
-// pub use glyph::{GlyphCache, GlyphCacheSession, GlyphEntry};
 pub use glyph::GlyphCache;
 
 /// Identifier for a texture in GPU memory.
@@ -152,9 +150,6 @@ pub enum TextureEvent<'a> {
 
 /// Limit on number of atlases before image allocation fails.
 const MAX_ATLASES: u16 = 256;
-
-/// Limit on number of standalone images.
-// const MAX_IMAGES: u16 = i16::MAX as u16;
 
 /// Limit on total number of images.
 const MAX_ENTRIES: u32 = 0x007FFFFF;
