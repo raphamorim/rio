@@ -33,6 +33,7 @@ impl GlyphCache {
         }
     }
 
+    #[inline]
     pub fn session<'a>(
         &'a mut self,
         images: &'a mut ImageCache,
