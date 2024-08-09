@@ -42,8 +42,9 @@ image = { version = "0.24.9", default-features = false, features = ["ico"] }
 regex = "1.10.5"
 bytemuck = { version = "1.16.3", features = [ "derive" ] }
 log = "0.4.22"
+swash = "0.1.18"
 serde = { version = "1.0.204", features = ["derive"] }
-tokio = { version = "1.38.1", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.39.2", default-features = false, features = ["rt", "rt-multi-thread", "macros"] }
 wgpu = "22.1.0"
 libc = "0.2.155"
 smol_str = "0.2.2"

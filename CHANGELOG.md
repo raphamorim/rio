@@ -17,6 +17,9 @@
 ## Unreleased
 
 - Performance improvements!
+	- Cache strategy has improved to cover any line that have been previously rendered.
+	- Render backgrounds and cursors in one pass.
+- Update tokio
 
 ## 0.1.5
 
