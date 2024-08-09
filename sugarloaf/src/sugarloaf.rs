@@ -339,13 +339,13 @@ impl Sugarloaf<'_> {
                         self.layer_brush.render(0, &mut rpass, None);
                     }
 
+                    self.rich_text_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
+
                     self.rect_brush
                         .render(&mut rpass, &self.state, &mut self.ctx);
 
                     self.text_brush.render(&mut self.ctx, &mut rpass);
-
-                    self.rich_text_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
 
                     // if !self.graphic_rects.is_empty() {
                     //     for entry_render in
