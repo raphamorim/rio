@@ -16,7 +16,7 @@
 
 ## Unreleased
 
-- TBD
+- Performance improvements!
 
 ## 0.1.5
 

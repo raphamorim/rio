@@ -53,6 +53,7 @@ pub enum Instruction {
 pub struct CachedRunGlyph {
     pub id: u16,
     pub x: f32,
+    #[allow(unused)]
     pub y: f32,
 }
 
@@ -197,7 +198,8 @@ impl Compositor {
 
             for glyph in &cached_run.glyphs {
                 let x = px + glyph.x;
-                let y = py - glyph.y;
+                // let y = py - glyph.y;
+                let y = py;
                 // px += glyph.advance;
                 px += rect.width * cached_run.char_width;
                 glyphs.push(Glyph { id: glyph.id, x, y });
@@ -365,12 +367,10 @@ impl Compositor {
                     let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
 
                     if entry.is_bitmap {
-                        let rect =
-                            Rect::new(gx, gy, entry.width as f32, entry.height as f32);
                         let color = [1.0, 1.0, 1.0, 1.0];
                         let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
                         self.batches.add_image_rect(
-                            &rect,
+                            &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
                             depth,
                             &color,
                             &coords,
@@ -386,11 +386,9 @@ impl Compositor {
                                 has_alpha: entry.image.has_alpha(),
                             }));
                     } else {
-                        let rect =
-                            Rect::new(gx, gy, entry.width as f32, entry.height as f32);
                         let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
                         self.batches.add_mask_rect(
-                            &rect,
+                            &Rect::new(gx, gy, entry.width as f32, entry.height as f32),
                             depth,
                             &color,
                             &coords,
