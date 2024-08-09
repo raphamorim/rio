@@ -321,13 +321,15 @@ impl RichTextBrush {
 
         draw_layout(
             &mut self.comp,
-            &mut self.images,
-            &mut self.glyphs,
+            (
+                &mut self.images,
+                &mut self.glyphs,
+                &mut self.draw_layout_cache,
+            ),
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position,
             font_library,
             state.current.layout.dimensions,
-            &mut self.draw_layout_cache,
         );
         self.draw_layout_cache.clear_on_demand();
         // let duration = start.elapsed();
@@ -352,8 +354,7 @@ impl RichTextBrush {
 
         let dimension = fetch_dimensions(
             &mut self.comp,
-            &mut self.images,
-            &mut self.glyphs,
+            (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.mocked_render_data,
             font_library,
         );
@@ -706,19 +707,17 @@ impl DrawLayoutCache {
 }
 
 #[inline]
-#[allow(clippy::too_many_arguments)]
 fn draw_layout(
     comp: &mut compositor::Compositor,
-    images: &mut ImageCache,
-    glyphs_cache: &mut GlyphCache,
+    caches: (&mut ImageCache, &mut GlyphCache, &mut DrawLayoutCache),
     render_data: &crate::layout::RenderData,
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: SugarDimensions,
-    draw_layout_cache: &mut DrawLayoutCache,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
+    let (image_cache, glyphs_cache, draw_layout_cache) = caches;
     let depth = 0.0;
     let mut glyphs = Vec::new();
     let mut current_font = 0;
@@ -733,7 +732,7 @@ fn draw_layout(
     }
 
     let mut session = glyphs_cache.session(
-        images,
+        image_cache,
         font_library[current_font].as_ref(),
         &current_font_coords,
         current_font_size,
@@ -801,7 +800,7 @@ fn draw_layout(
                 || style.font_coords != current_font_coords
             {
                 session = glyphs_cache.session(
-                    images,
+                    image_cache,
                     style.font,
                     style.font_coords,
                     style.font_size,
@@ -838,14 +837,14 @@ fn draw_layout(
 #[inline]
 fn fetch_dimensions(
     comp: &mut compositor::Compositor,
-    images: &mut ImageCache,
-    glyphs_cache: &mut GlyphCache,
+    caches: (&mut ImageCache, &mut GlyphCache),
     render_data: &crate::layout::RenderData,
     font_library: &FontLibraryData,
 ) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
 
+    let (image_cache, glyphs_cache) = caches;
     let mut current_font = 0;
     let mut current_font_size = 0.0;
     let mut current_font_coords: Vec<i16> = Vec::with_capacity(0);
@@ -858,7 +857,7 @@ fn fetch_dimensions(
     }
 
     let mut session = glyphs_cache.session(
-        images,
+        image_cache,
         font_library[current_font].as_ref(),
         &current_font_coords,
         current_font_size,
@@ -911,7 +910,7 @@ fn fetch_dimensions(
                 || style.font_coords != current_font_coords
             {
                 session = glyphs_cache.session(
-                    images,
+                    image_cache,
                     style.font,
                     style.font_coords,
                     style.font_size,
