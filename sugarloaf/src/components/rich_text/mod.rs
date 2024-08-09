@@ -10,7 +10,8 @@ use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use compositor::{
-    CachedRun, CachedRunGlyph, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
+    CachedRun, CachedRunGlyph, Command, Compositor, DisplayList, Rect, TextureEvent,
+    TextureId, Vertex,
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
@@ -745,7 +746,7 @@ fn draw_layout(
         let py = line.baseline() + y;
         if hash > 0 {
             if let Some(data) = draw_layout_cache.get(&hash) {
-                comp.draw_glyphs_from_cache(data, depth, px, py, rect);
+                comp.draw_glyphs_from_cache(data, px, py, depth, rect, line);
                 continue;
             }
         }
@@ -757,17 +758,13 @@ fn draw_layout(
             let font = *run.font();
             let char_width = run.char_width();
 
-            // 1. Cada run soma o px
-            // 2. Adicionam todos os glyphs
-            // 3. Depois adiciona o rect no batch fazendo o calculo
-                // let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
-                // let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
-
             let run_x = px;
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
-                    cached_run.glyphs.push(CachedRunGlyph { id: glyph.id, x, y });
+                    cached_run
+                        .glyphs
+                        .push(CachedRunGlyph { id: glyph.id, x, y });
 
                     let x = px + glyph.x;
                     let y = py - glyph.y;
@@ -823,7 +820,7 @@ fn draw_layout(
                     depth,
                     &style,
                     glyphs.iter(),
-                    &mut Some(&mut cached_run.rects_per_glyph)
+                    &mut cached_run,
                 );
 
                 cached_line_runs.push(cached_run);
@@ -873,6 +870,9 @@ fn fetch_dimensions(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         for run in line.runs() {
+            let char_width = run.char_width();
+            let mut cached_run = CachedRun::new(char_width);
+
             let font = run.font();
             let py = line.baseline() + y;
             let run_x = px;
@@ -882,7 +882,7 @@ fn fetch_dimensions(
                 for glyph in cluster.glyphs() {
                     let x = px + glyph.x;
                     let y = py - glyph.y;
-                    px += glyph.advance;
+                    px += glyph.advance * char_width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
@@ -929,7 +929,7 @@ fn fetch_dimensions(
                 0.0,
                 &style,
                 glyphs.iter(),
-                &mut None,
+                &mut cached_run,
             );
         }
     }
