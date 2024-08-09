@@ -324,8 +324,7 @@ impl RichTextBrush {
             &mut self.images,
             &mut self.glyphs,
             &state.compositors.advanced.render_data,
-            state.current.layout.style.screen_position.0,
-            state.current.layout.style.screen_position.1,
+            state.current.layout.style.screen_position,
             font_library,
             state.current.layout.dimensions,
             &mut self.draw_layout_cache,
@@ -713,13 +712,13 @@ fn draw_layout(
     images: &mut ImageCache,
     glyphs_cache: &mut GlyphCache,
     render_data: &crate::layout::RenderData,
-    x: f32,
-    y: f32,
+    pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: SugarDimensions,
     draw_layout_cache: &mut DrawLayoutCache,
 ) {
     // let start = std::time::Instant::now();
+    let (x, y) = pos;
     let depth = 0.0;
     let mut glyphs = Vec::new();
     let mut current_font = 0;
@@ -768,7 +767,7 @@ fn draw_layout(
 
                     let x = px + glyph.x;
                     let y = py - glyph.y;
-                    // px += glyph.advance;
+                    // px += glyph.advance
                     px += rect.width * char_width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
