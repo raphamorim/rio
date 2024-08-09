@@ -208,20 +208,24 @@ impl Compositor {
             let (underline, underline_offset, underline_size, underline_color) =
                 cached_run.underline;
 
+            if underline {
+                self.intercepts.clear();
+            }
+
             let mut index = 0;
+
             for glyph in &glyphs {
                 if let Some(set) = cached_run.instruction_set.get(&index) {
                     if set.entry.is_none() {
                         continue;
                     }
                     let entry = set.entry.unwrap();
-                    let mut intercepts = Vec::new();
 
-                    for rect in &set.instructions {
+                    for instruction in &set.instructions {
                         let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
                         let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
 
-                        match rect {
+                        match instruction {
                             Instruction::Image(data) => {
                                 self.batches.add_image_rect(
                                     &Rect::new(
@@ -276,41 +280,42 @@ impl Compositor {
                         }
 
                         if let Some(desc_ink) = set.desc_ink {
-                            intercepts.push((desc_ink.0 + gx, desc_ink.1 + gx));
-                        }
-                    }
-
-                    if underline {
-                        for range in intercepts.iter_mut() {
-                            range.0 -= 1.;
-                            range.1 += 1.;
-                        }
-                        let mut ux = run_x;
-                        let uy = py - underline_offset as f32;
-                        for range in intercepts.iter() {
-                            if ux < range.0 {
-                                self.batches.add_rect(
-                                    &Rect::new(ux, uy, range.0 - ux, underline_size),
-                                    depth,
-                                    &underline_color,
-                                );
-                            }
-                            ux = range.1;
-                        }
-                        let end = run_x + rect.width;
-                        if ux < end {
-                            let rect = Rect::new(ux, uy, end - ux, underline_size);
-                            self.batches.add_rect(&rect, depth, &underline_color);
+                            self.intercepts.push((desc_ink.0 + gx, desc_ink.1 + gx));
                         }
                     }
                 }
 
                 index += 1;
             }
+
+            if underline {
+                for range in self.intercepts.iter_mut() {
+                    range.0 -= 1.;
+                    range.1 += 1.;
+                }
+                let mut ux = run_x;
+                let uy = py - underline_offset as f32;
+                for range in self.intercepts.iter() {
+                    if ux < range.0 {
+                        self.batches.add_rect(
+                            &Rect::new(ux, uy, range.0 - ux, underline_size),
+                            depth,
+                            &underline_color,
+                        );
+                    }
+                    ux = range.1;
+                }
+                let end = run_x + advance;
+                if ux < end {
+                    self.batches.add_rect(
+                        &Rect::new(ux, uy, end - ux, underline_size),
+                        depth,
+                        &underline_color,
+                    );
+                }
+            }
         }
     }
-
-    // Option<(bool, i32, f32, [f32; 4])>
 
     /// Draws a text run.
     #[inline]
@@ -341,14 +346,14 @@ impl Compositor {
                 _ => (false, 0, 0., [0.0, 0.0, 0.0, 0.0]),
             };
         if underline {
+            cached_run.underline =
+                (underline, underline_offset, underline_size, underline_color);
             self.intercepts.clear();
         }
         let subpx_bias = (0.125, 0.);
         let color = style.color;
         let x = rect.x;
 
-        cached_run.underline =
-            (underline, underline_offset, underline_size, underline_color);
         for (glyph_acc, g) in glyphs.enumerate() {
             let mut cached_run_instructions = CachedRunInstructions::default();
             let glyph = g.borrow();
