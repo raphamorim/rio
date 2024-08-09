@@ -45,6 +45,9 @@ pub struct ComposedRect {
 pub enum Instruction {
     Image(ComposedRect),
     Mask(ComposedRect),
+}
+
+pub enum InstructionCallback {
     Background([f32; 4]),
     CaretCursor([f32; 4]),
     BlockCursor([f32; 4]),
@@ -66,8 +69,9 @@ pub struct CachedRunInstructions {
 
 pub struct CachedRun {
     pub glyphs: Vec<CachedRunGlyph>,
-    pub instruction_set: FxHashMap<usize, CachedRunInstructions>,
-    pub underline: (bool, i32, f32, [f32; 4]),
+    instruction_set: FxHashMap<usize, CachedRunInstructions>,
+    instruction_set_callback: Vec<InstructionCallback>,
+    underline: (bool, i32, f32, [f32; 4]),
     char_width: f32,
 }
 
@@ -77,6 +81,7 @@ impl CachedRun {
             underline: (false, 0, 0., [0.0, 0.0, 0.0, 0.0]),
             char_width,
             glyphs: Vec::new(),
+            instruction_set_callback: Vec::new(),
             instruction_set: FxHashMap::default(),
         }
     }
@@ -258,27 +263,6 @@ impl Compositor {
                                     data.has_alpha,
                                 );
                             }
-                            Instruction::Background(color) => {
-                                self.batches.add_rect(
-                                    &Rect::new(run_x, topline, advance, line_height),
-                                    depth,
-                                    color,
-                                );
-                            }
-                            Instruction::BlockCursor(cursor_color) => {
-                                self.batches.add_rect(
-                                    &Rect::new(run_x, topline, advance, line_height),
-                                    depth,
-                                    cursor_color,
-                                );
-                            }
-                            Instruction::CaretCursor(cursor_color) => {
-                                self.batches.add_rect(
-                                    &Rect::new(run_x, topline, 3.0, line_height),
-                                    depth,
-                                    cursor_color,
-                                );
-                            }
                         }
 
                         if let Some(desc_ink) = set.desc_ink {
@@ -288,6 +272,32 @@ impl Compositor {
                 }
 
                 index += 1;
+            }
+
+            for instruction_callback in &cached_run.instruction_set_callback {
+                match instruction_callback {
+                    InstructionCallback::Background(color) => {
+                        self.batches.add_rect(
+                            &Rect::new(run_x, topline, advance, line_height),
+                            depth,
+                            color,
+                        );
+                    }
+                    InstructionCallback::BlockCursor(cursor_color) => {
+                        self.batches.add_rect(
+                            &Rect::new(run_x, topline, advance, line_height),
+                            depth,
+                            cursor_color,
+                        );
+                    }
+                    InstructionCallback::CaretCursor(cursor_color) => {
+                        self.batches.add_rect(
+                            &Rect::new(run_x, topline, 3.0, line_height),
+                            depth,
+                            cursor_color,
+                        );
+                    }
+                }
             }
 
             if underline {
@@ -405,51 +415,6 @@ impl Compositor {
                         ));
                     }
 
-                    if let Some(bg_color) = style.background_color {
-                        self.batches.add_rect(
-                            &Rect::new(
-                                rect.x,
-                                style.topline,
-                                rect.width,
-                                style.line_height,
-                            ),
-                            depth,
-                            &bg_color,
-                        );
-                        cached_run_instructions
-                            .instructions
-                            .push(Instruction::Background(bg_color));
-                    }
-
-                    match style.cursor {
-                        SugarCursor::Block(cursor_color) => {
-                            self.batches.add_rect(
-                                &Rect::new(
-                                    rect.x,
-                                    style.topline,
-                                    rect.width,
-                                    style.line_height,
-                                ),
-                                depth,
-                                &cursor_color,
-                            );
-                            cached_run_instructions
-                                .instructions
-                                .push(Instruction::BlockCursor(cursor_color));
-                        }
-                        SugarCursor::Caret(cursor_color) => {
-                            self.batches.add_rect(
-                                &Rect::new(rect.x, style.topline, 3.0, style.line_height),
-                                depth,
-                                &cursor_color,
-                            );
-                            cached_run_instructions
-                                .instructions
-                                .push(Instruction::CaretCursor(cursor_color));
-                        }
-                        _ => {}
-                    }
-
                     if underline && entry.top - underline_offset < entry.height as i32 {
                         if let Some(mut desc_ink) = entry.desc.range() {
                             cached_run_instructions.desc_ink = Some(desc_ink);
@@ -466,6 +431,42 @@ impl Compositor {
                 .instruction_set
                 .insert(glyph_acc, cached_run_instructions);
         }
+
+        if let Some(bg_color) = style.background_color {
+            self.batches.add_rect(
+                &Rect::new(rect.x, style.topline, rect.width, style.line_height),
+                depth,
+                &bg_color,
+            );
+            cached_run
+                .instruction_set_callback
+                .push(InstructionCallback::Background(bg_color));
+        }
+
+        match style.cursor {
+            SugarCursor::Block(cursor_color) => {
+                self.batches.add_rect(
+                    &Rect::new(rect.x, style.topline, rect.width, style.line_height),
+                    depth,
+                    &cursor_color,
+                );
+                cached_run
+                    .instruction_set_callback
+                    .push(InstructionCallback::BlockCursor(cursor_color));
+            }
+            SugarCursor::Caret(cursor_color) => {
+                self.batches.add_rect(
+                    &Rect::new(rect.x, style.topline, 3.0, style.line_height),
+                    depth,
+                    &cursor_color,
+                );
+                cached_run
+                    .instruction_set_callback
+                    .push(InstructionCallback::CaretCursor(cursor_color));
+            }
+            _ => {}
+        }
+
         if underline {
             for range in self.intercepts.iter_mut() {
                 range.0 -= 1.;
