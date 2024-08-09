@@ -67,7 +67,6 @@ impl ImageCache {
             let dim = self.max_texture_size;
             let atlas_index = self.atlases.len();
             if atlas_index >= MAX_ATLASES as usize {
-                println!("falhous?");
                 return None;
             }
             let mut alloc = AtlasAllocator::new(dim, dim);
