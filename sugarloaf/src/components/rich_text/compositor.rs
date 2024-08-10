@@ -490,35 +490,67 @@ impl Compositor {
             let uy = baseline - underline.offset as f32;
             for range in self.intercepts.iter() {
                 if ux < range.0 {
-                    self.batches.add_rect(
-                        &Rect::new(ux, uy, range.0 - ux, underline.size),
-                        depth,
-                        &underline.color,
-                    );
+                    match underline.shape {
+                        UnderlineShape::Regular => {
+                            self.batches.add_rect(
+                                &Rect::new(ux, uy, range.0 - ux, underline.size),
+                                depth,
+                                &underline.color,
+                            );
 
-                    if underline.is_doubled {
-                        self.batches.add_rect(
-                            &Rect::new(ux, baseline, range.0 - ux, underline.size),
-                            depth,
-                            &underline.color,
-                        );
+                            if underline.is_doubled {
+                                self.batches.add_rect(
+                                    &Rect::new(ux, baseline, range.0 - ux, underline.size),
+                                    depth,
+                                    &underline.color,
+                                );
+                            }
+                        },
+                        UnderlineShape::Dotted => {
+                            let mut start = ux;
+                            while start < (range.0 - ux) {
+                                self.batches.add_rect(
+                                    &Rect::new(start, uy, 1.0, underline.size),
+                                    depth,
+                                    &underline.color,
+                                );
+                                start += 2.0;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 ux = range.1;
             }
             let end = x + advance;
             if ux < end {
-                self.batches.add_rect(
-                    &Rect::new(ux, uy, end - ux, underline.size),
-                    depth,
-                    &underline.color,
-                );
-                if underline.is_doubled {
-                    self.batches.add_rect(
-                        &Rect::new(ux, baseline, end - ux, underline.size),
-                        depth,
-                        &underline.color,
-                    );
+                match underline.shape {
+                    UnderlineShape::Regular => {
+                        self.batches.add_rect(
+                            &Rect::new(ux, uy, end - ux, underline.size),
+                            depth,
+                            &underline.color,
+                        );
+                        if underline.is_doubled {
+                            self.batches.add_rect(
+                                &Rect::new(ux, baseline, end - ux, underline.size),
+                                depth,
+                                &underline.color,
+                            );
+                        }
+                    }
+                    UnderlineShape::Dotted => {
+                        let mut start = ux;
+                        while start < end {
+                            self.batches.add_rect(
+                                &Rect::new(start, uy, 1.0, underline.size),
+                                depth,
+                                &underline.color,
+                            );
+                            start += 2.0;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
