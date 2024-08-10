@@ -44,7 +44,7 @@ jobs:
   nightly-release-macos:
     needs: create_tag
     if: ${{ needs.create_tag.outputs.created == 'true' }}
-    runs-on: macos-14
+    runs-on: macos-latest
     permissions:
       contents: write
       discussions: write
