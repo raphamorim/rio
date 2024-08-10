@@ -9,6 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::layout::FragmentStyleDecoration;
 use crate::sugarloaf::primitives::SugarCursor;
 use swash::{FontRef, GlyphId, NormalizedCoord};
 
@@ -34,20 +35,11 @@ pub struct TextRunStyle<'a> {
     /// Total advance of the run.
     pub advance: f32,
     /// Underline style.
-    pub underline: Option<UnderlineStyle>,
+    pub decoration: Option<FragmentStyleDecoration>,
+    /// Underline style.
+    pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
     pub cursor: SugarCursor,
-}
-
-/// Underline decoration style.
-#[derive(Copy, Clone)]
-pub struct UnderlineStyle {
-    /// Offset of the underline stroke.
-    pub offset: f32,
-    /// Thickness of the underline stroke.
-    pub size: f32,
-    /// Color of the underline.
-    pub color: [f32; 4],
 }
 
 /// Positioned glyph in a text run.

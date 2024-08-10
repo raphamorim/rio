@@ -29,8 +29,7 @@ pub use crate::components::rich_text::image_cache::{
     // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 use crate::components::rich_text::text::*;
-use crate::layout::Line;
-use crate::layout::SugarDimensions;
+use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions};
 use crate::SugarCursor;
 use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
@@ -67,18 +66,27 @@ pub struct CachedRunInstructions {
     pub entry: Option<GlyphEntry>,
 }
 
+#[derive(Default)]
+pub struct CachedRunUnderline {
+    enabled: bool,
+    offset: i32,
+    size: f32,
+    color: [f32; 4],
+    is_doubled: bool,
+}
+
 pub struct CachedRun {
     pub glyphs: Vec<CachedRunGlyph>,
     instruction_set: FxHashMap<usize, CachedRunInstructions>,
     instruction_set_callback: Vec<InstructionCallback>,
-    underline: (bool, i32, f32, [f32; 4]),
+    underline: CachedRunUnderline,
     char_width: f32,
 }
 
 impl CachedRun {
     pub fn new(char_width: f32) -> Self {
         Self {
-            underline: (false, 0, 0., [0.0, 0.0, 0.0, 0.0]),
+            underline: CachedRunUnderline::default(),
             char_width,
             glyphs: Vec::new(),
             instruction_set_callback: Vec::new(),
@@ -212,10 +220,7 @@ impl Compositor {
 
             let advance = px - run_x;
 
-            let (underline, underline_offset, underline_size, underline_color) =
-                cached_run.underline;
-
-            if underline {
+            if cached_run.underline.enabled {
                 self.intercepts.clear();
             }
 
@@ -300,32 +305,7 @@ impl Compositor {
                 }
             }
 
-            if underline {
-                for range in self.intercepts.iter_mut() {
-                    range.0 -= 1.;
-                    range.1 += 1.;
-                }
-                let mut ux = run_x;
-                let uy = py - underline_offset as f32;
-                for range in self.intercepts.iter() {
-                    if ux < range.0 {
-                        self.batches.add_rect(
-                            &Rect::new(ux, uy, range.0 - ux, underline_size),
-                            depth,
-                            &underline_color,
-                        );
-                    }
-                    ux = range.1;
-                }
-                let end = run_x + advance;
-                if ux < end {
-                    self.batches.add_rect(
-                        &Rect::new(ux, uy, end - ux, underline_size),
-                        depth,
-                        &underline_color,
-                    );
-                }
-            }
+            self.draw_underline(&cached_run.underline, run_x, advance, py, depth);
         }
     }
 
@@ -339,32 +319,40 @@ impl Compositor {
         style: &TextRunStyle,
         glyphs: I,
         cached_run: &mut CachedRun,
-        // dimension: SugarDimensions,
     ) where
         I: Iterator,
         I::Item: Borrow<Glyph>,
     {
-        // let start = std::time::Instant::now();
-
         let rect = rect.into();
-        let (underline, underline_offset, underline_size, underline_color) =
-            match style.underline {
-                Some(underline) => (
-                    true,
-                    underline.offset.round() as i32,
-                    underline.size.round().max(1.),
-                    underline.color,
-                ),
-                _ => (false, 0, 0., [0.0, 0.0, 0.0, 0.0]),
-            };
-        if underline {
-            cached_run.underline =
-                (underline, underline_offset, underline_size, underline_color);
+
+        match style.decoration {
+            Some(FragmentStyleDecoration::Underline(info)) => {
+                cached_run.underline = CachedRunUnderline {
+                    enabled: true,
+                    offset: info.offset.round() as i32,
+                    size: info.size,
+                    color: style.decoration_color.unwrap_or(style.color),
+                    is_doubled: info.is_doubled,
+                }
+            }
+            Some(FragmentStyleDecoration::Strikethrough) => {
+                cached_run.underline = CachedRunUnderline {
+                    enabled: true,
+                    offset: (style.line_height / 3.5).round() as i32,
+                    size: 2.,
+                    color: style.decoration_color.unwrap_or(style.color),
+                    is_doubled: false,
+                }
+            }
+            _ => {}
+        };
+
+        if cached_run.underline.enabled {
             self.intercepts.clear();
         }
+
         let subpx_bias = (0.125, 0.);
         let color = style.color;
-        let x = rect.x;
 
         for (glyph_acc, g) in glyphs.enumerate() {
             let mut cached_run_instructions = CachedRunInstructions::default();
@@ -415,7 +403,9 @@ impl Compositor {
                         ));
                     }
 
-                    if underline && entry.top - underline_offset < entry.height as i32 {
+                    if cached_run.underline.enabled
+                        && entry.top - cached_run.underline.offset < entry.height as i32
+                    {
                         if let Some(mut desc_ink) = entry.desc.range() {
                             cached_run_instructions.desc_ink = Some(desc_ink);
 
@@ -467,31 +457,67 @@ impl Compositor {
             _ => {}
         }
 
-        if underline {
+        self.draw_underline(
+            &cached_run.underline,
+            rect.x,
+            rect.width,
+            style.baseline,
+            depth,
+        );
+
+        // let duration = start.elapsed();
+        // println!(" - draw_glyphs() is: {:?}", duration);
+    }
+
+    #[inline]
+    fn draw_underline(
+        &mut self,
+        underline: &CachedRunUnderline,
+        x: f32,
+        advance: f32,
+        baseline: f32,
+        depth: f32,
+    ) {
+        if underline.enabled {
             for range in self.intercepts.iter_mut() {
                 range.0 -= 1.;
                 range.1 += 1.;
             }
             let mut ux = x;
-            let uy = style.baseline - underline_offset as f32;
+            let uy = baseline - underline.offset as f32;
             for range in self.intercepts.iter() {
                 if ux < range.0 {
                     self.batches.add_rect(
-                        &Rect::new(ux, uy, range.0 - ux, underline_size),
+                        &Rect::new(ux, uy, range.0 - ux, underline.size),
                         depth,
-                        &underline_color,
+                        &underline.color,
                     );
+
+                    if underline.is_doubled {
+                        self.batches.add_rect(
+                            &Rect::new(ux, baseline, range.0 - ux, underline.size),
+                            depth,
+                            &underline.color,
+                        );
+                    }
                 }
                 ux = range.1;
             }
-            let end = x + rect.width;
+            let end = x + advance;
             if ux < end {
-                let rect = Rect::new(ux, uy, end - ux, underline_size);
-                self.batches.add_rect(&rect, depth, &underline_color);
+                self.batches.add_rect(
+                    &Rect::new(ux, uy, end - ux, underline.size),
+                    depth,
+                    &underline.color,
+                );
+                if underline.is_doubled {
+                    self.batches.add_rect(
+                        &Rect::new(ux, baseline, end - ux, underline.size),
+                        depth,
+                        &underline.color,
+                    );
+                }
             }
         }
-
-        // let duration = start.elapsed();
-        // println!(" - draw_glyphs() is: {:?}", duration);
     }
 }

@@ -15,7 +15,7 @@ use compositor::{
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
-use text::{Glyph, TextRunStyle, UnderlineStyle};
+use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
 use wgpu::Texture;
 
@@ -784,15 +784,8 @@ fn draw_layout(
                 topline: py - line.ascent(),
                 line_height,
                 advance: px - run_x,
-                underline: if run.underline() {
-                    Some(UnderlineStyle {
-                        offset: run.underline_offset(),
-                        size: run.underline_size(),
-                        color: run.underline_color(),
-                    })
-                } else {
-                    None
-                },
+                decoration: run.decoration(),
+                decoration_color: run.decoration_color(),
             };
 
             if font != current_font
@@ -897,7 +890,8 @@ fn fetch_dimensions(
                 topline: py - line.ascent(),
                 line_height,
                 advance: px - run_x,
-                underline: None,
+                decoration: None,
+                decoration_color: None,
             };
 
             if style.advance > 0. && line_height > 0. {
