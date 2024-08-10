@@ -254,7 +254,7 @@ You can also set family on root to overwrite all fonts.
 
 ```toml
 [fonts]
-family = "cascadiamono"
+family = "cascadiacode"
 ```
 
 You can also specify extra fonts to load:
@@ -283,22 +283,22 @@ size = 18
 features = []
 
 [fonts.regular]
-family = "cascadiamono"
+family = "cascadiacode"
 style = "normal"
 weight = 400
 
 [fonts.bold]
-family = "cascadiamono"
+family = "cascadiacode"
 style = "normal"
 weight = 800
 
 [fonts.italic]
-family = "cascadiamono"
+family = "cascadiacode"
 style = "italic"
 weight = 400
 
 [fonts.bold-italic]
-family = "cascadiamono"
+family = "cascadiacode"
 style = "italic"
 weight = 800
 ```
