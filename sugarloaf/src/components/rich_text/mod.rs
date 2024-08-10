@@ -744,7 +744,7 @@ fn draw_layout(
         let py = line.baseline() + y;
         if hash > 0 {
             if let Some(data) = draw_layout_cache.get(&hash) {
-                comp.draw_glyphs_from_cache(data, px, py, depth, rect, line);
+                comp.draw_cached_run(data, px, py, depth, rect, line);
                 continue;
             }
         }
@@ -805,7 +805,7 @@ fn draw_layout(
             }
 
             if hash > 0 {
-                comp.draw_glyphs(
+                comp.draw_run(
                     &mut session,
                     Rect::new(run_x, py, style.advance, 1.),
                     depth,
@@ -915,7 +915,7 @@ fn fetch_dimensions(
                 current_font_size = style.font_size;
             }
 
-            comp.draw_glyphs(
+            comp.draw_run(
                 &mut session,
                 Rect::new(run_x, py, style.advance, 1.),
                 0.0,

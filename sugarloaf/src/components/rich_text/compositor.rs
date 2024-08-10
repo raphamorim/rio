@@ -29,7 +29,7 @@ pub use crate::components::rich_text::image_cache::{
     // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 use crate::components::rich_text::text::*;
-use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions};
+use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
 use crate::SugarCursor;
 use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
@@ -73,6 +73,7 @@ pub struct CachedRunUnderline {
     size: f32,
     color: [f32; 4],
     is_doubled: bool,
+    shape: UnderlineShape,
 }
 
 pub struct CachedRun {
@@ -190,7 +191,7 @@ impl Compositor {
     }
 
     #[inline]
-    pub fn draw_glyphs_from_cache(
+    pub fn draw_cached_run(
         &mut self,
         cache_line: &Vec<CachedRun>,
         px: f32,
@@ -311,7 +312,7 @@ impl Compositor {
 
     /// Draws a text run.
     #[inline]
-    pub fn draw_glyphs<I>(
+    pub fn draw_run<I>(
         &mut self,
         session: &mut GlyphCacheSession,
         rect: impl Into<Rect>,
@@ -333,6 +334,7 @@ impl Compositor {
                     size: info.size,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: info.is_doubled,
+                    shape: info.shape,
                 }
             }
             Some(FragmentStyleDecoration::Strikethrough) => {
@@ -342,6 +344,7 @@ impl Compositor {
                     size: 2.,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: false,
+                    shape: UnderlineShape::Regular,
                 }
             }
             _ => {}

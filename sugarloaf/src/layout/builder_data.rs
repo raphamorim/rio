@@ -173,11 +173,22 @@ impl FontSettingList {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
+pub enum UnderlineShape {
+    #[default]
+    Regular = 0,
+    Dotted = 1,
+    Dashed = 2,
+    Curly = 3,
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct UnderlineInfo {
     pub offset: f32,
     pub size: f32,
     pub is_doubled: bool,
+    pub shape: UnderlineShape,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -211,22 +222,15 @@ pub struct FragmentStyle {
     pub line_spacing: f32,
     /// Enable underline decoration.
     pub decoration: Option<FragmentStyleDecoration>,
-    /// Offset of an underline.
-    // pub underline_offset: Option<f32>,
-    /// Color of an underline.
+    /// Decoration color.
     pub decoration_color: Option<[f32; 4]>,
-    /// Thickness of an underline.
-    // pub underline_size: Option<f32>,
-    /// Cursor
+    /// Cursor style.
     pub cursor: SugarCursor,
 }
 
 impl Default for FragmentStyle {
     fn default() -> Self {
         Self {
-            // dir: Direction::LeftToRight,
-            // dir_changed: false,
-            // lang: None,
             font: 0,
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
@@ -279,7 +283,7 @@ impl From<&Sugar> for FragmentStyle {
             SugarStyle::Italic => {
                 style.font_attrs.2 = Style::Italic;
             }
-            _ => {}
+            SugarStyle::Disabled => {}
         }
 
         let mut has_underline_cursor = false;
@@ -290,6 +294,7 @@ impl From<&Sugar> for FragmentStyle {
                         offset: -1.0,
                         size: -1.0,
                         is_doubled: false,
+                        shape: UnderlineShape::Regular,
                     }));
                 style.decoration_color = Some(cursor_color);
 
@@ -301,7 +306,7 @@ impl From<&Sugar> for FragmentStyle {
             SugarCursor::Caret(cursor_color) => {
                 style.cursor = SugarCursor::Caret(cursor_color);
             }
-            _ => {}
+            SugarCursor::Disabled => {}
         }
 
         match &sugar.decoration {
@@ -312,6 +317,7 @@ impl From<&Sugar> for FragmentStyle {
                             offset: -2.0,
                             size: -1.0,
                             is_doubled: false,
+                            shape: UnderlineShape::Regular,
                         }));
                 }
             }
@@ -324,9 +330,37 @@ impl From<&Sugar> for FragmentStyle {
                         offset: -4.0,
                         size: 1.0,
                         is_doubled: true,
+                        shape: UnderlineShape::Regular,
                     }));
             }
-            _ => {}
+            SugarDecoration::DottedUnderline => {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -2.0,
+                        size: 1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Dotted,
+                    }));
+            }
+            SugarDecoration::DashedUnderline => {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -2.0,
+                        size: 1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Dashed,
+                    }));
+            }
+            SugarDecoration::CurlyUnderline => {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -2.0,
+                        size: 1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Curly,
+                    }));
+            }
+            SugarDecoration::Disabled => {}
         }
 
         style.color = sugar.foreground_color;
