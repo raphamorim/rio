@@ -61,31 +61,9 @@ impl Hash for Sugar {
             bg_color[2].to_bits().hash(state);
             bg_color[3].to_bits().hash(state);
         }
-        match self.style {
-            SugarStyle::Disabled => {
-                0.hash(state);
-            }
-            SugarStyle::Italic => {
-                1.hash(state);
-            }
-            SugarStyle::Bold => {
-                2.hash(state);
-            }
-            SugarStyle::BoldItalic => {
-                3.hash(state);
-            }
-        };
-        match self.decoration {
-            SugarDecoration::Disabled => {
-                0.hash(state);
-            }
-            SugarDecoration::Underline => {
-                1.hash(state);
-            }
-            SugarDecoration::Strikethrough => {
-                2.hash(state);
-            }
-        };
+
+        (self.style as u8).hash(state);
+        (self.decoration as u8).hash(state);
         match self.cursor {
             SugarCursor::Disabled => {
                 0.hash(state);
@@ -147,20 +125,26 @@ pub enum SugarCursor {
 }
 
 #[derive(Debug, Copy, PartialEq, Default, Clone)]
+#[repr(u8)]
 pub enum SugarDecoration {
-    Underline,
-    Strikethrough,
+    DottedUnderline = 6,
+    DashedUnderline = 5,
+    DoubleUnderline = 4,
+    CurlyUnderline = 3,
+    Strikethrough = 2,
+    Underline = 1,
     #[default]
-    Disabled,
+    Disabled = 0,
 }
 
 #[derive(Debug, PartialEq, Default, Copy, Clone)]
+#[repr(u8)]
 pub enum SugarStyle {
+    BoldItalic = 3,
+    Italic = 2,
+    Bold = 1,
     #[default]
-    Disabled,
-    Italic,
-    Bold,
-    BoldItalic,
+    Disabled = 0,
 }
 
 #[derive(Copy, PartialEq, Default, Debug, Clone)]
