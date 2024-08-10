@@ -11,6 +11,7 @@
 
 //! RenderData.
 use super::layout_data::*;
+use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use core::iter::DoubleEndedIterator;
@@ -494,31 +495,36 @@ impl<'a> Run<'a> {
 
     /// Returns true if the run has an underline decoration.
     #[inline]
-    pub fn underline(&self) -> bool {
-        self.run.span.underline
+    pub fn decoration(&self) -> Option<FragmentStyleDecoration> {
+        self.run.span.decoration
+    }
+
+    #[inline]
+    pub fn decoration_color(&self) -> Option<[f32; 4]> {
+        self.run.span.decoration_color
     }
 
     /// Returns the underline offset for the run.
-    #[inline]
-    pub fn underline_offset(&self) -> f32 {
-        // span_data.underline_offset.unwrap_or(metrics.underline_offset),
-        self.run.span.underline_offset.unwrap_or(0.0)
-    }
+    // #[inline]
+    // pub fn underline_offset(&self) -> f32 {
+    //     // span_data.underline_offset.unwrap_or(metrics.underline_offset),
+    //     self.run.span.underline_offset.unwrap_or(0.0)
+    // }
 
-    /// Returns the underline color for the run.
-    #[inline]
-    pub fn underline_color(&self) -> [f32; 4] {
-        self.run.span.underline_color.unwrap_or(self.run.span.color)
-    }
+    // /// Returns the underline color for the run.
+    // #[inline]
+    // pub fn underline_color(&self) -> [f32; 4] {
+    //     self.run.span.underline_color.unwrap_or(self.run.span.color)
+    // }
 
-    /// Returns the underline size for the run.
-    #[inline]
-    pub fn underline_size(&self) -> f32 {
-        self.run
-            .span
-            .underline_size
-            .unwrap_or(self.run.strikeout_size)
-    }
+    // /// Returns the underline size for the run.
+    // #[inline]
+    // pub fn underline_size(&self) -> f32 {
+    //     self.run
+    //         .span
+    //         .underline_size
+    //         .unwrap_or(self.run.strikeout_size)
+    // }
 
     /// Returns an iterator over the clusters in logical order.
     #[inline]

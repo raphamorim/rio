@@ -174,6 +174,20 @@ impl FontSettingList {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+pub struct UnderlineInfo {
+    pub offset: f32,
+    pub size: f32,
+    pub is_doubled: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum FragmentStyleDecoration {
+    // offset, size
+    Underline(UnderlineInfo),
+    Strikethrough,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct FragmentStyle {
     /// Internal identifier for a list of font families and attributes.
     pub font: usize,
@@ -196,13 +210,13 @@ pub struct FragmentStyle {
     /// Multiplicative line spacing factor.
     pub line_spacing: f32,
     /// Enable underline decoration.
-    pub underline: bool,
+    pub decoration: Option<FragmentStyleDecoration>,
     /// Offset of an underline.
-    pub underline_offset: Option<f32>,
+    // pub underline_offset: Option<f32>,
     /// Color of an underline.
-    pub underline_color: Option<[f32; 4]>,
+    pub decoration_color: Option<[f32; 4]>,
     /// Thickness of an underline.
-    pub underline_size: Option<f32>,
+    // pub underline_size: Option<f32>,
     /// Cursor
     pub cursor: SugarCursor,
 }
@@ -224,10 +238,8 @@ impl Default for FragmentStyle {
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
             cursor: SugarCursor::Disabled,
-            underline: false,
-            underline_offset: None,
-            underline_color: None,
-            underline_size: None,
+            decoration: None,
+            decoration_color: None,
         }
     }
 }
@@ -246,10 +258,8 @@ impl FragmentStyle {
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
             cursor: SugarCursor::Disabled,
-            underline: false,
-            underline_offset: None,
-            underline_color: None,
-            underline_size: None,
+            decoration: None,
+            decoration_color: None,
         }
     }
 }
@@ -275,10 +285,13 @@ impl From<&Sugar> for FragmentStyle {
         let mut has_underline_cursor = false;
         match sugar.cursor {
             SugarCursor::Underline(cursor_color) => {
-                style.underline = true;
-                style.underline_offset = Some(-1.);
-                style.underline_color = Some(cursor_color);
-                style.underline_size = Some(-1.);
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -1.0,
+                        size: -1.0,
+                        is_doubled: false,
+                    }));
+                style.decoration_color = Some(cursor_color);
 
                 has_underline_cursor = true;
             }
@@ -294,15 +307,24 @@ impl From<&Sugar> for FragmentStyle {
         match &sugar.decoration {
             SugarDecoration::Underline => {
                 if !has_underline_cursor {
-                    style.underline = true;
-                    style.underline_offset = Some(-2.);
-                    style.underline_size = Some(1.);
+                    style.decoration =
+                        Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                            offset: -2.0,
+                            size: -1.0,
+                            is_doubled: false,
+                        }));
                 }
             }
             SugarDecoration::Strikethrough => {
-                style.underline = true;
-                style.underline_offset = Some(style.font_size / 2.);
-                style.underline_size = Some(2.);
+                style.decoration = Some(FragmentStyleDecoration::Strikethrough);
+            }
+            SugarDecoration::DoubleUnderline => {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -4.0,
+                        size: 1.0,
+                        is_doubled: true,
+                    }));
             }
             _ => {}
         }

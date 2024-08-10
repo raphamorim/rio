@@ -200,6 +200,14 @@ impl State {
             decoration = SugarDecoration::Underline;
         } else if flags.contains(Flags::STRIKEOUT) {
             decoration = SugarDecoration::Strikethrough;
+        } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
+            decoration = SugarDecoration::DoubleUnderline;
+        } else if flags.contains(Flags::DOTTED_UNDERLINE) {
+            decoration = SugarDecoration::DottedUnderline;
+        } else if flags.contains(Flags::DASHED_UNDERLINE) {
+            decoration = SugarDecoration::DashedUnderline;
+        } else if flags.contains(Flags::UNDERCURL) {
+            decoration = SugarDecoration::CurlyUnderline;
         }
 
         let background_color = if self.dynamic_background.2
