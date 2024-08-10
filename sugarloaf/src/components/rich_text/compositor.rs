@@ -500,12 +500,17 @@ impl Compositor {
 
                             if underline.is_doubled {
                                 self.batches.add_rect(
-                                    &Rect::new(ux, baseline, range.0 - ux, underline.size),
+                                    &Rect::new(
+                                        ux,
+                                        baseline,
+                                        range.0 - ux,
+                                        underline.size,
+                                    ),
                                     depth,
                                     &underline.color,
                                 );
                             }
-                        },
+                        }
                         UnderlineShape::Dashed => {
                             self.batches.add_rect(
                                 &Rect::new(ux, uy, (range.0 - ux) / 3.0, underline.size),
@@ -568,12 +573,12 @@ impl Compositor {
                     UnderlineShape::Dotted => {
                         let mut start = ux;
                         while start < end {
-                            self.batches.add_rect(
-                                &Rect::new(start, uy, 1.0, underline.size),
+                            self.batches.add_circle(
+                                &Rect::new(start, uy, 2.0, underline.size),
                                 depth,
                                 &underline.color,
                             );
-                            start += 2.0;
+                            start += 4.0;
                         }
                     }
                     _ => {}
