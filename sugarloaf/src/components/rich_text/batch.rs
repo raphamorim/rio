@@ -110,65 +110,6 @@ impl Batch {
         true
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    pub fn add_circle(
-        &mut self,
-        rect: &Rect,
-        depth: f32,
-        color: &[f32; 4],
-        coords: Option<&[f32; 4]>,
-    ) -> bool {
-        if !self.vertices.is_empty() {
-            return false;
-        }
-
-        let x = rect.x;
-        let y = rect.y;
-        let w = rect.width;
-        let h = rect.height;
-        const DEFAULT_COORDS: [f32; 4] = [0., 0., 1., 1.];
-        let coords = coords.unwrap_or(&DEFAULT_COORDS);
-        let l = coords[0];
-        let t = coords[1];
-        let r = coords[2];
-        let b = coords[3];
-        let empty_flags = 0.;
-        let verts = [
-            Vertex {
-                pos: [x, y, depth, empty_flags],
-                color: *color,
-                uv: [l, t],
-            },
-            Vertex {
-                pos: [x, y + h, depth, empty_flags],
-                color: *color,
-                uv: [l, b],
-            },
-            Vertex {
-                pos: [x, y + h, depth, empty_flags],
-                color: *color,
-                uv: [r, b],
-            },
-            Vertex {
-                pos: [x, y, depth, empty_flags],
-                color: *color,
-                uv: [r, t],
-            },
-        ];
-        let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&verts);
-        self.indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 2,
-            base + 2,
-            base,
-            base + 3,
-        ]);
-        true
-    }
-
     #[inline]
     fn push_rect(
         &mut self,
@@ -360,26 +301,6 @@ impl BatchManager {
         }
         self.alloc_batch(transparent)
             .add_rect(rect, depth, color, None, None, None, false);
-    }
-
-    #[inline]
-    pub fn add_circle(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.add_circle(rect, depth, color, None) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.add_circle(rect, depth, color, None) {
-                    return;
-                }
-            }
-        }
-        self.alloc_batch(transparent)
-            .add_circle(rect, depth, color, None);
     }
 
     #[inline]
