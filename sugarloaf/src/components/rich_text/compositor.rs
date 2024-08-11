@@ -539,7 +539,33 @@ impl Compositor {
                                 start += 2.0;
                             }
                         }
-                        _ => {}
+                        UnderlineShape::Curly => {
+                            let style_line_height = (line_height / 12.).min(3.0);
+                            let offset = style_line_height * 1.5;
+
+                            let mut curly_width = ux;
+                            let end = range.0 - ux;
+                            let mut rect_width = 1.0f32.min(end - curly_width);
+
+                            while curly_width < end {
+                                rect_width = rect_width.min(end - curly_width);
+
+                                let dot_bottom_offset = match curly_width as u32 % 8 {
+                                    3..=5 => offset + style_line_height,
+                                    2 | 6 => offset + 2.0 * style_line_height / 3.0,
+                                    1 | 7 => offset + 1.0 * style_line_height / 3.0,
+                                    _ => offset,
+                                };
+
+                                self.batches.add_rect(
+                                    &Rect::new(curly_width, uy - ((dot_bottom_offset - offset) + underline.offset as f32), rect_width, style_line_height),
+                                    depth,
+                                    &underline.color,
+                                );
+
+                                curly_width += rect_width;
+                            }
+                        }
                     }
                 }
                 ux = range.1;
@@ -587,7 +613,7 @@ impl Compositor {
                         }
                     }
                     UnderlineShape::Curly => {
-                        let style_line_height = (line_height / 12.).min(2.0);
+                        let style_line_height = (line_height / 12.).min(3.0);
                         let offset = style_line_height * 1.5;
 
                         let mut curly_width = ux;
