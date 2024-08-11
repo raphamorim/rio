@@ -127,7 +127,7 @@ impl Batch {
         let y = rect.y;
         let w = rect.width;
         let h = rect.height;
-        const DEFAULT_COORDS: [f32; 4] = [0., 1., 1., 1.];
+        const DEFAULT_COORDS: [f32; 4] = [0., 0., 1., 1.];
         let coords = coords.unwrap_or(&DEFAULT_COORDS);
         let l = coords[0];
         let t = coords[1];
@@ -146,12 +146,12 @@ impl Batch {
                 uv: [l, b],
             },
             Vertex {
-                pos: [x + w, y + h, depth, empty_flags],
+                pos: [x, y + h, depth, empty_flags],
                 color: *color,
                 uv: [r, b],
             },
             Vertex {
-                pos: [x + w, y, depth, empty_flags],
+                pos: [x, y, depth, empty_flags],
                 color: *color,
                 uv: [r, t],
             },
