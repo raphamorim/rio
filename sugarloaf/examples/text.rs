@@ -229,12 +229,14 @@ async fn main() {
                         content: '!',
                         foreground_color: [1.0, 1.0, 1.0, 1.0],
                         background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        decoration: SugarDecoration::CurlyUnderline,
                         ..Sugar::default()
                     });
                     sugarloaf.insert_on_current_line(&Sugar {
                         content: '=',
                         foreground_color: [1.0, 1.0, 1.0, 1.0],
                         background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        decoration: SugarDecoration::CurlyUnderline,
                         ..Sugar::default()
                     });
                     sugarloaf.finish_line();
