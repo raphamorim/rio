@@ -582,11 +582,30 @@ impl Compositor {
                         }
                     }
                     UnderlineShape::Curly => {
-                        self.batches.add_circle(
-                            &Rect::new(ux, uy, end - ux, underline.size),
-                            depth,
-                            &underline.color,
-                        );
+                        let style_line_height = 6.;
+                        let bottom_offset = style_line_height * underline.offset as f32;
+
+                        let mut accu_width = 0.0;
+                        let mut dot_width = 1.0f32.min(end - accu_width);
+
+                        while accu_width < end {
+                            dot_width = dot_width.min(end - accu_width);
+
+                            let dot_bottom_offset = match accu_width as u32 % 8 {
+                                3..=5 => bottom_offset + style_line_height,
+                                2 | 6 => bottom_offset + 2.0 * style_line_height / 3.0,
+                                1 | 7 => bottom_offset + 1.0 * style_line_height / 3.0,
+                                _ => bottom_offset,
+                            };
+
+                            self.batches.add_rect(
+                                &Rect::new(accu_width, uy + dot_bottom_offset, dot_width, style_line_height),
+                                depth,
+                                &underline.color,
+                            );
+
+                            accu_width += dot_width;
+                        }
                     }
                 }
             }
