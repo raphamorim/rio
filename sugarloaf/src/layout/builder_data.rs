@@ -315,7 +315,7 @@ impl From<&Sugar> for FragmentStyle {
                     style.decoration =
                         Some(FragmentStyleDecoration::Underline(UnderlineInfo {
                             offset: -2.0,
-                            size: 1.0,
+                            size: 2.0,
                             is_doubled: false,
                             shape: UnderlineShape::Regular,
                         }));
@@ -354,7 +354,7 @@ impl From<&Sugar> for FragmentStyle {
             SugarDecoration::CurlyUnderline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: 1.0,
+                        offset: -2.0,
                         size: 1.0,
                         is_doubled: false,
                         shape: UnderlineShape::Curly,
