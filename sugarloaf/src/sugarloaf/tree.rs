@@ -16,14 +16,13 @@ pub struct DiffChar {
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct DiffLine {
-    pub line: usize,
     pub before: usize,
     pub after: usize,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Diff {
-    Char(DiffChar),
+    Char(Box<DiffChar>),
     // (previous size, next size)
     Line(DiffLine),
     Hash(bool),
@@ -80,11 +79,13 @@ impl SugarTree {
                 //     );
                 // }
 
-                if line.len() != next_line.len() {
+                let line_len = line.len();
+                let next_line_len = next_line.len();
+
+                if line_len != next_line_len {
                     changes.push(Diff::Line(DiffLine {
-                        line: line_number,
-                        before: line.len(),
-                        after: next_line.len(),
+                        before: line_len,
+                        after: next_line_len,
                     }));
                 } else if line.hash_key() != next_line.hash_key() {
                     if !exact {
@@ -93,12 +94,12 @@ impl SugarTree {
                     } else {
                         for column in 0..line.len() {
                             if line[column] != next_line[column] {
-                                changes.push(Diff::Char(DiffChar {
+                                changes.push(Diff::Char(Box::new(DiffChar {
                                     line: line_number,
                                     column,
                                     before: line[column],
                                     after: next_line[column],
-                                }));
+                                })));
                             }
                         }
                     }
@@ -260,7 +261,6 @@ pub mod test {
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
-                line: 0,
                 before: 1,
                 after: 2,
             })])
@@ -274,7 +274,6 @@ pub mod test {
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
-                line: 0,
                 before: 1,
                 after: 3,
             })])
@@ -296,7 +295,6 @@ pub mod test {
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
-                line: 0,
                 before: 1,
                 after: 6,
             })])
@@ -310,7 +308,6 @@ pub mod test {
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),
             SugarTreeDiff::Changes(vec![Diff::Line(DiffLine {
-                line: 0,
                 before: 2,
                 after: 6,
             })])
@@ -340,7 +337,7 @@ pub mod test {
             ..Sugar::default()
         });
 
-        let mut changes = vec![Diff::Char(DiffChar {
+        let mut changes = vec![Diff::Char(Box::new(DiffChar {
             line: 0,
             column: 0,
             before: Sugar {
@@ -350,6 +347,7 @@ pub mod test {
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
+                decoration_color: None,
                 cursor: SugarCursor::Disabled,
                 media: None,
             },
@@ -360,10 +358,11 @@ pub mod test {
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
+                decoration_color: None,
                 cursor: SugarCursor::Disabled,
                 media: None,
             },
-        })];
+        }))];
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),
@@ -380,7 +379,7 @@ pub mod test {
             ..Sugar::default()
         });
 
-        changes.push(Diff::Char(DiffChar {
+        changes.push(Diff::Char(Box::new(DiffChar {
             line: 0,
             column: 1,
             before: Sugar {
@@ -390,6 +389,7 @@ pub mod test {
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
+                decoration_color: None,
                 cursor: SugarCursor::Disabled,
                 media: None,
             },
@@ -400,10 +400,11 @@ pub mod test {
                 style: SugarStyle::Disabled,
                 repeated: 0,
                 decoration: Disabled,
+                decoration_color: None,
                 cursor: SugarCursor::Disabled,
                 media: None,
             },
-        }));
+        })));
 
         assert_eq!(
             sugartree_a.calculate_diff(&sugartree_b, true, false),

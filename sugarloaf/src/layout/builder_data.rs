@@ -365,6 +365,9 @@ impl From<&Sugar> for FragmentStyle {
 
         style.color = sugar.foreground_color;
         style.background_color = sugar.background_color;
+        if let Some(decoration_color) = sugar.decoration_color {
+            style.decoration_color = Some(decoration_color);
+        }
 
         style
     }

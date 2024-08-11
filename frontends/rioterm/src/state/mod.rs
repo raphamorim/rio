@@ -171,7 +171,7 @@ impl State {
     fn create_sugar(&self, square: &Square) -> Sugar {
         let flags = square.flags;
 
-        let mut foreground_color = self.compute_fg_color(square);
+        let mut foreground_color = self.compute_color(&square.fg, flags);
         let mut background_color = self.compute_bg_color(square);
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
@@ -210,6 +210,13 @@ impl State {
             decoration = SugarDecoration::CurlyUnderline;
         }
 
+        let mut decoration_color = None;
+        if decoration != SugarDecoration::Disabled {
+            if let Some(color) = square.underline_color() {
+                decoration_color = Some(self.compute_color(&color, square.flags));
+            }
+        };
+
         let background_color = if self.dynamic_background.2
             && background_color[0] == self.dynamic_background.0[0]
             && background_color[1] == self.dynamic_background.0[1]
@@ -225,6 +232,7 @@ impl State {
             repeated: 0,
             foreground_color,
             background_color,
+            decoration_color,
             style,
             decoration,
             media: None,
@@ -288,7 +296,7 @@ impl State {
                 let selected_sugar = Sugar {
                     content,
                     foreground_color: if self.ignore_selection_fg_color {
-                        self.compute_fg_color(square)
+                        self.compute_color(&square.fg, square.flags)
                     } else {
                         self.named_colors.selection_foreground
                     },
@@ -322,9 +330,9 @@ impl State {
     }
 
     #[inline]
-    fn compute_fg_color(&self, square: &Square) -> ColorArray {
-        match square.fg {
-            AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
+    fn compute_color(&self, color: &AnsiColor, flags: Flags) -> ColorArray {
+        match color {
+            AnsiColor::Named(ansi_name) => match (ansi_name, flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
 
@@ -373,17 +381,19 @@ impl State {
                 (NamedColor::DimYellow, _) => self.named_colors.dim_yellow,
             },
             AnsiColor::Spec(rgb) => {
-                if !square.flags.contains(Flags::DIM) {
+                if !flags.contains(Flags::DIM) {
                     rgb.to_arr()
                 } else {
                     rgb.to_arr_with_dim()
                 }
             }
             AnsiColor::Indexed(index) => {
-                let index = match (square.flags & Flags::DIM_BOLD, index) {
-                    (Flags::DIM, 8..=15) => index as usize - 8,
-                    (Flags::DIM, 0..=7) => NamedColor::DimBlack as usize + index as usize,
-                    _ => index as usize,
+                let index = match (flags & Flags::DIM_BOLD, index) {
+                    (Flags::DIM, 8..=15) => *index as usize - 8,
+                    (Flags::DIM, 0..=7) => {
+                        NamedColor::DimBlack as usize + *index as usize
+                    }
+                    _ => *index as usize,
                 };
 
                 self.colors[index]
@@ -489,7 +499,7 @@ impl State {
             _ => SugarStyle::Disabled,
         };
 
-        let mut foreground_color = self.compute_fg_color(square);
+        let mut foreground_color = self.compute_color(&square.fg, square.flags);
         let mut background_color = self.compute_bg_color(square);
 
         if square.flags.contains(Flags::INVERSE) {

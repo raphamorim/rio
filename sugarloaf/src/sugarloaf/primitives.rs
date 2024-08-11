@@ -15,6 +15,7 @@ pub struct Sugar {
     pub repeated: usize,
     pub foreground_color: [f32; 4],
     pub background_color: Option<[f32; 4]>,
+    pub decoration_color: Option<[f32; 4]>,
     pub style: SugarStyle,
     pub decoration: SugarDecoration,
     pub cursor: SugarCursor,
@@ -37,6 +38,7 @@ impl Default for Sugar {
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
             background_color: None,
+            decoration_color: None,
             style: SugarStyle::default(),
             decoration: SugarDecoration::default(),
             cursor: SugarCursor::default(),
@@ -60,6 +62,13 @@ impl Hash for Sugar {
             bg_color[1].to_bits().hash(state);
             bg_color[2].to_bits().hash(state);
             bg_color[3].to_bits().hash(state);
+        }
+
+        if let Some(color) = self.decoration_color {
+            color[0].to_bits().hash(state);
+            color[1].to_bits().hash(state);
+            color[2].to_bits().hash(state);
+            color[3].to_bits().hash(state);
         }
 
         (self.style as u8).hash(state);
@@ -579,6 +588,7 @@ pub mod test {
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
             background_color: None,
+            decoration_color: None,
             style: SugarStyle::Disabled,
             decoration: SugarDecoration::Disabled,
             cursor: SugarCursor::Disabled,
@@ -592,6 +602,7 @@ pub mod test {
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
             background_color: None,
+            decoration_color: None,
             style: SugarStyle::Bold,
             decoration: SugarDecoration::Disabled,
             cursor: SugarCursor::Disabled,
@@ -605,6 +616,7 @@ pub mod test {
             repeated: 0,
             foreground_color: [0., 0., 0., 0.],
             background_color: None,
+            decoration_color: None,
             style: SugarStyle::Disabled,
             decoration: SugarDecoration::Strikethrough,
             cursor: SugarCursor::Disabled,

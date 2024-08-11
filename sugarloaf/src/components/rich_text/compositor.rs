@@ -573,7 +573,7 @@ impl Compositor {
                     UnderlineShape::Dotted => {
                         let mut start = ux;
                         while start < end {
-                            self.batches.add_circle(
+                            self.batches.add_rect(
                                 &Rect::new(start, uy, 2.0, underline.size),
                                 depth,
                                 &underline.color,
@@ -581,7 +581,13 @@ impl Compositor {
                             start += 4.0;
                         }
                     }
-                    _ => {}
+                    UnderlineShape::Curly => {
+                        self.batches.add_circle(
+                            &Rect::new(ux, uy, end - ux, underline.size),
+                            depth,
+                            &underline.color,
+                        );
+                    }
                 }
             }
         }
