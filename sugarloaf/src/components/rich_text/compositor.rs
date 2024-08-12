@@ -306,7 +306,14 @@ impl Compositor {
                 }
             }
 
-            self.draw_underline(&cached_run.underline, run_x, advance, py, depth, line_height);
+            self.draw_underline(
+                &cached_run.underline,
+                run_x,
+                advance,
+                py,
+                depth,
+                line_height,
+            );
         }
     }
 
@@ -558,7 +565,13 @@ impl Compositor {
                                 };
 
                                 self.batches.add_rect(
-                                    &Rect::new(curly_width, uy - ((dot_bottom_offset - offset) + underline.offset as f32), rect_width, style_line_height),
+                                    &Rect::new(
+                                        curly_width,
+                                        uy - ((dot_bottom_offset - offset)
+                                            + underline.offset as f32),
+                                        rect_width,
+                                        style_line_height,
+                                    ),
                                     depth,
                                     &underline.color,
                                 );
@@ -630,7 +643,13 @@ impl Compositor {
                             };
 
                             self.batches.add_rect(
-                                &Rect::new(curly_width, uy - ((dot_bottom_offset - offset) + underline.offset as f32), rect_width, style_line_height),
+                                &Rect::new(
+                                    curly_width,
+                                    uy - ((dot_bottom_offset - offset)
+                                        + underline.offset as f32),
+                                    rect_width,
+                                    style_line_height,
+                                ),
                                 depth,
                                 &underline.color,
                             );
