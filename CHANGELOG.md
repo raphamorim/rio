@@ -16,6 +16,8 @@
 
 ## Unreleased
 
+- Support custom colors on all underlines.
+- Support for advaned formatting (squiggly underline?) [#370](https://github.com/raphamorim/rio/issues/370)
 - Performance improvements!
 	- Cache strategy has improved to cover any line that have been previously rendered.
 	- Render backgrounds and cursors in one pass.
