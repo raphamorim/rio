@@ -18,7 +18,7 @@
 | Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
-Demo usage of Rio terminal on MacOS using [Fira Code](https://fonts.google.com/specimen/Fira+Code) and font ligatures enabled:
+Demo usage of Rio terminal on MacOS:
 
 ![Demo Rio on MacOS](docs/static/assets/posts/0.1.0/demo-rio.png)
 
