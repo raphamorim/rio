@@ -1235,7 +1235,7 @@ impl Screen<'_> {
             && has_blinking_enabled
             && self.selection_is_empty()
         {
-            self.context_manager.schedule_render(800);
+            self.context_manager.schedule_render_on_route(800);
         }
 
         // let duration = start.elapsed();
