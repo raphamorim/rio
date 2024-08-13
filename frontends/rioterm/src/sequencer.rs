@@ -246,7 +246,7 @@ impl Sequencer {
                                 millis,
                                 route_id,
                             )) => {
-                                let timer_id = TimerId::new(Topic::Render, 0);
+                                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                                 let event = EventPayload::new(
                                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                                     window_id,

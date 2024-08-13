@@ -15,11 +15,11 @@ use wa::event_loop::EventLoopProxy;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TimerId {
     topic: Topic,
-    id: u16,
+    id: usize,
 }
 
 impl TimerId {
-    pub fn new(topic: Topic, id: u16) -> Self {
+    pub fn new(topic: Topic, id: usize) -> Self {
         Self { topic, id }
     }
 }
@@ -28,6 +28,7 @@ impl TimerId {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Topic {
     Render,
+    RenderRoute,
 }
 
 /// Event scheduled to be emitted at a specific time.
@@ -122,7 +123,7 @@ impl Scheduler {
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
     #[allow(dead_code)]
-    pub fn unschedule_tab(&mut self, id: u16) {
+    pub fn unschedule_tab(&mut self, id: usize) {
         self.timers.retain(|timer| timer.id.id != id);
     }
 }
