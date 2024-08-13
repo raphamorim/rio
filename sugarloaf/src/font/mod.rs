@@ -374,22 +374,20 @@ impl FontLibraryData {
             }
         }
 
-        if !spec.extras.is_empty() {
-            for extra_font in spec.extras {
-                match find_font(
-                    &self.db,
-                    SugarloafFont {
-                        family: extra_font.family,
-                        style: extra_font.style,
-                        weight: extra_font.weight,
-                    },
-                ) {
-                    FindResult::Found(data) => {
-                        self.inner.push(FontSource::Data(data));
-                    }
-                    FindResult::NotFound(spec) => {
-                        fonts_not_fount.push(spec);
-                    }
+        for extra_font in spec.extras {
+            match find_font(
+                &self.db,
+                SugarloafFont {
+                    family: extra_font.family,
+                    style: extra_font.style,
+                    weight: extra_font.weight,
+                },
+            ) {
+                FindResult::Found(data) => {
+                    self.inner.push(FontSource::Data(data));
+                }
+                FindResult::NotFound(spec) => {
+                    fonts_not_fount.push(spec);
                 }
             }
         }
