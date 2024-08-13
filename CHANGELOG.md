@@ -16,6 +16,26 @@
 
 ## Unreleased
 
+**Breaking**
+
+Editor property have changed from `String` to allow input arguments as well.
+
+Before:
+
+```toml
+editor = "vi"
+```
+
+Now:
+
+```toml
+```toml
+[editor]
+program = "code"
+args = ["-w"]
+```
+
+- Fix: editor doesn't handle arguments [#550](https://github.com/raphamorim/rio/issues/550).
 - Fix: Weird rendering behaviour on setting padding-x in config [#590](https://github.com/raphamorim/rio/issues/590).
 - Upgrade Rust to 1.80.1.
 

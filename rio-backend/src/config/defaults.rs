@@ -1,3 +1,5 @@
+use crate::config::Shell;
+
 #[inline]
 pub fn default_bool_true() -> bool {
     true
@@ -76,8 +78,11 @@ pub fn default_theme() -> String {
 }
 
 #[inline]
-pub fn default_editor() -> String {
-    String::from("vi")
+pub fn default_editor() -> Shell {
+    Shell {
+        program: String::from("vi"),
+        args: vec![],
+    }
 }
 
 #[inline]
@@ -111,7 +116,9 @@ pub fn default_config_file_content() -> String {
 #
 # Whenever the key binding `OpenConfigEditor` is triggered it will
 # use the value of the editor along with the rio configuration path.
-# editor = 'vi'
+# [editor]
+# program = "vi"
+# args = []
 
 # Cursor
 #

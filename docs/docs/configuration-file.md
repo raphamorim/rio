@@ -42,7 +42,9 @@ Whenever the key binding `OpenConfigEditor` is triggered it will use the value o
 An example, considering you have VS Code installed and you want to use it as your editor:
 
 ```toml
-editor = 'code'
+[editor]
+program = "code"
+args = []
 ```
 
 Whenever `OpenConfigEditor` runs it will trigger `$ code <path-to-rio-configuration-file>`.
