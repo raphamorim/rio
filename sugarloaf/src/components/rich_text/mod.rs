@@ -10,8 +10,7 @@ use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use compositor::{
-    CachedRun, CachedRunGlyph, Command, Compositor, DisplayList, Rect, TextureEvent,
-    TextureId, Vertex,
+    CachedRun, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
@@ -760,9 +759,7 @@ fn draw_layout(
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
-                    cached_run
-                        .glyphs
-                        .push(CachedRunGlyph { id: glyph.id, x, y });
+                    cached_run.glyphs_ids.push(glyph.id);
 
                     let x = px + glyph.x;
                     let y = py - glyph.y;

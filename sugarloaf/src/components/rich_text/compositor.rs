@@ -52,13 +52,6 @@ pub enum InstructionCallback {
     BlockCursor([f32; 4]),
 }
 
-pub struct CachedRunGlyph {
-    pub id: u16,
-    pub x: f32,
-    #[allow(unused)]
-    pub y: f32,
-}
-
 #[derive(Default)]
 pub struct CachedRunInstructions {
     pub instructions: Vec<Instruction>,
@@ -77,7 +70,7 @@ pub struct CachedRunUnderline {
 }
 
 pub struct CachedRun {
-    pub glyphs: Vec<CachedRunGlyph>,
+    pub glyphs_ids: Vec<u16>,
     instruction_set: FxHashMap<usize, CachedRunInstructions>,
     instruction_set_callback: Vec<InstructionCallback>,
     underline: CachedRunUnderline,
@@ -89,7 +82,7 @@ impl CachedRun {
         Self {
             underline: CachedRunUnderline::default(),
             char_width,
-            glyphs: Vec::new(),
+            glyphs_ids: Vec::new(),
             instruction_set_callback: Vec::new(),
             instruction_set: FxHashMap::default(),
         }
@@ -210,13 +203,13 @@ impl Compositor {
             let mut glyphs = Vec::new();
             let run_x = px;
 
-            for glyph in &cached_run.glyphs {
-                let x = px + glyph.x;
+            for glyph in &cached_run.glyphs_ids {
+                let x = px;
                 // let y = py - glyph.y;
                 let y = py;
                 // px += glyph.advance;
                 px += rect.width * cached_run.char_width;
-                glyphs.push(Glyph { id: glyph.id, x, y });
+                glyphs.push(Glyph { id: *glyph, x, y });
             }
 
             let advance = px - run_x;
