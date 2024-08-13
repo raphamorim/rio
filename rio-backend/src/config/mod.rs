@@ -97,7 +97,7 @@ pub struct Config {
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
-    pub editor: String,
+    pub editor: Shell,
     #[serde(rename = "padding-x", default = "f32::default")]
     pub padding_x: f32,
     #[serde(rename = "padding-y", default = "default_padding_y")]

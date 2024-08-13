@@ -244,12 +244,17 @@ impl Router {
         }
 
         let current_config: RioConfig = config.clone();
+        let editor = config.editor.clone();
+        let mut args = editor.args;
+        args.push(
+            rio_backend::config::config_file_path()
+                .display()
+                .to_string(),
+        );
         let new_config = RioConfig {
             shell: rio_backend::config::Shell {
-                program: config.editor.clone(),
-                args: vec![rio_backend::config::config_file_path()
-                    .display()
-                    .to_string()],
+                program: editor.program,
+                args,
             },
             ..current_config
         };

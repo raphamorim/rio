@@ -754,7 +754,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 pub fn process_open_url(
     mut shell: Shell,
     mut working_dir: Option<String>,
-    editor: String,
+    editor: Shell,
     open_url: Option<&str>,
 ) -> (Shell, Option<String>) {
     if open_url.is_none() {
@@ -765,9 +765,11 @@ pub fn process_open_url(
         if let Ok(path_buf) = url.to_file_path() {
             if path_buf.exists() {
                 if path_buf.is_file() {
+                    let mut args = editor.args;
+                    args.push(path_buf.display().to_string());
                     shell = Shell {
-                        program: editor,
-                        args: vec![path_buf.display().to_string()],
+                        program: editor.program,
+                        args,
                     }
                 } else if path_buf.is_dir() {
                     working_dir = Some(path_buf.display().to_string());
