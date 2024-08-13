@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- Fix: Weird rendering behaviour on setting padding-x in config [#590](https://github.com/raphamorim/rio/issues/590).
 - Upgrade Rust to 1.80.1.
 
 ## 0.1.6
