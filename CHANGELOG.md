@@ -29,7 +29,6 @@ editor = "vi"
 Now:
 
 ```toml
-```toml
 [editor]
 program = "code"
 args = ["-w"]
