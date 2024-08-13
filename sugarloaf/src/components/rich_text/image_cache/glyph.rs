@@ -61,14 +61,14 @@ impl GlyphCache {
         }
     }
 
-    pub fn prune(&mut self, images: &mut ImageCache) {
-        self.fonts.retain(|_, entry| {
-            for glyph in &entry.glyphs {
-                images.deallocate(glyph.1.image);
-            }
-            false
-        });
-    }
+    // pub fn prune(&mut self, images: &mut ImageCache) {
+    //     self.fonts.retain(|_, entry| {
+    //         for glyph in &entry.glyphs {
+    //             images.deallocate(glyph.1.image);
+    //         }
+    //         false
+    //     });
+    // }
 
     #[allow(unused)]
     pub fn clear_evicted(&mut self, images: &mut ImageCache) {
