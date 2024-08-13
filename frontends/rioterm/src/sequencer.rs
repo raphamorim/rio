@@ -20,7 +20,6 @@ use winit::event_loop::{DeviceEvents, EventLoop};
 use winit::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{CursorIcon, Fullscreen};
 
 pub struct Sequencer {
@@ -48,7 +47,7 @@ impl Sequencer {
 
     pub async fn run(
         &mut self,
-        mut event_loop: EventLoop<EventPayload>,
+        event_loop: EventLoop<EventPayload>,
     ) -> Result<(), Box<dyn Error>> {
         let proxy = event_loop.create_proxy();
         self.event_proxy = Some(EventProxy::new(proxy.clone()));
@@ -66,7 +65,7 @@ impl Sequencer {
 
         event_loop.listen_device_events(DeviceEvents::Never);
         #[allow(deprecated)]
-        let _ = event_loop.run_on_demand(
+        let _ = event_loop.run(
             move |event: Event<EventPayload>,
                   event_loop_window_target: &ActiveEventLoop| {
                 match event {
