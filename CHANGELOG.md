@@ -16,6 +16,10 @@
 
 ## Unreleased
 
+- Upgrade Rust to 1.80.1.
+
+## 0.1.6
+
 - Support custom colors on all underlines.
 - Support for advaned formatting (squiggly underline?) [#370](https://github.com/raphamorim/rio/issues/370)
 - Performance improvements!
