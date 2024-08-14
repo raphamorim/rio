@@ -150,10 +150,16 @@ impl ScreenNavigation {
         let position_modifier = 20.;
         for i in (0..len).rev() {
             let mut color = self.colors.inactive;
-            let mut size = INACTIVE_TAB_WIDTH_SIZE;
+            let mut tab_height = INACTIVE_TAB_HEIGHT_SIZE;
+            let mut tab_width = 30.;
+            let tab_number = i + 1;
+
             if i == self.current {
                 color = self.colors.active;
-                size = ACTIVE_TAB_WIDTH_SIZE;
+                tab_height = ACTIVE_TAB_HEIGHT_SIZE;
+            }
+            if tab_number >= 10 {
+                tab_width += 15.;
             }
 
             if let Some(name_idx) = titles.get(&i) {
@@ -169,8 +175,14 @@ impl ScreenNavigation {
             let renderable = Rect {
                 position: [initial_position, 0.0],
                 color,
-                size: [30.0, size],
+                size: [tab_width, tab_height],
             };
+            self.texts.push(Text::new(
+                (initial_position + 4., 8.),
+                (i + 1).to_string(),
+                14.,
+                [255., 255., 255., 255.],
+            ));
             initial_position -= position_modifier;
             self.rects.push(renderable);
         }
