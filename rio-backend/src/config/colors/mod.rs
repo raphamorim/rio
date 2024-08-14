@@ -220,10 +220,7 @@ pub struct Colors {
         rename = "selection-foreground"
     )]
     pub selection_foreground: ColorArray,
-    #[serde(
-        default = "defaults::cursor",
-        deserialize_with = "deserialize_to_arr",
-    )]
+    #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub split: ColorArray,
 }
 
