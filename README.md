@@ -35,7 +35,6 @@ Rio would not be possible without [few acknowledgements](#acknowledgements) and 
 If you use and like Rio, please consider sponsoring it: your support helps to cover the fees required to maintain the project and to validate the time spent working on it!
 
 * [![Sponsor Rio terminal](https://img.shields.io/github/sponsors/raphamorim?label=Sponsor%20Rio&logo=github&style=for-the-badge)](https://github.com/sponsors/raphamorim)
-* [Patreon](https://patreon.com/raphamorim)
 
 ## Acknowledgments
 
