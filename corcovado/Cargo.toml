@@ -17,7 +17,7 @@ include = [
 
 [dependencies]
 log = { workspace = true }
-iovec = "0.1.4"
+iovec = { workspace = true }
 slab = "0.4.9"
 net2 = "0.2.39"
 cfg-if = "0.1.9"

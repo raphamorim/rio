@@ -8,7 +8,6 @@ license = "Apache-2.0 OR MIT"
 version = { workspace = true }
 name = "copa"
 edition = "2021"
-rust-version = "1.73.0"
 
 [dependencies]
 rio-proc-macros = { workspace = true }
