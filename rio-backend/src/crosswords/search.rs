@@ -1,3 +1,6 @@
+// search.rs was originally taken from Alacritty https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/term/search.rs
+// which is licensed under Apache 2.0 license.
+
 use crate::event;
 use std::cmp::max;
 use std::error::Error;
@@ -138,23 +141,26 @@ impl<T: event::EventListener> Crosswords<T> {
     }
 
     /// Find the next match to the right of the origin.
-    fn next_match_right(
+    fn next_match_right<D>(
         &self,
+        dimensions: &D,
         regex: &mut RegexSearch,
         origin: Pos,
         side: Side,
         max_lines: Option<usize>,
-    ) -> Option<Match> {
+    ) -> Option<Match>
+    where
+        D: Dimensions, {
         let start = self.row_search_left(origin);
         let mut end = start;
 
         // Limit maximum number of lines searched.
         end = match max_lines {
             Some(max_lines) => {
-                let line = (start.row + max_lines).grid_clamp(self, Boundary::None);
+                let line = (start.row + max_lines).grid_clamp(dimensions, Boundary::None);
                 Pos::new(line, self.grid.last_column())
             },
-            _ => end.sub(self, Boundary::None, 1),
+            _ => end.sub(dimensions, Boundary::None, 1),
         };
 
         let mut regex_iter = RegexIter::new(start, end, Direction::Right, self, regex).peekable();
@@ -177,23 +183,26 @@ impl<T: event::EventListener> Crosswords<T> {
     }
 
     /// Find the next match to the left of the origin.
-    fn next_match_left(
+    fn next_match_left<D>(
         &self,
+        dimensions: &D,
         regex: &mut RegexSearch,
         origin: Pos,
         side: Side,
         max_lines: Option<usize>,
-    ) -> Option<Match> {
+    ) -> Option<Match>
+    where
+        D: Dimensions, {
         let start = self.row_search_right(origin);
         let mut end = start;
 
         // Limit maximum number of lines searched.
         end = match max_lines {
             Some(max_lines) => {
-                let line = (start.row - max_lines).grid_clamp(self, Boundary::None);
+                let line = (start.row - max_lines).grid_clamp(dimensions, Boundary::None);
                 Pos::new(line, Column(0))
             },
-            _ => end.add(self, Boundary::None, 1),
+            _ => end.add(dimensions, Boundary::None, 1),
         };
 
         let mut regex_iter = RegexIter::new(start, end, Direction::Left, self, regex).peekable();
@@ -434,12 +443,14 @@ impl<T: event::EventListener> Crosswords<T> {
     }
 
     /// Advance a grid iterator over fullwidth characters.
-    fn skip_fullwidth<'a>(
+    fn skip_fullwidth<'a, D>(
         &self,
+        dimensions: &D,
         iter: &'a mut GridIterator<'_, Square>,
         square: &mut &'a Square,
         direction: Direction,
-    ) {
+    ) where
+        D: Dimensions, {
         match direction {
             // In the alternate screen buffer there might not be a wide char spacer after a wide
             // char, so we only advance the iterator when the wide char is not in the last column.
@@ -460,7 +471,7 @@ impl<T: event::EventListener> Crosswords<T> {
                     *square = new_cell;
                 }
 
-                let prev = iter.pos().sub(self, Boundary::Grid, 1);
+                let prev = iter.pos().sub(dimensions, Boundary::Grid, 1);
                 if self.grid[prev].flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
                     iter.prev();
                 }
@@ -611,7 +622,7 @@ impl<T: event::EventListener> Crosswords<T> {
 }
 
 /// Iterator over regex matches.
-pub struct RegexIter<'a, T> {
+pub struct RegexIter<'a, T: event::EventListener> {
     point: Pos,
     end: Pos,
     direction: Direction,
@@ -620,7 +631,7 @@ pub struct RegexIter<'a, T> {
     done: bool,
 }
 
-impl<'a, T> RegexIter<'a, T> {
+impl<'a, T: event::EventListener> RegexIter<'a, T> {
     pub fn new(
         start: Pos,
         end: Pos,
