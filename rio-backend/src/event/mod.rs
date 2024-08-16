@@ -3,8 +3,11 @@ pub mod sync;
 use crate::clipboard::ClipboardType;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
+use crate::crosswords::pos::{Direction, Pos};
+use crate::crosswords::search::{Match, RegexSearch};
 use crate::error::RioError;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -262,5 +265,82 @@ impl EventListener for EventProxy {
 
     fn send_event(&self, event: RioEvent, id: WindowId) {
         let _ = self.proxy.send_event(EventPayload::new(event.into(), id));
+    }
+}
+
+/// Regex search state.
+pub struct SearchState {
+    /// Search direction.
+    pub direction: Direction,
+
+    /// Current position in the search history.
+    pub history_index: Option<usize>,
+
+    /// Change in display offset since the beginning of the search.
+    pub display_offset_delta: i32,
+
+    /// Search origin in viewport coordinates relative to original display offset.
+    pub origin: Pos,
+
+    /// Focused match during active search.
+    pub focused_match: Option<Match>,
+
+    /// Search regex and history.
+    ///
+    /// During an active search, the first element is the user's current input.
+    ///
+    /// While going through history, the [`SearchState::history_index`] will point to the element
+    /// in history which is currently being previewed.
+    pub history: VecDeque<String>,
+
+    /// Compiled search automatons.
+    pub dfas: Option<RegexSearch>,
+}
+
+impl SearchState {
+    /// Search regex text if a search is active.
+    pub fn regex(&self) -> Option<&String> {
+        self.history_index.and_then(|index| self.history.get(index))
+    }
+
+    /// Direction of the search from the search origin.
+    pub fn direction(&self) -> Direction {
+        self.direction
+    }
+
+    /// Focused match during vi-less search.
+    pub fn focused_match(&self) -> Option<&Match> {
+        self.focused_match.as_ref()
+    }
+
+    /// Clear the focused match.
+    pub fn clear_focused_match(&mut self) {
+        self.focused_match = None;
+    }
+
+    /// Active search dfas.
+    pub fn dfas(&mut self) -> Option<&mut RegexSearch> {
+        self.dfas.as_mut()
+    }
+
+    /// Search regex text if a search is active.
+    #[allow(dead_code)]
+    fn regex_mut(&mut self) -> Option<&mut String> {
+        self.history_index
+            .and_then(move |index| self.history.get_mut(index))
+    }
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        Self {
+            direction: Direction::Right,
+            display_offset_delta: Default::default(),
+            focused_match: Default::default(),
+            history_index: Default::default(),
+            history: Default::default(),
+            origin: Default::default(),
+            dfas: Default::default(),
+        }
     }
 }
