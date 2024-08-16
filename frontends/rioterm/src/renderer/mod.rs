@@ -47,3 +47,22 @@ pub fn padding_bottom_from_config(
 
     default_padding
 }
+
+pub fn draw_search_bar(
+    dimensions: (f32, f32),
+    scale: f32,
+    content: &String,
+) -> (Vec<Rect>, Text) {
+    let (width, height) = dimensions;
+    let position_y = (height / scale) - 40.;
+
+    let rects = vec![Rect {
+        position: [0.0, position_y],
+        color: [0.0, 0.1, 0.1, 1.0],
+        size: [width * (scale + 1.0), 22.0],
+    }];
+
+    let text = Text::new((4., position_y), content.to_string(), 14., [0., 0., 0., 1.]);
+
+    (rects, text)
+}

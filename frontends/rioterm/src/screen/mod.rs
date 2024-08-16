@@ -564,7 +564,10 @@ impl Screen<'_> {
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
-                    Act::SearchForward => self.start_search(Direction::Right),
+                    Act::SearchForward => {
+                        self.start_search(Direction::Right);
+                        return;
+                    }
                     Act::SearchBackward => self.start_search(Direction::Left),
                     Act::Search(SearchAction::SearchConfirm) => self.confirm_search(),
                     Act::Search(SearchAction::SearchCancel) => self.cancel_search(),
@@ -859,7 +862,7 @@ impl Screen<'_> {
         self.sugarloaf.mark_dirty();
         let text = key.text_with_all_modifiers().unwrap_or_default();
 
-        if search_active {
+        if self.search_active() {
             for character in text.chars() {
                 self.search_input(character);
             }
@@ -1270,10 +1273,9 @@ impl Screen<'_> {
         self.search_state.direction = direction;
         self.search_state.focused_match = None;
 
-        let terminal = self.context_manager.current().terminal.lock();
-
         // Store original search position as origin and reset location.
         if self.get_mode().contains(Mode::VI) {
+            let terminal = self.context_manager.current().terminal.lock();
             self.search_state.origin = terminal.vi_mode_cursor.pos;
             self.search_state.display_offset_delta = 0;
 
@@ -1281,7 +1283,9 @@ impl Screen<'_> {
             if terminal.grid.cursor.pos.row + 1 == terminal.screen_lines() {
                 self.search_state.origin.row -= 1;
             }
+            drop(terminal);
         } else {
+            let terminal = self.context_manager.current().terminal.lock();
             let viewport_top = Line(-(terminal.grid.display_offset() as i32)) - 1;
             let viewport_bottom = viewport_top + terminal.bottommost_line();
             let last_column = terminal.last_column();
@@ -1289,6 +1293,7 @@ impl Screen<'_> {
                 Direction::Right => Pos::new(viewport_top, Column(0)),
                 Direction::Left => Pos::new(viewport_bottom, last_column),
             };
+            drop(terminal);
         }
 
         // Enable IME so we can input into the search bar with it if we were in Vi mode.
@@ -1297,6 +1302,7 @@ impl Screen<'_> {
         // self.display.damage_tracker.frame().mark_fully_damaged();
         // self.display.pending_update.dirty = true;
         self.sugarloaf.mark_dirty();
+        self.render();
     }
 
     #[inline]
@@ -1347,6 +1353,8 @@ impl Screen<'_> {
 
         // Clear focused match.
         self.search_state.focused_match = None;
+
+        self.render();
     }
 
     #[inline]
@@ -1584,6 +1592,15 @@ impl Screen<'_> {
 
         // let start = std::time::Instant::now();
         // println!("Render time elapsed");
+
+        // if self.search_active() {
+        //     self.state.start_search(
+        //         self.search_state.history_index,
+        //         self.search_state.history.clone(),
+        //     );
+        // } else {
+        //     self.state.finish_search();
+        // }
 
         self.sugarloaf.render();
 

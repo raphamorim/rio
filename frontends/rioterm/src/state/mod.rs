@@ -6,6 +6,7 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
+use crate::renderer::draw_search_bar;
 use crate::selection::SelectionRange;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
@@ -18,6 +19,7 @@ use rio_backend::sugarloaf::{
     SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 #[cfg(not(use_wa))]
 use winit::window::Theme;
@@ -52,7 +54,11 @@ pub struct State {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
+<<<<<<< HEAD
     width_cache: FxHashMap<char, f32>,
+=======
+    active_search: Option<String>,
+>>>>>>> 6e9d3e94 (render simple search bar)
 }
 
 impl State {
@@ -147,6 +153,7 @@ impl State {
             hyperlink_range: None,
             named_colors,
             dynamic_background,
+            active_search: None,
             cursor: Cursor {
                 content: config.cursor,
                 content_ref: config.cursor,
@@ -169,6 +176,22 @@ impl State {
     #[inline]
     pub fn get_cursor_state(&self) -> CursorState {
         self.cursor.state.clone()
+    }
+
+    #[inline]
+    pub fn start_search(
+        &mut self,
+        current_search_index: Option<usize>,
+        search_history: VecDeque<String>,
+    ) {
+        if let Some(index) = current_search_index {
+            self.active_search = search_history.get(index).cloned();
+        }
+    }
+
+    #[inline]
+    pub fn finish_search(&mut self) {
+        self.active_search = None
     }
 
     #[inline]
@@ -685,6 +708,11 @@ impl State {
         }
 
         sugarloaf.set_content(content_builder.build());
+            // let (rect, text) = draw_search_bar(
+            //     (layout.width, layout.height),
+            //     layout.dimensions.scale,
+            //     search_content,
+            // );
 
         self.navigation.content(
             (layout.width, layout.height),
