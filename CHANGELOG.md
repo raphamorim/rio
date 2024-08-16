@@ -16,6 +16,10 @@
 
 ## Unreleased
 
+- TBD
+
+## 0.1.7
+
 **Breaking**
 
 Editor property have changed from `String` to allow input arguments as well.
