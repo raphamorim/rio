@@ -7,7 +7,9 @@
 // which is licensed under Apache 2.0 license.
 
 pub mod touch;
+mod hint;
 
+use crate::screen::hint::HintMatches;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
@@ -76,6 +78,7 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub ime: Ime,
+    pub hints: Option<HintMatches<'screen>>,
     pub state: State,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -234,6 +237,7 @@ impl Screen<'_> {
             state,
             bindings,
             clipboard,
+            hints: None,
         })
     }
 
