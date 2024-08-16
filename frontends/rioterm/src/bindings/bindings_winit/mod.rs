@@ -1029,8 +1029,9 @@ pub fn platform_key_bindings(
         "f", ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SearchForward;
         "b", ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SearchBackward;
         Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
-        "c", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchCancel;
-        "u",      ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchClear;
+        Key::Named(Enter), +BindingMode::SEARCH; SearchAction::SearchFocusNext;
+        "c", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchCancel;
+        "u", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchClear;
     );
 
     if use_navigation_key_bindings {
