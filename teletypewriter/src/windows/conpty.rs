@@ -1,6 +1,6 @@
 use crate::Winsize;
 use log::*;
-use std::io::Error;
+use std::io::{Error, Result};
 use std::os::windows::io::IntoRawHandle;
 use std::{mem, ptr};
 
@@ -108,7 +108,7 @@ pub fn new(
     working_directory: &Option<String>,
     columns: u16,
     rows: u16,
-) -> Option<Pty> {
+) -> Result<Pty> {
     let api = ConptyApi::new();
     let mut pty_handle: HPCON = 0;
 
@@ -116,8 +116,8 @@ pub fn new(
     // size to be used. There may be small performance and memory advantages
     // to be gained by tuning this in the future, but it's likely a reasonable
     // start point.
-    let (conout, conout_pty_handle) = miow::pipe::anonymous(0).unwrap();
-    let (conin_pty_handle, conin) = miow::pipe::anonymous(0).unwrap();
+    let (conout, conout_pty_handle) = miow::pipe::anonymous(0)?;
+    let (conin_pty_handle, conin) = miow::pipe::anonymous(0)?;
 
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -166,7 +166,7 @@ pub fn new(
 
         // This call was expected to return false.
         if failure {
-            panic_shell_spawn();
+            return Err(Error::last_os_error());
         }
     }
 
@@ -192,7 +192,7 @@ pub fn new(
         ) > 0;
 
         if !success {
-            panic_shell_spawn();
+            return Err(Error::last_os_error());
         }
     }
 
@@ -209,7 +209,7 @@ pub fn new(
         ) > 0;
 
         if !success {
-            panic_shell_spawn();
+            return Err(Error::last_os_error());
         }
     }
 
@@ -232,25 +232,20 @@ pub fn new(
         ) > 0;
 
         if !success {
-            panic_shell_spawn();
+            return Err(Error::last_os_error());
         }
     }
 
     let conin = EventedAnonWrite::new(conin);
     let conout = EventedAnonRead::new(conout);
 
-    let child_watcher = ChildExitWatcher::new(proc_info.hProcess).unwrap();
+    let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
     let conpty = Conpty {
         handle: pty_handle as HPCON,
         api,
     };
 
-    Some(Pty::new(conpty, conout, conin, child_watcher))
-}
-
-// Panic with the last os error as message.
-fn panic_shell_spawn() {
-    panic!("Unable to spawn shell: {}", Error::last_os_error());
+    Ok(Pty::new(conpty, conout, conin, child_watcher))
 }
 
 impl Conpty {
