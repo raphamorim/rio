@@ -15,9 +15,9 @@
 */
 
 pub mod attr;
-pub mod search;
 pub mod grid;
 pub mod pos;
+pub mod search;
 pub mod square;
 pub mod vi_mode;
 
@@ -66,7 +66,6 @@ pub type NamedColor = colors::NamedColor;
 
 pub const MIN_COLUMNS: usize = 2;
 pub const MIN_LINES: usize = 1;
-const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
 
 /// Max. number of graphics stored in a single cell.
 const MAX_GRAPHICS_PER_CELL: usize = 20;
@@ -331,7 +330,7 @@ impl IndexMut<Column> for TabStops {
 
 /// Terminal version for escape sequence reports.
 ///
-/// This returns the current terminal version as a unique number based on alacritty_terminal's
+/// This returns the current terminal version as a unique number based on rio's
 /// semver version. The different versions are padded to ensure that a higher semver version will
 /// always report a higher version number.
 fn version_number(mut version: &str) -> usize {
@@ -779,105 +778,6 @@ impl<U: EventListener> Crosswords<U> {
             *line = std::cmp::max(*line - lines, top);
         }
         self.mark_fully_damaged();
-    }
-
-    #[inline]
-    pub fn bracket_search(&self, point: Pos) -> Option<Pos> {
-        let start_char = self.grid[point].c;
-
-        // Find the matching bracket we're looking for
-        let (forward, end_char) = BRACKET_PAIRS.iter().find_map(|(open, close)| {
-            if open == &start_char {
-                Some((true, *close))
-            } else if close == &start_char {
-                Some((false, *open))
-            } else {
-                None
-            }
-        })?;
-
-        let mut iter = self.grid.iter_from(point);
-
-        // For every character match that equals the starting bracket, we
-        // ignore one bracket of the opposite type.
-        let mut skip_pairs = 0;
-
-        loop {
-            // Check the next cell
-            let cell = if forward { iter.next() } else { iter.prev() };
-
-            // Break if there are no more cells
-            let cell = match cell {
-                Some(cell) => cell,
-                None => break,
-            };
-
-            // Check if the bracket matches
-            if cell.c == end_char && skip_pairs == 0 {
-                return Some(cell.pos);
-            } else if cell.c == start_char {
-                skip_pairs += 1;
-            } else if cell.c == end_char {
-                skip_pairs -= 1;
-            }
-        }
-
-        None
-    }
-
-    #[inline]
-    pub fn semantic_search_left(&self, mut point: Pos) -> Pos {
-        // Limit the starting point to the last line in the history
-        point.row = std::cmp::max(point.row, self.grid.topmost_line());
-
-        let mut iter = self.grid.iter_from(point);
-        let last_column = self.grid.columns() - 1;
-
-        let wide = square::Flags::WIDE_CHAR
-            | square::Flags::WIDE_CHAR_SPACER
-            | square::Flags::LEADING_WIDE_CHAR_SPACER;
-        while let Some(cell) = iter.prev() {
-            if !cell.flags.intersects(wide) && self.semantic_escape_chars.contains(cell.c)
-            {
-                break;
-            }
-
-            if cell.pos.col == last_column
-                && !cell.flags.contains(square::Flags::WRAPLINE)
-            {
-                break; // cut off if on new line or hit escape char
-            }
-
-            point = cell.pos;
-        }
-
-        point
-    }
-
-    #[inline]
-    pub fn semantic_search_right(&self, mut point: Pos) -> Pos {
-        // Limit the starting point to the last line in the history
-        point.row = std::cmp::max(point.row, self.grid.topmost_line());
-
-        let wide = square::Flags::WIDE_CHAR
-            | square::Flags::WIDE_CHAR_SPACER
-            | square::Flags::LEADING_WIDE_CHAR_SPACER;
-        let last_column = self.grid.columns() - 1;
-
-        for cell in self.grid.iter_from(point) {
-            if !cell.flags.intersects(wide) && self.semantic_escape_chars.contains(cell.c)
-            {
-                break;
-            }
-
-            point = cell.pos;
-
-            if point.col == last_column && !cell.flags.contains(square::Flags::WRAPLINE) {
-                break; // cut off if on new line or hit escape char
-            }
-        }
-
-        point
     }
 
     #[inline]
@@ -2717,6 +2617,31 @@ impl Dimensions for CrosswordsSize {
 
     fn columns(&self) -> usize {
         self.columns
+    }
+
+    fn square_width(&self) -> f32 {
+        0.
+    }
+
+    fn square_height(&self) -> f32 {
+        0.
+    }
+}
+
+impl<T: EventListener> Dimensions for Crosswords<T> {
+    #[inline]
+    fn columns(&self) -> usize {
+        self.grid.columns()
+    }
+
+    #[inline]
+    fn screen_lines(&self) -> usize {
+        self.grid.screen_lines()
+    }
+
+    #[inline]
+    fn total_lines(&self) -> usize {
+        self.grid.total_lines()
     }
 
     fn square_width(&self) -> f32 {
