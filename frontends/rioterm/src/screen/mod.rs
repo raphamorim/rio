@@ -576,6 +576,13 @@ impl Screen<'_> {
                         self.cancel_search();
                         self.start_search(direction);
                     }
+                    Act::Search(SearchAction::SearchFocusNext) => {
+                        self.advance_search_origin(self.search_state.direction);
+                    },
+                    Act::Search(SearchAction::SearchFocusPrevious) => {
+                        let direction = self.search_state.direction.opposite();
+                        self.advance_search_origin(direction);
+                    },
                     Act::ToggleViMode => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
@@ -945,6 +952,54 @@ impl Screen<'_> {
                 self.paste(&content, true);
             }
         }
+    }
+
+    #[inline]
+    fn advance_search_origin(&mut self, direction: Direction) {
+        // Use focused match as new search origin if available.
+        if let Some(focused_match) = &self.search_state.focused_match {
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
+            let new_origin = match direction {
+                Direction::Right => focused_match.end().add(&*terminal, Boundary::None, 1),
+                Direction::Left => focused_match.start().sub(&*terminal, Boundary::None, 1),
+            };
+
+            terminal.scroll_to_pos(new_origin);
+
+            self.search_state.display_offset_delta = 0;
+            self.search_state.origin = new_origin;
+        }
+
+        // Search for the next match using the supplied direction.
+        let search_direction = std::mem::replace(&mut self.search_state.direction, direction);
+        self.goto_match(None);
+        self.search_state.direction = search_direction;
+
+        // If we found a match, we set the search origin right in front of it to make sure that
+        // after modifications to the regex the search is started without moving the focused match
+        // around.
+        let focused_match = match &self.search_state.focused_match {
+            Some(focused_match) => focused_match,
+            None => return,
+        };
+
+        // Set new origin to the left/right of the match, depending on search direction.
+        let new_origin = match self.search_state.direction {
+            Direction::Right => *focused_match.start(),
+            Direction::Left => *focused_match.end(),
+        };
+
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
+
+        // Store the search origin with display offset by checking how far we need to scroll to it.
+        let old_display_offset = terminal.display_offset() as i32;
+        terminal.scroll_to_pos(new_origin);
+        let new_display_offset = terminal.display_offset() as i32;
+        self.search_state.display_offset_delta = new_display_offset - old_display_offset;
+
+        // Store origin and scroll back to the match.
+        terminal.scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
+        self.search_state.origin = new_origin;
     }
 
     /// Whether we should send `ESC` due to `Alt` being pressed.
@@ -1388,6 +1443,7 @@ impl Screen<'_> {
         }
 
         self.update_search();
+        self.render();
     }
 
     fn update_search(&mut self) {
