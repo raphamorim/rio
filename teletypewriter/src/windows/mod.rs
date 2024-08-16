@@ -40,8 +40,6 @@ pub fn create_pty(
     rows: u16,
 ) -> Pty {
     conpty::new(shell, working_directory, columns, rows)
-        .ok_or_else(|| panic!("failed to spawn conpty"))
-        .unwrap()
 }
 
 impl Pty {
