@@ -619,6 +619,21 @@ impl<U: EventListener> Crosswords<U> {
         self.vi_mode_recompute_selection();
     }
 
+    /// Move vi cursor to a point in the grid.
+    #[inline]
+    pub fn vi_goto_pos(&mut self, pos: Pos)
+    where
+        U: EventListener,
+    {
+        // Move viewport to make pos visible.
+        self.scroll_to_pos(pos);
+
+        // Move vi cursor to the pos.
+        self.vi_mode_cursor.pos = pos;
+
+        self.vi_mode_recompute_selection();
+    }
+
     /// Scroll display to point if it is outside of viewport.
     #[inline]
     pub fn scroll_to_pos(&mut self, pos: Pos)

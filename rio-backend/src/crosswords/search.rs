@@ -142,54 +142,42 @@ impl LazyDfa {
 
 impl<T: event::EventListener> Crosswords<T> {
     /// Get next search match in the specified direction.
-    pub fn search_next<D>(
+    pub fn search_next(
         &self,
-        dimensions: &D,
         regex: &mut RegexSearch,
         mut origin: Pos,
         direction: Direction,
         side: Side,
         mut max_lines: Option<usize>,
-    ) -> Option<Match>
-    where
-        D: Dimensions,
-    {
+    ) -> Option<Match> {
         origin = self.expand_wide(origin, direction);
 
         max_lines = max_lines.filter(|max_lines| max_lines + 1 < self.grid.total_lines());
 
         match direction {
-            Direction::Right => {
-                self.next_match_right(dimensions, regex, origin, side, max_lines)
-            }
-            Direction::Left => {
-                self.next_match_left(dimensions, regex, origin, side, max_lines)
-            }
+            Direction::Right => self.next_match_right(regex, origin, side, max_lines),
+            Direction::Left => self.next_match_left(regex, origin, side, max_lines),
         }
     }
 
     /// Find the next match to the right of the origin.
-    fn next_match_right<D>(
+    fn next_match_right(
         &self,
-        dimensions: &D,
         regex: &mut RegexSearch,
         origin: Pos,
         side: Side,
         max_lines: Option<usize>,
-    ) -> Option<Match>
-    where
-        D: Dimensions,
-    {
+    ) -> Option<Match> {
         let start = self.row_search_left(origin);
         let mut end = start;
 
         // Limit maximum number of lines searched.
         end = match max_lines {
             Some(max_lines) => {
-                let line = (start.row + max_lines).grid_clamp(dimensions, Boundary::None);
+                let line = (start.row + max_lines).grid_clamp(self, Boundary::None);
                 Pos::new(line, self.grid.last_column())
             }
-            _ => end.sub(dimensions, Boundary::None, 1),
+            _ => end.sub(self, Boundary::None, 1),
         };
 
         let mut regex_iter =
@@ -213,27 +201,23 @@ impl<T: event::EventListener> Crosswords<T> {
     }
 
     /// Find the next match to the left of the origin.
-    fn next_match_left<D>(
+    fn next_match_left(
         &self,
-        dimensions: &D,
         regex: &mut RegexSearch,
         origin: Pos,
         side: Side,
         max_lines: Option<usize>,
-    ) -> Option<Match>
-    where
-        D: Dimensions,
-    {
+    ) -> Option<Match> {
         let start = self.row_search_right(origin);
         let mut end = start;
 
         // Limit maximum number of lines searched.
         end = match max_lines {
             Some(max_lines) => {
-                let line = (start.row - max_lines).grid_clamp(dimensions, Boundary::None);
+                let line = (start.row - max_lines).grid_clamp(self, Boundary::None);
                 Pos::new(line, Column(0))
             }
-            _ => end.add(dimensions, Boundary::None, 1),
+            _ => end.add(self, Boundary::None, 1),
         };
 
         let mut regex_iter =

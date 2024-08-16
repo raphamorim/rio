@@ -9,7 +9,8 @@
 pub mod touch;
 
 use crate::bindings::{
-    Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, ViAction,
+    Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
+    ViAction,
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
@@ -33,7 +34,9 @@ use rio_backend::config::{
     colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
-use rio_backend::event::{ClickState, EventProxy};
+use rio_backend::crosswords::pos::{Boundary, Direction, Line};
+use rio_backend::crosswords::search::RegexSearch;
+use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
@@ -58,6 +61,12 @@ const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
 /// Number of pixels for increasing the selection scrolling speed factor by one.
 const SELECTION_SCROLLING_STEP: f32 = 10.;
 
+/// Maximum number of lines for the blocking search while still typing the search regex.
+const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
+
+/// Maximum number of search terms stored in the history.
+const MAX_SEARCH_HISTORY_SIZE: usize = 255;
+
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
@@ -65,6 +74,7 @@ pub struct Screen<'screen> {
     pub modifiers: Modifiers,
     pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
+    pub search_state: SearchState,
     pub ime: Ime,
     pub state: State,
     pub sugarloaf: Sugarloaf<'screen>,
@@ -213,6 +223,7 @@ impl Screen<'_> {
         sugarloaf.render();
 
         Ok(Screen {
+            search_state: SearchState::default(),
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
@@ -239,6 +250,11 @@ impl Screen<'_> {
     #[inline]
     pub fn set_modifiers(&mut self, modifiers: Modifiers) {
         self.modifiers = modifiers;
+    }
+
+    #[inline]
+    pub fn search_active(&mut self) -> bool {
+        self.search_state.history_index.is_some()
     }
 
     #[inline]
@@ -480,7 +496,9 @@ impl Screen<'_> {
             return;
         }
 
-        let binding_mode = BindingMode::new(&mode);
+        let search_active = self.search_active();
+
+        let binding_mode = BindingMode::new(&mode, search_active);
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
@@ -545,6 +563,15 @@ impl Screen<'_> {
                     }
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
+                    }
+                    Act::SearchForward => self.start_search(Direction::Right),
+                    Act::SearchBackward => self.start_search(Direction::Left),
+                    Act::Search(SearchAction::SearchConfirm) => self.confirm_search(),
+                    Act::Search(SearchAction::SearchCancel) => self.cancel_search(),
+                    Act::Search(SearchAction::SearchClear) => {
+                        let direction = self.search_state.direction;
+                        self.cancel_search();
+                        self.start_search(direction);
                     }
                     Act::ToggleViMode => {
                         let mut terminal =
@@ -832,6 +859,14 @@ impl Screen<'_> {
         self.sugarloaf.mark_dirty();
         let text = key.text_with_all_modifiers().unwrap_or_default();
 
+        if search_active {
+            for character in text.chars() {
+                self.search_input(character);
+            }
+
+            return;
+        }
+
         let bytes = if !self.state.is_kitty_keyboard_enabled {
             // If text is empty then leave without input bytes
             if text.is_empty() {
@@ -888,7 +923,7 @@ impl Screen<'_> {
     #[inline]
     pub fn process_mouse_bindings(&mut self, button: MouseButton) {
         let mode = self.get_mode();
-        let binding_mode = BindingMode::new(&mode);
+        let binding_mode = BindingMode::new(&mode, self.search_active());
         let mouse_mode = self.mouse_mode();
         let mods = self.modifiers.state();
 
@@ -1219,8 +1254,259 @@ impl Screen<'_> {
     }
 
     #[inline]
+    fn start_search(&mut self, direction: Direction) {
+        // Only create new history entry if the previous regex wasn't empty.
+        if self
+            .search_state
+            .history
+            .front()
+            .map_or(true, |regex| !regex.is_empty())
+        {
+            self.search_state.history.push_front(String::new());
+            self.search_state.history.truncate(MAX_SEARCH_HISTORY_SIZE);
+        }
+
+        self.search_state.history_index = Some(0);
+        self.search_state.direction = direction;
+        self.search_state.focused_match = None;
+
+        let terminal = self.context_manager.current().terminal.lock();
+
+        // Store original search position as origin and reset location.
+        if self.get_mode().contains(Mode::VI) {
+            self.search_state.origin = terminal.vi_mode_cursor.pos;
+            self.search_state.display_offset_delta = 0;
+
+            // Adjust origin for content moving upward on search start.
+            if terminal.grid.cursor.pos.row + 1 == terminal.screen_lines() {
+                self.search_state.origin.row -= 1;
+            }
+        } else {
+            let viewport_top = Line(-(terminal.grid.display_offset() as i32)) - 1;
+            let viewport_bottom = viewport_top + terminal.bottommost_line();
+            let last_column = terminal.last_column();
+            self.search_state.origin = match direction {
+                Direction::Right => Pos::new(viewport_top, Column(0)),
+                Direction::Left => Pos::new(viewport_bottom, last_column),
+            };
+        }
+
+        // Enable IME so we can input into the search bar with it if we were in Vi mode.
+        // self.window().set_ime_allowed(true);
+
+        // self.display.damage_tracker.frame().mark_fully_damaged();
+        // self.display.pending_update.dirty = true;
+        self.sugarloaf.mark_dirty();
+    }
+
+    #[inline]
+    fn confirm_search(&mut self) {
+        // Just cancel search when not in vi mode.
+        if !self.get_mode().contains(Mode::VI) {
+            self.cancel_search();
+            return;
+        }
+
+        // Force unlimited search if the previous one was interrupted.
+        // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
+        // if self.scheduler.scheduled(timer_id) {
+        //     self.goto_match(None);
+        // }
+
+        self.exit_search();
+    }
+
+    #[inline]
+    fn cancel_search(&mut self) {
+        if self.get_mode().contains(Mode::VI) {
+            // Recover pre-search state in vi mode.
+            self.search_reset_state();
+        } else if let Some(focused_match) = &self.search_state.focused_match {
+            // Create a selection for the focused match.
+            let start = *focused_match.start();
+            let end = *focused_match.end();
+            self.start_selection(SelectionType::Simple, start, Side::Left);
+            self.update_selection(end, Side::Right);
+            self.copy_selection(ClipboardType::Selection);
+        }
+
+        self.search_state.dfas = None;
+
+        self.exit_search();
+    }
+
+    /// Cleanup the search state.
+    fn exit_search(&mut self) {
+        // let vi_mode = self.get_mode().contains(Mode::VI);
+        // self.window().set_ime_allowed(!vi_mode);
+
+        // self.display.damage_tracker.frame().mark_fully_damaged();
+        // self.display.pending_update.dirty = true;
+        self.sugarloaf.mark_dirty();
+        self.search_state.history_index = None;
+
+        // Clear focused match.
+        self.search_state.focused_match = None;
+    }
+
+    #[inline]
+    fn search_input(&mut self, c: char) {
+        match self.search_state.history_index {
+            Some(0) => (),
+            // When currently in history, replace active regex with history on change.
+            Some(index) => {
+                self.search_state.history[0] = self.search_state.history[index].clone();
+                self.search_state.history_index = Some(0);
+            }
+            None => return,
+        }
+        let regex = &mut self.search_state.history[0];
+
+        match c {
+            // Handle backspace/ctrl+h.
+            '\x08' | '\x7f' => {
+                let _ = regex.pop();
+            }
+            // Add ascii and unicode text.
+            ' '..='~' | '\u{a0}'..='\u{10ffff}' => regex.push(c),
+            // Ignore non-printable characters.
+            _ => return,
+        }
+
+        let mode = self.get_mode();
+        if !mode.contains(Mode::VI) {
+            // Clear selection so we do not obstruct any matches.
+            self.state.set_selection(None);
+        }
+
+        self.update_search();
+    }
+
+    fn update_search(&mut self) {
+        let regex = match self.search_state.regex() {
+            Some(regex) => regex,
+            None => return,
+        };
+
+        if regex.is_empty() {
+            // Stop search if there's nothing to search for.
+            self.search_reset_state();
+            self.search_state.dfas = None;
+        } else {
+            // Create search dfas for the new regex string.
+            self.search_state.dfas = RegexSearch::new(regex).ok();
+
+            // Update search highlighting.
+            self.goto_match(MAX_SEARCH_WHILE_TYPING);
+        }
+
+        self.sugarloaf.mark_dirty();
+    }
+
+    /// Reset terminal to the state before search was started.
+    fn search_reset_state(&mut self) {
+        // Unschedule pending timers.
+        // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
+        // self.scheduler.unschedule(timer_id);
+
+        // Clear focused match.
+        self.search_state.focused_match = None;
+
+        // The viewport reset logic is only needed for vi mode, since without it our origin is
+        // always at the current display offset instead of at the vi cursor position which we need
+        // to recover to.
+        let mode = self.get_mode();
+        if !mode.contains(Mode::VI) {
+            return;
+        }
+
+        // Reset display offset and cursor position.
+        {
+            let mut terminal = self.ctx().current().terminal.lock();
+            terminal.vi_mode_cursor.pos = self.search_state.origin;
+            terminal
+                .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
+        }
+        self.search_state.display_offset_delta = 0;
+        self.sugarloaf.mark_dirty();
+    }
+
+    /// Jump to the first regex match from the search origin.
+    fn goto_match(&mut self, mut limit: Option<usize>) {
+        let dfas = match &mut self.search_state.dfas {
+            Some(dfas) => dfas,
+            None => return,
+        };
+
+        let mut should_reset_search_state = false;
+
+        // Jump to the next match.
+        {
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
+            // Limit search only when enough lines are available to run into the limit.
+            limit = limit.filter(|&limit| limit <= terminal.total_lines());
+
+            let direction = self.search_state.direction;
+            let clamped_origin = self
+                .search_state
+                .origin
+                .grid_clamp(&*terminal, Boundary::Grid);
+            match terminal.search_next(dfas, clamped_origin, direction, Side::Left, limit)
+            {
+                Some(regex_match) => {
+                    let old_offset = terminal.display_offset() as i32;
+                    if terminal.mode().contains(Mode::VI) {
+                        // Move vi cursor to the start of the match.
+                        terminal.vi_goto_pos(*regex_match.start());
+                    } else {
+                        // Select the match when vi mode is not active.
+                        terminal.scroll_to_pos(*regex_match.start());
+                    }
+
+                    // Update the focused match.
+                    self.search_state.focused_match = Some(regex_match);
+
+                    // Store number of lines the viewport had to be moved.
+                    let display_offset = terminal.display_offset();
+                    self.search_state.display_offset_delta +=
+                        old_offset - display_offset as i32;
+
+                    // Since we found a result, we require no delayed re-search.
+                    // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
+                    // self.scheduler.unschedule(timer_id);
+                }
+                // Reset viewport only when we know there is no match, to prevent unnecessary jumping.
+                None if limit.is_none() => {
+                    should_reset_search_state = true;
+                }
+                None => {
+                    // Schedule delayed search if we ran into our search limit.
+                    // let timer_id = TimerId::new(Topic::DelayedSearch, self.display.window.id());
+                    // if !self.scheduler.scheduled(timer_id) {
+                    // let event = Event::new(EventType::SearchNext, self.display.window.id());
+                    // self.scheduler.schedule(event, TYPING_SEARCH_DELAY, false, timer_id);
+                    // }
+
+                    // Clear focused match.
+                    self.search_state.focused_match = None;
+                }
+            }
+        }
+
+        if should_reset_search_state {
+            self.search_reset_state();
+        }
+
+        self.sugarloaf.mark_dirty();
+    }
+
+    #[inline]
     pub fn paste(&mut self, text: &str, bracketed: bool) {
-        if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+        if self.search_active() {
+            for c in text.chars() {
+                self.search_input(c);
+            }
+        } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
             self.ctx_mut()
                 .current_mut()
                 .messenger
