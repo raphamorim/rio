@@ -39,7 +39,7 @@ pub fn create_pty(
     columns: u16,
     rows: u16,
 ) -> Pty {
-    conpty::new(shell, working_directory, columns, rows)
+    conpty::new(shell, working_directory, columns, rows).unwrap()
 }
 
 impl Pty {
