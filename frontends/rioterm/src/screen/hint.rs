@@ -42,6 +42,7 @@ impl<'a> HintMatches<'a> {
     }
 
     /// Create from regex matches on term visible part.
+    #[inline]
     pub fn visible_regex_matches<T: rio_backend::event::EventListener>(term: &Crosswords<T>, dfas: &mut RegexSearch) -> Self {
         let matches = visible_regex_match_iter(term, dfas).collect::<Vec<_>>();
         Self::new(matches)
