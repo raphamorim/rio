@@ -1201,24 +1201,21 @@ impl Screen<'_> {
         // let start = std::time::Instant::now();
         // println!("Render time elapsed");
 
-        #[cfg(use_wa)]
-        if self.sugarloaf.dimensions_changed() {
-            self.resize_all_contexts();
-            return;
+        let (rows, cursor, display_offset, has_blinking_enabled) = {
+            let terminal = self.ctx().current().terminal.lock();
+            (
+                terminal.visible_rows(),
+                terminal.cursor(),
+                terminal.display_offset(),
+                terminal.blinking_cursor,
+            )
         };
 
-        let terminal = self.ctx().current().terminal.lock();
-        let visible_rows = terminal.visible_rows();
-        let cursor = terminal.cursor();
-        let display_offset = terminal.display_offset();
-        let has_blinking_enabled = terminal.blinking_cursor;
-        drop(terminal);
         self.context_manager.update_titles();
-
         self.state.set_ime(self.ime.preedit());
 
         self.state.prepare_term(
-            visible_rows,
+            rows,
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
