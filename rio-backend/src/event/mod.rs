@@ -319,8 +319,13 @@ impl SearchState {
     }
 
     /// Active search dfas.
-    pub fn dfas(&mut self) -> Option<&mut RegexSearch> {
+    pub fn dfas_mut(&mut self) -> Option<&mut RegexSearch> {
         self.dfas.as_mut()
+    }
+
+    /// Active search dfas.
+    pub fn dfas(&self) -> Option<&RegexSearch> {
+        self.dfas.as_ref()
     }
 
     /// Search regex text if a search is active.

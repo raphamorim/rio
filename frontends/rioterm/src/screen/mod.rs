@@ -7,7 +7,7 @@
 // which is licensed under Apache 2.0 license.
 
 pub mod touch;
-mod hint;
+pub mod hint;
 
 use crate::screen::hint::HintMatches;
 use crate::bindings::{
@@ -257,7 +257,7 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn search_active(&mut self) -> bool {
+    pub fn search_active(&self) -> bool {
         self.search_state.history_index.is_some()
     }
 
@@ -1653,6 +1653,7 @@ impl Screen<'_> {
         // let start = std::time::Instant::now();
         // println!("Render time elapsed");
 
+        // let is_search_active = self.search_active();
         // if self.search_active() {
         //     self.state.start_search(
         //         self.search_state.history_index,
