@@ -1033,9 +1033,9 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn visible_rows(&mut self) -> Vec<Row<Square>> {
-        let mut visible_rows = vec![];
         let mut start = self.scroll_region.start.0;
         let mut end = self.scroll_region.end.0;
+        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
 
         let scroll = self.display_offset() as i32;
         if scroll != 0 {
