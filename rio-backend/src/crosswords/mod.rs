@@ -960,7 +960,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         for row in start..end {
-            visible_rows.push(self.grid[Line(row)].to_owned());
+            visible_rows.push(self.grid[Line(row)].clone());
         }
 
         visible_rows

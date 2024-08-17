@@ -1,5 +1,6 @@
 pub mod navigation;
 
+use crate::screen::hint::HintMatches;
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos;
@@ -54,11 +55,8 @@ pub struct State {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
-<<<<<<< HEAD
     width_cache: FxHashMap<char, f32>,
-=======
     active_search: Option<String>,
->>>>>>> 6e9d3e94 (render simple search bar)
 }
 
 impl State {
@@ -331,6 +329,7 @@ impl State {
         row: &Row<Square>,
         has_cursor: bool,
         current_line: pos::Line,
+        search_hints: &Option<HintMatches>,
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
@@ -671,6 +670,7 @@ impl State {
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         display_offset: i32,
         has_blinking_enabled: bool,
+        hints: Option<HintMatches>
     ) {
         let layout = sugarloaf.layout();
         self.cursor.state = cursor;
@@ -704,6 +704,7 @@ impl State {
                 row,
                 has_cursor,
                 pos::Line((i as i32) - display_offset),
+                &hints,
             );
         }
 
