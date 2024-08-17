@@ -1215,7 +1215,7 @@ impl Screen<'_> {
         self.state.set_ime(self.ime.preedit());
 
         self.state.prepare_term(
-            rows,
+            &rows,
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,

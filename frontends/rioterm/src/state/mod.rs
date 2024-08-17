@@ -556,7 +556,7 @@ impl State {
     #[inline]
     pub fn prepare_term(
         &mut self,
-        rows: Vec<Row<Square>>,
+        rows: &[Row<Square>],
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
