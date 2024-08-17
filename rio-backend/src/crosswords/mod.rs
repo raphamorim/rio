@@ -1068,7 +1068,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn cursor(&mut self) -> CursorState {
+    pub fn cursor(&self) -> CursorState {
         let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
         let scroll = self.display_offset() as i32;

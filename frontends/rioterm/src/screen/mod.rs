@@ -1207,7 +1207,7 @@ impl Screen<'_> {
             return;
         };
 
-        let mut terminal = self.ctx().current().terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let visible_rows = terminal.visible_rows();
         let cursor = terminal.cursor();
         let display_offset = terminal.display_offset();
