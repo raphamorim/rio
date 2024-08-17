@@ -413,7 +413,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn display_offset(&self) -> usize {
-        let mut terminal = self.ctx().current().terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let display_offset = terminal.display_offset();
         drop(terminal);
         display_offset
@@ -992,7 +992,7 @@ impl Screen<'_> {
             return false;
         }
 
-        let mut terminal = self.context_manager.current().terminal.lock();
+        let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
         let pos = self.mouse_position(display_offset);
         let pos_hyperlink = terminal.grid[pos].hyperlink();
@@ -1268,7 +1268,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn mouse_report(&mut self, button: u8, state: ElementState) {
-        let mut terminal = self.ctx().current().terminal.lock();
+        let terminal = self.ctx().current().terminal.lock();
         let display_offset = terminal.display_offset();
         let mode = terminal.mode();
         drop(terminal);
