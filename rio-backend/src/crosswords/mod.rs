@@ -451,7 +451,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn display_offset(&mut self) -> usize {
+    pub fn display_offset(&self) -> usize {
         self.grid.display_offset()
     }
 
@@ -1032,7 +1032,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn visible_rows(&mut self) -> Vec<Row<Square>> {
+    pub fn visible_rows(&self) -> Vec<Row<Square>> {
         let mut start = self.scroll_region.start.0;
         let mut end = self.scroll_region.end.0;
         let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
