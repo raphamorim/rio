@@ -423,7 +423,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll_bottom_when_cursor_not_visible(&mut self) {
-        let mut terminal = self.ctx_mut().current().terminal.lock();
+        let mut terminal = self.ctx_mut().current_mut().terminal.lock();
         if terminal.display_offset() != 0 {
             terminal.scroll_display(Scroll::Bottom);
         }
