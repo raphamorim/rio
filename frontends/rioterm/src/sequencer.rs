@@ -97,10 +97,16 @@ impl Sequencer {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
+                                    if self.config.renderer.disable_unfocused_render
+                                        && !route.window.is_focused
+                                    {
+                                        return;
+                                    }
+
                                     if route_id
                                         == route.window.screen.ctx().current_route()
                                     {
-                                        route.window.screen.context_manager.schedule_render(5);
+                                        route.window.screen.context_manager.schedule_render(4);
                                         // route.window.winit_window.request_redraw();
                                     }
                                 }
@@ -1043,6 +1049,8 @@ impl Sequencer {
                             {
                                 route.window.winit_window.set_cursor_visible(false);
                             }
+
+                            route.window.winit_window.request_redraw();
                         }
                     }
 
