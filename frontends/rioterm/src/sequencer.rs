@@ -106,7 +106,11 @@ impl Sequencer {
                                     if route_id
                                         == route.window.screen.ctx().current_route()
                                     {
-                                        route.window.screen.context_manager.schedule_render(4);
+                                        route
+                                            .window
+                                            .screen
+                                            .context_manager
+                                            .schedule_render(4);
                                         // route.window.winit_window.request_redraw();
                                     }
                                 }
