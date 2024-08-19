@@ -106,12 +106,7 @@ impl Sequencer {
                                     if route_id
                                         == route.window.screen.ctx().current_route()
                                     {
-                                        route
-                                            .window
-                                            .screen
-                                            .context_manager
-                                            .schedule_render(4);
-                                        // route.window.winit_window.request_redraw();
+                                        route.window.winit_window.request_redraw();
                                     }
                                 }
                             }
@@ -1053,8 +1048,6 @@ impl Sequencer {
                             {
                                 route.window.winit_window.set_cursor_visible(false);
                             }
-
-                            route.window.winit_window.request_redraw();
                         }
                     }
 
@@ -1183,7 +1176,7 @@ impl Sequencer {
 
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             route.window.screen.resize(new_size);
-                            route.window.screen.context_manager.schedule_render(30);
+                            route.window.screen.context_manager.schedule_render(60);
                         }
                     }
 
