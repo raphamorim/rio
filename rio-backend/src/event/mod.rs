@@ -28,6 +28,7 @@ pub type WindowId = u16;
 #[derive(Debug, Clone)]
 pub enum RioEventType {
     Rio(RioEvent),
+    Frame,
     // Message(Message),
     BlinkCursor,
     BlinkCursorTimeout,

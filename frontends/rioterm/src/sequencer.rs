@@ -72,6 +72,27 @@ impl Sequencer {
                         payload, window_id, ..
                     }) => {
                         match payload {
+                            RioEventType::Frame => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.has_frame = true;
+                                    if route.window.has_updates {
+                                        route.request_redraw();
+                                    }
+                                }
+                            }
+                            RioEventType::Rio(RioEvent::Wakeup) => {
+                                // Emitted when the application has been resumed.
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    route.window.has_updates = true;
+                                    if route.window.has_frame {
+                                        route.request_redraw();
+                                    }
+                                }
+                            }
                             RioEventType::Rio(RioEvent::Render) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
@@ -81,8 +102,12 @@ impl Sequencer {
                                     {
                                         return;
                                     }
+
                                     route.window.screen.update_content();
-                                    route.window.winit_window.request_redraw();
+                                    route.window.has_updates = true;
+                                    if route.window.has_frame {
+                                        route.request_redraw();
+                                    }
                                 }
                             }
                             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
@@ -95,11 +120,14 @@ impl Sequencer {
                                         return;
                                     }
 
-                                    if route_id
-                                        == route.window.screen.ctx().current_route()
-                                    {
+                                    if route_id == route.window.screen.ctx().current_route() {
+                                        route.window.has_updates = true;
+                                    
                                         route.window.screen.update_content();
-                                        route.window.winit_window.request_redraw();
+                                        if route.window.has_frame
+                                        {
+                                            route.request_redraw();
+                                        }
                                     }
                                 }
                             }
@@ -199,7 +227,7 @@ impl Sequencer {
                                     if self.config.confirm_before_quit {
                                         route.confirm_quit();
                                         route.window.screen.update_content();
-                                        route.redraw();
+                                        route.request_redraw();
                                     } else {
                                         route.quit();
                                     }
@@ -234,11 +262,13 @@ impl Sequencer {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    route.window.winit_window.request_redraw();
+                                    if route.window.has_frame {
+                                        route.request_redraw();
+                                    }
                                 }
                             }
                             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                                let timer_id = TimerId::new(Topic::Render, 0);
+                                let timer_id = TimerId::new(Topic::Render, window_id);
                                 let event = EventPayload::new(
                                     RioEventType::Rio(RioEvent::Render),
                                     window_id,
@@ -257,7 +287,7 @@ impl Sequencer {
                                 millis,
                                 route_id,
                             )) => {
-                                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                                 let event = EventPayload::new(
                                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                                     window_id,
@@ -613,7 +643,7 @@ impl Sequencer {
                                     );
 
                                     route.window.screen.update_content();
-                                    route.redraw();
+                                    route.request_redraw();
                                 }
                             }
                         }
@@ -770,7 +800,7 @@ impl Sequencer {
                                         }
 
                                         route.window.screen.update_content();
-                                        route.redraw();
+                                        route.request_redraw();
                                     }
                                     route.window.screen.process_mouse_bindings(button);
                                 }
@@ -1048,8 +1078,7 @@ impl Sequencer {
                                     && key_event.state == ElementState::Released
                                 {
                                     // Scheduler must be cleaned after leave the terminal route
-                                    scheduler.unschedule(TimerId::new(Topic::Render, 0));
-                                    route.window.winit_window.request_redraw();
+                                    scheduler.unschedule(TimerId::new(Topic::Render, window_id));
                                 }
                                 return;
                             }
@@ -1099,7 +1128,9 @@ impl Sequencer {
                                     {
                                         route.window.screen.ime.set_preedit(preedit);
                                         route.window.screen.update_content();
-                                        route.redraw();
+                                        if route.window.has_frame {
+                                            route.request_redraw();
+                                        }
                                     }
                                 }
                                 Ime::Enabled => {
@@ -1136,7 +1167,7 @@ impl Sequencer {
 
                             if has_regained_focus {
                                 route.window.screen.update_content();
-                                route.redraw();
+                                route.request_redraw();
                             }
 
                             route.window.screen.on_focus_change(focused);
@@ -1213,7 +1244,7 @@ impl Sequencer {
                                 .screen
                                 .set_scale(scale, route.window.winit_window.inner_size());
                             route.window.screen.update_content();
-                            route.redraw();
+                            route.request_redraw();
                         }
                     }
 
@@ -1244,6 +1275,7 @@ impl Sequencer {
                     } => {
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             // let start = std::time::Instant::now();
+                            route.window.has_updates = false;
 
                             route.window.winit_window.pre_present_notify();
                             match route.path {
@@ -1267,6 +1299,7 @@ impl Sequencer {
                                 }
                             }
 
+                            route.request_frame(&mut scheduler);
                             // route.window.screen.render();
                             // let duration = start.elapsed();
                             // println!("Time elapsed in render() is: {:?}", duration);
