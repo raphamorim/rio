@@ -1,6 +1,7 @@
 // scheduler.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/scheduler.rs
 // which is licensed under Apache 2.0 license.
 
+use rio_backend::event::WindowId;
 use crate::event::EventPayload;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -15,11 +16,11 @@ use wa::event_loop::EventLoopProxy;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TimerId {
     topic: Topic,
-    id: usize,
+    id: WindowId,
 }
 
 impl TimerId {
-    pub fn new(topic: Topic, id: usize) -> Self {
+    pub fn new(topic: Topic, id: WindowId) -> Self {
         Self { topic, id }
     }
 }
@@ -29,6 +30,7 @@ impl TimerId {
 pub enum Topic {
     Render,
     RenderRoute,
+    Frame,
 }
 
 /// Event scheduled to be emitted at a specific time.
@@ -122,8 +124,7 @@ impl Scheduler {
     ///
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
-    #[allow(dead_code)]
-    pub fn unschedule_tab(&mut self, id: usize) {
+    pub fn unschedule_tab(&mut self, id: WindowId) {
         self.timers.retain(|timer| timer.id.id != id);
     }
 }

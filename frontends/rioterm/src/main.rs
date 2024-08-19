@@ -13,6 +13,7 @@ mod context;
 mod ime;
 mod logger;
 mod messenger;
+mod frame;
 mod mouse;
 #[cfg(windows)]
 mod panic;
