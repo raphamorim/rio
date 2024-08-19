@@ -8,6 +8,7 @@
 
 use crate::layout::*;
 use core::ops::Range;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Fragment {
@@ -52,6 +53,12 @@ impl Content {
     #[inline]
     pub fn builder() -> ContentBuilder {
         ContentBuilder::default()
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.fragments.clear();
+        self.text.clear();
     }
 
     #[inline]
@@ -138,6 +145,15 @@ impl Content {
     }
 }
 
+#[inline]
+fn calculate_hash<C: Hash + ?Sized, T: Hash + ?Sized, B: Hash + ?Sized>(c: &C, t: &T, a: &B) -> u64 {
+    let mut s = DefaultHasher::new();
+    c.hash(&mut s);
+    t.hash(&mut s);
+    a.hash(&mut s);
+    s.finish()
+}
+
 #[derive(Default, Clone, PartialEq)]
 pub struct ContentBuilder {
     content: Content,
@@ -150,6 +166,8 @@ impl ContentBuilder {
         self.content.text.push_str(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
+        let text_hash = calculate_hash(&self.content.fragments[last_line].hash, text, &style);
+        self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data
             .push(Fragment { start, end, style });
@@ -161,19 +179,15 @@ impl ContentBuilder {
         self.content.text.push(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
+        let text_hash = calculate_hash(&self.content.fragments[last_line].hash, &text, &style);
+        self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data
             .push(Fragment { start, end, style });
     }
 
     #[inline]
-    pub fn set_hash_on_last_line(&mut self, hash: u64) {
-        let last_line = self.content.fragments.len() - 1;
-        self.content.fragments[last_line].hash = hash;
-    }
-
-    #[inline]
-    pub fn break_line(&mut self) {
+    pub fn finish_line(&mut self) {
         self.content.fragments.push(LineFragments {
             data: vec![],
             hash: 0,

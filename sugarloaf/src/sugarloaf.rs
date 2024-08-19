@@ -4,6 +4,7 @@ pub mod primitives;
 pub mod state;
 mod tree;
 
+use crate::{ContentBuilder, Content};
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -14,7 +15,6 @@ use crate::font::fonts::SugarloafFont;
 use crate::font::FontLibrary;
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
-use crate::Sugar;
 use crate::{SugarBlock, SugarText};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
@@ -212,18 +212,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn start_line(&mut self) {
-        self.state.compute_line_start();
-    }
-
-    #[inline]
-    pub fn insert_on_current_line(&mut self, sugar: &Sugar) {
-        self.state.insert_on_current_line(sugar);
-    }
-
-    #[inline]
-    pub fn finish_line(&mut self) {
-        self.state.compute_line_end();
+    pub fn set_content(&mut self, content: Content) {
+        self.state.next.content = content;
     }
 
     #[inline]

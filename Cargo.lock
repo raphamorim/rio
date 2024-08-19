@@ -2654,6 +2654,7 @@ dependencies = [
  "regex",
  "rio-backend",
  "rio-winit-fork",
+ "rustc-hash 2.0.0",
  "serde",
  "smol_str",
  "teletypewriter",

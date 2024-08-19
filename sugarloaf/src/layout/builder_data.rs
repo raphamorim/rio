@@ -9,6 +9,7 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
+use std::hash::{Hash, Hasher};
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::Sugar;
 use crate::SugarDecoration;
@@ -200,8 +201,6 @@ pub enum FragmentStyleDecoration {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct FragmentStyle {
-    /// Internal identifier for a list of font families and attributes.
-    pub font: usize,
     //  Unicode width
     pub width: f32,
     /// Font attributes.
@@ -231,7 +230,6 @@ pub struct FragmentStyle {
 impl Default for FragmentStyle {
     fn default() -> Self {
         Self {
-            font: 0,
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16.,
@@ -251,7 +249,6 @@ impl Default for FragmentStyle {
 impl FragmentStyle {
     pub fn scaled_default(scale: f32) -> Self {
         Self {
-            font: 0,
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
             font_size: 16. * scale,
@@ -265,6 +262,79 @@ impl FragmentStyle {
             decoration: None,
             decoration_color: None,
         }
+    }
+}
+
+impl Hash for FragmentStyle {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.font_attrs.0.hash(state);
+        self.font_attrs.1.hash(state);
+        match self.font_attrs.2 {
+            swash::Style::Normal => 0.hash(state),
+            swash::Style::Italic => 1.hash(state),
+            swash::Style::Oblique(_) => 2.hash(state),
+        };
+
+        self.color[0].to_bits().hash(state);
+        self.color[1].to_bits().hash(state);
+        self.color[2].to_bits().hash(state);
+        self.color[3].to_bits().hash(state);
+
+        if let Some(bg_color) = self.background_color {
+            bg_color[0].to_bits().hash(state);
+            bg_color[1].to_bits().hash(state);
+            bg_color[2].to_bits().hash(state);
+            bg_color[3].to_bits().hash(state);
+        }
+
+        if let Some(color) = self.decoration_color {
+            color[0].to_bits().hash(state);
+            color[1].to_bits().hash(state);
+            color[2].to_bits().hash(state);
+            color[3].to_bits().hash(state);
+        }
+
+        match self.decoration {
+            None => { 0.hash(state) },
+            Some(FragmentStyleDecoration::Strikethrough) => 1.hash(state),
+            Some(FragmentStyleDecoration::Underline(info)) => {
+                match info.shape {
+                    UnderlineShape::Regular => 2.hash(state),
+                    UnderlineShape::Dotted => 3.hash(state),
+                    UnderlineShape::Dashed => 4.hash(state),
+                    UnderlineShape::Curly => 5.hash(state),
+
+                }
+                info.is_doubled.hash(state);
+            },
+        }
+        match self.cursor {
+            SugarCursor::Disabled => {
+                0.hash(state);
+            }
+            SugarCursor::Block(color) => {
+                1.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            SugarCursor::Caret(color) => {
+                2.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            SugarCursor::Underline(color) => {
+                3.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+        };
     }
 }
 
