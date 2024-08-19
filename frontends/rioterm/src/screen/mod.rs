@@ -71,12 +71,6 @@ pub struct Screen<'screen> {
     pub context_manager: context::ContextManager<EventProxy>,
 }
 
-// impl<'a> Drop for Screen<'a> {
-//     fn drop(&mut self) {
-//         println!("dropped screen");
-//     }
-// }
-
 pub struct ScreenWindowProperties {
     pub size: winit::dpi::PhysicalSize<u32>,
     pub scale: f64,
