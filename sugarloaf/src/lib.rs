@@ -4,6 +4,9 @@ pub mod font;
 pub mod layout;
 mod sugarloaf;
 
+pub use swash::{Stretch, Style, Weight};
+
+pub use layout::{Content, ContentBuilder, FragmentStyle};
 pub use crate::sugarloaf::{
     compositors::SugarCompositors,
     graphics::{

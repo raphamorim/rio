@@ -7,41 +7,36 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use rustc_hash::FxHashMap;
-
 use crate::layout::{Content, ContentBuilder, FragmentStyle, LayoutContext, RenderData};
 use crate::sugarloaf::tree::SugarTree;
-use unicode_width::UnicodeWidthChar;
 
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
-    content_builder: ContentBuilder,
+    content: Content,
     layout_context: LayoutContext,
-    width_cache: FxHashMap<char, f32>,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             layout_context: LayoutContext::new(font_library),
-            content_builder: ContentBuilder::default(),
+            content: Content::default(),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
-            width_cache: FxHashMap::default(),
         }
     }
 
     #[inline]
     pub fn reset(&mut self) {
-        self.content_builder = ContentBuilder::default();
+        self.content = Content::default();
         self.render_data = RenderData::default();
         self.layout_context.clear_cache();
     }
 
     #[inline]
     pub fn clean(&mut self) {
-        self.content_builder = ContentBuilder::default();
+        self.content = Content::default();
         self.render_data = RenderData::default();
     }
 
@@ -74,8 +69,7 @@ impl Advanced {
         self.render_data = RenderData::default();
 
         let mut lb = self.layout_context.builder(tree.layout.dimensions.scale);
-        let content = self.content_builder.build_ref();
-        content.layout(&mut lb);
+        tree.content.layout(&mut lb);
         self.render_data.clear();
         lb.build_into(&mut self.render_data);
         self.render_data
@@ -112,39 +106,44 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
-        if line_number == 0 {
-            self.content_builder = Content::builder();
-        }
-
-        let line = &tree.lines[line_number];
-        for sugar in line.inner() {
-            let width = if let Some(w) = self.width_cache.get(&sugar.content) {
-                *w
-            } else {
-                let w = sugar.content.width().unwrap_or(1) as f32;
-                self.width_cache.insert(sugar.content, w);
-                w
-            };
-
-            let style = FragmentStyle {
-                width,
-                font_size: tree.layout.font_size,
-                ..FragmentStyle::from(sugar)
-            };
-
-            if sugar.repeated > 0 {
-                let text = std::iter::repeat(sugar.content)
-                    .take(sugar.repeated + 1)
-                    .collect::<String>();
-                self.content_builder.add_text(&text, style);
-            } else {
-                self.content_builder.add_char(sugar.content, style);
-            }
-        }
-
-        self.content_builder
-            .set_hash_on_last_line(line.hash.unwrap_or(0));
-        self.content_builder.break_line();
+    pub fn set_content(&mut self, content: Content) {
+        self.content = content;
     }
+
+    // #[inline]
+    // pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
+    //     if line_number == 0 {
+    //         self.content_builder = Content::builder();
+    //     }
+
+    //     let line = &tree.lines[line_number];
+    //     for sugar in line.inner() {
+    //         let width = if let Some(w) = self.width_cache.get(&sugar.content) {
+    //             *w
+    //         } else {
+    //             let w = sugar.content.width().unwrap_or(1) as f32;
+    //             self.width_cache.insert(sugar.content, w);
+    //             w
+    //         };
+
+    //         let style = FragmentStyle {
+    //             width,
+    //             font_size: tree.layout.font_size,
+    //             ..FragmentStyle::from(sugar)
+    //         };
+
+    //         if sugar.repeated > 0 {
+    //             let text = std::iter::repeat(sugar.content)
+    //                 .take(sugar.repeated + 1)
+    //                 .collect::<String>();
+    //             self.content_builder.add_text(&text, style);
+    //         } else {
+    //             self.content_builder.add_char(sugar.content, style);
+    //         }
+    //     }
+
+    //     self.content_builder
+    //         .set_hash_on_last_line(line.hash.unwrap_or(0));
+    //     self.content_builder.break_line();
+    // }
 }

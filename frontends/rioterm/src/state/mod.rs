@@ -13,12 +13,15 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::{Sugar, SugarCursor, SugarDecoration, SugarStyle};
-use rio_backend::sugarloaf::{SugarGraphic, Sugarloaf};
+use rio_backend::sugarloaf::{Content, ContentBuilder, FragmentStyle, Sugar, SugarCursor, SugarDecoration, SugarStyle, 
+    SugarGraphic, Sugarloaf, Stretch, Style, Weight};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 #[cfg(not(use_wa))]
 use winit::window::Theme;
+
+use rustc_hash::FxHashMap;
+use unicode_width::UnicodeWidthChar;
 
 struct Cursor {
     state: CursorState,
@@ -46,6 +49,7 @@ pub struct State {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
+    width_cache: FxHashMap<char, f32>,
 }
 
 impl State {
@@ -144,6 +148,7 @@ impl State {
                 content_ref: config.cursor,
                 state: CursorState::new(config.cursor),
             },
+            width_cache: FxHashMap::default(),
         }
     }
 
@@ -168,7 +173,7 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar(&self, square: &Square) -> Sugar {
+    fn create_style(&mut self, square: &Square) -> (FragmentStyle, char) {
         let flags = square.flags;
 
         let mut foreground_color = self.compute_color(&square.fg, flags);
@@ -180,15 +185,23 @@ impl State {
             square.c
         };
 
-        let style = match (
+        let width = if let Some(w) = self.width_cache.get(&content) {
+            *w
+        } else {
+            let w = square.c.width().unwrap_or(1) as f32;
+            self.width_cache.insert(square.c, w);
+            w
+        };
+
+        let font_attrs = match (
             flags.contains(Flags::ITALIC),
             flags.contains(Flags::BOLD_ITALIC),
             flags.contains(Flags::BOLD),
         ) {
-            (true, _, _) => SugarStyle::Italic,
-            (_, true, _) => SugarStyle::BoldItalic,
-            (_, _, true) => SugarStyle::Bold,
-            _ => SugarStyle::Disabled,
+            (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
+            (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
+            (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
+            _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
         if flags.contains(Flags::INVERSE) {
@@ -227,17 +240,14 @@ impl State {
             Some(background_color)
         };
 
-        Sugar {
-            content,
-            repeated: 0,
-            foreground_color,
-            background_color,
-            decoration_color,
-            style,
-            decoration,
-            media: None,
-            cursor: SugarCursor::Disabled,
-        }
+        (FragmentStyle {
+            width,
+            font_size: self.font_size,
+            color: foreground_color,
+            background_color: background_color,
+            font_attrs,
+            ..FragmentStyle::default()
+        }, content)
     }
 
     #[inline]
@@ -247,16 +257,17 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_line(
+    fn create_line(
         &mut self,
-        sugarloaf: &mut Sugarloaf,
+        content_builder: &mut ContentBuilder,
         row: &Row<Square>,
         has_cursor: bool,
         current_line: pos::Line,
     ) {
-        sugarloaf.start_line();
-
         let columns: usize = row.len();
+        let mut content = String::from("");
+        let mut last_style = FragmentStyle::default();
+
         for column in 0..columns {
             let square = &row.inner[column];
 
@@ -265,12 +276,14 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
+                // sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
                 continue;
             }
 
+            let (style, square_content) = self.create_style(&square);
+
             if has_cursor && column == self.cursor.state.pos.col {
-                sugarloaf.insert_on_current_line(&self.create_cursor(square));
+                // sugarloaf.insert_on_current_line(&self.create_cursor(square));
             } else if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -278,8 +291,8 @@ impl State {
                     .unwrap()
                     .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
-                let sugar = self.create_sugar(square);
-                sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
+                // let sugar = self.create_sugar(square);
+                // sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
@@ -303,19 +316,130 @@ impl State {
                     background_color: Some(self.named_colors.selection_background),
                     ..Sugar::default()
                 };
-                sugarloaf.insert_on_current_line(&selected_sugar);
+                // sugarloaf.insert_on_current_line(&selected_sugar);
+            }
+
+            if last_style != style {
+                if !content.is_empty() {
+                    content_builder.add_text(&content, last_style);
+                    // content_builder.add_char(square.c, style);
+                }
+
+                content = square_content.to_string();
+                last_style = style;
             } else {
-                sugarloaf.insert_on_current_line(&self.create_sugar(square));
+                content.push(square_content);
             }
 
             // Render last column and break row
             if column == (columns - 1) {
+                if !content.is_empty() {
+                    content_builder.add_text(&content, last_style);
+                }
+
                 break;
             }
         }
 
-        sugarloaf.finish_line();
+        content_builder.finish_line();
     }
+
+    // match sugar.style {
+    //         SugarStyle::BoldItalic => {
+    //             style.font_attrs.1 = Weight::BOLD;
+    //             style.font_attrs.2 = Style::Italic;
+    //         }
+    //         SugarStyle::Bold => {
+    //             style.font_attrs.1 = Weight::BOLD;
+    //         }
+    //         SugarStyle::Italic => {
+    //             style.font_attrs.2 = Style::Italic;
+    //         }
+    //         SugarStyle::Disabled => {}
+    //     }
+
+    //     let mut has_underline_cursor = false;
+    //     match sugar.cursor {
+    //         SugarCursor::Underline(cursor_color) => {
+    //             style.decoration =
+    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                     offset: -1.0,
+    //                     size: -1.0,
+    //                     is_doubled: false,
+    //                     shape: UnderlineShape::Regular,
+    //                 }));
+    //             style.decoration_color = Some(cursor_color);
+
+    //             has_underline_cursor = true;
+    //         }
+    //         SugarCursor::Block(cursor_color) => {
+    //             style.cursor = SugarCursor::Block(cursor_color);
+    //         }
+    //         SugarCursor::Caret(cursor_color) => {
+    //             style.cursor = SugarCursor::Caret(cursor_color);
+    //         }
+    //         SugarCursor::Disabled => {}
+    //     }
+
+    //     match &sugar.decoration {
+    //         SugarDecoration::Underline => {
+    //             if !has_underline_cursor {
+    //                 style.decoration =
+    //                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                         offset: -2.0,
+    //                         size: 2.0,
+    //                         is_doubled: false,
+    //                         shape: UnderlineShape::Regular,
+    //                     }));
+    //             }
+    //         }
+    //         SugarDecoration::Strikethrough => {
+    //             style.decoration = Some(FragmentStyleDecoration::Strikethrough);
+    //         }
+    //         SugarDecoration::DoubleUnderline => {
+    //             style.decoration =
+    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                     offset: -4.0,
+    //                     size: 1.0,
+    //                     is_doubled: true,
+    //                     shape: UnderlineShape::Regular,
+    //                 }));
+    //         }
+    //         SugarDecoration::DottedUnderline => {
+    //             style.decoration =
+    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                     offset: -2.0,
+    //                     size: 2.0,
+    //                     is_doubled: false,
+    //                     shape: UnderlineShape::Dotted,
+    //                 }));
+    //         }
+    //         SugarDecoration::DashedUnderline => {
+    //             style.decoration =
+    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                     offset: -2.0,
+    //                     size: 2.0,
+    //                     is_doubled: false,
+    //                     shape: UnderlineShape::Dashed,
+    //                 }));
+    //         }
+    //         SugarDecoration::CurlyUnderline => {
+    //             style.decoration =
+    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+    //                     offset: -2.0,
+    //                     size: 1.0,
+    //                     is_doubled: false,
+    //                     shape: UnderlineShape::Curly,
+    //                 }));
+    //         }
+    //         SugarDecoration::Disabled => {}
+    //     }
+
+    //     style.color = sugar.foreground_color;
+    //     style.background_color = sugar.background_color;
+    //     if let Some(decoration_color) = sugar.decoration_color {
+    //         style.decoration_color = Some(decoration_color);
+    //     }
 
     #[inline]
     #[cfg(use_wa)]
@@ -553,6 +677,41 @@ impl State {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
+    // if line_number == 0 {
+    //         self.content_builder = Content::builder();
+    //     }
+
+    //     let line = &tree.lines[line_number];
+    //     for sugar in line.inner() {
+    //         let width = if let Some(w) = self.width_cache.get(&sugar.content) {
+    //             *w
+    //         } else {
+    //             let w = sugar.content.width().unwrap_or(1) as f32;
+    //             self.width_cache.insert(sugar.content, w);
+    //             w
+    //         };
+
+    //         let style = FragmentStyle {
+    //             width,
+    //             font_size: tree.layout.font_size,
+    //             ..FragmentStyle::from(sugar)
+    //         };
+
+    //         if sugar.repeated > 0 {
+    //             let text = std::iter::repeat(sugar.content)
+    //                 .take(sugar.repeated + 1)
+    //                 .collect::<String>();
+    //             self.content_builder.add_text(&text, style);
+    //         } else {
+    //             self.content_builder.add_char(sugar.content, style);
+    //         }
+    //     }
+
+    //     self.content_builder
+    //         .set_hash_on_last_line(line.hash.unwrap_or(0));
+    //     self.content_builder.break_line();
+    // }
+
     #[inline]
     pub fn prepare_term(
         &mut self,
@@ -585,15 +744,19 @@ impl State {
             }
         }
 
+        let mut content_builder = Content::builder();
+
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-            self.create_sugar_line(
-                sugarloaf,
+            self.create_line(
+                &mut content_builder,
                 row,
                 has_cursor,
                 pos::Line((i as i32) - display_offset),
             );
         }
+
+        sugarloaf.set_content(content_builder.build());
 
         self.navigation.content(
             (layout.width, layout.height),

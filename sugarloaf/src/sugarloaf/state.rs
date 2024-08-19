@@ -3,18 +3,18 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::{Content, ContentBuilder};
 use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{SugarBlock, SugarLine};
+use crate::SugarBlock;
 
 pub struct SugarState {
     pub current: Box<SugarTree>,
     pub next: SugarTree,
     latest_change: SugarTreeDiff,
-    current_line: usize,
     pub is_dirty: bool,
     pub compositors: SugarCompositors,
     // TODO: Decide if graphics should be in SugarTree or SugarState
@@ -35,7 +35,6 @@ impl SugarState {
 
         let mut state = SugarState {
             is_dirty: false,
-            current_line: 0,
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
             current: Box::<SugarTree>::default(),
@@ -75,22 +74,8 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_line_start(&mut self) {
-        self.next.lines.push(SugarLine::default());
-        self.current_line = self.next.lines.len() - 1;
-    }
-
-    #[inline]
-    pub fn compute_line_end(&mut self) {
-        self.next.lines[self.current_line].mark_hash_key();
-        self.compositors
-            .advanced
-            .update_tree_with_new_line(self.current_line, &self.next);
-    }
-
-    #[inline]
-    pub fn insert_on_current_line(&mut self, sugar: &crate::Sugar) {
-        self.next.lines[self.current_line].insert(sugar);
+    pub fn set_content(&mut self, content: Content) {
+        self.compositors.advanced.set_content(content);
     }
 
     #[inline]
@@ -107,7 +92,7 @@ impl SugarState {
 
     #[inline]
     pub fn clean_screen(&mut self) {
-        self.current.lines.clear();
+        self.current.content.clear();
         self.current.blocks.clear();
         self.compositors.advanced.reset();
     }
@@ -211,8 +196,7 @@ impl SugarState {
     #[inline]
     pub fn reset_next(&mut self) {
         self.next.layout = self.current.layout;
-        self.current_line = 0;
-        self.next.lines.clear();
+        self.next.content.clear();
         self.next.blocks.clear();
         self.is_dirty = false;
     }

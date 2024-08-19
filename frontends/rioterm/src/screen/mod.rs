@@ -1192,7 +1192,7 @@ impl Screen<'_> {
         // If sugarloaf does have pending updates to process then
         // should abort current render
 
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         // println!("Render time elapsed");
 
         let (rows, cursor, display_offset, has_blinking_enabled) = {
@@ -1208,14 +1208,19 @@ impl Screen<'_> {
         self.context_manager.update_titles();
         self.state.set_ime(self.ime.preedit());
 
-        self.state.prepare_term(
-            &rows,
-            cursor,
-            &mut self.sugarloaf,
-            &self.context_manager,
-            display_offset as i32,
-            has_blinking_enabled,
-        );
+        {
+            let start = std::time::Instant::now();
+            self.state.prepare_term(
+                &rows,
+                cursor,
+                &mut self.sugarloaf,
+                &self.context_manager,
+                display_offset as i32,
+                has_blinking_enabled,
+            );
+            let duration = start.elapsed();
+            println!("Total prepare_term time is: {:?}\n", duration);
+        }
 
         self.sugarloaf.render();
 
@@ -1229,8 +1234,8 @@ impl Screen<'_> {
             self.context_manager.schedule_render_on_route(800);
         }
 
-        // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
+        let duration = start.elapsed();
+        println!("Total render time is: {:?}\n", duration);
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
