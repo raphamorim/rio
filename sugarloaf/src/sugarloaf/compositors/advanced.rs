@@ -85,15 +85,12 @@ impl Advanced {
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = Content::builder();
-        let style = FragmentStyle {
-            ..Default::default()
-        };
         // content_builder.enter_span(&[
         //     SpanStyle::FontId(0),
         //     SpanStyle::Size(tree.layout.font_size),
         //     // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
         // ]);
-        content_builder.add_char(' ', style);
+        content_builder.add_char(' ', FragmentStyle::default());
 
         let mut lb = self
             .layout_context

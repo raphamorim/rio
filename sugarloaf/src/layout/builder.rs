@@ -93,8 +93,13 @@ impl LayoutContext {
     pub fn builder(&mut self, scale: f32, font_size: f32) -> ParagraphBuilder {
         self.state.clear();
         self.state.begin();
+        let prev_font_size = self.state.font_size;
         self.state.scale = scale;
         self.state.font_size = font_size * scale;
+
+        if prev_font_size != self.state.font_size {
+            self.cache.inner.clear();
+        }
         ParagraphBuilder {
             fcx: &mut self.fcx,
             // bidi: &mut self.bidi,

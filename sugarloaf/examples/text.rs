@@ -147,6 +147,38 @@ async fn main() {
                         },
                     );
                     content.finish_line();
+                    content.add_text(
+                        "dashed",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Dashed,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        "dotted",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Dotted,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
                     sugarloaf.set_content(content.build());
 
                     sugarloaf.render();

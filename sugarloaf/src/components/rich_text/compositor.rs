@@ -514,17 +514,17 @@ impl Compositor {
                             }
                         }
                         UnderlineShape::Dashed => {
-                            self.batches.add_rect(
-                                &Rect::new(ux, uy, (range.0 - ux) / 3.0, underline.size),
-                                depth,
-                                &underline.color,
-                            );
-
-                            self.batches.add_rect(
-                                &Rect::new(range.0 - 5.0, uy, 5.0, underline.size),
-                                depth,
-                                &underline.color,
-                            );
+                            let mut start = ux;
+                            let end = range.0 - ux;
+                            while start < end {
+                                start = start.min(end);
+                                self.batches.add_rect(
+                                    &Rect::new(start, uy, 6.0, underline.size),
+                                    depth,
+                                    &underline.color,
+                                );
+                                start += 8.0;
+                            }
                         }
                         UnderlineShape::Dotted => {
                             let mut start = ux;
@@ -532,11 +532,11 @@ impl Compositor {
                             while start < end {
                                 start = start.min(end);
                                 self.batches.add_rect(
-                                    &Rect::new(start, uy, 1.0, underline.size),
+                                    &Rect::new(start, uy, 2.0, underline.size),
                                     depth,
                                     &underline.color,
                                 );
-                                start += 2.0;
+                                start += 4.0;
                             }
                         }
                         UnderlineShape::Curly => {
@@ -594,17 +594,16 @@ impl Compositor {
                         }
                     }
                     UnderlineShape::Dashed => {
-                        self.batches.add_rect(
-                            &Rect::new(ux, uy, (end - ux) / 3.0, underline.size),
-                            depth,
-                            &underline.color,
-                        );
-
-                        self.batches.add_rect(
-                            &Rect::new(end - 5.0, uy, 5.0, underline.size),
-                            depth,
-                            &underline.color,
-                        );
+                        let mut start = ux;
+                        while start < end {
+                            start = start.min(end);
+                            self.batches.add_rect(
+                                &Rect::new(start, uy, 6.0, underline.size),
+                                depth,
+                                &underline.color,
+                            );
+                            start += 8.0;
+                        }
                     }
                     UnderlineShape::Dotted => {
                         let mut start = ux;
