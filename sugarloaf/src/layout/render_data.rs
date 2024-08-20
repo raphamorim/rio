@@ -504,28 +504,6 @@ impl<'a> Run<'a> {
         self.run.span.decoration_color
     }
 
-    /// Returns the underline offset for the run.
-    // #[inline]
-    // pub fn underline_offset(&self) -> f32 {
-    //     // span_data.underline_offset.unwrap_or(metrics.underline_offset),
-    //     self.run.span.underline_offset.unwrap_or(0.0)
-    // }
-
-    // /// Returns the underline color for the run.
-    // #[inline]
-    // pub fn underline_color(&self) -> [f32; 4] {
-    //     self.run.span.underline_color.unwrap_or(self.run.span.color)
-    // }
-
-    // /// Returns the underline size for the run.
-    // #[inline]
-    // pub fn underline_size(&self) -> f32 {
-    //     self.run
-    //         .span
-    //         .underline_size
-    //         .unwrap_or(self.run.strikeout_size)
-    // }
-
     /// Returns an iterator over the clusters in logical order.
     #[inline]
     pub fn clusters(&self) -> Clusters<'a> {

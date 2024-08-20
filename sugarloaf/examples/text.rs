@@ -1,8 +1,8 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, ContentBuilder, FragmentStyle, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::SugarloafLayout, ContentBuilder, FragmentStyle, FragmentStyleDecoration,
+    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -27,7 +27,7 @@ async fn main() {
     let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
-    let font_size = 60.;
+    let font_size = 30.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -110,6 +110,39 @@ async fn main() {
                             color: [1.0, 0.0, 1.0, 1.0],
                             background_color: Some([0.3, 0.5, 1.0, 1.0]),
                             width: 2.0,
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.finish_line();
+                    content.add_text(
+                        "ok ",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Regular,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        "curly",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Curly,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
                             ..FragmentStyle::default()
                         },
                     );
