@@ -78,6 +78,8 @@ impl SugarState {
 
         if should_update {
             self.current.layout.update();
+            self.current.layout.dimensions.height = 0.0;
+            self.current.layout.dimensions.width = 0.0;
             self.latest_change = SugarTreeDiff::Repaint;
         }
     }
@@ -154,10 +156,7 @@ impl SugarState {
         }
 
         advance_brush.prepare(context, self);
-
-        if self.compositors.elementary.should_resize {
-            rect_brush.resize(context);
-        }
+        rect_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf
         // like objects rendering (created by .text() or .append_rects())
@@ -229,14 +228,12 @@ impl SugarState {
 
             self.compositors.advanced.update_layout(&self.current);
 
-            self.compositors.elementary.set_should_resize();
             self.latest_change = SugarTreeDiff::Repaint;
             log::info!("has empty dimensions, will try to find...");
             return;
         }
 
         let mut should_update = false;
-        let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
         match &self.latest_change {
@@ -246,7 +243,6 @@ impl SugarState {
             SugarTreeDiff::Repaint => {
                 should_update = true;
                 should_compute_dimensions = true;
-                should_resize = true;
             }
             SugarTreeDiff::Different => {
                 should_update = true;
@@ -263,10 +259,6 @@ impl SugarState {
             }
 
             self.compositors.advanced.update_layout(&self.current);
-        }
-
-        if should_resize {
-            self.compositors.elementary.set_should_resize();
         }
     }
 }
