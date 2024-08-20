@@ -1208,19 +1208,14 @@ impl Screen<'_> {
         self.context_manager.update_titles();
         self.state.set_ime(self.ime.preedit());
 
-        {
-            let start = std::time::Instant::now();
-            self.state.prepare_term(
-                &rows,
-                cursor,
-                &mut self.sugarloaf,
-                &self.context_manager,
-                display_offset as i32,
-                has_blinking_enabled,
-            );
-            let duration = start.elapsed();
-            println!("Total prepare_term time is: {:?}\n", duration);
-        }
+        self.state.prepare_term(
+            &rows,
+            cursor,
+            &mut self.sugarloaf,
+            &self.context_manager,
+            display_offset as i32,
+            has_blinking_enabled,
+        );
 
         self.sugarloaf.render();
 

@@ -17,7 +17,7 @@ use winit::{
 async fn main() {
     let mut event_loop = EventLoop::new().unwrap();
     let width = 400.0;
-    let height = 300.0;
+    let height = 400.0;
 
     let window_attribute = WindowAttributes::default()
         .with_title("Text example")
@@ -27,7 +27,7 @@ async fn main() {
     let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
-    let font_size = 30.;
+    let font_size = 25.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -115,7 +115,7 @@ async fn main() {
                     );
                     content.finish_line();
                     content.add_text(
-                        "ok ",
+                        " regular -> ",
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
@@ -125,6 +125,40 @@ async fn main() {
                                     shape: UnderlineShape::Regular,
                                 },
                             )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        "|still|",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Regular,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
                             ..FragmentStyle::default()
@@ -158,6 +192,15 @@ async fn main() {
                                     shape: UnderlineShape::Dashed,
                                 },
                             )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
                             ..FragmentStyle::default()

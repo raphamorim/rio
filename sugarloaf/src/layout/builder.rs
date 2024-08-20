@@ -459,7 +459,10 @@ fn shape_item(
         fonts_to_load,
     ) {}
 
-    cache.insert(state.lines[current_line].hash, render_data.last_cached_run.to_owned());
+    cache.insert(
+        state.lines[current_line].hash,
+        render_data.last_cached_run.to_owned(),
+    );
 
     Some(())
 }
