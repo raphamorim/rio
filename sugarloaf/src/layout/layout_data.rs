@@ -181,7 +181,7 @@ impl GlyphData {
 pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
-    pub hash: Option<u64>,
+    pub hash: u64,
     pub font: usize,
     pub coords: (u32, u32),
     pub size: f32,
@@ -239,7 +239,7 @@ pub struct LineData {
     pub max_advance: Option<f32>,
     pub runs: (u32, u32),
     pub clusters: (u32, u32),
-    pub hash: Option<u64>,
+    pub hash: u64,
 }
 
 impl LineData {

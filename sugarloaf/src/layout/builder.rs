@@ -135,10 +135,8 @@ pub struct ParagraphBuilder<'a> {
 impl<'a> ParagraphBuilder<'a> {
     #[inline]
     pub fn set_hash(&mut self, hash: u64) {
-        if hash > 0 {
-            let current_line = self.s.current_line();
-            self.s.lines[current_line].hash = Some(hash);
-        }
+        let current_line = self.s.current_line();
+        self.s.lines[current_line].hash = hash;
     }
 
     #[inline]
@@ -233,12 +231,11 @@ impl<'a> ParagraphBuilder<'a> {
         render_data: &mut RenderData,
         current_line: usize,
     ) -> bool {
-        if let Some(line_hash) = self.s.lines[current_line].hash {
-            if let Some(data) = self.cache.inner.get(&line_hash) {
-                render_data.push_run_from_cached_line(data, current_line as u32);
+        let hash = self.s.lines[current_line].hash;
+        if let Some(data) = self.cache.inner.get(&hash) {
+            render_data.push_run_from_cached_line(data, current_line as u32);
 
-                return true;
-            }
+            return true;
         }
 
         false
@@ -462,9 +459,7 @@ fn shape_item(
         fonts_to_load,
     ) {}
 
-    if let Some(line_hash) = state.lines[current_line].hash {
-        cache.insert(line_hash, render_data.last_cached_run.to_owned());
-    }
+    cache.insert(state.lines[current_line].hash, render_data.last_cached_run.to_owned());
 
     Some(())
 }

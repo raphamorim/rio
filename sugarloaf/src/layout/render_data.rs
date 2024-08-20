@@ -91,7 +91,7 @@ pub struct CachedRunData {
     pub coords: Vec<i16>,
     pub span: FragmentStyle,
     pub line: u32,
-    pub hash: Option<u64>,
+    pub hash: u64,
     pub font: usize,
     pub size: f32,
     pub ascent: f32,
@@ -178,7 +178,7 @@ impl RenderData {
         font: &usize,
         size: f32,
         line: u32,
-        hash: Option<u64>,
+        hash: u64,
         shaper: Shaper<'_>,
     ) {
         // In case is a new line,
@@ -806,8 +806,8 @@ impl<'a> Line<'a> {
     }
 
     #[inline]
-    pub fn hash(&self) -> &Option<u64> {
-        &self.line.hash
+    pub fn hash(&self) -> u64 {
+        self.line.hash
     }
 }
 

@@ -738,14 +738,12 @@ fn draw_layout(
     );
 
     for line in render_data.lines() {
-        let hash = line.hash().unwrap_or(0);
+        let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        if hash > 0 {
-            if let Some(data) = draw_layout_cache.get(&hash) {
-                comp.draw_cached_run(data, px, py, depth, rect, line);
-                continue;
-            }
+        if let Some(data) = draw_layout_cache.get(&hash) {
+            comp.draw_cached_run(data, px, py, depth, rect, line);
+            continue;
         }
 
         let mut cached_line_runs = Vec::new();
@@ -801,21 +799,19 @@ fn draw_layout(
                 current_font_size = style.font_size;
             }
 
-            if hash > 0 {
-                comp.draw_run(
-                    &mut session,
-                    Rect::new(run_x, py, style.advance, 1.),
-                    depth,
-                    &style,
-                    glyphs.iter(),
-                    &mut cached_run,
-                );
+            comp.draw_run(
+                &mut session,
+                Rect::new(run_x, py, style.advance, 1.),
+                depth,
+                &style,
+                glyphs.iter(),
+                &mut cached_run,
+            );
 
-                cached_line_runs.push(cached_run);
-            }
+            cached_line_runs.push(cached_run);
         }
 
-        if hash > 0 && !cached_line_runs.is_empty() {
+        if !cached_line_runs.is_empty() {
             draw_layout_cache.insert(hash, cached_line_runs);
         }
     }
