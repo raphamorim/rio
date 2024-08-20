@@ -2,7 +2,6 @@ pub mod compositors;
 pub mod graphics;
 pub mod primitives;
 pub mod state;
-mod tree;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};

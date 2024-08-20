@@ -15,7 +15,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Stretch, Style,
-    Sugar, SugarCursor, SugarGraphic, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -305,7 +305,10 @@ impl State {
     ) {
         let columns: usize = row.len();
         let mut content = String::from("");
-        let mut last_style = FragmentStyle::default();
+        let mut last_style = FragmentStyle {
+            font_size: self.font_size,
+            ..FragmentStyle::default()
+        };
 
         for column in 0..columns {
             let square = &row.inner[column];
@@ -518,19 +521,19 @@ impl State {
         }
     }
 
-    #[inline]
-    #[allow(dead_code)]
-    fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-        let media = &square.graphics().unwrap()[0].texture;
-        Sugar {
-            media: Some(SugarGraphic {
-                id: media.id,
-                width: media.width,
-                height: media.height,
-            }),
-            ..Sugar::default()
-        }
-    }
+    // #[inline]
+    // #[allow(dead_code)]
+    // fn create_graphic_sugar(&self, square: &Square) -> Sugar {
+    //     let media = &square.graphics().unwrap()[0].texture;
+    //     Sugar {
+    //         media: Some(SugarGraphic {
+    //             id: media.id,
+    //             width: media.width,
+    //             height: media.height,
+    //         }),
+    //         ..Sugar::default()
+    //     }
+    // }
 
     #[inline]
     fn create_cursor_style(&self, square: &Square) -> (FragmentStyle, char) {
@@ -568,6 +571,7 @@ impl State {
             color,
             background_color: Some(background_color),
             font_attrs,
+            font_size: self.font_size,
             ..FragmentStyle::default()
         };
 

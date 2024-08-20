@@ -8,7 +8,7 @@
 
 use crate::font::FontLibrary;
 use crate::layout::{Content, FragmentStyle, LayoutContext, RenderData};
-use crate::sugarloaf::tree::SugarTree;
+use crate::sugarloaf::state::SugarTree;
 
 pub struct Advanced {
     pub render_data: RenderData,

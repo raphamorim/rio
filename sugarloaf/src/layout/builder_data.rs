@@ -10,9 +10,6 @@
 // and other functionalities
 
 use crate::sugarloaf::primitives::SugarCursor;
-use crate::Sugar;
-use crate::SugarDecoration;
-use crate::SugarStyle;
 use std::hash::{Hash, Hasher};
 use swash::text::cluster::CharInfo;
 use swash::Setting;
@@ -334,110 +331,5 @@ impl Hash for FragmentStyle {
                 color[3].to_bits().hash(state);
             }
         };
-    }
-}
-
-impl From<&Sugar> for FragmentStyle {
-    fn from(sugar: &Sugar) -> Self {
-        let mut style = FragmentStyle::default();
-
-        match sugar.style {
-            SugarStyle::BoldItalic => {
-                style.font_attrs.1 = Weight::BOLD;
-                style.font_attrs.2 = Style::Italic;
-            }
-            SugarStyle::Bold => {
-                style.font_attrs.1 = Weight::BOLD;
-            }
-            SugarStyle::Italic => {
-                style.font_attrs.2 = Style::Italic;
-            }
-            SugarStyle::Disabled => {}
-        }
-
-        let mut has_underline_cursor = false;
-        match sugar.cursor {
-            SugarCursor::Underline(cursor_color) => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
-                style.decoration_color = Some(cursor_color);
-
-                has_underline_cursor = true;
-            }
-            SugarCursor::Block(cursor_color) => {
-                style.cursor = SugarCursor::Block(cursor_color);
-            }
-            SugarCursor::Caret(cursor_color) => {
-                style.cursor = SugarCursor::Caret(cursor_color);
-            }
-            SugarCursor::Disabled => {}
-        }
-
-        match &sugar.decoration {
-            SugarDecoration::Underline => {
-                if !has_underline_cursor {
-                    style.decoration =
-                        Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                            offset: -2.0,
-                            size: 2.0,
-                            is_doubled: false,
-                            shape: UnderlineShape::Regular,
-                        }));
-                }
-            }
-            SugarDecoration::Strikethrough => {
-                style.decoration = Some(FragmentStyleDecoration::Strikethrough);
-            }
-            SugarDecoration::DoubleUnderline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -4.0,
-                        size: 1.0,
-                        is_doubled: true,
-                        shape: UnderlineShape::Regular,
-                    }));
-            }
-            SugarDecoration::DottedUnderline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -2.0,
-                        size: 2.0,
-                        is_doubled: false,
-                        shape: UnderlineShape::Dotted,
-                    }));
-            }
-            SugarDecoration::DashedUnderline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -2.0,
-                        size: 2.0,
-                        is_doubled: false,
-                        shape: UnderlineShape::Dashed,
-                    }));
-            }
-            SugarDecoration::CurlyUnderline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -2.0,
-                        size: 1.0,
-                        is_doubled: false,
-                        shape: UnderlineShape::Curly,
-                    }));
-            }
-            SugarDecoration::Disabled => {}
-        }
-
-        style.color = sugar.foreground_color;
-        style.background_color = sugar.background_color;
-        if let Some(decoration_color) = sugar.decoration_color {
-            style.decoration_color = Some(decoration_color);
-        }
-
-        style
     }
 }
