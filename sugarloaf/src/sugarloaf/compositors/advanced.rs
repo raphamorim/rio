@@ -7,7 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, ContentBuilder, FragmentStyle, LayoutContext, RenderData};
+use crate::layout::{Content, FragmentStyle, LayoutContext, RenderData};
 use crate::sugarloaf::tree::SugarTree;
 
 pub struct Advanced {

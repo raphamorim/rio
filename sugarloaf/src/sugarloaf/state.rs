@@ -3,13 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::{Content, ContentBuilder};
 use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
 use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::SugarBlock;
+use crate::{Content, SugarBlock};
 
 pub struct SugarState {
     pub current: Box<SugarTree>,

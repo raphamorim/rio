@@ -6,7 +6,6 @@ mod sugarloaf;
 
 pub use swash::{Stretch, Style, Weight};
 
-pub use layout::{Content, ContentBuilder, FragmentStyle};
 pub use crate::sugarloaf::{
     compositors::SugarCompositors,
     graphics::{
@@ -15,4 +14,8 @@ pub use crate::sugarloaf::{
     primitives::*,
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
+};
+pub use layout::{
+    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, UnderlineInfo,
+    UnderlineShape,
 };

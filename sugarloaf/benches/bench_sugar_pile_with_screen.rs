@@ -73,17 +73,19 @@ fn bench_sugar_pile_with_screen(c: &mut Criterion) {
                 if let WindowEvent::RedrawRequested { .. } = event {
                     c.bench_function("bench_sugar_pile_with_screen", |b| {
                         b.iter(|| {
-                            sugarloaf.start_line();
+                            let mut content = ContentBuilder::default();
                             for _i in 0..NUM {
-                                sugarloaf.insert_on_current_line(&Sugar {
-                                    content: 'a',
-                                    foreground_color: [1.0, 1.0, 1.0, 1.0],
-                                    background_color: Some([0.0, 1.0, 1.0, 1.0]),
-                                    ..Sugar::default()
-                                });
+                                content.add_text(
+                                    "Sugarloaf",
+                                    FragmentStyle {
+                                        color: [1.0, 1.0, 1.0, 1.0],
+                                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                                        ..FragmentStyle::default()
+                                    },
+                                );
+                                content.finish_line();
                             }
-
-                            sugarloaf.finish_line();
+                            sugarloaf.set_content(content.build());
                             sugarloaf.render();
                         })
                     });

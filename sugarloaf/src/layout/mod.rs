@@ -22,7 +22,9 @@ pub mod iter {
 }
 
 pub use builder::{LayoutContext, ParagraphBuilder};
-pub use builder_data::{FragmentStyle, FragmentStyleDecoration, UnderlineShape};
+pub use builder_data::{
+    FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
+};
 pub use render_data::{Cluster, Glyph, Line, Run};
 
 /// Largest allowable span or fragment identifier.

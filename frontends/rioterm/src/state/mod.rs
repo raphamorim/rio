@@ -13,8 +13,10 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::sugarloaf::{Content, ContentBuilder, FragmentStyle, Sugar, SugarCursor, SugarDecoration, SugarStyle, 
-    SugarGraphic, Sugarloaf, Stretch, Style, Weight};
+use rio_backend::sugarloaf::{
+    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Stretch, Style,
+    Sugar, SugarCursor, SugarGraphic, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 #[cfg(not(use_wa))]
@@ -208,28 +210,6 @@ impl State {
             std::mem::swap(&mut background_color, &mut foreground_color);
         }
 
-        let mut decoration = SugarDecoration::Disabled;
-        if flags.contains(Flags::UNDERLINE) {
-            decoration = SugarDecoration::Underline;
-        } else if flags.contains(Flags::STRIKEOUT) {
-            decoration = SugarDecoration::Strikethrough;
-        } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
-            decoration = SugarDecoration::DoubleUnderline;
-        } else if flags.contains(Flags::DOTTED_UNDERLINE) {
-            decoration = SugarDecoration::DottedUnderline;
-        } else if flags.contains(Flags::DASHED_UNDERLINE) {
-            decoration = SugarDecoration::DashedUnderline;
-        } else if flags.contains(Flags::UNDERCURL) {
-            decoration = SugarDecoration::CurlyUnderline;
-        }
-
-        let mut decoration_color = None;
-        if decoration != SugarDecoration::Disabled {
-            if let Some(color) = square.underline_color() {
-                decoration_color = Some(self.compute_color(&color, square.flags));
-            }
-        };
-
         let background_color = if self.dynamic_background.2
             && background_color[0] == self.dynamic_background.0[0]
             && background_color[1] == self.dynamic_background.0[1]
@@ -240,20 +220,79 @@ impl State {
             Some(background_color)
         };
 
-        (FragmentStyle {
-            width,
-            font_size: self.font_size,
-            color: foreground_color,
-            background_color: background_color,
-            font_attrs,
-            ..FragmentStyle::default()
-        }, content)
+        let (decoration, decoration_color) = self.compute_decoration(square, false);
+
+        (
+            FragmentStyle {
+                width,
+                font_size: self.font_size,
+                color: foreground_color,
+                background_color,
+                font_attrs,
+                decoration,
+                decoration_color,
+                ..FragmentStyle::default()
+            },
+            content,
+        )
     }
 
-    #[inline]
-    fn set_hyperlink_in_sugar(&self, mut sugar: Sugar) -> Sugar {
-        sugar.decoration = SugarDecoration::Underline;
-        sugar
+    fn compute_decoration(
+        &self,
+        square: &Square,
+        skip_underline: bool,
+    ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
+        let mut decoration = None;
+        let mut decoration_color = None;
+
+        if square.flags.contains(Flags::UNDERLINE) {
+            if !skip_underline {
+                decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                    offset: -2.0,
+                    size: 2.0,
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
+            }
+        } else if square.flags.contains(Flags::STRIKEOUT) {
+            decoration = Some(FragmentStyleDecoration::Strikethrough);
+        } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -4.0,
+                size: 1.0,
+                is_doubled: true,
+                shape: UnderlineShape::Regular,
+            }));
+        } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -2.0,
+                size: 2.0,
+                is_doubled: false,
+                shape: UnderlineShape::Dotted,
+            }));
+        } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -2.0,
+                size: 2.0,
+                is_doubled: false,
+                shape: UnderlineShape::Dashed,
+            }));
+        } else if square.flags.contains(Flags::UNDERCURL) {
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -2.0,
+                size: 1.0,
+                is_doubled: false,
+                shape: UnderlineShape::Curly,
+            }));
+        }
+
+        if decoration.is_some() {
+            if let Some(color) = square.underline_color() {
+                decoration_color = Some(self.compute_color(&color, square.flags));
+            }
+        };
+
+        (decoration, decoration_color)
     }
 
     #[inline]
@@ -276,53 +315,48 @@ impl State {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                // sugarloaf.insert_on_current_line(&self.create_graphic_sugar(square));
+                // &self.create_graphic_sugar(square);
                 continue;
             }
 
-            let (style, square_content) = self.create_style(&square);
+            let (mut style, square_content) =
+                if has_cursor && column == self.cursor.state.pos.col {
+                    self.create_cursor_style(square)
+                } else {
+                    self.create_style(square)
+                };
 
-            if has_cursor && column == self.cursor.state.pos.col {
-                // sugarloaf.insert_on_current_line(&self.create_cursor(square));
-            } else if self.hyperlink_range.is_some()
+            if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
                     .hyperlink_range
                     .unwrap()
                     .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
-                // let sugar = self.create_sugar(square);
-                // sugarloaf.insert_on_current_line(&self.set_hyperlink_in_sugar(sugar));
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -1.0,
+                        size: -1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Regular,
+                    }));
             } else if self.selection_range.is_some()
                 && self
                     .selection_range
                     .unwrap()
                     .contains(pos::Pos::new(current_line, pos::Column(column)))
             {
-                let content = if square.c == '\t' || square.flags.contains(Flags::HIDDEN)
-                {
-                    ' '
+                style.color = if self.ignore_selection_fg_color {
+                    self.compute_color(&square.fg, square.flags)
                 } else {
-                    square.c
+                    self.named_colors.selection_foreground
                 };
-
-                let selected_sugar = Sugar {
-                    content,
-                    foreground_color: if self.ignore_selection_fg_color {
-                        self.compute_color(&square.fg, square.flags)
-                    } else {
-                        self.named_colors.selection_foreground
-                    },
-                    background_color: Some(self.named_colors.selection_background),
-                    ..Sugar::default()
-                };
-                // sugarloaf.insert_on_current_line(&selected_sugar);
+                style.background_color = Some(self.named_colors.selection_background);
             }
 
             if last_style != style {
                 if !content.is_empty() {
                     content_builder.add_text(&content, last_style);
-                    // content_builder.add_char(square.c, style);
                 }
 
                 content = square_content.to_string();
@@ -343,103 +377,6 @@ impl State {
 
         content_builder.finish_line();
     }
-
-    // match sugar.style {
-    //         SugarStyle::BoldItalic => {
-    //             style.font_attrs.1 = Weight::BOLD;
-    //             style.font_attrs.2 = Style::Italic;
-    //         }
-    //         SugarStyle::Bold => {
-    //             style.font_attrs.1 = Weight::BOLD;
-    //         }
-    //         SugarStyle::Italic => {
-    //             style.font_attrs.2 = Style::Italic;
-    //         }
-    //         SugarStyle::Disabled => {}
-    //     }
-
-    //     let mut has_underline_cursor = false;
-    //     match sugar.cursor {
-    //         SugarCursor::Underline(cursor_color) => {
-    //             style.decoration =
-    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                     offset: -1.0,
-    //                     size: -1.0,
-    //                     is_doubled: false,
-    //                     shape: UnderlineShape::Regular,
-    //                 }));
-    //             style.decoration_color = Some(cursor_color);
-
-    //             has_underline_cursor = true;
-    //         }
-    //         SugarCursor::Block(cursor_color) => {
-    //             style.cursor = SugarCursor::Block(cursor_color);
-    //         }
-    //         SugarCursor::Caret(cursor_color) => {
-    //             style.cursor = SugarCursor::Caret(cursor_color);
-    //         }
-    //         SugarCursor::Disabled => {}
-    //     }
-
-    //     match &sugar.decoration {
-    //         SugarDecoration::Underline => {
-    //             if !has_underline_cursor {
-    //                 style.decoration =
-    //                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                         offset: -2.0,
-    //                         size: 2.0,
-    //                         is_doubled: false,
-    //                         shape: UnderlineShape::Regular,
-    //                     }));
-    //             }
-    //         }
-    //         SugarDecoration::Strikethrough => {
-    //             style.decoration = Some(FragmentStyleDecoration::Strikethrough);
-    //         }
-    //         SugarDecoration::DoubleUnderline => {
-    //             style.decoration =
-    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                     offset: -4.0,
-    //                     size: 1.0,
-    //                     is_doubled: true,
-    //                     shape: UnderlineShape::Regular,
-    //                 }));
-    //         }
-    //         SugarDecoration::DottedUnderline => {
-    //             style.decoration =
-    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                     offset: -2.0,
-    //                     size: 2.0,
-    //                     is_doubled: false,
-    //                     shape: UnderlineShape::Dotted,
-    //                 }));
-    //         }
-    //         SugarDecoration::DashedUnderline => {
-    //             style.decoration =
-    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                     offset: -2.0,
-    //                     size: 2.0,
-    //                     is_doubled: false,
-    //                     shape: UnderlineShape::Dashed,
-    //                 }));
-    //         }
-    //         SugarDecoration::CurlyUnderline => {
-    //             style.decoration =
-    //                 Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-    //                     offset: -2.0,
-    //                     size: 1.0,
-    //                     is_doubled: false,
-    //                     shape: UnderlineShape::Curly,
-    //                 }));
-    //         }
-    //         SugarDecoration::Disabled => {}
-    //     }
-
-    //     style.color = sugar.foreground_color;
-    //     style.background_color = sugar.background_color;
-    //     if let Some(decoration_color) = sugar.decoration_color {
-    //         style.decoration_color = Some(decoration_color);
-    //     }
 
     #[inline]
     #[cfg(use_wa)]
@@ -582,6 +519,7 @@ impl State {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn create_graphic_sugar(&self, square: &Square) -> Sugar {
         let media = &square.graphics().unwrap()[0].texture;
         Sugar {
@@ -595,62 +533,80 @@ impl State {
     }
 
     #[inline]
-    fn create_sugar_cursor(&self) -> SugarCursor {
-        let color = if !self.is_vi_mode_enabled {
-            self.named_colors.cursor
-        } else {
-            self.named_colors.vi_cursor
-        };
-
-        match self.cursor.state.content {
-            CursorShape::Block => SugarCursor::Block(color),
-            CursorShape::Underline => SugarCursor::Underline(color),
-            CursorShape::Beam => SugarCursor::Caret(color),
-            CursorShape::Hidden => SugarCursor::Disabled,
-        }
-    }
-
-    #[inline]
-    fn create_cursor(&self, square: &Square) -> Sugar {
-        let style = match (
+    fn create_cursor_style(&self, square: &Square) -> (FragmentStyle, char) {
+        let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
             square.flags.contains(Flags::BOLD_ITALIC),
             square.flags.contains(Flags::BOLD),
         ) {
-            (true, _, _) => SugarStyle::Italic,
-            (_, true, _) => SugarStyle::BoldItalic,
-            (_, _, true) => SugarStyle::Bold,
-            _ => SugarStyle::Disabled,
+            (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
+            (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
+            (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
+            _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        let mut foreground_color = self.compute_color(&square.fg, square.flags);
+        let mut color = self.compute_color(&square.fg, square.flags);
         let mut background_color = self.compute_bg_color(square);
+        // If IME is enabled we get the current content to cursor
+        let content = if self.is_ime_enabled {
+            self.cursor.content
+        } else {
+            square.c
+        };
 
         if square.flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut background_color, &mut foreground_color);
-        }
-
-        let mut sugar = Sugar {
-            content: square.c,
-            foreground_color,
-            background_color: Some(background_color),
-            cursor: self.create_sugar_cursor(),
-            style,
-            ..Sugar::default()
-        };
-
-        // If IME is enabled we get the current content to cursor
-        if self.is_ime_enabled {
-            sugar.content = self.cursor.content;
+            std::mem::swap(&mut background_color, &mut color);
         }
 
         // If IME is enabled or is a block cursor, put background color
         // when cursor is over the character
         if self.is_ime_enabled || self.cursor.state.content == CursorShape::Block {
-            sugar.foreground_color = self.named_colors.background.0;
+            color = self.named_colors.background.0;
         }
 
-        sugar
+        let mut style = FragmentStyle {
+            color,
+            background_color: Some(background_color),
+            font_attrs,
+            ..FragmentStyle::default()
+        };
+
+        let cursor_color = if !self.is_vi_mode_enabled {
+            self.named_colors.cursor
+        } else {
+            self.named_colors.vi_cursor
+        };
+
+        let mut has_underline_cursor = false;
+
+        match self.cursor.state.content {
+            CursorShape::Underline => {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -1.0,
+                        size: -1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Regular,
+                    }));
+                style.decoration_color = Some(cursor_color);
+
+                has_underline_cursor = true;
+            }
+            CursorShape::Block => {
+                style.cursor = SugarCursor::Block(cursor_color);
+            }
+            CursorShape::Beam => {
+                style.cursor = SugarCursor::Caret(cursor_color);
+            }
+            CursorShape::Hidden => {}
+        }
+
+        let (decoration, decoration_color) =
+            self.compute_decoration(square, has_underline_cursor);
+        style.decoration = decoration;
+        style.decoration_color = decoration_color;
+
+        (style, content)
     }
 
     #[inline]
@@ -676,41 +632,6 @@ impl State {
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
-
-    // if line_number == 0 {
-    //         self.content_builder = Content::builder();
-    //     }
-
-    //     let line = &tree.lines[line_number];
-    //     for sugar in line.inner() {
-    //         let width = if let Some(w) = self.width_cache.get(&sugar.content) {
-    //             *w
-    //         } else {
-    //             let w = sugar.content.width().unwrap_or(1) as f32;
-    //             self.width_cache.insert(sugar.content, w);
-    //             w
-    //         };
-
-    //         let style = FragmentStyle {
-    //             width,
-    //             font_size: tree.layout.font_size,
-    //             ..FragmentStyle::from(sugar)
-    //         };
-
-    //         if sugar.repeated > 0 {
-    //             let text = std::iter::repeat(sugar.content)
-    //                 .take(sugar.repeated + 1)
-    //                 .collect::<String>();
-    //             self.content_builder.add_text(&text, style);
-    //         } else {
-    //             self.content_builder.add_char(sugar.content, style);
-    //         }
-    //     }
-
-    //     self.content_builder
-    //         .set_hash_on_last_line(line.hash.unwrap_or(0));
-    //     self.content_builder.break_line();
-    // }
 
     #[inline]
     pub fn prepare_term(
