@@ -1,8 +1,8 @@
 extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
-    layout::SugarloafLayout, Sugar, SugarDecoration, SugarStyle, Sugarloaf,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, ContentBuilder, FragmentStyle, Sugarloaf, SugarloafWindow,
+    SugarloafWindowSize,
 };
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -27,7 +27,7 @@ async fn main() {
     let window = event_loop.create_window(window_attribute).unwrap();
 
     let scale_factor = window.scale_factor();
-    let font_size = 40.;
+    let font_size = 60.;
 
     let sugarloaf_layout = SugarloafLayout::new(
         width as f32,
@@ -85,284 +85,36 @@ async fn main() {
                     window.request_redraw();
                 }
                 winit::event::WindowEvent::RedrawRequested { .. } => {
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'S',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        style: SugarStyle::Bold,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'u',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        style: SugarStyle::Bold,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'g',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'a',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'r',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'l',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::Strikethrough,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'o',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::Strikethrough,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'a',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::Strikethrough,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'f',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::Strikethrough,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.finish_line();
-
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'R',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::Underline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'i',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::Underline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'o',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::Underline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: ' ',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '¼',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '㏑',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([0.0, 1.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.finish_line();
-
-                    sugarloaf.start_line();
-                    // Font Symbol (char width 2)
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '!',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    // Font Symbol (apple symbols font)
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '⫹',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    // Font Emojis
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '🥶',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '🐶',
-                        foreground_color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([0.0, 0.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '!',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '=',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.finish_line();
-
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'o',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::DashedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'l',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::DashedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'á',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        decoration: SugarDecoration::DashedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: ' ',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([1.0, 0.0, 1.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '-',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([1.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::DoubleUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '>',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([1.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::DoubleUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: ' ',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([1.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::DoubleUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'i',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([1.0, 0.0, 1.0, 1.0]),
-                        decoration: SugarDecoration::DoubleUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: ' ',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'R',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.0, 1.0]),
-                        decoration: SugarDecoration::DottedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'I',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.0, 1.0]),
-                        decoration: SugarDecoration::DottedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'O',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.0, 1.0]),
-                        decoration: SugarDecoration::DottedUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.finish_line();
-
-                    sugarloaf.start_line();
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'T',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.5, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'e',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.5, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'r',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.5, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: 'm',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.5, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.insert_on_current_line(&Sugar {
-                        content: '!',
-                        foreground_color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.5, 0.5, 1.0]),
-                        decoration: SugarDecoration::CurlyUnderline,
-                        ..Sugar::default()
-                    });
-                    sugarloaf.finish_line();
+                    let mut content = ContentBuilder::default();
+                    content.add_text(
+                        "Sugarloaf",
+                        FragmentStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.finish_line();
+                    content.add_text(
+                        "㏑¼",
+                        FragmentStyle {
+                            color: [0.0, 0.0, 0.0, 1.0],
+                            background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                            width: 2.0,
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.add_text(
+                        "🥶",
+                        FragmentStyle {
+                            color: [1.0, 0.0, 1.0, 1.0],
+                            background_color: Some([0.3, 0.5, 1.0, 1.0]),
+                            width: 2.0,
+                            ..FragmentStyle::default()
+                        },
+                    );
+                    content.finish_line();
+                    sugarloaf.set_content(content.build());
 
                     sugarloaf.render();
                 }

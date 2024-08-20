@@ -9,11 +9,11 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use std::hash::{Hash, Hasher};
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::Sugar;
 use crate::SugarDecoration;
 use crate::SugarStyle;
+use std::hash::{Hash, Hasher};
 use swash::text::cluster::CharInfo;
 use swash::Setting;
 use swash::{Stretch, Style, Weight};
@@ -296,7 +296,7 @@ impl Hash for FragmentStyle {
         }
 
         match self.decoration {
-            None => { 0.hash(state) },
+            None => 0.hash(state),
             Some(FragmentStyleDecoration::Strikethrough) => 1.hash(state),
             Some(FragmentStyleDecoration::Underline(info)) => {
                 match info.shape {
@@ -304,10 +304,9 @@ impl Hash for FragmentStyle {
                     UnderlineShape::Dotted => 3.hash(state),
                     UnderlineShape::Dashed => 4.hash(state),
                     UnderlineShape::Curly => 5.hash(state),
-
                 }
                 info.is_doubled.hash(state);
-            },
+            }
         }
         match self.cursor {
             SugarCursor::Disabled => {

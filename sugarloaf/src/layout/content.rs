@@ -146,7 +146,11 @@ impl Content {
 }
 
 #[inline]
-fn calculate_hash<C: Hash + ?Sized, T: Hash + ?Sized, B: Hash + ?Sized>(c: &C, t: &T, a: &B) -> u64 {
+fn calculate_hash<C: Hash + ?Sized, T: Hash + ?Sized, B: Hash + ?Sized>(
+    c: &C,
+    t: &T,
+    a: &B,
+) -> u64 {
     let mut s = DefaultHasher::new();
     c.hash(&mut s);
     t.hash(&mut s);
@@ -166,7 +170,8 @@ impl ContentBuilder {
         self.content.text.push_str(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
-        let text_hash = calculate_hash(&self.content.fragments[last_line].hash, text, &style);
+        let text_hash =
+            calculate_hash(&self.content.fragments[last_line].hash, text, &style);
         self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data
@@ -179,7 +184,8 @@ impl ContentBuilder {
         self.content.text.push(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
-        let text_hash = calculate_hash(&self.content.fragments[last_line].hash, &text, &style);
+        let text_hash =
+            calculate_hash(&self.content.fragments[last_line].hash, &text, &style);
         self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data

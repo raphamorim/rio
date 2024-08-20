@@ -3,8 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::Content;
 use crate::sugarloaf::SugarloafLayout;
+use crate::Content;
 use crate::{Sugar, SugarBlock};
 
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -69,56 +69,56 @@ impl SugarTree {
 
         SugarTreeDiff::Equal
 
-    //     let current_len = self..len();
-    //     let next_len = next.len();
-    //     let mut changes: Vec<Diff> = vec![];
+        //     let current_len = self..len();
+        //     let next_len = next.len();
+        //     let mut changes: Vec<Diff> = vec![];
 
-    //     if current_len == next_len {
-    //         for line_number in 0..current_len {
-    //             let line: &SugarLine = &self.lines[line_number];
-    //             let next_line: &SugarLine = &next.lines[line_number];
+        //     if current_len == next_len {
+        //         for line_number in 0..current_len {
+        //             let line: &SugarLine = &self.lines[line_number];
+        //             let next_line: &SugarLine = &next.lines[line_number];
 
-    //             // .width stands for column size and .len() sugar elements
-    //             // this needs to be differenciated
-    //             // if line.width != next_line.width {
-    //             //     return SugarTreeDiff::ColumnsLengthIsDifferent(
-    //             //         line.width as i32 - next_line.width as i32,
-    //             //     );
-    //             // }
+        //             // .width stands for column size and .len() sugar elements
+        //             // this needs to be differenciated
+        //             // if line.width != next_line.width {
+        //             //     return SugarTreeDiff::ColumnsLengthIsDifferent(
+        //             //         line.width as i32 - next_line.width as i32,
+        //             //     );
+        //             // }
 
-    //             let line_len = line.len();
-    //             let next_line_len = next_line.len();
+        //             let line_len = line.len();
+        //             let next_line_len = next_line.len();
 
-    //             if line_len != next_line_len {
-    //                 changes.push(Diff::Line(DiffLine {
-    //                     before: line_len,
-    //                     after: next_line_len,
-    //                 }));
-    //             } else if line.hash_key() != next_line.hash_key() {
-    //                 if !exact {
-    //                     changes.push(Diff::Hash(true));
-    //                     break;
-    //                 } else {
-    //                     for column in 0..line.len() {
-    //                         if line[column] != next_line[column] {
-    //                             changes.push(Diff::Char(Box::new(DiffChar {
-    //                                 line: line_number,
-    //                                 column,
-    //                                 before: line[column],
-    //                                 after: next_line[column],
-    //                             })));
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
+        //             if line_len != next_line_len {
+        //                 changes.push(Diff::Line(DiffLine {
+        //                     before: line_len,
+        //                     after: next_line_len,
+        //                 }));
+        //             } else if line.hash_key() != next_line.hash_key() {
+        //                 if !exact {
+        //                     changes.push(Diff::Hash(true));
+        //                     break;
+        //                 } else {
+        //                     for column in 0..line.len() {
+        //                         if line[column] != next_line[column] {
+        //                             changes.push(Diff::Char(Box::new(DiffChar {
+        //                                 line: line_number,
+        //                                 column,
+        //                                 before: line[column],
+        //                                 after: next_line[column],
+        //                             })));
+        //                         }
+        //                     }
+        //                 }
+        //             }
+        //         }
 
-    //         if !changes.is_empty() {
-    //             return SugarTreeDiff::Changes(changes);
-    //         }
-    //     }
+        //         if !changes.is_empty() {
+        //             return SugarTreeDiff::Changes(changes);
+        //         }
+        //     }
 
-    //     SugarTreeDiff::Equal
+        //     SugarTreeDiff::Equal
     }
 
     // #[inline]
