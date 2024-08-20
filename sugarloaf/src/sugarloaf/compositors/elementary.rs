@@ -5,7 +5,7 @@
 
 use crate::components::text::glyph::OwnedSection;
 use crate::sugarloaf::graphics;
-use crate::sugarloaf::tree::SugarTree;
+use crate::sugarloaf::state::SugarTree;
 use crate::sugarloaf::{PxScale, Rect, SugarText};
 
 #[allow(unused)]

@@ -5,7 +5,6 @@
 
 use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
-use super::tree::{SugarTree, SugarTreeDiff};
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{Content, SugarBlock};
@@ -238,14 +237,7 @@ impl SugarState {
                 should_compute_dimensions = true;
                 should_resize = true;
             }
-            SugarTreeDiff::LineQuantity(_) => {
-                should_update = true;
-                should_compute_dimensions = true;
-            }
             SugarTreeDiff::Different => {
-                should_update = true;
-            }
-            SugarTreeDiff::Changes(_changes) => {
                 should_update = true;
             }
         }
@@ -269,6 +261,46 @@ impl SugarState {
         }
 
         self.reset_next();
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SugarTreeDiff {
+    Equal,
+    Different,
+    LayoutIsDifferent,
+}
+
+#[derive(Clone, Default)]
+pub struct SugarTree {
+    pub content: Content,
+    pub blocks: Vec<SugarBlock>,
+    pub layout: SugarloafLayout,
+}
+
+impl SugarTree {
+    #[inline]
+    pub fn calculate_diff(
+        &self,
+        next: &SugarTree,
+        _exact: bool,
+        is_dirty: bool,
+    ) -> SugarTreeDiff {
+        if self.layout != next.layout {
+            // In layout case, doesn't matter if blocks are different
+            // or texts are different, it will repaint everything
+            return SugarTreeDiff::LayoutIsDifferent;
+        }
+
+        if is_dirty || self.blocks != next.blocks {
+            return SugarTreeDiff::Different;
+        }
+
+        if self.content != next.content {
+            return SugarTreeDiff::Different;
+        }
+
+        SugarTreeDiff::Equal
     }
 }
 
