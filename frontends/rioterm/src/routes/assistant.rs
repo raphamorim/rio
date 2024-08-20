@@ -1,6 +1,5 @@
 use rio_backend::error::{RioError, RioErrorLevel};
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
 
 pub struct Assistant {
     pub inner: Option<RioError>,
@@ -41,66 +40,57 @@ pub fn screen(sugarloaf: &mut Sugarloaf, assistant: &Assistant) {
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
     let layout = sugarloaf.layout();
 
-    let assistant_background = vec![
-        // Rect {
-        //     position: [30., 0.0],
-        //     color: self.named_colors.background.0,
-        //     size: [layout.width, layout.height],
-        // },
-        Rect {
-            position: [0., 30.0],
-            color: blue,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [15., layout.margin.top_y + 40.],
-            color: yellow,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [30., layout.margin.top_y + 120.],
-            color: red,
-            size: [30., layout.height],
-        },
-    ];
+    let mut objects = Vec::with_capacity(8);
 
-    sugarloaf.append_rects(assistant_background);
+    objects.push(Object::Rect(Rect {
+        position: [0., 30.0],
+        color: blue,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [15., layout.margin.top_y + 40.],
+        color: yellow,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [30., layout.margin.top_y + 120.],
+        color: red,
+        size: [30., layout.height],
+    }));
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., layout.margin.top_y + 50.),
         String::from("Woops! Rio got errors"),
         28.,
         [1., 1., 1., 1.],
-        true,
-    );
+    )));
 
     if let Some(report) = &assistant.inner {
         if report.level == RioErrorLevel::Error {
-            sugarloaf.text(
+            objects.push(Object::Text(Text::single_line(
                 (70., layout.margin.top_y + 80.),
                 String::from("after fix it, restart the terminal"),
                 18.,
                 [1., 1., 1., 1.],
-                true,
-            );
+            )));
         }
 
         if report.level == RioErrorLevel::Warning {
-            sugarloaf.text(
+            objects.push(Object::Text(Text::single_line(
                 (70., layout.margin.top_y + 80.),
                 String::from("(press enter twice to continue)"),
                 18.,
                 [1., 1., 1., 1.],
-                true,
-            );
+            )));
         }
 
-        sugarloaf.text(
+        objects.push(Object::Text(Text::multi_line(
             (70., layout.margin.top_y + 170.),
             report.report.to_string(),
             14.,
             [1., 1., 1., 1.],
-            false,
-        );
+        )));
+
+        sugarloaf.set_objects(objects);
     }
 }

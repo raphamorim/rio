@@ -1,31 +1,7 @@
 use crate::constants::*;
 use rio_backend::config::navigation::NavigationMode;
-use rio_backend::sugarloaf::components::rect::Rect;
+use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
-
-pub struct Text {
-    pub position: (f32, f32),
-    pub content: String,
-    pub font_size: f32,
-    pub color: [f32; 4],
-}
-
-impl Text {
-    #[inline]
-    pub fn new(
-        position: (f32, f32),
-        content: String,
-        font_size: f32,
-        color: [f32; 4],
-    ) -> Self {
-        Text {
-            position,
-            content,
-            font_size,
-            color,
-        }
-    }
-}
 
 pub struct ScreenNavigationColors {
     foreground: [f32; 4],
@@ -35,8 +11,7 @@ pub struct ScreenNavigationColors {
 
 pub struct ScreenNavigation {
     pub mode: NavigationMode,
-    pub rects: Vec<Rect>,
-    pub texts: Vec<Text>,
+    pub objects: Vec<Object>,
     keys: String,
     current: usize,
     colors: ScreenNavigationColors,
@@ -65,8 +40,7 @@ impl ScreenNavigation {
 
         ScreenNavigation {
             mode,
-            rects: vec![],
-            texts: vec![],
+            objects: vec![],
             keys: String::from(""),
             color_automation,
             current: 0,
@@ -118,8 +92,7 @@ impl ScreenNavigation {
             return;
         }
 
-        self.rects = vec![];
-        self.texts = vec![];
+        self.objects = vec![];
 
         match self.mode {
             #[cfg(target_os = "macos")]
@@ -172,7 +145,7 @@ impl ScreenNavigation {
                 size: [30.0, size],
             };
             initial_position -= position_modifier;
-            self.rects.push(renderable);
+            self.objects.push(Object::Rect(renderable));
         }
     }
 
@@ -216,22 +189,22 @@ impl ScreenNavigation {
             size: [200., 26.0],
         };
 
-        self.texts.push(Text::new(
+        self.objects.push(Object::Text(Text::single_line(
             (initial_position - 12., 14.5),
             "".to_string(),
             23.,
             icon_color,
-        ));
+        )));
 
-        self.texts.push(Text::new(
+        self.objects.push(Object::Text(Text::single_line(
             (initial_position + 4., 13.0),
             format!("{}.{}", current_index + 1, main_name),
             14.,
             fg_color,
-        ));
+        )));
 
         initial_position -= position_modifier;
-        self.rects.push(renderable);
+        self.objects.push(Object::Rect(renderable));
 
         if len <= 1 {
             return;
@@ -246,12 +219,12 @@ impl ScreenNavigation {
 
         if min_view == 1 {
             if len > 1 {
-                self.texts.push(Text::new(
+                self.objects.push(Object::Text(Text::single_line(
                     (initial_position + 36., 13.0),
                     format!("+ {}", len - 1),
                     13.,
                     self.colors.foreground,
-                ));
+                )));
             }
         } else {
             let mut rendered = len - 1;
@@ -261,12 +234,12 @@ impl ScreenNavigation {
                 }
 
                 if initial_position <= 120.0 {
-                    self.texts.push(Text::new(
+                    self.objects.push(Object::Text(Text::single_line(
                         (initial_position + 36., 13.0),
                         format!("+ {}", rendered),
                         13.,
                         self.colors.foreground,
-                    ));
+                    )));
                     break;
                 }
 
@@ -299,22 +272,22 @@ impl ScreenNavigation {
                     size: [160., 26.],
                 };
 
-                self.texts.push(Text::new(
+                self.objects.push(Object::Text(Text::single_line(
                     (initial_position - 12., 15.0),
                     "".to_string(),
                     22.,
                     icon_color,
-                ));
+                )));
 
-                self.texts.push(Text::new(
+                self.objects.push(Object::Text(Text::single_line(
                     (initial_position + 4., 13.0),
                     format!("{}.{}", iterator + 1, name),
                     14.,
                     fg_color,
-                ));
+                )));
 
                 initial_position -= position_modifier;
-                self.rects.push(renderable_item);
+                self.objects.push(Object::Rect(renderable_item));
 
                 if len - 1 == iterator {
                     iterator = 0;
@@ -343,7 +316,7 @@ impl ScreenNavigation {
             size: [self.width * (self.scale + 1.0), 22.0],
         };
 
-        self.rects.push(renderable);
+        self.objects.push(Object::Rect(renderable));
 
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
@@ -400,15 +373,15 @@ impl ScreenNavigation {
                 size: [120. + name_modifier + 30., 22.],
             };
 
-            self.texts.push(Text::new(
+            self.objects.push(Object::Text(Text::single_line(
                 (initial_position_x + 4., position_y + text_pos_mod),
                 format!("{}.{}", i + 1, name),
                 14.,
                 foreground_color,
-            ));
+            )));
 
             initial_position_x += name_modifier;
-            self.rects.push(renderable_item);
+            self.objects.push(Object::Rect(renderable_item));
         }
     }
 }

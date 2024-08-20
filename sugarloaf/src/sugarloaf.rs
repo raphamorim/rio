@@ -11,7 +11,7 @@ use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::layer::types;
-use crate::{context::Context, Content, SugarBlock, SugarText};
+use crate::{context::Context, Content, Object};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
@@ -167,13 +167,9 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn layout_next(&self) -> SugarloafLayout {
-        self.state.next.layout
-    }
-
-    #[inline]
-    pub fn layout_next_mut(&mut self) -> &mut SugarloafLayout {
-        &mut self.state.next.layout
+    pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
+        self.state.mark_dirty();
+        &mut self.state.current.layout
     }
 
     #[inline]
@@ -203,13 +199,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn append_rects(&mut self, rects: Vec<Rect>) {
-        self.state.compute_block(SugarBlock { rects, text: None });
+    pub fn set_objects(&mut self, objects: Vec<Object>) {
+        self.state.compute_objects(objects);
     }
 
     #[inline]
     pub fn set_content(&mut self, content: Content) {
-        self.state.next.content = content;
+        self.state.set_content(content);
     }
 
     #[inline]
@@ -217,27 +213,27 @@ impl Sugarloaf<'_> {
         self.state.clean_screen();
     }
 
-    #[inline]
-    pub fn text(
-        &mut self,
-        position: (f32, f32),
-        content: String,
-        font_size: f32,
-        color: [f32; 4],
-        single_line: bool,
-    ) {
-        self.state.compute_block(SugarBlock {
-            rects: vec![],
-            text: Some(SugarText {
-                position,
-                content,
-                font_id: 0,
-                font_size,
-                color,
-                single_line,
-            }),
-        });
-    }
+    // #[inline]
+    // pub fn text(
+    //     &mut self,
+    //     position: (f32, f32),
+    //     content: String,
+    //     font_size: f32,
+    //     color: [f32; 4],
+    //     single_line: bool,
+    // ) {
+    //     self.state.compute_block(SugarBlock {
+    //         rects: vec![],
+    //         text: Some(SugarText {
+    //             position,
+    //             content,
+    //             font_id: 0,
+    //             font_size,
+    //             color,
+    //             single_line,
+    //         }),
+    //     });
+    // }
 
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -268,7 +264,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn mark_dirty(&mut self) {
-        self.state.is_dirty = true;
+        self.state.mark_dirty();
     }
 
     #[inline]

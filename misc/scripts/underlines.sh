@@ -1,5 +1,5 @@
 # Script retired from https://github.com/pop-os/cosmic-term/blob/be808b56cf24d03fc99cf44b0885078a81a16523/ansi-colors.sh#L64
-# which licensed under GNU 3.0 https://github.com/pop-os/cosmic-term/blob/master/LICENSE 
+# which licensed under GNU 3.0 https://github.com/pop-os/cosmic-term/blob/master/LICENSE
 
 #!/usr/bin/env bash
 
@@ -30,7 +30,7 @@ printf "\n"
 
 printf "INV: "
 printf "\033[7m\033[9mStrikeout\033[0m "
-printf "\033[7m\033[4mUnderline\033[0m "
+printf "\033[7m\033[4mUngderline\033[0m "
 printf "\033[7m\033[4:2mDoubleUnderline\033[0m "
 printf "\033[7m\033[4:3mCurlyUnderline\033[0m "
 printf "\033[7m\033[4:4mDottedUnderline\033[0m "

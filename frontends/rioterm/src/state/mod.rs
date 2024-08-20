@@ -642,7 +642,7 @@ impl State {
         display_offset: i32,
         has_blinking_enabled: bool,
     ) {
-        let layout = sugarloaf.layout_next();
+        let layout = sugarloaf.layout();
         self.cursor.state = cursor;
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
@@ -687,16 +687,16 @@ impl State {
             context_manager.len(),
         );
 
-        sugarloaf.append_rects(self.navigation.rects.to_owned());
+        sugarloaf.set_objects(self.navigation.objects.clone());
 
-        for text in self.navigation.texts.iter() {
-            sugarloaf.text(
-                text.position,
-                text.content.to_owned(),
-                text.font_size,
-                text.color,
-                true,
-            );
-        }
+        // for text in self.navigation.texts.iter() {
+        //     sugarloaf.text(
+        //         text.position,
+        //         text.content.to_owned(),
+        //         text.font_size,
+        //         text.color,
+        //         true,
+        //     );
+        // }
     }
 }

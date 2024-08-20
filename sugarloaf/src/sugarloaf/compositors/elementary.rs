@@ -6,7 +6,8 @@
 use crate::components::text::glyph::OwnedSection;
 use crate::sugarloaf::graphics;
 use crate::sugarloaf::state::SugarTree;
-use crate::sugarloaf::{PxScale, Rect, SugarText};
+use crate::sugarloaf::{PxScale, Rect};
+use crate::Text;
 
 #[allow(unused)]
 struct GraphicRect {
@@ -50,7 +51,7 @@ impl Elementary {
     #[inline]
     pub fn create_section_from_text(
         &mut self,
-        sugar_text: &SugarText,
+        sugar_text: &Text,
         tree: &SugarTree,
     ) -> OwnedSection {
         let text = crate::components::text::OwnedText {

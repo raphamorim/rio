@@ -37,7 +37,7 @@ pub struct ImageProperties {
 }
 
 #[derive(Default, Debug, PartialEq, Clone)]
-pub struct SugarText {
+pub struct Text {
     pub position: (f32, f32),
     pub content: String,
     pub font_id: usize,
@@ -46,8 +46,44 @@ pub struct SugarText {
     pub single_line: bool,
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct SugarBlock {
-    pub rects: Vec<Rect>,
-    pub text: Option<SugarText>,
+impl Text {
+    #[inline]
+    pub fn single_line(
+        position: (f32, f32),
+        content: String,
+        font_size: f32,
+        color: [f32; 4],
+    ) -> Self {
+        Text {
+            position,
+            content,
+            font_size,
+            font_id: 0,
+            color,
+            single_line: true,
+        }
+    }
+
+    #[inline]
+    pub fn multi_line(
+        position: (f32, f32),
+        content: String,
+        font_size: f32,
+        color: [f32; 4],
+    ) -> Self {
+        Text {
+            position,
+            content,
+            font_size,
+            font_id: 0,
+            color,
+            single_line: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Object {
+    Rect(Rect),
+    Text(Text),
 }

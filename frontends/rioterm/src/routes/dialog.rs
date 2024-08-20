@@ -1,5 +1,4 @@
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
@@ -11,54 +10,51 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let layout = sugarloaf.layout();
     let height = layout.height / layout.dimensions.scale;
 
-    let assistant_background = vec![
-        Rect {
-            position: [0., 0.0],
-            color: black,
-            size: [layout.width, layout.height],
-        },
-        Rect {
-            position: [0., 30.0],
-            color: blue,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [15., layout.margin.top_y + 40.],
-            color: yellow,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [30., layout.margin.top_y + 120.],
-            color: red,
-            size: [30., layout.height],
-        },
-    ];
+    let mut objects = Vec::with_capacity(7);
 
-    sugarloaf.append_rects(assistant_background);
+    objects.push(Object::Rect(Rect {
+        position: [0., 0.0],
+        color: black,
+        size: [layout.width, layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [0., 30.0],
+        color: blue,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [15., layout.margin.top_y + 40.],
+        color: yellow,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [30., layout.margin.top_y + 120.],
+        color: red,
+        size: [30., layout.height],
+    }));
 
     let mid_screen = height / 2.;
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., mid_screen - 10.),
         content.to_string(),
         48.,
         [1., 1., 1., 1.],
-        true,
-    );
+    )));
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., mid_screen + 30.),
         String::from("To quit press enter key"),
         18.,
         yellow,
-        true,
-    );
+    )));
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., mid_screen + 50.),
         String::from("To continue press escape key"),
         18.,
         blue,
-        true,
-    );
+    )));
+
+    sugarloaf.set_objects(objects);
 }
