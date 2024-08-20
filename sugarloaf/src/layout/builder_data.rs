@@ -82,6 +82,8 @@ pub struct BuilderState {
     pub vars: FontSettingCache<f32>,
     /// User specified scale.
     pub scale: f32,
+    // Font size in ppem.
+    pub font_size: f32,
 }
 
 impl BuilderState {
@@ -98,9 +100,7 @@ impl BuilderState {
     pub fn new_line(&mut self) {
         self.lines.push(BuilderLine::default());
         let last = self.lines.len() - 1;
-        self.lines[last]
-            .styles
-            .push(FragmentStyle::scaled_default(self.scale));
+        self.lines[last].styles.push(FragmentStyle::default());
     }
     #[inline]
     pub fn current_line(&self) -> usize {
@@ -202,8 +202,6 @@ pub struct FragmentStyle {
     pub width: f32,
     /// Font attributes.
     pub font_attrs: (Stretch, Weight, Style),
-    /// Font size in ppem.
-    pub font_size: f32,
     /// Font color.
     pub color: [f32; 4],
     /// Background color.
@@ -229,26 +227,6 @@ impl Default for FragmentStyle {
         Self {
             width: 1.0,
             font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-            font_size: 16.,
-            font_vars: EMPTY_FONT_SETTINGS,
-            letter_spacing: 0.,
-            word_spacing: 0.,
-            line_spacing: 1.,
-            color: [1.0, 1.0, 1.0, 1.0],
-            background_color: None,
-            cursor: SugarCursor::Disabled,
-            decoration: None,
-            decoration_color: None,
-        }
-    }
-}
-
-impl FragmentStyle {
-    pub fn scaled_default(scale: f32) -> Self {
-        Self {
-            width: 1.0,
-            font_attrs: (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-            font_size: 16. * scale,
             font_vars: EMPTY_FONT_SETTINGS,
             letter_spacing: 0.,
             word_spacing: 0.,

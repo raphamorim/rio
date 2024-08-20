@@ -68,7 +68,9 @@ impl Advanced {
         // let start = std::time::Instant::now();
         self.render_data = RenderData::default();
 
-        let mut lb = self.layout_context.builder(tree.layout.dimensions.scale);
+        let mut lb = self
+            .layout_context
+            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
         tree.content.layout(&mut lb);
         self.render_data.clear();
         lb.build_into(&mut self.render_data);
@@ -84,7 +86,6 @@ impl Advanced {
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = Content::builder();
         let style = FragmentStyle {
-            font_size: tree.layout.font_size,
             ..Default::default()
         };
         // content_builder.enter_span(&[
@@ -94,7 +95,9 @@ impl Advanced {
         // ]);
         content_builder.add_char(' ', style);
 
-        let mut lb = self.layout_context.builder(tree.layout.dimensions.scale);
+        let mut lb = self
+            .layout_context
+            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
         let content = content_builder.build_ref();
         content.layout(&mut lb);
         self.mocked_render_data.clear();
@@ -109,41 +112,4 @@ impl Advanced {
     pub fn set_content(&mut self, content: Content) {
         self.content = content;
     }
-
-    // #[inline]
-    // pub fn update_tree_with_new_line(&mut self, line_number: usize, tree: &SugarTree) {
-    //     if line_number == 0 {
-    //         self.content_builder = Content::builder();
-    //     }
-
-    //     let line = &tree.lines[line_number];
-    //     for sugar in line.inner() {
-    //         let width = if let Some(w) = self.width_cache.get(&sugar.content) {
-    //             *w
-    //         } else {
-    //             let w = sugar.content.width().unwrap_or(1) as f32;
-    //             self.width_cache.insert(sugar.content, w);
-    //             w
-    //         };
-
-    //         let style = FragmentStyle {
-    //             width,
-    //             font_size: tree.layout.font_size,
-    //             ..FragmentStyle::from(sugar)
-    //         };
-
-    //         if sugar.repeated > 0 {
-    //             let text = std::iter::repeat(sugar.content)
-    //                 .take(sugar.repeated + 1)
-    //                 .collect::<String>();
-    //             self.content_builder.add_text(&text, style);
-    //         } else {
-    //             self.content_builder.add_char(sugar.content, style);
-    //         }
-    //     }
-
-    //     self.content_builder
-    //         .set_hash_on_last_line(line.hash.unwrap_or(0));
-    //     self.content_builder.break_line();
-    // }
 }

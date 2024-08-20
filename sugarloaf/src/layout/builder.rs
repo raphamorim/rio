@@ -90,10 +90,11 @@ impl LayoutContext {
     /// Creates a new builder for computing a paragraph layout with the
     /// specified direction, language and scaling factor.
     #[inline]
-    pub fn builder(&mut self, scale: f32) -> ParagraphBuilder {
+    pub fn builder(&mut self, scale: f32, font_size: f32) -> ParagraphBuilder {
         self.state.clear();
         self.state.begin();
         self.state.scale = scale;
+        self.state.font_size = font_size * scale;
         ParagraphBuilder {
             fcx: &mut self.fcx,
             // bidi: &mut self.bidi,
@@ -141,7 +142,7 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, text: &str, mut style: FragmentStyle) -> Option<()> {
+    pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> Option<()> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
@@ -150,7 +151,6 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         let mut offset = self.last_offset;
-        style.font_size *= self.s.scale;
         line.styles.push(style);
         let span_id = line.styles.len() - 1;
 
@@ -174,8 +174,8 @@ impl<'a> ParagraphBuilder<'a> {
             if prev_style == style {
                 false
             } else {
-                style.font_size != prev_style.font_size
-                    || style.letter_spacing != prev_style.letter_spacing
+                // style.font_size != prev_style.font_size
+                style.letter_spacing != prev_style.letter_spacing
                     // || style.lang != prev_style.lang
                     // || style.font_features != prev_style.font_features
                     // || style.font_attrs != prev_style.font_attrs
@@ -413,7 +413,7 @@ fn shape_item(
         span: &state.lines[current_line].styles[span_index],
         font_id: None,
         span_index,
-        size: style.font_size,
+        size: state.font_size,
     };
 
     let chars = state.lines[current_line].text.content[range.to_owned()]
@@ -515,7 +515,7 @@ where
         let cluster_span = cluster.user_data() as usize;
         if cluster_span != state.span_index {
             state.span_index = cluster_span;
-            state.span = &state.state.lines[current_line].styles[state.span_index];
+            state.span = &state.state.lines[current_line].styles[cluster_span];
         }
 
         let next_font =
