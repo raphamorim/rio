@@ -55,7 +55,6 @@ pub enum InstructionCallback {
 #[derive(Default)]
 pub struct CachedRunInstructions {
     pub instructions: Vec<Instruction>,
-    pub desc_ink: Option<(f32, f32)>,
     pub entry: Option<GlyphEntry>,
 }
 
@@ -91,7 +90,6 @@ impl CachedRun {
 
 pub struct Compositor {
     batches: BatchManager,
-    intercepts: Vec<(f32, f32)>,
 }
 
 impl Compositor {
@@ -99,7 +97,6 @@ impl Compositor {
     pub fn new() -> Self {
         Self {
             batches: BatchManager::new(),
-            intercepts: Vec::new(),
         }
     }
 
@@ -214,10 +211,6 @@ impl Compositor {
 
             let advance = px - run_x;
 
-            if cached_run.underline.enabled {
-                self.intercepts.clear();
-            }
-
             let mut index = 0;
 
             for glyph in &glyphs {
@@ -262,10 +255,6 @@ impl Compositor {
                                     data.has_alpha,
                                 );
                             }
-                        }
-
-                        if let Some(desc_ink) = set.desc_ink {
-                            self.intercepts.push((desc_ink.0 + gx, desc_ink.1 + gx));
                         }
                     }
                 }
@@ -350,10 +339,6 @@ impl Compositor {
             _ => {}
         };
 
-        if cached_run.underline.enabled {
-            self.intercepts.clear();
-        }
-
         let subpx_bias = (0.125, 0.);
         let color = style.color;
 
@@ -404,18 +389,6 @@ impl Compositor {
                                 has_alpha: true,
                             },
                         ));
-                    }
-
-                    if cached_run.underline.enabled
-                        && entry.top - cached_run.underline.offset < entry.height as i32
-                    {
-                        if let Some(mut desc_ink) = entry.desc.range() {
-                            cached_run_instructions.desc_ink = Some(desc_ink);
-
-                            desc_ink.0 += gx;
-                            desc_ink.1 += gx;
-                            self.intercepts.push(desc_ink);
-                        }
                     }
                 }
             }
@@ -484,98 +457,8 @@ impl Compositor {
         line_height: f32,
     ) {
         if underline.enabled {
-            for range in self.intercepts.iter_mut() {
-                range.0 -= 1.;
-                range.1 += 1.;
-            }
-            let mut ux = x;
+            let ux = x;
             let uy = baseline - underline.offset as f32;
-            for range in self.intercepts.iter() {
-                if ux < range.0 {
-                    match underline.shape {
-                        UnderlineShape::Regular => {
-                            self.batches.add_rect(
-                                &Rect::new(ux, uy, range.0 - ux, underline.size),
-                                depth,
-                                &underline.color,
-                            );
-
-                            if underline.is_doubled {
-                                self.batches.add_rect(
-                                    &Rect::new(
-                                        ux,
-                                        baseline,
-                                        range.0 - ux,
-                                        underline.size,
-                                    ),
-                                    depth,
-                                    &underline.color,
-                                );
-                            }
-                        }
-                        UnderlineShape::Dashed => {
-                            let mut start = ux;
-                            let end = range.0 - ux;
-                            while start < end {
-                                start = start.min(end);
-                                self.batches.add_rect(
-                                    &Rect::new(start, uy, 6.0, underline.size),
-                                    depth,
-                                    &underline.color,
-                                );
-                                start += 8.0;
-                            }
-                        }
-                        UnderlineShape::Dotted => {
-                            let mut start = ux;
-                            let end = range.0 - ux;
-                            while start < end {
-                                start = start.min(end);
-                                self.batches.add_rect(
-                                    &Rect::new(start, uy, 2.0, underline.size),
-                                    depth,
-                                    &underline.color,
-                                );
-                                start += 4.0;
-                            }
-                        }
-                        UnderlineShape::Curly => {
-                            let style_line_height = (line_height / 12.).min(3.0);
-                            let offset = style_line_height * 1.5;
-
-                            let mut curly_width = ux;
-                            let end = range.0 - ux;
-                            let mut rect_width = 1.0f32.min(end - curly_width);
-
-                            while curly_width < end {
-                                rect_width = rect_width.min(end - curly_width);
-
-                                let dot_bottom_offset = match curly_width as u32 % 8 {
-                                    3..=5 => offset + style_line_height,
-                                    2 | 6 => offset + 2.0 * style_line_height / 3.0,
-                                    1 | 7 => offset + 1.0 * style_line_height / 3.0,
-                                    _ => offset,
-                                };
-
-                                self.batches.add_rect(
-                                    &Rect::new(
-                                        curly_width,
-                                        uy - ((dot_bottom_offset - offset)
-                                            + underline.offset as f32),
-                                        rect_width,
-                                        style_line_height,
-                                    ),
-                                    depth,
-                                    &underline.color,
-                                );
-
-                                curly_width += rect_width;
-                            }
-                        }
-                    }
-                }
-                ux = range.1;
-            }
             let end = x + advance;
             if ux < end {
                 match underline.shape {
@@ -618,6 +501,16 @@ impl Compositor {
                         }
                     }
                     UnderlineShape::Curly => {
+                        let mut start = ux;
+                        while start < end {
+                            start = start.min(end);
+                            self.batches.add_rect(
+                                &Rect::new(start, uy, 2.0, underline.size),
+                                depth,
+                                &underline.color,
+                            );
+                            start += 4.0;
+                        }
                         let style_line_height = (line_height / 12.).min(3.0);
                         let offset = style_line_height * 1.5;
 

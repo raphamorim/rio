@@ -159,7 +159,6 @@ impl<'a> GlyphCacheSession<'a> {
                 height: h,
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
-                desc: DescenderRegion::new(self.scaled_image),
             };
             self.entry.glyphs.insert(key, entry);
             return Some(entry);
@@ -249,87 +248,5 @@ pub struct GlyphEntry {
     pub height: u16,
     pub image: ImageId,
     pub is_bitmap: bool,
-    pub desc: DescenderRegion,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct DescenderRegion {
-    start: u16,
-    end: u16,
-}
-
-impl DescenderRegion {
-    fn new(image: &GlyphImage) -> Self {
-        let mut start = u16::MAX;
-        let mut end = 0;
-        let h = image.placement.height as i32;
-        let w = image.placement.width as usize;
-        let y1 = image.placement.top + 1;
-        if y1 >= 0 && y1 < h && w < u16::MAX as usize {
-            let y1 = y1 as usize;
-            let y2 = h as usize;
-            start = u16::MAX;
-            if image.content == Content::Mask {
-                for y in y1..y2 {
-                    let mut has_ink = false;
-                    let mut in_ink = false;
-                    let offset = y * w;
-                    if let Some(row) = image.data.get(offset..offset + w) {
-                        for (i, alpha) in row.iter().enumerate() {
-                            if *alpha != 0 {
-                                if !has_ink {
-                                    has_ink = true;
-                                    start = start.min(i as u16);
-                                }
-                                in_ink = true;
-                            } else if in_ink {
-                                in_ink = false;
-                                end = end.max(i as u16);
-                            }
-                        }
-                    }
-                    if in_ink {
-                        end = w as u16;
-                    }
-                }
-            } else {
-                for y in y1..y2 {
-                    let mut has_ink = false;
-                    let mut in_ink = false;
-                    let offset = y * w * 4;
-                    if let Some(row) = image.data.get(offset..offset + w * 4) {
-                        for (i, rgba) in row.chunks_exact(4).enumerate() {
-                            if rgba[0] != 0
-                                || rgba[1] != 0
-                                || rgba[2] != 0
-                                || rgba[3] != 0
-                            {
-                                if !has_ink {
-                                    has_ink = true;
-                                    start = start.min(i as u16);
-                                }
-                                in_ink = true;
-                            } else if in_ink {
-                                in_ink = false;
-                                end = end.max(i as u16);
-                            }
-                        }
-                    }
-                    if in_ink {
-                        end = w as u16;
-                    }
-                }
-            }
-        }
-        Self { start, end }
-    }
-
-    #[inline]
-    pub fn range(&self) -> Option<(f32, f32)> {
-        if self.start <= self.end {
-            Some((self.start as f32, self.end as f32))
-        } else {
-            None
-        }
-    }
+    // pub desc: DescenderRegion,
 }

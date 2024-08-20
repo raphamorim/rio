@@ -15,29 +15,6 @@ pub enum SugarCursor {
     Disabled,
 }
 
-#[derive(Debug, Copy, PartialEq, Default, Clone)]
-#[repr(u8)]
-pub enum SugarDecoration {
-    DottedUnderline = 6,
-    DashedUnderline = 5,
-    DoubleUnderline = 4,
-    CurlyUnderline = 3,
-    Strikethrough = 2,
-    Underline = 1,
-    #[default]
-    Disabled = 0,
-}
-
-#[derive(Debug, PartialEq, Default, Copy, Clone)]
-#[repr(u8)]
-pub enum SugarStyle {
-    BoldItalic = 3,
-    Italic = 2,
-    Bold = 1,
-    #[default]
-    Disabled = 0,
-}
-
 #[derive(Copy, PartialEq, Default, Debug, Clone)]
 pub struct SugarloafStyle {
     pub screen_position: (f32, f32),

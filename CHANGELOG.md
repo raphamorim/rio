@@ -16,7 +16,9 @@
 
 ## Unreleased
 
-- TBD
+- **breaking:** `BottomTab` is now default for all platforms.
+- Performance update: Render repeated styled fragments as one rect.
+- Sugarloaf API has changed from `Sugar` primitives to `Content`.
 
 ## 0.1.7
 
