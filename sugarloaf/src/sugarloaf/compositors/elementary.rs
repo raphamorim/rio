@@ -24,7 +24,6 @@ struct GraphicRect {
 #[derive(Default)]
 pub struct Elementary {
     pub rects: Vec<Rect>,
-    pub should_resize: bool,
     text_y: f32,
     current_row: u16,
 }
@@ -36,15 +35,9 @@ impl Elementary {
     }
 
     #[inline]
-    pub fn set_should_resize(&mut self) {
-        self.should_resize = true;
-    }
-
-    #[inline]
     pub fn clean(&mut self) {
         self.current_row = 0;
         self.text_y = 0.0;
-        self.should_resize = false;
         self.rects.clear();
     }
 

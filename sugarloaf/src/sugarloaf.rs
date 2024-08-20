@@ -328,43 +328,6 @@ impl Sugarloaf<'_> {
                         .render(&mut rpass, &self.state, &mut self.ctx);
 
                     self.text_brush.render(&mut self.ctx, &mut rpass);
-
-                    // if !self.graphic_rects.is_empty() {
-                    //     for entry_render in
-                    //         &self.graphic_rects.keys().cloned().collect::<Vec<_>>()
-                    //     {
-                    //         if let Some(entry) = self.graphic_rects.get(entry_render) {
-                    //             if let Some(graphic_data) = self.graphics.get(&entry.id) {
-                    //                 let rows = entry.end_row - entry.start_row;
-                    //                 let height = (rows - 2.) * self.layout.dimensions.height;
-
-                    //                 let a = layer::types::Image::Raster {
-                    //                     handle: graphic_data.handle.clone(),
-                    //                     bounds: Rectangle {
-                    //                         x: entry.pos_x,
-                    //                         y: entry.pos_y,
-                    //                         width: entry.width as f32,
-                    //                         height,
-                    //                     },
-                    //                 };
-
-                    //                 self.layer_brush.prepare_ref(
-                    //                     &mut encoder,
-                    //                     &mut self.ctx,
-                    //                     &[&a],
-                    //                 );
-
-                    //                 self.layer_brush.render_with_encoder(
-                    //                     0,
-                    //                     view,
-                    //                     &mut encoder,
-                    //                     None,
-                    //                 );
-                    //             }
-                    //         }
-                    //     }
-                    // }
-                    // self.layer_brush.end_frame();
                 }
 
                 if self.background_image.is_some() {

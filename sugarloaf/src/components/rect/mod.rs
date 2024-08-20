@@ -259,7 +259,6 @@ impl RectBrush {
 
             self.current_transform = transform;
         }
-        // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
     }
 
     #[inline]
