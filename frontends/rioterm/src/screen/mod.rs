@@ -200,7 +200,7 @@ impl Screen<'_> {
             window_id,
             0,
             context_manager_config,
-            sugarloaf.layout_next(),
+            sugarloaf.layout(),
             sugarloaf_errors,
         )?;
 
@@ -293,7 +293,7 @@ impl Screen<'_> {
         let padding_y_top = padding_top_from_config(config);
 
         self.sugarloaf.update_font(font_library);
-        self.sugarloaf.layout_next_mut().recalculate(
+        self.sugarloaf.layout_mut().recalculate(
             config.fonts.size,
             config.line_height,
             config.padding_x,
@@ -301,7 +301,7 @@ impl Screen<'_> {
             padding_y_bottom,
         );
 
-        self.sugarloaf.layout_next_mut().update();
+        self.sugarloaf.layout_mut().update();
         self.state = State::new(config, current_theme);
 
         for context in self.ctx().contexts() {
@@ -366,7 +366,7 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
-        let layout = self.sugarloaf.layout_next();
+        let layout = self.sugarloaf.layout();
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
             terminal.resize::<SugarloafLayout>(layout);
@@ -1192,8 +1192,8 @@ impl Screen<'_> {
         // If sugarloaf does have pending updates to process then
         // should abort current render
 
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
+        let start = std::time::Instant::now();
+        println!("Render time elapsed");
 
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.ctx().current().terminal.lock();
@@ -1229,8 +1229,8 @@ impl Screen<'_> {
             self.context_manager.schedule_render_on_route(800);
         }
 
-        // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
+        let duration = start.elapsed();
+        println!("Total render time is: {:?}\n", duration);
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {

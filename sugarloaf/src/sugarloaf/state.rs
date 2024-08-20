@@ -7,13 +7,25 @@ use super::compositors::SugarCompositors;
 use super::graphics::SugarloafGraphics;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{Content, SugarBlock};
+use crate::{Content, Object};
+
+#[derive(Debug, PartialEq)]
+pub enum SugarTreeDiff {
+    Equal,
+    Different,
+    Repaint,
+}
+
+#[derive(Clone, Default)]
+pub struct SugarTree {
+    pub content: Content,
+    pub objects: Vec<Object>,
+    pub layout: SugarloafLayout,
+}
 
 pub struct SugarState {
-    pub current: Box<SugarTree>,
-    pub next: SugarTree,
+    pub current: SugarTree,
     latest_change: SugarTreeDiff,
-    pub is_dirty: bool,
     pub compositors: SugarCompositors,
     // TODO: Decide if graphics should be in SugarTree or SugarState
     pub graphics: SugarloafGraphics,
@@ -25,19 +37,15 @@ impl SugarState {
         font_library: &FontLibrary,
         font_features: &Option<Vec<String>>,
     ) -> SugarState {
-        // First time computing changes should obtain dimensions
-        let next = SugarTree {
-            layout: initial_layout,
-            ..Default::default()
-        };
-
         let mut state = SugarState {
-            is_dirty: false,
             compositors: SugarCompositors::new(font_library),
             graphics: SugarloafGraphics::default(),
-            current: Box::<SugarTree>::default(),
-            next,
-            latest_change: SugarTreeDiff::LayoutIsDifferent,
+            // First time computing changes should obtain dimensions
+            current: SugarTree {
+                layout: initial_layout,
+                ..Default::default()
+            },
+            latest_change: SugarTreeDiff::Repaint,
         };
 
         state.compositors.advanced.set_font_features(font_features);
@@ -46,7 +54,8 @@ impl SugarState {
 
     #[inline]
     pub fn compute_layout_resize(&mut self, width: u32, height: u32) {
-        self.next.layout.resize(width, height).update();
+        self.current.layout.resize(width, height).update();
+        self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
@@ -54,62 +63,80 @@ impl SugarState {
         // In rescale case, we actually need to clean cache from the compositors
         // because it's based on sugarline hash which only consider the font size
         self.compositors.advanced.reset();
-        self.next.layout.rescale(scale).update();
+        self.current.layout.rescale(scale).update();
+        self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn compute_layout_font_size(&mut self, operation: u8) {
         let should_update = match operation {
-            0 => self.next.layout.reset_font_size(),
-            2 => self.next.layout.increase_font_size(),
-            1 => self.next.layout.decrease_font_size(),
+            0 => self.current.layout.reset_font_size(),
+            2 => self.current.layout.increase_font_size(),
+            1 => self.current.layout.decrease_font_size(),
             _ => false,
         };
 
         if should_update {
-            self.next.layout.update();
+            self.current.layout.update();
+            self.latest_change = SugarTreeDiff::Repaint;
         }
     }
 
     #[inline]
-    pub fn set_content(&mut self, content: Content) {
-        self.compositors.advanced.set_content(content);
+    pub fn set_content(&mut self, new_content: Content) {
+        if self.current.content != new_content {
+            self.latest_change = SugarTreeDiff::Different;
+        }
+        self.current.content = new_content;
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
-        self.next.layout.dimensions.height = 0.0;
-        self.next.layout.dimensions.width = 0.0;
+        self.current.layout.dimensions.height = 0.0;
+        self.current.layout.dimensions.width = 0.0;
+        self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
         self.compositors.advanced.set_font_features(font_features);
+        self.latest_change = SugarTreeDiff::Repaint;
+    }
+
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.latest_change = SugarTreeDiff::Different;
     }
 
     #[inline]
     pub fn clean_screen(&mut self) {
         self.current.content.clear();
-        self.current.blocks.clear();
+        self.current.objects.clear();
         self.compositors.advanced.reset();
     }
 
     #[inline]
-    pub fn compute_block(&mut self, block: SugarBlock) {
+    pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
+        if self.current.objects == new_objects {
+            self.latest_change = SugarTreeDiff::Different;
+        };
+
         // Block are used only with elementary renderer
-        self.next.blocks.push(block);
+        self.current.objects = new_objects;
     }
 
     #[inline]
     pub fn reset_compositor(&mut self) {
         self.compositors.elementary.clean();
         self.compositors.advanced.reset();
+        self.latest_change = SugarTreeDiff::Equal;
     }
 
     #[inline]
     pub fn clean_compositor(&mut self) {
         self.compositors.elementary.clean();
+        self.latest_change = SugarTreeDiff::Equal;
     }
 
     #[inline]
@@ -121,7 +148,7 @@ impl SugarState {
         context: &mut super::Context,
     ) -> bool {
         #[cfg(not(feature = "always_dirty"))]
-        if !self.is_dirty && self.latest_change == SugarTreeDiff::Equal {
+        if self.latest_change == SugarTreeDiff::Equal {
             self.compositors.advanced.clean();
             return false;
         }
@@ -133,22 +160,23 @@ impl SugarState {
         }
 
         // Elementary renderer is used for everything else in sugarloaf
-        // like blocks rendering (created by .text() or .append_rects())
+        // like objects rendering (created by .text() or .append_rects())
         // ...
-        // If current tree has blocks and compositor has empty blocks
-        // It means that's either the first render or blocks were erased on compute_diff() step
-        for block in &self.current.blocks {
-            if let Some(text) = &block.text {
-                elementary_brush.queue(
-                    &self
-                        .compositors
-                        .elementary
-                        .create_section_from_text(text, &self.current),
-                );
-            }
-
-            if !block.rects.is_empty() {
-                self.compositors.elementary.rects.extend(&block.rects);
+        // If current tree has objects and compositor has empty objects
+        // It means that's either the first render or objects were erased on compute_diff() step
+        for object in &self.current.objects {
+            match object {
+                Object::Text(text) => {
+                    elementary_brush.queue(
+                        &self
+                            .compositors
+                            .elementary
+                            .create_section_from_text(text, &self.current),
+                    );
+                }
+                Object::Rect(rect) => {
+                    self.compositors.elementary.rects.push(*rect);
+                }
             }
         }
 
@@ -161,7 +189,7 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
 
-        if self.latest_change != SugarTreeDiff::LayoutIsDifferent {
+        if self.latest_change != SugarTreeDiff::Repaint {
             return;
         }
 
@@ -184,19 +212,9 @@ impl SugarState {
 
             if dimensions_changed {
                 self.current.layout.update();
-                self.next.layout = self.current.layout;
-                self.is_dirty = true;
                 log::info!("sugar_state: dimensions has changed");
             }
         }
-    }
-
-    #[inline]
-    pub fn reset_next(&mut self) {
-        self.next.layout = self.current.layout;
-        self.next.content.clear();
-        self.next.blocks.clear();
-        self.is_dirty = false;
     }
 
     #[inline]
@@ -205,8 +223,6 @@ impl SugarState {
         if self.current.layout.dimensions.width == 0.0
             || self.current.layout.dimensions.height == 0.0
         {
-            self.current = Box::new(std::mem::take(&mut self.next));
-
             self.compositors
                 .advanced
                 .calculate_dimensions(&self.current);
@@ -214,8 +230,7 @@ impl SugarState {
             self.compositors.advanced.update_layout(&self.current);
 
             self.compositors.elementary.set_should_resize();
-            self.reset_next();
-            self.latest_change = SugarTreeDiff::LayoutIsDifferent;
+            self.latest_change = SugarTreeDiff::Repaint;
             log::info!("has empty dimensions, will try to find...");
             return;
         }
@@ -224,15 +239,11 @@ impl SugarState {
         let mut should_resize = false;
         let mut should_compute_dimensions = false;
 
-        self.latest_change =
-            self.current
-                .calculate_diff(&self.next, false, self.is_dirty);
-
         match &self.latest_change {
             SugarTreeDiff::Equal => {
                 // Do nothing
             }
-            SugarTreeDiff::LayoutIsDifferent => {
+            SugarTreeDiff::Repaint => {
                 should_update = true;
                 should_compute_dimensions = true;
                 should_resize = true;
@@ -245,8 +256,6 @@ impl SugarState {
         log::info!("state compute_changes result: {:?}", self.latest_change);
 
         if should_update {
-            self.current = Box::new(std::mem::take(&mut self.next));
-
             if should_compute_dimensions {
                 self.compositors
                     .advanced
@@ -259,48 +268,6 @@ impl SugarState {
         if should_resize {
             self.compositors.elementary.set_should_resize();
         }
-
-        self.reset_next();
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum SugarTreeDiff {
-    Equal,
-    Different,
-    LayoutIsDifferent,
-}
-
-#[derive(Clone, Default)]
-pub struct SugarTree {
-    pub content: Content,
-    pub blocks: Vec<SugarBlock>,
-    pub layout: SugarloafLayout,
-}
-
-impl SugarTree {
-    #[inline]
-    pub fn calculate_diff(
-        &self,
-        next: &SugarTree,
-        _exact: bool,
-        is_dirty: bool,
-    ) -> SugarTreeDiff {
-        if self.layout != next.layout {
-            // In layout case, doesn't matter if blocks are different
-            // or texts are different, it will repaint everything
-            return SugarTreeDiff::LayoutIsDifferent;
-        }
-
-        if is_dirty || self.blocks != next.blocks {
-            return SugarTreeDiff::Different;
-        }
-
-        if self.content != next.content {
-            return SugarTreeDiff::Different;
-        }
-
-        SugarTreeDiff::Equal
     }
 }
 

@@ -15,6 +15,7 @@ pub use crate::sugarloaf::{
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
 };
+pub use components::rect::Rect;
 pub use layout::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, UnderlineInfo,
     UnderlineShape,

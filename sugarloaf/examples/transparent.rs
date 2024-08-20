@@ -4,7 +4,7 @@ extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::SugarloafLayout;
-use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{Object, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 use winit::event::WindowEvent;
 use winit::event_loop::ControlFlow;
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -71,18 +71,20 @@ async fn main() {
             }
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested { .. } = event {
-                    sugarloaf.append_rects(vec![
-                        Rect {
+                    let objects = vec![
+                        Object::Rect(Rect {
                             position: [10.0, 10.0],
                             color: [1.0, 0.0, 1.0, 0.2],
                             size: [100.0, 100.0],
-                        },
-                        Rect {
+                        }),
+                        Object::Rect(Rect {
                             position: [115.0, 10.0],
                             color: [0.0, 1.0, 1.0, 0.5],
                             size: [100.0, 100.0],
-                        },
-                    ]);
+                        }),
+                    ];
+
+                    sugarloaf.set_objects(objects);
                     sugarloaf.render();
                 }
             }

@@ -1,5 +1,4 @@
-use rio_backend::sugarloaf::components::rect::Rect;
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf) {
@@ -11,74 +10,69 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     let layout = sugarloaf.layout();
     let width = layout.width / layout.dimensions.scale;
 
-    let assistant_background = vec![
-        Rect {
-            position: [0., 0.0],
-            color: black,
-            size: [layout.width, layout.height],
-        },
-        Rect {
-            position: [0., 30.0],
-            color: blue,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [15., layout.margin.top_y + 60.],
-            color: yellow,
-            size: [30., layout.height],
-        },
-        Rect {
-            position: [30., layout.margin.top_y + 120.],
-            color: red,
-            size: [30., layout.height],
-        },
-    ];
+    let mut objects = Vec::with_capacity(7);
 
-    sugarloaf.append_rects(assistant_background);
+    objects.push(Object::Rect(Rect {
+        position: [0., 0.0],
+        color: black,
+        size: [layout.width, layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [0., 30.0],
+        color: blue,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [15., layout.margin.top_y + 60.],
+        color: yellow,
+        size: [30., layout.height],
+    }));
+    objects.push(Object::Rect(Rect {
+        position: [30., layout.margin.top_y + 120.],
+        color: red,
+        size: [30., layout.height],
+    }));
 
     if width <= 440. {
-        sugarloaf.text(
+        objects.push(Object::Text(Text::single_line(
             (70., layout.margin.top_y + 50.),
             String::from("Welcome to\nRio Terminal"),
             28.,
             [1., 1., 1., 1.],
-            false,
-        );
+        )));
 
-        sugarloaf.text(
+        objects.push(Object::Text(Text::single_line(
             (70., layout.margin.top_y + 100.),
             String::from("(enter to continue)"),
             18.,
             yellow,
-            false,
-        );
+        )));
 
         return;
     }
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., layout.margin.top_y + 50.),
         String::from("Welcome to Rio Terminal"),
         28.,
         [1., 1., 1., 1.],
-        true,
-    );
+    )));
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::single_line(
         (70., layout.margin.top_y + 80.),
         String::from("(press enter to continue)"),
         18.,
         yellow,
-        true,
-    );
+    )));
 
-    sugarloaf.text(
+    objects.push(Object::Text(Text::multi_line(
         (70., layout.margin.top_y + 220.),
         welcome_content(),
         18.,
         [1., 1., 1., 1.],
-        false,
-    );
+    )));
+
+    sugarloaf.set_objects(objects);
 }
 
 #[inline]

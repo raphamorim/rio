@@ -13,7 +13,6 @@ use crate::sugarloaf::state::SugarTree;
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
-    content: Content,
     layout_context: LayoutContext,
 }
 
@@ -21,7 +20,6 @@ impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             layout_context: LayoutContext::new(font_library),
-            content: Content::default(),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
         }
@@ -29,14 +27,12 @@ impl Advanced {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.content = Content::default();
         self.render_data = RenderData::default();
         self.layout_context.clear_cache();
     }
 
     #[inline]
     pub fn clean(&mut self) {
-        self.content = Content::default();
         self.render_data = RenderData::default();
     }
 
@@ -103,10 +99,5 @@ impl Advanced {
         self.mocked_render_data
             .break_lines()
             .break_without_advance_or_alignment()
-    }
-
-    #[inline]
-    pub fn set_content(&mut self, content: Content) {
-        self.content = content;
     }
 }
