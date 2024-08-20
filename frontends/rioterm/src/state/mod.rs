@@ -15,7 +15,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Sugarloaf, SugarCursor, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -304,7 +304,7 @@ impl State {
         current_line: pos::Line,
     ) {
         let columns: usize = row.len();
-        let mut content = String::from("");
+        let mut content = String::default();
         let mut last_style = FragmentStyle {
             font_size: self.font_size,
             ..FragmentStyle::default()
@@ -362,11 +362,11 @@ impl State {
                     content_builder.add_text(&content, last_style);
                 }
 
-                content = square_content.to_string();
+                content.clear();
                 last_style = style;
-            } else {
-                content.push(square_content);
             }
+            
+            content.push(square_content);
 
             // Render last column and break row
             if column == (columns - 1) {
