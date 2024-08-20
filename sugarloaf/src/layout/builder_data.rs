@@ -70,7 +70,7 @@ pub struct BuilderLine {
     /// Span index per character.
     pub styles: Vec<FragmentStyle>,
     /// Line Hash
-    pub hash: Option<u64>,
+    pub hash: u64,
 }
 
 /// Builder state.

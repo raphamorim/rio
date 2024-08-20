@@ -35,7 +35,6 @@ impl Default for Content {
             fragments: vec![LineFragments {
                 data: vec![],
                 // 0 means uninitialized hash
-                // that will reflect in uncached
                 hash: 0,
             }],
             text: String::default(),
