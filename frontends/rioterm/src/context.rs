@@ -621,9 +621,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         self.close_context();
-
-        #[cfg(use_wa)]
-        self.close_current_window(false);
     }
 
     #[inline]

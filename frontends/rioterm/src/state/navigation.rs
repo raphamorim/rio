@@ -1,5 +1,5 @@
 use crate::constants::*;
-use rio_backend::config::navigation::NavigationMode;
+use rio_backend::config::navigation::{Navigation, NavigationMode};
 use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
 
@@ -12,7 +12,7 @@ pub struct ScreenNavigationColors {
 }
 
 pub struct ScreenNavigation {
-    pub mode: NavigationMode,
+    pub navigation: Navigation,
     pub objects: Vec<Object>,
     keys: String,
     current: usize,
@@ -20,17 +20,16 @@ pub struct ScreenNavigation {
     width: f32,
     height: f32,
     scale: f32,
+    pub padding_y: [f32; 2],
     color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
 }
 
 impl ScreenNavigation {
     pub fn new(
-        mode: NavigationMode,
+        navigation: Navigation,
         colors: [[f32; 4]; 4],
         color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
-        width: f32,
-        height: f32,
-        scale: f32,
+        padding_y: [f32; 2],
     ) -> ScreenNavigation {
         let colors = {
             ScreenNavigationColors {
@@ -42,15 +41,16 @@ impl ScreenNavigation {
         };
 
         ScreenNavigation {
-            mode,
+            navigation,
             objects: vec![],
             keys: String::from(""),
             color_automation,
             current: 0,
             colors,
-            width,
-            height,
-            scale,
+            padding_y,
+            width: 0.0,
+            height: 0.0,
+            scale: 0.0,
         }
     }
 
@@ -95,19 +95,21 @@ impl ScreenNavigation {
             return;
         }
 
-        self.objects = vec![];
+        self.objects.clear();
 
-        match self.mode {
+        match self.navigation.mode {
             #[cfg(target_os = "macos")]
             NavigationMode::NativeTab => {}
-            NavigationMode::CollapsedTab => self.collapsed_tab(titles, len),
+            NavigationMode::CollapsedTab => {
+                self.collapsed_tab(titles, len, self.navigation.hide_if_single)
+            }
             NavigationMode::TopTab => {
                 let position_y = 0.0;
-                self.tab(titles, len, position_y, 11.);
+                self.tab(titles, len, position_y, 11., self.navigation.hide_if_single);
             }
             NavigationMode::BottomTab => {
                 let position_y = (self.height / self.scale) - 20.;
-                self.tab(titles, len, position_y, 9.);
+                self.tab(titles, len, position_y, 9., self.navigation.hide_if_single);
             }
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
@@ -115,8 +117,13 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn collapsed_tab(&mut self, titles: &HashMap<usize, [String; 3]>, len: usize) {
-        if len <= 1 {
+    pub fn collapsed_tab(
+        &mut self,
+        titles: &HashMap<usize, [String; 3]>,
+        len: usize,
+        hide_if_single: bool,
+    ) {
+        if hide_if_single && len <= 1 {
             return;
         }
 
@@ -157,13 +164,18 @@ impl ScreenNavigation {
         len: usize,
         position_y: f32,
         text_pos_mod: f32,
+        hide_if_single: bool,
     ) {
+        if hide_if_single && len <= 1 {
+            return;
+        }
+
         let mut initial_position_x = 0.;
 
         let renderable = Rect {
             position: [initial_position_x, position_y],
             color: self.colors.bar,
-            size: [self.width * (self.scale + 1.0), 22.0],
+            size: [self.width * (self.scale + 1.0), PADDING_Y_BOTTOM_TABS],
         };
 
         self.objects.push(Object::Rect(renderable));

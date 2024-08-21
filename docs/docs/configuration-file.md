@@ -347,9 +347,9 @@ divider = 1.0
   - `CollapsedTab`
   - `BottomTab`
   - `TopTab`
-  - `Breadcrumb`
   - `Plain`
 
+- `hide-if-single` - Hide navigation UI if there is only one tab. It does not work for `NativeTab`. 
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/next/configuration-file/#use-fork) to be set to false).
 - `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
@@ -358,6 +358,7 @@ divider = 1.0
 [navigation]
 mode = "CollapsedTab"
 clickable = false
+hide-if-single = true
 use-current-path = false
 color-automation = []
 ```

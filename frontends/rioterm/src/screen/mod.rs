@@ -95,8 +95,10 @@ impl Screen<'_> {
         let window_id = window_properties.window_id;
         let theme = window_properties.theme;
 
-        let padding_y_bottom = padding_bottom_from_config(&config.navigation.mode, 1);
-        let padding_y_top = padding_top_from_config(&config.navigation.mode, 1);
+        let padding_y_top =
+            padding_top_from_config(&config.navigation, config.padding_y[0], 1);
+        let padding_y_bottom =
+            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1);
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
@@ -289,8 +291,11 @@ impl Screen<'_> {
         current_theme: Option<winit::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        let padding_y_bottom = padding_bottom_from_config(&config.navigation.mode, self.ctx().len());
-        let padding_y_top = padding_top_from_config(&config.navigation.mode, self.ctx().len());
+        let num_tabs = self.ctx().len();
+        let padding_y_top =
+            padding_top_from_config(&config.navigation, config.padding_y[0], num_tabs);
+        let padding_y_bottom =
+            padding_bottom_from_config(&config.navigation, config.padding_y[1], num_tabs);
 
         self.sugarloaf.update_font(font_library);
         self.sugarloaf.layout_mut().recalculate(
@@ -599,18 +604,33 @@ impl Screen<'_> {
                             ),
                         );
 
-                        let padding_y_bottom = padding_bottom_from_config(&self.state.navigation.mode, self.ctx().len());
-                        let padding_y_top = padding_top_from_config(&self.state.navigation.mode, self.ctx().len());
-
-                        let layout = self.sugarloaf.layout();
-                        self.sugarloaf.layout_mut().recalculate(
-                            layout.font_size,
-                            layout.line_height,
-                            layout.margin.x,
-                            padding_y_top,
-                            padding_y_bottom,
+                        let previous_margin = layout.margin;
+                        let num_tabs = self.ctx().len();
+                        let padding_y_top = padding_top_from_config(
+                            &self.state.navigation.navigation,
+                            self.state.navigation.padding_y[0],
+                            num_tabs,
                         );
-                        self.sugarloaf.layout_mut().update();
+                        let padding_y_bottom = padding_bottom_from_config(
+                            &self.state.navigation.navigation,
+                            self.state.navigation.padding_y[1],
+                            num_tabs,
+                        );
+
+                        if previous_margin.top_y != padding_y_top
+                            || previous_margin.bottom_y != padding_y_bottom
+                        {
+                            let layout = self.sugarloaf.layout();
+                            self.sugarloaf.layout_mut().recalculate(
+                                layout.font_size,
+                                layout.line_height,
+                                layout.margin.x,
+                                padding_y_top,
+                                padding_y_bottom,
+                            );
+                            self.sugarloaf.layout_mut().update();
+                            self.resize_all_contexts();
+                        }
 
                         self.render();
                     }
@@ -619,11 +639,47 @@ impl Screen<'_> {
 
                         if self.context_manager.config.is_native {
                             self.context_manager.close_current_window(false);
+                            return;
                         } else {
                             // Kill current context will trigger terminal.exit
                             // then RioEvent::Exit and eventually try_close_existent_tab
                             self.context_manager.kill_current_context();
                         }
+
+                        if self.ctx().len() <= 1 {
+                            return;
+                        }
+
+                        let layout = self.sugarloaf.layout();
+                        let previous_margin = layout.margin;
+                        let num_tabs = self.ctx().len().wrapping_sub(1);
+                        let padding_y_top = padding_top_from_config(
+                            &self.state.navigation.navigation,
+                            self.state.navigation.padding_y[0],
+                            num_tabs,
+                        );
+                        let padding_y_bottom = padding_bottom_from_config(
+                            &self.state.navigation.navigation,
+                            self.state.navigation.padding_y[1],
+                            num_tabs,
+                        );
+
+                        if previous_margin.top_y != padding_y_top
+                            || previous_margin.bottom_y != padding_y_bottom
+                        {
+                            let layout = self.sugarloaf.layout();
+                            self.sugarloaf.layout_mut().recalculate(
+                                layout.font_size,
+                                layout.line_height,
+                                layout.margin.x,
+                                padding_y_top,
+                                padding_y_bottom,
+                            );
+                            self.sugarloaf.layout_mut().update();
+                            self.resize_all_contexts();
+                        }
+
+                        self.render();
                     }
                     Act::Quit => {
                         self.context_manager.quit();
