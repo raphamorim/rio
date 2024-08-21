@@ -53,7 +53,9 @@ pub enum ClickState {
 pub enum RioEvent {
     PrepareRender(u64),
     PrepareRenderOnRoute(u64, usize),
+    /// New terminal content available.
     Render,
+    /// New terminal content available per route.
     RenderRoute(usize),
     Paste,
     Copy(String),
@@ -117,9 +119,6 @@ pub enum RioEvent {
     /// Cursor blinking state has changed.
     CursorBlinkingChange,
 
-    /// New terminal content available.
-    Wakeup,
-
     /// Terminal bell ring.
     Bell,
 
@@ -160,7 +159,6 @@ impl Debug for RioEvent {
             RioEvent::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
-            RioEvent::Wakeup => write!(f, "Wakeup"),
             RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
             RioEvent::PrepareRenderOnRoute(millis, route) => {
                 write!(f, "PrepareRender({millis} on route {route})")

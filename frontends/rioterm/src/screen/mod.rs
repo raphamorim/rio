@@ -326,6 +326,7 @@ impl Screen<'_> {
             self.sugarloaf.set_background_image(image);
         }
 
+        self.update_content();
         self.render();
         self.resize_all_contexts();
     }
@@ -340,6 +341,7 @@ impl Screen<'_> {
 
         self.sugarloaf.update_font_size(action);
 
+        self.update_content();
         self.render();
         self.resize_all_contexts();
     }
@@ -359,6 +361,7 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
+        self.update_content();
         self.render();
         self.resize_all_contexts();
 
@@ -559,6 +562,7 @@ impl Screen<'_> {
                             self.state.set_selection(selection.to_range(&terminal));
                         };
                         drop(terminal);
+                        self.update_content();
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
@@ -600,7 +604,7 @@ impl Screen<'_> {
                             layout,
                             (
                                 &self.state.get_cursor_state_from_ref(),
-                                self.state.has_blinking_enabled,
+                                self.state.config_has_blinking_enabled,
                             ),
                         );
 
@@ -632,6 +636,7 @@ impl Screen<'_> {
                             self.resize_all_contexts();
                         }
 
+                        self.update_content();
                         self.render();
                     }
                     Act::TabCloseCurrent => {
@@ -679,6 +684,7 @@ impl Screen<'_> {
                             self.resize_all_contexts();
                         }
 
+                        self.update_content();
                         self.render();
                     }
                     Act::Quit => {
@@ -773,6 +779,7 @@ impl Screen<'_> {
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
+                        self.update_content();
                         self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
@@ -788,20 +795,24 @@ impl Screen<'_> {
                     }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
+                        self.update_content();
                         self.render();
                     }
                     Act::SelectLastTab => {
                         self.context_manager.select_last_tab();
+                        self.update_content();
                         self.render();
                     }
                     Act::SelectNextTab => {
                         self.clear_selection();
                         self.context_manager.switch_to_next();
+                        self.update_content();
                         self.render();
                     }
                     Act::SelectPrevTab => {
                         self.clear_selection();
                         self.context_manager.switch_to_prev();
+                        self.update_content();
                         self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
@@ -1256,14 +1267,8 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    #[inline]
-    pub fn render(&mut self) {
-        // If sugarloaf does have pending updates to process then
-        // should abort current render
-
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
-
+    #[inline(never)]
+    pub fn update_content(&mut self) {
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.ctx().current().terminal.lock();
             (
@@ -1285,14 +1290,22 @@ impl Screen<'_> {
             display_offset as i32,
             has_blinking_enabled,
         );
+    }
+
+    #[inline]
+    pub fn render(&mut self) {
+        // If sugarloaf does have pending updates to process then
+        // should abort current render
+
+        // let start = std::time::Instant::now();
+        // println!("Render time elapsed");
 
         self.sugarloaf.render();
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
-        if self.state.has_blinking_enabled
-            && has_blinking_enabled
+        if self.state.has_blinking_enabled()
             && self.selection_is_empty()
         {
             self.context_manager.schedule_render_on_route(800);

@@ -44,7 +44,8 @@ pub struct State {
     pub navigation: ScreenNavigation,
     cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
-    pub has_blinking_enabled: bool,
+    pub config_has_blinking_enabled: bool,
+    term_has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
     // Dynamic background keep track of the original bg color and
@@ -125,7 +126,8 @@ impl State {
             is_vi_mode_enabled: false,
             is_blinking: false,
             last_typing: None,
-            has_blinking_enabled: config.blinking_cursor,
+            config_has_blinking_enabled: config.blinking_cursor,
+            term_has_blinking_enabled: false,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: ScreenNavigation::new(
@@ -152,6 +154,11 @@ impl State {
             },
             width_cache: FxHashMap::default(),
         }
+    }
+
+    #[inline]
+    pub fn has_blinking_enabled(&self) -> bool {
+        self.config_has_blinking_enabled && self.term_has_blinking_enabled
     }
 
     #[inline]
@@ -647,10 +654,11 @@ impl State {
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
         self.font_size = layout.font_size;
+        self.term_has_blinking_enabled = has_blinking_enabled;
 
         // Only blink cursor if does not contain selection
         let has_selection = self.selection_range.is_some();
-        if !has_selection && self.has_blinking_enabled && has_blinking_enabled {
+        if !has_selection && self.has_blinking_enabled() {
             let mut should_blink = true;
             if let Some(last_typing_time) = self.last_typing {
                 if last_typing_time.elapsed() < Duration::from_secs(1) {
@@ -688,15 +696,5 @@ impl State {
         );
 
         sugarloaf.set_objects(self.navigation.objects.clone());
-
-        // for text in self.navigation.texts.iter() {
-        //     sugarloaf.text(
-        //         text.position,
-        //         text.content.to_owned(),
-        //         text.font_size,
-        //         text.color,
-        //         true,
-        //     );
-        // }
     }
 }
