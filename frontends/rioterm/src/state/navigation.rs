@@ -185,7 +185,7 @@ impl ScreenNavigation {
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
 
-        let max_tab_width = 150.;
+        let max_tab_width = 90.;
         let screen_limit = ((self.width / self.scale) / max_tab_width).floor() as usize;
         if len > screen_limit && self.current > screen_limit {
             tabs = Vec::from_iter(self.current - screen_limit..len);
@@ -220,23 +220,15 @@ impl ScreenNavigation {
                 }
             }
 
-            let mut name_modifier = 100.;
-
-            if name.len() >= 20 {
-                name = name[0..20].to_string();
-                name_modifier += 80.;
-            } else if name.len() >= 15 {
-                name = name[0..15].to_string();
-                name_modifier += 40.;
-            } else if name.len() >= 10 {
+            let name_modifier = 80.;
+            if name.len() >= 10 {
                 name = name[0..10].to_string();
-                name_modifier += 20.;
             }
 
             self.objects.push(Object::Rect(Rect {
                 position: [initial_position_x, position_y],
                 color: background_color,
-                size: [120. + name_modifier + 30., PADDING_Y_BOTTOM_TABS],
+                size: [180., PADDING_Y_BOTTOM_TABS],
             }));
 
             if is_current {
@@ -247,7 +239,7 @@ impl ScreenNavigation {
                 self.objects.push(Object::Rect(Rect {
                     position: [initial_position_x, position_y],
                     color: modified_color,
-                    size: [120. + name_modifier + 30., PADDING_Y_BOTTOM_TABS / 10.],
+                    size: [180., PADDING_Y_BOTTOM_TABS / 10.],
                 }));
             }
 
@@ -257,16 +249,14 @@ impl ScreenNavigation {
                 format!("{}.{}", i + 1, name)
             };
 
-            let size = if is_current { 16. } else { 14. };
-
             self.objects.push(Object::Text(Text::single_line(
                 (initial_position_x + 4., position_y + text_pos_mod),
                 text,
-                size,
+                14.,
                 foreground_color,
             )));
 
-            initial_position_x += name_modifier;
+            initial_position_x += name_modifier + 10.;
         }
     }
 }
