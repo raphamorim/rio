@@ -4,11 +4,11 @@ use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
 
 pub struct ScreenNavigationColors {
-    #[allow(dead_code)]
     foreground: [f32; 4],
     bar: [f32; 4],
     active: [f32; 4],
     inactive: [f32; 4],
+    active_highlight: [f32; 4],
 }
 
 pub struct ScreenNavigation {
@@ -27,16 +27,17 @@ pub struct ScreenNavigation {
 impl ScreenNavigation {
     pub fn new(
         navigation: Navigation,
-        colors: [[f32; 4]; 4],
+        colors: [[f32; 4]; 5],
         color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
         padding_y: [f32; 2],
     ) -> ScreenNavigation {
         let colors = {
             ScreenNavigationColors {
-                inactive: colors[0],
+                foreground: colors[0],
                 bar: colors[1],
-                active: colors[2],
-                foreground: colors[3],
+                inactive: colors[2],
+                active: colors[3],
+                active_highlight: colors[4],
             }
         };
 
@@ -232,13 +233,16 @@ impl ScreenNavigation {
             }));
 
             if is_current {
-                let mut modified_color = background_color;
-                modified_color[0] = modified_color[0].round();
-                modified_color[1] = modified_color[1].round();
-                modified_color[2] = modified_color[3].round();
+                // TopBar case should render on bottom
+                let position = if position_y == 0.0 {
+                    PADDING_Y_BOTTOM_TABS - (PADDING_Y_BOTTOM_TABS / 10.)
+                } else {
+                    position_y
+                };
+
                 self.objects.push(Object::Rect(Rect {
-                    position: [initial_position_x, position_y],
-                    color: modified_color,
+                    position: [initial_position_x, position],
+                    color: self.colors.active_highlight,
                     size: [180., PADDING_Y_BOTTOM_TABS / 10.],
                 }));
             }

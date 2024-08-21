@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- **breaking:** Introduced a new property in theme called `tabs_active_highlight`, default color is `#ff00ff`.
 - **breaking:** Removed breadcrumb navigation.
 - **breaking:** Introduced a new property in theme called `bar`, default color changed is `#1b1a1a`.
 - **breaking:** `BottomTab` is now default for all platforms.
