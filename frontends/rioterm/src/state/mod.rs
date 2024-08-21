@@ -131,10 +131,11 @@ impl State {
             navigation: ScreenNavigation::new(
                 config.navigation.clone(),
                 [
-                    named_colors.tabs,
-                    named_colors.bar,
-                    named_colors.tabs_active,
                     named_colors.foreground,
+                    named_colors.bar,
+                    named_colors.tabs,
+                    named_colors.tabs_active,
+                    named_colors.tabs_active_highlight,
                 ],
                 color_automation,
                 config.padding_y,
