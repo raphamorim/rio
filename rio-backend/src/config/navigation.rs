@@ -86,7 +86,7 @@ pub struct ColorAutomation {
     pub color: ColorArray,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Navigation {
     #[serde(default = "NavigationMode::default")]
     pub mode: NavigationMode,
@@ -104,6 +104,19 @@ pub struct Navigation {
     pub use_terminal_title: bool,
     #[serde(default = "default_bool_true", rename = "hide-if-single")]
     pub hide_if_single: bool,
+}
+
+impl Default for Navigation {
+    fn default() -> Navigation {
+        Navigation {
+            mode: NavigationMode::default(),
+            color_automation: Vec::default(),
+            clickable: false,
+            use_current_path: false,
+            use_terminal_title: false,
+            hide_if_single: true,
+        }
+    }
 }
 
 impl Navigation {
