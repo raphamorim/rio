@@ -98,6 +98,8 @@ pub struct Colors {
     pub magenta: ColorArray,
     #[serde(default = "defaults::tabs", deserialize_with = "deserialize_to_arr")]
     pub tabs: ColorArray,
+    #[serde(default = "defaults::bar", deserialize_with = "deserialize_to_arr")]
+    pub bar: ColorArray,
     #[serde(default = "defaults::white", deserialize_with = "deserialize_to_arr")]
     pub white: ColorArray,
     #[serde(
@@ -241,6 +243,7 @@ impl Default for Colors {
             cyan: defaults::cyan(),
             magenta: defaults::magenta(),
             tabs: defaults::tabs(),
+            bar: defaults::bar(),
             white: defaults::white(),
             dim_black: defaults::dim_black(),
             dim_blue: defaults::dim_blue(),

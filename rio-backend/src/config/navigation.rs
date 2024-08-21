@@ -8,8 +8,6 @@ pub enum NavigationMode {
     #[cfg(target_os = "macos")]
     NativeTab,
     BottomTab,
-    #[cfg(not(windows))]
-    Breadcrumb,
     CollapsedTab,
 }
 
@@ -27,8 +25,6 @@ impl NavigationMode {
     const BOTTOM_TAB_STR: &'static str = "BottomTab";
     #[cfg(target_os = "macos")]
     const NATIVE_TAB_STR: &'static str = "NativeTab";
-    #[cfg(not(windows))]
-    const BREADCRUMB_STR: &'static str = "Breadcrumb";
 
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -38,8 +34,6 @@ impl NavigationMode {
             Self::BottomTab => Self::BOTTOM_TAB_STR,
             #[cfg(target_os = "macos")]
             Self::NativeTab => Self::NATIVE_TAB_STR,
-            #[cfg(not(windows))]
-            Self::Breadcrumb => Self::BREADCRUMB_STR,
         }
     }
 }
@@ -53,8 +47,6 @@ pub fn modes_as_vec_string() -> Vec<String> {
         NavigationMode::BottomTab,
         #[cfg(target_os = "macos")]
         NavigationMode::NativeTab,
-        #[cfg(not(windows))]
-        NavigationMode::Breadcrumb,
     ]
     .iter()
     .map(|navigation_mode| navigation_mode.to_string())
@@ -80,8 +72,6 @@ impl std::str::FromStr for NavigationMode {
             Self::BOTTOM_TAB_STR => Ok(NavigationMode::BottomTab),
             #[cfg(target_os = "macos")]
             Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
-            #[cfg(not(windows))]
-            Self::BREADCRUMB_STR => Ok(NavigationMode::Breadcrumb),
             Self::PLAIN_STR => Ok(NavigationMode::Plain),
             _ => Ok(NavigationMode::default()),
         }
@@ -150,12 +140,7 @@ impl Navigation {
 
     #[inline]
     pub fn is_placed_on_top(&self) -> bool {
-        #[cfg(windows)]
-        return self.mode == NavigationMode::TopTab;
-
-        #[cfg(not(windows))]
-        return self.mode == NavigationMode::TopTab
-            || self.mode == NavigationMode::Breadcrumb;
+        self.mode == NavigationMode::TopTab
     }
 }
 
@@ -181,22 +166,6 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
         assert!(!decoded.navigation.clickable);
-        assert!(decoded.navigation.color_automation.is_empty());
-    }
-
-    #[test]
-    #[cfg(not(windows))]
-    fn test_breadcrumb() {
-        let content = r#"
-            [navigation]
-            mode = 'Breadcrumb'
-            use-current-path = true
-        "#;
-
-        let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Breadcrumb);
-        assert!(!decoded.navigation.clickable);
-        assert!(decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 

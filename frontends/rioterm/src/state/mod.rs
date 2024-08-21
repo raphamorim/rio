@@ -132,6 +132,7 @@ impl State {
                 config.navigation.mode,
                 [
                     named_colors.tabs,
+                    named_colors.bar,
                     named_colors.tabs_active,
                     named_colors.foreground,
                 ],

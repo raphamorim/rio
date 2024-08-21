@@ -4,7 +4,9 @@ use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
 
 pub struct ScreenNavigationColors {
+    #[allow(dead_code)]
     foreground: [f32; 4],
+    bar: [f32; 4],
     active: [f32; 4],
     inactive: [f32; 4],
 }
@@ -24,7 +26,7 @@ pub struct ScreenNavigation {
 impl ScreenNavigation {
     pub fn new(
         mode: NavigationMode,
-        colors: [[f32; 4]; 3],
+        colors: [[f32; 4]; 4],
         color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
         width: f32,
         height: f32,
@@ -33,8 +35,9 @@ impl ScreenNavigation {
         let colors = {
             ScreenNavigationColors {
                 inactive: colors[0],
-                active: colors[1],
-                foreground: colors[2],
+                bar: colors[1],
+                active: colors[2],
+                foreground: colors[3],
             }
         };
 
@@ -98,8 +101,6 @@ impl ScreenNavigation {
             #[cfg(target_os = "macos")]
             NavigationMode::NativeTab => {}
             NavigationMode::CollapsedTab => self.collapsed_tab(titles, len),
-            #[cfg(not(windows))]
-            NavigationMode::Breadcrumb => self.breadcrumb(titles, len),
             NavigationMode::TopTab => {
                 let position_y = 0.0;
                 self.tab(titles, len, position_y, 11.);
@@ -150,157 +151,6 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn breadcrumb(&mut self, titles: &HashMap<usize, [String; 3]>, len: usize) {
-        let mut initial_position = (self.width / self.scale) - 100.;
-        let position_modifier = 80.;
-        let mut min_view = 9;
-
-        if (self.width / self.scale) <= 440. {
-            min_view = 1;
-        }
-
-        let current_index = self.current;
-        let mut bg_color = self.colors.active;
-        let mut fg_color = self.colors.inactive;
-        let mut icon_color = self.colors.active;
-
-        let mut main_name = String::from("tab");
-        if let Some(main_name_idx) = titles.get(&current_index) {
-            main_name = main_name_idx[0].to_string();
-
-            if let Some(color_overwrite) = get_color_overwrite(
-                &self.color_automation,
-                &main_name_idx[0],
-                &main_name_idx[2],
-            ) {
-                fg_color = self.colors.inactive;
-                bg_color = *color_overwrite;
-                icon_color = bg_color;
-            }
-        }
-
-        if main_name.len() > 12 {
-            main_name = main_name[0..12].to_string();
-        }
-
-        let renderable = Rect {
-            position: [initial_position, 0.0],
-            color: bg_color,
-            size: [200., 26.0],
-        };
-
-        self.objects.push(Object::Text(Text::single_line(
-            (initial_position - 12., 14.5),
-            "".to_string(),
-            23.,
-            icon_color,
-        )));
-
-        self.objects.push(Object::Text(Text::single_line(
-            (initial_position + 4., 13.0),
-            format!("{}.{}", current_index + 1, main_name),
-            14.,
-            fg_color,
-        )));
-
-        initial_position -= position_modifier;
-        self.objects.push(Object::Rect(renderable));
-
-        if len <= 1 {
-            return;
-        }
-
-        let mut iterator = current_index;
-        if len - 1 == iterator {
-            iterator = 0;
-        } else {
-            iterator += 1;
-        }
-
-        if min_view == 1 {
-            if len > 1 {
-                self.objects.push(Object::Text(Text::single_line(
-                    (initial_position + 36., 13.0),
-                    format!("+ {}", len - 1),
-                    13.,
-                    self.colors.foreground,
-                )));
-            }
-        } else {
-            let mut rendered = len - 1;
-            while rendered > 0 {
-                if iterator == self.current {
-                    continue;
-                }
-
-                if initial_position <= 120.0 {
-                    self.objects.push(Object::Text(Text::single_line(
-                        (initial_position + 36., 13.0),
-                        format!("+ {}", rendered),
-                        13.,
-                        self.colors.foreground,
-                    )));
-                    break;
-                }
-
-                let mut bg_color = self.colors.inactive;
-                let mut fg_color = self.colors.active;
-                let mut icon_color = self.colors.inactive;
-
-                let mut name = String::from("tab");
-                if let Some(name_idx) = titles.get(&iterator) {
-                    name = name_idx[0].to_string();
-
-                    if let Some(color_overwrite) = get_color_overwrite(
-                        &self.color_automation,
-                        &name_idx[0],
-                        &name_idx[2],
-                    ) {
-                        fg_color = self.colors.inactive;
-                        bg_color = *color_overwrite;
-                        icon_color = bg_color;
-                    }
-                }
-
-                if name.len() > 7 {
-                    name = name[0..7].to_string();
-                }
-
-                let renderable_item = Rect {
-                    position: [initial_position, 0.0],
-                    color: bg_color,
-                    size: [160., 26.],
-                };
-
-                self.objects.push(Object::Text(Text::single_line(
-                    (initial_position - 12., 15.0),
-                    "".to_string(),
-                    22.,
-                    icon_color,
-                )));
-
-                self.objects.push(Object::Text(Text::single_line(
-                    (initial_position + 4., 13.0),
-                    format!("{}.{}", iterator + 1, name),
-                    14.,
-                    fg_color,
-                )));
-
-                initial_position -= position_modifier;
-                self.objects.push(Object::Rect(renderable_item));
-
-                if len - 1 == iterator {
-                    iterator = 0;
-                } else {
-                    iterator += 1;
-                }
-
-                rendered -= 1;
-            }
-        }
-    }
-
-    #[inline]
     pub fn tab(
         &mut self,
         titles: &HashMap<usize, [String; 3]>,
@@ -312,7 +162,7 @@ impl ScreenNavigation {
 
         let renderable = Rect {
             position: [initial_position_x, position_y],
-            color: self.colors.inactive,
+            color: self.colors.bar,
             size: [self.width * (self.scale + 1.0), 22.0],
         };
 
