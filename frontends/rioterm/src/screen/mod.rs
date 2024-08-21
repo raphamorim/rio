@@ -95,8 +95,8 @@ impl Screen<'_> {
         let window_id = window_properties.window_id;
         let theme = window_properties.theme;
 
-        let padding_y_bottom = padding_bottom_from_config(config);
-        let padding_y_top = padding_top_from_config(config);
+        let padding_y_bottom = padding_bottom_from_config(&config.navigation.mode, 1);
+        let padding_y_top = padding_top_from_config(&config.navigation.mode, 1);
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
@@ -289,8 +289,8 @@ impl Screen<'_> {
         current_theme: Option<winit::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        let padding_y_bottom = padding_bottom_from_config(config);
-        let padding_y_top = padding_top_from_config(config);
+        let padding_y_bottom = padding_bottom_from_config(&config.navigation.mode, self.ctx().len());
+        let padding_y_top = padding_top_from_config(&config.navigation.mode, self.ctx().len());
 
         self.sugarloaf.update_font(font_library);
         self.sugarloaf.layout_mut().recalculate(
@@ -598,6 +598,19 @@ impl Screen<'_> {
                                 self.state.has_blinking_enabled,
                             ),
                         );
+
+                        let padding_y_bottom = padding_bottom_from_config(&self.state.navigation.mode, self.ctx().len());
+                        let padding_y_top = padding_top_from_config(&self.state.navigation.mode, self.ctx().len());
+
+                        let layout = self.sugarloaf.layout();
+                        self.sugarloaf.layout_mut().recalculate(
+                            layout.font_size,
+                            layout.line_height,
+                            layout.margin.x,
+                            padding_y_top,
+                            padding_y_bottom,
+                        );
+                        self.sugarloaf.layout_mut().update();
 
                         self.render();
                     }
