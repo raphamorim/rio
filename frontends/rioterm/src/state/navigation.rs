@@ -105,11 +105,11 @@ impl ScreenNavigation {
             }
             NavigationMode::TopTab => {
                 let position_y = 0.0;
-                self.tab(titles, len, position_y, 11., self.navigation.hide_if_single);
+                self.tab(titles, len, position_y, self.navigation.hide_if_single);
             }
             NavigationMode::BottomTab => {
-                let position_y = (self.height / self.scale) - 20.;
-                self.tab(titles, len, position_y, 9., self.navigation.hide_if_single);
+                let position_y = (self.height / self.scale) - PADDING_Y_BOTTOM_TABS;
+                self.tab(titles, len, position_y, self.navigation.hide_if_single);
             }
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
@@ -163,7 +163,6 @@ impl ScreenNavigation {
         titles: &HashMap<usize, [String; 3]>,
         len: usize,
         position_y: f32,
-        text_pos_mod: f32,
         hide_if_single: bool,
     ) {
         if hide_if_single && len <= 1 {
@@ -175,7 +174,10 @@ impl ScreenNavigation {
         let renderable = Rect {
             position: [initial_position_x, position_y],
             color: self.colors.bar,
-            size: [self.width * (self.scale + 1.0), PADDING_Y_BOTTOM_TABS],
+            size: [
+                (self.width + PADDING_Y_BOTTOM_TABS) * self.scale,
+                PADDING_Y_BOTTOM_TABS,
+            ],
         };
 
         self.objects.push(Object::Rect(renderable));
@@ -189,12 +191,14 @@ impl ScreenNavigation {
             tabs = Vec::from_iter(self.current - screen_limit..len);
         }
 
+        let text_pos_mod = 11.;
         for i in tabs {
-            let mut background_color = self.colors.inactive;
+            let mut background_color = self.colors.bar;
             let mut foreground_color = self.colors.active;
 
-            if i == self.current {
-                foreground_color = self.colors.inactive;
+            let is_current = i == self.current;
+            if is_current {
+                foreground_color = self.colors.foreground;
                 background_color = self.colors.active;
             }
 
@@ -229,21 +233,40 @@ impl ScreenNavigation {
                 name_modifier += 20.;
             }
 
-            let renderable_item = Rect {
+            self.objects.push(Object::Rect(Rect {
                 position: [initial_position_x, position_y],
                 color: background_color,
-                size: [120. + name_modifier + 30., 22.],
+                size: [120. + name_modifier + 30., PADDING_Y_BOTTOM_TABS],
+            }));
+
+            if is_current {
+                let mut modified_color = background_color;
+                modified_color[0] = modified_color[0].round();
+                modified_color[1] = modified_color[1].round();
+                modified_color[2] = modified_color[3].round();
+                self.objects.push(Object::Rect(Rect {
+                    position: [initial_position_x, position_y],
+                    color: modified_color,
+                    size: [120. + name_modifier + 30., PADDING_Y_BOTTOM_TABS / 10.],
+                }));
+            }
+
+            let text = if is_current {
+                format!("▲ {}", name)
+            } else {
+                format!("{}.{}", i + 1, name)
             };
+
+            let size = if is_current { 16. } else { 14. };
 
             self.objects.push(Object::Text(Text::single_line(
                 (initial_position_x + 4., position_y + text_pos_mod),
-                format!("{}.{}", i + 1, name),
-                14.,
+                text,
+                size,
                 foreground_color,
             )));
 
             initial_position_x += name_modifier;
-            self.objects.push(Object::Rect(renderable_item));
         }
     }
 }
