@@ -24,8 +24,6 @@ mode = "CollapsedTab"
 
 `NativeTab` is the default navigation mode for MacOS.
 
-Note: NativeTab only works for MacOS.
-
 <img alt="Demo NativeTab" src="/rio/assets/posts/0.0.17/demo-native-tabs.png" width="60%"/>
 
 Usage:
@@ -67,19 +65,6 @@ tabs = "#000000"
 mode = "TopTab"
 ```
 
-### Breadcrumb
-
-Note: `Breadcrumb` does not support click mode yet and is only available for MacOS, BSD and Linux.
-
-<img alt="Demo Breadcrumb" src="/rio/assets/features/demo-breadcrumb.png" width="70%"/>
-
-Usage:
-
-```toml
-[navigation]
-mode = "Breadcrumb"
-```
-
 ### Plain
 
 Plain navigation mode will simply turn off any tab key binding.
@@ -91,6 +76,17 @@ Usage:
 ```toml
 [navigation]
 mode = "Plain"
+```
+
+### Hide if is only one tab
+
+The property `hide-if-single` hides navigation UI if there is only one tab. It does not work for `NativeTab`.
+
+Default is `true`.
+
+```toml
+[navigation]
+hide-if-single = true
 ```
 
 ### Color automation for navigation

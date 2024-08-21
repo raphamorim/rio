@@ -29,3 +29,4 @@ pub const DEADZONE_END_Y: f64 = -2.0;
 pub const DEADZONE_START_X: f64 = 80.;
 
 pub const PADDING_X_COLLAPSED_TABS: f32 = 30.;
+pub const PADDING_Y_BOTTOM_TABS: f32 = 22.0;

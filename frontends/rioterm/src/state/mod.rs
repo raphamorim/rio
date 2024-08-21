@@ -129,7 +129,7 @@ impl State {
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: ScreenNavigation::new(
-                config.navigation.mode,
+                config.navigation.clone(),
                 [
                     named_colors.tabs,
                     named_colors.bar,
@@ -137,9 +137,7 @@ impl State {
                     named_colors.foreground,
                 ],
                 color_automation,
-                0.0,
-                0.0,
-                0.0,
+                config.padding_y,
             ),
             font_size: config.fonts.size,
             selection_range: None,
