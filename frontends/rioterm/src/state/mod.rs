@@ -41,7 +41,7 @@ pub struct State {
     pub named_colors: Colors,
     font_size: f32,
     pub colors: List,
-    navigation: ScreenNavigation,
+    pub navigation: ScreenNavigation,
     cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
     pub has_blinking_enabled: bool,

@@ -1,3 +1,4 @@
+use crate::config::default_bool_true;
 use crate::config::colors::{deserialize_to_arr, ColorArray};
 use serde::{Deserialize, Serialize};
 
@@ -107,6 +108,8 @@ pub struct Navigation {
     pub use_current_path: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
+    #[serde(default = "default_bool_true", rename = "hide-single-tab")]
+    pub hide_single_tab: bool
 }
 
 impl Navigation {
