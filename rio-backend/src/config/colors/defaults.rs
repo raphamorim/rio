@@ -37,8 +37,15 @@ pub fn tabs() -> ColorArray {
 }
 
 #[inline]
+pub fn bar() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#1b1a1a"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
 pub fn tabs_active() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#f712ff"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#ac0cb2"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }

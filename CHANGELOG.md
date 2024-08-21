@@ -16,6 +16,8 @@
 
 ## Unreleased
 
+- **breaking:** Removed breadcrumb navigation.
+- **breaking:** Introduced a new property in theme called `bar`, default color changed is `#1b1a1a`.
 - **breaking:** `BottomTab` is now default for all platforms.
 - Performance update: Render repeated styled fragments as one rect.
 - Sugarloaf API has changed from `Sugar` primitives to `Content`.
