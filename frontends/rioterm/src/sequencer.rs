@@ -199,6 +199,7 @@ impl Sequencer {
                                 {
                                     if self.config.confirm_before_quit {
                                         route.confirm_quit();
+                                        route.window.screen.update_content();
                                         route.redraw();
                                     } else {
                                         route.quit();
@@ -599,6 +600,7 @@ impl Sequencer {
                                         &self.router.font_library,
                                     );
 
+                                    route.window.screen.update_content();
                                     route.redraw();
                                 }
                             }
@@ -754,7 +756,8 @@ impl Sequencer {
                                             route.window.screen.on_left_click(pos);
                                         }
 
-                                        route.window.winit_window.request_redraw();
+                                        route.window.screen.update_content();
+                                        route.redraw();
                                     }
                                     route.window.screen.process_mouse_bindings(button);
                                 }
@@ -1077,6 +1080,7 @@ impl Sequencer {
                                         != preedit.as_ref()
                                     {
                                         route.window.screen.ime.set_preedit(preedit);
+                                        route.window.screen.update_content();
                                         route.redraw();
                                     }
                                 }
@@ -1113,6 +1117,7 @@ impl Sequencer {
                             route.window.is_focused = focused;
 
                             if has_regained_focus {
+                                route.window.screen.update_content();
                                 route.redraw();
                             }
 
@@ -1189,6 +1194,7 @@ impl Sequencer {
                                 .window
                                 .screen
                                 .set_scale(scale, route.window.winit_window.inner_size());
+                            route.window.screen.update_content();
                             route.redraw();
                         }
                     }
