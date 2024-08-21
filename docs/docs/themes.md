@@ -56,6 +56,8 @@ foreground = ""
 selection-background = ""
 selection-foreground = ""
 tabs-active = ""
+tabs-active-highlight = ""
+bar = ""
 cursor = ""
 vi-cursor = ""
 # Regular colors
