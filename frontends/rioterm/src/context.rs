@@ -463,7 +463,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.len()
     }
 
-    #[inline]
     pub fn update_titles(&mut self) {
         if !self.config.should_update_titles {
             return;
