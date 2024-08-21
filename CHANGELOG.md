@@ -21,6 +21,7 @@
 - **breaking:** `BottomTab` is now default for all platforms.
 - Performance update: Render repeated styled fragments as one rect.
 - Sugarloaf API has changed from `Sugar` primitives to `Content`.
+- Fix: `[editor]` overshadow headerless parameters in default config. (Ref: #601)
 
 ## 0.1.7
 
