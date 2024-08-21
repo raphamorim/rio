@@ -338,7 +338,7 @@ where
                                 self.terminal.lock().exit();
 
                                 self.event_proxy
-                                    .send_event(RioEvent::Wakeup, self.window_id);
+                                    .send_event(RioEvent::Render, self.window_id);
 
                                 break 'event_loop;
                             }

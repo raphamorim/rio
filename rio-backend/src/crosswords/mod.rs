@@ -480,7 +480,7 @@ impl<U: EventListener> Crosswords<U> {
             self.mark_fully_damaged();
 
             self.event_proxy
-                .send_event(RioEvent::Wakeup, self.window_id);
+                .send_event(RioEvent::Render, self.window_id);
         }
     }
 

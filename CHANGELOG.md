@@ -21,6 +21,7 @@
 - **breaking:** Introduced a new property in theme called `bar`, default color changed is `#1b1a1a`.
 - **breaking:** `CollapsedTab` is now default for all platforms.
 - Introduce `navigation.hide-if-single` property (Ref: [#595](https://github.com/raphamorim/rio/issues/595)).
+- Performance update: Remove lock dependencies on render calls.
 - Performance update: Render repeated styled fragments as one rect.
 - Sugarloaf API has changed from `Sugar` primitives to `Content`.
 - Fix: `[editor]` overshadow headerless parameters in default config. (Ref: #601)

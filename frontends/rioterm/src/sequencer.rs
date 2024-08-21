@@ -73,14 +73,6 @@ impl Sequencer {
                         payload, window_id, ..
                     }) => {
                         match payload {
-                            RioEventType::Rio(RioEvent::Wakeup) => {
-                                // Emitted when the application has been resumed.
-                                if let Some(route) =
-                                    self.router.routes.get_mut(&window_id)
-                                {
-                                    route.window.winit_window.request_redraw();
-                                }
-                            }
                             RioEventType::Rio(RioEvent::Render) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
@@ -90,6 +82,7 @@ impl Sequencer {
                                     {
                                         return;
                                     }
+                                    route.window.screen.update_content();
                                     route.window.winit_window.request_redraw();
                                 }
                             }
@@ -106,6 +99,7 @@ impl Sequencer {
                                     if route_id
                                         == route.window.screen.ctx().current_route()
                                     {
+                                        route.window.screen.update_content();
                                         route.window.winit_window.request_redraw();
                                     }
                                 }
