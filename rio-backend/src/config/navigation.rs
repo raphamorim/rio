@@ -2,21 +2,15 @@ use crate::config::colors::{deserialize_to_arr, ColorArray};
 use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     Plain,
     TopTab,
     #[cfg(target_os = "macos")]
     NativeTab,
     BottomTab,
+    #[default]
     CollapsedTab,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for NavigationMode {
-    fn default() -> NavigationMode {
-        NavigationMode::BottomTab
-    }
 }
 
 impl NavigationMode {
