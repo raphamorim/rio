@@ -11,6 +11,24 @@ Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml`
 
 Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
+Note that all parameters without a header must be at the beginning of the file, otherwise they will be ignored. Example:
+
+```toml
+[editor]
+program = "vi"
+args = []
+
+cursor = "_" # ignore it, be under the `editor` header
+```
+
+```toml
+cursor = "_" # it works, be without heading
+
+[editor]
+program = "vi"
+args = []
+```
+
 ## Cursor
 
 Default cursor is `Block`.
