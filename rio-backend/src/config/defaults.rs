@@ -110,16 +110,6 @@ pub fn default_disable_ctlseqs_alt() -> bool {
 
 pub fn default_config_file_content() -> String {
     r#"
-# Editor
-#
-# Default editor is "vi".
-#
-# Whenever the key binding `OpenConfigEditor` is triggered it will
-# use the value of the editor along with the rio configuration path.
-# [editor]
-# program = "vi"
-# args = []
-
 # Cursor
 #
 # Default cursor is Block
@@ -214,6 +204,16 @@ blinking-cursor = false
 # Default is `true`
 #
 # confirm-before-quit = false
+
+# Editor
+#
+# Default editor is "vi".
+#
+# Whenever the key binding `OpenConfigEditor` is triggered it will
+# use the value of the editor along with the rio configuration path.
+# [editor]
+# program = "vi"
+# args = []
 
 # Window configuration
 #

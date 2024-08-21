@@ -22,6 +22,7 @@
 - Introduce `navigation.hide-if-single` property (Ref: [#595](https://github.com/raphamorim/rio/issues/595)).
 - Performance update: Render repeated styled fragments as one rect.
 - Sugarloaf API has changed from `Sugar` primitives to `Content`.
+- Fix: `[editor]` overshadow headerless parameters in default config. (Ref: #601)
 
 ## 0.1.7
 
