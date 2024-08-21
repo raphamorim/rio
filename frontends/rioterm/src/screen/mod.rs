@@ -1267,7 +1267,6 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    #[inline(never)]
     pub fn update_content(&mut self) {
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.ctx().current().terminal.lock();
@@ -1305,9 +1304,7 @@ impl Screen<'_> {
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
-        if self.state.has_blinking_enabled()
-            && self.selection_is_empty()
-        {
+        if self.state.has_blinking_enabled() && self.selection_is_empty() {
             self.context_manager.schedule_render_on_route(800);
         }
 
