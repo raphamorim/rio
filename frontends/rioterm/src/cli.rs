@@ -32,7 +32,7 @@ pub struct TerminalOptions {
     pub working_dir: Option<String>,
 
     /// Writes the config to a given path or the default location.
-    #[clap(long, value_hint = ValueHint::FilePath)]
+    #[clap(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
     pub write_config: Option<Option<PathBuf>>,
 }
 

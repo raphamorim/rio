@@ -16,7 +16,7 @@
 
 ## Unreleased
 
-- TODO
+- Support writing the config to a custom/default location via `--write-config` (Ref: #605)
 
 ## 0.1.8
 
