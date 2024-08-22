@@ -16,8 +16,9 @@ use crate::config::window::Window;
 use colors::Colors;
 use log::warn;
 use serde::{Deserialize, Serialize};
-use std::default::Default;
+use std::io::Write;
 use std::path::PathBuf;
+use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
 
@@ -151,6 +152,47 @@ pub fn config_file_path() -> PathBuf {
 #[inline]
 pub fn config_file_content() -> String {
     default_config_file_content()
+}
+
+#[inline]
+pub fn create_config_file(path: Option<PathBuf>) {
+    let default_file_path = path.clone().unwrap_or(config_file_path());
+    if default_file_path.exists() {
+        log::info!(
+            "configuration file already exists at {}",
+            default_file_path.display()
+        );
+        return;
+    }
+
+    if path.is_none() {
+        let default_dir_path = config_dir_path();
+        match std::fs::create_dir_all(&default_dir_path) {
+            Ok(_) => {
+                log::info!("configuration path created {}", default_dir_path.display());
+            }
+            Err(err_message) => {
+                log::error!("could not create config directory: {err_message}");
+            }
+        }
+    }
+
+    match File::create(&default_file_path) {
+        Err(err_message) => {
+            log::error!(
+                "could not create config file {}: {err_message}",
+                default_file_path.display()
+            )
+        }
+        Ok(mut created_file) => {
+            log::info!("configuration file created {}", default_file_path.display());
+
+            if let Err(err_message) = writeln!(created_file, "{}", config_file_content())
+            {
+                log::error!("could not update config file with defaults: {err_message}")
+            }
+        }
+    }
 }
 
 impl Config {

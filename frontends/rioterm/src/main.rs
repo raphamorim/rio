@@ -108,6 +108,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load command line options.
     let args = cli::Cli::parse();
 
+    let write_config_path = args.window_options.terminal_options.write_config.clone();
+    if write_config_path.is_some() {
+        let _ = setup_logs_by_filter_level("TRACE");
+        rio_backend::config::create_config_file(write_config_path.unwrap());
+        return Ok(());
+    }
+
     let (mut config, config_error) = match rio_backend::config::Config::try_load() {
         Ok(config) => (config, None),
         Err(err) => (rio_backend::config::Config::default(), Some(err)),
