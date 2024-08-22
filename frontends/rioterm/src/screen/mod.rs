@@ -361,9 +361,12 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.update_content();
+        // TODO: Fix this double render hack on scale update
         self.render();
         self.resize_all_contexts();
+
+        self.update_content();
+        self.render();
 
         self
     }
@@ -1246,21 +1249,18 @@ impl Screen<'_> {
         }
     }
 
-    #[inline]
     pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
         self.sugarloaf.clear();
         crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
-    #[inline]
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
         crate::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
-    #[inline]
     pub fn render_dialog(&mut self, content: &str) {
         self.sugarloaf.clear();
         crate::routes::dialog::screen(&mut self.sugarloaf, content);
@@ -1269,7 +1269,7 @@ impl Screen<'_> {
 
     pub fn update_content(&mut self) {
         let (rows, cursor, display_offset, has_blinking_enabled) = {
-            let terminal = self.ctx().current().terminal.lock();
+            let terminal = self.context_manager.current().terminal.lock();
             (
                 terminal.visible_rows(),
                 terminal.cursor(),

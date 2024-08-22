@@ -16,7 +16,7 @@
 
 ## Unreleased
 
-- TODO
+- Fix scale update on transitioning between screens with different DPI.
 
 ## 0.1.8
 
