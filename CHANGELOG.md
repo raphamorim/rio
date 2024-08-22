@@ -17,6 +17,7 @@
 ## Unreleased
 
 - Fix scale update on transitioning between screens with different DPI.
+- Support a short variant (`-w`) for `--working-dir` argument
 
 ## 0.1.8
 
