@@ -4,6 +4,7 @@
 use clap::{Args, Parser, ValueHint};
 use rio_backend::config::Shell;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Parser, Default, Debug)]
 #[clap(author, about, version)]
@@ -29,6 +30,10 @@ pub struct TerminalOptions {
     /// Start the shell in the specified working directory.
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub working_dir: Option<String>,
+
+    /// Writes the config to a given path or the default location.
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
+    pub write_config: Option<Option<PathBuf>>,
 }
 
 impl TerminalOptions {
