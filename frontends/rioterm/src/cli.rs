@@ -28,7 +28,7 @@ pub struct TerminalOptions {
     pub command: Vec<String>,
 
     /// Start the shell in the specified working directory.
-    #[clap(long, value_hint = ValueHint::FilePath)]
+    #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub working_dir: Option<String>,
 
     /// Writes the config to a given path or the default location.
