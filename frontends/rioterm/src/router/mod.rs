@@ -9,8 +9,6 @@ use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::File;
-use std::io::Write;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -129,52 +127,12 @@ impl Route {
         }
 
         if self.path == RoutePath::Welcome && is_enter {
-            self.create_config_file();
+            rio_backend::config::create_config_file(None);
             self.path = RoutePath::Terminal;
             return true;
         }
 
         true
-    }
-
-    #[inline]
-    pub fn create_config_file(&self) {
-        let default_file_path = rio_backend::config::config_file_path();
-        if default_file_path.exists() {
-            return;
-        }
-
-        let default_dir_path = rio_backend::config::config_dir_path();
-        match std::fs::create_dir_all(&default_dir_path) {
-            Ok(_) => {
-                log::info!("configuration path created {}", default_dir_path.display());
-            }
-            Err(err_message) => {
-                log::error!("could not create config directory: {err_message}");
-            }
-        }
-
-        match File::create(&default_file_path) {
-            Err(err_message) => {
-                log::error!(
-                    "could not create config file {}: {err_message}",
-                    default_file_path.display()
-                )
-            }
-            Ok(mut created_file) => {
-                log::info!("configuration file created {}", default_file_path.display());
-
-                if let Err(err_message) = writeln!(
-                    created_file,
-                    "{}",
-                    rio_backend::config::config_file_content()
-                ) {
-                    log::error!(
-                        "could not update config file with defaults: {err_message}"
-                    )
-                }
-            }
-        }
     }
 }
 

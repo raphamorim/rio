@@ -16,6 +16,7 @@
 
 ## Unreleased
 
+- Support writing the config to a custom/default location via `--write-config` (Ref: #605)
 - Fix scale update on transitioning between screens with different DPI.
 - Support a short variant (`-w`) for `--working-dir` argument
 
