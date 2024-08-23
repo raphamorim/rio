@@ -1568,114 +1568,6 @@ impl Screen<'_> {
         self.sugarloaf.mark_dirty();
     }
 
-    #[inline]
-    pub fn paste(&mut self, text: &str, bracketed: bool) {
-        if self.search_active() {
-            for c in text.chars() {
-                self.search_input(c);
-            }
-        } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(b"\x1b[200~"[..].to_vec());
-
-            // Write filtered escape sequences.
-            //
-            // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
-            // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
-            // bracketed paste on its receival.
-            let filtered = text.replace(['\x1b', '\x03'], "");
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(filtered.into_bytes());
-
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(b"\x1b[201~"[..].to_vec());
-        } else {
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
-        }
-    }
-
-    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
-        self.sugarloaf.clear();
-        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
-        self.sugarloaf.render();
-    }
-
-    pub fn render_welcome(&mut self) {
-        self.sugarloaf.clear();
-        crate::routes::welcome::screen(&mut self.sugarloaf);
-        self.sugarloaf.render();
-    }
-
-    pub fn render_dialog(&mut self, content: &str) {
-        self.sugarloaf.clear();
-        crate::routes::dialog::screen(&mut self.sugarloaf, content);
-        self.sugarloaf.render();
-    }
-
-    pub fn update_content(&mut self) {
-        let (rows, cursor, display_offset, has_blinking_enabled) = {
-            let terminal = self.context_manager.current().terminal.lock();
-            (
-                terminal.visible_rows(),
-                terminal.cursor(),
-                terminal.display_offset(),
-                terminal.blinking_cursor,
-            )
-        };
-
-        self.context_manager.update_titles();
-        self.state.set_ime(self.ime.preedit());
-
-        self.state.prepare_term(
-            &rows,
-            cursor,
-            &mut self.sugarloaf,
-            &self.context_manager,
-            display_offset as i32,
-            has_blinking_enabled,
-        );
-    }
-
-    #[inline]
-    pub fn render(&mut self) {
-        // If sugarloaf does have pending updates to process then
-        // should abort current render
-
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
-
-        // let is_search_active = self.search_active();
-        // if self.search_active() {
-        //     self.state.start_search(
-        //         self.search_state.history_index,
-        //         self.search_state.history.clone(),
-        //     );
-        // } else {
-        //     self.state.finish_search();
-        // }
-
-        self.sugarloaf.render();
-
-        // In this case the configuration of blinking cursor is enabled
-        // and the terminal also have instructions of blinking enabled
-        // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
-        if self.state.has_blinking_enabled() && self.selection_is_empty() {
-            self.context_manager.schedule_render_on_route(800);
-        }
-
-        // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
-    }
-
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
         let c = match state {
             ElementState::Pressed => 'M',
@@ -1872,5 +1764,113 @@ impl Screen<'_> {
 
         self.mouse.accumulated_scroll.x %= width;
         self.mouse.accumulated_scroll.y %= height;
+    }
+
+    #[inline]
+    pub fn paste(&mut self, text: &str, bracketed: bool) {
+        if self.search_active() {
+            for c in text.chars() {
+                self.search_input(c);
+            }
+        } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(b"\x1b[200~"[..].to_vec());
+
+            // Write filtered escape sequences.
+            //
+            // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
+            // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
+            // bracketed paste on its receival.
+            let filtered = text.replace(['\x1b', '\x03'], "");
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(filtered.into_bytes());
+
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(b"\x1b[201~"[..].to_vec());
+        } else {
+            self.ctx_mut()
+                .current_mut()
+                .messenger
+                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+        }
+    }
+
+    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+        self.sugarloaf.clear();
+        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
+        self.sugarloaf.render();
+    }
+
+    pub fn render_welcome(&mut self) {
+        self.sugarloaf.clear();
+        crate::routes::welcome::screen(&mut self.sugarloaf);
+        self.sugarloaf.render();
+    }
+
+    pub fn render_dialog(&mut self, content: &str) {
+        self.sugarloaf.clear();
+        crate::routes::dialog::screen(&mut self.sugarloaf, content);
+        self.sugarloaf.render();
+    }
+
+    pub fn update_content(&mut self) {
+        let (rows, cursor, display_offset, has_blinking_enabled) = {
+            let terminal = self.context_manager.current().terminal.lock();
+            (
+                terminal.visible_rows(),
+                terminal.cursor(),
+                terminal.display_offset(),
+                terminal.blinking_cursor,
+            )
+        };
+
+        let is_search_active = self.search_active();
+        if self.search_active() {
+            self.state.start_search(
+                self.search_state.history_index,
+                self.search_state.history.clone(),
+            );
+        } else {
+            self.state.finish_search();
+        }
+
+        self.context_manager.update_titles();
+        self.state.set_ime(self.ime.preedit());
+
+        self.state.prepare_term(
+            &rows,
+            cursor,
+            &mut self.sugarloaf,
+            &self.context_manager,
+            display_offset as i32,
+            has_blinking_enabled,
+        );
+    }
+
+    #[inline]
+    pub fn render(&mut self) {
+        // If sugarloaf does have pending updates to process then
+        // should abort current render
+
+        // let start = std::time::Instant::now();
+        // println!("Render time elapsed");
+
+        self.sugarloaf.render();
+
+        // In this case the configuration of blinking cursor is enabled
+        // and the terminal also have instructions of blinking enabled
+        // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
+        if self.state.has_blinking_enabled() && self.selection_is_empty() {
+            self.context_manager.schedule_render_on_route(800);
+        }
+
+        // let duration = start.elapsed();
+        // println!("Total render time is: {:?}\n", duration);
     }
 }
