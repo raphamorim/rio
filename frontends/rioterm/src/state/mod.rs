@@ -7,7 +7,7 @@ use crate::crosswords::pos;
 use crate::crosswords::pos::CursorState;
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
-use crate::renderer::draw_search_bar;
+// use crate::renderer::draw_search_bar;
 use crate::selection::SelectionRange;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
@@ -329,7 +329,7 @@ impl State {
         row: &Row<Square>,
         has_cursor: bool,
         current_line: pos::Line,
-        search_hints: &Option<HintMatches>,
+        // search_hints: &Option<HintMatches>,
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
@@ -670,7 +670,7 @@ impl State {
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         display_offset: i32,
         has_blinking_enabled: bool,
-        hints: Option<HintMatches>
+        // hints: Option<HintMatches>
     ) {
         let layout = sugarloaf.layout();
         self.cursor.state = cursor;
@@ -704,7 +704,6 @@ impl State {
                 row,
                 has_cursor,
                 pos::Line((i as i32) - display_offset),
-                &hints,
             );
         }
 
