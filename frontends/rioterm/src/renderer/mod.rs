@@ -137,13 +137,6 @@ impl Renderer {
             colors,
             navigation: ScreenNavigation::new(
                 config.navigation.clone(),
-                [
-                    named_colors.foreground,
-                    named_colors.bar,
-                    named_colors.tabs,
-                    named_colors.tabs_active,
-                    named_colors.tabs_active_highlight,
-                ],
                 color_automation,
                 config.padding_y,
             ),
@@ -717,6 +710,7 @@ impl Renderer {
             layout.dimensions.scale,
             context_manager.titles.key.as_str(),
             &context_manager.titles.titles,
+            &self.named_colors,
             context_manager.current_index(),
             context_manager.len(),
             &mut objects,

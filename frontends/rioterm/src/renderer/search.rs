@@ -1,3 +1,4 @@
+use crate::constants::*;
 use rio_backend::sugarloaf::{Object, Rect, Text};
 
 #[inline]
@@ -8,12 +9,12 @@ pub fn draw_search_bar(
     content: &String,
 ) {
     let (width, height) = dimensions;
-    let position_y = (height / scale) - 40.;
+    let position_y = (height / scale) - PADDING_Y_BOTTOM_TABS;
 
     objects.push(Object::Rect(Rect {
         position: [0.0, position_y],
         color: [0.4, 0.8, 1.0, 1.0],
-        size: [width * (scale + 1.0), 22.0],
+        size: [width * (scale + 1.0), PADDING_Y_BOTTOM_TABS],
     }));
 
     objects.push(Object::Text(Text::single_line(

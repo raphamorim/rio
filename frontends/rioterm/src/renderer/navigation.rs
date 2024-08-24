@@ -1,22 +1,14 @@
+use rio_backend::config::colors::Colors;
 use crate::constants::*;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
 use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
-
-pub struct ScreenNavigationColors {
-    foreground: [f32; 4],
-    bar: [f32; 4],
-    active: [f32; 4],
-    inactive: [f32; 4],
-    active_highlight: [f32; 4],
-}
 
 pub struct ScreenNavigation {
     pub navigation: Navigation,
     pub objects: Vec<Object>,
     keys: String,
     current: usize,
-    colors: ScreenNavigationColors,
     width: f32,
     height: f32,
     scale: f32,
@@ -27,27 +19,15 @@ pub struct ScreenNavigation {
 impl ScreenNavigation {
     pub fn new(
         navigation: Navigation,
-        colors: [[f32; 4]; 5],
         color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
         padding_y: [f32; 2],
     ) -> ScreenNavigation {
-        let colors = {
-            ScreenNavigationColors {
-                foreground: colors[0],
-                bar: colors[1],
-                inactive: colors[2],
-                active: colors[3],
-                active_highlight: colors[4],
-            }
-        };
-
         ScreenNavigation {
             navigation,
             objects: Vec::with_capacity(26),
             keys: String::from(""),
             color_automation,
             current: 0,
-            colors,
             padding_y,
             width: 0.0,
             height: 0.0,
@@ -62,6 +42,7 @@ impl ScreenNavigation {
         scale: f32,
         keys: &str,
         titles: &HashMap<usize, [String; 3]>,
+        colors: &Colors,
         current: usize,
         len: usize,
         objects: &mut Vec<Object>,
@@ -104,15 +85,15 @@ impl ScreenNavigation {
             #[cfg(target_os = "macos")]
             NavigationMode::NativeTab => {}
             NavigationMode::CollapsedTab => {
-                self.collapsed_tab(titles, len, self.navigation.hide_if_single)
+                self.collapsed_tab(titles, colors, len, self.navigation.hide_if_single)
             }
             NavigationMode::TopTab => {
                 let position_y = 0.0;
-                self.tab(titles, len, position_y, self.navigation.hide_if_single);
+                self.tab(titles, colors, len, position_y, self.navigation.hide_if_single);
             }
             NavigationMode::BottomTab => {
                 let position_y = (self.height / self.scale) - PADDING_Y_BOTTOM_TABS;
-                self.tab(titles, len, position_y, self.navigation.hide_if_single);
+                self.tab(titles, colors, len, position_y, self.navigation.hide_if_single);
             }
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
@@ -125,6 +106,7 @@ impl ScreenNavigation {
     pub fn collapsed_tab(
         &mut self,
         titles: &HashMap<usize, [String; 3]>,
+        colors: &Colors,
         len: usize,
         hide_if_single: bool,
     ) {
@@ -135,10 +117,10 @@ impl ScreenNavigation {
         let mut initial_position = (self.width / self.scale) - PADDING_X_COLLAPSED_TABS;
         let position_modifier = 20.;
         for i in (0..len).rev() {
-            let mut color = self.colors.inactive;
+            let mut color = colors.tabs;
             let mut size = INACTIVE_TAB_WIDTH_SIZE;
             if i == self.current {
-                color = self.colors.active;
+                color = colors.tabs_active;
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
 
@@ -166,6 +148,7 @@ impl ScreenNavigation {
     pub fn tab(
         &mut self,
         titles: &HashMap<usize, [String; 3]>,
+        colors: &Colors,
         len: usize,
         position_y: f32,
         hide_if_single: bool,
@@ -178,7 +161,7 @@ impl ScreenNavigation {
 
         let renderable = Rect {
             position: [initial_position_x, position_y],
-            color: self.colors.bar,
+            color: colors.bar,
             size: [
                 (self.width + PADDING_Y_BOTTOM_TABS) * self.scale,
                 PADDING_Y_BOTTOM_TABS,
@@ -198,13 +181,13 @@ impl ScreenNavigation {
 
         let text_pos_mod = 11.;
         for i in tabs {
-            let mut background_color = self.colors.bar;
-            let mut foreground_color = self.colors.active;
+            let mut background_color = colors.bar;
+            let mut foreground_color = colors.tabs_active;
 
             let is_current = i == self.current;
             if is_current {
-                foreground_color = self.colors.foreground;
-                background_color = self.colors.active;
+                foreground_color = colors.foreground;
+                background_color = colors.tabs_active;
             }
 
             let mut name = String::from("tab");
@@ -220,7 +203,7 @@ impl ScreenNavigation {
                     &name_idx[0],
                     &name_idx[2],
                 ) {
-                    foreground_color = self.colors.inactive;
+                    foreground_color = colors.tabs;
                     background_color = *color_overwrite;
                 }
             }
@@ -246,7 +229,7 @@ impl ScreenNavigation {
 
                 self.objects.push(Object::Rect(Rect {
                     position: [initial_position_x, position],
-                    color: self.colors.active_highlight,
+                    color: colors.tabs_active_highlight,
                     size: [180., PADDING_Y_BOTTOM_TABS / 10.],
                 }));
             }
