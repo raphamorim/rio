@@ -26,7 +26,6 @@ mod scheduler;
 mod screen;
 #[cfg(not(use_wa))]
 mod sequencer;
-mod state;
 mod watcher;
 
 use clap::Parser;
