@@ -53,13 +53,24 @@ Note: Missing fields will use the default for Rio.
 [colors]
 background = ""
 foreground = ""
+
+# Selection
 selection-background = ""
 selection-foreground = ""
+
+# Navigation
 tabs-active = ""
 tabs-active-highlight = ""
 bar = ""
 cursor = ""
 vi-cursor = ""
+
+# Search
+search-match-background = ""
+search-match-foreground = ""
+search-focused-match-background = ""
+search-focused-match-foreground = ""
+
 # Regular colors
 black = ""
 blue = ""
@@ -70,6 +81,7 @@ red = ""
 tabs = ""
 white = ""
 yellow = ""
+
 # Dim colors
 dim-black = ""
 dim-blue = ""
@@ -80,6 +92,7 @@ dim-magenta = ""
 dim-red = ""
 dim-white = ""
 dim-yellow = ""
+
 # Light colors
 light-black = ""
 light-blue = ""
