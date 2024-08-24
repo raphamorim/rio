@@ -66,21 +66,21 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
           disableVersioning: false,
-          includeCurrentVersion: true,
-          lastVersion: undefined,
-          onlyIncludeVersions: ['current', '0.0.x'],
-          versions: {
-            current: {
-              label: '0.1.x',
-              path: 'next',
-              banner: 'none',
-            },
-            '0.0.x': {
-              label: '0.0.x',
-              path: '0.0.x',
-              banner: 'none',
-            },
-          },
+          // includeCurrentVersion: true,
+          // lastVersion: undefined,
+          // onlyIncludeVersions: ['current', '0.0.x'],
+          // versions: {
+          //   current: {
+          //     label: '0.1.x',
+          //     path: 'next',
+          //     banner: 'none',
+          //   },
+          //   '0.0.x': {
+          //     label: '0.0.x',
+          //     path: '0.0.x',
+          //     banner: 'none',
+          //   },
+          // },
         },
         blog: {
           showReadingTime: true,
@@ -112,25 +112,25 @@ const config = {
           src: '/assets/rio-logo.svg',
         },
         items: [
-          { to: '/docs/next/install', label: 'Install', position: 'left' },
+          { to: '/docs/install', label: 'Install', position: 'left' },
           {
-            to: '/docs/next/configuration-file',
+            to: '/docs/configuration-file',
             label: 'Config',
             position: 'left',
           },
-          { to: '/docs/next/features', label: 'Features', position: 'left' },
+          { to: '/docs/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
             label: 'Discord',
             position: 'left',
           },
-          {
-            type: 'docsVersionDropdown',
-            position: 'right',
-            // dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
-            dropdownActiveClassDisabled: true,
-          },
+          // {
+          //   type: 'docsVersionDropdown',
+          //   position: 'right',
+          //   // dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
+          //   dropdownActiveClassDisabled: true,
+          // },
           {
             type: 'localeDropdown',
             position: 'right',
@@ -151,15 +151,15 @@ const config = {
             items: [
               {
                 label: 'Install',
-                to: '/docs/next/install',
+                to: '/docs/install',
               },
               {
                 label: 'Config',
-                to: '/docs/next/configuration-file',
+                to: '/docs/configuration-file',
               },
               {
                 label: 'Features',
-                to: '/docs/next/features',
+                to: '/docs/features',
               },
             ],
           },
