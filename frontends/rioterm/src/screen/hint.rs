@@ -1,9 +1,9 @@
-use std::ops::Deref;
-use std::borrow::Cow;
-use rio_backend::crosswords::pos::{Line, Pos, Direction, Column};
-use rio_backend::crosswords::Crosswords;
+use rio_backend::crosswords::pos::{Column, Direction, Line, Pos};
 use rio_backend::crosswords::search::Match;
 use rio_backend::crosswords::search::{RegexIter, RegexSearch};
+use rio_backend::crosswords::Crosswords;
+use std::borrow::Cow;
+use std::ops::Deref;
 
 /// Maximum number of linewraps followed outside of the viewport during search highlighting.
 pub const MAX_SEARCH_LINES: usize = 100;
@@ -38,12 +38,18 @@ pub struct HintMatches<'a> {
 impl<'a> HintMatches<'a> {
     /// Create new renderable matches iterator..
     fn new(matches: impl Into<Cow<'a, [Match]>>) -> Self {
-        Self { matches: matches.into(), index: 0 }
+        Self {
+            matches: matches.into(),
+            index: 0,
+        }
     }
 
     /// Create from regex matches on term visible part.
     #[inline]
-    pub fn visible_regex_matches<T: rio_backend::event::EventListener>(term: &Crosswords<T>, dfas: &mut RegexSearch) -> Self {
+    pub fn visible_regex_matches<T: rio_backend::event::EventListener>(
+        term: &Crosswords<T>,
+        dfas: &mut RegexSearch,
+    ) -> Self {
         let matches = visible_regex_match_iter(term, dfas).collect::<Vec<_>>();
         Self::new(matches)
     }

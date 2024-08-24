@@ -363,11 +363,12 @@ impl Sequencer {
                                 //
                                 // In the future should try first get
                                 // from Crosswords then state colors
-                                // screen.colors()[index] or screen.state.colors[index]
+                                // screen.colors()[index] or screen.renderer.colors[index]
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    let color = route.window.screen.state.colors[index];
+                                    let color =
+                                        route.window.screen.renderer.colors[index];
                                     let rgb = ColorRgb::from_color_arr(color);
                                     route
                                         .window
@@ -913,8 +914,12 @@ impl Sequencer {
                                 route.window.winit_window.set_cursor(cursor_icon);
 
                                 // In case hyperlink range has cleaned trigger one more render
-                                if route.window.screen.state.has_hyperlink_range() {
-                                    route.window.screen.state.set_hyperlink_range(None);
+                                if route.window.screen.renderer.has_hyperlink_range() {
+                                    route
+                                        .window
+                                        .screen
+                                        .renderer
+                                        .set_hyperlink_range(None);
                                     route
                                         .window
                                         .screen
@@ -1038,7 +1043,8 @@ impl Sequencer {
                                 return;
                             }
 
-                            route.window.screen.state.last_typing = Some(Instant::now());
+                            route.window.screen.renderer.last_typing =
+                                Some(Instant::now());
                             route.window.screen.process_key_event(&key_event);
 
                             if key_event.state == ElementState::Released

@@ -56,7 +56,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn content(
+    pub fn build_objects(
         &mut self,
         dimensions: (f32, f32),
         scale: f32,
@@ -64,6 +64,7 @@ impl ScreenNavigation {
         titles: &HashMap<usize, [String; 3]>,
         current: usize,
         len: usize,
+        objects: &mut Vec<Object>,
     ) {
         let mut has_changes = false;
 
@@ -93,6 +94,7 @@ impl ScreenNavigation {
         }
 
         if !has_changes {
+            objects.extend(self.objects.clone());
             return;
         }
 
@@ -115,6 +117,8 @@ impl ScreenNavigation {
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
         }
+
+        objects.extend(self.objects.clone());
     }
 
     #[inline]
@@ -281,7 +285,7 @@ fn get_color_overwrite<'a>(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::state::navigation::get_color_overwrite;
+    use crate::renderer::navigation::get_color_overwrite;
 
     #[test]
     fn test_get_color_overwrite() {
