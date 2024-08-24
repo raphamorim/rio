@@ -136,11 +136,11 @@ impl ScreenNavigation {
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
 
-            if let Some(name_idx) = titles.get(&i) {
+            if let Some(title) = titles.get(&i) {
                 if let Some(color_overwrite) = get_color_overwrite(
                     &self.color_automation,
-                    &name_idx[0],
-                    &name_idx[2],
+                    &title[0],
+                    &title[2],
                 ) {
                     color = *color_overwrite;
                 }
@@ -185,7 +185,7 @@ impl ScreenNavigation {
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
 
-        let max_tab_width = 90.;
+        let max_tab_width = 140.;
         let screen_limit = ((self.width / self.scale) / max_tab_width).floor() as usize;
         if len > screen_limit && self.current > screen_limit {
             tabs = Vec::from_iter(self.current - screen_limit..len);
@@ -203,32 +203,32 @@ impl ScreenNavigation {
             }
 
             let mut name = String::from("tab");
-            if let Some(name_idx) = titles.get(&i) {
-                if !name_idx[1].is_empty() {
-                    name = name_idx[1].to_string();
+            if let Some(title) = titles.get(&i) {
+                if title[1].is_empty() {
+                    name = title[0].to_string();
                 } else {
-                    name = name_idx[0].to_string();
+                    name = format!("{} ({})", title[0], title[1]);
                 }
 
                 if let Some(color_overwrite) = get_color_overwrite(
                     &self.color_automation,
-                    &name_idx[0],
-                    &name_idx[2],
+                    &title[0],
+                    &title[2],
                 ) {
                     foreground_color = colors.tabs;
                     background_color = *color_overwrite;
                 }
             }
 
-            let name_modifier = 80.;
-            if name.len() >= 10 {
-                name = name[0..10].to_string();
+            let name_modifier = 90.;
+            if name.len() >= 14 {
+                name = name[0..14].to_string();
             }
 
             self.objects.push(Object::Rect(Rect {
                 position: [initial_position_x, position_y],
                 color: background_color,
-                size: [180., PADDING_Y_BOTTOM_TABS],
+                size: [250., PADDING_Y_BOTTOM_TABS],
             }));
 
             if is_current {
@@ -242,7 +242,7 @@ impl ScreenNavigation {
                 self.objects.push(Object::Rect(Rect {
                     position: [initial_position_x, position],
                     color: colors.tabs_active_highlight,
-                    size: [180., PADDING_Y_BOTTOM_TABS / 10.],
+                    size: [250., PADDING_Y_BOTTOM_TABS / 10.],
                 }));
             }
 
@@ -259,7 +259,7 @@ impl ScreenNavigation {
                 foreground_color,
             )));
 
-            initial_position_x += name_modifier + 10.;
+            initial_position_x += name_modifier + 40.;
         }
     }
 }

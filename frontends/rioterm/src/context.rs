@@ -467,7 +467,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(unix)]
         {
             let interval_time = Duration::from_secs(2);
             if self.titles.last_title_update.elapsed() > interval_time {
@@ -479,7 +479,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         context.shell_pid,
                     );
 
-                    #[cfg(any(use_wa, target_os = "macos"))]
                     let path = teletypewriter::foreground_process_path(
                         *context.main_fd,
                         context.shell_pid,
@@ -487,22 +486,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                    #[cfg(not(any(use_wa, target_os = "macos")))]
-                    let path = String::default();
-
-                    #[cfg(not(target_os = "macos"))]
-                    let terminal_title = String::from("");
-
-                    #[cfg(target_os = "macos")]
-                    #[allow(unused)]
-                    let mut terminal_title = String::from("");
-
-                    #[cfg(target_os = "macos")]
-                    {
+                    let terminal_title = {
                         let terminal = context.terminal.lock();
-                        terminal_title = terminal.title.to_string();
-                        drop(terminal);
-                    }
+                        terminal.title.to_string()
+                    };
 
                     if self.config.is_native {
                         let window_title = if terminal_title.is_empty() {
@@ -530,9 +517,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        #[cfg(target_os = "windows")]
+        #[cfg(not(unix))]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(5) {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, context) in self.contexts.iter_mut().enumerate() {
