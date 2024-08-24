@@ -230,6 +230,30 @@ pub struct Colors {
     pub selection_foreground: ColorArray,
     #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub split: ColorArray,
+    #[serde(
+        default = "defaults::search_match_background",
+        deserialize_with = "deserialize_to_arr",
+        rename = "search-match-background"
+    )]
+    pub search_match_background: ColorArray,
+    #[serde(
+        default = "defaults::search_match_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "search-match-foreground"
+    )]
+    pub search_match_foreground: ColorArray,
+    #[serde(
+        default = "defaults::search_focused_match_background",
+        deserialize_with = "deserialize_to_arr",
+        rename = "search-focused-match-background"
+    )]
+    pub search_focused_match_background: ColorArray,
+    #[serde(
+        default = "defaults::search_focused_match_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "search-focused-match-foreground"
+    )]
+    pub search_focused_match_foreground: ColorArray,
 }
 
 impl Default for Colors {
@@ -272,6 +296,10 @@ impl Default for Colors {
             light_yellow: defaults::light_yellow(),
             selection_background: defaults::selection_background(),
             selection_foreground: defaults::selection_foreground(),
+            search_match_background: defaults::search_match_background(),
+            search_match_foreground: defaults::search_match_foreground(),
+            search_focused_match_background: defaults::search_focused_match_background(),
+            search_focused_match_foreground: defaults::search_focused_match_foreground(),
         }
     }
 }

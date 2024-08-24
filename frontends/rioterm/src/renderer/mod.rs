@@ -2,10 +2,9 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
-use std::ops::RangeInclusive;
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
-use crate::crosswords::pos::{Pos, Line, Column, CursorState};
+use crate::crosswords::pos::{Column, CursorState, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::screen::hint::HintMatches;
@@ -21,6 +20,7 @@ use rio_backend::sugarloaf::{
     SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 #[cfg(not(use_wa))]
 use winit::window::Theme;
@@ -170,10 +170,7 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn set_active_search(
-        &mut self,
-        active_search: Option<String>,
-    ) {
+    pub fn set_active_search(&mut self, active_search: Option<String>) {
         self.active_search = active_search;
     }
 
@@ -315,7 +312,7 @@ impl Renderer {
         has_cursor: bool,
         line: Line,
         search_hints: &mut Option<HintMatches>,
-        focused_match: &Option<RangeInclusive<Pos>>
+        focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
@@ -366,14 +363,24 @@ impl Renderer {
                     self.named_colors.selection_foreground
                 };
                 style.background_color = Some(self.named_colors.selection_background);
-            } else if search_hints.is_some() && search_hints.as_mut().map_or(false, |search| search.advance(Pos::new(line, Column(column)))) {
-                let focused = focused_match.as_ref().map_or(false, |fm| fm.contains(&Pos::new(line, Column(column))));
-                style.color = if self.ignore_selection_fg_color {
-                    self.compute_color(&square.fg, square.flags)
+            } else if search_hints.is_some()
+                && search_hints.as_mut().map_or(false, |search| {
+                    search.advance(Pos::new(line, Column(column)))
+                })
+            {
+                let focused = focused_match
+                    .as_ref()
+                    .map_or(false, |fm| fm.contains(&Pos::new(line, Column(column))));
+
+                if focused {
+                    style.color = self.named_colors.search_focused_match_foreground;
+                    style.background_color =
+                        Some(self.named_colors.search_focused_match_background);
                 } else {
-                    self.named_colors.selection_foreground
-                };
-                style.background_color = Some(self.named_colors.selection_background);
+                    style.color = self.named_colors.search_match_foreground;
+                    style.background_color =
+                        Some(self.named_colors.search_match_background);
+                }
             }
 
             if last_style != style {
@@ -665,7 +672,7 @@ impl Renderer {
         display_offset: i32,
         has_blinking_enabled: bool,
         hints: &mut Option<HintMatches>,
-        focused_match: &Option<RangeInclusive<Pos>>
+        focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let layout = sugarloaf.layout();
         self.cursor.state = cursor;
