@@ -181,7 +181,7 @@
 <li>Second image: BottomTab navigation macos.</li>
 </ul>
 <p><img decoding="async" loading="lazy" alt="example breadcrumb navigation macos" src="https://raphamorim.io/rio/pl/assets/images/demo-breadcrumb-d35acfa5227edcf96354ce73c590acf7.png" width="1132" height="526" class="img_ev3q"></p>
-<p><img decoding="async" loading="lazy" alt="example BottomTab navigation macos" src="https://raphamorim.io/rio/pl/assets/images/demo-bottom-tab-8b9933b7d2983553a727f0419f0d67e1.png" width="1424" height="1024" class="img_ev3q"></p>
+<p><img decoding="async" loading="lazy" alt="example BottomTab navigation macos" src="https://raphamorim.io/rio/pl/assets/images/demo-bottom-tab-7143377666f5e5b75de1ec22c0f7d176.png" width="1824" height="1224" class="img_ev3q"></p>
 <p>More info about navigation in <a href="https://raphamorim.io/rio/pl/docs/0.0.x/navigation/">docs/navigation</a>.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="sugarloaf-performance-improvements">Sugarloaf performance improvements<a class="hash-link" aria-label="Bezpośredni link do Sugarloaf performance improvements" title="Bezpośredni link do Sugarloaf performance improvements" href="https://raphamorim.io/rio/pl/blog/2023/08/02/release-0.0.15#sugarloaf-performance-improvements">​</a></h2>
 <p>Performance improvements with Sugarloaf de-duplication of input data.</p>
