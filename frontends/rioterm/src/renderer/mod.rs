@@ -171,19 +171,11 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn start_search(
+    pub fn set_active_search(
         &mut self,
-        current_search_index: Option<usize>,
-        search_history: VecDeque<String>,
+        active_search: Option<String>,
     ) {
-        if let Some(index) = current_search_index {
-            self.active_search = search_history.get(index).cloned();
-        }
-    }
-
-    #[inline]
-    pub fn finish_search(&mut self) {
-        self.active_search = None
+        self.active_search = active_search;
     }
 
     #[inline]
@@ -725,6 +717,8 @@ impl Renderer {
                 layout.dimensions.scale,
                 &active_search_content,
             );
+
+            self.active_search = None;
         }
 
         sugarloaf.set_objects(objects);

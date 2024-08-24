@@ -1849,12 +1849,11 @@ impl Screen<'_> {
         };
 
         if self.search_active() {
-            self.renderer.start_search(
-                self.search_state.history_index,
-                self.search_state.history.clone(),
-            );
-        } else {
-            self.renderer.finish_search();
+            if let Some(history_index) = self.search_state.history_index {
+                self.renderer.set_active_search(
+                    self.search_state.history.get(history_index).cloned()
+                );
+            }
         }
 
         self.context_manager.update_titles();
@@ -1869,7 +1868,7 @@ impl Screen<'_> {
             has_blinking_enabled,
         );
         // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
+        // println!("Total update_content is: {:?}\n", duration);
     }
 
     #[inline]
