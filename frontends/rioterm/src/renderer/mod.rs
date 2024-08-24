@@ -2,10 +2,10 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
+use std::ops::RangeInclusive;
 use crate::ansi::CursorShape;
 use crate::crosswords::grid::row::Row;
-use crate::crosswords::pos;
-use crate::crosswords::pos::CursorState;
+use crate::crosswords::pos::{Pos, Line, Column, CursorState};
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::screen::hint::HintMatches;
@@ -21,7 +21,6 @@ use rio_backend::sugarloaf::{
     SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 #[cfg(not(use_wa))]
 use winit::window::Theme;
@@ -314,8 +313,9 @@ impl Renderer {
         content_builder: &mut ContentBuilder,
         row: &Row<Square>,
         has_cursor: bool,
-        current_line: pos::Line,
-        // search_hints: &Option<HintMatches>,
+        line: Line,
+        search_hints: &mut Option<HintMatches>,
+        focused_match: &Option<RangeInclusive<Pos>>
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
@@ -345,7 +345,7 @@ impl Renderer {
                 && self
                     .hyperlink_range
                     .unwrap()
-                    .contains(pos::Pos::new(current_line, pos::Column(column)))
+                    .contains(Pos::new(line, Column(column)))
             {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
@@ -358,8 +358,16 @@ impl Renderer {
                 && self
                     .selection_range
                     .unwrap()
-                    .contains(pos::Pos::new(current_line, pos::Column(column)))
+                    .contains(Pos::new(line, Column(column)))
             {
+                style.color = if self.ignore_selection_fg_color {
+                    self.compute_color(&square.fg, square.flags)
+                } else {
+                    self.named_colors.selection_foreground
+                };
+                style.background_color = Some(self.named_colors.selection_background);
+            } else if search_hints.is_some() && search_hints.as_mut().map_or(false, |search| search.advance(Pos::new(line, Column(column)))) {
+                let focused = focused_match.as_ref().map_or(false, |fm| fm.contains(&Pos::new(line, Column(column))));
                 style.color = if self.ignore_selection_fg_color {
                     self.compute_color(&square.fg, square.flags)
                 } else {
@@ -656,7 +664,8 @@ impl Renderer {
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         display_offset: i32,
         has_blinking_enabled: bool,
-        // hints: Option<HintMatches>
+        hints: &mut Option<HintMatches>,
+        focused_match: &Option<RangeInclusive<Pos>>
     ) {
         let layout = sugarloaf.layout();
         self.cursor.state = cursor;
@@ -689,7 +698,9 @@ impl Renderer {
                 &mut content_builder,
                 row,
                 has_cursor,
-                pos::Line((i as i32) - display_offset),
+                Line((i as i32) - display_offset),
+                hints,
+                focused_match,
             );
         }
 
