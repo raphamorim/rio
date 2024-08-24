@@ -1,5 +1,5 @@
-use rio_backend::config::colors::Colors;
 use crate::constants::*;
+use rio_backend::config::colors::Colors;
 use rio_backend::sugarloaf::{Object, Rect, Text};
 
 #[inline]
@@ -16,7 +16,10 @@ pub fn draw_search_bar(
     objects.push(Object::Rect(Rect {
         position: [0.0, position_y],
         color: colors.bar,
-        size: [(width + PADDING_Y_BOTTOM_TABS) * scale, PADDING_Y_BOTTOM_TABS],
+        size: [
+            (width + PADDING_Y_BOTTOM_TABS) * scale,
+            PADDING_Y_BOTTOM_TABS,
+        ],
     }));
 
     objects.push(Object::Text(Text::single_line(

@@ -35,8 +35,14 @@ pub fn padding_bottom_from_config(
     navigation: &Navigation,
     padding_y_bottom: f32,
     num_tabs: usize,
+    is_search_active: bool,
 ) -> f32 {
     let default_padding = 0.0 + padding_y_bottom;
+
+    if is_search_active {
+        return padding_y_bottom + constants::PADDING_Y_BOTTOM_TABS;
+    }
+
     if navigation.hide_if_single && num_tabs == 1 {
         return default_padding;
     }
