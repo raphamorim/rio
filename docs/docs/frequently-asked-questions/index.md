@@ -7,7 +7,7 @@ language: 'en'
 
 The famous case of "'rio' unknown terminal type".
 
-All the issues all have the same root cause: the rio terminfo is not available. The most common way this happens is SSHing into a computer that does not have the rio terminfo files. The simplest fix would be install the terminfo files on the remote machine (following terminfo instruction in install section [install/terminfo](/docs/0.0.x/install/terminfo))
+All the issues all have the same root cause: the rio terminfo is not available. The most common way this happens is SSHing into a computer that does not have the rio terminfo files. The simplest fix would be install the terminfo files on the remote machine (following terminfo instruction in install section [install/terminfo](/docs/install/terminfo))
 
 Other alternative is use a different terminfo either in config or per connection with environment variable like `TERM=xterm-256color ssh`.
 
