@@ -83,7 +83,7 @@ impl ScreenNavigation {
             has_changes = true;
         }
 
-        let len = context_manager.current_index();
+        let len = context_manager.len();
         if len != self.len {
             self.len = len;
             has_changes = true;
