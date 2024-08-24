@@ -932,7 +932,7 @@ impl Screen<'_> {
         }
     }
 
-    fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
+    pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
         let layout = self.sugarloaf.layout();
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
