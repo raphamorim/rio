@@ -421,7 +421,7 @@ blinking-cursor = false
 # Bindings
 #
 # Create custom Key bindings for Rio terminal
-# More information in: https://raphamorim.io/rio/docs/next/key-bindings#custom-key-bindings
+# More information in: https://raphamorim.io/rio/docs/key-bindings#custom-key-bindings
 #
 # Example:
 # [bindings]
