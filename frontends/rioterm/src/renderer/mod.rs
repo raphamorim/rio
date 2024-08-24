@@ -662,6 +662,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_term(
         &mut self,
         rows: &[Row<Square>],
