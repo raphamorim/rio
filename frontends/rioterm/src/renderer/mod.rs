@@ -368,11 +368,10 @@ impl Renderer {
                     search.advance(Pos::new(line, Column(column)))
                 })
             {
-                let focused = focused_match
+                let is_focused = focused_match
                     .as_ref()
                     .map_or(false, |fm| fm.contains(&Pos::new(line, Column(column))));
-
-                if focused {
+                if is_focused {
                     style.color = self.named_colors.search_focused_match_foreground;
                     style.background_color =
                         Some(self.named_colors.search_focused_match_background);
