@@ -226,9 +226,7 @@ impl From<String> for Action {
                 Some(Action::Search(SearchAction::SearchFocusPrevious))
             }
             "searchdeleteword" => Some(Action::Search(SearchAction::SearchDeleteWord)),
-            "searchhistorynext" => {
-                Some(Action::Search(SearchAction::SearchHistoryNext))
-            }
+            "searchhistorynext" => Some(Action::Search(SearchAction::SearchHistoryNext)),
             "searchhistoryprevious" => {
                 Some(Action::Search(SearchAction::SearchHistoryPrevious))
             }
