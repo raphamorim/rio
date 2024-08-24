@@ -59,7 +59,7 @@ bitflags = "2.6.0"
 iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
 # winit = { package = "rio-winit-fork", path = "../rio-winit-fork", default-features = false, features = ["rwh_06"] }
-winit = { package = "rio-winit-fork", version = "0.30.7", default-features = false, features = ["rwh_06"] }
+winit = { package = "rio-winit-fork", version = "0.30.8", default-features = false, features = ["rwh_06"] }
 
 [profile.release]
 opt-level = 3
