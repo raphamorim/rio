@@ -26,7 +26,12 @@ pub fn draw_search_bar(
             (4., position_y + 10.),
             String::from("Search: type something..."),
             14.,
-            colors.foreground,
+            [
+                colors.foreground[0],
+                colors.foreground[1],
+                colors.foreground[2],
+                colors.foreground[3] - 0.3,
+            ],
         )));
         return;
     }
