@@ -65,6 +65,13 @@ impl ScreenNavigation {
             has_changes = true;
         }
 
+        // When search is active then BottomTab should not be rendered
+        if is_search_active && self.navigation.mode == NavigationMode::BottomTab {
+            self.objects.clear();
+            self.keys.clear();
+            return;
+        }
+
         if keys != self.keys {
             self.keys = keys.to_string();
             has_changes = true;
@@ -73,13 +80,6 @@ impl ScreenNavigation {
         if current != self.current {
             self.current = current;
             has_changes = true;
-        }
-
-        // When search is active then BottomTab should not be rendered
-        if is_search_active && self.navigation.mode == NavigationMode::BottomTab {
-            self.objects.clear();
-            self.keys.clear();
-            return;
         }
 
         if !has_changes {
