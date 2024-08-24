@@ -43,7 +43,7 @@ impl ScreenNavigation {
 
         ScreenNavigation {
             navigation,
-            objects: vec![],
+            objects: Vec::with_capacity(26),
             keys: String::from(""),
             color_automation,
             current: 0,
