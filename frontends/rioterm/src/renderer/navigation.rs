@@ -45,6 +45,7 @@ impl ScreenNavigation {
         colors: &Colors,
         current: usize,
         len: usize,
+        is_search_active: bool,
         objects: &mut Vec<Object>,
     ) {
         let mut has_changes = false;
@@ -72,6 +73,13 @@ impl ScreenNavigation {
         if current != self.current {
             self.current = current;
             has_changes = true;
+        }
+
+        // When search is active then BottomTab should not be rendered
+        if is_search_active && self.navigation.mode == NavigationMode::BottomTab {
+            self.objects.clear();
+            self.keys.clear();
+            return;
         }
 
         if !has_changes {
@@ -137,11 +145,9 @@ impl ScreenNavigation {
             }
 
             if let Some(title) = titles.get(&i) {
-                if let Some(color_overwrite) = get_color_overwrite(
-                    &self.color_automation,
-                    &title[0],
-                    &title[2],
-                ) {
+                if let Some(color_overwrite) =
+                    get_color_overwrite(&self.color_automation, &title[0], &title[2])
+                {
                     color = *color_overwrite;
                 }
             }
@@ -210,11 +216,9 @@ impl ScreenNavigation {
                     name = format!("{} ({})", title[0], title[1]);
                 }
 
-                if let Some(color_overwrite) = get_color_overwrite(
-                    &self.color_automation,
-                    &title[0],
-                    &title[2],
-                ) {
+                if let Some(color_overwrite) =
+                    get_color_overwrite(&self.color_automation, &title[0], &title[2])
+                {
                     foreground_color = colors.tabs;
                     background_color = *color_overwrite;
                 }

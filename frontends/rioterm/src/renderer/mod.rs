@@ -713,6 +713,7 @@ impl Renderer {
             &self.named_colors,
             context_manager.current_index(),
             context_manager.len(),
+            self.active_search.is_some(),
             &mut objects,
         );
 
