@@ -719,6 +719,7 @@ impl Renderer {
         if let Some(active_search_content) = &self.active_search {
             search::draw_search_bar(
                 &mut objects,
+                &self.named_colors,
                 (layout.width, layout.height),
                 layout.dimensions.scale,
                 &active_search_content,
