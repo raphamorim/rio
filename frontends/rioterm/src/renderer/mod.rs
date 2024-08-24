@@ -715,13 +715,9 @@ impl Renderer {
         let mut objects = Vec::new();
 
         self.navigation.build_objects(
-            (layout.width, layout.height),
-            layout.dimensions.scale,
-            context_manager.titles.key.as_str(),
-            &context_manager.titles.titles,
+            (layout.width, layout.height, layout.dimensions.scale),
             &self.named_colors,
-            context_manager.current_index(),
-            context_manager.len(),
+            context_manager,
             self.active_search.is_some(),
             &mut objects,
         );
@@ -730,9 +726,8 @@ impl Renderer {
             search::draw_search_bar(
                 &mut objects,
                 &self.named_colors,
-                (layout.width, layout.height),
-                layout.dimensions.scale,
-                &active_search_content,
+                (layout.width, layout.height, layout.dimensions.scale),
+                active_search_content,
             );
 
             self.active_search = None;

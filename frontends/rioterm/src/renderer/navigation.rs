@@ -9,6 +9,7 @@ pub struct ScreenNavigation {
     pub objects: Vec<Object>,
     keys: String,
     current: usize,
+    len: usize,
     width: f32,
     height: f32,
     scale: f32,
@@ -28,6 +29,7 @@ impl ScreenNavigation {
             keys: String::from(""),
             color_automation,
             current: 0,
+            len: 0,
             padding_y,
             width: 0.0,
             height: 0.0,
@@ -38,25 +40,22 @@ impl ScreenNavigation {
     #[inline]
     pub fn build_objects(
         &mut self,
-        dimensions: (f32, f32),
-        scale: f32,
-        keys: &str,
-        titles: &HashMap<usize, [String; 3]>,
+        dimensions: (f32, f32, f32),
         colors: &Colors,
-        current: usize,
-        len: usize,
+        context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         is_search_active: bool,
         objects: &mut Vec<Object>,
     ) {
         let mut has_changes = false;
+        let (width, height, scale) = dimensions;
 
-        if dimensions.0 != self.width {
-            self.width = dimensions.0;
+        if width != self.width {
+            self.width = width;
             has_changes = true;
         }
 
-        if dimensions.1 != self.height {
-            self.height = dimensions.1;
+        if height != self.height {
+            self.height = height;
             has_changes = true;
         }
 
@@ -72,13 +71,21 @@ impl ScreenNavigation {
             return;
         }
 
-        if keys != self.keys {
+        let keys = &context_manager.titles.key;
+        if keys != &self.keys {
             self.keys = keys.to_string();
             has_changes = true;
         }
 
+        let current = context_manager.current_index();
         if current != self.current {
             self.current = current;
+            has_changes = true;
+        }
+
+        let len = context_manager.current_index();
+        if len != self.len {
+            self.len = len;
             has_changes = true;
         }
 
@@ -88,6 +95,8 @@ impl ScreenNavigation {
         }
 
         self.objects.clear();
+
+        let titles = &context_manager.titles.titles;
 
         match self.navigation.mode {
             #[cfg(target_os = "macos")]
