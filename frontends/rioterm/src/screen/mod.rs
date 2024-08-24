@@ -1838,14 +1838,17 @@ impl Screen<'_> {
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
                 self.renderer.set_active_search(
-                    self.search_state.history.get(history_index).cloned()
+                    self.search_state.history.get(history_index).cloned(),
                 );
             }
         }
 
         let mut search_hints = if is_search_active {
             let terminal = self.context_manager.current().terminal.lock();
-            let hints = self.search_state.dfas_mut().map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
+            let hints = self
+                .search_state
+                .dfas_mut()
+                .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
             drop(terminal);
             hints
         } else {
@@ -1875,7 +1878,7 @@ impl Screen<'_> {
             display_offset as i32,
             has_blinking_enabled,
             &mut search_hints,
-            &self.search_state.focused_match
+            &self.search_state.focused_match,
         );
         // let duration = start.elapsed();
         // println!("Total update_content is: {:?}\n", duration);

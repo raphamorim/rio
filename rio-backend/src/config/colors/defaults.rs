@@ -257,3 +257,24 @@ pub fn selection_background() -> ColorArray {
         .unwrap()
         .to_arr()
 }
+
+#[inline]
+pub fn search_match_background() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+#[inline]
+pub fn search_match_foreground() -> ColorArray {
+    [1., 1., 1., 1.]
+}
+#[inline]
+pub fn search_focused_match_background() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#E6A003"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+#[inline]
+pub fn search_focused_match_foreground() -> ColorArray {
+    [1., 1., 1., 1.]
+}

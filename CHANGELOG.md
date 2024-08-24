@@ -11,6 +11,8 @@
 
 ## Unreleased
 
+- Search support.
+- New theme properties `search-match-background`, `search-match-foreground`, `search-focused-match-background` and `search-focused-match-foreground`.
 - Fix color automation on tabs for linux.
 - Update tabs UI styles (make it larger and able to show more text when necessary).
 - Support writing the config to a custom/default location via `--write-config` (Ref: #605).
