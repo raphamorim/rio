@@ -11,9 +11,10 @@
 
 ## Unreleased
 
-- Support writing the config to a custom/default location via `--write-config` (Ref: #605)
+- Update tabs UI styles (make it larger and able to show more text when necessary).
+- Support writing the config to a custom/default location via `--write-config` (Ref: #605).
 - Fix scale update on transitioning between screens with different DPI.
-- Support a short variant (`-w`) for `--working-dir` argument
+- Support a short variant (`-w`) for `--working-dir` argument.
 
 ## 0.1.8
 
