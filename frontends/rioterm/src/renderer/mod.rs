@@ -713,8 +713,7 @@ impl Renderer {
 
         sugarloaf.set_content(content_builder.build());
 
-        let mut objects = Vec::new();
-
+        let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
             (layout.width, layout.height, layout.dimensions.scale),
             &self.named_colors,
