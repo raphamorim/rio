@@ -216,20 +216,20 @@ impl From<String> for Action {
             "paste" => Some(Action::Paste),
             "quit" => Some(Action::Quit),
             "copy" => Some(Action::Copy),
-            "search-forward" => Some(Action::SearchForward),
-            "search-backward" => Some(Action::SearchBackward),
-            "search-confirm" => Some(Action::Search(SearchAction::SearchConfirm)),
-            "search-cancel" => Some(Action::Search(SearchAction::SearchCancel)),
-            "search-clear" => Some(Action::Search(SearchAction::SearchClear)),
-            "search-focus-next" => Some(Action::Search(SearchAction::SearchFocusNext)),
-            "search-focus-previous" => {
+            "searchforward" => Some(Action::SearchForward),
+            "searchbackward" => Some(Action::SearchBackward),
+            "searchconfirm" => Some(Action::Search(SearchAction::SearchConfirm)),
+            "searchcancel" => Some(Action::Search(SearchAction::SearchCancel)),
+            "searchclear" => Some(Action::Search(SearchAction::SearchClear)),
+            "searchfocusnext" => Some(Action::Search(SearchAction::SearchFocusNext)),
+            "searchfocusprevious" => {
                 Some(Action::Search(SearchAction::SearchFocusPrevious))
             }
-            "search-delete-word" => Some(Action::Search(SearchAction::SearchDeleteWord)),
-            "search-history-next" => {
+            "searchdeleteword" => Some(Action::Search(SearchAction::SearchDeleteWord)),
+            "searchhistorynext" => {
                 Some(Action::Search(SearchAction::SearchHistoryNext))
             }
-            "search-history-previous" => {
+            "searchhistoryprevious" => {
                 Some(Action::Search(SearchAction::SearchHistoryPrevious))
             }
             "clearhistory" => Some(Action::ClearHistory),
