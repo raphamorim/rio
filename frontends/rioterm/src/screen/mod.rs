@@ -79,7 +79,6 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub ime: Ime,
-    pub hints: Option<HintMatches<'screen>>,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -238,7 +237,6 @@ impl Screen<'_> {
             renderer,
             bindings,
             clipboard,
-            hints: None,
         })
     }
 
@@ -1836,6 +1834,24 @@ impl Screen<'_> {
     pub fn update_content(&mut self) {
         // let start = std::time::Instant::now();
         // println!("Render time elapsed");
+        let is_search_active = self.search_active();
+        if is_search_active {
+            if let Some(history_index) = self.search_state.history_index {
+                self.renderer.set_active_search(
+                    self.search_state.history.get(history_index).cloned()
+                );
+            }
+        }
+
+        let mut search_hints = if is_search_active {
+            let terminal = self.context_manager.current().terminal.lock();
+            let hints = self.search_state.dfas_mut().map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
+            drop(terminal);
+            hints
+        } else {
+            None
+        };
+
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.context_manager.current().terminal.lock();
             let data = (
@@ -1848,14 +1864,6 @@ impl Screen<'_> {
             data
         };
 
-        if self.search_active() {
-            if let Some(history_index) = self.search_state.history_index {
-                self.renderer.set_active_search(
-                    self.search_state.history.get(history_index).cloned()
-                );
-            }
-        }
-
         self.context_manager.update_titles();
         self.renderer.set_ime(self.ime.preedit());
 
@@ -1866,6 +1874,8 @@ impl Screen<'_> {
             &self.context_manager,
             display_offset as i32,
             has_blinking_enabled,
+            &mut search_hints,
+            &self.search_state.focused_match
         );
         // let duration = start.elapsed();
         // println!("Total update_content is: {:?}\n", duration);

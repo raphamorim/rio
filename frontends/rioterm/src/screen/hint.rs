@@ -57,7 +57,7 @@ impl<'a> HintMatches<'a> {
     /// Advance the regex tracker to the next point.
     ///
     /// This will return `true` if the point passed is part of a regex match.
-    fn advance(&mut self, point: Pos) -> bool {
+    pub fn advance(&mut self, point: Pos) -> bool {
         while let Some(bounds) = self.get(self.index) {
             if bounds.start() > &point {
                 break;
