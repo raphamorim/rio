@@ -112,7 +112,7 @@ impl Screen<'_> {
         let padding_y_top =
             padding_top_from_config(&config.navigation, config.padding_y[0], 1);
         let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1);
+            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
 
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
@@ -315,8 +315,12 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         let padding_y_top =
             padding_top_from_config(&config.navigation, config.padding_y[0], num_tabs);
-        let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding_y[1], num_tabs);
+        let padding_y_bottom = padding_bottom_from_config(
+            &config.navigation,
+            config.padding_y[1],
+            num_tabs,
+            self.search_active(),
+        );
 
         self.sugarloaf.update_font(font_library);
         self.sugarloaf.layout_mut().recalculate(
@@ -571,33 +575,40 @@ impl Screen<'_> {
                     }
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
                         self.confirm_search();
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
                         self.cancel_search();
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
                         self.cancel_search();
                         self.start_search(direction);
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::Search(SearchAction::SearchFocusNext) => {
                         self.advance_search_origin(self.search_state.direction);
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::Search(SearchAction::SearchFocusPrevious) => {
                         let direction = self.search_state.direction.opposite();
                         self.advance_search_origin(direction);
+                        self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
                     Act::ToggleViMode => {
@@ -669,34 +680,8 @@ impl Screen<'_> {
                             ),
                         );
 
-                        let previous_margin = layout.margin;
                         let num_tabs = self.ctx().len();
-                        let padding_y_top = padding_top_from_config(
-                            &self.renderer.navigation.navigation,
-                            self.renderer.navigation.padding_y[0],
-                            num_tabs,
-                        );
-                        let padding_y_bottom = padding_bottom_from_config(
-                            &self.renderer.navigation.navigation,
-                            self.renderer.navigation.padding_y[1],
-                            num_tabs,
-                        );
-
-                        if previous_margin.top_y != padding_y_top
-                            || previous_margin.bottom_y != padding_y_bottom
-                        {
-                            let layout = self.sugarloaf.layout();
-                            self.sugarloaf.layout_mut().recalculate(
-                                layout.font_size,
-                                layout.line_height,
-                                layout.margin.x,
-                                padding_y_top,
-                                padding_y_bottom,
-                            );
-                            self.sugarloaf.layout_mut().update();
-                            self.resize_all_contexts();
-                        }
-
+                        self.resize_top_or_bottom_line(num_tabs);
                         self.demand_render();
                     }
                     Act::TabCloseCurrent => {
@@ -715,35 +700,8 @@ impl Screen<'_> {
                             return;
                         }
 
-                        let layout = self.sugarloaf.layout();
-                        let previous_margin = layout.margin;
                         let num_tabs = self.ctx().len().wrapping_sub(1);
-                        let padding_y_top = padding_top_from_config(
-                            &self.renderer.navigation.navigation,
-                            self.renderer.navigation.padding_y[0],
-                            num_tabs,
-                        );
-                        let padding_y_bottom = padding_bottom_from_config(
-                            &self.renderer.navigation.navigation,
-                            self.renderer.navigation.padding_y[1],
-                            num_tabs,
-                        );
-
-                        if previous_margin.top_y != padding_y_top
-                            || previous_margin.bottom_y != padding_y_bottom
-                        {
-                            let layout = self.sugarloaf.layout();
-                            self.sugarloaf.layout_mut().recalculate(
-                                layout.font_size,
-                                layout.line_height,
-                                layout.margin.x,
-                                padding_y_top,
-                                padding_y_bottom,
-                            );
-                            self.sugarloaf.layout_mut().update();
-                            self.resize_all_contexts();
-                        }
-
+                        self.resize_top_or_bottom_line(num_tabs);
                         self.demand_render();
                     }
                     Act::Quit => {
@@ -973,6 +931,37 @@ impl Screen<'_> {
                 let content = self.clipboard.get(ClipboardType::Selection);
                 self.paste(&content, true);
             }
+        }
+    }
+
+    fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
+        let layout = self.sugarloaf.layout();
+        let previous_margin = layout.margin;
+        let padding_y_top = padding_top_from_config(
+            &self.renderer.navigation.navigation,
+            self.renderer.navigation.padding_y[0],
+            num_tabs,
+        );
+        let padding_y_bottom = padding_bottom_from_config(
+            &self.renderer.navigation.navigation,
+            self.renderer.navigation.padding_y[1],
+            num_tabs,
+            self.search_active(),
+        );
+
+        if previous_margin.top_y != padding_y_top
+            || previous_margin.bottom_y != padding_y_bottom
+        {
+            let layout = self.sugarloaf.layout();
+            self.sugarloaf.layout_mut().recalculate(
+                layout.font_size,
+                layout.line_height,
+                layout.margin.x,
+                padding_y_top,
+                padding_y_bottom,
+            );
+            self.sugarloaf.layout_mut().update();
+            self.resize_all_contexts();
         }
     }
 

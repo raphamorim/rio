@@ -1,5 +1,5 @@
-use rio_backend::config::colors::Colors;
 use crate::constants::*;
+use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
 use rio_backend::sugarloaf::{Object, Rect, Text};
 use std::collections::HashMap;
@@ -89,11 +89,23 @@ impl ScreenNavigation {
             }
             NavigationMode::TopTab => {
                 let position_y = 0.0;
-                self.tab(titles, colors, len, position_y, self.navigation.hide_if_single);
+                self.tab(
+                    titles,
+                    colors,
+                    len,
+                    position_y,
+                    self.navigation.hide_if_single,
+                );
             }
             NavigationMode::BottomTab => {
                 let position_y = (self.height / self.scale) - PADDING_Y_BOTTOM_TABS;
-                self.tab(titles, colors, len, position_y, self.navigation.hide_if_single);
+                self.tab(
+                    titles,
+                    colors,
+                    len,
+                    position_y,
+                    self.navigation.hide_if_single,
+                );
             }
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
