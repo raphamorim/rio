@@ -6,11 +6,10 @@ use rio_backend::sugarloaf::{Object, Rect, Text};
 pub fn draw_search_bar(
     objects: &mut Vec<Object>,
     colors: &Colors,
-    dimensions: (f32, f32),
-    scale: f32,
+    dimensions: (f32, f32, f32),
     content: &String,
 ) {
-    let (width, height) = dimensions;
+    let (width, height, scale) = dimensions;
     let position_y = (height / scale) - PADDING_Y_BOTTOM_TABS;
 
     objects.push(Object::Rect(Rect {
@@ -21,6 +20,16 @@ pub fn draw_search_bar(
             PADDING_Y_BOTTOM_TABS,
         ],
     }));
+
+    if content.is_empty() {
+        objects.push(Object::Text(Text::single_line(
+            (4., position_y + 10.),
+            String::from("Search: type something..."),
+            14.,
+            colors.foreground,
+        )));
+        return;
+    }
 
     objects.push(Object::Text(Text::single_line(
         (4., position_y + 10.),
