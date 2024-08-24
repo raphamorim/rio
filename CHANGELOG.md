@@ -5,11 +5,6 @@
 
 <!-- ## In progress
 
-- Migration from Winit to WA.
-- Apple MacOS
-- ⏳ Linux Wayland
-- ⏳ Linux x11
-- ⏳ Microsoft Windows
 - Sixel graphics initial support.
 - iTerm2 image protocol.
 -->

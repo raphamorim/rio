@@ -633,6 +633,7 @@ impl Sequencer {
                                 }
 
                                 route.window.winit_window.set_cursor(CursorIcon::Pointer);
+                                route.window.screen.update_content();
                                 route.window.screen.context_manager.schedule_render(60);
                             }
                         }
