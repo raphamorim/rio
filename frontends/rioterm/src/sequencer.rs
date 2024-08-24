@@ -216,6 +216,13 @@ impl Sequencer {
                                         if self.router.routes.is_empty() {
                                             event_loop_window_target.exit();
                                         }
+                                    } else {
+                                        let size =
+                                            route.window.screen.context_manager.len();
+                                        route
+                                            .window
+                                            .screen
+                                            .resize_top_or_bottom_line(size);
                                     }
                                 }
                             }
