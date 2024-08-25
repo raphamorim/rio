@@ -330,7 +330,7 @@ impl Compositor {
                 cached_run.underline = CachedRunUnderline {
                     enabled: true,
                     offset: (style.line_height / 3.5).round() as i32,
-                    size: 3.0,
+                    size: 2.0,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: false,
                     shape: UnderlineShape::Regular,
@@ -470,7 +470,12 @@ impl Compositor {
                         );
                         if underline.is_doubled {
                             self.batches.add_rect(
-                                &Rect::new(ux, baseline, end - ux, underline.size),
+                                &Rect::new(
+                                    ux,
+                                    uy - (underline.size * 2.),
+                                    end - ux,
+                                    underline.size,
+                                ),
                                 depth,
                                 &underline.color,
                             );
@@ -501,18 +506,8 @@ impl Compositor {
                         }
                     }
                     UnderlineShape::Curly => {
-                        let mut start = ux;
-                        while start < end {
-                            start = start.min(end);
-                            self.batches.add_rect(
-                                &Rect::new(start, uy, 2.0, underline.size),
-                                depth,
-                                &underline.color,
-                            );
-                            start += 4.0;
-                        }
-                        let style_line_height = (line_height / 12.).min(3.0);
-                        let offset = style_line_height * 1.5;
+                        let style_line_height = (line_height / 10.).clamp(2.0, 16.0);
+                        let offset = style_line_height * 1.6;
 
                         let mut curly_width = ux;
                         let mut rect_width = 1.0f32.min(end - curly_width);
@@ -530,10 +525,9 @@ impl Compositor {
                             self.batches.add_rect(
                                 &Rect::new(
                                     curly_width,
-                                    uy - ((dot_bottom_offset - offset)
-                                        + underline.offset as f32),
+                                    uy - (dot_bottom_offset - offset),
                                     rect_width,
-                                    style_line_height,
+                                    underline.size,
                                 ),
                                 depth,
                                 &underline.color,
