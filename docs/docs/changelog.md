@@ -7,6 +7,10 @@ language: 'en'
 
 ## Unreleased
 
+- X11: Replace libxcursor with custom cursor code.
+
+## 0.1.9
+
 - Search support.
 - New theme properties `search-match-background`, `search-match-foreground`, `search-focused-match-background` and `search-focused-match-foreground`.
 - Fix bug Tab indicator doesn't disappear [#493](https://github.com/raphamorim/rio/issues/493).
@@ -16,7 +20,6 @@ language: 'en'
 - Support writing the config to a custom/default location via `--write-config` (Ref: #605).
 - Fix scale update on transitioning between screens with different DPI.
 - Support a short variant (`-w`) for `--working-dir` argument.
-- X11: Replace libxcursor with custom cursor code.
 
 ## 0.1.8
 
