@@ -399,6 +399,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn close_other_tabs(&mut self) {
+        let current_route_id = self.current().route_id;
+        self.titles.titles.retain(|&i, _| i == self.current_index);
+        self.contexts.retain(|ctx| ctx.route_id == current_route_id);
+        self.current_route = self.contexts[0].route_id;
+        self.set_current(0);
+    }
+
+    #[inline]
     pub fn select_tab(&mut self, tab_index: usize) {
         if self.config.is_native {
             self.event_proxy

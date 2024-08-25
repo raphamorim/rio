@@ -190,6 +190,7 @@ Execute a predefined action in Rio terminal.
 | :------------------- | :------------------------------------------------------------------ |
 | CreateTab            |                                                                     |
 | CloseTab             |                                                                     |
+| CloseOtherTabs       |                                                                     |
 | SelectPrevTab        |                                                                     |
 | SelectNextTab        |                                                                     |
 | SelectLastTab        |                                                                     |

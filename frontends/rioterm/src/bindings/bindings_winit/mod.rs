@@ -237,6 +237,7 @@ impl From<String> for Action {
             "createwindow" => Some(Action::WindowCreateNew),
             "createtab" => Some(Action::TabCreateNew),
             "closetab" => Some(Action::TabCloseCurrent),
+            "closeothertabs" => Some(Action::TabCloseOthers),
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
             "selectnexttab" => Some(Action::SelectNextTab),
@@ -408,6 +409,9 @@ pub enum Action {
 
     /// Close tab.
     TabCloseCurrent,
+
+    /// Close all other tabs (leave only the current tab).
+    TabCloseOthers,
 
     /// Toggle fullscreen.
     #[allow(dead_code)]
