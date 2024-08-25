@@ -173,6 +173,20 @@ Execute a predefined action in Rio terminal.
 | ScrollToTop        |                                                                            |
 | ScrollToBottom     |                                                                            |
 
+### [Search](#search)
+
+| Action             | Description                                                                |
+| :----------------- | :------------------------------------------------------------------------- |
+| SearchForward      |  |
+| SearchBackward       |                                                                            |
+| SearchConfirm     |                                                                            |
+| SearchClear   |                                                                            |
+| SearchFocusNext |                                                                            |
+| SearchFocusPrevious        |                                                                            |
+| SearchDeleteWord     |                                                                            |
+| SearchHistoryNext     |                                                                            |
+| SearchHistoryPrevious     |                                                                            |
+
 ### [Bytes](#bytes)
 
 Send a byte sequence to the running application.
