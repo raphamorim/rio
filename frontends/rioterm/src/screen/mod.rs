@@ -691,6 +691,7 @@ impl Screen<'_> {
                         );
 
                         let num_tabs = self.ctx().len();
+                        self.cancel_search();
                         self.resize_top_or_bottom_line(num_tabs);
                         self.demand_render();
                     }
@@ -706,6 +707,7 @@ impl Screen<'_> {
                             self.context_manager.kill_current_context();
                         }
 
+                        self.cancel_search();
                         if self.ctx().len() <= 1 {
                             return;
                         }
@@ -828,18 +830,22 @@ impl Screen<'_> {
                     }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
+                        self.cancel_search();
                         self.demand_render();
                     }
                     Act::SelectLastTab => {
+                        self.cancel_search();
                         self.context_manager.select_last_tab();
                         self.demand_render();
                     }
                     Act::SelectNextTab => {
+                        self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_next();
                         self.demand_render();
                     }
                     Act::SelectPrevTab => {
+                        self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_prev();
                         self.demand_render();
