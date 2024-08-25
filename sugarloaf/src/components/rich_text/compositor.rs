@@ -507,6 +507,7 @@ impl Compositor {
                     }
                     UnderlineShape::Curly => {
                         let style_line_height = (line_height / 10.).clamp(2.0, 16.0);
+                        let size = (style_line_height / 1.5).clamp(1.0, 4.0);
                         let offset = style_line_height * 1.6;
 
                         let mut curly_width = ux;
@@ -527,7 +528,7 @@ impl Compositor {
                                     curly_width,
                                     uy - (dot_bottom_offset - offset),
                                     rect_width,
-                                    underline.size,
+                                    size,
                                 ),
                                 depth,
                                 &underline.color,
