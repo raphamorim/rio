@@ -31,7 +31,7 @@ language: 'en'
 | Select the sixth tab   | `Command + 6`                                                  |
 | Select the seventh tab | `Command + 7`                                                  |
 | Select the eighth tab  | `Command + 8`                                                  |
-| Select the last tab    | `Command + 9`                                                  |
+| Select the last tab    | `Command + 9`          |
 
 ### Windows
 
@@ -49,6 +49,15 @@ language: 'en'
 | Decrease font size   | `Control + Minus (-)`                                       |
 | Reset font size      | `Control + 0`                                               |
 | Close tab or quit    | `Control + Shift + W`                                       |
+| Select the first tab   | `Control + Shift + 1`                                                  |
+| Select the second tab  | `Control + Shift + 2`                                                  |
+| Select the third tab   | `Control + Shift + 3`                                                  |
+| Select the fourth tab  | `Control + Shift + 4`                                                  |
+| Select the fifth tab   | `Control + Shift + 5`                                                  |
+| Select the sixth tab   | `Control + Shift + 6`                                                  |
+| Select the seventh tab | `Control + Shift + 7`                                                  |
+| Select the eighth tab  | `Control + Shift + 8`                                                  |
+| Select the last tab    | `Control + Shift + 9`          |
 
 ### Linux and BSD
 
@@ -66,6 +75,31 @@ language: 'en'
 | Decrease font size   | `Control + Minus (-)`                                          |
 | Reset font size      | `Control + 0`                                                  |
 | Close tab or quit    | `Control + Shift + W`                                          |
+| Select the first tab   | `Control + Shift + 1`                                                  |
+| Select the second tab  | `Control + Shift + 2`                                                  |
+| Select the third tab   | `Control + Shift + 3`                                                  |
+| Select the fourth tab  | `Control + Shift + 4`                                                  |
+| Select the fifth tab   | `Control + Shift + 5`                                                  |
+| Select the sixth tab   | `Control + Shift + 6`                                                  |
+| Select the seventh tab | `Control + Shift + 7`                                                  |
+| Select the eighth tab  | `Control + Shift + 8`                                                  |
+| Select the last tab    | `Control + Shift + 9`          |
+
+### Search
+
+| Action               | Key                                                         |
+| -------------------- | ----------------------------------------------------------- |
+| Search forward         | `Command + f`          |
+| Search backward        | `Command + b`          |
+| Quit search            | `Escape` (while search is open)        |
+| Quit search            | `Control + c` (while search is open)   |
+| Focus next             | `Enter` (while search is open)         |
+| Focus previous         | `Shift + Enter` (while search is open) |
+| Clear search word      | `Control + w` (while search is open)   |
+| Search history previous| `Control + p` (while search is open)   |
+| Search history previous| `ArrowUp` (while search is open)       |
+| Search history next    | `Control + n` (while search is open)   |
+| Search history next    | `ArrowDown` (while search is open)     |
 
 <br/>
 
