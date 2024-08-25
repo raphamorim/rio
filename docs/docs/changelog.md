@@ -94,7 +94,7 @@ padding-y = [30, 10]
 
 - Update swash (0.1.18), ab_glyph (0.2.28) and remove double hashmap implementation.
 
-## 0.1.13
+## 0.1.3
 
 - Added support to font features (ref: #548 #551)
 
