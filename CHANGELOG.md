@@ -13,6 +13,7 @@
 - Fix bug Tab indicator doesn't disappear [#493](https://github.com/raphamorim/rio/issues/493).
 - Fix color automation on tabs for linux.
 - Update tabs UI styles (make it larger and able to show more text when necessary).
+- Corrections on underline render proportions for different DPIs.
 - Support writing the config to a custom/default location via `--write-config` (Ref: #605).
 - Fix scale update on transitioning between screens with different DPI.
 - Support a short variant (`-w`) for `--working-dir` argument.
