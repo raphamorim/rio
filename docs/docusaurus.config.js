@@ -120,6 +120,7 @@ const config = {
           },
           { to: '/docs/features', label: 'Features', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
+          { to: '/docs/changelog', label: 'Changelog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
             label: 'Discord',
