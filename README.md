@@ -10,9 +10,9 @@
 
 | Name | Details |
 | --- | --- |
-| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/macos) |
-| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/linux) |
-| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/0.0.x/install/windows) |
+| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/macos/) |
+| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/linux/) |
+| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows/) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
 Demo usage of Rio terminal on MacOS:
@@ -25,7 +25,7 @@ Documentation: https://raphamorim.io/rio
 
 If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 
-Rio would not be possible without [few acknowledgements](#acknowledgements) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
+Rio would not be possible without [few acknowledgements](#acknowledgments) and specially [Alacritty](https://github.com/alacritty/alacritty/), since a lot of Rio functionalities (e.g: ANSI parser, events, grid system) was originally written (and still uses a good amount) of Alacritty code.
 
 ## Supporting the Project
 
