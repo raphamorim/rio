@@ -8,7 +8,8 @@ language: 'en'
 ## Unreleased
 
 - X11: Replace libxcursor with custom cursor code.
-- Enable search functionality as default on Linux
+- `use-kitty-keyboard-protocol` is now `true` as default.
+- Enable search functionality as default on Linux.
 
 ## 0.1.9
 
