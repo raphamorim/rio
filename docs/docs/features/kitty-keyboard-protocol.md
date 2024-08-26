@@ -3,7 +3,7 @@ title: 'Kitty keyboard protocol'
 language: 'en'
 ---
 
-Rio terminal implements Kitty keyboard protocol. It is disabled by default, for activate you need to set the configuration as true.
+Rio terminal implements Kitty keyboard protocol. It is enabled by default.
 
 ```toml
 use-kitty-keyboard-protocol = true

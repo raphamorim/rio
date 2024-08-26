@@ -9,6 +9,8 @@ language: 'en'
 
 - X11: Replace libxcursor with custom cursor code.
 - Add command for closing all tabs except the current one (`closeunfocusedtabs`)
+- `use-kitty-keyboard-protocol` is now `true` as default.
+- Enable search functionality as default on Linux.
 
 ## 0.1.9
 

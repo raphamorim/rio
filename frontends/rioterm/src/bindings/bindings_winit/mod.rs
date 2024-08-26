@@ -641,6 +641,21 @@ pub fn default_key_bindings(
             ViMotion::WordRightEnd;
         "5",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Bracket;
+
+        // Search
+        "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
+        "b", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchBackward;
+        Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
+        Key::Named(Enter), +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
+        Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
+        Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
+        "c", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchCancel;
+        "u", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchClear;
+        "w", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchDeleteWord;
+        "p", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        "n", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
+        Key::Named(ArrowUp), +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        Key::Named(ArrowDown), +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
     );
 
     if !config_keyboard.use_kitty_keyboard_protocol {
