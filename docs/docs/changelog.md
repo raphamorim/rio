@@ -8,6 +8,7 @@ language: 'en'
 ## Unreleased
 
 - X11: Replace libxcursor with custom cursor code.
+- Enable search functionality as default on Linux
 
 ## 0.1.9
 
