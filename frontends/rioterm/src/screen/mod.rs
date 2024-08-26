@@ -466,7 +466,8 @@ impl Screen<'_> {
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
         // 2. In case IME has preedit then also should drop the key processing
-        if !self.renderer.is_kitty_keyboard_enabled && key.state == ElementState::Released
+        let is_kitty_keyboard_enabled = self.renderer.is_kitty_keyboard_enabled;
+        if !is_kitty_keyboard_enabled && key.state == ElementState::Released
             || self.ime.preedit().is_some()
         {
             return;
@@ -475,34 +476,139 @@ impl Screen<'_> {
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
-        if self.renderer.is_kitty_keyboard_enabled && key.state == ElementState::Released
+        if is_kitty_keyboard_enabled && key.state == ElementState::Released
         {
-            if mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
-                && !mode.contains(Mode::VI)
+            if !mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+                || mode.contains(Mode::VI)
+                || self.search_active()
             {
-                // NOTE: echoing the key back on release is how it's done in kitty/foot and
-                // it's how it should be done according to the kitty author
-                // https://github.com/kovidgoyal/kitty/issues/6516#issuecomment-1659454350
-                let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
-                    Key::Named(NamedKey::Tab) => [b'\t'].as_slice().into(),
-                    Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
-                    Key::Named(NamedKey::Delete) => [b'\x7f'].as_slice().into(),
-                    Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                    _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key, mods, mode,
-                    )
-                    .into(),
-                };
-
-                self.sugarloaf.mark_dirty();
-                self.ctx_mut().current_mut().messenger.send_write(bytes);
+                return;
             }
+
+            // Mask `Alt` modifier from input when we won't send esc.
+            let text = key.text_with_all_modifiers().unwrap_or_default();
+            let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
+
+            let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
+                // NOTE: Echo the key back on release to follow kitty/foot behavior. When
+                // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
+                // the keys below.
+                _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
+                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode).into()
+                },
+                // Winit uses different keys for `Backspace` so we explicitly specify the
+                // values, instead of using what was passed to us from it.
+                Key::Named(NamedKey::Tab) => [b'\t'].as_slice().into(),
+                Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
+                Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
+                Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
+                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode).into(),
+            };
+
+            self.sugarloaf.mark_dirty();
+            self.ctx_mut().current_mut().messenger.send_write(bytes);
 
             return;
         }
 
-        let search_active = self.search_active();
+        let ignore_chars = self.process_key_bindings(key, &mode, mods);
 
+        // VI mode doesn't have inputs
+        if ignore_chars || mode.contains(Mode::VI) {
+            return;
+        }
+
+        let text = key.text_with_all_modifiers().unwrap_or_default();
+
+        if self.search_active() {
+            for character in text.chars() {
+                self.search_input(character);
+            }
+
+            self.demand_render();
+            return;
+        }
+
+        let bytes = if !is_kitty_keyboard_enabled {
+            // If text is empty then leave without input bytes
+            if text.is_empty() {
+                return;
+            }
+
+            let mut bytes = Vec::with_capacity(text.len() + 1);
+            if self.alt_send_esc(key, text) && text.len() == 1 {
+                bytes.push(b'\x1b');
+            }
+            bytes.extend_from_slice(text.as_bytes());
+            bytes
+        } else {
+            // We use legacy input when we have associated text with
+            // the given key and we have one of the following situations:
+            //
+            // 1. No keyboard input protocol is enabled.
+            // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
+            //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
+            let write_legacy = !mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC)
+                && !text.is_empty()
+                && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                    || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                        && (mods.is_empty() || mods == ModifiersState::SHIFT)
+                        && key.location != KeyLocation::Numpad
+                        // Special case escape here.
+                        && key.logical_key != Key::Named(NamedKey::Escape)));
+
+            // Handle legacy char writing.
+            if write_legacy {
+                let mut bytes = Vec::with_capacity(text.len() + 1);
+                if self.alt_send_esc(key, text) && text.len() == 1 {
+                    bytes.push(b'\x1b');
+                }
+
+                bytes.extend_from_slice(text.as_bytes());
+                bytes
+            } else {
+                // Otherwise we should build the key sequence for the given input.
+                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
+                    key, mods, mode,
+                )
+            }
+        };
+
+        if !bytes.is_empty() {
+            self.sugarloaf.mark_dirty();
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
+            self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+        }
+    }
+
+    #[inline]
+    pub fn process_mouse_bindings(&mut self, button: MouseButton) {
+        let mode = self.get_mode();
+        let binding_mode = BindingMode::new(&mode, self.search_active());
+        let mouse_mode = self.mouse_mode();
+        let mods = self.modifiers.state();
+
+        for i in 0..self.mouse_bindings.len() {
+            let mut binding = self.mouse_bindings[i].clone();
+
+            // Require shift for all modifiers when mouse mode is active.
+            if mouse_mode {
+                binding.mods |= ModifiersState::SHIFT;
+            }
+
+            if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
+                && binding.action == Act::PasteSelection
+            {
+                let content = self.clipboard.get(ClipboardType::Selection);
+                self.paste(&content, true);
+            }
+        }
+    }
+
+    pub fn process_key_bindings(&mut self, key: &winit::event::KeyEvent, mode: &Mode, mods: ModifiersState) -> bool {
+        let search_active = self.search_active();
         let binding_mode = BindingMode::new(&mode, search_active);
         let mut ignore_chars = None;
 
@@ -533,7 +639,7 @@ impl Screen<'_> {
                 key.logical_key.clone()
             };
 
-            let key = match (&binding.trigger, logical_key) {
+            let key_match = match (&binding.trigger, logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
                     key: code,
@@ -541,7 +647,7 @@ impl Screen<'_> {
                 },
             };
 
-            if binding.is_triggered_by(binding_mode.to_owned(), mods, &key) {
+            if binding.is_triggered_by(binding_mode.to_owned(), mods, &key_match) {
                 *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
 
                 match &binding.action {
@@ -700,7 +806,7 @@ impl Screen<'_> {
 
                         if self.context_manager.config.is_native {
                             self.context_manager.close_current_window(false);
-                            return;
+                            return true;
                         } else {
                             // Kill current context will trigger terminal.exit
                             // then RioEvent::Exit and eventually try_close_existent_tab
@@ -709,7 +815,7 @@ impl Screen<'_> {
 
                         self.cancel_search();
                         if self.ctx().len() <= 1 {
-                            return;
+                            return true;
                         }
 
                         let num_tabs = self.ctx().len().wrapping_sub(1);
@@ -856,98 +962,7 @@ impl Screen<'_> {
             }
         }
 
-        // VI mode doesn't have inputs
-        if ignore_chars.unwrap_or(false) || mode.contains(Mode::VI) {
-            return;
-        }
-
-        let text = key.text_with_all_modifiers().unwrap_or_default();
-
-        if self.search_active() {
-            for character in text.chars() {
-                self.search_input(character);
-            }
-
-            self.demand_render();
-            return;
-        }
-
-        let bytes = if !self.renderer.is_kitty_keyboard_enabled {
-            // If text is empty then leave without input bytes
-            if text.is_empty() {
-                return;
-            }
-
-            let mut bytes = Vec::with_capacity(text.len() + 1);
-            if self.alt_send_esc() && text.len() == 1 {
-                bytes.push(b'\x1b');
-            }
-            bytes.extend_from_slice(text.as_bytes());
-            bytes
-        } else {
-            // We use legacy input when we have associated text with
-            // the given key and we have one of the following situations:
-            //
-            // 1. No keyboard input protocol is enabled.
-            // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
-            //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
-            let write_legacy = !mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC)
-                && !text.is_empty()
-                && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                    || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                        && (mods.is_empty() || mods == ModifiersState::SHIFT)
-                        && key.location != KeyLocation::Numpad
-                        // Special case escape here.
-                        && key.logical_key != Key::Named(NamedKey::Escape)));
-
-            // Handle legacy char writing.
-            if write_legacy {
-                let mut bytes = Vec::with_capacity(text.len() + 1);
-                if self.alt_send_esc() && text.len() == 1 {
-                    bytes.push(b'\x1b');
-                }
-
-                bytes.extend_from_slice(text.as_bytes());
-                bytes
-            } else {
-                // Otherwise we should build the key sequence for the given input.
-                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
-            }
-        };
-
-        if !bytes.is_empty() {
-            self.sugarloaf.mark_dirty();
-            self.scroll_bottom_when_cursor_not_visible();
-            self.clear_selection();
-
-            self.ctx_mut().current_mut().messenger.send_bytes(bytes);
-        }
-    }
-
-    #[inline]
-    pub fn process_mouse_bindings(&mut self, button: MouseButton) {
-        let mode = self.get_mode();
-        let binding_mode = BindingMode::new(&mode, self.search_active());
-        let mouse_mode = self.mouse_mode();
-        let mods = self.modifiers.state();
-
-        for i in 0..self.mouse_bindings.len() {
-            let mut binding = self.mouse_bindings[i].clone();
-
-            // Require shift for all modifiers when mouse mode is active.
-            if mouse_mode {
-                binding.mods |= ModifiersState::SHIFT;
-            }
-
-            if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
-                && binding.action == Act::PasteSelection
-            {
-                let content = self.clipboard.get(ClipboardType::Selection);
-                self.paste(&content, true);
-            }
-        }
+        ignore_chars.unwrap_or(false)
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
@@ -1069,21 +1084,32 @@ impl Screen<'_> {
     }
 
     /// Whether we should send `ESC` due to `Alt` being pressed.
-    #[cfg(not(target_os = "macos"))]
-    #[inline]
-    fn alt_send_esc(&mut self) -> bool {
-        self.modifiers.state().alt_key()
-    }
+    fn alt_send_esc(&mut self, key: &winit::event::KeyEvent, text: &str) -> bool {
+        #[cfg(not(target_os = "macos"))]
+        let alt_send_esc = self.modifiers.state().alt_key();
 
-    #[cfg(target_os = "macos")]
-    #[inline]
-    fn alt_send_esc(&mut self) -> bool {
-        self.modifiers.state().alt_key()
-            && (self.renderer.option_as_alt == *"both"
-                || (self.renderer.option_as_alt == *"left"
-                    && self.modifiers.lalt_state() == ModifiersKeyState::Pressed)
-                || (self.renderer.option_as_alt == *"right"
-                    && self.modifiers.ralt_state() == ModifiersKeyState::Pressed))
+        #[cfg(target_os = "macos")]
+        let alt_send_esc = {
+            let option_as_alt = &self.renderer.option_as_alt;
+            self.modifiers.state().alt_key()
+                && (option_as_alt == "both"
+                    || (option_as_alt == "left"
+                        && self.modifiers.lalt_state() == ModifiersKeyState::Pressed)
+                    || (option_as_alt == "right"
+                        && self.modifiers.ralt_state() == ModifiersKeyState::Pressed))
+        };
+
+        match key.logical_key {
+            Key::Named(named) => {
+                if named.to_text().is_some() {
+                    alt_send_esc
+                } else {
+                    // Treat `Alt` as modifier for named keys without text, like ArrowUp.
+                    self.modifiers.state().alt_key()
+                }
+            },
+            _ => alt_send_esc && text.chars().count() == 1,
+        }
     }
 
     #[inline]
