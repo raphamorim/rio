@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{default_disable_ctlseqs_alt, default_bool_true};
+use super::defaults::{default_bool_true, default_disable_ctlseqs_alt};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub struct Keyboard {

@@ -476,8 +476,7 @@ impl Screen<'_> {
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
-        if is_kitty_keyboard_enabled && key.state == ElementState::Released
-        {
+        if is_kitty_keyboard_enabled && key.state == ElementState::Released {
             if !mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
@@ -487,22 +486,32 @@ impl Screen<'_> {
 
             // Mask `Alt` modifier from input when we won't send esc.
             let text = key.text_with_all_modifiers().unwrap_or_default();
-            let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
+            let mods = if self.alt_send_esc(key, text) {
+                mods
+            } else {
+                mods & !ModifiersState::ALT
+            };
 
             let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
                 // NOTE: Echo the key back on release to follow kitty/foot behavior. When
                 // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
                 // the keys below.
                 _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
-                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode).into()
-                },
+                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(
+                        key, mods, mode,
+                    )
+                    .into()
+                }
                 // Winit uses different keys for `Backspace` so we explicitly specify the
                 // values, instead of using what was passed to us from it.
                 Key::Named(NamedKey::Tab) => [b'\t'].as_slice().into(),
                 Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                 Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
                 Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(key, mods, mode).into(),
+                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
+                    key, mods, mode,
+                )
+                .into(),
             };
 
             self.sugarloaf.mark_dirty();
@@ -607,9 +616,14 @@ impl Screen<'_> {
         }
     }
 
-    pub fn process_key_bindings(&mut self, key: &winit::event::KeyEvent, mode: &Mode, mods: ModifiersState) -> bool {
+    pub fn process_key_bindings(
+        &mut self,
+        key: &winit::event::KeyEvent,
+        mode: &Mode,
+        mods: ModifiersState,
+    ) -> bool {
         let search_active = self.search_active();
-        let binding_mode = BindingMode::new(&mode, search_active);
+        let binding_mode = BindingMode::new(mode, search_active);
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
@@ -1107,7 +1121,7 @@ impl Screen<'_> {
                     // Treat `Alt` as modifier for named keys without text, like ArrowUp.
                     self.modifiers.state().alt_key()
                 }
-            },
+            }
             _ => alt_send_esc && text.chars().count() == 1,
         }
     }
