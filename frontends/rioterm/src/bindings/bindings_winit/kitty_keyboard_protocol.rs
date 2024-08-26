@@ -33,7 +33,20 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
         kitty_event_type,
     };
 
-    let associated_text = key.text_with_all_modifiers().filter(|text| {
+    // Backspace whenever pressed with Fn(Globe button) on MacOS
+    // will produce `\u{f728}` as text_with_all_modifiers
+    // however it should act as a Delete key.
+    #[cfg(target_os = "macos")]
+    let text = if key.logical_key == Key::Named(NamedKey::Delete) {
+        None
+    } else {
+        key.text_with_all_modifiers()
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let text = key.text_with_all_modifiers();
+
+    let associated_text = text.filter(|text| {
         mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
             && key.state != ElementState::Released
             && !text.is_empty()
