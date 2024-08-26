@@ -8,6 +8,7 @@ language: 'en'
 ## Unreleased
 
 - X11: Replace libxcursor with custom cursor code.
+- Add command for closing all tabs except the current one (`closeunfocusedtabs`)
 
 ## 0.1.9
 

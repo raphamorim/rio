@@ -399,7 +399,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_other_tabs(&mut self) {
+    pub fn close_unfocused_tabs(&mut self) {
         let current_route_id = self.current().route_id;
         self.titles.titles.retain(|&i, _| i == self.current_index);
         self.contexts.retain(|ctx| ctx.route_id == current_route_id);

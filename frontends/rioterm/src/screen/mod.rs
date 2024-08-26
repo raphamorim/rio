@@ -716,13 +716,13 @@ impl Screen<'_> {
                         self.resize_top_or_bottom_line(num_tabs);
                         self.demand_render();
                     }
-                    Act::TabCloseOthers => {
+                    Act::TabCloseUnfocused => {
                         self.clear_selection();
                         self.cancel_search();
                         if self.ctx().len() <= 1 {
                             return;
                         }
-                        self.context_manager.close_other_tabs();
+                        self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
                         self.demand_render();
                     }

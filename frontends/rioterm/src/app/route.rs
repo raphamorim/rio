@@ -755,14 +755,6 @@ impl Route {
 
                         self.render();
                     }
-                    Act::TabCloseOthers => {
-                        self.clear_selection();
-                        if self.ctx.len() <= 1 {
-                            return;
-                        }
-                        self.ctx.close_other_tabs();
-                        self.render();
-                    }
                     Act::Quit => {
                         wa::window::request_quit();
                     }
