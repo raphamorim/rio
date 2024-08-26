@@ -1,14 +1,14 @@
 // build_key_sequence was originally taken from alacritty
 // which is licensed under Apache 2.0 license.
 
-use winit::keyboard::NamedKey;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use rio_backend::crosswords::Mode;
 use std::borrow::Cow;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::Key;
 use winit::keyboard::KeyLocation;
 use winit::keyboard::ModifiersState;
+use winit::keyboard::NamedKey;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 #[inline(never)]
 pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
@@ -25,8 +25,13 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     let kitty_event_type = mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
         && (key.repeat || key.state == ElementState::Released);
 
-    let context =
-        SequenceBuilder { mode, modifiers, kitty_seq, kitty_encode_all, kitty_event_type };
+    let context = SequenceBuilder {
+        mode,
+        modifiers,
+        kitty_seq,
+        kitty_encode_all,
+        kitty_event_type,
+    };
 
     let associated_text = key.text_with_all_modifiers().filter(|text| {
         mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
@@ -36,14 +41,17 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     });
 
     let sequence_base = context
-        .try_build_numpad(&key)
-        .or_else(|| context.try_build_named_kitty(&key))
-        .or_else(|| context.try_build_named_normal(&key))
-        .or_else(|| context.try_build_control_char_or_mod(&key, &mut modifiers))
-        .or_else(|| context.try_build_textual(&key, associated_text));
+        .try_build_numpad(key)
+        .or_else(|| context.try_build_named_kitty(key))
+        .or_else(|| context.try_build_named_normal(key))
+        .or_else(|| context.try_build_control_char_or_mod(key, &mut modifiers))
+        .or_else(|| context.try_build_textual(key, associated_text));
 
     let (payload, terminator) = match sequence_base {
-        Some(SequenceBase { payload, terminator }) => (payload, terminator),
+        Some(SequenceBase {
+            payload,
+            terminator,
+        }) => (payload, terminator),
         _ => return Vec::new(),
     };
 
@@ -114,8 +122,9 @@ impl SequenceBuilder {
             // Try to get the base for keys which change based on modifier, like `1` for `!`.
             match key.key_without_modifiers().as_ref() {
                 Key::Character(unmodded) if alternate_key_code == unicode_key_code => {
-                    unicode_key_code = u32::from(unmodded.chars().next().unwrap_or(base_character));
-                },
+                    unicode_key_code =
+                        u32::from(unmodded.chars().next().unwrap_or(base_character));
+                }
                 _ => (),
             }
 
@@ -248,7 +257,11 @@ impl SequenceBuilder {
         };
 
         // The default parameter is 1, so we can omit it.
-        let one_based = if self.modifiers.is_empty() && !self.kitty_event_type { "" } else { "1" };
+        let one_based = if self.modifiers.is_empty() && !self.kitty_event_type {
+            ""
+        } else {
+            "1"
+        };
         let (base, terminator) = match named {
             NamedKey::PageUp => ("5", SequenceTerminator::Normal('~')),
             NamedKey::PageDown => ("6", SequenceTerminator::Normal('~')),
@@ -364,7 +377,10 @@ pub struct SequenceBase {
 
 impl SequenceBase {
     fn new(payload: Cow<'static, str>, terminator: SequenceTerminator) -> Self {
-        Self { payload, terminator }
+        Self {
+            payload,
+            terminator,
+        }
     }
 }
 
