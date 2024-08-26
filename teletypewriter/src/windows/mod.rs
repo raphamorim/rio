@@ -41,7 +41,7 @@ pub fn create_pty(
 ) -> Pty {
     let args = args.join(" ");
     let mut program = shell;
-    program.push_str(args);
+    program.push(args);
     conpty::new(program, working_directory, columns, rows).unwrap()
 }
 

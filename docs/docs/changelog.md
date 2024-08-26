@@ -7,7 +7,12 @@ language: 'en'
 
 ## Unreleased
 
+- Fix: Windows - The behavior of using a complete shell command and a shell command with parameters is inconsistent [#533](https://github.com/raphamorim/rio/issues/533).
 - X11: Replace libxcursor with custom cursor code.
+- Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513).
+- Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599).
+- Fix: Kitty keyboard protocol shifted key codes are reported in wrong order [#596](https://github.com/raphamorim/rio/issues/596).
+- Fix: Mouse pointer hidden (Ubuntu Wayland) / Cursor icon not changing [#383](https://github.com/raphamorim/rio/issues/383).
 - `use-kitty-keyboard-protocol` is now `true` as default.
 - Enable search functionality as default on Linux.
 
