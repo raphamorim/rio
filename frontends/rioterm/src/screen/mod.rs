@@ -609,6 +609,18 @@ impl Screen<'_> {
                         self.resize_top_or_bottom_line(self.ctx().len());
                         self.demand_render();
                     }
+                    Act::Search(SearchAction::SearchDeleteWord) => {
+                        self.search_pop_word();
+                        self.demand_render();
+                    }
+                    Act::Search(SearchAction::SearchHistoryPrevious) => {
+                        self.search_history_previous();
+                        self.demand_render();
+                    }
+                    Act::Search(SearchAction::SearchHistoryNext) => {
+                        self.search_history_next();
+                        self.demand_render();
+                    }
                     Act::ToggleViMode => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
@@ -679,6 +691,7 @@ impl Screen<'_> {
                         );
 
                         let num_tabs = self.ctx().len();
+                        self.cancel_search();
                         self.resize_top_or_bottom_line(num_tabs);
                         self.demand_render();
                     }
@@ -694,6 +707,7 @@ impl Screen<'_> {
                             self.context_manager.kill_current_context();
                         }
 
+                        self.cancel_search();
                         if self.ctx().len() <= 1 {
                             return;
                         }
@@ -816,18 +830,22 @@ impl Screen<'_> {
                     }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
+                        self.cancel_search();
                         self.demand_render();
                     }
                     Act::SelectLastTab => {
+                        self.cancel_search();
                         self.context_manager.select_last_tab();
                         self.demand_render();
                     }
                     Act::SelectNextTab => {
+                        self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_next();
                         self.demand_render();
                     }
                     Act::SelectPrevTab => {
+                        self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_prev();
                         self.demand_render();
@@ -961,6 +979,40 @@ impl Screen<'_> {
             self.sugarloaf.layout_mut().update();
             self.resize_all_contexts();
         }
+    }
+
+    #[inline]
+    fn search_pop_word(&mut self) {
+        if let Some(regex) = self.search_state.regex_mut() {
+            *regex = regex.trim_end().to_owned();
+            regex.truncate(regex.rfind(' ').map_or(0, |i| i + 1));
+            self.update_search();
+        }
+    }
+
+    /// Go to the previous regex in the search history.
+    #[inline]
+    fn search_history_previous(&mut self) {
+        let index = match &mut self.search_state.history_index {
+            None => return,
+            Some(index) if *index + 1 >= self.search_state.history.len() => return,
+            Some(index) => index,
+        };
+
+        *index += 1;
+        self.update_search();
+    }
+
+    /// Go to the previous regex in the search history.
+    #[inline]
+    fn search_history_next(&mut self) {
+        let index = match &mut self.search_state.history_index {
+            Some(0) | None => return,
+            Some(index) => index,
+        };
+
+        *index -= 1;
+        self.update_search();
     }
 
     #[inline]

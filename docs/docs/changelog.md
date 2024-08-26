@@ -1,22 +1,26 @@
+---
+title: 'Changelog'
+language: 'en'
+---
+
 # Changelog
 
-<!-- ## In progress
-
-- Sixel graphics initial support.
-- iTerm2 image protocol.
--->
-
 ## Unreleased
+
+- X11: Replace libxcursor with custom cursor code.
+- Enable search functionality as default on Linux
+
+## 0.1.9
 
 - Search support.
 - New theme properties `search-match-background`, `search-match-foreground`, `search-focused-match-background` and `search-focused-match-foreground`.
 - Fix bug Tab indicator doesn't disappear [#493](https://github.com/raphamorim/rio/issues/493).
 - Fix color automation on tabs for linux.
 - Update tabs UI styles (make it larger and able to show more text when necessary).
+- Corrections on underline render proportions for different DPIs.
 - Support writing the config to a custom/default location via `--write-config` (Ref: #605).
 - Fix scale update on transitioning between screens with different DPI.
 - Support a short variant (`-w`) for `--working-dir` argument.
-- X11: Replace libxcursor with custom cursor code.
 
 ## 0.1.8
 
@@ -94,7 +98,7 @@ padding-y = [30, 10]
 
 - Update swash (0.1.18), ab_glyph (0.2.28) and remove double hashmap implementation.
 
-## 0.1.13
+## 0.1.3
 
 - Added support to font features (ref: #548 #551)
 

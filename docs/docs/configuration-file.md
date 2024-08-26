@@ -39,7 +39,7 @@ Other available options are: `_` and `|`
 cursor = '▇'
 ```
 
-## Line height
+<!-- ## Line height
 
 This option will apply an modifier to line-height.
 
@@ -49,7 +49,7 @@ line-height = 1.0
 
 Example with line-height as `1.6`
 
-![Demo line height 1.6](https://github.com/raphamorim/rio/assets/3630346/2700741e-f2bd-4fd8-ada1-b5f54ae4b20c)
+![Demo line height 1.6](https://github.com/raphamorim/rio/assets/3630346/2700741e-f2bd-4fd8-ada1-b5f54ae4b20c) -->
 
 ## Editor
 

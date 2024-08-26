@@ -329,8 +329,7 @@ impl SearchState {
     }
 
     /// Search regex text if a search is active.
-    #[allow(dead_code)]
-    fn regex_mut(&mut self) -> Option<&mut String> {
+    pub fn regex_mut(&mut self) -> Option<&mut String> {
         self.history_index
             .and_then(move |index| self.history.get_mut(index))
     }
