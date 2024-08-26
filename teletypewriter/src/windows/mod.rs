@@ -39,10 +39,13 @@ pub fn create_pty(
     columns: u16,
     rows: u16,
 ) -> Pty {
-    let args = args.join(" ");
-    let mut program = shell;
-    program.push(args);
-    conpty::new(program, working_directory, columns, rows).unwrap()
+    let exec = if !args.is_empty() {
+        let args = args.join(" ");
+        &format!("{shell} {args}")
+    } else {
+        shell
+    };
+    conpty::new(exec, working_directory, columns, rows).unwrap()
 }
 
 impl Pty {
