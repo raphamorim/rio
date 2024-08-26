@@ -1,243 +1,61 @@
 // build_key_sequence was originally taken from alacritty
 // which is licensed under Apache 2.0 license.
 
+use winit::keyboard::NamedKey;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use rio_backend::crosswords::Mode;
 use std::borrow::Cow;
 use winit::event::{ElementState, KeyEvent};
 use winit::keyboard::Key;
 use winit::keyboard::KeyLocation;
 use winit::keyboard::ModifiersState;
-use winit::keyboard::NamedKey::*;
 
 #[inline(never)]
 pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
-    let mut modifiers = 0;
-    if mods.shift_key() {
-        modifiers |= 0b0001;
-    }
+    let mut modifiers = mods.into();
 
-    if mods.alt_key() {
-        modifiers |= 0b0010;
-    }
-
-    if mods.control_key() {
-        modifiers |= 0b0100;
-    }
-
-    if mods.super_key() {
-        modifiers |= 0b1000;
-    }
-
-    // The `1` must be added to result.
-    modifiers += 1;
-
-    let named_csi_u = mode.intersects(
+    let kitty_seq = mode.intersects(
         Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC
             | Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES
             | Mode::KEYBOARD_REPORT_EVENT_TYPES,
     );
-    // Send CSI u for numpad
-    let csi_u_numpad = key.location == KeyLocation::Numpad && named_csi_u;
-    let encode_all = mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC);
-    let send_event_type = mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+
+    let kitty_encode_all = mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC);
+    // The default parameter is 1, so we can omit it.
+    let kitty_event_type = mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
         && (key.repeat || key.state == ElementState::Released);
 
-    let (codepoint, suffix): (Cow<'static, str>, char) = match key.logical_key.as_ref() {
-        // Special case numpad.
-        Key::Character("0") if csi_u_numpad => ("57399".into(), 'u'),
-        Key::Character("1") if csi_u_numpad => ("57400".into(), 'u'),
-        Key::Character("2") if csi_u_numpad => ("57401".into(), 'u'),
-        Key::Character("3") if csi_u_numpad => ("57402".into(), 'u'),
-        Key::Character("4") if csi_u_numpad => ("57403".into(), 'u'),
-        Key::Character("5") if csi_u_numpad => ("57404".into(), 'u'),
-        Key::Character("6") if csi_u_numpad => ("57405".into(), 'u'),
-        Key::Character("7") if csi_u_numpad => ("57406".into(), 'u'),
-        Key::Character("8") if csi_u_numpad => ("57407".into(), 'u'),
-        Key::Character("9") if csi_u_numpad => ("57408".into(), 'u'),
-        Key::Character(".") if csi_u_numpad => ("57409".into(), 'u'),
-        Key::Character("/") if csi_u_numpad => ("57410".into(), 'u'),
-        Key::Character("*") if csi_u_numpad => ("57411".into(), 'u'),
-        Key::Character("-") if csi_u_numpad => ("57412".into(), 'u'),
-        Key::Character("+") if csi_u_numpad => ("57413".into(), 'u'),
-        Key::Named(Enter) if csi_u_numpad => ("57414".into(), 'u'),
-        Key::Character("=") if csi_u_numpad => ("57415".into(), 'u'),
-        // KP_SEPARATOR if csi_u_numpad => ("57415".into(), 'u'),
-        Key::Named(ArrowLeft) if csi_u_numpad => ("57417".into(), 'u'),
-        Key::Named(ArrowRight) if csi_u_numpad => ("57418".into(), 'u'),
-        Key::Named(ArrowUp) if csi_u_numpad => ("57419".into(), 'u'),
-        Key::Named(ArrowDown) if csi_u_numpad => ("57420".into(), 'u'),
-        Key::Named(PageUp) if csi_u_numpad => ("57421".into(), 'u'),
-        Key::Named(PageDown) if csi_u_numpad => ("57422".into(), 'u'),
-        Key::Named(Home) if csi_u_numpad => ("57423".into(), 'u'),
-        Key::Named(End) if csi_u_numpad => ("57424".into(), 'u'),
-        Key::Named(Insert) if csi_u_numpad => ("57425".into(), 'u'),
-        Key::Named(Delete) if csi_u_numpad => ("57426".into(), 'u'),
-        // KP_BEGIN if csi_u_numpad => ("57427".into(), 'u'),
-        // Handle common keys.
-        Key::Named(ArrowLeft) if mods.is_empty() && !send_event_type => ("".into(), 'D'),
-        Key::Named(ArrowLeft) => ("1".into(), 'D'),
-        Key::Named(ArrowRight) if mods.is_empty() && !send_event_type => ("".into(), 'C'),
-        Key::Named(ArrowRight) => ("1".into(), 'C'),
-        Key::Named(ArrowUp) if mods.is_empty() && !send_event_type => ("".into(), 'A'),
-        Key::Named(ArrowUp) => ("1".into(), 'A'),
-        Key::Named(ArrowDown) if mods.is_empty() && !send_event_type => ("".into(), 'B'),
-        Key::Named(ArrowDown) => ("1".into(), 'B'),
-        Key::Named(Home) if mods.is_empty() && !send_event_type => ("".into(), 'H'),
-        Key::Named(Home) => ("1".into(), 'H'),
-        Key::Named(End) if mods.is_empty() && !send_event_type => ("".into(), 'F'),
-        Key::Named(End) => ("1".into(), 'F'),
-        Key::Named(PageUp) => ("5".into(), '~'),
-        Key::Named(PageDown) => ("6".into(), '~'),
-        Key::Named(Insert) => ("2".into(), '~'),
-        Key::Named(Delete) => ("3".into(), '~'),
-        Key::Named(F1) if mods.is_empty() && named_csi_u && !send_event_type => {
-            ("".into(), 'P')
-        }
-        Key::Named(F1) if !mods.is_empty() || send_event_type => ("1".into(), 'P'),
-        Key::Named(F2) if mods.is_empty() && named_csi_u && !send_event_type => {
-            ("".into(), 'Q')
-        }
-        Key::Named(F2) if !mods.is_empty() || send_event_type => ("1".into(), 'Q'),
-        // F3 diverges from alacritty's terminfo for CSI u modes.
-        Key::Named(F3) if named_csi_u => ("13".into(), '~'),
-        Key::Named(F3) if !mods.is_empty() => ("1".into(), 'R'),
-        Key::Named(F4) if mods.is_empty() && named_csi_u && !send_event_type => {
-            ("".into(), 'S')
-        }
-        Key::Named(F4) if !mods.is_empty() || send_event_type => ("1".into(), 'S'),
-        Key::Named(F5) => ("15".into(), '~'),
-        Key::Named(F6) => ("17".into(), '~'),
-        Key::Named(F7) => ("18".into(), '~'),
-        Key::Named(F8) => ("19".into(), '~'),
-        Key::Named(F9) => ("20".into(), '~'),
-        Key::Named(F10) => ("21".into(), '~'),
-        Key::Named(F11) => ("23".into(), '~'),
-        Key::Named(F12) => ("24".into(), '~'),
-        // These keys are enabled regardless of mode and reported with the CSI u.
-        Key::Named(F13) => ("57376".into(), 'u'),
-        Key::Named(F14) => ("57377".into(), 'u'),
-        Key::Named(F15) => ("57378".into(), 'u'),
-        Key::Named(F16) => ("57379".into(), 'u'),
-        Key::Named(F17) => ("57380".into(), 'u'),
-        Key::Named(F18) => ("57381".into(), 'u'),
-        Key::Named(F19) => ("57382".into(), 'u'),
-        Key::Named(F20) => ("57383".into(), 'u'),
-        Key::Named(F21) => ("57384".into(), 'u'),
-        Key::Named(F22) => ("57385".into(), 'u'),
-        Key::Named(F23) => ("57386".into(), 'u'),
-        Key::Named(F24) => ("57387".into(), 'u'),
-        Key::Named(F25) => ("57388".into(), 'u'),
-        Key::Named(F26) => ("57389".into(), 'u'),
-        Key::Named(F27) => ("57390".into(), 'u'),
-        Key::Named(F28) => ("57391".into(), 'u'),
-        Key::Named(F29) => ("57392".into(), 'u'),
-        Key::Named(F30) => ("57393".into(), 'u'),
-        Key::Named(F31) => ("57394".into(), 'u'),
-        Key::Named(F32) => ("57395".into(), 'u'),
-        Key::Named(F33) => ("57396".into(), 'u'),
-        Key::Named(F34) => ("57397".into(), 'u'),
-        Key::Named(F35) => ("57398".into(), 'u'),
-        Key::Named(ScrollLock) => ("57359".into(), 'u'),
-        Key::Named(PrintScreen) => ("57361".into(), 'u'),
-        Key::Named(Pause) => ("57362".into(), 'u'),
-        Key::Named(ContextMenu) => ("57363".into(), 'u'),
-        Key::Named(MediaPlay) => ("57428".into(), 'u'),
-        Key::Named(MediaPause) => ("57429".into(), 'u'),
-        Key::Named(MediaPlayPause) => ("57430".into(), 'u'),
-        // Key::Named(MediaReverse) => ("57431".into(), 'u'),
-        Key::Named(MediaStop) => ("57432".into(), 'u'),
-        Key::Named(MediaFastForward) => ("57433".into(), 'u'),
-        Key::Named(MediaRewind) => ("57434".into(), 'u'),
-        Key::Named(MediaTrackNext) => ("57435".into(), 'u'),
-        Key::Named(MediaTrackPrevious) => ("57436".into(), 'u'),
-        Key::Named(MediaRecord) => ("57437".into(), 'u'),
-        Key::Named(AudioVolumeDown) => ("57438".into(), 'u'),
-        Key::Named(AudioVolumeUp) => ("57439".into(), 'u'),
-        Key::Named(AudioVolumeMute) => ("57440".into(), 'u'),
-        Key::Named(Escape) if named_csi_u => ("27".into(), 'u'),
-        // Keys which are reported only when all key must be reported
-        Key::Named(CapsLock) if encode_all => ("57358".into(), 'u'),
-        Key::Named(NumLock) if encode_all => ("57360".into(), 'u'),
-        // Left mods.
-        Key::Named(Shift) if key.location == KeyLocation::Left && encode_all => {
-            ("57441".into(), 'u')
-        }
-        Key::Named(Control) if key.location == KeyLocation::Left && encode_all => {
-            ("57442".into(), 'u')
-        }
-        Key::Named(Alt) if key.location == KeyLocation::Left && encode_all => {
-            ("57443".into(), 'u')
-        }
-        Key::Named(Super) if key.location == KeyLocation::Left && encode_all => {
-            ("57444".into(), 'u')
-        }
-        Key::Named(Hyper) if key.location == KeyLocation::Left && encode_all => {
-            ("57445".into(), 'u')
-        }
-        Key::Named(Meta) if key.location == KeyLocation::Left && encode_all => {
-            ("57446".into(), 'u')
-        }
-        // Right mods.
-        Key::Named(Shift) if key.location == KeyLocation::Right && encode_all => {
-            ("57447".into(), 'u')
-        }
-        Key::Named(Control) if key.location == KeyLocation::Right && encode_all => {
-            ("57448".into(), 'u')
-        }
-        Key::Named(Alt) if key.location == KeyLocation::Right && encode_all => {
-            ("57449".into(), 'u')
-        }
-        Key::Named(Super) if key.location == KeyLocation::Right && encode_all => {
-            ("57450".into(), 'u')
-        }
-        Key::Named(Hyper) if key.location == KeyLocation::Right && encode_all => {
-            ("57451".into(), 'u')
-        }
-        Key::Named(Meta) if key.location == KeyLocation::Right && encode_all => {
-            ("57452".into(), 'u')
-        }
+    let context =
+        SequenceBuilder { mode, modifiers, kitty_seq, kitty_encode_all, kitty_event_type };
 
-        Key::Named(Enter) if encode_all => ("13".into(), 'u'),
-        Key::Named(Tab) if encode_all => ("9".into(), 'u'),
-        Key::Named(Backspace) if encode_all => ("127".into(), 'u'),
-        // When the character key ended up being a text, like when compose was done.
-        Key::Character(c) if encode_all && c.chars().count() > 1 => ("0".into(), 'u'),
-        Key::Character(c) => {
-            let character = c.chars().next().unwrap();
-            let base_character = character.to_lowercase().next().unwrap();
+    let associated_text = key.text_with_all_modifiers().filter(|text| {
+        mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
+            && key.state != ElementState::Released
+            && !text.is_empty()
+            && !is_control_character(text)
+    });
 
-            let codepoint = u32::from(character);
-            let base_codepoint = u32::from(base_character);
+    let sequence_base = context
+        .try_build_numpad(&key)
+        .or_else(|| context.try_build_named_kitty(&key))
+        .or_else(|| context.try_build_named_normal(&key))
+        .or_else(|| context.try_build_control_char_or_mod(&key, &mut modifiers))
+        .or_else(|| context.try_build_textual(&key, associated_text));
 
-            let payload = if mode.contains(Mode::KEYBOARD_REPORT_ALTERNATE_KEYS)
-                && codepoint != base_codepoint
-            {
-                format!("{codepoint}:{base_codepoint}")
-            } else {
-                codepoint.to_string()
-            };
-
-            (payload.into(), 'u')
-        }
-        // In case we have text attached to the key, but we don't have a
-        // matching logical key with the text, likely due to winit not being
-        // able to map it.
-        _ if encode_all && key.text.is_some() => ("0".into(), 'u'),
+    let (payload, terminator) = match sequence_base {
+        Some(SequenceBase { payload, terminator }) => (payload, terminator),
         _ => return Vec::new(),
     };
 
-    let mut payload = format!("\x1b[{codepoint}");
+    let mut payload = format!("\x1b[{payload}");
 
-    // Add modifiers information. Check for text to push `;`.
-    if send_event_type
-        || modifiers > 1
-        || (mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT) && key.text.is_some())
-    {
-        payload.push_str(&format!(";{modifiers}"));
+    // Add modifiers information.
+    if kitty_event_type || !modifiers.is_empty() || associated_text.is_some() {
+        payload.push_str(&format!(";{}", modifiers.encode_esc_sequence()));
     }
 
-    // Push event types. The `Press` is default, so we don't have to push it.
-    if send_event_type {
+    // Push event type.
+    if kitty_event_type {
         payload.push(':');
         let event_type = match key.state {
             _ if key.repeat => '2',
@@ -247,23 +65,361 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
         payload.push(event_type);
     }
 
-    if mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
-        && key.state != ElementState::Released
-    {
-        if let Some(text) = &key.text {
-            let mut codepoints = text.chars().map(u32::from);
-            if let Some(codepoint) = codepoints.next() {
-                payload.push_str(&format!(";{codepoint}"));
-            }
-            // Push the rest of the chars.
-            for codepoint in codepoints {
-                payload.push_str(&format!(":{codepoint}"));
-            }
+    if let Some(text) = associated_text {
+        let mut codepoints = text.chars().map(u32::from);
+        if let Some(codepoint) = codepoints.next() {
+            payload.push_str(&format!(";{codepoint}"));
+        }
+        for codepoint in codepoints {
+            payload.push_str(&format!(":{codepoint}"));
         }
     }
 
-    // Terminate the sequence.
-    payload.push(suffix);
+    payload.push(terminator.encode_esc_sequence());
 
     payload.into_bytes()
+}
+
+/// Helper to build escape sequence payloads from [`KeyEvent`].
+pub struct SequenceBuilder {
+    mode: Mode,
+    /// The emitted sequence should follow the kitty keyboard protocol.
+    kitty_seq: bool,
+    /// Encode all the keys according to the protocol.
+    kitty_encode_all: bool,
+    /// Report event types.
+    kitty_event_type: bool,
+    modifiers: SequenceModifiers,
+}
+
+impl SequenceBuilder {
+    /// Try building sequence from the event's emitting text.
+    fn try_build_textual(
+        &self,
+        key: &KeyEvent,
+        associated_text: Option<&str>,
+    ) -> Option<SequenceBase> {
+        let character = match key.logical_key.as_ref() {
+            Key::Character(character) if self.kitty_seq => character,
+            _ => return None,
+        };
+
+        if character.chars().count() == 1 {
+            let character = character.chars().next().unwrap();
+            let base_character = character.to_lowercase().next().unwrap();
+
+            let alternate_key_code = u32::from(character);
+            let mut unicode_key_code = u32::from(base_character);
+
+            // Try to get the base for keys which change based on modifier, like `1` for `!`.
+            match key.key_without_modifiers().as_ref() {
+                Key::Character(unmodded) if alternate_key_code == unicode_key_code => {
+                    unicode_key_code = u32::from(unmodded.chars().next().unwrap_or(base_character));
+                },
+                _ => (),
+            }
+
+            // NOTE: Base layouts are ignored, since winit doesn't expose this information
+            // yet.
+            let payload = if self.mode.contains(Mode::KEYBOARD_REPORT_ALTERNATE_KEYS)
+                && alternate_key_code != unicode_key_code
+            {
+                format!("{unicode_key_code}:{alternate_key_code}")
+            } else {
+                unicode_key_code.to_string()
+            };
+
+            Some(SequenceBase::new(payload.into(), SequenceTerminator::Kitty))
+        } else if self.kitty_encode_all && associated_text.is_some() {
+            // Fallback when need to report text, but we don't have any key associated with this
+            // text.
+            Some(SequenceBase::new("0".into(), SequenceTerminator::Kitty))
+        } else {
+            None
+        }
+    }
+
+    /// Try building from numpad key.
+    ///
+    /// `None` is returned when the key is neither known nor numpad.
+    fn try_build_numpad(&self, key: &KeyEvent) -> Option<SequenceBase> {
+        if !self.kitty_seq || key.location != KeyLocation::Numpad {
+            return None;
+        }
+
+        let base = match key.logical_key.as_ref() {
+            Key::Character("0") => "57399",
+            Key::Character("1") => "57400",
+            Key::Character("2") => "57401",
+            Key::Character("3") => "57402",
+            Key::Character("4") => "57403",
+            Key::Character("5") => "57404",
+            Key::Character("6") => "57405",
+            Key::Character("7") => "57406",
+            Key::Character("8") => "57407",
+            Key::Character("9") => "57408",
+            Key::Character(".") => "57409",
+            Key::Character("/") => "57410",
+            Key::Character("*") => "57411",
+            Key::Character("-") => "57412",
+            Key::Character("+") => "57413",
+            Key::Character("=") => "57415",
+            Key::Named(named) => match named {
+                NamedKey::Enter => "57414",
+                NamedKey::ArrowLeft => "57417",
+                NamedKey::ArrowRight => "57418",
+                NamedKey::ArrowUp => "57419",
+                NamedKey::ArrowDown => "57420",
+                NamedKey::PageUp => "57421",
+                NamedKey::PageDown => "57422",
+                NamedKey::Home => "57423",
+                NamedKey::End => "57424",
+                NamedKey::Insert => "57425",
+                NamedKey::Delete => "57426",
+                _ => return None,
+            },
+            _ => return None,
+        };
+
+        Some(SequenceBase::new(base.into(), SequenceTerminator::Kitty))
+    }
+
+    /// Try building from [`NamedKey`] using the kitty keyboard protocol encoding
+    /// for functional keys.
+    fn try_build_named_kitty(&self, key: &KeyEvent) -> Option<SequenceBase> {
+        let named = match key.logical_key {
+            Key::Named(named) if self.kitty_seq => named,
+            _ => return None,
+        };
+
+        let (base, terminator) = match named {
+            // F3 in kitty protocol diverges from alacritty's terminfo.
+            NamedKey::F3 => ("13", SequenceTerminator::Normal('~')),
+            NamedKey::F13 => ("57376", SequenceTerminator::Kitty),
+            NamedKey::F14 => ("57377", SequenceTerminator::Kitty),
+            NamedKey::F15 => ("57378", SequenceTerminator::Kitty),
+            NamedKey::F16 => ("57379", SequenceTerminator::Kitty),
+            NamedKey::F17 => ("57380", SequenceTerminator::Kitty),
+            NamedKey::F18 => ("57381", SequenceTerminator::Kitty),
+            NamedKey::F19 => ("57382", SequenceTerminator::Kitty),
+            NamedKey::F20 => ("57383", SequenceTerminator::Kitty),
+            NamedKey::F21 => ("57384", SequenceTerminator::Kitty),
+            NamedKey::F22 => ("57385", SequenceTerminator::Kitty),
+            NamedKey::F23 => ("57386", SequenceTerminator::Kitty),
+            NamedKey::F24 => ("57387", SequenceTerminator::Kitty),
+            NamedKey::F25 => ("57388", SequenceTerminator::Kitty),
+            NamedKey::F26 => ("57389", SequenceTerminator::Kitty),
+            NamedKey::F27 => ("57390", SequenceTerminator::Kitty),
+            NamedKey::F28 => ("57391", SequenceTerminator::Kitty),
+            NamedKey::F29 => ("57392", SequenceTerminator::Kitty),
+            NamedKey::F30 => ("57393", SequenceTerminator::Kitty),
+            NamedKey::F31 => ("57394", SequenceTerminator::Kitty),
+            NamedKey::F32 => ("57395", SequenceTerminator::Kitty),
+            NamedKey::F33 => ("57396", SequenceTerminator::Kitty),
+            NamedKey::F34 => ("57397", SequenceTerminator::Kitty),
+            NamedKey::F35 => ("57398", SequenceTerminator::Kitty),
+            NamedKey::ScrollLock => ("57359", SequenceTerminator::Kitty),
+            NamedKey::PrintScreen => ("57361", SequenceTerminator::Kitty),
+            NamedKey::Pause => ("57362", SequenceTerminator::Kitty),
+            NamedKey::ContextMenu => ("57363", SequenceTerminator::Kitty),
+            NamedKey::MediaPlay => ("57428", SequenceTerminator::Kitty),
+            NamedKey::MediaPause => ("57429", SequenceTerminator::Kitty),
+            NamedKey::MediaPlayPause => ("57430", SequenceTerminator::Kitty),
+            NamedKey::MediaStop => ("57432", SequenceTerminator::Kitty),
+            NamedKey::MediaFastForward => ("57433", SequenceTerminator::Kitty),
+            NamedKey::MediaRewind => ("57434", SequenceTerminator::Kitty),
+            NamedKey::MediaTrackNext => ("57435", SequenceTerminator::Kitty),
+            NamedKey::MediaTrackPrevious => ("57436", SequenceTerminator::Kitty),
+            NamedKey::MediaRecord => ("57437", SequenceTerminator::Kitty),
+            NamedKey::AudioVolumeDown => ("57438", SequenceTerminator::Kitty),
+            NamedKey::AudioVolumeUp => ("57439", SequenceTerminator::Kitty),
+            NamedKey::AudioVolumeMute => ("57440", SequenceTerminator::Kitty),
+            _ => return None,
+        };
+
+        Some(SequenceBase::new(base.into(), terminator))
+    }
+
+    /// Try building from [`NamedKey`].
+    fn try_build_named_normal(&self, key: &KeyEvent) -> Option<SequenceBase> {
+        let named = match key.logical_key {
+            Key::Named(named) => named,
+            _ => return None,
+        };
+
+        // The default parameter is 1, so we can omit it.
+        let one_based = if self.modifiers.is_empty() && !self.kitty_event_type { "" } else { "1" };
+        let (base, terminator) = match named {
+            NamedKey::PageUp => ("5", SequenceTerminator::Normal('~')),
+            NamedKey::PageDown => ("6", SequenceTerminator::Normal('~')),
+            NamedKey::Insert => ("2", SequenceTerminator::Normal('~')),
+            NamedKey::Delete => ("3", SequenceTerminator::Normal('~')),
+            NamedKey::Home => (one_based, SequenceTerminator::Normal('H')),
+            NamedKey::End => (one_based, SequenceTerminator::Normal('F')),
+            NamedKey::ArrowLeft => (one_based, SequenceTerminator::Normal('D')),
+            NamedKey::ArrowRight => (one_based, SequenceTerminator::Normal('C')),
+            NamedKey::ArrowUp => (one_based, SequenceTerminator::Normal('A')),
+            NamedKey::ArrowDown => (one_based, SequenceTerminator::Normal('B')),
+            NamedKey::F1 => (one_based, SequenceTerminator::Normal('P')),
+            NamedKey::F2 => (one_based, SequenceTerminator::Normal('Q')),
+            NamedKey::F3 => (one_based, SequenceTerminator::Normal('R')),
+            NamedKey::F4 => (one_based, SequenceTerminator::Normal('S')),
+            NamedKey::F5 => ("15", SequenceTerminator::Normal('~')),
+            NamedKey::F6 => ("17", SequenceTerminator::Normal('~')),
+            NamedKey::F7 => ("18", SequenceTerminator::Normal('~')),
+            NamedKey::F8 => ("19", SequenceTerminator::Normal('~')),
+            NamedKey::F9 => ("20", SequenceTerminator::Normal('~')),
+            NamedKey::F10 => ("21", SequenceTerminator::Normal('~')),
+            NamedKey::F11 => ("23", SequenceTerminator::Normal('~')),
+            NamedKey::F12 => ("24", SequenceTerminator::Normal('~')),
+            NamedKey::F13 => ("25", SequenceTerminator::Normal('~')),
+            NamedKey::F14 => ("26", SequenceTerminator::Normal('~')),
+            NamedKey::F15 => ("28", SequenceTerminator::Normal('~')),
+            NamedKey::F16 => ("29", SequenceTerminator::Normal('~')),
+            NamedKey::F17 => ("31", SequenceTerminator::Normal('~')),
+            NamedKey::F18 => ("32", SequenceTerminator::Normal('~')),
+            NamedKey::F19 => ("33", SequenceTerminator::Normal('~')),
+            NamedKey::F20 => ("34", SequenceTerminator::Normal('~')),
+            _ => return None,
+        };
+
+        Some(SequenceBase::new(base.into(), terminator))
+    }
+
+    /// Try building escape from control characters (e.g. Enter) and modifiers.
+    fn try_build_control_char_or_mod(
+        &self,
+        key: &KeyEvent,
+        mods: &mut SequenceModifiers,
+    ) -> Option<SequenceBase> {
+        if !self.kitty_encode_all && !self.kitty_seq {
+            return None;
+        }
+
+        let named = match key.logical_key {
+            Key::Named(named) => named,
+            _ => return None,
+        };
+
+        let base = match named {
+            NamedKey::Tab => "9",
+            NamedKey::Enter => "13",
+            NamedKey::Escape => "27",
+            NamedKey::Space => "32",
+            NamedKey::Backspace => "127",
+            _ => "",
+        };
+
+        // Fail when the key is not a named control character and the active mode prohibits us
+        // from encoding modifier keys.
+        if !self.kitty_encode_all && base.is_empty() {
+            return None;
+        }
+
+        let base = match (named, key.location) {
+            (NamedKey::Shift, KeyLocation::Left) => "57441",
+            (NamedKey::Control, KeyLocation::Left) => "57442",
+            (NamedKey::Alt, KeyLocation::Left) => "57443",
+            (NamedKey::Super, KeyLocation::Left) => "57444",
+            (NamedKey::Hyper, KeyLocation::Left) => "57445",
+            (NamedKey::Meta, KeyLocation::Left) => "57446",
+            (NamedKey::Shift, _) => "57447",
+            (NamedKey::Control, _) => "57448",
+            (NamedKey::Alt, _) => "57449",
+            (NamedKey::Super, _) => "57450",
+            (NamedKey::Hyper, _) => "57451",
+            (NamedKey::Meta, _) => "57452",
+            (NamedKey::CapsLock, _) => "57358",
+            (NamedKey::NumLock, _) => "57360",
+            _ => base,
+        };
+
+        // NOTE: Kitty's protocol mandates that the modifier state is applied before
+        // key press, however winit sends them after the key press, so for modifiers
+        // itself apply the state based on keysyms and not the _actual_ modifiers
+        // state, which is how kitty is doing so and what is suggested in such case.
+        let press = key.state.is_pressed();
+        match named {
+            NamedKey::Shift => mods.set(SequenceModifiers::SHIFT, press),
+            NamedKey::Control => mods.set(SequenceModifiers::CONTROL, press),
+            NamedKey::Alt => mods.set(SequenceModifiers::ALT, press),
+            NamedKey::Super => mods.set(SequenceModifiers::SUPER, press),
+            _ => (),
+        }
+
+        if base.is_empty() {
+            None
+        } else {
+            Some(SequenceBase::new(base.into(), SequenceTerminator::Kitty))
+        }
+    }
+}
+
+pub struct SequenceBase {
+    /// The base of the payload, which is the `number` and optionally an alt base from the kitty
+    /// spec.
+    payload: Cow<'static, str>,
+    terminator: SequenceTerminator,
+}
+
+impl SequenceBase {
+    fn new(payload: Cow<'static, str>, terminator: SequenceTerminator) -> Self {
+        Self { payload, terminator }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceTerminator {
+    /// The normal key esc sequence terminator defined by xterm/dec.
+    Normal(char),
+    /// The terminator is for kitty escape sequence.
+    Kitty,
+}
+
+impl SequenceTerminator {
+    fn encode_esc_sequence(self) -> char {
+        match self {
+            SequenceTerminator::Normal(char) => char,
+            SequenceTerminator::Kitty => 'u',
+        }
+    }
+}
+
+bitflags::bitflags! {
+    /// The modifiers encoding for escape sequence.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct SequenceModifiers : u8 {
+        const SHIFT   = 0b0000_0001;
+        const ALT     = 0b0000_0010;
+        const CONTROL = 0b0000_0100;
+        const SUPER   = 0b0000_1000;
+        // NOTE: Kitty protocol defines additional modifiers to what is present here, like
+        // Capslock, but it's not a modifier as per winit.
+    }
+}
+
+impl SequenceModifiers {
+    /// Get the value which should be passed to escape sequence.
+    pub fn encode_esc_sequence(self) -> u8 {
+        self.bits() + 1
+    }
+}
+
+impl From<ModifiersState> for SequenceModifiers {
+    fn from(mods: ModifiersState) -> Self {
+        let mut modifiers = Self::empty();
+        modifiers.set(Self::SHIFT, mods.shift_key());
+        modifiers.set(Self::ALT, mods.alt_key());
+        modifiers.set(Self::CONTROL, mods.control_key());
+        modifiers.set(Self::SUPER, mods.super_key());
+        modifiers
+    }
+}
+
+/// Check whether the `text` is `0x7f`, `C0` or `C1` control code.
+fn is_control_character(text: &str) -> bool {
+    // 0x7f (DEL) is included here since it has a dedicated control code (`^?`) which generally
+    // does not match the reported text (`^H`), despite not technically being part of C0 or C1.
+    let codepoint = text.bytes().next().unwrap();
+    text.len() == 1 && (codepoint < 0x20 || (0x7f..=0x9f).contains(&codepoint))
 }
