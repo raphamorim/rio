@@ -32,6 +32,8 @@ language: 'en'
 | Select the seventh tab | `Command + 7`                                                  |
 | Select the eighth tab  | `Command + 8`                                                  |
 | Select the last tab    | `Command + 9`          |
+| Search forward         | `Command + f`          |
+| Search backward        | `Command + b`          |
 
 ### Windows
 
@@ -57,7 +59,9 @@ language: 'en'
 | Select the sixth tab   | `Control + Shift + 6`                                                  |
 | Select the seventh tab | `Control + Shift + 7`                                                  |
 | Select the eighth tab  | `Control + Shift + 8`                                                  |
-| Select the last tab    | `Control + Shift + 9`          |
+| Select the last tab    | `Control + Shift + 9`   |
+| Search forward         | `Control + Shift + f`  |
+| Search backward        | `Control + Shift + b`  |
 
 ### Linux and BSD
 
@@ -84,13 +88,13 @@ language: 'en'
 | Select the seventh tab | `Control + Shift + 7`                                                  |
 | Select the eighth tab  | `Control + Shift + 8`                                                  |
 | Select the last tab    | `Control + Shift + 9`          |
+| Search forward          | `Control + Shift + f`  |
+| Search backward         | `Control + Shift + b`  |
 
 ### Search
 
 | Action                  | Key                                    |
 | ----------------------- | -------------------------------------- |
-| Search forward          | `Command + f` / `Control + Shift + f`  |
-| Search backward         | `Command + b` / `Control + Shift + b`  |
 | Quit search             | `Escape` (while search is open)        |
 | Quit search             | `Control + c` (while search is open)   |
 | Focus next              | `Enter` (while search is open)         |
