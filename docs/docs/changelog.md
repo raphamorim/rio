@@ -7,6 +7,9 @@ language: 'en'
 
 ## Unreleased
 
+- Refactor close logic on close tabs.
+- Fix: NativeTab margin top when `hide-if-single` is true.
+- Fix: Search bar width on 1.0 dpi screens.
 - Fix: Windows - The behavior of using a complete shell command and a shell command with parameters is inconsistent [#533](https://github.com/raphamorim/rio/issues/533).
 - X11: Replace libxcursor with custom cursor code.
 - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513).

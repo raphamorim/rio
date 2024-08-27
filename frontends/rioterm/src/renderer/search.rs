@@ -16,7 +16,7 @@ pub fn draw_search_bar(
         position: [0.0, position_y],
         color: colors.bar,
         size: [
-            (width + PADDING_Y_BOTTOM_TABS) * scale,
+            (width * 2.) * scale,
             PADDING_Y_BOTTOM_TABS,
         ],
     }));
