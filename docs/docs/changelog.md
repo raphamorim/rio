@@ -18,7 +18,8 @@ language: 'en'
 - Fix: Mouse pointer hidden (Ubuntu Wayland) / Cursor icon not changing [#383](https://github.com/raphamorim/rio/issues/383).
 - `use-kitty-keyboard-protocol` is now `true` as default.
 - Enable search functionality as default on Linux.
-- Add command for closing all tabs except the current one (`closeunfocusedtabs`)
+- Enable search functionality as default on Microsoft Windows.
+- Add command for closing all tabs except the current one (`CloseUnfocusedTabs`)
 
 ## 0.1.9
 
