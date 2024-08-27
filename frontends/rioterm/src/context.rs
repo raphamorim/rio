@@ -378,15 +378,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 .iter()
                 .position(|ctx| ctx.route_id == route_id)
             {
+                let mut should_set_current = false;
                 if requires_change_route {
                     if index_to_remove > 1 {
                         self.set_current(index_to_remove - 1);
                     } else {
-                        self.set_current(0);
+                        should_set_current = true;
                     }
                 }
                 self.contexts.remove(index_to_remove);
                 self.titles.titles.remove(&index_to_remove);
+
+                if should_set_current {
+                    self.set_current(0);
+                }
             };
         }
 
@@ -603,14 +608,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let index_to_remove = self.current_index;
+        let mut should_set_current = false;
         if index_to_remove > 1 {
             self.set_current(self.current_index - 1);
         } else {
-            self.set_current(0);
+            should_set_current = true;
         }
 
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
+
+        if should_set_current {
+            self.set_current(0);
+        }
     }
 
     #[inline]

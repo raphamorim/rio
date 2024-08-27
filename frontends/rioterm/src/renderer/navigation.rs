@@ -189,10 +189,7 @@ impl ScreenNavigation {
         let renderable = Rect {
             position: [initial_position_x, position_y],
             color: colors.bar,
-            size: [
-                (self.width + PADDING_Y_BOTTOM_TABS) * self.scale,
-                PADDING_Y_BOTTOM_TABS,
-            ],
+            size: [self.width * 2., PADDING_Y_BOTTOM_TABS],
         };
 
         self.objects.push(Object::Rect(renderable));
