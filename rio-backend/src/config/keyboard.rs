@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{default_bool_true, default_disable_ctlseqs_alt};
+use super::defaults::default_disable_ctlseqs_alt;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub struct Keyboard {
     // Enable kitty keyboard protocol
-    #[serde(default = "default_bool_true", rename = "use-kitty-keyboard-protocol")]
+    #[serde(default = "bool::default", rename = "use-kitty-keyboard-protocol")]
     pub use_kitty_keyboard_protocol: bool,
     // Disable ctlseqs with ALT keys
     // For example: Terminal.app does not deal with ctlseqs with ALT keys
@@ -20,7 +20,7 @@ pub struct Keyboard {
 impl Default for Keyboard {
     fn default() -> Keyboard {
         Keyboard {
-            use_kitty_keyboard_protocol: true,
+            use_kitty_keyboard_protocol: false,
             #[cfg(target_os = "macos")]
             disable_ctlseqs_alt: true,
             #[cfg(not(target_os = "macos"))]
