@@ -360,14 +360,31 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn should_close_context_manager(&mut self, route_id: usize) -> bool {
-        if self.current_route == route_id {
-            self.close_current_context();
-        } else if self.contexts.len() > 1 {
+        let requires_change_route = self.current_route == route_id;
+
+        // should_close_context_manager is only called when terminal.exit()
+        // is triggered. The terminal.exit() happens for any drop on context
+        // by tab removal or if the Pty is exited (e.g: exit/control+d)
+        //
+        // In the tab case we already have removed the context with the
+        // specified route_id so isn't gonna find anything. Then will be false.
+        //
+        // However if the tab is killed by Pty and not a tab action then
+        // it means we need to clean the context with the specified route_id.
+        // If there's no context then should return true and kill the window.
+        if !self.contexts.is_empty() {
             if let Some(index_to_remove) = self
                 .contexts
                 .iter()
                 .position(|ctx| ctx.route_id == route_id)
             {
+                if requires_change_route {
+                    if index_to_remove > 1 {
+                        self.set_current(index_to_remove - 1);
+                    } else {
+                        self.set_current(0);
+                    }
+                }
                 self.contexts.remove(index_to_remove);
                 self.titles.titles.remove(&index_to_remove);
             };
@@ -422,7 +439,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(tab_index);
-        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -463,7 +479,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(self.contexts.len() - 1);
-        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -568,15 +583,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
+            self.current_route = self.contexts[self.current_index].route_id;
         }
     }
 
     #[inline]
     pub fn close_current_context(&mut self) {
-        if self.contexts.len() <= 1 {
-            self.current_index = 0;
-            self.current_route = self.contexts[self.current_index].route_id;
-
+        if self.contexts.len() == 1 {
             // In MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background if allow_close_last_tab is true
             #[cfg(target_os = "macos")]
@@ -598,7 +611,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
-        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
