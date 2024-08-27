@@ -194,6 +194,7 @@ Execute a predefined action in Rio terminal.
 | :------------------- | :------------------------------------------------------------------ |
 | CreateTab            |                                                                     |
 | CloseTab             |                                                                     |
+| CloseUnfocusedTabs   |                                                                     |
 | SelectPrevTab        |                                                                     |
 | SelectNextTab        |                                                                     |
 | SelectLastTab        |                                                                     |
