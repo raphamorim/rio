@@ -132,7 +132,7 @@ pub enum RioEvent {
     Quit,
 
     /// Leave current terminal.
-    CloseTerminal,
+    CloseTerminal(usize),
 
     BlinkCursor,
 
@@ -172,7 +172,7 @@ impl Debug for RioEvent {
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
-            RioEvent::CloseTerminal => write!(f, "CloseTerminal"),
+            RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
             RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),

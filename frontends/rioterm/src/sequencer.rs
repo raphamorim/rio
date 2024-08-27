@@ -206,11 +206,16 @@ impl Sequencer {
                                     }
                                 }
                             }
-                            RioEventType::Rio(RioEvent::CloseTerminal) => {
+                            RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
                                 {
-                                    if !route.try_close_existent_tab() {
+                                    if route
+                                        .window
+                                        .screen
+                                        .context_manager
+                                        .should_close_context_manager(route_id)
+                                    {
                                         self.router.routes.remove(&window_id);
 
                                         if self.router.routes.is_empty() {

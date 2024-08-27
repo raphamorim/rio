@@ -35,6 +35,13 @@ pub struct Context<T: EventListener> {
     pub shell_pid: u32,
 }
 
+impl<T: rio_backend::event::EventListener> Drop for Context<T> {
+    fn drop(&mut self) {
+        #[cfg(not(target_os = "windows"))]
+        teletypewriter::kill_pid(self.shell_pid as i32);
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: Shell,
@@ -352,6 +359,46 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn should_close_context_manager(&mut self, route_id: usize) -> bool {
+        let requires_change_route = self.current_route == route_id;
+
+        // should_close_context_manager is only called when terminal.exit()
+        // is triggered. The terminal.exit() happens for any drop on context
+        // by tab removal or if the Pty is exited (e.g: exit/control+d)
+        //
+        // In the tab case we already have removed the context with the
+        // specified route_id so isn't gonna find anything. Then will be false.
+        //
+        // However if the tab is killed by Pty and not a tab action then
+        // it means we need to clean the context with the specified route_id.
+        // If there's no context then should return true and kill the window.
+        if !self.contexts.is_empty() {
+            if let Some(index_to_remove) = self
+                .contexts
+                .iter()
+                .position(|ctx| ctx.route_id == route_id)
+            {
+                let mut should_set_current = false;
+                if requires_change_route {
+                    if index_to_remove > 1 {
+                        self.set_current(index_to_remove - 1);
+                    } else {
+                        should_set_current = true;
+                    }
+                }
+                self.contexts.remove(index_to_remove);
+                self.titles.titles.remove(&index_to_remove);
+
+                if should_set_current {
+                    self.set_current(0);
+                }
+            };
+        }
+
+        self.contexts.is_empty()
+    }
+
+    #[inline]
     pub fn schedule_render(&mut self, scheduled_time: u64) {
         self.event_proxy
             .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
@@ -389,16 +436,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_current_window(&mut self, is_last_tab: bool) {
-        if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::CloseWindow, self.window_id);
-        } else if !is_last_tab {
-            self.close_context();
-        }
-    }
-
-    #[inline]
     pub fn close_unfocused_tabs(&mut self) {
         let current_route_id = self.current().route_id;
         self.titles.titles.retain(|&i, _| i == self.current_index);
@@ -416,7 +453,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(tab_index);
-        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -457,7 +493,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.set_current(self.contexts.len() - 1);
-        self.current_route = self.contexts[self.current_index].route_id;
     }
 
     #[inline]
@@ -562,60 +597,39 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
+            self.current_route = self.contexts[self.current_index].route_id;
         }
     }
 
     #[inline]
-    pub fn close_context(&mut self) {
-        if self.contexts.len() <= 1 {
-            self.current_index = 0;
-            self.current_route = self.contexts[self.current_index].route_id;
-            return;
-        }
-
-        let index_to_remove = self.current_index;
-        if index_to_remove > 1 {
-            self.set_current(self.current_index - 1);
-        } else {
-            self.set_current(0);
-        }
-
-        self.titles.titles.remove(&index_to_remove);
-        self.contexts.remove(index_to_remove);
-        self.current_route = self.contexts[self.current_index].route_id;
-    }
-
-    #[inline]
-    pub fn kill_current_context(&mut self) {
-        if self.contexts.len() <= 1 {
-            self.current_index = 0;
-            self.current_route = self.contexts[self.current_index].route_id;
+    pub fn close_current_context(&mut self) {
+        if self.contexts.len() == 1 {
             // In MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background if allow_close_last_tab is true
             #[cfg(target_os = "macos")]
             {
-                self.close_current_window(true);
+                if self.config.is_native {
+                    self.event_proxy
+                        .send_event(RioEvent::CloseWindow, self.window_id);
+                }
             }
-
             return;
         }
 
         let index_to_remove = self.current_index;
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            // The reason why we don't use close context here is because it is unix is handled by
-            // by Rio event lifecycle as well, so calling close_context on unix could trigger
-            // two close tabs events since we listen for SIGHUP in teletypewriter to close a tab as well
-            let pid = self.contexts[index_to_remove].shell_pid;
-            if pid > 0 {
-                self.titles.titles.remove(&index_to_remove);
-                teletypewriter::kill_pid(pid as i32);
-            }
+        let mut should_set_current = false;
+        if index_to_remove > 1 {
+            self.set_current(self.current_index - 1);
+        } else {
+            should_set_current = true;
         }
 
-        #[cfg(target_os = "windows")]
-        self.close_context();
+        self.titles.titles.remove(&index_to_remove);
+        self.contexts.remove(index_to_remove);
+
+        if should_set_current {
+            self.set_current(0);
+        }
     }
 
     #[inline]
@@ -935,7 +949,7 @@ pub mod test {
         assert_eq!(context_manager.current_index, 2);
         context_manager.set_current(0);
 
-        context_manager.close_context();
+        context_manager.close_current_context();
         context_manager.set_current(2);
         assert_eq!(context_manager.current_index, 0);
         assert_eq!(context_manager.len(), 2);
@@ -974,10 +988,10 @@ pub mod test {
             (&CursorState::new('_'), false),
         );
 
-        context_manager.close_context();
-        context_manager.close_context();
-        context_manager.close_context();
-        context_manager.close_context();
+        context_manager.close_current_context();
+        context_manager.close_current_context();
+        context_manager.close_current_context();
+        context_manager.close_current_context();
 
         assert_eq!(context_manager.len(), 1);
         assert_eq!(context_manager.current_index, 0);
@@ -991,7 +1005,7 @@ pub mod test {
         assert_eq!(context_manager.len(), 2);
         context_manager.set_current(1);
         assert_eq!(context_manager.current_index, 1);
-        context_manager.close_context();
+        context_manager.close_current_context();
         assert_eq!(context_manager.len(), 1);
         assert_eq!(context_manager.current_index, 0);
     }
@@ -1021,11 +1035,11 @@ pub mod test {
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
 
-        context_manager.close_context();
+        context_manager.close_current_context();
         assert_eq!(context_manager.len(), 1);
 
         // Last context should not be closed
-        context_manager.close_context();
+        context_manager.close_current_context();
         assert_eq!(context_manager.len(), 1);
     }
 

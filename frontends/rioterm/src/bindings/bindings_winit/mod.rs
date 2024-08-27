@@ -641,21 +641,6 @@ pub fn default_key_bindings(
             ViMotion::WordRightEnd;
         "5",   ModifiersState::SHIFT, +BindingMode::VI;
             ViMotion::Bracket;
-
-        // Search
-        "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
-        "b", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchBackward;
-        Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
-        Key::Named(Enter), +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
-        Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
-        Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
-        "c", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchCancel;
-        "u", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchClear;
-        "w", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchDeleteWord;
-        "p", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
-        "n", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
-        Key::Named(ArrowUp), +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
-        Key::Named(ArrowDown), +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
     );
 
     if !config_keyboard.use_kitty_keyboard_protocol {
@@ -1115,6 +1100,21 @@ pub fn platform_key_bindings(
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
+
+        // Search
+        "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
+        "b", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchBackward;
+        Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
+        Key::Named(Enter), +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
+        Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
+        Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
+        "c", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchCancel;
+        "u", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchClear;
+        "w", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchDeleteWord;
+        "p", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        "n", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
+        Key::Named(ArrowUp), +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        Key::Named(ArrowDown), +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
     );
 
     if use_navigation_key_bindings {
@@ -1158,6 +1158,21 @@ pub fn platform_key_bindings(
         // https://github.com/raphamorim/rio/issues/220#issuecomment-1761651339
         Key::Named(Backspace), ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\u{0017}".into());
         Key::Named(Space), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ToggleViMode;
+
+        // Search
+        "f", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchForward;
+        "b", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH; Action::SearchBackward;
+        Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
+        Key::Named(Enter), +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
+        Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
+        Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
+        "c", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchCancel;
+        "u", ModifiersState::CONTROL, +BindingMode::SEARCH; SearchAction::SearchClear;
+        "w", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchDeleteWord;
+        "p", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        "n", ModifiersState::CONTROL,  +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
+        Key::Named(ArrowUp), +BindingMode::SEARCH; SearchAction::SearchHistoryPrevious;
+        Key::Named(ArrowDown), +BindingMode::SEARCH; SearchAction::SearchHistoryNext;
     );
 
     if use_navigation_key_bindings {

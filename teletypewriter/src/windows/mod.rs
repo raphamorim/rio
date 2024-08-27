@@ -34,12 +34,18 @@ pub struct Pty {
 // Windows Pseudo Console (ConPTY)
 pub fn create_pty(
     shell: &str,
-    _args: Vec<String>,
+    args: Vec<String>,
     working_directory: &Option<String>,
     columns: u16,
     rows: u16,
 ) -> Pty {
-    conpty::new(shell, working_directory, columns, rows).unwrap()
+    let exec = if !args.is_empty() {
+        let args = args.join(" ");
+        &format!("{shell} {args}")
+    } else {
+        shell
+    };
+    conpty::new(exec, working_directory, columns, rows).unwrap()
 }
 
 impl Pty {

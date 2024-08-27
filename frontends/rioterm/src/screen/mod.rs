@@ -817,15 +817,7 @@ impl Screen<'_> {
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
-
-                        if self.context_manager.config.is_native {
-                            self.context_manager.close_current_window(false);
-                            return true;
-                        } else {
-                            // Kill current context will trigger terminal.exit
-                            // then RioEvent::Exit and eventually try_close_existent_tab
-                            self.context_manager.kill_current_context();
-                        }
+                        self.context_manager.close_current_context();
 
                         self.cancel_search();
                         if self.ctx().len() <= 1 {
@@ -840,7 +832,7 @@ impl Screen<'_> {
                         self.clear_selection();
                         self.cancel_search();
                         if self.ctx().len() <= 1 {
-                            return;
+                            return true;
                         }
                         self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
@@ -1134,16 +1126,6 @@ impl Screen<'_> {
             }
             _ => alt_send_esc && text.chars().count() == 1,
         }
-    }
-
-    #[inline]
-    pub fn try_close_existent_tab(&mut self) -> bool {
-        if self.context_manager.len() > 1 {
-            self.context_manager.close_context();
-            return true;
-        }
-
-        false
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {

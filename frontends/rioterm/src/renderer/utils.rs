@@ -9,13 +9,11 @@ pub fn padding_top_from_config(
 ) -> f32 {
     let default_padding = constants::PADDING_Y + padding_y_top;
 
-    if navigation.hide_if_single && num_tabs == 1 {
-        return default_padding;
-    }
-
     #[cfg(not(target_os = "macos"))]
     {
-        if navigation.mode == NavigationMode::TopTab {
+        if navigation.hide_if_single && num_tabs == 1 {
+            return default_padding;
+        } else if navigation.mode == NavigationMode::TopTab {
             return constants::PADDING_Y_WITH_TAB_ON_TOP + padding_y_top;
         }
     }
@@ -24,6 +22,8 @@ pub fn padding_top_from_config(
     {
         if navigation.mode == NavigationMode::NativeTab {
             return 0.0 + padding_y_top;
+        } else if navigation.hide_if_single && num_tabs == 1 {
+            return default_padding;
         }
     }
 
