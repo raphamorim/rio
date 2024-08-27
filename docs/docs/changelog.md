@@ -11,9 +11,9 @@ language: 'en'
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 - `use-kitty-keyboard-protocol` is now `true` as default.
 
-## Unreleased
+## 0.1.10
 
-- Refactor close logic on close tabs.
+- Refactor/Simplify close tabs logic internally.
 - Fix: NativeTab margin top when `hide-if-single` is true.
 - Fix: Search bar width on 1.0 dpi screens.
 - Fix: Windows - The behavior of using a complete shell command and a shell command with parameters is inconsistent [#533](https://github.com/raphamorim/rio/issues/533).
