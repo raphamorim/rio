@@ -57,11 +57,6 @@ impl Route {
     }
 
     #[inline]
-    pub fn try_close_existent_tab(&mut self) -> bool {
-        self.window.screen.try_close_existent_tab()
-    }
-
-    #[inline]
     #[allow(unused_variables)]
     pub fn set_window_subtitle(&mut self, subtitle: &str) {
         #[cfg(target_os = "macos")]
