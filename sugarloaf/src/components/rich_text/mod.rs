@@ -4,7 +4,7 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
-use crate::{Graphics, GraphicId};
+use crate::GraphicId;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{ImageId, GlyphCache, ImageCache};
 use crate::context::Context;
@@ -58,7 +58,16 @@ pub struct RichTextBrush {
     supported_vertex_buffer: usize,
     images: ImageCache,
     glyphs: GlyphCache,
-    graphics_map: FxHashMap<GraphicId, ImageId>,
+    graphics_map: FxHashMap<GraphicId, GraphicsDataBrush>,
+}
+
+pub struct GraphicsDataBrush {
+    texture_id: TextureId,
+    image_id: ImageId,
+    coords: [f32; 4],
+    has_alpha: bool,
+    width: usize,
+    height: usize,
 }
 
 impl RichTextBrush {
@@ -281,7 +290,8 @@ impl RichTextBrush {
             sampler,
             textures: FxHashMap::default(),
             comp: Compositor::new(),
-            images: ImageCache::new(2048),
+            // 20mb is the limit to cache now
+            images: ImageCache::new(20480),
             glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
@@ -329,7 +339,16 @@ impl RichTextBrush {
                 }
                 if let Some(graphic_data) = state.graphics.get(&graphic_id) {
                     if let Some(image_id) = self.comp.add_image(&mut self.images, graphic_data) {
-                        self.graphics_map.insert(*graphic_id, image_id);
+                        if let Some(img) = self.images.get(&image_id) {
+                            self.graphics_map.insert(*graphic_id, GraphicsDataBrush {
+                                image_id,
+                                width: graphic_data.width,
+                                height: graphic_data.height,
+                                texture_id: img.texture_id,
+                                coords: [img.min.0, img.min.1, img.max.0, img.max.1],
+                                has_alpha: graphic_data.is_opaque,
+                            });
+                        }
                     }
                 }
             }
@@ -731,7 +750,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: &SugarDimensions,
-    graphics: &FxHashMap<GraphicId, ImageId>,
+    graphics: &FxHashMap<GraphicId, GraphicsDataBrush>,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
@@ -755,6 +774,8 @@ fn draw_layout(
         &current_font_coords,
         current_font_size,
     );
+
+    let mut last_rendered_graphic = None;
 
     for line in render_data.lines() {
         let hash = line.hash();
@@ -816,6 +837,26 @@ fn draw_layout(
                 current_font = font;
                 current_font_coords = style.font_coords.to_vec();
                 current_font_size = style.font_size;
+            }
+
+            if let Some(graphic) = run.media() {
+                if last_rendered_graphic != Some(graphic) {
+                    if let Some(image_data) = graphics.get(&graphic.id) {
+                        comp.draw_image_from_data(
+                            Rect::new(run_x - (graphic.offset_x as f32), style.topline - (graphic.offset_y as f32), image_data.width as f32, image_data.height as f32),
+                            0.0,
+                            &[1.0, 1.0, 1.0, 1.0],
+                            &image_data.coords,
+                            image_data.texture_id,
+                            image_data.has_alpha
+                        );
+
+                        cached_run.push_graphic(
+
+                        );
+                        last_rendered_graphic = Some(graphic);
+                    }
+                }
             }
 
             comp.draw_run(

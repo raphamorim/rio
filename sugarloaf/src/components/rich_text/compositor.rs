@@ -150,7 +150,7 @@ impl Compositor {
         images: &mut ImageCache,
         image: ImageId,
     ) -> Option<ImageLocation> {
-        images.get(image)
+        images.get(&image)
     }
 
     /// Removes the image from the compositor.
@@ -169,11 +169,11 @@ impl Compositor {
     #[allow(unused)]
     pub fn draw_image(
         &mut self,
-        images: &mut ImageCache,
+        images: &ImageCache,
         rect: impl Into<Rect>,
         depth: f32,
         color: &[f32; 4],
-        image: ImageId,
+        image: &ImageId,
     ) {
         if let Some(img) = images.get(image) {
             self.batches.add_image_rect(
@@ -185,6 +185,27 @@ impl Compositor {
                 image.has_alpha(),
             );
         }
+    }
+
+    /// Draws an image with the specified rectangle, depth and color.
+    #[inline]
+    pub fn draw_image_from_data(
+        &mut self,
+        rect: impl Into<Rect>,
+        depth: f32,
+        color: &[f32; 4],
+        coords: &[f32; 4],
+        texture_id: TextureId,
+        has_alpha: bool,
+    ) {
+        self.batches.add_image_rect(
+            &rect.into(),
+            depth,
+            color,
+            coords,
+            texture_id,
+            has_alpha,
+        );
     }
 
     #[inline]
