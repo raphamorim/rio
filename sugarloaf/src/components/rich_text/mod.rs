@@ -4,9 +4,9 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
-use crate::Graphics;
+use crate::{Graphics, GraphicId};
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
+use crate::components::rich_text::image_cache::{ImageId, GlyphCache, ImageCache};
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
@@ -58,6 +58,7 @@ pub struct RichTextBrush {
     supported_vertex_buffer: usize,
     images: ImageCache,
     glyphs: GlyphCache,
+    graphics_map: FxHashMap<GraphicId, ImageId>,
 }
 
 impl RichTextBrush {
@@ -292,6 +293,7 @@ impl RichTextBrush {
             bind_group_needs_update: true,
             supported_vertex_buffer,
             current_transform,
+            graphics_map: FxHashMap::default(),
         }
     }
 
@@ -319,6 +321,20 @@ impl RichTextBrush {
         let library = state.compositors.advanced.font_library();
         let font_library = { &library.inner.read().unwrap() };
 
+        if !&state.compositors.advanced.render_data.graphics.is_empty() {
+            for graphic_id in &state.compositors.advanced.render_data.graphics {
+                // If graphic id already exist in the image cache then skip
+                if self.graphics_map.contains_key(&graphic_id) {
+                    continue;
+                }
+                if let Some(graphic_data) = state.graphics.get(&graphic_id) {
+                    if let Some(image_id) = self.comp.add_image(&mut self.images, graphic_data) {
+                        self.graphics_map.insert(*graphic_id, image_id);
+                    }
+                }
+            }
+        }
+
         draw_layout(
             &mut self.comp,
             (
@@ -330,7 +346,7 @@ impl RichTextBrush {
             state.current.layout.style.screen_position,
             font_library,
             &state.current.layout.dimensions,
-            &state.graphics,
+            &self.graphics_map,
         );
         self.draw_layout_cache.clear_on_demand();
         // let duration = start.elapsed();
@@ -715,7 +731,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: &SugarDimensions,
-    graphics: &Graphics,
+    graphics: &FxHashMap<GraphicId, ImageId>,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
@@ -768,10 +784,6 @@ fn draw_layout(
                     px += rect.width * char_width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
-            }
-
-            if let Some(media) = run.media() {
-                println!("has graphics");
             }
 
             let line_height = line.ascent() + line.descent() + line.leading();
