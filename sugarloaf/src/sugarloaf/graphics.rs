@@ -22,7 +22,7 @@ impl Graphics {
     }
 
     #[inline]
-    pub fn get(&mut self, id: &GraphicId) -> Option<&GraphicData> {
+    pub fn get(&self, id: &GraphicId) -> Option<&GraphicData> {
         self.inner.get(id)
     }
 

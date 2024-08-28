@@ -9,6 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::GraphicData;
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
     // Command, DisplayList, Pipeline, Rect, Vertex,
@@ -17,9 +18,8 @@ pub use crate::components::rich_text::batch::{
     Rect,
     Vertex,
 };
-use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
-use crate::components::rich_text::image_cache::glyph::GlyphEntry;
-use crate::components::rich_text::image_cache::ImageCache;
+use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
+use crate::components::rich_text::image_cache::{PixelFormat, ImageData, ImageCache};
 pub use crate::components::rich_text::image_cache::{
     AddImage,
     ImageId,
@@ -121,12 +121,25 @@ impl Compositor {
     }
 
     /// Adds an image to the compositor.
-    #[allow(unused)]
     pub fn add_image(
         &mut self,
         images: &mut ImageCache,
-        request: AddImage,
+        graphic: &GraphicData,
     ) -> Option<ImageId> {
+        let format = if graphic.is_opaque {
+            PixelFormat::Rgba8
+        } else {
+            PixelFormat::A8
+        };
+        let request = AddImage {
+            format,
+            width: graphic.width as u16,
+            height: graphic.height as u16,
+            has_alpha: graphic.is_opaque,
+            evictable: true,
+            data: ImageData::Borrowed(&graphic.pixels),
+        };
+
         images.allocate(request)
     }
 
