@@ -119,10 +119,7 @@ impl Compositor {
         images.drain_events(events);
         self.batches.build_display_list(list);
     }
-}
 
-/// Image management.
-impl Compositor {
     /// Adds an image to the compositor.
     #[allow(unused)]
     pub fn add_image(
@@ -148,10 +145,7 @@ impl Compositor {
     pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
         images.deallocate(image).is_some()
     }
-}
 
-/// Drawing.
-impl Compositor {
     /// Draws a rectangle with the specified depth and color.
     #[allow(unused)]
     pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: &[f32; 4]) {

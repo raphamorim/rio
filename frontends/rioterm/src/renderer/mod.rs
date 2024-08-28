@@ -16,8 +16,8 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -325,17 +325,21 @@ impl Renderer {
                 continue;
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                // &self.create_graphic_sugar(square);
-                continue;
-            }
-
             let (mut style, square_content) =
                 if has_cursor && column == self.cursor.state.pos.col {
                     self.create_cursor_style(square)
                 } else {
                     self.create_style(square)
                 };
+
+            if square.flags.contains(Flags::GRAPHICS) {
+                let media = &square.graphics().unwrap()[0].texture;
+                style.media = Some(Graphic {
+                    id: media.id,
+                    width: media.width,
+                    height: media.height,
+                });
+            }
 
             if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
