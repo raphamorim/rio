@@ -8,7 +8,7 @@ use log::{debug, warn};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
-use sugarloaf::SugarGraphicData;
+use sugarloaf::GraphicData;
 
 use crate::crosswords::attr::Attr;
 
@@ -344,12 +344,7 @@ pub trait Handler {
     }
 
     /// Insert a new graphic item.
-    fn insert_graphic(
-        &mut self,
-        _data: SugarGraphicData,
-        _palette: Option<Vec<ColorRgb>>,
-    ) {
-    }
+    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}

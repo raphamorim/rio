@@ -4,7 +4,7 @@
 
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
-use crate::sugarloaf::{SugarGraphicData, SugarGraphicId};
+use crate::sugarloaf::{GraphicData, GraphicId};
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::mem;
@@ -13,7 +13,7 @@ use std::sync::{Arc, Weak};
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct ClearSubregion {
     /// Graphics identifier.
-    pub id: SugarGraphicId,
+    pub id: GraphicId,
 
     /// X coordinate.
     pub x: u16,
@@ -24,10 +24,10 @@ pub struct ClearSubregion {
 
 pub struct UpdateQueues {
     /// Graphics read from the PTY.
-    pub pending: Vec<SugarGraphicData>,
+    pub pending: Vec<GraphicData>,
 
     /// Graphics removed from the grid.
-    pub remove_queue: Vec<SugarGraphicId>,
+    pub remove_queue: Vec<GraphicId>,
 
     /// Subregions in a graphic to be clear.
     pub clear_subregions: Vec<ClearSubregion>,
@@ -39,7 +39,7 @@ pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 #[derive(Clone, Debug)]
 pub struct TextureRef {
     /// Graphic identifier.
-    pub id: SugarGraphicId,
+    pub id: GraphicId,
 
     /// Width, in pixels, of the graphic.
     pub width: u16,
@@ -120,7 +120,7 @@ impl Drop for GraphicCell {
 #[derive(Debug)]
 pub enum TextureOperation {
     /// Remove a texture from the GPU.
-    Remove(SugarGraphicId),
+    Remove(GraphicId),
 
     /// Clear a subregion.
     ClearSubregion(ClearSubregion),
@@ -133,7 +133,7 @@ pub struct Graphics {
     pub last_id: u64,
 
     /// New graphics, received from the PTY.
-    pub pending: Vec<SugarGraphicData>,
+    pub pending: Vec<GraphicData>,
 
     /// Graphics removed from the grid.
     pub texture_operations: Arc<Mutex<Vec<TextureOperation>>>,
@@ -158,9 +158,9 @@ impl Graphics {
     }
 
     /// Generate a new graphic identifier.
-    pub fn next_id(&mut self) -> SugarGraphicId {
+    pub fn next_id(&mut self) -> GraphicId {
         self.last_id += 1;
-        SugarGraphicId(self.last_id)
+        GraphicId(self.last_id)
     }
 
     /// Get queues to update graphics in the grid.
@@ -207,8 +207,8 @@ impl Graphics {
 #[test]
 fn check_opaque_region() {
     use sugarloaf::ColorType;
-    let graphic = SugarGraphicData {
-        id: SugarGraphicId(0),
+    let graphic = GraphicData {
+        id: GraphicId(0),
         width: 10,
         height: 10,
         color_type: ColorType::Rgb,
@@ -229,8 +229,8 @@ fn check_opaque_region() {
         data
     };
 
-    let graphic = SugarGraphicData {
-        id: SugarGraphicId(0),
+    let graphic = GraphicData {
+        id: GraphicId(0),
         pixels,
         width: 10,
         height: 10,

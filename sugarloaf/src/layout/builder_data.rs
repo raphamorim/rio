@@ -220,6 +220,8 @@ pub struct FragmentStyle {
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
     pub cursor: SugarCursor,
+    /// Media
+    pub media: Option<crate::Graphic>,
 }
 
 impl Default for FragmentStyle {
@@ -236,6 +238,7 @@ impl Default for FragmentStyle {
             cursor: SugarCursor::Disabled,
             decoration: None,
             decoration_color: None,
+            media: None,
         }
     }
 }

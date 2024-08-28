@@ -10,6 +10,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
+use crate::sugarloaf::graphics::{GraphicData, GraphicId};
 use crate::sugarloaf::layer::types;
 use crate::{context::Context, Content, Object};
 use ab_glyph::{self, PxScale};
@@ -253,12 +254,12 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn add_graphic(&mut self, graphic: crate::SugarGraphicData) {
+    pub fn add_graphic(&mut self, graphic: GraphicData) {
         self.state.graphics.add(graphic);
     }
 
     #[inline]
-    pub fn remove_graphic(&mut self, graphic_id: &crate::SugarGraphicId) {
+    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
         self.state.graphics.remove(graphic_id);
     }
 

@@ -58,7 +58,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use sugarloaf::SugarGraphicData;
+use sugarloaf::GraphicData;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -2393,11 +2393,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_graphic(
-        &mut self,
-        graphic: SugarGraphicData,
-        palette: Option<Vec<ColorRgb>>,
-    ) {
+    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -2571,7 +2567,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // Add the graphic data to the pending queue.
-        self.graphics.pending.push(SugarGraphicData {
+        self.graphics.pending.push(GraphicData {
             id: graphic_id,
             ..graphic
         });

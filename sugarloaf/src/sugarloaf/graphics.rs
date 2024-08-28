@@ -6,14 +6,14 @@
 use crate::components::core::image::Handle;
 use rustc_hash::FxHashMap;
 
-pub struct SugarGraphicEntry {
-    pub id: SugarGraphicId,
+pub struct GraphicEntry {
+    pub id: GraphicId,
     pub handle: Handle,
 }
 
 #[derive(Default)]
 pub struct SugarloafGraphics {
-    inner: FxHashMap<SugarGraphicId, SugarGraphicEntry>,
+    inner: FxHashMap<GraphicId, GraphicEntry>,
 }
 
 impl SugarloafGraphics {
@@ -23,51 +23,49 @@ impl SugarloafGraphics {
     }
 
     #[inline]
-    pub fn get_mut(&mut self, id: &SugarGraphicId) -> Option<&mut SugarGraphicEntry> {
+    pub fn get_mut(&mut self, id: &GraphicId) -> Option<&mut GraphicEntry> {
         self.inner.get_mut(id)
     }
 
     #[inline]
-    pub fn get(&mut self, id: &SugarGraphicId) -> Option<&SugarGraphicEntry> {
+    pub fn get(&mut self, id: &GraphicId) -> Option<&GraphicEntry> {
         self.inner.get(id)
     }
 
     #[inline]
-    pub fn keys(&self) -> Vec<SugarGraphicId> {
+    pub fn keys(&self) -> Vec<GraphicId> {
         self.inner.keys().cloned().collect::<Vec<_>>()
     }
 
     #[inline]
-    pub fn add(&mut self, graphic_data: SugarGraphicData) {
+    pub fn add(&mut self, graphic_data: GraphicData) {
         let handle = Handle::from_pixels(
             graphic_data.width as u32,
             graphic_data.height as u32,
             graphic_data.pixels.clone(),
         );
-        self.inner
-            .entry(graphic_data.id)
-            .or_insert(SugarGraphicEntry {
-                id: graphic_data.id,
-                handle,
-            });
+        self.inner.entry(graphic_data.id).or_insert(GraphicEntry {
+            id: graphic_data.id,
+            handle,
+        });
     }
 
     #[inline]
-    pub fn remove(&mut self, graphic_id: &SugarGraphicId) {
+    pub fn remove(&mut self, graphic_id: &GraphicId) {
         self.inner.remove(graphic_id);
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SugarGraphic {
-    pub id: SugarGraphicId,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Graphic {
+    pub id: GraphicId,
     pub width: u16,
     pub height: u16,
 }
 
 /// Unique identifier for every graphic added to a grid.
 #[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
-pub struct SugarGraphicId(pub u64);
+pub struct GraphicId(pub u64);
 
 /// Specifies the format of the pixel data.
 #[derive(Eq, PartialEq, Clone, Debug, Copy)]
@@ -81,9 +79,9 @@ pub enum ColorType {
 
 /// Defines a single graphic read from the PTY.
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct SugarGraphicData {
+pub struct GraphicData {
     /// Graphics identifier.
-    pub id: SugarGraphicId,
+    pub id: GraphicId,
 
     /// Width, in pixels, of the graphic.
     pub width: usize,
@@ -101,7 +99,7 @@ pub struct SugarGraphicData {
     pub is_opaque: bool,
 }
 
-impl SugarGraphicData {
+impl GraphicData {
     /// Check if the image may contain transparent pixels. If it returns
     /// `false`, it is guaranteed that there are no transparent pixels.
     #[inline]

@@ -11,7 +11,7 @@ use crate::Text;
 
 #[allow(unused)]
 struct GraphicRect {
-    id: graphics::SugarGraphicId,
+    id: graphics::GraphicId,
     height: u16,
     width: u16,
     pos_x: f32,
