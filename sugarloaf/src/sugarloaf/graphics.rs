@@ -42,7 +42,7 @@ impl Graphics {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Graphic {
     pub id: GraphicId,
     pub offset_x: u16,

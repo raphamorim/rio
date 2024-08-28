@@ -138,8 +138,8 @@ impl ImageCache {
     }
 
     /// Retrieves the image for the specified handle and updates the epoch.
-    pub fn get(&mut self, handle: ImageId) -> Option<ImageLocation> {
-        let entry = self.entries.get_mut(handle.index())?;
+    pub fn get(&self, handle: &ImageId) -> Option<ImageLocation> {
+        let entry = self.entries.get(handle.index())?;
         if entry.flags & ENTRY_ALLOCATED == 0 || entry.generation != handle.generation() {
             return None;
         }

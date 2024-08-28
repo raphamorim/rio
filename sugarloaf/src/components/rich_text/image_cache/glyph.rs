@@ -108,7 +108,7 @@ pub struct GlyphCacheSession<'a> {
 
 impl<'a> GlyphCacheSession<'a> {
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
-        self.images.get(image)
+        self.images.get(&image)
     }
 
     #[inline]

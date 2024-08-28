@@ -362,6 +362,7 @@ impl RenderData {
         if let Some(graphic) = styles[last_span].media {
             self.graphics.insert(graphic.id);
         }
+
         let run_data = RunData {
             span: styles[last_span],
             line,
