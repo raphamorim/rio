@@ -4,6 +4,7 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
+use crate::Graphics;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
@@ -328,7 +329,8 @@ impl RichTextBrush {
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position,
             font_library,
-            state.current.layout.dimensions,
+            &state.current.layout.dimensions,
+            &state.graphics,
         );
         self.draw_layout_cache.clear_on_demand();
         // let duration = start.elapsed();
@@ -712,7 +714,8 @@ fn draw_layout(
     render_data: &crate::layout::RenderData,
     pos: (f32, f32),
     font_library: &FontLibraryData,
-    rect: SugarDimensions,
+    rect: &SugarDimensions,
+    graphics: &Graphics,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
@@ -765,6 +768,10 @@ fn draw_layout(
                     px += rect.width * char_width;
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
+            }
+
+            if let Some(media) = run.media() {
+                println!("has graphics");
             }
 
             let line_height = line.ascent() + line.descent() + line.leading();

@@ -8,7 +8,7 @@ pub use swash::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{
     compositors::SugarCompositors,
-    graphics::{ColorType, Graphic, GraphicData, GraphicId, SugarloafGraphics},
+    graphics::{ColorType, Graphic, GraphicData, GraphicId, Graphics},
     primitives::*,
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,

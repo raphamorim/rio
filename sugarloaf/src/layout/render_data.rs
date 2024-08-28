@@ -11,6 +11,7 @@
 
 //! RenderData.
 use super::layout_data::*;
+use crate::Graphic;
 use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
@@ -442,6 +443,11 @@ impl<'a> Run<'a> {
     #[inline]
     pub fn span(&self) -> FragmentStyle {
         self.run.span
+    }
+
+    #[inline]
+    pub fn media(&self) -> Option<Graphic> {
+        self.run.span.media
     }
 
     /// Returns the font for the run.
