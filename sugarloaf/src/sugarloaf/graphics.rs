@@ -3,32 +3,26 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::components::core::image::Handle;
 use rustc_hash::FxHashMap;
 
-pub struct GraphicEntry {
-    pub id: GraphicId,
-    pub handle: Handle,
-}
-
 #[derive(Default)]
-pub struct SugarloafGraphics {
-    inner: FxHashMap<GraphicId, GraphicEntry>,
+pub struct Graphics {
+    inner: FxHashMap<GraphicId, GraphicData>,
 }
 
-impl SugarloafGraphics {
+impl Graphics {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
     #[inline]
-    pub fn get_mut(&mut self, id: &GraphicId) -> Option<&mut GraphicEntry> {
+    pub fn get_mut(&mut self, id: &GraphicId) -> Option<&mut GraphicData> {
         self.inner.get_mut(id)
     }
 
     #[inline]
-    pub fn get(&mut self, id: &GraphicId) -> Option<&GraphicEntry> {
+    pub fn get(&mut self, id: &GraphicId) -> Option<&GraphicData> {
         self.inner.get(id)
     }
 
@@ -39,15 +33,7 @@ impl SugarloafGraphics {
 
     #[inline]
     pub fn add(&mut self, graphic_data: GraphicData) {
-        let handle = Handle::from_pixels(
-            graphic_data.width as u32,
-            graphic_data.height as u32,
-            graphic_data.pixels.clone(),
-        );
-        self.inner.entry(graphic_data.id).or_insert(GraphicEntry {
-            id: graphic_data.id,
-            handle,
-        });
+        self.inner.entry(graphic_data.id).or_insert(graphic_data);
     }
 
     #[inline]
@@ -59,8 +45,8 @@ impl SugarloafGraphics {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Graphic {
     pub id: GraphicId,
-    pub width: u16,
-    pub height: u16,
+    pub offset_x: u16,
+    pub offset_y: u16,
 }
 
 /// Unique identifier for every graphic added to a grid.

@@ -181,7 +181,7 @@ impl Compositor {
         px: f32,
         py: f32,
         depth: f32,
-        rect: SugarDimensions,
+        rect: &SugarDimensions,
         line: Line,
     ) {
         let mut px = px;

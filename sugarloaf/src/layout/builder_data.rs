@@ -9,7 +9,7 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::{Graphic, sugarloaf::primitives::SugarCursor};
 use std::hash::{Hash, Hasher};
 use swash::text::cluster::CharInfo;
 use swash::Setting;
@@ -33,10 +33,6 @@ pub struct FragmentData {
 /// Data that describes an item.
 #[derive(Copy, Debug, Clone)]
 pub struct ItemData {
-    // Script of the item.
-    // pub script: Script,
-    // Bidi level of the item.
-    // pub level: u8,
     /// Offset of the text.
     pub start: usize,
     /// End of the text.
@@ -221,7 +217,7 @@ pub struct FragmentStyle {
     /// Cursor style.
     pub cursor: SugarCursor,
     /// Media
-    pub media: Option<crate::Graphic>,
+    pub media: Option<Graphic>,
 }
 
 impl Default for FragmentStyle {

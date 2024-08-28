@@ -333,12 +333,24 @@ impl Renderer {
                 };
 
             if square.flags.contains(Flags::GRAPHICS) {
-                let media = &square.graphics().unwrap()[0].texture;
-                style.media = Some(Graphic {
-                    id: media.id,
-                    width: media.width,
-                    height: media.height,
-                });
+                // let graphics = square.graphics().map(|graphics| {
+                //     graphics
+                //         .iter()
+                //         .map(|graphic| Graphic {
+                //             id: graphic.texture.id,
+                //             offset_x: graphic.offset_x,
+                //             offset_y: graphic.offset_y,
+                //         })
+                //         .collect::<_>()
+                // });
+                // style.media = Some(graphics);
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(
+                    Graphic {
+                        id: graphic.texture.id,
+                        offset_x: graphic.offset_x,
+                        offset_y: graphic.offset_y,
+                    });
             }
 
             if self.hyperlink_range.is_some()
