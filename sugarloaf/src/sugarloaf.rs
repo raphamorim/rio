@@ -3,7 +3,6 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
-use crate::sugarloaf::graphics::{GraphicData, GraphicId};
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -11,6 +10,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
+use crate::sugarloaf::graphics::{GraphicData, GraphicId};
 use crate::sugarloaf::layer::types;
 use crate::{context::Context, Content, Object};
 use ab_glyph::{self, PxScale};

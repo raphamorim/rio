@@ -324,8 +324,8 @@ impl ImageCache {
         let texture_id = TextureId::allocate();
         let pending_data = match request.data {
             // ImageData::None => None,
-            // ImageData::Owned(data) => Some(PendingData::Inline(ImageData::Owned(data))),
-            // ImageData::Shared(data) => Some(PendingData::Inline(ImageData::Shared(data))),
+            ImageData::Owned(data) => Some(PendingData::Inline(ImageData::Owned(data))),
+            ImageData::Shared(data) => Some(PendingData::Inline(ImageData::Shared(data))),
             ImageData::Borrowed(data) => {
                 let start = self.buffered_data.len();
                 self.buffered_data.extend_from_slice(data);

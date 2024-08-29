@@ -9,7 +9,6 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::GraphicData;
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
     // Command, DisplayList, Pipeline, Rect, Vertex,
@@ -19,7 +18,6 @@ pub use crate::components::rich_text::batch::{
     Vertex,
 };
 use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
-use crate::components::rich_text::image_cache::{PixelFormat, ImageData, ImageCache};
 pub use crate::components::rich_text::image_cache::{
     AddImage,
     ImageId,
@@ -28,11 +26,15 @@ pub use crate::components::rich_text::image_cache::{
     TextureId,
     // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
+use crate::components::rich_text::image_cache::{ImageCache, ImageData, PixelFormat};
 use crate::components::rich_text::text::*;
+use crate::components::rich_text::GraphicsDataBrush;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
 use crate::SugarCursor;
+use crate::{Graphic, GraphicData, GraphicId};
 use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
+use std::collections::HashSet;
 
 pub struct ComposedRect {
     coords: [f32; 4],
@@ -70,6 +72,7 @@ pub struct CachedRunUnderline {
 
 pub struct CachedRun {
     pub glyphs_ids: Vec<u16>,
+    pub graphics: HashSet<Graphic>,
     instruction_set: FxHashMap<usize, CachedRunInstructions>,
     instruction_set_callback: Vec<InstructionCallback>,
     underline: CachedRunUnderline,
@@ -82,6 +85,7 @@ impl CachedRun {
             underline: CachedRunUnderline::default(),
             char_width,
             glyphs_ids: Vec::new(),
+            graphics: HashSet::new(),
             instruction_set_callback: Vec::new(),
             instruction_set: FxHashMap::default(),
         }
@@ -192,16 +196,14 @@ impl Compositor {
     pub fn draw_image_from_data(
         &mut self,
         rect: impl Into<Rect>,
-        depth: f32,
-        color: &[f32; 4],
         coords: &[f32; 4],
         texture_id: TextureId,
         has_alpha: bool,
     ) {
         self.batches.add_image_rect(
             &rect.into(),
-            depth,
-            color,
+            0.0,
+            &[0.0, 0.0, 0.0, 0.0],
             coords,
             texture_id,
             has_alpha,
@@ -209,6 +211,7 @@ impl Compositor {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_cached_run(
         &mut self,
         cache_line: &Vec<CachedRun>,
@@ -217,6 +220,8 @@ impl Compositor {
         depth: f32,
         rect: &SugarDimensions,
         line: Line,
+        last_rendered_graphic: &mut Option<GraphicId>,
+        graphics: &FxHashMap<GraphicId, GraphicsDataBrush>,
     ) {
         let mut px = px;
         let subpx_bias = (0.125, 0.);
@@ -238,8 +243,26 @@ impl Compositor {
             }
 
             let advance = px - run_x;
-
             let mut index = 0;
+
+            for graphic in &cached_run.graphics {
+                if *last_rendered_graphic != Some(graphic.id) {
+                    if let Some(image_data) = graphics.get(&graphic.id) {
+                        self.draw_image_from_data(
+                            Rect::new(
+                                run_x - (graphic.offset_x as f32),
+                                topline - (graphic.offset_y as f32),
+                                image_data.width as f32,
+                                image_data.height as f32,
+                            ),
+                            &image_data.coords,
+                            image_data.texture_id,
+                            image_data.has_alpha,
+                        );
+                        *last_rendered_graphic = Some(graphic.id);
+                    }
+                }
+            }
 
             for glyph in &glyphs {
                 if let Some(set) = cached_run.instruction_set.get(&index) {

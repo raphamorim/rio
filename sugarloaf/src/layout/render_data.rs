@@ -11,10 +11,10 @@
 
 //! RenderData.
 use super::layout_data::*;
-use crate::{Graphic, GraphicId};
 use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
+use crate::{Graphic, GraphicId};
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
