@@ -870,26 +870,10 @@ impl Sequencer {
                                         .is_native
                                     && route.window.screen.is_macos_deadzone(y)
                                 {
-                                    if route.window.screen.is_macos_deadzone_draggable(x)
-                                    {
-                                        if lmb_pressed || rmb_pressed {
-                                            route.window.screen.clear_selection();
-                                            route
-                                                .window
-                                                .winit_window
-                                                .set_cursor(CursorIcon::Grabbing);
-                                        } else {
-                                            route
-                                                .window
-                                                .winit_window
-                                                .set_cursor(CursorIcon::Grab);
-                                        }
-                                    } else {
-                                        route
-                                            .window
-                                            .winit_window
-                                            .set_cursor(CursorIcon::Default);
-                                    }
+                                    route
+                                        .window
+                                        .winit_window
+                                        .set_cursor(CursorIcon::Default);
 
                                     route.window.is_macos_deadzone = true;
                                     return;
