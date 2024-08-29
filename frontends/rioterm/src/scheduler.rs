@@ -124,7 +124,7 @@ impl Scheduler {
     ///
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
-    pub fn unschedule_tab(&mut self, id: WindowId) {
+    pub fn unschedule_window(&mut self, id: WindowId) {
         self.timers.retain(|timer| timer.id.id != id);
     }
 }

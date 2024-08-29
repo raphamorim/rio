@@ -1,3 +1,6 @@
+// frame.rs was retired originally from https://github.com/alacritty/alacritty
+// which is licensed under Apache 2.0 license.
+
 use std::time::{Duration, Instant};
 
 /// The frame timer state.

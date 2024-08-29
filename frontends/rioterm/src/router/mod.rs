@@ -69,14 +69,18 @@ impl Route {
 
         let swap_timeout = self.window.frame_timer.compute_timeout(monitor_vblank_interval);
 
-        let window_id = self.window.winit_window.id();
-        let timer_id = TimerId::new(Topic::Frame, window_id);
-        let event = EventPayload::new(
-            RioEventType::Frame,
-            window_id,
-        );
-
-        scheduler.schedule(event, swap_timeout, false, timer_id);
+        if swap_timeout > Duration::from_nanos(0)
+         && !cfg!(feature = "wayland") {
+            let window_id = self.window.winit_window.id();
+            let timer_id = TimerId::new(Topic::Frame, window_id);
+            let event = EventPayload::new(
+                RioEventType::Frame,
+                window_id,
+            );
+            scheduler.schedule(event, swap_timeout, false, timer_id);
+        } else {
+            self.window.has_frame = true;
+        }
     }
 
     #[inline]

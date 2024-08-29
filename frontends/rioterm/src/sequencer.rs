@@ -234,6 +234,9 @@ impl Sequencer {
                                     {
                                         self.router.routes.remove(&window_id);
 
+                                        // Unschedule pending events.
+                                        scheduler.unschedule_window(window_id);
+
                                         if self.router.routes.is_empty() {
                                             event_loop_window_target.exit();
                                         }
