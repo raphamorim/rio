@@ -4,7 +4,7 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var font_sampler: sampler;
-@group(1) @binding(0) var font_color_tex: texture_2d<f32>;
+@group(1) @binding(0) var font_color_tex: texture_2d_array<f32>;
 @group(1) @binding(1) var font_mask_tex: texture_2d_array<f32>;
 
 struct VertexInput {
