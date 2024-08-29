@@ -291,8 +291,7 @@ impl RichTextBrush {
             sampler,
             textures: FxHashMap::default(),
             comp: Compositor::new(),
-            // 20mb is the limit to cache now
-            images: ImageCache::new(20480),
+            images: ImageCache::new(8192),
             glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
@@ -363,15 +362,6 @@ impl RichTextBrush {
 
         let library = state.compositors.advanced.font_library();
         let font_library = { &library.inner.read().unwrap() };
-
-        // if !&state.compositors.advanced.render_data.graphics.is_empty() {
-        //     for graphic_id in &state.compositors.advanced.render_data.graphics {
-        //         // If graphic id already exist in the image cache then skip
-        //         if self.graphics.contains_key(graphic_id) {
-        //             continue;
-        //         }
-        //     }
-        // }
 
         draw_layout(
             &mut self.comp,
