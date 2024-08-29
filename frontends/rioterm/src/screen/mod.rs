@@ -14,7 +14,7 @@ use crate::bindings::{
     ViAction,
 };
 #[cfg(target_os = "macos")]
-use crate::constants::{DEADZONE_END_Y, DEADZONE_START_X, DEADZONE_START_Y};
+use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -280,6 +280,7 @@ impl Screen<'_> {
         )
     }
 
+    #[inline]
     pub fn touch_purpose(&mut self) -> &mut TouchPurpose {
         &mut self.touchpurpose
     }
@@ -290,14 +291,6 @@ impl Screen<'_> {
         let layout = self.sugarloaf.layout();
         let scale_f64 = layout.dimensions.scale as f64;
         pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
-    }
-
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn is_macos_deadzone_draggable(&self, pos_x: f64) -> bool {
-        let layout = self.sugarloaf.layout();
-        let scale_f64 = layout.dimensions.scale as f64;
-        pos_x >= DEADZONE_START_X * scale_f64
     }
 
     /// update_config is triggered in any configuration file update
